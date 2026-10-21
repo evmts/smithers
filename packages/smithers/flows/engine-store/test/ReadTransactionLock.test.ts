@@ -11,8 +11,9 @@
  */
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
-import { Effect, Exit, Layer, Option } from "effect"
+import { Cause, Effect, Exit, Layer, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -67,4 +68,34 @@ it("the memory twin's read snapshot answers what its transaction answers", async
   const state = DurableEngineState.makeMemory()
   const read = await Effect.runPromise(state.readTransaction(state.waiting("absent")))
   expect(Option.isNone(read)).toBe(true)
+})
+
+it("a read snapshot that cannot begin dies with the storage failure instead of failing as the body", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "engine-read-begin-"))
+  const filename = join(directory, "engine.db")
+  const store = Layer.provideMerge(DurableWriter.layer({ maxAttempts: 1 }), NodeDatabase.layer({ filename }))
+  try {
+    const read = await Effect.runPromise(Effect.scoped(
+      Effect.gen(function*() {
+        yield* Migrations.run
+        const state = yield* DurableEngineState.make
+        const sql = yield* SqlClient.SqlClient
+        // The connection is already inside a transaction the store did not
+        // open, so the snapshot's own BEGIN is refused.
+        yield* sql.unsafe("BEGIN")
+        const read = yield* Effect.exit(state.readTransaction(state.waiting("run-1")))
+        yield* sql.unsafe("ROLLBACK")
+        return read
+      }).pipe(Effect.provide(store))
+    ))
+
+    expect(Exit.isFailure(read)).toBe(true)
+    if (Exit.isFailure(read)) {
+      expect(Cause.hasDies(read.cause)).toBe(true)
+      expect(Cause.hasFails(read.cause)).toBe(false)
+      expect(SqlError.isSqlError(Cause.squash(read.cause))).toBe(true)
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })

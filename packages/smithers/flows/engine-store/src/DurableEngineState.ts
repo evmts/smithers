@@ -1103,27 +1103,25 @@ const dieOnDatabaseError = <E>(cause: Cause.Cause<E | DatabaseError>): Cause.Cau
   )
 
 /**
- * Constructs the database-backed durable-state implementation.
- *
- * Clock creation is fenced against the current run owner. Deferred completion
- * and clock firing are external trigger admissions protected by first-writer
- * and compare-and-set semantics; execution remains claim-gated by `RunStore`.
- *
- * @since 0.1.0
- * @category constructors
+ * What every statement of the database-backed state runs against: the
+ * connection, the shared writer, and the gate that orders this store's
+ * write transactions.
  */
-export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient> = Effect.gen(function*() {
-  const sql = yield* Effect.service(SqlClient.SqlClient)
-  const writer = yield* DurableWriter
+interface Database {
+  readonly sql: SqlClient.SqlClient
+  readonly writer: DurableWriter["Service"]
+  /**
+   * Keep state-first ordering. This gate and DurableWriter's shared permit are
+   * both taken at the caller's interruptibility, so an interruptible caller can
+   * still be cancelled while queued, including behind a journal-only write that
+   * skips this gate.
+   * A nested SQL transaction already owns the connection and bypasses this gate.
+   */
+  readonly transactionGate: Semaphore.Semaphore
+}
 
-  // Engine-store-owned storage created outside the journal migration
-  // (issues #40/#41/#79/#81). The statements, their rationale, and
-  // the dialects each is known to accept live in one machine-readable
-  // inventory so the pg-porting plan cannot omit them (issue #92).
-  yield* EngineStateSchema.apply(sql, writer)
-
-  const selectDeferred = (address: DeferredAddress) =>
-    sql<DeferredDatabaseRow>`
+const selectDeferred = (db: Database, address: DeferredAddress) =>
+  db.sql<DeferredDatabaseRow>`
       SELECT
         flow_name AS "flowName",
         execution_id AS "executionId",
@@ -1137,8 +1135,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         AND deferred_name = ${address.deferredName}
     `
 
-  const selectClock = (address: ClockAddress) =>
-    sql<ClockDatabaseRow>`
+const selectClock = (db: Database, address: ClockAddress) =>
+  db.sql<ClockDatabaseRow>`
       SELECT
         flow_name AS "flowName",
         execution_id AS "executionId",
@@ -1152,8 +1150,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         AND clock_name = ${address.clockName}
     `
 
-  const deferred: Service["deferred"] = Effect.fn("DurableEngineState.deferred")((address) =>
-    selectDeferred(address).pipe(
+const deferred = (db: Database): Service["deferred"] =>
+  Effect.fn("DurableEngineState.deferred")((address) =>
+    selectDeferred(db, address).pipe(
       Effect.orDie,
       Effect.flatMap((rows) =>
         rows[0] === undefined
@@ -1163,11 +1162,12 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const consumeDeferred: Service["consumeDeferred"] = Effect.fn("DurableEngineState.consumeDeferred")((
+const consumeDeferred = (db: Database): Service["consumeDeferred"] =>
+  Effect.fn("DurableEngineState.consumeDeferred")((
     address,
     consumedAtMs
   ) =>
-    writer.write(sql<{ readonly flowName: string }>`
+    db.writer.write(db.sql<{ readonly flowName: string }>`
       UPDATE flows_deferred_completions
       SET consumed_at_ms = ${consumedAtMs}
       WHERE flow_name = ${address.flowName}
@@ -1178,7 +1178,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     `).pipe(Effect.orDie, Effect.map((rows) => rows.length > 0))
   )
 
-  const completeDeferred: Service["completeDeferred"] = Effect.fn(
+const completeDeferred = (db: Database): Service["completeDeferred"] =>
+  Effect.fn(
     "DurableEngineState.completeDeferred"
   )((row) =>
     Effect.gen(function*() {
@@ -1186,9 +1187,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       const metadataJson = row.metadata === undefined
         ? null
         : yield* encodeJson(row.metadata, "metadata")
-      return yield* writer.write(
+      return yield* db.writer.write(
         Effect.gen(function*() {
-          const inserted = yield* sql<DeferredDatabaseRow>`
+          const inserted = yield* db.sql<DeferredDatabaseRow>`
             INSERT INTO flows_deferred_completions (
               flow_name,
               execution_id,
@@ -1220,7 +1221,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
               digest: deferredDigest(inserted[0])
             }
           }
-          const existing = yield* selectDeferred(row)
+          const existing = yield* selectDeferred(db, row)
           if (existing[0] === undefined) {
             return yield* Effect.die(new EngineStateFault({ reason: "deferred_completion_missing" }))
           }
@@ -1234,8 +1235,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     })
   )
 
-  const clock: Service["clock"] = Effect.fn("DurableEngineState.clock")((address) =>
-    selectClock(address).pipe(
+const clock = (db: Database): Service["clock"] =>
+  Effect.fn("DurableEngineState.clock")((address) =>
+    selectClock(db, address).pipe(
       Effect.orDie,
       Effect.flatMap((rows) =>
         rows[0] === undefined
@@ -1245,10 +1247,11 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const scheduleClock: Service["scheduleClock"] = Effect.fn("DurableEngineState.scheduleClock")((row, owner) =>
-    writer.write(
+const scheduleClock = (db: Database): Service["scheduleClock"] =>
+  Effect.fn("DurableEngineState.scheduleClock")((row, owner) =>
+    db.writer.write(
       Effect.gen(function*() {
-        const inserted = yield* sql<ClockDatabaseRow>`
+        const inserted = yield* db.sql<ClockDatabaseRow>`
           INSERT INTO flows_clock_deadlines (
             flow_name,
             execution_id,
@@ -1288,7 +1291,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             row: yield* decodeClockRow(inserted[0])
           }
         }
-        const existing = yield* selectClock(row)
+        const existing = yield* selectClock(db, row)
         if (existing[0] !== undefined) {
           return {
             _tag: "Existing" as const,
@@ -1300,13 +1303,14 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     ).pipe(Effect.orDie)
   )
 
-  const completeClock: Service["completeClock"] = Effect.fn("DurableEngineState.completeClock")((
+const completeClock = (db: Database): Service["completeClock"] =>
+  Effect.fn("DurableEngineState.completeClock")((
     address,
     completedAtMs
   ) =>
-    writer.write(
+    db.writer.write(
       Effect.gen(function*() {
-        const updated = yield* sql<ClockDatabaseRow>`
+        const updated = yield* db.sql<ClockDatabaseRow>`
           UPDATE flows_clock_deadlines
           SET completed_at_ms = ${completedAtMs}
           WHERE flow_name = ${address.flowName}
@@ -1327,7 +1331,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             row: yield* decodeClockRow(updated[0])
           }
         }
-        const existing = yield* selectClock(address)
+        const existing = yield* selectClock(db, address)
         return existing[0] === undefined
           ? { _tag: "NotFound" as const }
           : {
@@ -1338,8 +1342,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     ).pipe(Effect.orDie)
   )
 
-  const dueClocks: Service["dueClocks"] = Effect.fn("DurableEngineState.dueClocks")((nowMs) =>
-    sql<ClockDatabaseRow>`
+const dueClocks = (db: Database): Service["dueClocks"] =>
+  Effect.fn("DurableEngineState.dueClocks")((nowMs) =>
+    db.sql<ClockDatabaseRow>`
       SELECT
         flow_name AS "flowName",
         execution_id AS "executionId",
@@ -1359,9 +1364,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const pendingClocks: Service["pendingClocks"] = Effect.fn("DurableEngineState.pendingClocks")((scope) =>
+const pendingClocks = (db: Database): Service["pendingClocks"] =>
+  Effect.fn("DurableEngineState.pendingClocks")((scope) =>
     (scope.executionId !== undefined
-      ? sql<ClockDatabaseRow>`
+      ? db.sql<ClockDatabaseRow>`
       SELECT
         flow_name AS "flowName",
         execution_id AS "executionId",
@@ -1372,7 +1378,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       FROM flows_clock_deadlines
       WHERE completed_at_ms IS NULL
         AND execution_id = ${scope.executionId}
-        AND ${scope.flowName === undefined ? sql`1 = 1` : sql`flow_name = ${scope.flowName}`}
+        AND ${scope.flowName === undefined ? db.sql`1 = 1` : db.sql`flow_name = ${scope.flowName}`}
         AND EXISTS (
           SELECT 1 FROM flows_runs
           WHERE flows_runs.run_id = flows_clock_deadlines.execution_id
@@ -1381,7 +1387,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       ORDER BY due_at_ms, execution_id, clock_name
     `
       : scope.flowName !== undefined
-      ? sql<ClockDatabaseRow>`
+      ? db.sql<ClockDatabaseRow>`
       SELECT
         flow_name AS "flowName",
         execution_id AS "executionId",
@@ -1399,7 +1405,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         )
       ORDER BY due_at_ms, execution_id, clock_name
     `
-      : sql<ClockDatabaseRow>`
+      : db.sql<ClockDatabaseRow>`
       SELECT
         flow_name AS "flowName",
         execution_id AS "executionId",
@@ -1424,8 +1430,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       )
   )
 
-  const hasDueWake: Service["hasDueWake"] = (executionId, nowMs) =>
-    sql`
+const hasDueWake = (db: Database): Service["hasDueWake"] => (executionId, nowMs) =>
+  db.sql`
       SELECT 1 FROM flows_deferred_completions
       WHERE execution_id = ${executionId} AND consumed_at_ms IS NULL
       UNION ALL
@@ -1434,17 +1440,18 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       LIMIT 1
     `.pipe(Effect.orDie, Effect.map((rows) => rows.length > 0))
 
-  const completedDeferreds: Service["completedDeferreds"] = Effect.fn(
+const completedDeferreds = (db: Database): Service["completedDeferreds"] =>
+  Effect.fn(
     "DurableEngineState.completedDeferreds"
   )((flowName, executionId) =>
-    sql<Record<string, unknown>>`
+    db.sql<Record<string, unknown>>`
       SELECT
         flow_name AS "flowName",
         execution_id AS "executionId",
         deferred_name AS "deferredName"
       FROM flows_deferred_completions
       WHERE flow_name = ${flowName}
-        AND ${executionId === undefined ? sql`1 = 1` : sql`execution_id = ${executionId}`}
+        AND ${executionId === undefined ? db.sql`1 = 1` : db.sql`execution_id = ${executionId}`}
         AND consumed_at_ms IS NULL
         AND EXISTS (
           SELECT 1 FROM flows_runs
@@ -1465,10 +1472,11 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const completeRunClocks: Service["completeRunClocks"] = Effect.fn(
+const completeRunClocks = (db: Database): Service["completeRunClocks"] =>
+  Effect.fn(
     "DurableEngineState.completeRunClocks"
   )((executionId, completedAtMs) =>
-    writer.write(sql<ClockDatabaseRow>`
+    db.writer.write(db.sql<ClockDatabaseRow>`
       UPDATE flows_clock_deadlines
       SET completed_at_ms = ${completedAtMs}
       WHERE execution_id = ${executionId}
@@ -1491,8 +1499,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const selectWaiting = (runId: string) =>
-    sql<WaitingDatabaseRow>`
+const selectWaiting = (db: Database, runId: string) =>
+  db.sql<WaitingDatabaseRow>`
       SELECT
         run_id AS "runId",
         waiting_reason AS "waitingReason",
@@ -1504,10 +1512,11 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         AND waiting_reason IS NOT NULL
     `
 
-  const park: Service["park"] = Effect.fn("DurableEngineState.park")((runId, waiting, owner) =>
-    writer.write(
+const park = (db: Database): Service["park"] =>
+  Effect.fn("DurableEngineState.park")((runId, waiting, owner) =>
+    db.writer.write(
       Effect.gen(function*() {
-        const updated = yield* sql<WaitingDatabaseRow>`
+        const updated = yield* db.sql<WaitingDatabaseRow>`
           UPDATE flows_runs
           SET
             waiting_reason = ${waiting.reason},
@@ -1533,18 +1542,19 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     ).pipe(Effect.orDie)
   )
 
-  const wake: Service["wake"] = Effect.fn("DurableEngineState.wake")((runId) =>
-    writer.write(
+const wake = (db: Database): Service["wake"] =>
+  Effect.fn("DurableEngineState.wake")((runId) =>
+    db.writer.write(
       Effect.gen(function*() {
-        const before = yield* selectWaiting(runId)
+        const before = yield* selectWaiting(db, runId)
         if (before[0] === undefined) {
-          const existing = yield* sql<{ runId: string }>`
+          const existing = yield* db.sql<{ runId: string }>`
             SELECT run_id AS "runId" FROM flows_runs WHERE run_id = ${runId}
           `
           return existing[0] === undefined ? { _tag: "NotFound" as const } : { _tag: "NotWaiting" as const }
         }
         const row = yield* decodeWaitingRow(before[0])
-        yield* sql`
+        yield* db.sql`
           UPDATE flows_runs
           SET
             waiting_reason = NULL,
@@ -1559,8 +1569,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     ).pipe(Effect.orDie)
   )
 
-  const waiting: Service["waiting"] = Effect.fn("DurableEngineState.waiting")((runId) =>
-    selectWaiting(runId).pipe(
+const waiting = (db: Database): Service["waiting"] =>
+  Effect.fn("DurableEngineState.waiting")((runId) =>
+    selectWaiting(db, runId).pipe(
       Effect.orDie,
       Effect.flatMap((rows) =>
         rows[0] === undefined
@@ -1570,18 +1581,19 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  /**
-   * Every open wait in one run tree, the named run's own first.
-   *
-   * Walk the authoritative spawn and trampoline edges. UNION visits each
-   * (run, depth) pair once; the depth cap bounds even externally corrupted
-   * cycles. Grouping by run afterwards collapses unequal-depth DAG paths
-   * and orders each wait at its shortest attached distance from the root.
-   * Correlated edge lookups seek each parent's indexes instead of building
-   * an edge set from the database's entire execution history.
-   */
-  const waitingTree: Service["waitingTree"] = Effect.fn("DurableEngineState.waitingTree")((runId, options) =>
-    sql<WaitingDatabaseRow>`
+/**
+ * Every open wait in one run tree, the named run's own first.
+ *
+ * Walk the authoritative spawn and trampoline edges. UNION visits each
+ * (run, depth) pair once; the depth cap bounds even externally corrupted
+ * cycles. Grouping by run afterwards collapses unequal-depth DAG paths
+ * and orders each wait at its shortest attached distance from the root.
+ * Correlated edge lookups seek each parent's indexes instead of building
+ * an edge set from the database's entire execution history.
+ */
+const waitingTree = (db: Database): Service["waitingTree"] =>
+  Effect.fn("DurableEngineState.waitingTree")((runId, options) =>
+    db.sql<WaitingDatabaseRow>`
       WITH RECURSIVE tree(run_id, depth) AS (
         SELECT run_id, 0 FROM flows_runs WHERE run_id = ${runId}
         UNION
@@ -1595,7 +1607,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         WHERE tree.depth < ${waitingTreeMaxDepth}
           AND (${options?.detached === "include" ? 1 : 0} = 1
             OR child.parent_run_id = tree.run_id
-            OR COALESCE(${Dialect.jsonText(sql, sql`child.state_json`, "$.onParentExit")}, 'cancel') <> 'detach')
+            OR COALESCE(${Dialect.jsonText(db.sql, db.sql`child.state_json`, "$.onParentExit")}, 'cancel') <> 'detach')
       ), reachable(run_id, depth) AS (
         SELECT run_id, MIN(depth) FROM tree GROUP BY run_id
       )
@@ -1616,13 +1628,14 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const waitingRuns: Service["waitingRuns"] = Effect.fn("DurableEngineState.waitingRuns")((filter) => {
+const waitingRuns = (db: Database): Service["waitingRuns"] =>
+  Effect.fn("DurableEngineState.waitingRuns")((filter) => {
     // `1 = 0` short-circuits the cancel predicate away when the caller did
     // not ask for it, so the reason/wake filters (and the 0004 index) stay
     // the leading predicates (issue #68).
     const cancelRequestedOnly = filter?.cancelRequested === true ? 1 : 0
     return (filter?.reason !== undefined && filter.dueBeforeMs !== undefined
-      ? sql<WaitingDatabaseRow>`
+      ? db.sql<WaitingDatabaseRow>`
         SELECT
           run_id AS "runId",
           waiting_reason AS "waitingReason",
@@ -1638,7 +1651,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         ORDER BY waiting_wake_at_ms, run_id
       `
       : filter?.reason !== undefined
-      ? sql<WaitingDatabaseRow>`
+      ? db.sql<WaitingDatabaseRow>`
         SELECT
           run_id AS "runId",
           waiting_reason AS "waitingReason",
@@ -1652,7 +1665,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         ORDER BY waiting_wake_at_ms IS NULL, waiting_wake_at_ms, run_id
       `
       : filter?.dueBeforeMs !== undefined
-      ? sql<WaitingDatabaseRow>`
+      ? db.sql<WaitingDatabaseRow>`
         SELECT
           run_id AS "runId",
           waiting_reason AS "waitingReason",
@@ -1667,7 +1680,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           AND status NOT IN ('completed', 'failed', 'cancelled')
         ORDER BY waiting_wake_at_ms, run_id
       `
-      : sql<WaitingDatabaseRow>`
+      : db.sql<WaitingDatabaseRow>`
         SELECT
           run_id AS "runId",
           waiting_reason AS "waitingReason",
@@ -1688,122 +1701,134 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       )
   })
 
-  const pendingRows = (
-    flowName: string,
-    limit?: number,
-    after?: PendingRunCursor,
-    through?: PendingRunCursor,
-    descending = false,
-    eligibleBeforeMs?: number
-  ): Effect.Effect<ReadonlyArray<PendingRunCursor>> =>
-    sql<{ readonly runId: string; readonly createdAtMs: number | bigint | string }>`
+const pendingRows = (
+  db: Database,
+  flowName: string,
+  limit?: number,
+  after?: PendingRunCursor,
+  through?: PendingRunCursor,
+  descending = false,
+  eligibleBeforeMs?: number
+): Effect.Effect<ReadonlyArray<PendingRunCursor>> =>
+  db.sql<{ readonly runId: string; readonly createdAtMs: number | bigint | string }>`
       SELECT run_id AS "runId", created_at_ms AS "createdAtMs" FROM flows_runs
-        ${Dialect.isPostgres(sql) ? sql`` : sql`INDEXED BY flows_runs_listing_3`}
+        ${Dialect.isPostgres(db.sql) ? db.sql`` : db.sql`INDEXED BY flows_runs_listing_3`}
       WHERE status = 'pending'
-        AND ${eligibleBeforeMs === undefined ? sql`TRUE` : sql`created_at_ms < ${eligibleBeforeMs}`}
+        AND ${eligibleBeforeMs === undefined ? db.sql`TRUE` : db.sql`created_at_ms < ${eligibleBeforeMs}`}
         AND execution_flow = ${flowName}
         AND ${
-      after === undefined ? sql`TRUE` : sql`(
+    after === undefined ? db.sql`TRUE` : db.sql`(
           created_at_ms > ${after.createdAtMs}
           OR (created_at_ms = ${after.createdAtMs} AND run_id > ${after.runId})
         )`
-    }
+  }
         AND ${
-      through === undefined ? sql`TRUE` : sql`(
+    through === undefined ? db.sql`TRUE` : db.sql`(
           created_at_ms < ${through.createdAtMs}
           OR (created_at_ms = ${through.createdAtMs} AND run_id <= ${through.runId})
         )`
-    }
-      ORDER BY ${descending ? sql`created_at_ms DESC, run_id DESC` : sql`created_at_ms, run_id`}
-      LIMIT ${limit ?? (Dialect.isPostgres(sql) ? null : -1)}
+  }
+      ORDER BY ${descending ? db.sql`created_at_ms DESC, run_id DESC` : db.sql`created_at_ms, run_id`}
+      LIMIT ${limit ?? (Dialect.isPostgres(db.sql) ? null : -1)}
     `.pipe(
-      Effect.orDie,
-      Effect.map((rows) => rows.map((row) => ({ runId: row.runId, createdAtMs: Number(row.createdAtMs) })))
-    )
-  const pendingRuns: Service["pendingRuns"] = Effect.fn("DurableEngineState.pendingRuns")((
+    Effect.orDie,
+    Effect.map((rows) => rows.map((row) => ({ runId: row.runId, createdAtMs: Number(row.createdAtMs) })))
+  )
+const pendingRuns = (db: Database): Service["pendingRuns"] =>
+  Effect.fn("DurableEngineState.pendingRuns")((
     flowName,
     limit,
     after,
     through,
     eligibleBeforeMs
-  ) => pendingRows(flowName, limit, after, through, false, eligibleBeforeMs))
-  const pendingRunTail: Service["pendingRunTail"] = Effect.fn("DurableEngineState.pendingRunTail")((
+  ) => pendingRows(db, flowName, limit, after, through, false, eligibleBeforeMs))
+const pendingRunTail = (db: Database): Service["pendingRunTail"] =>
+  Effect.fn("DurableEngineState.pendingRunTail")((
     flowName,
     eligibleBeforeMs
   ) =>
-    pendingRows(flowName, 1, undefined, undefined, true, eligibleBeforeMs).pipe(
+    pendingRows(db, flowName, 1, undefined, undefined, true, eligibleBeforeMs).pipe(
       Effect.map((rows) => Option.fromNullishOr(rows[0]))
     )
   )
 
-  const pendingCancellationRows = (
-    limit: number,
-    after?: PendingRunCursor,
-    through?: PendingRunCursor,
-    descending = false
-  ): Effect.Effect<ReadonlyArray<PendingRunCursor>> =>
-    pendingCancellationLimit(limit).pipe(
-      Effect.andThen(sql<{ readonly runId: string; readonly createdAtMs: number | bigint | string }>`
+const pendingCancellationRows = (
+  db: Database,
+  limit: number,
+  after?: PendingRunCursor,
+  through?: PendingRunCursor,
+  descending = false
+): Effect.Effect<ReadonlyArray<PendingRunCursor>> =>
+  pendingCancellationLimit(limit).pipe(
+    Effect.andThen(db.sql<{ readonly runId: string; readonly createdAtMs: number | bigint | string }>`
       SELECT run_id AS "runId", created_at_ms AS "createdAtMs" FROM flows_runs
-        ${Dialect.isPostgres(sql) ? sql`` : sql`INDEXED BY flows_runs_pending_cancel_idx`}
+        ${Dialect.isPostgres(db.sql) ? db.sql`` : db.sql`INDEXED BY flows_runs_pending_cancel_idx`}
       WHERE status = 'pending' AND cancel_requested_at_ms IS NOT NULL
-        AND ${after === undefined ? sql`TRUE` : sql`(created_at_ms, run_id) > (${after.createdAtMs}, ${after.runId})`}
         AND ${
-        through === undefined ? sql`TRUE` : sql`(created_at_ms, run_id) <= (${through.createdAtMs}, ${through.runId})`
-      }
-      ORDER BY ${descending ? sql`created_at_ms DESC, run_id DESC` : sql`created_at_ms, run_id`}
+      after === undefined ? db.sql`TRUE` : db.sql`(created_at_ms, run_id) > (${after.createdAtMs}, ${after.runId})`
+    }
+        AND ${
+      through === undefined
+        ? db.sql`TRUE`
+        : db.sql`(created_at_ms, run_id) <= (${through.createdAtMs}, ${through.runId})`
+    }
+      ORDER BY ${descending ? db.sql`created_at_ms DESC, run_id DESC` : db.sql`created_at_ms, run_id`}
       LIMIT ${limit}
     `.pipe(
-        Effect.orDie,
-        Effect.map((rows) => rows.map((row) => ({ runId: row.runId, createdAtMs: Number(row.createdAtMs) })))
-      ))
-    )
-  const pendingCancellationRuns: Service["pendingCancellationRuns"] = Effect.fn(
+      Effect.orDie,
+      Effect.map((rows) => rows.map((row) => ({ runId: row.runId, createdAtMs: Number(row.createdAtMs) })))
+    ))
+  )
+const pendingCancellationRuns = (db: Database): Service["pendingCancellationRuns"] =>
+  Effect.fn(
     "DurableEngineState.pendingCancellationRuns"
-  )((limit, after, through) => pendingCancellationRows(limit, after, through))
-  const pendingCancellationTail: Service["pendingCancellationTail"] = Effect.fn(
+  )((limit, after, through) => pendingCancellationRows(db, limit, after, through))
+const pendingCancellationTail = (db: Database): Service["pendingCancellationTail"] =>
+  Effect.fn(
     "DurableEngineState.pendingCancellationTail"
   )(() =>
-    pendingCancellationRows(1, undefined, undefined, true).pipe(
+    pendingCancellationRows(db, 1, undefined, undefined, true).pipe(
       Effect.map((rows) => Option.fromNullishOr(rows[0]))
     )
   )
 
-  const staleRunningRuns: Service["staleRunningRuns"] = Effect.fn(
+const staleRunningRuns = (db: Database): Service["staleRunningRuns"] =>
+  Effect.fn(
     "DurableEngineState.staleRunningRuns"
   )((staleBeforeMs, limit) =>
     // `LIMIT -1` is SQLite's explicit "no limit"; the partial index created
     // in `make` serves the predicate, so the per-tick sweep is an index
     // range read instead of a full table scan (issue #79).
-    sql<{ runId: string; heartbeatAtMs: number | bigint | string }>`
+    db.sql<{ runId: string; heartbeatAtMs: number | bigint | string }>`
       SELECT run_id AS "runId", heartbeat_at_ms AS "heartbeatAtMs"
       FROM flows_runs
       WHERE status = 'running'
         AND heartbeat_at_ms IS NOT NULL
         AND heartbeat_at_ms < ${staleBeforeMs}
       ORDER BY heartbeat_at_ms, run_id
-      LIMIT ${limit ?? (Dialect.isPostgres(sql) ? null : -1)}
+      LIMIT ${limit ?? (Dialect.isPostgres(db.sql) ? null : -1)}
     `.pipe(
       Effect.orDie,
       Effect.map((rows) => rows.map((row) => ({ runId: String(row.runId), heartbeatAtMs: Number(row.heartbeatAtMs) })))
     )
   )
 
-  /**
-   * One ordered range read replaces the engine store's per-attempt point
-   * probes (issue #77): a fresh key costs one empty SELECT instead of 32
-   * sequential gets, and a resumed key one SELECT instead of one per
-   * surviving attempt. The earliest surviving row is the durable retry
-   * origin (issue #69) and the highest attempt contiguous from it the
-   * resumed counter (issue #59). This read is deliberately unbounded; the
-   * pruned-prefix tolerance that makes it agree with the point-probe
-   * fallback is applied once, by the caller, in
-   * `internal/AttemptProbe.probeAttempts` (issue #96).
-   */
-  const attemptSurvivors: NonNullable<Service["attemptSurvivors"]> = Effect.fn(
+/**
+ * One ordered range read replaces the engine store's per-attempt point
+ * probes (issue #77): a fresh key costs one empty SELECT instead of 32
+ * sequential gets, and a resumed key one SELECT instead of one per
+ * surviving attempt. The earliest surviving row is the durable retry
+ * origin (issue #69) and the highest attempt contiguous from it the
+ * resumed counter (issue #59). This read is deliberately unbounded; the
+ * pruned-prefix tolerance that makes it agree with the point-probe
+ * fallback is applied once, by the caller, in
+ * `internal/AttemptProbe.probeAttempts` (issue #96).
+ */
+const attemptSurvivors = (db: Database): NonNullable<Service["attemptSurvivors"]> =>
+  Effect.fn(
     "DurableEngineState.attemptSurvivors"
   )((runId, stepKeyDigest) =>
-    sql<{ readonly attempt: number; readonly startedAtMs: number }>`
+    db.sql<{ readonly attempt: number; readonly startedAtMs: number }>`
       SELECT attempt AS "attempt", started_at_ms AS "startedAtMs"
       FROM flows_attempts
       WHERE run_id = ${runId}
@@ -1829,8 +1854,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const selectRunParent = (childId: string, parentId: string) =>
-    sql<RunParentDatabaseRow>`
+const selectRunParent = (db: Database, childId: string, parentId: string) =>
+  db.sql<RunParentDatabaseRow>`
       SELECT
         child_id AS "childId",
         parent_id AS "parentId",
@@ -1840,8 +1865,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         AND parent_id = ${parentId}
     `
 
-  const parentIdsOf = (id: string): Effect.Effect<ReadonlyArray<string>> =>
-    sql<RunParentDatabaseRow>`
+const parentIdsOf = (db: Database, id: string): Effect.Effect<ReadonlyArray<string>> =>
+  db.sql<RunParentDatabaseRow>`
       SELECT
         child_id AS "childId",
         parent_id AS "parentId",
@@ -1850,18 +1875,19 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       WHERE child_id = ${id}
       ORDER BY seq
     `.pipe(
-      Effect.orDie,
-      Effect.map((rows) => rows.map((row) => String(row.parentId)))
-    )
+    Effect.orDie,
+    Effect.map((rows) => rows.map((row) => String(row.parentId)))
+  )
 
-  const recordRunParent: Service["recordRunParent"] = Effect.fn(
+const recordRunParent = (db: Database): Service["recordRunParent"] =>
+  Effect.fn(
     "DurableEngineState.recordRunParent"
   )((childId, parentId) =>
-    writer.write(
+    db.writer.write(
       Effect.gen(function*() {
         // MAX(seq)+1 and the insert share one write transaction, so the
         // assigned seq is a total insertion order over the store.
-        const inserted = yield* sql<RunParentDatabaseRow>`
+        const inserted = yield* db.sql<RunParentDatabaseRow>`
           INSERT INTO flows_run_parents (child_id, parent_id, seq)
           SELECT ${childId}, ${parentId}, COALESCE(MAX(seq), 0) + 1
           FROM flows_run_parents
@@ -1884,7 +1910,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           // This is a contract requirement, not a SQLite artifact; a
           // backend that ran writes at READ COMMITTED would break it and is
           // excluded by the DurableWriter contract.
-          const cycle = yield* findCyclePath(childId, parentId, parentIdsOf)
+          const cycle = yield* findCyclePath(childId, parentId, (id) => parentIdsOf(db, id))
           if (cycle !== undefined) {
             return yield* Effect.fail(new RunParentCycleError({ path: cycle }))
           }
@@ -1893,7 +1919,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             edge: yield* decodeRunParentEdge(inserted[0])
           }
         }
-        const existing = yield* selectRunParent(childId, parentId)
+        const existing = yield* selectRunParent(db, childId, parentId)
         if (existing[0] === undefined) {
           return yield* Effect.die(new EngineStateFault({ reason: "run_parent_edge_missing" }))
         }
@@ -1907,72 +1933,78 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const removeRunParentsForRun: Service["removeRunParentsForRun"] = Effect.fn(
+const removeRunParentsForRun = (db: Database): Service["removeRunParentsForRun"] =>
+  Effect.fn(
     "DurableEngineState.removeRunParentsForRun"
   )((runId) =>
-    writer.write(sql`
+    db.writer.write(db.sql`
       DELETE FROM flows_run_parents
       WHERE child_id = ${runId}
         OR parent_id = ${runId}
     `).pipe(Effect.orDie, Effect.asVoid)
   )
-
-  // Keep state-first ordering. This gate and DurableWriter's shared permit are
-  // both taken at the caller's interruptibility, so an interruptible caller can
-  // still be cancelled while queued, including behind a journal-only write that
-  // skips this gate.
-  // A nested SQL transaction already owns the connection and bypasses this gate.
-  const transactionGate = Semaphore.makeUnsafe(1)
-  const transaction: Service["transaction"] = <A, E, R>(
-    effect: Effect.Effect<A, E, R>
-  ): Effect.Effect<A, E, R> =>
-    Effect.flatMap(Effect.serviceOption(sql.transactionService), (enclosing) => {
-      const write = (body: Effect.Effect<A, E, R>) =>
-        writer.write(body).pipe(
-          Effect.catchCause((cause) => {
-            // Only a sole storage failure is normalized. A composite keeps every
-            // reason for the caller to diagnose, and its storage failures are
-            // demoted to defects one by one rather than cast through the
-            // declared error type: `transaction` promises the BODY's failures,
-            // so a `DatabaseError` arriving as a typed failure would be a lie
-            // the compiler could not catch. Defect identity is unchanged.
-            if (cause.reasons.length === 1) {
-              const reason = cause.reasons[0]!
-              if (Cause.isFailReason(reason) && reason.error instanceof DatabaseError) {
-                return Effect.die(reason.error)
-              }
-            }
-            return Effect.failCause(dieOnDatabaseError<E>(cause))
-          })
-        )
-      if (Option.isSome(enclosing)) return write(effect)
-      return Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function*() {
-          yield* restore(transactionGate.take(1))
-          let released = false
-          const release = Effect.suspend(() => {
-            if (released) return Effect.void
-            released = true
-            return transactionGate.release(1).pipe(Effect.asVoid)
-          })
-          return yield* restore(write(Effect.gen(function*() {
-            // Release at COMMIT, before publication can read through another
-            // transaction. A failed write instead releases in ensuring below.
-            yield* afterCommit(release, sql)
-            return yield* effect
-          }))).pipe(Effect.ensuring(release))
-        })
-      )
+/**
+ * Writes `body` through the shared writer, dying on a sole storage failure.
+ *
+ * Only a sole storage failure is normalized. A composite keeps every
+ * reason for the caller to diagnose, and its storage failures are
+ * demoted to defects one by one rather than cast through the
+ * declared error type: `transaction` promises the BODY's failures,
+ * so a `DatabaseError` arriving as a typed failure would be a lie
+ * the compiler could not catch. Defect identity is unchanged.
+ */
+const writeBody = <A, E, R>(db: Database, body: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  db.writer.write(body).pipe(
+    Effect.catchCause((cause) => {
+      if (cause.reasons.length === 1) {
+        const reason = cause.reasons[0]!
+        if (Cause.isFailReason(reason) && reason.error instanceof DatabaseError) {
+          return Effect.die(reason.error)
+        }
+      }
+      return Effect.failCause(dieOnDatabaseError<E>(cause))
     })
+  )
 
-  const readTransaction: Service["readTransaction"] = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    Dialect.readTransaction(sql, effect).pipe(
-      // BEGIN or COMMIT failing is the store's failure, never the body's.
-      Effect.catchIf((error): error is SqlError.SqlError => SqlError.isSqlError(error), (error) => Effect.die(error))
-    ) as Effect.Effect<A, E, R>
+/** Takes the store's transaction gate, then writes `effect`, releasing the gate at COMMIT. */
+const gatedWrite = <A, E, R>(db: Database, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function*() {
+      yield* restore(db.transactionGate.take(1))
+      let released = false
+      const release = Effect.suspend(() => {
+        if (released) return Effect.void
+        released = true
+        return db.transactionGate.release(1).pipe(Effect.asVoid)
+      })
+      return yield* restore(writeBody(
+        db,
+        Effect.gen(function*() {
+          // Release at COMMIT, before publication can read through another
+          // transaction. A failed write instead releases in ensuring below.
+          yield* afterCommit(release, db.sql)
+          return yield* effect
+        })
+      )).pipe(Effect.ensuring(release))
+    })
+  )
 
-  const runParents: Service["runParents"] = Effect.fn("DurableEngineState.runParents")((childId) =>
-    sql<RunParentDatabaseRow>`
+/** Runs `effect` in one write transaction; a nested one joins the enclosing transaction. */
+const transaction = (db: Database): Service["transaction"] => (effect) =>
+  Effect.flatMap(
+    Effect.serviceOption(db.sql.transactionService),
+    (enclosing) => Option.isSome(enclosing) ? writeBody(db, effect) : gatedWrite(db, effect)
+  )
+
+const readTransaction = (db: Database): Service["readTransaction"] => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Dialect.readTransaction(db.sql, effect).pipe(
+    // BEGIN or COMMIT failing is the store's failure, never the body's.
+    Effect.catchIf((error): error is SqlError.SqlError => SqlError.isSqlError(error), (error) => Effect.die(error))
+  ) as Effect.Effect<A, E, R>
+
+const runParents = (db: Database): Service["runParents"] =>
+  Effect.fn("DurableEngineState.runParents")((childId) =>
+    db.sql<RunParentDatabaseRow>`
       SELECT
         child_id AS "childId",
         parent_id AS "parentId",
@@ -1988,8 +2020,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
-  const runChildren: Service["runChildren"] = Effect.fn("DurableEngineState.runChildren")((parentId) =>
-    sql<RunParentDatabaseRow>`
+const runChildren = (db: Database): Service["runChildren"] =>
+  Effect.fn("DurableEngineState.runChildren")((parentId) =>
+    db.sql<RunParentDatabaseRow>`
       SELECT
         child_id AS "childId",
         parent_id AS "parentId",
@@ -2006,35 +2039,56 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     )
   )
 
+/**
+ * Constructs the database-backed durable-state implementation.
+ *
+ * Clock creation is fenced against the current run owner. Deferred completion
+ * and clock firing are external trigger admissions protected by first-writer
+ * and compare-and-set semantics; execution remains claim-gated by `RunStore`.
+ *
+ * @since 0.1.0
+ * @category constructors
+ */
+export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient> = Effect.gen(function*() {
+  const sql = yield* Effect.service(SqlClient.SqlClient)
+  const writer = yield* DurableWriter
+
+  // Engine-store-owned storage created outside the journal migration
+  // (issues #40/#41/#79/#81). The statements, their rationale, and
+  // the dialects each is known to accept live in one machine-readable
+  // inventory so the pg-porting plan cannot omit them (issue #92).
+  yield* EngineStateSchema.apply(sql, writer)
+
+  const db: Database = { sql, writer, transactionGate: Semaphore.makeUnsafe(1) }
   return DurableEngineState.of({
-    deferred,
-    consumeDeferred,
-    completeDeferred,
-    clock,
-    scheduleClock,
-    completeClock,
-    completeRunClocks,
-    dueClocks,
-    pendingClocks,
-    completedDeferreds,
-    hasDueWake,
-    park,
-    wake,
-    waiting,
-    waitingTree,
-    waitingRuns,
-    pendingRuns,
-    pendingRunTail,
-    pendingCancellationRuns,
-    pendingCancellationTail,
-    staleRunningRuns,
-    attemptSurvivors,
-    recordRunParent,
-    removeRunParentsForRun,
-    runParents,
-    runChildren,
-    transaction,
-    readTransaction
+    deferred: deferred(db),
+    consumeDeferred: consumeDeferred(db),
+    completeDeferred: completeDeferred(db),
+    clock: clock(db),
+    scheduleClock: scheduleClock(db),
+    completeClock: completeClock(db),
+    completeRunClocks: completeRunClocks(db),
+    dueClocks: dueClocks(db),
+    pendingClocks: pendingClocks(db),
+    completedDeferreds: completedDeferreds(db),
+    hasDueWake: hasDueWake(db),
+    park: park(db),
+    wake: wake(db),
+    waiting: waiting(db),
+    waitingTree: waitingTree(db),
+    waitingRuns: waitingRuns(db),
+    pendingRuns: pendingRuns(db),
+    pendingRunTail: pendingRunTail(db),
+    pendingCancellationRuns: pendingCancellationRuns(db),
+    pendingCancellationTail: pendingCancellationTail(db),
+    staleRunningRuns: staleRunningRuns(db),
+    attemptSurvivors: attemptSurvivors(db),
+    recordRunParent: recordRunParent(db),
+    removeRunParentsForRun: removeRunParentsForRun(db),
+    runParents: runParents(db),
+    runChildren: runChildren(db),
+    transaction: transaction(db),
+    readTransaction: readTransaction(db)
   })
 })
 
@@ -2108,6 +2162,672 @@ export interface MemoryOptions {
   readonly listRuns?: () => Iterable<readonly [string, MemoryRunView]>
 }
 
+/** Everything one in-memory durable state holds. */
+interface Memory {
+  readonly options: MemoryOptions
+  readonly deferreds: Map<string, DeferredRow>
+  readonly consumedDeferreds: Map<string, number>
+  readonly clocks: Map<string, ClockRow>
+  readonly waitingRows: Map<string, WaitingRow>
+  /** childId -> (parentId -> seq); `parentSeq` mirrors the SQL MAX(seq)+1. */
+  readonly parentEdges: Map<string, Map<string, number>>
+  parentSeq: number
+  /** The one permit every unnested operation and transaction takes. */
+  readonly gate: Semaphore.Semaphore
+  /** How deep each fiber is inside a transaction; a nested operation skips the gate. */
+  readonly transactionDepth: Map<number, number>
+}
+
+const snapshotDeferred = (row: DeferredRow): Effect.Effect<DeferredRow> =>
+  Schema.decodeUnknownEffect(DeferredRow)(row).pipe(
+    Effect.orDie,
+    Effect.flatMap((decoded) =>
+      Effect.all({
+        exitJson: encodeJson(decoded.exit, "exit"),
+        metadataJson: decoded.metadata === undefined
+          ? Effect.succeed(null)
+          : encodeJson(decoded.metadata, "metadata")
+      }).pipe(
+        Effect.flatMap(({ exitJson, metadataJson }) =>
+          decodeDeferredRow({
+            flowName: decoded.flowName,
+            executionId: decoded.executionId,
+            deferredName: decoded.deferredName,
+            exitJson,
+            metadataJson,
+            completedAtMs: decoded.completedAtMs
+          })
+        )
+      )
+    )
+  )
+
+const snapshotClock = (row: ClockRow): Effect.Effect<ClockRow> =>
+  Schema.decodeUnknownEffect(ClockRow)(row).pipe(
+    Effect.orDie,
+    Effect.map((decoded) => ({ ...decoded }))
+  )
+
+const snapshotWaiting = (row: WaitingRow): WaitingRow => ({ ...row })
+
+/** The synchronous twin of `findCyclePath` over the in-memory edge map. */
+const findCyclePathSync = (memory: Memory, childId: string, parentId: string): ReadonlyArray<string> | undefined => {
+  if (parentId === childId) return [childId]
+  const seen = new Set<string>([parentId])
+  const walk = (
+    current: string,
+    chain: ReadonlyArray<string>
+  ): ReadonlyArray<string> | undefined => {
+    for (const parent of memory.parentEdges.get(current)?.keys() ?? []) {
+      if (parent === childId) return [...chain, parent].reverse()
+      if (seen.has(parent)) continue
+      seen.add(parent)
+      const found = walk(parent, [...chain, parent])
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  return walk(parentId, [parentId])
+}
+
+const sameOwner = (left: OwnerId, right: OwnerId): boolean =>
+  left.hostId === right.hostId && left.pid === right.pid && left.nonce === right.nonce
+
+/** Mirrors the SQL `flows_runs` owner-match predicate for a run. */
+const runView = (memory: Memory, runId: string, presented: OwnerId | undefined): {
+  readonly exists: boolean
+  readonly running: boolean
+  readonly owned: boolean
+} => {
+  if (memory.options.runs === undefined) {
+    return { exists: true, running: true, owned: true }
+  }
+  const view = memory.options.runs(runId)
+  if (Option.isNone(view)) {
+    return { exists: false, running: false, owned: false }
+  }
+  const owned = presented !== undefined &&
+    view.value.owner !== null &&
+    sameOwner(view.value.owner, presented)
+  return { exists: true, running: view.value.status === "running", owned }
+}
+
+/**
+ * Mirrors the SQL sweeps' run-status join: a row whose run has settled is
+ * never swept, and `Option.none()` from a supplied `runs` view means the run
+ * does not exist, so its orphaned engine-state rows stay hidden. The
+ * permissive default (no `runs` view) treats every run as live because a
+ * standalone memory store has no run table to consult.
+ */
+const isLive = (memory: Memory, runId: string): boolean => {
+  if (memory.options.runs === undefined) return true
+  const view = memory.options.runs(runId)
+  return Option.isSome(view) && (
+    view.value.status === "pending" ||
+    view.value.status === "running" ||
+    view.value.status === "suspended"
+  )
+}
+
+const pendingMemoryRows = (
+  memory: Memory,
+  flowName: string | undefined,
+  after?: PendingRunCursor,
+  through?: PendingRunCursor,
+  eligibleBeforeMs?: number,
+  cancellationOnly = false
+) =>
+  Array.from(memory.options.listRuns?.() ?? [])
+    .filter(([runId, view]) =>
+      view.status === "pending" && (flowName === undefined || view.flowName === flowName) &&
+      (!cancellationOnly || view.cancelRequestedAtMs != null) &&
+      (eligibleBeforeMs === undefined || (view.createdAtMs ?? 0) < eligibleBeforeMs) &&
+      (after === undefined || (view.createdAtMs ?? 0) > after.createdAtMs ||
+        ((view.createdAtMs ?? 0) === after.createdAtMs && compareText(runId, after.runId) > 0)) &&
+      (through === undefined || (view.createdAtMs ?? 0) < through.createdAtMs ||
+        ((view.createdAtMs ?? 0) === through.createdAtMs && compareText(runId, through.runId) <= 0))
+    )
+    .sort(([leftId, left], [rightId, right]) =>
+      (left.createdAtMs ?? 0) - (right.createdAtMs ?? 0) || compareText(leftId, rightId)
+    )
+    .map(([runId, view]) => ({ runId, createdAtMs: view.createdAtMs ?? 0 }))
+
+const memoryDeferred = (memory: Memory): Service["deferred"] =>
+  Effect.fn("DurableEngineState.deferred")((address) =>
+    Effect.gen(function*() {
+      const row = memory.deferreds.get(deferredKey(address))
+      return row === undefined ? Option.none() : Option.some(yield* snapshotDeferred(row))
+    })
+  )
+
+const memoryConsumeDeferred = (memory: Memory): Service["consumeDeferred"] =>
+  Effect.fn("DurableEngineState.consumeDeferred")((
+    address,
+    consumedAtMs
+  ) =>
+    Effect.sync(() => {
+      const key = deferredKey(address)
+      if (!memory.deferreds.has(key) || memory.consumedDeferreds.has(key)) return false
+      memory.consumedDeferreds.set(key, consumedAtMs)
+      return true
+    })
+  )
+
+const memoryCompleteDeferred = (memory: Memory): Service["completeDeferred"] =>
+  Effect.fn("DurableEngineState.completeDeferred")((row) =>
+    Effect.gen(function*() {
+      const stored = yield* snapshotDeferred(row)
+      const key = deferredKey(stored)
+      const existing = memory.deferreds.get(key)
+      if (existing !== undefined) {
+        return {
+          _tag: "Existing" as const,
+          row: yield* snapshotDeferred(existing),
+          digest: yield* memoryDigest(existing)
+        }
+      }
+      memory.deferreds.set(key, stored)
+      return {
+        _tag: "Completed" as const,
+        row: yield* snapshotDeferred(stored),
+        digest: yield* memoryDigest(stored)
+      }
+    })
+  )
+
+const memoryClock = (memory: Memory): Service["clock"] =>
+  Effect.fn("DurableEngineState.clock")((address) =>
+    Effect.gen(function*() {
+      const row = memory.clocks.get(clockKey(address))
+      return row === undefined ? Option.none() : Option.some(yield* snapshotClock(row))
+    })
+  )
+
+const memoryScheduleClock = (memory: Memory): Service["scheduleClock"] =>
+  Effect.fn("DurableEngineState.scheduleClock")((row, owner) =>
+    Effect.gen(function*(): Generator<Effect.Effect<unknown>, ScheduleClockOutcome, never> {
+      // Mirrors the SQL fence: creation requires the presented owner to
+      // currently run the execution; a lost fence surfaces as
+      // self-interruption, an existing row wins regardless.
+      const stored = yield* snapshotClock(row)
+      const key = clockKey(stored)
+      const existing = memory.clocks.get(key)
+      if (existing !== undefined) {
+        return { _tag: "Existing" as const, row: yield* snapshotClock(existing) }
+      }
+      const view = runView(memory, stored.executionId, owner)
+      if (!view.exists || !view.running || !view.owned) {
+        return yield* Effect.interrupt
+      }
+      memory.clocks.set(key, stored)
+      return { _tag: "Scheduled" as const, row: yield* snapshotClock(stored) }
+    })
+  )
+
+const memoryCompleteClock = (memory: Memory): Service["completeClock"] =>
+  Effect.fn("DurableEngineState.completeClock")((
+    address,
+    completedAtMs
+  ) =>
+    Effect.sync(() => {
+      const key = clockKey(address)
+      const existing = memory.clocks.get(key)
+      if (existing === undefined) {
+        return { _tag: "NotFound" as const }
+      }
+      if (existing.completedAtMs !== null) {
+        return { _tag: "AlreadyCompleted" as const, row: { ...existing } }
+      }
+      const row = { ...existing, completedAtMs }
+      memory.clocks.set(key, row)
+      return { _tag: "Completed" as const, row: { ...row } }
+    })
+  )
+
+const memoryDueClocks = (memory: Memory): Service["dueClocks"] =>
+  Effect.fn("DurableEngineState.dueClocks")((nowMs) =>
+    Effect.forEach(
+      Array.from(memory.clocks.values())
+        .filter((row) => row.completedAtMs === null && row.dueAtMs <= nowMs)
+        .sort((left, right) =>
+          left.dueAtMs - right.dueAtMs ||
+          compareText(left.executionId, right.executionId) ||
+          compareText(left.clockName, right.clockName)
+        ),
+      snapshotClock
+    )
+  )
+
+const memoryCompleteRunClocks = (memory: Memory): Service["completeRunClocks"] =>
+  Effect.fn("DurableEngineState.completeRunClocks")((
+    executionId,
+    completedAtMs
+  ) =>
+    Effect.sync(() => {
+      const completed: Array<ClockRow> = []
+      for (const [key, row] of memory.clocks) {
+        if (row.executionId !== executionId || row.completedAtMs !== null) continue
+        const next = { ...row, completedAtMs }
+        memory.clocks.set(key, next)
+        completed.push({ ...next })
+      }
+      return completed.sort((left, right) =>
+        compareText(left.flowName, right.flowName) || compareText(left.clockName, right.clockName)
+      )
+    })
+  )
+
+const memoryPendingClocks = (memory: Memory): Service["pendingClocks"] =>
+  Effect.fn("DurableEngineState.pendingClocks")((scope) =>
+    Effect.flatMap(
+      Effect.sync(() =>
+        Array.from(memory.clocks.values())
+          .filter((row) =>
+            row.completedAtMs === null &&
+            isLive(memory, row.executionId) &&
+            (scope.executionId === undefined || row.executionId === scope.executionId) &&
+            (scope.flowName === undefined || row.flowName === scope.flowName)
+          )
+          .sort((left, right) =>
+            left.dueAtMs - right.dueAtMs ||
+            compareText(left.executionId, right.executionId) ||
+            compareText(left.clockName, right.clockName)
+          )
+      ),
+      (rows) => Effect.forEach(rows, snapshotClock)
+    )
+  )
+
+const memoryHasDueWake = (memory: Memory): Service["hasDueWake"] => (executionId, nowMs) =>
+  Effect.sync(() =>
+    Array.from(memory.deferreds.values()).some((row) =>
+      row.executionId === executionId && !memory.consumedDeferreds.has(deferredKey(row))
+    ) || Array.from(memory.clocks.values()).some((row) =>
+      row.executionId === executionId && row.completedAtMs === null && row.dueAtMs <= nowMs
+    )
+  )
+
+const memoryCompletedDeferreds = (memory: Memory): Service["completedDeferreds"] =>
+  Effect.fn("DurableEngineState.completedDeferreds")((
+    flowName,
+    executionId
+  ) =>
+    Effect.sync(() =>
+      Array.from(memory.deferreds.values())
+        .filter((row) =>
+          row.flowName === flowName && (executionId === undefined || row.executionId === executionId) &&
+          isLive(memory, row.executionId) && !memory.consumedDeferreds.has(deferredKey(row))
+        )
+        .map(({ flowName, executionId, deferredName }) => ({
+          flowName,
+          executionId,
+          deferredName
+        }))
+        .sort((left, right) =>
+          compareText(left.executionId, right.executionId) ||
+          compareText(left.deferredName, right.deferredName)
+        )
+    )
+  )
+
+const memoryPark = (memory: Memory): Service["park"] =>
+  Effect.fn("DurableEngineState.park")((runId, waitingPayload, owner) =>
+    Effect.sync(() => {
+      // Mirrors the SQL fence: only the current owner of an existing run
+      // may park it; anything else reports NotFound, exactly like the
+      // owner-guarded UPDATE matching no row.
+      const view = runView(memory, runId, owner)
+      if (!view.exists || !view.owned) {
+        return { _tag: "NotFound" as const }
+      }
+      // The declared question is stored as JSON TEXT and read back decoded,
+      // exactly as the column and its SELECT do it.
+      const row: WaitingRow = {
+        runId,
+        reason: waitingPayload.reason,
+        wakeAt: waitingPayload.wakeAt ?? null,
+        token: waitingPayload.token ?? null,
+        ...decodeWaitingRequest(waitingPayload.request)
+      } as WaitingRow
+      memory.waitingRows.set(runId, row)
+      return { _tag: "Parked" as const, row: snapshotWaiting(row) }
+    })
+  )
+
+const memoryWake = (memory: Memory): Service["wake"] =>
+  Effect.fn("DurableEngineState.wake")((runId) =>
+    Effect.sync(() => {
+      const row = memory.waitingRows.get(runId)
+      if (row === undefined) {
+        // Mirrors SQL: an unknown run is NotFound, an existing unparked
+        // run is NotWaiting.
+        return runView(memory, runId, undefined).exists
+          ? { _tag: "NotWaiting" as const }
+          : { _tag: "NotFound" as const }
+      }
+      memory.waitingRows.delete(runId)
+      return { _tag: "Woken" as const, row: snapshotWaiting(row) }
+    })
+  )
+
+const memoryWaiting = (memory: Memory): Service["waiting"] =>
+  Effect.fn("DurableEngineState.waiting")((runId) =>
+    Effect.sync(() => {
+      const row = memory.waitingRows.get(runId)
+      return row === undefined ? Option.none() : Option.some(snapshotWaiting(row))
+    })
+  )
+
+const memoryWaitingTree = (memory: Memory): Service["waitingTree"] =>
+  Effect.fn("DurableEngineState.waitingTree")((runId, walk) =>
+    Effect.sync(() => {
+      // Breadth-first over recorded spawn edges: the named run first, then
+      // each generation beneath it. This memory view does not model the
+      // parent_run_id trampoline links that the SQL walk also follows.
+      const found: Array<WaitingRow> = []
+      const seen = new Set<string>([runId])
+      let frontier: ReadonlyArray<string> = [runId]
+      for (let depth = 0; depth <= waitingTreeMaxDepth && frontier.length > 0; depth++) {
+        const next: Array<string> = []
+        for (const current of frontier) {
+          const row = memory.waitingRows.get(current)
+          if (row !== undefined && isLive(memory, current)) found.push(snapshotWaiting(row))
+          for (const [childId, parents] of memory.parentEdges) {
+            if (!parents.has(current) || seen.has(childId)) continue
+            // The SQL walk skips a detached subtree; so does this one, for a
+            // view that records the policy. A view that does not describes an
+            // attached child, which is the default.
+            const view = memory.options.runs?.(childId)
+            if (
+              walk?.detached !== "include" && view !== undefined && Option.isSome(view) &&
+              view.value.onParentExit === "detach"
+            ) continue
+            seen.add(childId)
+            next.push(childId)
+          }
+        }
+        frontier = next
+      }
+      return found
+    })
+  )
+
+const memoryWaitingRuns = (memory: Memory): Service["waitingRuns"] =>
+  Effect.fn("DurableEngineState.waitingRuns")((filter) =>
+    Effect.sync(() =>
+      Array.from(memory.waitingRows.values())
+        // Mirrors the SQL status predicate: a terminally closed run's
+        // stale waiting row never surfaces to a sweeper (issue #28). The
+        // permissive default (no `runs` view) treats every run as live.
+        .filter((row) => isLive(memory, row.runId))
+        .filter((row) => filter?.reason === undefined || row.reason === filter.reason)
+        .filter((row) =>
+          filter?.dueBeforeMs === undefined ||
+          (row.wakeAt !== null && row.wakeAt <= filter.dueBeforeMs)
+        )
+        // Mirrors the SQL cancel predicate over
+        // `flows_runs.cancel_requested_at_ms` (issue #68). Without a
+        // `runs` view the flag is unknowable, so the query stays
+        // permissive and the sweeper's own per-row guard decides.
+        .filter((row) => {
+          if (filter?.cancelRequested !== true) return true
+          if (memory.options.runs === undefined) return true
+          const view = memory.options.runs(row.runId)
+          return Option.isSome(view) && view.value.cancelRequestedAtMs != null
+        })
+        .sort((left, right) =>
+          Number(left.wakeAt === null) - Number(right.wakeAt === null) ||
+          (left.wakeAt ?? 0) - (right.wakeAt ?? 0) ||
+          compareText(left.runId, right.runId)
+        )
+        .map(snapshotWaiting)
+    )
+  )
+
+const memoryPendingRuns = (memory: Memory): Service["pendingRuns"] =>
+  Effect.fn("DurableEngineState.pendingRuns")((
+    flowName,
+    limit,
+    after,
+    through,
+    eligibleBeforeMs
+  ) =>
+    Effect.sync(() => {
+      const ordered = pendingMemoryRows(memory, flowName, after, through, eligibleBeforeMs)
+      return limit === undefined ? ordered : ordered.slice(0, limit)
+    })
+  )
+
+const memoryPendingRunTail = (memory: Memory): Service["pendingRunTail"] =>
+  Effect.fn("DurableEngineState.pendingRunTail")((
+    flowName,
+    eligibleBeforeMs
+  ) =>
+    Effect.sync(() =>
+      Option.fromNullishOr(pendingMemoryRows(memory, flowName, undefined, undefined, eligibleBeforeMs).at(-1))
+    )
+  )
+
+const memoryPendingCancellationRuns = (memory: Memory): Service["pendingCancellationRuns"] =>
+  Effect.fn(
+    "DurableEngineState.pendingCancellationRuns"
+  )((limit, after, through) =>
+    pendingCancellationLimit(limit).pipe(Effect.andThen(
+      Effect.sync(() => pendingMemoryRows(memory, undefined, after, through, undefined, true).slice(0, limit))
+    ))
+  )
+
+const memoryPendingCancellationTail = (memory: Memory): Service["pendingCancellationTail"] =>
+  Effect.fn(
+    "DurableEngineState.pendingCancellationTail"
+  )(() =>
+    Effect.sync(() =>
+      Option.fromNullishOr(
+        pendingMemoryRows(memory, undefined, undefined, undefined, undefined, true).at(-1)
+      )
+    )
+  )
+
+const memoryStaleRunningRuns = (memory: Memory): Service["staleRunningRuns"] =>
+  Effect.fn("DurableEngineState.staleRunningRuns")((
+    staleBeforeMs,
+    limit
+  ) =>
+    Effect.sync(() => {
+      // Mirrors the SQL scan of `flows_runs`: without an enumerator there
+      // is nothing to scan, so no stale rows exist.
+      if (memory.options.listRuns === undefined) return []
+      const stale: Array<StaleRunningRow> = []
+      for (const [runId, view] of memory.options.listRuns()) {
+        const heartbeatAtMs = view.heartbeatAtMs
+        if (
+          view.status === "running" &&
+          typeof heartbeatAtMs === "number" &&
+          heartbeatAtMs < staleBeforeMs
+        ) {
+          stale.push({ runId, heartbeatAtMs })
+        }
+      }
+      const ordered = stale.sort((left, right) =>
+        left.heartbeatAtMs - right.heartbeatAtMs ||
+        compareText(left.runId, right.runId)
+      )
+      // Mirrors the SQL LIMIT: oldest heartbeats first, capped per sweep
+      // (issue #79).
+      return limit === undefined ? ordered : ordered.slice(0, limit)
+    })
+  )
+
+const memoryRecordRunParent = (memory: Memory): Service["recordRunParent"] =>
+  Effect.fn("DurableEngineState.recordRunParent")((
+    childId,
+    parentId
+  ) =>
+    // A single synchronous step mirrors the SQL transaction: the cycle
+    // check and the insert are atomic — no fiber can interleave between
+    // them, and a rejected edge is never observable (issues #54/#55/#56).
+    Effect.suspend((): Effect.Effect<RecordRunParentOutcome, RunParentCycleError> => {
+      const parents = memory.parentEdges.get(childId) ?? new Map<string, number>()
+      const existing = parents.get(parentId)
+      if (existing !== undefined) {
+        return Effect.succeed({
+          _tag: "Existing" as const,
+          edge: { childId, parentId, seq: existing }
+        })
+      }
+      const cycle = findCyclePathSync(memory, childId, parentId)
+      if (cycle !== undefined) {
+        return Effect.fail(new RunParentCycleError({ path: cycle }))
+      }
+      memory.parentSeq += 1
+      parents.set(parentId, memory.parentSeq)
+      memory.parentEdges.set(childId, parents)
+      return Effect.succeed({
+        _tag: "Recorded" as const,
+        edge: { childId, parentId, seq: memory.parentSeq }
+      })
+    })
+  )
+
+const memoryRemoveRunParentsForRun = (memory: Memory): Service["removeRunParentsForRun"] =>
+  Effect.fn(
+    "DurableEngineState.removeRunParentsForRun"
+  )((runId) =>
+    Effect.sync(() => {
+      memory.parentEdges.delete(runId)
+      for (const [childId, parents] of memory.parentEdges) {
+        parents.delete(runId)
+        if (parents.size === 0) memory.parentEdges.delete(childId)
+      }
+    })
+  )
+
+const memoryRunParents = (memory: Memory): Service["runParents"] =>
+  Effect.fn("DurableEngineState.runParents")((childId) =>
+    Effect.sync(() =>
+      Array.from(memory.parentEdges.get(childId) ?? [])
+        .map(([parentId, seq]) => ({ childId, parentId, seq }))
+        .sort((left, right) => left.seq - right.seq)
+    )
+  )
+
+const memoryRunChildren = (memory: Memory): Service["runChildren"] =>
+  Effect.fn("DurableEngineState.runChildren")((parentId) =>
+    Effect.sync(() => {
+      const edges: Array<RunParentEdge> = []
+      for (const [childId, parents] of memory.parentEdges) {
+        const seq = parents.get(parentId)
+        if (seq !== undefined) edges.push({ childId, parentId, seq })
+      }
+      return edges.sort((left, right) => left.seq - right.seq)
+    })
+  )
+/** Runs one operation under the memory state's permit, unless its fiber is inside a transaction. */
+const guard = <A, E, R>(memory: Memory, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.flatMap(
+    Effect.fiberId,
+    (fiberId) => (memory.transactionDepth.get(fiberId) ?? 0) > 0 ? effect : memory.gate.withPermit(effect)
+  )
+
+const restoreMap = <K, V>(target: Map<K, V>, source: ReadonlyMap<K, V>): void => {
+  target.clear()
+  for (const [key, value] of source) target.set(key, value)
+}
+
+/** A copy of every table a memory transaction can change. */
+const snapshotMemory = (memory: Memory) => ({
+  deferreds: new Map(memory.deferreds),
+  consumedDeferreds: new Map(memory.consumedDeferreds),
+  clocks: new Map(memory.clocks),
+  waitingRows: new Map(memory.waitingRows),
+  parentEdges: new Map([...memory.parentEdges].map(([child, parents]) => [child, new Map(parents)])),
+  parentSeq: memory.parentSeq
+})
+
+/** Puts back every table a failed transaction changed. */
+const restoreMemory = (memory: Memory, before: ReturnType<typeof snapshotMemory>): void => {
+  restoreMap(memory.deferreds, before.deferreds)
+  restoreMap(memory.consumedDeferreds, before.consumedDeferreds)
+  restoreMap(memory.clocks, before.clocks)
+  restoreMap(memory.waitingRows, before.waitingRows)
+  restoreMap(memory.parentEdges, before.parentEdges)
+  memory.parentSeq = before.parentSeq
+}
+
+/**
+ * Leaves a fiber's transaction, once: lowers its depth and, when the
+ * transaction is the outermost, releases the permit.
+ */
+const leaveTransaction = (memory: Memory, fiberId: number, nested: boolean): Effect.Effect<void> => {
+  let closed = false
+  return Effect.suspend(() => {
+    if (closed) return Effect.void
+    closed = true
+    const depth = memory.transactionDepth.get(fiberId)! - 1
+    if (depth === 0) memory.transactionDepth.delete(fiberId)
+    else memory.transactionDepth.set(fiberId, depth)
+    return nested ? Effect.void : memory.gate.release(1).pipe(Effect.asVoid)
+  })
+}
+
+/**
+ * Runs `effect` as one memory transaction: the outermost takes the permit,
+ * and a failure before commit restores every table it changed.
+ */
+const memoryTransaction = (memory: Memory): Service["transaction"] => (effect, options) =>
+  Effect.flatMap(Effect.fiberId, (fiberId) =>
+    Effect.uninterruptibleMask((restore) =>
+      Effect.gen(function*() {
+        const nested = (memory.transactionDepth.get(fiberId) ?? 0) > 0
+        if (!nested) yield* restore(memory.gate.take(1))
+        const before = snapshotMemory(memory)
+        memory.transactionDepth.set(fiberId, (memory.transactionDepth.get(fiberId) ?? 0) + 1)
+        let committed = false
+        const close = leaveTransaction(memory, fiberId, nested)
+        const commit = Effect.sync(() => {
+          committed = true
+        }).pipe(Effect.andThen(close))
+        return yield* Effect.sync(() => options?.onCommit(commit)).pipe(
+          Effect.andThen(restore(effect)),
+          Effect.catchCause((cause) =>
+            Effect.sync(() => {
+              if (!committed) restoreMemory(memory, before)
+            }).pipe(Effect.andThen(Effect.failCause(cause)))
+          ),
+          Effect.ensuring(close)
+        )
+      })
+    ))
+
+/** The memory state's operations, each unguarded: the caller holds the gate. */
+const memoryMethods = (memory: Memory): Omit<Service, "transaction" | "readTransaction"> => ({
+  deferred: memoryDeferred(memory),
+  consumeDeferred: memoryConsumeDeferred(memory),
+  completeDeferred: memoryCompleteDeferred(memory),
+  clock: memoryClock(memory),
+  scheduleClock: memoryScheduleClock(memory),
+  completeClock: memoryCompleteClock(memory),
+  dueClocks: memoryDueClocks(memory),
+  completeRunClocks: memoryCompleteRunClocks(memory),
+  pendingClocks: memoryPendingClocks(memory),
+  hasDueWake: memoryHasDueWake(memory),
+  completedDeferreds: memoryCompletedDeferreds(memory),
+  park: memoryPark(memory),
+  wake: memoryWake(memory),
+  waiting: memoryWaiting(memory),
+  waitingTree: memoryWaitingTree(memory),
+  waitingRuns: memoryWaitingRuns(memory),
+  pendingRuns: memoryPendingRuns(memory),
+  pendingRunTail: memoryPendingRunTail(memory),
+  pendingCancellationRuns: memoryPendingCancellationRuns(memory),
+  pendingCancellationTail: memoryPendingCancellationTail(memory),
+  staleRunningRuns: memoryStaleRunningRuns(memory),
+  recordRunParent: memoryRecordRunParent(memory),
+  removeRunParentsForRun: memoryRemoveRunParentsForRun(memory),
+  runParents: memoryRunParents(memory),
+  runChildren: memoryRunChildren(memory)
+})
+
 /**
  * Constructs a deterministic in-memory durable-state implementation.
  *
@@ -2121,572 +2841,49 @@ export interface MemoryOptions {
  * @category constructors
  */
 export const makeMemory = (options: MemoryOptions = {}): Service => {
-  const deferreds = new Map<string, DeferredRow>()
-  const consumedDeferreds = new Map<string, number>()
-  const clocks = new Map<string, ClockRow>()
-  const waitingRows = new Map<string, WaitingRow>()
-  // childId -> (parentId -> seq); `parentSeq` mirrors the SQL MAX(seq)+1.
-  const parentEdges = new Map<string, Map<string, number>>()
-  let parentSeq = 0
-
-  const snapshotDeferred = (row: DeferredRow): Effect.Effect<DeferredRow> =>
-    Schema.decodeUnknownEffect(DeferredRow)(row).pipe(
-      Effect.orDie,
-      Effect.flatMap((decoded) =>
-        Effect.all({
-          exitJson: encodeJson(decoded.exit, "exit"),
-          metadataJson: decoded.metadata === undefined
-            ? Effect.succeed(null)
-            : encodeJson(decoded.metadata, "metadata")
-        }).pipe(
-          Effect.flatMap(({ exitJson, metadataJson }) =>
-            decodeDeferredRow({
-              flowName: decoded.flowName,
-              executionId: decoded.executionId,
-              deferredName: decoded.deferredName,
-              exitJson,
-              metadataJson,
-              completedAtMs: decoded.completedAtMs
-            })
-          )
-        )
-      )
-    )
-
-  const snapshotClock = (row: ClockRow): Effect.Effect<ClockRow> =>
-    Schema.decodeUnknownEffect(ClockRow)(row).pipe(
-      Effect.orDie,
-      Effect.map((decoded) => ({ ...decoded }))
-    )
-
-  const snapshotWaiting = (row: WaitingRow): WaitingRow => ({ ...row })
-
-  /** The synchronous twin of `findCyclePath` over the in-memory edge map. */
-  const findCyclePathSync = (
-    childId: string,
-    parentId: string
-  ): ReadonlyArray<string> | undefined => {
-    if (parentId === childId) return [childId]
-    const seen = new Set<string>([parentId])
-    const walk = (
-      current: string,
-      chain: ReadonlyArray<string>
-    ): ReadonlyArray<string> | undefined => {
-      for (const parent of parentEdges.get(current)?.keys() ?? []) {
-        if (parent === childId) return [...chain, parent].reverse()
-        if (seen.has(parent)) continue
-        seen.add(parent)
-        const found = walk(parent, [...chain, parent])
-        if (found !== undefined) return found
-      }
-      return undefined
-    }
-    return walk(parentId, [parentId])
+  const memory: Memory = {
+    options,
+    deferreds: new Map(),
+    consumedDeferreds: new Map(),
+    clocks: new Map(),
+    waitingRows: new Map(),
+    parentEdges: new Map(),
+    parentSeq: 0,
+    gate: Semaphore.makeUnsafe(1),
+    transactionDepth: new Map()
   }
-
-  const sameOwner = (left: OwnerId, right: OwnerId): boolean =>
-    left.hostId === right.hostId && left.pid === right.pid && left.nonce === right.nonce
-
-  /** Mirrors the SQL `flows_runs` owner-match predicate for a run. */
-  const runView = (runId: string, presented: OwnerId | undefined): {
-    readonly exists: boolean
-    readonly running: boolean
-    readonly owned: boolean
-  } => {
-    if (options.runs === undefined) {
-      return { exists: true, running: true, owned: true }
-    }
-    const view = options.runs(runId)
-    if (Option.isNone(view)) {
-      return { exists: false, running: false, owned: false }
-    }
-    const owned = presented !== undefined &&
-      view.value.owner !== null &&
-      sameOwner(view.value.owner, presented)
-    return { exists: true, running: view.value.status === "running", owned }
-  }
-
-  /**
-   * Mirrors the SQL sweeps' run-status join: a row whose run has settled is
-   * never swept, and `Option.none()` from a supplied `runs` view means the run
-   * does not exist, so its orphaned engine-state rows stay hidden. The
-   * permissive default (no `runs` view) treats every run as live because a
-   * standalone memory store has no run table to consult.
-   */
-  const isLive = (runId: string): boolean => {
-    if (options.runs === undefined) return true
-    const view = options.runs(runId)
-    return Option.isSome(view) && (
-      view.value.status === "pending" ||
-      view.value.status === "running" ||
-      view.value.status === "suspended"
-    )
-  }
-
-  const pendingMemoryRows = (
-    flowName: string | undefined,
-    after?: PendingRunCursor,
-    through?: PendingRunCursor,
-    eligibleBeforeMs?: number,
-    cancellationOnly = false
-  ) =>
-    Array.from(options.listRuns?.() ?? [])
-      .filter(([runId, view]) =>
-        view.status === "pending" && (flowName === undefined || view.flowName === flowName) &&
-        (!cancellationOnly || view.cancelRequestedAtMs != null) &&
-        (eligibleBeforeMs === undefined || (view.createdAtMs ?? 0) < eligibleBeforeMs) &&
-        (after === undefined || (view.createdAtMs ?? 0) > after.createdAtMs ||
-          ((view.createdAtMs ?? 0) === after.createdAtMs && compareText(runId, after.runId) > 0)) &&
-        (through === undefined || (view.createdAtMs ?? 0) < through.createdAtMs ||
-          ((view.createdAtMs ?? 0) === through.createdAtMs && compareText(runId, through.runId) <= 0))
-      )
-      .sort(([leftId, left], [rightId, right]) =>
-        (left.createdAtMs ?? 0) - (right.createdAtMs ?? 0) || compareText(leftId, rightId)
-      )
-      .map(([runId, view]) => ({ runId, createdAtMs: view.createdAtMs ?? 0 }))
-
-  const unguarded: Omit<Service, "transaction" | "readTransaction"> = {
-    deferred: Effect.fn("DurableEngineState.deferred")((address) =>
-      Effect.gen(function*() {
-        const row = deferreds.get(deferredKey(address))
-        return row === undefined ? Option.none() : Option.some(yield* snapshotDeferred(row))
-      })
-    ),
-    consumeDeferred: Effect.fn("DurableEngineState.consumeDeferred")((address, consumedAtMs) =>
-      Effect.sync(() => {
-        const key = deferredKey(address)
-        if (!deferreds.has(key) || consumedDeferreds.has(key)) return false
-        consumedDeferreds.set(key, consumedAtMs)
-        return true
-      })
-    ),
-    completeDeferred: Effect.fn("DurableEngineState.completeDeferred")((row) =>
-      Effect.gen(function*() {
-        const stored = yield* snapshotDeferred(row)
-        const key = deferredKey(stored)
-        const existing = deferreds.get(key)
-        if (existing !== undefined) {
-          return {
-            _tag: "Existing" as const,
-            row: yield* snapshotDeferred(existing),
-            digest: yield* memoryDigest(existing)
-          }
-        }
-        deferreds.set(key, stored)
-        return {
-          _tag: "Completed" as const,
-          row: yield* snapshotDeferred(stored),
-          digest: yield* memoryDigest(stored)
-        }
-      })
-    ),
-    clock: Effect.fn("DurableEngineState.clock")((address) =>
-      Effect.gen(function*() {
-        const row = clocks.get(clockKey(address))
-        return row === undefined ? Option.none() : Option.some(yield* snapshotClock(row))
-      })
-    ),
-    scheduleClock: Effect.fn("DurableEngineState.scheduleClock")((row, owner) =>
-      Effect.gen(function*(): Generator<Effect.Effect<unknown>, ScheduleClockOutcome, never> {
-        // Mirrors the SQL fence: creation requires the presented owner to
-        // currently run the execution; a lost fence surfaces as
-        // self-interruption, an existing row wins regardless.
-        const stored = yield* snapshotClock(row)
-        const key = clockKey(stored)
-        const existing = clocks.get(key)
-        if (existing !== undefined) {
-          return { _tag: "Existing" as const, row: yield* snapshotClock(existing) }
-        }
-        const view = runView(stored.executionId, owner)
-        if (!view.exists || !view.running || !view.owned) {
-          return yield* Effect.interrupt
-        }
-        clocks.set(key, stored)
-        return { _tag: "Scheduled" as const, row: yield* snapshotClock(stored) }
-      })
-    ),
-    completeClock: Effect.fn("DurableEngineState.completeClock")((address, completedAtMs) =>
-      Effect.sync(() => {
-        const key = clockKey(address)
-        const existing = clocks.get(key)
-        if (existing === undefined) {
-          return { _tag: "NotFound" as const }
-        }
-        if (existing.completedAtMs !== null) {
-          return { _tag: "AlreadyCompleted" as const, row: { ...existing } }
-        }
-        const row = { ...existing, completedAtMs }
-        clocks.set(key, row)
-        return { _tag: "Completed" as const, row: { ...row } }
-      })
-    ),
-    dueClocks: Effect.fn("DurableEngineState.dueClocks")((nowMs) =>
-      Effect.forEach(
-        Array.from(clocks.values())
-          .filter((row) => row.completedAtMs === null && row.dueAtMs <= nowMs)
-          .sort((left, right) =>
-            left.dueAtMs - right.dueAtMs ||
-            compareText(left.executionId, right.executionId) ||
-            compareText(left.clockName, right.clockName)
-          ),
-        snapshotClock
-      )
-    ),
-    completeRunClocks: Effect.fn("DurableEngineState.completeRunClocks")((executionId, completedAtMs) =>
-      Effect.sync(() => {
-        const completed: Array<ClockRow> = []
-        for (const [key, row] of clocks) {
-          if (row.executionId !== executionId || row.completedAtMs !== null) continue
-          const next = { ...row, completedAtMs }
-          clocks.set(key, next)
-          completed.push({ ...next })
-        }
-        return completed.sort((left, right) =>
-          compareText(left.flowName, right.flowName) || compareText(left.clockName, right.clockName)
-        )
-      })
-    ),
-    pendingClocks: Effect.fn("DurableEngineState.pendingClocks")((scope) =>
-      Effect.flatMap(
-        Effect.sync(() =>
-          Array.from(clocks.values())
-            .filter((row) =>
-              row.completedAtMs === null &&
-              isLive(row.executionId) &&
-              (scope.executionId === undefined || row.executionId === scope.executionId) &&
-              (scope.flowName === undefined || row.flowName === scope.flowName)
-            )
-            .sort((left, right) =>
-              left.dueAtMs - right.dueAtMs ||
-              compareText(left.executionId, right.executionId) ||
-              compareText(left.clockName, right.clockName)
-            )
-        ),
-        (rows) => Effect.forEach(rows, snapshotClock)
-      )
-    ),
-    hasDueWake: (executionId, nowMs) =>
-      Effect.sync(() =>
-        Array.from(deferreds.values()).some((row) =>
-          row.executionId === executionId && !consumedDeferreds.has(deferredKey(row))
-        ) || Array.from(clocks.values()).some((row) =>
-          row.executionId === executionId && row.completedAtMs === null && row.dueAtMs <= nowMs
-        )
-      ),
-    completedDeferreds: Effect.fn("DurableEngineState.completedDeferreds")((flowName, executionId) =>
-      Effect.sync(() =>
-        Array.from(deferreds.values())
-          .filter((row) =>
-            row.flowName === flowName && (executionId === undefined || row.executionId === executionId) &&
-            isLive(row.executionId) && !consumedDeferreds.has(deferredKey(row))
-          )
-          .map(({ flowName, executionId, deferredName }) => ({
-            flowName,
-            executionId,
-            deferredName
-          }))
-          .sort((left, right) =>
-            compareText(left.executionId, right.executionId) ||
-            compareText(left.deferredName, right.deferredName)
-          )
-      )
-    ),
-    park: Effect.fn("DurableEngineState.park")((runId, waitingPayload, owner) =>
-      Effect.sync(() => {
-        // Mirrors the SQL fence: only the current owner of an existing run
-        // may park it; anything else reports NotFound, exactly like the
-        // owner-guarded UPDATE matching no row.
-        const view = runView(runId, owner)
-        if (!view.exists || !view.owned) {
-          return { _tag: "NotFound" as const }
-        }
-        // The declared question is stored as JSON TEXT and read back decoded,
-        // exactly as the column and its SELECT do it.
-        const row: WaitingRow = {
-          runId,
-          reason: waitingPayload.reason,
-          wakeAt: waitingPayload.wakeAt ?? null,
-          token: waitingPayload.token ?? null,
-          ...decodeWaitingRequest(waitingPayload.request)
-        } as WaitingRow
-        waitingRows.set(runId, row)
-        return { _tag: "Parked" as const, row: snapshotWaiting(row) }
-      })
-    ),
-    wake: Effect.fn("DurableEngineState.wake")((runId) =>
-      Effect.sync(() => {
-        const row = waitingRows.get(runId)
-        if (row === undefined) {
-          // Mirrors SQL: an unknown run is NotFound, an existing unparked
-          // run is NotWaiting.
-          return runView(runId, undefined).exists
-            ? { _tag: "NotWaiting" as const }
-            : { _tag: "NotFound" as const }
-        }
-        waitingRows.delete(runId)
-        return { _tag: "Woken" as const, row: snapshotWaiting(row) }
-      })
-    ),
-    waiting: Effect.fn("DurableEngineState.waiting")((runId) =>
-      Effect.sync(() => {
-        const row = waitingRows.get(runId)
-        return row === undefined ? Option.none() : Option.some(snapshotWaiting(row))
-      })
-    ),
-    waitingTree: Effect.fn("DurableEngineState.waitingTree")((runId, walk) =>
-      Effect.sync(() => {
-        // Breadth-first over recorded spawn edges: the named run first, then
-        // each generation beneath it. This memory view does not model the
-        // parent_run_id trampoline links that the SQL walk also follows.
-        const found: Array<WaitingRow> = []
-        const seen = new Set<string>([runId])
-        let frontier: ReadonlyArray<string> = [runId]
-        for (let depth = 0; depth <= waitingTreeMaxDepth && frontier.length > 0; depth++) {
-          const next: Array<string> = []
-          for (const current of frontier) {
-            const row = waitingRows.get(current)
-            if (row !== undefined && isLive(current)) found.push(snapshotWaiting(row))
-            for (const [childId, parents] of parentEdges) {
-              if (!parents.has(current) || seen.has(childId)) continue
-              // The SQL walk skips a detached subtree; so does this one, for a
-              // view that records the policy. A view that does not describes an
-              // attached child, which is the default.
-              const view = options.runs?.(childId)
-              if (
-                walk?.detached !== "include" && view !== undefined && Option.isSome(view) &&
-                view.value.onParentExit === "detach"
-              ) continue
-              seen.add(childId)
-              next.push(childId)
-            }
-          }
-          frontier = next
-        }
-        return found
-      })
-    ),
-    waitingRuns: Effect.fn("DurableEngineState.waitingRuns")((filter) =>
-      Effect.sync(() =>
-        Array.from(waitingRows.values())
-          // Mirrors the SQL status predicate: a terminally closed run's
-          // stale waiting row never surfaces to a sweeper (issue #28). The
-          // permissive default (no `runs` view) treats every run as live.
-          .filter((row) => isLive(row.runId))
-          .filter((row) => filter?.reason === undefined || row.reason === filter.reason)
-          .filter((row) =>
-            filter?.dueBeforeMs === undefined ||
-            (row.wakeAt !== null && row.wakeAt <= filter.dueBeforeMs)
-          )
-          // Mirrors the SQL cancel predicate over
-          // `flows_runs.cancel_requested_at_ms` (issue #68). Without a
-          // `runs` view the flag is unknowable, so the query stays
-          // permissive and the sweeper's own per-row guard decides.
-          .filter((row) => {
-            if (filter?.cancelRequested !== true) return true
-            if (options.runs === undefined) return true
-            const view = options.runs(row.runId)
-            return Option.isSome(view) && view.value.cancelRequestedAtMs != null
-          })
-          .sort((left, right) =>
-            Number(left.wakeAt === null) - Number(right.wakeAt === null) ||
-            (left.wakeAt ?? 0) - (right.wakeAt ?? 0) ||
-            compareText(left.runId, right.runId)
-          )
-          .map(snapshotWaiting)
-      )
-    ),
-    pendingRuns: Effect.fn("DurableEngineState.pendingRuns")((flowName, limit, after, through, eligibleBeforeMs) =>
-      Effect.sync(() => {
-        const ordered = pendingMemoryRows(flowName, after, through, eligibleBeforeMs)
-        return limit === undefined ? ordered : ordered.slice(0, limit)
-      })
-    ),
-    pendingRunTail: Effect.fn("DurableEngineState.pendingRunTail")((flowName, eligibleBeforeMs) =>
-      Effect.sync(() =>
-        Option.fromNullishOr(pendingMemoryRows(flowName, undefined, undefined, eligibleBeforeMs).at(-1))
-      )
-    ),
-    pendingCancellationRuns: Effect.fn("DurableEngineState.pendingCancellationRuns")((limit, after, through) =>
-      pendingCancellationLimit(limit).pipe(Effect.andThen(
-        Effect.sync(() => pendingMemoryRows(undefined, after, through, undefined, true).slice(0, limit))
-      ))
-    ),
-    pendingCancellationTail: Effect.fn("DurableEngineState.pendingCancellationTail")(() =>
-      Effect.sync(() =>
-        Option.fromNullishOr(
-          pendingMemoryRows(undefined, undefined, undefined, undefined, true).at(-1)
-        )
-      )
-    ),
-    staleRunningRuns: Effect.fn("DurableEngineState.staleRunningRuns")((staleBeforeMs, limit) =>
-      Effect.sync(() => {
-        // Mirrors the SQL scan of `flows_runs`: without an enumerator there
-        // is nothing to scan, so no stale rows exist.
-        if (options.listRuns === undefined) return []
-        const stale: Array<StaleRunningRow> = []
-        for (const [runId, view] of options.listRuns()) {
-          const heartbeatAtMs = view.heartbeatAtMs
-          if (
-            view.status === "running" &&
-            typeof heartbeatAtMs === "number" &&
-            heartbeatAtMs < staleBeforeMs
-          ) {
-            stale.push({ runId, heartbeatAtMs })
-          }
-        }
-        const ordered = stale.sort((left, right) =>
-          left.heartbeatAtMs - right.heartbeatAtMs ||
-          compareText(left.runId, right.runId)
-        )
-        // Mirrors the SQL LIMIT: oldest heartbeats first, capped per sweep
-        // (issue #79).
-        return limit === undefined ? ordered : ordered.slice(0, limit)
-      })
-    ),
-    recordRunParent: Effect.fn("DurableEngineState.recordRunParent")((childId, parentId) =>
-      // A single synchronous step mirrors the SQL transaction: the cycle
-      // check and the insert are atomic — no fiber can interleave between
-      // them, and a rejected edge is never observable (issues #54/#55/#56).
-      Effect.suspend((): Effect.Effect<RecordRunParentOutcome, RunParentCycleError> => {
-        const parents = parentEdges.get(childId) ?? new Map<string, number>()
-        const existing = parents.get(parentId)
-        if (existing !== undefined) {
-          return Effect.succeed({
-            _tag: "Existing" as const,
-            edge: { childId, parentId, seq: existing }
-          })
-        }
-        const cycle = findCyclePathSync(childId, parentId)
-        if (cycle !== undefined) {
-          return Effect.fail(new RunParentCycleError({ path: cycle }))
-        }
-        parentSeq += 1
-        parents.set(parentId, parentSeq)
-        parentEdges.set(childId, parents)
-        return Effect.succeed({
-          _tag: "Recorded" as const,
-          edge: { childId, parentId, seq: parentSeq }
-        })
-      })
-    ),
-    removeRunParentsForRun: Effect.fn("DurableEngineState.removeRunParentsForRun")((runId) =>
-      Effect.sync(() => {
-        parentEdges.delete(runId)
-        for (const [childId, parents] of parentEdges) {
-          parents.delete(runId)
-          if (parents.size === 0) parentEdges.delete(childId)
-        }
-      })
-    ),
-    runParents: Effect.fn("DurableEngineState.runParents")((childId) =>
-      Effect.sync(() =>
-        Array.from(parentEdges.get(childId) ?? [])
-          .map(([parentId, seq]) => ({ childId, parentId, seq }))
-          .sort((left, right) => left.seq - right.seq)
-      )
-    ),
-    runChildren: Effect.fn("DurableEngineState.runChildren")((parentId) =>
-      Effect.sync(() => {
-        const edges: Array<RunParentEdge> = []
-        for (const [childId, parents] of parentEdges) {
-          const seq = parents.get(parentId)
-          if (seq !== undefined) edges.push({ childId, parentId, seq })
-        }
-        return edges.sort((left, right) => left.seq - right.seq)
-      })
-    )
-  }
-
-  const gate = Semaphore.makeUnsafe(1)
-  const transactionDepth = new Map<number, number>()
-  const guard = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-    Effect.flatMap(
-      Effect.fiberId,
-      (fiberId) => (transactionDepth.get(fiberId) ?? 0) > 0 ? effect : gate.withPermit(effect)
-    )
-
-  const restoreMap = <K, V>(target: Map<K, V>, source: ReadonlyMap<K, V>): void => {
-    target.clear()
-    for (const [key, value] of source) target.set(key, value)
-  }
-
-  const transaction: Service["transaction"] = <A, E, R>(
-    effect: Effect.Effect<A, E, R>,
-    options?: { readonly onCommit: (commit: Effect.Effect<void>) => void }
-  ): Effect.Effect<A, E, R> =>
-    Effect.flatMap(Effect.fiberId, (fiberId) =>
-      Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function*() {
-          const nested = (transactionDepth.get(fiberId) ?? 0) > 0
-          if (!nested) yield* restore(gate.take(1))
-          const before = {
-            deferreds: new Map(deferreds),
-            consumedDeferreds: new Map(consumedDeferreds),
-            clocks: new Map(clocks),
-            waitingRows: new Map(waitingRows),
-            parentEdges: new Map([...parentEdges].map(([child, parents]) => [child, new Map(parents)])),
-            parentSeq
-          }
-          transactionDepth.set(fiberId, (transactionDepth.get(fiberId) ?? 0) + 1)
-          let committed = false
-          let closed = false
-          const close = Effect.suspend(() => {
-            if (closed) return Effect.void
-            closed = true
-            const depth = transactionDepth.get(fiberId)! - 1
-            if (depth === 0) transactionDepth.delete(fiberId)
-            else transactionDepth.set(fiberId, depth)
-            return nested ? Effect.void : gate.release(1).pipe(Effect.asVoid)
-          })
-          const commit = Effect.sync(() => {
-            committed = true
-          }).pipe(Effect.andThen(close))
-          return yield* Effect.sync(() => options?.onCommit(commit)).pipe(
-            Effect.andThen(restore(effect)),
-            Effect.catchCause((cause) =>
-              Effect.sync(() => {
-                if (committed) return
-                restoreMap(deferreds, before.deferreds)
-                restoreMap(consumedDeferreds, before.consumedDeferreds)
-                restoreMap(clocks, before.clocks)
-                restoreMap(waitingRows, before.waitingRows)
-                restoreMap(parentEdges, before.parentEdges)
-                parentSeq = before.parentSeq
-              }).pipe(Effect.andThen(Effect.failCause(cause)))
-            ),
-            Effect.ensuring(close)
-          )
-        })
-      ))
-
+  const unguarded = memoryMethods(memory)
+  const transaction = memoryTransaction(memory)
   return DurableEngineState.of({
-    deferred: (address) => guard(unguarded.deferred(address)),
-    consumeDeferred: (address, consumedAtMs) => guard(unguarded.consumeDeferred(address, consumedAtMs)),
-    completeDeferred: (row) => guard(unguarded.completeDeferred(row)),
-    clock: (address) => guard(unguarded.clock(address)),
-    scheduleClock: (row, owner) => guard(unguarded.scheduleClock(row, owner)),
-    completeClock: (address, completedAtMs) => guard(unguarded.completeClock(address, completedAtMs)),
-    dueClocks: (nowMs) => guard(unguarded.dueClocks(nowMs)),
-    completeRunClocks: (executionId, completedAtMs) => guard(unguarded.completeRunClocks(executionId, completedAtMs)),
-    pendingClocks: (scope) => guard(unguarded.pendingClocks(scope)),
-    hasDueWake: (executionId, nowMs) => guard(unguarded.hasDueWake(executionId, nowMs)),
-    completedDeferreds: (flowName, executionId) => guard(unguarded.completedDeferreds(flowName, executionId)),
-    park: (runId, waiting, owner) => guard(unguarded.park(runId, waiting, owner)),
-    wake: (runId) => guard(unguarded.wake(runId)),
-    waiting: (runId) => guard(unguarded.waiting(runId)),
-    waitingTree: (runId, options) => guard(unguarded.waitingTree(runId, options)),
-    waitingRuns: (filter) => guard(unguarded.waitingRuns(filter)),
+    deferred: (address) => guard(memory, unguarded.deferred(address)),
+    consumeDeferred: (address, consumedAtMs) => guard(memory, unguarded.consumeDeferred(address, consumedAtMs)),
+    completeDeferred: (row) => guard(memory, unguarded.completeDeferred(row)),
+    clock: (address) => guard(memory, unguarded.clock(address)),
+    scheduleClock: (row, owner) => guard(memory, unguarded.scheduleClock(row, owner)),
+    completeClock: (address, completedAtMs) => guard(memory, unguarded.completeClock(address, completedAtMs)),
+    dueClocks: (nowMs) => guard(memory, unguarded.dueClocks(nowMs)),
+    completeRunClocks: (executionId, completedAtMs) =>
+      guard(memory, unguarded.completeRunClocks(executionId, completedAtMs)),
+    pendingClocks: (scope) => guard(memory, unguarded.pendingClocks(scope)),
+    hasDueWake: (executionId, nowMs) => guard(memory, unguarded.hasDueWake(executionId, nowMs)),
+    completedDeferreds: (flowName, executionId) => guard(memory, unguarded.completedDeferreds(flowName, executionId)),
+    park: (runId, waiting, owner) => guard(memory, unguarded.park(runId, waiting, owner)),
+    wake: (runId) => guard(memory, unguarded.wake(runId)),
+    waiting: (runId) => guard(memory, unguarded.waiting(runId)),
+    waitingTree: (runId, options) => guard(memory, unguarded.waitingTree(runId, options)),
+    waitingRuns: (filter) => guard(memory, unguarded.waitingRuns(filter)),
     pendingRuns: (flowName, limit, after, through, eligibleBeforeMs) =>
-      guard(unguarded.pendingRuns(flowName, limit, after, through, eligibleBeforeMs)),
-    pendingRunTail: (flowName, eligibleBeforeMs) => guard(unguarded.pendingRunTail(flowName, eligibleBeforeMs)),
-    pendingCancellationRuns: (limit, after, through) => guard(unguarded.pendingCancellationRuns(limit, after, through)),
-    pendingCancellationTail: () => guard(unguarded.pendingCancellationTail()),
-    staleRunningRuns: (staleBeforeMs, limit) => guard(unguarded.staleRunningRuns(staleBeforeMs, limit)),
+      guard(memory, unguarded.pendingRuns(flowName, limit, after, through, eligibleBeforeMs)),
+    pendingRunTail: (flowName, eligibleBeforeMs) => guard(memory, unguarded.pendingRunTail(flowName, eligibleBeforeMs)),
+    pendingCancellationRuns: (limit, after, through) =>
+      guard(memory, unguarded.pendingCancellationRuns(limit, after, through)),
+    pendingCancellationTail: () => guard(memory, unguarded.pendingCancellationTail()),
+    staleRunningRuns: (staleBeforeMs, limit) => guard(memory, unguarded.staleRunningRuns(staleBeforeMs, limit)),
     attemptSurvivors: undefined,
-    recordRunParent: (childId, parentId) => guard(unguarded.recordRunParent(childId, parentId)),
-    removeRunParentsForRun: (runId) => guard(unguarded.removeRunParentsForRun(runId)),
-    runParents: (childId) => guard(unguarded.runParents(childId)),
-    runChildren: (parentId) => guard(unguarded.runChildren(parentId)),
+    recordRunParent: (childId, parentId) => guard(memory, unguarded.recordRunParent(childId, parentId)),
+    removeRunParentsForRun: (runId) => guard(memory, unguarded.removeRunParentsForRun(runId)),
+    runParents: (childId) => guard(memory, unguarded.runParents(childId)),
+    runChildren: (parentId) => guard(memory, unguarded.runChildren(parentId)),
     transaction,
     // Memory has no lock to contend for; its permit is what keeps reads agreeing.
     readTransaction: (effect) => transaction(effect)
