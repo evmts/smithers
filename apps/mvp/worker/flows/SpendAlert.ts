@@ -140,12 +140,26 @@ export interface DeliverRequest {
   readonly outcome: Alerted["outcome"]
 }
 
-/** Sends the window's alert on one channel and records its receipt. */
+/**
+ * `ops/DeliverSpendAlert`'s implementation version. v2 (2026-10-21) declares the step irreversible and at least once; a
+ * run parked on the v1 plan stops with `plan_changed`.
+ */
+export const DELIVER_VERSION = "ops/deliver-spend-alert/v2"
+
+/**
+ * Sends the window's alert on one channel and records its receipt, at least once: a duplicate alert beats a lost one.
+ * The send is the step's one write, so it is `irreversible`, and its key (the alert and the channel) lets a durable
+ * engine run it again after a host died mid-send. Email carries the alert's id as Resend's `Idempotency-Key`, so a repeat
+ * within Resend's 24 hours sends nothing new; Telegram has no key, so a repeat sends the message again.
+ */
 export const Deliver = Action.make("ops/DeliverSpendAlert", {
   payload: deliverPayload,
   success: Delivered,
   error: Schema.Union([Channels.DeliveryFailed, DeliverUnavailable]),
   capabilities: ["db:read:alert_channels", "db:write:alert_deliveries", "net:alert_channels"],
+  implementationVersion: DELIVER_VERSION,
+  tier: "irreversible",
+  idempotencyKey: ({ alertId, channel }) => ({ alert: alertId, channel }),
   retryPolicy: deliverRetryPolicy,
 })
 
@@ -453,6 +467,6 @@ export const registration = <E, R>(
     Layer.mergeAll(
       AlertIn.toLayer((window) => alertIn(window)),
       Record.toLayer((window) => observedRecord(window, database)),
-      Deliver.toLayer((request) => observedDeliver(request, database)),
+      Deliver.toLayer((request) => observedDeliver(request, database), { implementationVersion: DELIVER_VERSION }),
     ),
   ).pipe(Layer.provide(channels), Layer.provideMerge(Action.layerImplementations))

@@ -17,7 +17,9 @@
  *   one email.
  * - Telegram goes through the Bot API's `sendMessage`, as plain text with link
  *   previews off. The Bot API has no idempotency key: a process that dies
- *   between Telegram's answer and the caller's record of it sends twice.
+ *   between Telegram's answer and the caller's record of it sends twice. Put
+ *   the send in its own `irreversible` step: with an `idempotencyKey` it is at
+ *   least once, without one at most once.
  *
  * ## Credentials
  *

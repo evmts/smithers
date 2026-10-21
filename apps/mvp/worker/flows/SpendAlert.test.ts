@@ -504,3 +504,15 @@ describe("the delivery step", () => {
     expect(providers.received).toEqual([])
   })
 })
+
+describe("the delivery step's declaration", () => {
+  test("is irreversible and at least once: keyed by the alert and the channel, so an engine re-runs a send a host died in", () => {
+    expect(SpendAlert.Deliver.tier).toBe("irreversible")
+    expect(SpendAlert.Deliver.implementationVersion).toBe(SpendAlert.DELIVER_VERSION)
+    const key = SpendAlert.Deliver.idempotencyKey as (payload: SpendAlert.DeliverRequest) => unknown
+    expect(key({ alertId: "a1", channel: "telegram", outcome: "recorded" })).toEqual({ alert: "a1", channel: "telegram" })
+    expect(key({ alertId: "a1", channel: "email", outcome: "recorded" })).not.toEqual(
+      key({ alertId: "a1", channel: "telegram", outcome: "recorded" }),
+    )
+  })
+})

@@ -79,6 +79,22 @@ and log.
   that dies after Telegram took the message and before it recorded the receipt
   sends it again.
 
+## Declare the guarantee in the step
+
+A send is a write another service can't undo, so put each one in its own
+`irreversible` step and say which guarantee you want:
+
+- **At least once:** declare an `idempotencyKey`, such as the message's id and
+  channel. A durable engine runs the step again after a host died mid-send, so
+  a Telegram message can arrive twice; an email within Resend's 24 hours can't.
+  Choose this when a duplicate beats a lost message, as for alerts.
+- **At most once:** declare no `idempotencyKey`. A durable engine never runs an
+  unsettled send again; the step stops with
+  `IrreversibleRetryRequiresIdempotencyKey`, and the message may or may not
+  have gone out.
+
+Never decide whether a message went out by looking for one that reads the same.
+
 ## Test it
 
 Point a provider's `url` at a server on loopback for the happy path. For an
