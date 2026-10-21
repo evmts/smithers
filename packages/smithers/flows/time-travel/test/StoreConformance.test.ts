@@ -779,6 +779,97 @@ describe("TimeTravelStore conformance", () => {
  * that commits it, handed back until forgotten when abandoned, never reused.
  */
 describe("TimeTravelStore fork intents", () => {
+  for (const state of ["reserved", "reclaiming", "forgotten", "unknown"] as const) {
+    it.effect(`renews a ${state} reservation identically without changing reclaimed intents`, () =>
+      Effect.gen(function*() {
+        const exercise = (store: TimeTravelStore.Service) =>
+          Effect.gen(function*() {
+            const childRunId = state === "unknown" ? "unknown" : yield* store.nextForkId("run", frame)
+            if (state === "reclaiming" || state === "forgotten") {
+              const [claimed] = yield* store.abandonForkIntents(Number.MAX_SAFE_INTEGER)
+              if (state === "forgotten") yield* store.forgetForkIntent(childRunId, claimed!.reclaimedAtMs!)
+            }
+            yield* TestClock.adjust(100)
+            const result = yield* Effect.result(store.renewForkIntent(childRunId))
+            if (state === "reclaiming" || state === "forgotten") {
+              expect(result).toMatchObject({
+                _tag: "Failure",
+                failure: {
+                  code: "fence_lost",
+                  message: `fork reservation ${childRunId} was reclaimed before its lane was provisioned`
+                }
+              })
+            } else {
+              expect(result).toMatchObject({ _tag: "Success", success: undefined })
+            }
+            return childRunId
+          })
+        const memory = MemoryTimeTravelStore.make()
+        const childRunId = yield* exercise(memory)
+        if (state === "reserved") {
+          expect(memory.state().forkIntents).toEqual([{
+            childRunId,
+            parentRunId: "run",
+            parentSeq: frame.seq,
+            reservedAtMs: 100
+          }])
+          expect(yield* memory.abandonForkIntents(100)).toEqual([])
+          expect(yield* memory.abandonForkIntents(101)).toHaveLength(1)
+        } else {
+          expect(memory.state().forkIntents).toEqual([])
+          // Renewal must not advance the claim: the original acknowledgment
+          // must still complete a reclaiming intent.
+          if (state === "reclaiming") yield* memory.forgetForkIntent(childRunId, 0)
+          expect(yield* memory.abandonForkIntents(0)).toEqual([])
+        }
+        yield* TestClock.setTime(0)
+        yield* withSql((store, sql) =>
+          Effect.gen(function*() {
+            const id = yield* exercise(store)
+            const rows = yield* sql`
+              SELECT child_run_id, reserved_at_ms, reclaimed_at_ms, forgotten_at_ms
+              FROM flows_time_travel_fork_intents
+            `
+            expect(rows).toEqual(
+              state === "unknown" ? [] : [{
+                child_run_id: id,
+                reserved_at_ms: state === "reserved" ? 100 : 0,
+                reclaimed_at_ms: state === "reserved" ? null : 0,
+                forgotten_at_ms: state === "forgotten" ? 0 : null
+              }]
+            )
+            if (state === "reserved") {
+              expect(yield* store.abandonForkIntents(100)).toEqual([])
+              expect(yield* store.abandonForkIntents(101)).toHaveLength(1)
+            } else {
+              expect(yield* store.abandonForkIntents(0)).toHaveLength(state === "reclaiming" ? 1 : 0)
+            }
+          })
+        )
+      }))
+  }
+
+  it.effect("renews only the named reservation and leaves unknown ids inert", () =>
+    Effect.gen(function*() {
+      const exercise = (store: TimeTravelStore.Service) =>
+        Effect.gen(function*() {
+          const childRunId = yield* store.nextForkId("run", frame)
+          const peer = yield* store.nextForkId("peer", frame)
+          yield* TestClock.adjust(100)
+          yield* store.renewForkIntent(childRunId)
+          yield* store.renewForkIntent("unknown")
+          const [stale] = yield* store.abandonForkIntents(100)
+          expect(stale).toMatchObject({ childRunId: peer, reservedAtMs: 0 })
+          yield* store.forgetForkIntent(peer, stale!.reclaimedAtMs!)
+          const pending = yield* store.abandonForkIntents(101)
+          expect(pending).toHaveLength(1)
+          expect(pending[0]).toMatchObject({ childRunId, reservedAtMs: 100 })
+        })
+      yield* exercise(MemoryTimeTravelStore.make())
+      yield* TestClock.setTime(0)
+      yield* withSql((store) => exercise(store))
+    }))
+
   it.effect("returns every pending lane in reservation order, breaking ties by child id", () =>
     Effect.gen(function*() {
       const exercise = (store: TimeTravelStore.Service) =>

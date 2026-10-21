@@ -505,6 +505,14 @@ export interface Service {
    */
   readonly nextForkId: (parentRunId: string, frame: Frame) => Effect.Effect<string, TimeTravelError>
   /**
+   * Restarts a reserved intent's stale window immediately before provisioning
+   * its lane. In one write transaction, sets `reservedAtMs` to the current
+   * time only while the reservation is unreclaimed. A reclaiming or forgotten
+   * intent fails `fence_lost` without changing anything. An id with no
+   * reservation succeeds without changes.
+   */
+  readonly renewForkIntent: (childRunId: string) => Effect.Effect<void, TimeTravelError>
+  /**
    * In one write transaction, marks every reserved {@link ForkIntent} with
    * `reservedAtMs < staleBeforeMs` as reclaiming, then returns every reclaiming
    * intent, including those claimed by an earlier sweep, ordered by reservation
@@ -512,9 +520,12 @@ export interface Service {
    * recorded forgotten through {@link Service.forgetForkIntent}. Every returned
    * intent carries a fresh `reclaimedAtMs` claim stamp. Every claim and reopen
    * strictly advances it with `max(now, previous + 1)`, even in one millisecond.
-   * A late {@link Service.createFork} refused after reclamation resets even a
-   * forgotten intent to reclaiming, so the next sweep retries its lane removal
-   * if the fork's own cleanup failed. Forgetting a missing lane is a no-op.
+   * {@link Service.renewForkIntent} restarts the stale window just before lane
+   * provisioning and refuses an already reclaimed reservation without changes.
+   * A late {@link Service.createFork} refused after reclamation during
+   * provisioning resets even a forgotten intent to reclaiming, so the next
+   * sweep retries its lane removal if the fork's own cleanup failed.
+   * Forgetting a missing lane is a no-op.
    * The intents stay counted for minting, so their ordinals are never reused.
    */
   readonly abandonForkIntents: (staleBeforeMs: number) => Effect.Effect<ReadonlyArray<ForkIntent>, TimeTravelError>
@@ -534,9 +545,12 @@ export interface Service {
    *
    * `childRunId` is the id {@link Service.nextForkId} minted for this fork.
    * Omitting it mints one inside the same transaction, which is what a caller
-   * that provisions nothing beforehand wants. A reclaiming or forgotten
-   * reservation is reset to reclaiming before any other validation in the
-   * transaction deciding refusal: clear `forgotten_at_ms`, strictly advance
+   * that provisions nothing beforehand wants. Call {@link Service.renewForkIntent}
+   * immediately before provisioning to refuse a reservation reclaimed while
+   * stalled and restart its stale window. Reclamation during provisioning is
+   * still possible: a reclaiming or forgotten reservation is reset to reclaiming
+   * before any other validation in the transaction deciding refusal: clear
+   * `forgotten_at_ms`, strictly advance
    * `reclaimed_at_ms` with `max(now, previous + 1)`, then fail `fence_lost`
    * after that write commits. No fork records are written. The next startup
    * sweep retries lane removal even if the fork's own cleanup fails.
@@ -616,6 +630,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
     archiveAndTruncate: () => unavailable("archiveAndTruncate"),
     archivedAt: () => unavailable("archivedAt"),
     nextForkId: () => unavailable("nextForkId"),
+    renewForkIntent: () => unavailable("renewForkIntent"),
     abandonForkIntents: () => unavailable("abandonForkIntents"),
     forgetForkIntent: () => unavailable("forgetForkIntent"),
     createFork: () => unavailable("createFork"),

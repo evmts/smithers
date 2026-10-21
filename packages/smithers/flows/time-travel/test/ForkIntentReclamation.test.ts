@@ -213,6 +213,75 @@ for (const kind of ["sql", "memory"] as const) {
         })
       ))
 
+    it.effect("refuses a forgotten reservation before a failing add can strand its registered lane", () =>
+      withStore((store) =>
+        Effect.gen(function*() {
+          yield* seed
+          const before = yield* image
+          const added: Array<string> = []
+          const forgotten: Array<string> = []
+          const jj = Jj.makeNoop({
+            workspaceAdd: (name) =>
+              Effect.suspend(() => {
+                added.push(name)
+                return Effect.fail(
+                  new Jj.JjError({
+                    code: "unknown",
+                    command: "workspace add",
+                    message: "injected pinning failure after registration and failed adapter cleanup"
+                  })
+                )
+              }),
+            workspaceForget: (name) =>
+              Effect.suspend(() => {
+                forgotten.push(name)
+                return Effect.fail(
+                  new Jj.JjError({
+                    code: "unknown",
+                    command: "workspace forget",
+                    message: "injected cleanup failure"
+                  })
+                )
+              })
+          })
+          const result = yield* Effect.result(
+            Fork.fork({
+              parentRunId: "parent",
+              frame,
+              workspaceRoot: "/tmp/fork-lanes",
+              retainWorkspace: true,
+              hooks: {
+                beforeStep: (step) =>
+                  step === "provision-workspace"
+                    ? Effect.gen(function*() {
+                      yield* TestClock.adjust("6 minutes")
+                      const [intent] = yield* store.abandonForkIntents(Number.MAX_SAFE_INTEGER)
+                      expect(intent!.childRunId).toBe("parent:fork:0:1")
+                      // A sweep forgets a lane that does not exist yet, then
+                      // acknowledges success before the stalled fork resumes.
+                      yield* store.forgetForkIntent(intent!.childRunId, intent!.reclaimedAtMs!)
+                      expect(yield* store.abandonForkIntents(0)).toEqual([])
+                    })
+                    : Effect.void
+              }
+            }).pipe(Effect.provideService(Jj.Jj, jj), Effect.provide(Registry.layerNoop))
+          )
+          expect({ result, added, forgotten }).toMatchObject({
+            result: {
+              _tag: "Failure",
+              failure: {
+                code: "fence_lost",
+                message: "fork reservation parent:fork:0:1 was reclaimed before its lane was provisioned"
+              }
+            },
+            added: [],
+            forgotten: []
+          })
+          expect(yield* store.abandonForkIntents(0)).toEqual([])
+          expect(yield* image).toEqual(before)
+        })
+      ))
+
     it.effect("reopens a forgotten intent after late provisioning and retries failed refused-commit cleanup", () =>
       withRealFixture("flows-late-fork-", (fixture) =>
         withStore((store) =>
@@ -230,6 +299,27 @@ for (const kind of ["sql", "memory"] as const) {
             let refuseCleanup = false
             const faultyJj = {
               ...jj,
+              workspaceAdd: (...args: Parameters<Jj.Jj["workspaceAdd"]>): ReturnType<Jj.Jj["workspaceAdd"]> =>
+                Effect.gen(function*() {
+                  // Stall inside workspaceAdd, after renewal but before jj
+                  // registers the lane. The sweep still sees an absent lane.
+                  yield* TestClock.adjust("6 minutes")
+                  expect(yield* store.abandonForkIntents(Number.MAX_SAFE_INTEGER)).toHaveLength(1)
+                  yield* build()
+                  expect(yield* store.abandonForkIntents(0)).toEqual([])
+                  yield* TestClock.adjust("1 minute")
+                  refuseCleanup = true
+                  yield* jj.workspaceAdd(...args)
+                }).pipe(
+                  Effect.mapError((cause) =>
+                    new Jj.JjError({
+                      code: "unknown",
+                      command: "workspace add",
+                      message: "injected stall failed",
+                      cause
+                    })
+                  )
+                ),
               workspaceForget: (name: string) =>
                 Effect.suspend(() => {
                   forgets.push(name)
@@ -258,22 +348,7 @@ for (const kind of ["sql", "memory"] as const) {
                 parentRunId: "parent",
                 frame,
                 workspaceRoot: `${fixture.directory}/lanes`,
-                retainWorkspace: true,
-                hooks: {
-                  beforeStep: (step) =>
-                    step === "provision-workspace"
-                      ? Effect.gen(function*() {
-                        // nextForkId reserved the identity, but workspaceAdd has
-                        // not run. Forgetting the absent lane succeeds in jj.
-                        yield* TestClock.adjust("6 minutes")
-                        expect(yield* store.abandonForkIntents(Number.MAX_SAFE_INTEGER)).toHaveLength(1)
-                        yield* build()
-                        expect(yield* store.abandonForkIntents(0)).toEqual([])
-                        yield* TestClock.adjust("1 minute")
-                        refuseCleanup = true
-                      })
-                      : Effect.void
-                }
+                retainWorkspace: true
               }).pipe(Effect.provideService(Jj.Jj, faultyJj), Effect.provide(Registry.layerNoop))
             )
             expect(result).toMatchObject({ _tag: "Failure", failure: { code: "fence_lost" } })

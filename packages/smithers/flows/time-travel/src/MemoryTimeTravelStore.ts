@@ -505,6 +505,20 @@ export const make = (options: Options = {}): TimeTravelStore.Service & {
         )
       )
     ),
+    renewForkIntent: Effect.fn("TimeTravelStore.renewForkIntent")((childRunId) =>
+      Effect.annotateCurrentSpan({ childRunId }).pipe(
+        Effect.andThen(atomicWithTime((nowMs) => {
+          fail("renewForkIntent")
+          const intent = forkIntents.find((candidate) => candidate.childRunId === childRunId)
+          if (intent?.reclaimedAtMs !== undefined) {
+            throw error("fence_lost", `fork reservation ${childRunId} was reclaimed before its lane was provisioned`)
+          }
+          forkIntents = forkIntents.map((candidate) =>
+            candidate === intent ? { ...candidate, reservedAtMs: nowMs } : candidate
+          )
+        }))
+      )
+    ),
     abandonForkIntents: Effect.fn("TimeTravelStore.abandonForkIntents")((staleBeforeMs) =>
       Effect.annotateCurrentSpan({ staleBeforeMs }).pipe(
         Effect.andThen(atomicWithTime((nowMs) => {

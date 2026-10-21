@@ -539,9 +539,9 @@ export const makeWith = (
     /**
      * Forgets the jj lanes of forks that never committed.
      *
-     * A fork reserves its child id, provisions the lane, then commits; a
-     * process that dies between the last two steps leaves a registered lane
-     * behind and a reservation every later mint has already counted past. The
+     * A fork reserves its child id, renews just before provisioning the lane,
+     * then commits. A process that dies between provisioning and commit leaves
+     * a registered lane and a reservation every later mint has already counted past. The
      * sweep claims stale reservations before forgetting their lanes. A claimed
      * reservation refuses a concurrent fork commit with `fence_lost`. The sweep
      * records completion only after jj succeeds, comparing the claim stamp so
@@ -553,10 +553,12 @@ export const makeWith = (
      * even if refused-commit cleanup fails. A successful cleanup makes that
      * later forget a no-op: jj warns about a missing workspace and exits 0.
      *
-     * One window remains: a process that stalls past the stale window before
-     * workspaceAdd, then crashes after adding its lane but before createFork,
-     * leaves the lane registered if the sweep already recorded it forgotten.
-     * Nothing durable says that late lane exists.
+     * Renewal refuses a reservation reclaimed before provisioning without
+     * adding a lane. The remaining window requires a stall longer than the
+     * stale window inside workspaceAdd itself, followed by either an add
+     * failure whose own cleanup also fails, or a crash after the add and before
+     * createFork. If the sweep already recorded the intent forgotten, nothing
+     * durable says that late lane exists.
      */
     const reclaimForkLanes = Effect.gen(function*() {
       const store = yield* TimeTravelStore

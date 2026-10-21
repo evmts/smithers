@@ -101,10 +101,12 @@ nothing), `invalid` (a malformed option or an undecodable durable payload),
 superseded before a mutation committed), `limit_exceeded` (the operation would
 read more journal entries than `maxHistoryEntries` allows), and `unknown`.
 
-A fork whose reservation was reclaimed resets even a forgotten intent to
-reclaiming before failing `fence_lost` after commit. Startup retries lane removal
-if the fork's own cleanup fails; successful cleanup makes that later forget a
-no-op. See the [fork protocol and its remaining crash window](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/api.md#operations).
+A fork renews its reservation immediately before provisioning its lane. A
+reservation reclaimed during an earlier stall fails `fence_lost` without adding
+a lane. If reclamation happens during provisioning, a late fork commit resets
+even a forgotten intent to reclaiming before failing `fence_lost` after commit.
+Startup retries lane removal if the fork's own cleanup fails; successful cleanup
+makes that later forget a no-op. See the [fork protocol and its remaining crash window](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/api.md#operations).
 
 A rewind removes the mutable deferred completions and clock deadlines whose
 completion or schedule records lie in the archived suffix. Reaching those

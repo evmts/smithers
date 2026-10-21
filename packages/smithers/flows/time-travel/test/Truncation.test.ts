@@ -197,6 +197,16 @@ describe("truncation", () => {
       expect(store.state()).toEqual(before)
     }))
 
+  it.effect("keeps the reservation unchanged when renewal fails", () =>
+    Effect.gen(function*() {
+      const store = Memory.make({ records, edges, failAt: "renewForkIntent" })
+      const childRunId = yield* store.nextForkId("parent", { lineageId: "parent/root", seq: 0 })
+      const before = store.state()
+      const failure = yield* Effect.flip(store.renewForkIntent(childRunId))
+      expect(failure).toMatchObject({ code: "unknown", message: "injected failure at renewForkIntent" })
+      expect(store.state()).toEqual(before)
+    }))
+
   it.effect("keeps a reclaimed intent retryable when recording its forgotten lane fails", () =>
     Effect.gen(function*() {
       const store = Memory.make({ records, edges, failAt: "forgetForkIntent" })

@@ -1010,6 +1010,27 @@ export const make: Effect.Effect<
           )
         )
       ),
+      renewForkIntent: Effect.fn("TimeTravelStore.renewForkIntent")((childRunId) =>
+        Effect.annotateCurrentSpan({ childRunId }).pipe(Effect.andThen(
+          writer.write(
+            Effect.gen(function*() {
+              const intents = yield* sql<{ readonly reclaimed_at_ms: number | null }>`
+                SELECT reclaimed_at_ms FROM flows_time_travel_fork_intents WHERE child_run_id = ${childRunId}
+              `
+              if (intents[0] !== undefined && intents[0].reclaimed_at_ms !== null) {
+                return yield* Effect.fail(
+                  error("fence_lost", `fork reservation ${childRunId} was reclaimed before its lane was provisioned`)
+                )
+              }
+              const nowMs = yield* Clock.currentTimeMillis
+              yield* sql`
+                UPDATE flows_time_travel_fork_intents SET reserved_at_ms = ${nowMs}
+                WHERE child_run_id = ${childRunId} AND reclaimed_at_ms IS NULL
+              `
+            }).pipe(Effect.mapError(mapError))
+          ).pipe(Effect.mapError(mapError))
+        ))
+      ),
       abandonForkIntents: Effect.fn("TimeTravelStore.abandonForkIntents")((staleBeforeMs) =>
         Effect.annotateCurrentSpan({ staleBeforeMs }).pipe(Effect.andThen(
           writer.write(

@@ -89,13 +89,20 @@ const store = MemoryTimeTravelStore.make({ records, failAt: "archiveAndTruncate:
 ```
 
 The steps are `writeAudit`, `updateAudit`, `recordSnapshot`, `recordReceipt`,
-`nextForkId`, `abandonForkIntents`, `forgetForkIntent`, `createFork:start`, `createFork:copy`,
+`nextForkId`, `renewForkIntent`, `abandonForkIntents`, `forgetForkIntent`, `createFork:start`, `createFork:copy`,
 `createFork:commit`, `archiveAndTruncate:start`,
 `archiveAndTruncate:before-archive`, `archiveAndTruncate:before-truncate`, and
 `archiveAndTruncate:commit`.
 
 `ForkIntentReclamation.test.ts` also wraps the real stores and jj service to
-exercise a reservation swept before provisioning. A late `createFork` resets
+exercise a reservation swept before provisioning: renewal refuses `fence_lost`
+without calling `workspaceAdd`, even when the injected add would register a lane
+and fail with failed cleanup. Store conformance covers renewal of reserved,
+reclaiming, forgotten, and unknown ids on both stores.
+
+The remaining window requires a stall longer than the stale window inside
+`workspaceAdd` itself, followed by either an add failure whose own cleanup also
+fails, or a crash after the add and before `createFork`. A late `createFork` resets
 the forgotten intent to reclaiming in its refusal transaction, then raises
 `fence_lost` after commit. An injected cleanup failure must leave that intent
 available for the next startup sweep to forget its real lane; successful cleanup

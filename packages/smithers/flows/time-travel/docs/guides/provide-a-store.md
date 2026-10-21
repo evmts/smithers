@@ -134,6 +134,10 @@ stating:
 - `nextForkId` **reserves** the id it mints. The reservation is what makes a
   crashed fork retryable under a fresh lane name instead of colliding with the
   leftover on disk. Intent rows stay counted even after reclamation.
+- `renewForkIntent(childRunId)` restarts a reserved intent's stale window by
+  setting `reservedAtMs` to now in one write transaction, immediately before
+  provisioning. A reclaiming or forgotten intent fails `fence_lost` without
+  changes; an id without a reservation succeeds without changes.
 - `abandonForkIntents` claims stale reserved intents and returns **all**
   reclaiming intents, including earlier sweeps, until `forgetForkIntent`
   records that their lane is gone. Claiming and listing share one transaction.
@@ -153,6 +157,12 @@ stating:
   back the reset and strand a late-provisioned lane if cleanup also failed.
   Caller-supplied ids without reservations and ids minted during commit keep
   their existing behaviour. Only a committing fork deletes its intent.
+
+Renewal prevents provisioning a reservation reclaimed during an earlier stall.
+The remaining window requires a stall longer than the stale window inside
+`workspaceAdd` itself, followed by either a failed add whose own cleanup also
+fails, or a crash after the add and before `createFork`. A lane added after the
+sweep already recorded its intent forgotten has no durable record of its existence.
 
 ## Where to go next
 

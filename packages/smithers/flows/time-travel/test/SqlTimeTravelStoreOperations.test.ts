@@ -648,6 +648,11 @@ describe("SqlTimeTravelStore persistence fault matrix", () => {
         invoke: (store: TimeTravelStore.Service) => store.abandonForkIntents(1)
       },
       {
+        method: "renewForkIntent",
+        table: "flows_time_travel_fork_intents",
+        invoke: (store: TimeTravelStore.Service) => store.renewForkIntent("child")
+      },
+      {
         method: "forgetForkIntent",
         table: "flows_time_travel_fork_intents",
         invoke: (store: TimeTravelStore.Service) => store.forgetForkIntent("child", 0)

@@ -21,6 +21,7 @@ describe("TimeTravelStore.makeNoop", () => {
         ["archivedAt", store.archivedAt("run", 1, 0)],
         ["nextForkId", store.nextForkId("run", frame)],
         ["abandonForkIntents", store.abandonForkIntents(0)],
+        ["renewForkIntent", store.renewForkIntent("child")],
         ["forgetForkIntent", store.forgetForkIntent("child", 0)],
         ["createFork", store.createFork("run", frame)],
         ["recordReceipt", store.recordReceipt({ id: "r", auditId: "a", effectId: "e", receipt: {} })]

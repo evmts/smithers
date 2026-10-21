@@ -43383,7 +43383,10 @@ never supplied: `smithers-fork-` plus the sanitized id capped at 64 characters
 plus a short digest of the raw id. A frame forked twice therefore gets two
 lanes, and the lane is forgotten when the service scope is released.
 
-The mint is a durable reservation. A process that dies after provisioning the
+The mint is a durable reservation, renewed immediately before `workspaceAdd`
+to restart its stale window. A reservation reclaimed while the fork stalled
+before provisioning fails `fence_lost` without adding a lane; renewal changes
+neither reclaiming nor forgotten intents. A process that dies after provisioning the
 lane and before the store commits the fork leaves a registered lane and a
 reservation behind; the next build of `TimeTravel.layer` forgets the lane of
 every reservation older than five minutes whose fork never committed, and the
@@ -43402,10 +43405,11 @@ before any other fork validation, then raises the error after commit. Startup th
 that cleanup fails; successful cleanup makes the later forget a no-op. Retrying
 the fork mints a fresh id.
 
-One window remains: a process can stall past the stale window before
-`workspaceAdd`, then crash after adding its lane but before `createFork`. If the
-sweep already recorded the intent forgotten, that lane stays registered;
-nothing durable says it exists.
+The remaining window requires a stall longer than the stale window inside
+`workspaceAdd` itself, followed by either an add failure whose own cleanup also
+fails, or a crash after the add and before `createFork`. If the sweep already
+recorded the intent forgotten, that lane stays registered; nothing durable
+says it exists.
 
 ### Rewind order of operations
 
@@ -43587,6 +43591,7 @@ fork whose child id names a run that already exists.
 | `archiveAndTruncate(runId, frame, receipts, owner, childOwners?)`    | Refuses malformed frames with `invalid`. Truncates a run back to a frame, archiving rather than deleting, removing deferred completions and clock deadlines named by archived records, and persisting the receipts. Fenced on the caller's ownership and on every non-terminal attached child.                                                                                                                                                                                                                                                                                                                                                                 |
 | `archivedAt(runId, seq, generation?)`                                | Whether the archive holds a record at that exact coordinate in the pre-truncation journal generation when supplied, or in any generation when omitted. Recovery's commit-point evidence, including its legacy fallback.                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `nextForkId(parentRunId, frame)`                                     | Mints and durably reserves the run id the next fork off that frame will carry, without creating a run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `renewForkIntent(childRunId)`                                        | In one write transaction, sets a reserved intent’s `reservedAtMs` to now immediately before lane provisioning, restarting its stale window. A reclaiming or forgotten intent fails `fence_lost` without changes. An id without a reservation succeeds without changes.                                                                                                                                                                                                                                                                                                                                                                                         |
 | `abandonForkIntents(staleBeforeMs)`                                  | In one write transaction, claims reserved intents older than `staleBeforeMs` and advances every pending claim stamp, then returns every reclaiming intent ordered by reservation time and child id, including earlier sweeps, until `forgetForkIntent` records lane removal. A late refused `createFork` resets even a forgotten intent to reclaiming, so the next sweep retries removal if its cleanup failed.                                                                                                                                                                                                                                                |
 | `forgetForkIntent(childRunId, reclaimedAtMs)`                        | Records lane removal only when the current claim stamp equals `reclaimedAtMs` and the intent is not already forgotten. Stale acknowledgments and unknown or unreclaimed ids change nothing. The row stays counted for minting.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `createFork(parentRunId, frame, childRunId?, override?, rebinding?)` | Branches a new run off a frame, copying the journal prefix and the attempts that existed there, and recording the `fork` edge. `override` replaces one copied step result in the same transaction; `rebinding` replaces the child's payload and carries named spawned children. The parent is untouched. A reclaiming or forgotten reservation is reset to reclaiming (clear `forgotten_at_ms`, strictly advance `reclaimed_at_ms`) before all other validation in the refusal transaction; `fence_lost` is raised after it commits, with no fork records written. A `childRunId` naming a run that already exists, the parent included, is refused `invalid`. |

@@ -398,16 +398,18 @@ export const fork = (
 
       const jj = yield* Jj
       /**
-       * MINT, THEN PROVISION, THEN COMMIT — in that order, on purpose.
+       * MINT, THEN RENEW, THEN PROVISION, THEN COMMIT — in that order, on purpose.
        *
        * The mint is what makes the lane and the child one identity: the
        * workspace is named after the run that will live in it, so a frame
        * forked twice provisions two lanes and two parents that sanitize alike
        * never share one. The mint is a durable RESERVATION and nothing more:
        * no run exists yet, but the ordinal is taken, so a process that dies
-       * between the two steps below retries under a fresh id instead of
-       * asking jj for the lane name its own leftover still holds. Startup
-       * hands the stale reservation back through `abandonForkIntents` and
+       * after provisioning and before commit retries under a fresh id instead of
+       * asking jj for the lane name its own leftover still holds. Renewal
+       * immediately before workspaceAdd restarts the stale window and refuses
+       * a reservation reclaimed while the fork stalled, without adding a lane.
+       * Startup hands the stale reservation back through `abandonForkIntents` and
        * forgets the lane it named, retrying until removal is recorded. A
        * reclaiming or forgotten reservation is reset to reclaiming in the
        * refusal transaction, which commits before `fence_lost` is raised.
@@ -430,6 +432,7 @@ export const fork = (
       yield* Effect.annotateCurrentSpan({ childRunId, workspaceName })
       const rebinding = options.rebind === undefined ? undefined : yield* options.rebind(childRunId)
       yield* StepHook.run("fork", options.hooks?.beforeStep, "provision-workspace")
+      yield* store.renewForkIntent(childRunId)
       yield* jj.workspaceAdd(workspaceName, `${options.workspaceRoot}/${workspaceName}`, snapshot?.changeId).pipe(
         Effect.mapError((cause) => error("unknown", "could not add fork workspace", cause))
       )
