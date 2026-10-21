@@ -426,7 +426,6 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         ...(config.retry === undefined ? {} : { retry: config.retry }),
       })
       const branchViews = yield* viewsStore.forConversation(conversationId)
-      yield* followSummaries(branchMessages, summaries, flows).pipe(Effect.forkIn(scope))
       const branchHistory = yield* Collection.local<History, string>({
         id: `chat-history:${conversationId}`,
         schema: History,
@@ -435,6 +434,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       })
       const branchConversation = yield* conversationQuery(branchMessages, unsent, asking, branchViews, conversationId)
       const branchLatest = yield* latestQuery(branchConversation, pageSize)
+      // The rail summarizes what this conversation's window shows (src/features/timeline/store.ts).
+      yield* followSummaries(branchLatest, branchMessages, summaries, flows).pipe(Effect.forkIn(scope))
       const opened: ConversationState = {
         conversationId,
         messages: branchMessages,
@@ -582,7 +583,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     }
   }
 
-  yield* followSummaries(messages, summaries, flows).pipe(Effect.forkIn(scope))
+  // The rail summarizes what the window shows, never every message the device holds (src/features/timeline/store.ts).
+  yield* followSummaries(latest, messages, summaries, flows).pipe(Effect.forkIn(scope))
   const store = ChatStore.of({
     summaries: yield* summaryQuery(summaries),
     messages,

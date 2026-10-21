@@ -15,19 +15,16 @@ import { appHome, questionPost, requires, writeHeaders } from "./target"
 //
 // Three tests are marked broken (`test.fail`, docs/rulings.md TEST-5) just before the assertion the bug fails, so a failure
 // anywhere before it is still a failure. Once the bug is fixed the assertion passes, the run goes red, and the mark
-// comes off. Four more are red for causes not yet found and are marked broken as a whole until they are.
+// comes off. One more, `stale tab`, fails now and then, its cause narrowed but not found, so it is marked as a whole.
 
 /** Why each broken test fails today. */
 const BROKEN_WITHDRAW = "Broken: Outbox.withdraw takes back a write the server already took, between two of its sends"
 const BROKEN_GHOST = "Broken: a tab that loses the outbox's lead keeps the rows of writes another tab then takes back"
 const BROKEN_CLOCK =
   "Broken: after the device clock steps back, the device shows the next question twice, and the outbox orders its writes by that clock"
-// Red on the real model, cause not yet found; marked for the whole test until it is (docs/work/local-first-conflicts.md).
-const BROKEN_SAME_ID = "Broken, cause not found: A's re-asked question never shows (docs/work/local-first-conflicts.md)"
-const BROKEN_DUPLICATE = "Broken, cause not found: A's composer doesn't open for the resend (docs/work/local-first-conflicts.md)"
-const BROKEN_STALE_TAB = "Broken, cause not found: tab 2's second question never shows (docs/work/local-first-conflicts.md)"
-const BROKEN_TAKEN_AFTER =
-  "Broken, cause not found: A sees its question arrive although sync is down (docs/work/local-first-conflicts.md)"
+// Red now and then on the real model, its cause narrowed but not found; marked for the whole test until it is.
+const BROKEN_STALE_TAB =
+  "Broken, cause narrowed: on a device with two tabs, a question both tabs saw arrive vanishes from both (docs/work/local-first-conflicts.md)"
 
 const DAY = 24 * 60 * 60 * 1000
 const HOUR = 60 * 60 * 1000
@@ -62,7 +59,6 @@ test.describe("Local-first conflicts", () => {
       description: "Two writers claim one question id: Postgres keeps the first, A keeps its own Not sent, and Edit asks it again under a new id.",
     },
   }, async ({ devices, request }) => {
-    test.fail(true, BROKEN_SAME_ID)
     const word = devices.word
     const [a, b] = await devices.open("A", "B")
     const mine = question(`mine-${word}`)
@@ -108,6 +104,14 @@ test.describe("Local-first conflicts", () => {
     const rows = await serverRows(request, word)
     expect(rows.filter(({ role }) => role === "user").map(({ text }) => text)).toEqual([theirs, mine])
     expect(rows.find(({ text }) => text === mine)?.id, "A's question took a new id").not.toBe(id)
+
+    // The device stored that Edit took the Not sent copy away: before the timeline's summaries were bounded to the
+    // window, their runs held the device store's writes back, and a reload brought the copy back.
+    await step("A reloads: its question shows once, answered, and the copy Edit took stays gone", async () => {
+      await a.reload()
+      await a.expectAnswered(mine, `mine-${word}`)
+      await expectSameThread([a, b], word, 4)
+    })
   })
 
   test("same TODO on two devices: Ann and Ben both drop a TODO offline; whichever comes back first drops it, and the other's drop changes nothing", {
@@ -201,7 +205,6 @@ test.describe("Local-first conflicts", () => {
     },
   }, async ({ devices, request }) => {
     requires("faults")
-    test.fail(true, BROKEN_DUPLICATE)
     const word = devices.word
     const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
     const asked = question(`once-${word}`)
@@ -373,7 +376,6 @@ test.describe("Local-first conflicts", () => {
     ],
   }, async ({ devices, request }) => {
     requires("faults")
-    test.fail(true, BROKEN_TAKEN_AFTER)
     const word = devices.word
     const [[a], [b]] = await Promise.all([devices.openFaulty("A"), devices.open("B")])
     const asked = question(`twice-${word}`)

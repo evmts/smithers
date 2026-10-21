@@ -75,3 +75,17 @@ test("summary seat constructs the real proxy and preparation failures become saf
   const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "route-refusal", payload })).pipe(Effect.provide(context)))
   expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
 })
+
+test.each([
+  ["the model", (seat: SummarySeat["Service"]) => ({ ...seat, model: Model.make({ stream: () => Stream.fail(new ModelError.ModelError({ code: "no_route", message: "no summary model" })) }) })],
+  ["its route", (seat: SummarySeat["Service"]) => ({ ...seat, route: { prepare: () => Effect.fail(new ModelError.ModelError({ code: "no_route", message: "no summary model" })) } })],
+] as const)("a summary role without a model fails unconfigured, from %s", async (_where, unconfigured) => {
+  const scope = Effect.runSync(Scope.make()); scopes.push(scope)
+  const seatContext = await Effect.runPromise(Scope.provide(scope)(Layer.build(SummarySeat.layer("https://summary.test").pipe(Layer.provide(FetchHttpClient.layer)))))
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+    Layer.provide(Layer.succeed(SummarySeat, unconfigured(Context.get(seatContext, SummarySeat)))), Layer.provideMerge(Action.layerImplementations),
+  ))))
+  const runtime = Context.get(context, FlowRuntime.FlowRuntime)
+  const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: `unconfigured-${_where}`, payload })).pipe(Effect.provide(context)))
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unconfigured" }))
+})

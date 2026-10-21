@@ -2,7 +2,7 @@ import { FlowRegistry } from "../../flows/registry"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Action } from "@smthrs/flow"
 import { Model, type ModelEvent } from "@smthrs/model"
-import { Context, Effect, Exit, Layer, Scope, Stream } from "effect"
+import { Context, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
 import { expect, test, vi } from "vitest"
 import { build } from "../../../worker/test/flowHost"
 import { ClientEngine, FlowDispatch } from "../../flows/dispatch"
@@ -36,7 +36,7 @@ test("real durable summary results project once, refresh changed content and ski
     const summaries = await run(makeSummaries)
     const query = await run(summaryQuery(summaries))
     expect(query.tanstack).toBeDefined()
-    await run(Effect.forkIn(followSummaries(messages, summaries, Context.get(context, FlowDispatch)), scope, { startImmediately: true }))
+    await run(Effect.forkIn(followSummaries(messages, messages, summaries, Context.get(context, FlowDispatch)), scope, { startImmediately: true }))
     await run(messages.insert(row("a", "Inspect retries")))
     await vi.waitFor(async () => expect((await run(summaries.get("a")))._tag).toBe("Some"), { timeout: 15_000 })
     expect(calls).toBe(1)
@@ -74,9 +74,52 @@ test.each(["failed", "unavailable", "changed", "deleted"] as const)("does not pu
         return { _tag: "Done", value: { summary: "Inspect both retry attempts" } }
       }),
     } as unknown as FlowDispatch["Service"]
-    await run(Effect.forkIn(followSummaries(messages, summaries, dispatch), scope, { startImmediately: true }))
+    await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch), scope, { startImmediately: true }))
     await run(messages.insert(row("a", "Inspect retries")))
     await vi.waitFor(() => expect(processed).toBe(true))
     expect((await run(summaries.get("a")))._tag).toBe("None")
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+})
+
+test("stops once the summary role answers it has no model: no later entry is dispatched", async () => {
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Persistence.memory)))
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: "unconfigured", schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    const dispatched: Array<string> = []
+    const dispatch = {
+      dispatch: (_name: string, payload: { readonly id: string }) => Effect.sync(() => {
+        dispatched.push(payload.id)
+        return { _tag: "Failed", error: { _tag: "timeline/SummaryFailed", code: "unconfigured" } }
+      }),
+    } as unknown as FlowDispatch["Service"]
+    await run(messages.insert([row("a", "Inspect retries"), row("b", "Inspect failures")]))
+    const followed = await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch), scope, { startImmediately: true }))
+    await run(Fiber.join(followed))
+    await run(messages.insert(row("c", "Inspect deploys")))
+    expect(dispatched).toEqual(["a"])
+    expect((await run(summaries.get("a")))._tag).toBe("None")
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+})
+
+test("summarizes the window's asks and answers, never a view the window shows among them", async () => {
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Persistence.memory)))
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: "with-view", schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    const dispatched: Array<string> = []
+    const dispatch = {
+      dispatch: (_name: string, payload: { readonly id: string }) => Effect.sync(() => {
+        dispatched.push(payload.id)
+        return { _tag: "Failed", error: { _tag: "timeline/SummaryFailed", code: "invalid" } }
+      }),
+    } as unknown as FlowDispatch["Service"]
+    const shown = (id: string, role: string) => ({ type: "insert" as const, key: id, value: { id, role, status: "done", text: "A page" }, previousValue: undefined })
+    await run(followSummaries({ changes: () => Stream.make([shown("view", "view"), shown("ask", "user"), shown("answer", "assistant")]) }, messages, summaries, dispatch))
+    expect(dispatched).toEqual(["ask", "answer"])
   } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
 })

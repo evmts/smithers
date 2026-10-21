@@ -7,6 +7,25 @@ updated: 2026-10-20 23:44 PDT
 links: [local-first.md, ../decisions/0002-local-first.md, ../features/chat.md, ../decisions/0016-todos-and-the-stack.md]
 ---
 
+## The four reds after 21:00 — 2026-10-21 04:17 PDT
+
+Real model, on the MacBook, against a dev server of its own (another `alchemy dev` stage and `DEV_HTTPS_PORT`), on main 1e94e0ec.
+
+| Test | Cause of the 00:16–00:30 reds | Now |
+|---|---|---|
+| same question id | The shared dev server reloaded A at 00:16:57 (Vite `full-reload`: someone edited `src/device/identity.ts` and `src/main.tsx` in the checkout it serves). The reload also showed a product bug: the `Not sent` copy Edit took away came back (2 of 2 runs). | Fixed and unmarked. A reload step now guards it. |
+| duplicate send | ChatApi rebuilt from 00:19:01 to 00:19:15; the page reloaded, `/api/auth/session` answered 503, and a fresh device showed `Sign in to ask Smithers.` in place of the composer. | Passes; unmarked. |
+| taken back after ChatApi took it | The dev server reloaded A at 00:25:33; the reloaded `/app?faults` page runs healthy services, so sync came back and A saw its question. | Passes; unmarked. The inner `BROKEN_WITHDRAW` mark stays. |
+| stale tab | The timeline rail's `followSummaries` started one `timeline/summarize` run per message the device held (about 300) on every tab's boot. Those runs held back the device store: a follower tab's restore took 31 to 39 s, so its sends were resent and its answers never arrived. Summaries off: 2 of 2 pass; on: 3 of 3 fail. | Still marked: 1 of 2 fail. In the failing run both of device A's tabs saw the second question arrive (`question stored`, `inserted`), then lost it. Cause not found. |
+
+Fixes:
+
+- `followSummaries` follows the conversation's window (chat's `latest` query), not every message, and stops once the summary role answers `unconfigured` (`409 no_route`). Regression tests: `src/features/chat/chat.test.ts` "a device opening a long conversation summarizes only the messages its window shows", `src/features/timeline/store.test.ts` and `engine.test.ts`.
+- The same flood is the status-sync red (device A's notifications hydration queued about 38 s): on one dev server, `e2e/status.spec.ts` "needs you" fails on main ("A: a toast says so") and passes with the fix, both tests.
+- `e2e/devices.ts` fails a device test as void when the dev server reloaded one of its opened tabs (`e2e/devReload.ts`) and logs the file. Run these specs against a dev server whose checkout no one edits.
+
+Still open: the stale-tab row loss above; a fresh device whose session request fails shows `Sign in to ask Smithers.` and never asks ChatApi again until a reload.
+
 ## Tracker reconciliation — 2026-10-20 23:44 PDT
 
 **What:** Retain one end-to-end test per real device-conflict class.

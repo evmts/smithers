@@ -1,6 +1,7 @@
 import { test as base, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { DEV_URL } from "../dev/https"
+import { devReload } from "./devReload"
 import { faultyApp, faults } from "./faults"
 import { allServerRows, type Row } from "./shape"
 import { appHome, guard, ownPlace, requires } from "./target"
@@ -172,6 +173,10 @@ export class Tab {
   readonly log: Array<string> = []
   // Every question this tab posted to ChatApi, in order.
   readonly asked: Array<Asked> = []
+  // Each time the dev server reloaded this tab, once it had opened, because a file it serves changed: when, and which.
+  readonly devReloads: Array<string> = []
+  // Set once `Devices.tab` has opened it: a reload before then only restarts a page no step has used yet.
+  opened = false
   // Seconds from the test's first device to this tab opening: where its video starts in the GIF.
   readonly openedAt: number
 
@@ -191,6 +196,18 @@ export class Tab {
     const at = () => `${((Date.now() - startedAt) / 1000).toFixed(2)}s`
     page.on("console", (message) => this.log.push(`${at()} ${message.type()}: ${message.text()}`))
     page.on("pageerror", (error) => this.log.push(`${at()} pageerror: ${error.message}`))
+    // Vite reloads every page it serves when a module changes (its HMR socket's `full-reload`), as when someone edits
+    // the checkout a shared dev server serves. The page restarts mid-test, losing its memory and its fault switches,
+    // so `teardown` voids a test that ran through one once the tab had opened. An HTML file's reload reaches only the
+    // page it is.
+    page.on("websocket", (socket) =>
+      socket.on("framereceived", ({ payload }) => {
+        const reload = devReload(payload)
+        if (reload === undefined) return
+        if (this.opened) this.devReloads.push(`${at()} ${reload}`)
+        this.log.push(`${at()} dev server: full-reload ${reload}`)
+      }),
+    )
     page.on("request", (request) => {
       if (!isQuestions(request.url()) || request.method() !== "POST") return
       const body = request.postDataJSON() as { id: string; answerId: string; text: string }
@@ -474,6 +491,7 @@ class Devices {
       await tab.reload()
       await page.waitForFunction(() => navigator.serviceWorker.controller !== null, undefined, { timeout: 30_000 })
     }
+    tab.opened = true
     return tab
   }
 
@@ -482,6 +500,11 @@ class Devices {
     for (const tab of tabs) {
       if (tab.page.isClosed()) continue
       expect.soft(await spinnersSeen(tab.page), `${tab.name} never showed a loading state`).toEqual([])
+    }
+    for (const tab of tabs) {
+      expect
+        .soft(tab.devReloads, `${tab.name}: the dev server never reloaded it mid-test (a watched file changed); a run through one is void`)
+        .toEqual([])
     }
     const failed = this.testInfo.status !== this.testInfo.expectedStatus
     if (failed) {

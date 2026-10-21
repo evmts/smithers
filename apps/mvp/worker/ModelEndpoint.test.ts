@@ -1239,7 +1239,8 @@ describe("timeline summary role", () => {
   test("a summary role with no model fails its step once: the model is asked once, never again", async () => {
     const { exit, calls } = await summarize()
 
-    expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
+    // The endpoint's no_route is the deployment having no summary model: unconfigured, not a model outage.
+    expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unconfigured" }))
     // As a 503 the refusal was capacity to the step, which the engine retried six times, up to 30 s apart.
     expect(calls).toBe(1)
   }, 30_000)

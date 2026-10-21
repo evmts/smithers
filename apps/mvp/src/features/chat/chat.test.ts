@@ -3,6 +3,7 @@ import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Effect, Exit, Fiber, ManagedRuntime, Metric, Option, Scope, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { dispatches } from "../../flows/dispatch"
+import { TabRequests } from "../../flows/requests"
 import {
   type ChatApiOptions,
   failingWorker,
@@ -30,6 +31,7 @@ import {
   syncRetries,
   unsentActions,
 } from "./metrics"
+import { revisionOf } from "../timeline/identity"
 import { chatShortcuts } from "./shortcuts"
 import { ChatStore } from "./store"
 
@@ -608,6 +610,26 @@ describe("the device store", () => {
     const second = await tabOn(openTab(api, { ...quick, host: device }))
     await until(() => expect(second.shown()).toEqual(["user unsent kept"]))
   })
+
+  test("an unsent question Edit took back stays gone after a reload", async () => {
+    const { api } = await openChat()
+    const device = nodeDevice()
+    const first = await faultyTabOn(api, { ...quick, host: device })
+    first.failNext("conflict")
+    const { questionId } = asked(first.actions.ask("taken"))
+    await until(() => expect(first.shown().at(-1)).toBe("user unsent taken"))
+    await until(() => expect(device.stored("chat-unsent")).toBe(1))
+    first.actions.editUnsent(questionId)
+    await until(() => expect(first.shown()).not.toContain("user unsent taken"))
+    // Sent again, under a new id.
+    const again = asked(first.actions.ask(first.composer()!.draft))
+    await until(() => expect(first.synced(again.answerId)).toBe(true))
+    await until(() => expect(device.stored("chat-unsent")).toBe(0))
+    await first.close()
+    const second = await tabOn(openTab(api, { ...quick, host: device }))
+    await until(() => expect(second.history()?.opened).toBe(true))
+    expect(second.shown()).not.toContain("user unsent taken")
+  })
 })
 
 describe("the connection pill", () => {
@@ -707,6 +729,28 @@ describe("the window", () => {
     tab.actions.loadEarlier()
     expect(tab.history()).toMatchObject({ limit: 4 })
     expect(tab.count(historyLoads)).toBe(1)
+  })
+
+  // The rail summarizes what the window shows. Before, a device that opened a long conversation started one
+  // `timeline/summarize` run per message it held, in turn, which kept its engine and store busy for minutes and starved
+  // its other tabs' sync (docs/work/local-first-conflicts.md, "stale tab").
+  test("a device opening a long conversation summarizes only the messages its window shows", async () => {
+    const first = await openChat()
+    const asked: Array<{ readonly id: string; readonly text: string }> = []
+    for (const text of ["one", "two", "three"]) {
+      const { questionId } = await first.onApi(first.api.askElsewhere(text))
+      asked.push({ id: questionId, text })
+    }
+    await until(() => expect(first.synced(asked[2]!.id)).toBe(true))
+    // Another device opens it, its window two messages: the last question and its answer.
+    const runtime = openTab(first.api, { pageSize: 2 })
+    const second = await tabOn(runtime)
+    await until(() => expect(second.shown()).toEqual(["user done three", "assistant streaming "]))
+    const requests = await runtime.runPromise(Effect.service(TabRequests))
+    const summarized = ({ id, text }: { readonly id: string; readonly text: string }) =>
+      Option.isSome(runtime.runSync(requests.doorOf(`timeline-${revisionOf({ id, role: "user", text })}`)))
+    await until(() => expect(summarized(asked[2]!)).toBe(true), agentWithin)
+    expect(asked.map(summarized)).toEqual([false, false, true])
   })
 })
 
