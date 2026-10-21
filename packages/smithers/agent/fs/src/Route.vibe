@@ -8,11 +8,8 @@ import type * as Flow from "@smthrs/core/Flow"
 import * as RuntimeFlow from "@smthrs/flow/Flow"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { fileSpecifier } from "@smthrs/registry/Executable"
-import * as Context from "effect/Context"
-import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
-import * as Schema from "effect/Schema"
-import { FsError } from "./FsError.ts"
+import { trusted } from "vibelang-runtime"
+import { FsError } from "./FsError.vibe"
 import * as Boundary from "./internal/Boundary.ts"
 
 /**
@@ -73,18 +70,18 @@ export type Kind = "module" | "markdown" | "skill"
  * @since 0.1.0
  */
 export interface Route {
-  readonly name: string
-  readonly segments: ReadonlyArray<string>
-  readonly kind: Kind
-  readonly sourcePath: string
-  readonly description: Option.Option<string>
-  readonly input: Descriptor.SchemaRef
-  readonly output: Descriptor.SchemaRef
-  readonly capabilities: ReadonlyArray<string>
-  readonly effects: Descriptor.EffectDeclaration
-  readonly modelInvocable: boolean
-  readonly placement: Option.Option<Descriptor.Placement>
-  readonly ui: Option.Option<string>
+  name: string
+  segments: ReadonlyArray<string>
+  kind: Kind
+  sourcePath: string
+  description: Option.Option<string>
+  input: Descriptor.SchemaRef
+  output: Descriptor.SchemaRef
+  capabilities: ReadonlyArray<string>
+  effects: Descriptor.EffectDeclaration
+  modelInvocable: boolean
+  placement: Option.Option<Descriptor.Placement>
+  ui: Option.Option<string>
 }
 
 /**
@@ -122,7 +119,7 @@ export type Name = keyof Manifest extends never ? string : Extract<keyof Manifes
  * @since 0.1.0
  */
 export type Input<N extends Name> = N extends keyof Manifest
-  ? Manifest[N] extends { readonly input: infer I } ? I : unknown
+  ? Manifest[N] extends { input: infer I } ? I : unknown
   : unknown
 
 /**
@@ -132,7 +129,7 @@ export type Input<N extends Name> = N extends keyof Manifest
  * @since 0.1.0
  */
 export type Output<N extends Name> = N extends keyof Manifest
-  ? Manifest[N] extends { readonly output: infer O } ? O : unknown
+  ? Manifest[N] extends { output: infer O } ? O : unknown
   : unknown
 
 const invalidRoute = (path: string, description = "Route metadata violates the command contract"): FsError =>
@@ -140,7 +137,7 @@ const invalidRoute = (path: string, description = "Route metadata violates the c
 
 const text = (
   value: unknown,
-  options: { readonly path: string; readonly maximum: number; readonly empty?: boolean | undefined }
+  options: { path: string; maximum: number; empty?: boolean | undefined }
 ): string => {
   if (
     typeof value !== "string" || (options.empty !== true && value.length === 0) ||
@@ -190,8 +187,7 @@ const schemaFields = (
     }
     return Object.freeze(output)
   } catch (cause) {
-    if (cause instanceof FsError) throw cause
-    throw invalidRoute("$")
+    throw cause instanceof FsError ? cause : invalidRoute("$")
   }
 }
 
@@ -202,31 +198,28 @@ const optionText = (
 ): Option.Option<string> => {
   try {
     if (!Option.isOption(input)) throw invalidRoute(path)
-    if (Option.isNone(input)) return Option.none()
-    return Option.some(text(input.value, { path, maximum }))
+    return input.map((value) => text(value, { path, maximum }))
   } catch (cause) {
-    if (cause instanceof FsError) throw cause
-    throw invalidRoute(path)
+    throw cause instanceof FsError ? cause : invalidRoute(path)
   }
 }
 
 const optionPlacement = (input: unknown): Option.Option<Descriptor.Placement> => {
   try {
     if (!Option.isOption(input)) throw invalidRoute("$.placement")
-    if (Option.isNone(input)) return Option.none()
+    if (input.isNone()) return Option.none()
     const placement = input.value
-    if (placement !== "client" && placement !== "local" && placement !== "sandbox" && placement !== "remote") {
-      throw invalidRoute("$.placement")
-    }
+    if (!(placement is "client" or "local" or "sandbox" or "remote")) throw invalidRoute("$.placement")
     return Option.some(placement)
   } catch (cause) {
-    if (cause instanceof FsError) throw cause
-    throw invalidRoute("$.placement")
+    throw cause instanceof FsError ? cause : invalidRoute("$.placement")
   }
 }
 
 const schemaRef = (input: unknown, path: string): Descriptor.SchemaRef => {
   const tagged = schemaFields(input, ["_tag"], ["path", "field", "document"])
+  // This stays a switch: a match arm can only throw with a throw expression,
+  // and VibeLang makes a function with one an Effect, not plain JavaScript.
   switch (tagged._tag) {
     case "MarkdownArgs":
       return new Descriptor.SchemaRefMarkdownArgs({})
@@ -236,7 +229,7 @@ const schemaRef = (input: unknown, path: string): Descriptor.SchemaRef => {
       return new Descriptor.SchemaRefNone({})
     case "Module": {
       const source = text(tagged.path, { path: `${path}.path`, maximum: maximumPathLength })
-      if (tagged.field !== "input" && tagged.field !== "output") throw invalidRoute(`${path}.field`)
+      if (!(tagged.field is "input" or "output")) throw invalidRoute(`${path}.field`)
       return new Descriptor.SchemaRefModule({ path: source, field: tagged.field })
     }
     case "Inline": {
@@ -261,13 +254,9 @@ const effectDeclaration = (input: unknown): Descriptor.EffectDeclaration => {
   })
   if (!reads.ok) throw invalidRoute(`$.effects.reads${reads.path.slice(1)}`)
   if (!writes.ok) throw invalidRoute(`$.effects.writes${writes.path.slice(1)}`)
-  if (data.mode !== "hermetic" && data.mode !== "expected") throw invalidRoute("$.effects.mode")
-  if (data.onConflict !== "serialize" && data.onConflict !== "lane" && data.onConflict !== "fail") {
-    throw invalidRoute("$.effects.onConflict")
-  }
-  if (data.tier !== "sealed" && data.tier !== "compensable" && data.tier !== "irreversible") {
-    throw invalidRoute("$.effects.tier")
-  }
+  if (!(data.mode is "hermetic" or "expected")) throw invalidRoute("$.effects.mode")
+  if (!(data.onConflict is "serialize" or "lane" or "fail")) throw invalidRoute("$.effects.onConflict")
+  if (!(data.tier is "sealed" or "compensable" or "irreversible")) throw invalidRoute("$.effects.tier")
   return Object.freeze({
     reads: reads.value,
     writes: writes.value,
@@ -280,74 +269,73 @@ const effectDeclaration = (input: unknown): Descriptor.EffectDeclaration => {
 const isAbsolutePath = (value: string): boolean =>
   value.startsWith("file:///") || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value)
 
+// Every reflective helper above catches foreign throws and normalizes them, so
+// this throws only FsError; anything else would be a defect.
+const copyRoute = (input: Route): Route => {
+  const data = fields(input, [
+    "name",
+    "segments",
+    "kind",
+    "sourcePath",
+    "description",
+    "input",
+    "output",
+    "capabilities",
+    "effects",
+    "modelInvocable",
+    "placement",
+    "ui"
+  ])
+  const segments = Boundary.stringArray(data.segments, {
+    maxItems: maximumRouteDepth,
+    maxLength: maximumSegmentLength
+  })
+  if (
+    !segments.ok || segments.value.length === 0 ||
+    segments.value.some((segment) => segment === "." || segment === ".." || segment.includes("/"))
+  ) {
+    throw invalidRoute(segments.ok ? "$.segments" : `$.segments${segments.path.slice(1)}`)
+  }
+  // A directory name arrives decomposed on macOS and composed from a
+  // browser or an agent, so one canonical form decides route identity.
+  const normalized = Object.freeze(segments.value.map((segment) => segment.normalize("NFC")))
+  const name = text(data.name, { path: "$.name", maximum: maximumRouteNameLength }).normalize("NFC")
+  if (name !== normalized.join("/")) {
+    throw invalidRoute("$.name", "Route name must equal its slash-joined segments")
+  }
+  if (!(data.kind is "module" or "markdown" or "skill")) throw invalidRoute("$.kind")
+  const sourcePath = text(data.sourcePath, { path: "$.sourcePath", maximum: maximumPathLength })
+  if (!isAbsolutePath(sourcePath)) throw invalidRoute("$.sourcePath", "Route source paths must be absolute")
+  const capabilities = Boundary.stringArray(data.capabilities, {
+    maxItems: maximumCapabilities,
+    maxLength: maximumPathLength
+  })
+  if (!capabilities.ok) throw invalidRoute(`$.capabilities${capabilities.path.slice(1)}`)
+  if (typeof data.modelInvocable !== "boolean") throw invalidRoute("$.modelInvocable")
+
+  return Object.freeze({
+    name,
+    segments: normalized,
+    kind: data.kind,
+    sourcePath,
+    description: optionText(data.description, "$.description", maximumPathLength),
+    input: schemaRef(data.input, "$.input"),
+    output: schemaRef(data.output, "$.output"),
+    capabilities: capabilities.value,
+    effects: effectDeclaration(data.effects),
+    modelInvocable: data.modelInvocable,
+    placement: optionPlacement(data.placement),
+    ui: optionText(data.ui, "$.ui", maximumPathLength)
+  })
+}
+
 /**
  * Copies and validates caller-owned route metadata before asynchronous use.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const snapshot = (input: Route): Effect.Effect<Route, FsError> =>
-  Effect.try({
-    try: () => {
-      const data = fields(input, [
-        "name",
-        "segments",
-        "kind",
-        "sourcePath",
-        "description",
-        "input",
-        "output",
-        "capabilities",
-        "effects",
-        "modelInvocable",
-        "placement",
-        "ui"
-      ])
-      const segments = Boundary.stringArray(data.segments, {
-        maxItems: maximumRouteDepth,
-        maxLength: maximumSegmentLength
-      })
-      if (
-        !segments.ok || segments.value.length === 0 ||
-        segments.value.some((segment) => segment === "." || segment === ".." || segment.includes("/"))
-      ) {
-        throw invalidRoute(segments.ok ? "$.segments" : `$.segments${segments.path.slice(1)}`)
-      }
-      // A directory name arrives decomposed on macOS and composed from a
-      // browser or an agent, so one canonical form decides route identity.
-      const normalized = Object.freeze(segments.value.map((segment) => segment.normalize("NFC")))
-      const name = text(data.name, { path: "$.name", maximum: maximumRouteNameLength }).normalize("NFC")
-      if (name !== normalized.join("/")) {
-        throw invalidRoute("$.name", "Route name must equal its slash-joined segments")
-      }
-      if (data.kind !== "module" && data.kind !== "markdown" && data.kind !== "skill") throw invalidRoute("$.kind")
-      const sourcePath = text(data.sourcePath, { path: "$.sourcePath", maximum: maximumPathLength })
-      if (!isAbsolutePath(sourcePath)) throw invalidRoute("$.sourcePath", "Route source paths must be absolute")
-      const capabilities = Boundary.stringArray(data.capabilities, {
-        maxItems: maximumCapabilities,
-        maxLength: maximumPathLength
-      })
-      if (!capabilities.ok) throw invalidRoute(`$.capabilities${capabilities.path.slice(1)}`)
-      if (typeof data.modelInvocable !== "boolean") throw invalidRoute("$.modelInvocable")
-
-      return Object.freeze({
-        name,
-        segments: normalized,
-        kind: data.kind,
-        sourcePath,
-        description: optionText(data.description, "$.description", maximumPathLength),
-        input: schemaRef(data.input, "$.input"),
-        output: schemaRef(data.output, "$.output"),
-        capabilities: capabilities.value,
-        effects: effectDeclaration(data.effects),
-        modelInvocable: data.modelInvocable,
-        placement: optionPlacement(data.placement),
-        ui: optionText(data.ui, "$.ui", maximumPathLength)
-      })
-    },
-    // Every reflective helper above catches foreign throws and normalizes them.
-    catch: (cause) => cause as FsError
-  })
+export const snapshot = trusted(copyRoute, [FsError])
 
 /**
  * True only for routes the agent and Incur command surfaces may execute.
@@ -356,6 +344,8 @@ export const snapshot = (input: Route): Effect.Effect<Route, FsError> =>
  * @since 0.1.0
  */
 export const isCommandRoute = (route: Route): boolean => route.kind === "module" && route.modelInvocable
+
+type Loaded = Pick<Flow.Any, "name" | "input" | "output"> & Partial<Pick<Flow.Any, "description">>
 
 const loadFailed = (description: string): FsError =>
   new FsError({
@@ -381,42 +371,38 @@ const exportMissing = (): FsError => loadFailed("The selected flow module has no
  * @category constructors
  * @since 0.1.0
  */
-export const load = (
-  input: Route
-): Effect.Effect<(Pick<Flow.Any, "name" | "input" | "output"> & Partial<Pick<Flow.Any, "description">>), FsError> =>
-  Effect.gen(function*() {
-    const route = yield* snapshot(input)
-    if (route.kind !== "module") {
-      return yield* Effect.fail(
-        new FsError({
-          code: "unsupported_body",
-          method: "Route.load",
-          description: "Only module routes are executable"
-        })
-      )
-    }
-    const module = yield* Effect.tryPromise({
-      try: () => import(/* @vite-ignore */ fileSpecifier(route.sourcePath)) as Promise<{ readonly default?: unknown }>,
-      catch: importFailed
+export function load(input: Route): Loaded!FsError {
+  const route = snapshot(input)
+  if (route.kind !== "module") {
+    throw new FsError({
+      code: "unsupported_body",
+      method: "Route.load",
+      description: "Only module routes are executable"
     })
-    if (RuntimeFlow.isFlow(module.default)) {
-      // Route metadata is caller-owned and can predate an edit that hid the
-      // flow, so the runtime declaration has the final word: a flow its author
-      // hid never reaches a model-facing surface.
-      if (route.modelInvocable && !Context.get(module.default.annotations, RuntimeFlow.ModelInvocable)) {
-        return yield* Effect.fail(loadFailed("The selected flow is not model-invocable"))
-      }
-      return {
-        name: module.default._tag,
-        description: module.default.description,
-        input: module.default.payloadSchema,
-        output: module.default.successSchema
-      }
+  }
+  const module = try(
+    async (specifier) => import(/* @vite-ignore */ specifier) as Promise<{ default?: unknown }>,
+    importFailed,
+    fileSpecifier(route.sourcePath)
+  )
+  if (RuntimeFlow.isFlow(module.default)) {
+    // Route metadata is caller-owned and can predate an edit that hid the
+    // flow, so the runtime declaration has the final word: a flow its author
+    // hid never reaches a model-facing surface.
+    if (route.modelInvocable && !Context.get(module.default.annotations, RuntimeFlow.ModelInvocable)) {
+      throw loadFailed("The selected flow is not model-invocable")
     }
-    if (
-      typeof module.default !== "object" || module.default === null ||
-      !("input" in module.default) || !Schema.isSchema(module.default.input) ||
-      !("output" in module.default) || !Schema.isSchema(module.default.output)
-    ) return yield* Effect.fail(exportMissing())
-    return module.default as (Pick<Flow.Any, "name" | "input" | "output"> & Partial<Pick<Flow.Any, "description">>)
-  })
+    return {
+      name: module.default._tag,
+      description: module.default.description,
+      input: module.default.payloadSchema,
+      output: module.default.successSchema
+    }
+  }
+  if (
+    typeof module.default !== "object" || module.default === null ||
+    !("input" in module.default) || !Schema.isSchema(module.default.input) ||
+    !("output" in module.default) || !Schema.isSchema(module.default.output)
+  ) throw exportMissing()
+  return module.default as Loaded
+}

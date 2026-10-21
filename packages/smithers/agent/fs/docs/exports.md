@@ -1,9 +1,9 @@
 ---
 title: "Exported members"
-description: "The public surface of @smthrs/fs as one index: 8 namespaces and 44 documented members."
+description: "The public surface of @smthrs/fs as one index: 8 namespaces and 42 documented members."
 ---
 
-The surface of `@smthrs/fs` is 8 namespaces and 44 documented members. Anything
+The surface of `@smthrs/fs` is 8 namespaces and 42 documented members. Anything
 the package exports that this index does not name is internal. For signatures,
 behavior, and errors, see the [API reference](./api.md).
 
@@ -61,8 +61,7 @@ behavior, and errors, see the [API reference](./api.md).
 | Export        | Kind      | Category     | Summary                                            |
 | ------------- | --------- | ------------ | -------------------------------------------------- |
 | `Invocation`  | interface | models       | One materialized invocation.                       |
-| `Service`     | interface | models       | Executes a materialized flow.                      |
-| `FlowInvoker` | class     | services     | The flow invocation service.                       |
+| `FlowInvoker` | service   | services     | Executes a materialized flow.                      |
 | `make`        | const     | constructors | Constructs a flow invoker from an implementation.  |
 | `makeNoop`    | const     | constructors | Constructs an invoker that fails every invocation. |
 | `layerNoop`   | const     | layers       | Provides an invoker that fails every invocation.   |
@@ -73,9 +72,8 @@ behavior, and errors, see the [API reference](./api.md).
 
 | Export    | Kind  | Category | Summary                                                           |
 | --------- | ----- | -------- | ----------------------------------------------------------------- |
-| `Code`    | const | models   | Stable failure codes for routing, parsing, loading, and decoding. |
 | `Code`    | type  | models   | Stable failure codes for routing, parsing, loading, and decoding. |
-| `FsError` | class | errors   | A recoverable file-routing failure.                               |
+| `FsError` | error | errors   | A recoverable file-routing failure.                               |
 
 ## `Incur`
 

@@ -45,7 +45,8 @@ describe("the package manifest", () => {
     for (const [, path] of wildcards) {
       const directory = join(root, dirname(path))
       expect(existsSync(directory)).toBe(true)
-      expect(readdirSync(directory).some((entry) => entry.endsWith(".ts"))).toBe(true)
+      const extension = path.slice(path.lastIndexOf("*") + 1)
+      expect(readdirSync(directory).some((entry) => entry.endsWith(extension))).toBe(true)
     }
   })
 

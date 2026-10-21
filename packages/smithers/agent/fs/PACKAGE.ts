@@ -5,14 +5,18 @@ import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
+  tests: Input.glob("test/**/*.test.{ts,vibe}"),
+  testSources: Input.glob("test/**/*.{ts,vibe}"),
+  compiler: "vibelang",
   cwd: "packages/smithers/agent/fs"
 })
 
 // The manifest augments Route's types, so it needs its own compilation.
 const checkTypes = Smithers.Typecheck({
+  compiler: "vibelang",
   srcs: [
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("type-tests/**/*.ts"),
     Smithers.file("tsconfig.json"),
     Smithers.file("tsconfig.test.json")
@@ -62,7 +66,13 @@ const securityReview = Smithers.SecurityReview({
         "An Incur discovery surface (--mcp, /mcp, /openapi.json, llms) mounting a route that dispatch would refuse.",
         "Route.load's runtime Flow invoked without rechecking that its modelInvocable, capabilities, and effects match the statically discovered route."
       ],
-      paths: ["src/Command.ts", "src/Incur.ts", "src/CommandTree.ts", "src/Route.ts"]
+      paths: [
+        "src/Command.vibe",
+        "src/Incur.vibe",
+        "src/internal/IncurHost.ts",
+        "src/CommandTree.vibe",
+        "src/Route.vibe"
+      ]
     },
     {
       id: "route-module-import",
@@ -74,7 +84,7 @@ const securityReview = Smithers.SecurityReview({
         "FileRouter.scan deriving sourcePath or the ui.tsx companion outside the resolved root (symlink, '..' segment).",
         "Route.load importing a markdown or skill route, or importing before the snapshot copy is taken."
       ],
-      paths: ["src/Route.ts", "src/FileRouter.ts"]
+      paths: ["src/Route.vibe", "src/FileRouter.vibe"]
     },
     {
       id: "command-string-no-shell",
@@ -85,7 +95,7 @@ const securityReview = Smithers.SecurityReview({
         "parseFlags accepting __proto__, constructor, or prototype as an option name, or writing to a prototyped object.",
         "Missing byte, token, or token-length bounds before lexing or flag parsing."
       ],
-      paths: ["src/internal/CommandLine.ts", "src/Command.ts"]
+      paths: ["src/internal/CommandLine.vibe", "src/Command.vibe"]
     },
     {
       id: "input-schema-authority",
@@ -97,7 +107,7 @@ const securityReview = Smithers.SecurityReview({
         "A zod projection that is less strict than the Effect schema and whose output is used instead of decodeInput's result.",
         "scalarRecord or assemble dropping surplus positionals or unknown flags rather than failing strict decoding."
       ],
-      paths: ["src/internal/SchemaBridge.ts", "src/Command.ts", "src/Incur.ts"]
+      paths: ["src/internal/SchemaBridge.vibe", "src/Command.vibe", "src/Incur.vibe", "src/internal/IncurHost.ts"]
     },
     {
       id: "untrusted-object-admission",
@@ -109,7 +119,7 @@ const securityReview = Smithers.SecurityReview({
         "A validated value used after an await without first taking a frozen snapshot.",
         "Missing maxBytes, maxDepth, or maxNodes limits in admitJson for invocation input or output."
       ],
-      paths: ["src/internal/Boundary.ts", "src/Route.ts", "src/FileRouter.ts", "src/FlowInvoker.ts"]
+      paths: ["src/internal/Boundary.ts", "src/Route.vibe", "src/FileRouter.vibe", "src/FlowInvoker.vibe"]
     },
     {
       id: "incur-http-surface",
@@ -122,7 +132,7 @@ const securityReview = Smithers.SecurityReview({
         "Percent-decoding a request path before splitting, so %2F or '..' invents a route boundary.",
         "process.env.COMPLETE or discovery flags diverting a run to an unguarded surface."
       ],
-      paths: ["src/Incur.ts"]
+      paths: ["src/Incur.vibe", "src/internal/IncurHost.ts"]
     }
   ]
 })

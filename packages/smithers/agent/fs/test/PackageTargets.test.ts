@@ -20,6 +20,7 @@ describe("manifest type-test gate", () => {
         const gate = checks.find((target) => target.attrs.tsconfig.path === "tsconfig.types.json")
         console.log(JSON.stringify(gate === undefined ? null : {
           kinds: gate.kinds,
+          compiler: gate.attrs.compiler,
           srcs: gate.attrs.srcs,
           cwd: gate.attrs.cwd,
           buildMode: gate.attrs.buildMode,
@@ -31,8 +32,9 @@ describe("manifest type-test gate", () => {
 
     expect(JSON.parse(result)).toEqual({
       kinds: ["build"],
+      compiler: "vibelang",
       srcs: [
-        { _tag: "Glob", pattern: "src/**/*.ts", exclude: [] },
+        { _tag: "Glob", pattern: "src/**/*.{ts,vibe}", exclude: [] },
         { _tag: "Glob", pattern: "type-tests/**/*.ts", exclude: [] },
         { _tag: "File", path: "tsconfig.json" },
         { _tag: "File", path: "tsconfig.test.json" }

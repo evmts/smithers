@@ -71,6 +71,17 @@ describe("BuildAndCheckTypeScriptPackage leaves the manager to the workspace", (
       "--noEmit"
     ])
   })
+
+  it("checks a package with VibeLang sources with vibelang and changes no other target", () => {
+    const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example" })
+    const vibe = BuildAndCheckTypeScriptPackage({ packageManager, cwd: "packages/example", compiler: "vibelang" })
+    expect(plannedArgv(vibe.check)).toEqual(["pnpm", "exec", "vibelang", "-p", "tsconfig.test.json", "--noEmit"])
+    expect(Target.metadata(vibe.check).attrs).toEqual({
+      ...attrsOf<Typecheck.Attrs>(standard.check),
+      compiler: "vibelang"
+    })
+    expect(Target.metadata(vibe.lib).attrs).toEqual(Target.metadata(standard.lib).attrs)
+  })
 })
 
 describe("BuildAndCheckTypeScriptPackage circular guard", () => {

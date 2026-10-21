@@ -1,10 +1,10 @@
 import type { Effect } from "effect"
-import type * as Command from "../src/Command.ts"
-import type * as FlowInvoker from "../src/FlowInvoker.ts"
-import type { FsError } from "../src/FsError.ts"
-import type * as Route from "../src/Route.ts"
+import type * as Command from "../src/Command.vibe"
+import type * as FlowInvoker from "../src/FlowInvoker.vibe"
+import type { FsError } from "../src/FsError.vibe"
+import type * as Route from "../src/Route.vibe"
 
-declare module "../src/Route.ts" {
+declare module "../src/Route.vibe" {
   interface Manifest {
     readonly "typed/scalar": { readonly input: number; readonly output: number }
     readonly "typed/review": {

@@ -1,0 +1,176 @@
+/**
+ * Incur projection of executable, model-visible module routes.
+ *
+ * @since 0.1.0
+ */
+
+import type { Cli as IncurCli } from "incur"
+import * as CommandTree from "./CommandTree.vibe"
+import * as FlowInvoker from "./FlowInvoker.vibe"
+import { FsError } from "./FsError.vibe"
+import * as IncurHost from "./internal/IncurHost.ts"
+import * as SchemaBridge from "./internal/SchemaBridge.vibe"
+import * as Route from "./Route.vibe"
+
+export { selfSegment } from "./internal/IncurHost.ts"
+
+const mapError = (context: IncurHost.Context, error: FsError): never =>
+  context.error({ code: error.code, exitCode: 1, message: error.description })
+
+// Incur's ok and error callbacks throw transport control signals, so each
+// settles the call as a defect, outside the program whose failures are
+// sanitized.
+function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context): unknown!!FlowInvoker.FlowInvoker {
+  const outcome = exit {
+    const input = selected.schema.decode(selected.schema.assemble(context.args, context.options))
+    const output = FlowInvoker.FlowInvoker.invoke(Object.freeze({
+      name: selected.route.name,
+      flow: selected.flow,
+      input
+    }))
+    return SchemaBridge.encodeOutput(selected.flow.output, output)
+  }
+  if (outcome is Exit.Success(let output)) return context.ok(output)
+  const cause = outcome.cause
+  if (cause.reasons is [{ _tag: "Fail", error: FsError and let error }]) return mapError(context, error)
+  // Host diagnostics stay in Effect's logger, never in Incur's response.
+  provide Logger.LogToStderr = true {
+    logDebug("Incur invocation failed", cause)
+  }
+  if (cause.hasInterrupts()) throw Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason))
+  return mapError(
+    context,
+    new FsError({
+      code: "invocation_unavailable",
+      method: "Incur.execute",
+      description: "The flow invocation failed"
+    })
+  )
+}
+
+function refuse(context: IncurHost.Context, error: FsError): never!! {
+  return mapError(context, error)
+}
+
+function project(route: Route.Route): IncurHost.Projection!! {
+  try {
+    const selected = Effect.timeoutOrElse({
+      duration: "5 seconds",
+      orElse: () =>
+        throw new FsError({
+          code: "load_failed",
+          method: "Incur.project",
+          description: "The route metadata load timed out",
+          path: route.name
+        })
+    }) {
+      const flow = Route.load(route)
+      const schema = SchemaBridge.toCommandSchema(route.input, flow.input)
+      return { route, flow, schema }
+    }
+    return { _tag: "Ready", selected }
+  } catch (error) {
+    return { _tag: "Failed", error }
+  }
+}
+
+function projectAll(tree: CommandTree.CommandTree): ReadonlyMap<Route.Route, IncurHost.Projection>!! {
+  const projections = new Map<Route.Route, IncurHost.Projection>()
+  for (const route of CommandTree.traverse(tree)) projections.set(route, project(route))
+  return projections
+}
+
+function groupedRoutes(tree: CommandTree.CommandTree): ReadonlySet<Route.Route>!FsError {
+  const grouped = new Set<Route.Route>()
+  const stack: Array<CommandTree.CommandTree> = [tree]
+  while (stack.length > 0) {
+    const node = stack.pop()!
+    const route = node.route.getOrUndefined()
+    if (route !== undefined && node.children.size > 0) {
+      if (node.children.has(IncurHost.selfSegment)) {
+        throw new FsError({
+          code: "duplicate_route",
+          method: "Incur.createCli",
+          description: "A child route claims the reserved self segment",
+          path: `${route.name}/${IncurHost.selfSegment}`
+        })
+      }
+      grouped.add(route)
+    }
+    for (const child of node.children.values()) stack.push(child)
+  }
+  return grouped
+}
+
+function hydrate(
+  tree: CommandTree.CommandTree,
+  grouped: ReadonlySet<Route.Route>,
+  tokens: ReadonlyArray<string>,
+  dispatchTokens: ReadonlyArray<string>
+): Option.Option<IncurHost.Selection>!FsError {
+  // Only an unmatched name may fall back to metadata: every other typed
+  // failure has to reach the caller.
+  const resolved = CommandTree.resolve(tree, tokens) catch (error) =>
+    error.code === "unknown_command" ? undefined : throw error
+  if (resolved === undefined) return Option.none()
+  // A name that resolves but cannot be loaded or projected keeps its typed
+  // failure: it is reported, never softened into help output.
+  const consumed = tokens.length - resolved.rest.length
+  const viaSelf = resolved.rest[0] === IncurHost.selfSegment && grouped.has(resolved.route)
+  const flow = Route.load(resolved.route)
+  const schema = SchemaBridge.toCommandSchema(resolved.route.input, flow.input)
+  return Option.some<IncurHost.Selection>({
+    route: resolved.route,
+    flow,
+    schema,
+    dispatch: Object.freeze(dispatchTokens.slice(0, viaSelf ? consumed + 1 : consumed))
+  })
+}
+
+function select(
+  tree: CommandTree.CommandTree,
+  grouped: ReadonlySet<Route.Route>,
+  tokens: ReadonlyArray<string>,
+  dispatchTokens: ReadonlyArray<string>
+): IncurHost.Outcome!! {
+  try {
+    return { _tag: "Selection", selection: hydrate(tree, grouped, tokens, dispatchTokens) }
+  } catch (error) {
+    return { _tag: "Error", error }
+  }
+}
+
+/**
+ * Projects routes onto an Incur CLI while preserving metadata-only discovery.
+ *
+ * Dispatching one command loads only that command's module. Its actual Effect
+ * input schema is then projected into Incur flags and remains the
+ * authoritative decoder. A discovery surface must publish those flags, so the
+ * first discovery request loads every command module once and reuses the
+ * result. Each route has a five-second metadata deadline. Hosts must call
+ * `close()` at shutdown to interrupt an active build and release its cache.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export function createCli(
+  name: string,
+  routes: ReadonlyArray<Route.Route>
+): (IncurCli.Cli & { close: () => Promise<void> })!FsError!FlowInvoker.FlowInvoker {
+  const validated = CommandTree.make(routes)
+  const executable = CommandTree.traverse(validated).filter(Route.isCommandRoute)
+  const tree = CommandTree.make(executable)
+  const grouped = groupedRoutes(tree)
+  const services = Effect.context<FlowInvoker.FlowInvoker>()
+  return IncurHost.mount({
+    name,
+    tree,
+    run: Effect.runPromiseWith(services),
+    programs: {
+      execute,
+      refuse,
+      projectAll,
+      select: (tokens, dispatchTokens) => select(tree, grouped, tokens, dispatchTokens)
+    }
+  })
+}

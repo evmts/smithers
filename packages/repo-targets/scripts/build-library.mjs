@@ -36,7 +36,14 @@ export const copyCommonJsDeclarations = (packageRoot) => {
 export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeoutMs = 90_000 } = {}) => {
   const require = createRequire(join(packageRoot, "package.json"))
   const { build } = require("esbuild")
-  const compiler = join(dirname(require.resolve("typescript/package.json")), "bin/tsc")
+  const src = join(packageRoot, "src")
+  const esm = join(packageRoot, "dist/esm")
+  // vibelang compiles a package's VibeLang and TypeScript sources together;
+  // esbuild cannot read .vibe, so that package's CommonJS comes from its ESM.
+  const vibe = files(src).some((file) => file.endsWith(".vibe"))
+  const compiler = vibe
+    ? join(dirname(require.resolve("vibelang/package.json")), "bin/vibelang")
+    : join(dirname(require.resolve("typescript/package.json")), "bin/tsc")
   rmSync(join(packageRoot, "dist"), { recursive: true, force: true })
   const result = spawnSync(process.execPath, [compiler, "-p", "tsconfig.json"], {
     cwd: packageRoot,
@@ -46,13 +53,15 @@ export const buildLibrary = async (packageRoot, { esmOnly = [], declarationTimeo
   })
   if (result.error) throw new Error(`package compiler failed: ${result.error.message}`, { cause: result.error })
   if (result.status !== 0) throw new Error(`package compiler exited ${result.status ?? result.signal}`)
-  const src = join(packageRoot, "src")
   const cjs = join(packageRoot, "dist/cjs")
-  copyInputDeclarations(src, join(packageRoot, "dist/esm"))
-  const excluded = new Set(esmOnly.map((path) => resolve(src, path)))
+  copyInputDeclarations(src, esm)
+  const input = vibe ? esm : src
+  const excluded = new Set(esmOnly.map((path) => resolve(input, vibe ? path.replace(/\.(?:ts|vibe)$/, ".js") : path)))
   await build({
-    entryPoints: files(src).filter((file) => file.endsWith(".ts") && !file.endsWith(".d.ts") && !excluded.has(file)),
-    outbase: src,
+    entryPoints: vibe
+      ? files(esm).filter((file) => file.endsWith(".js") && !excluded.has(file))
+      : files(src).filter((file) => file.endsWith(".ts") && !file.endsWith(".d.ts") && !excluded.has(file)),
+    outbase: input,
     outdir: cjs,
     format: "cjs",
     bundle: false,

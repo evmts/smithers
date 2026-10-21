@@ -9,13 +9,13 @@
  * @category surfaces
  * @since 0.1.0
  */
-export * as Command from "./Command.ts"
+export * as Command from "./Command.vibe"
 
 /**
  * @category routing
  * @since 0.1.0
  */
-export * as CommandTree from "./CommandTree.ts"
+export * as CommandTree from "./CommandTree.vibe"
 
 /**
  * @category directives
@@ -27,28 +27,28 @@ export * as Directive from "./Directive.ts"
  * @category routing
  * @since 0.1.0
  */
-export * as FileRouter from "./FileRouter.ts"
+export * as FileRouter from "./FileRouter.vibe"
 
 /**
  * @category services
  * @since 0.1.0
  */
-export * as FlowInvoker from "./FlowInvoker.ts"
+export * as FlowInvoker from "./FlowInvoker.vibe"
 
 /**
  * @category errors
  * @since 0.1.0
  */
-export * as FsError from "./FsError.ts"
+export * as FsError from "./FsError.vibe"
 
 /**
  * @category surfaces
  * @since 0.1.0
  */
-export * as Incur from "./Incur.ts"
+export * as Incur from "./Incur.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as Route from "./Route.ts"
+export * as Route from "./Route.vibe"

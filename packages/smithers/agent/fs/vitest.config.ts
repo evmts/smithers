@@ -1,8 +1,10 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     environment: "node",
     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
@@ -10,6 +12,7 @@ export default defineConfig({
     // while a genuine hang still fails the run.
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    include: ["test/**/*.test.ts", "test/**/*.test.vibe"],
     exclude: [...configDefaults.exclude, "test/fixtures/**"],
     coverage: {
       enabled: true,

@@ -38,6 +38,13 @@ export interface Options {
   readonly deps?: ReadonlyArray<Target.AnyTarget> | undefined
   readonly cwd: string
   /**
+   * The checker `check` runs: `vibelang` for a package with VibeLang
+   * sources, which `sources` then names alongside its TypeScript.
+   *
+   * @default tsc
+   */
+  readonly compiler?: "tsc" | "vibelang" | undefined
+  /**
    * The package's TypeScript sources. It feeds every target that reads them:
    * `lib`, `check`, `test`, `lint`, `fmt`, and `circular`. It does not name
    * the published entry point, which is `entry`, so a package that relocates
@@ -218,6 +225,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
   // instead of relying on the `lib` dependency key to carry it.
   const check = Typecheck({
     ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
+    ...(options.compiler === undefined ? {} : { compiler: options.compiler }),
     srcs: [
       sources,
       testSources,

@@ -17,13 +17,16 @@ import * as Target from "./Target.ts"
  * `cwd` is the workspace-relative package directory `tsc` runs in and
  * defaults to the workspace root, so `tsconfig` stays package-relative. A
  * `//` tsconfig is workspace-rooted and is rendered relative to `cwd` before
- * `tsc` sees it.
+ * `tsc` sees it. `compiler` names the checker: `tsc`, or `vibelang` for a
+ * package with VibeLang sources, which checks its `.vibe` and `.ts` files
+ * together. Omitted, it is `tsc` and the target keeps its key.
  *
  * @category schemas
  * @since 0.1.0
  */
 export const Attrs = Schema.Struct({
   packageManager: Schema.optional(PackageManager.PackageManager),
+  compiler: Schema.optional(Schema.Literals(["tsc", "vibelang"])),
   srcs: Schema.Array(Input.Declared),
   deps: Schema.Array(Target.Target),
   tsconfig: Input.File,
@@ -43,8 +46,8 @@ export type Attrs = typeof Attrs.Type
 /**
  * Builds the checking argv from decoded attrs at plan time.
  *
- * `tsc` resolves through `pnpm exec`, matching the pnpm workspace install
- * target. Plain mode runs `tsc -p <tsconfig> --noEmit`, adding
+ * The compiler resolves through `pnpm exec`, matching the pnpm workspace
+ * install target. Plain mode runs `tsc -p <tsconfig> --noEmit`, adding
  * `--incremental` when requested. Build mode runs `tsc -b <tsconfig>` for
  * project references, adding `--force` when `incremental` is false so the
  * check never trusts stale build info.
@@ -52,13 +55,13 @@ export type Attrs = typeof Attrs.Type
 const checkArgv = (attrs: Attrs): ReadonlyArray<string> =>
   attrs.buildMode
     ? PackageManager.exec(attrs.packageManager, [
-      "tsc",
+      attrs.compiler ?? "tsc",
       "-b",
       Input.rootRelative(attrs.cwd, attrs.tsconfig.path),
       ...(attrs.incremental ? [] : ["--force"])
     ])
     : PackageManager.exec(attrs.packageManager, [
-      "tsc",
+      attrs.compiler ?? "tsc",
       "-p",
       Input.rootRelative(attrs.cwd, attrs.tsconfig.path),
       "--noEmit",
@@ -66,7 +69,8 @@ const checkArgv = (attrs: Attrs): ReadonlyArray<string> =>
     ])
 
 /**
- * Checks a package with `tsc --noEmit` or TypeScript build mode.
+ * Checks a package with `tsc --noEmit` or TypeScript build mode, or with
+ * `vibelang` in the same modes.
  *
  * The plan runs `tsc` in `cwd` through the shared {@link Exec.Exec} action.
  * Success carries the {@link Exec.Result} run summary; the target declares no

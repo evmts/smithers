@@ -291,26 +291,26 @@ One materialized invocation. Projections pass it frozen.
 | `flow`  | `Flow.Any` | The loaded flow, from [@smthrs/core](/api/core).                |
 | `input` | `unknown`  | The decoded input; see `CommandSurface` for snapshot semantics. |
 
-### `Service`
-
-Executes a materialized flow.
-
-| Field    | Type                                                          | Description                 |
-| -------- | ------------------------------------------------------------- | --------------------------- |
-| `invoke` | `(invocation: Invocation) => Effect.Effect<unknown, FsError>` | Runs one materialized flow. |
-
 ### `FlowInvoker`
 
 ```ts
-class FlowInvoker extends Context.Service<FlowInvoker, Service>()("/fs/FlowInvoker")
+service FlowInvoker {
+  invoke(invocation: Invocation): unknown!FsError
+}
 ```
 
-The flow invocation service tag, keyed `"/fs/FlowInvoker"`.
+Executes a materialized flow. The VibeLang `service` declaration is both the
+service key, `"@smthrs/fs/src/FlowInvoker#FlowInvoker"`, and, as a type, the
+implementation's shape.
+
+| Member   | Type                                                          | Description                 |
+| -------- | ------------------------------------------------------------- | --------------------------- |
+| `invoke` | `(invocation: Invocation) => Effect.Effect<unknown, FsError>` | Runs one materialized flow. |
 
 ### `FlowInvoker.make`
 
 ```ts
-;((implementation: Service) => Service)
+;((implementation: FlowInvoker) => FlowInvoker)
 ```
 
 Constructs a frozen flow invoker from an implementation. The implementation
@@ -321,7 +321,7 @@ invoking anything.
 ### `FlowInvoker.makeNoop`
 
 ```ts
-;((overrides?: Partial<Service>) => Service)
+;((overrides?: Partial<FlowInvoker>) => FlowInvoker)
 ```
 
 Constructs an invoker that fails every invocation with
@@ -332,7 +332,7 @@ replaces that default; an accessor or non-function override throws
 ### `FlowInvoker.layerNoop`
 
 ```ts
-;((overrides?: Partial<Service>) => Layer.Layer<FlowInvoker>)
+;((overrides?: Partial<FlowInvoker>) => Layer.Layer<FlowInvoker>)
 ```
 
 Provides `makeNoop` as the `FlowInvoker` layer.
@@ -362,23 +362,23 @@ type Code =
   | "invocation_unavailable"
 ```
 
-Stable failure codes for routing, parsing, loading, and decoding, also
-exported as a `Schema.Literals` value for decoding. For the meaning and
-trigger of each code, see the
+Stable failure codes for routing, parsing, loading, and decoding. For the
+meaning and trigger of each code, see the
 [error codes table](./contract.md#error-codes).
 
 ### `FsError`
 
 ```ts
-class FsError extends Schema.TaggedError<FsError>()("flows/fs/FsError", {
-  code: Code,
-  method: Schema.String,
-  description: Schema.String,
-  path: Schema.optional(Schema.String)
-})
+error FsError {
+  code: Code
+  method: string
+  description: string
+  path?: string | undefined
+}
 ```
 
-A recoverable file-routing failure. `method` names the surface that failed so
+A VibeLang `error` declaration: a tagged error class whose `_tag` is
+`"FsError"`, with readonly fields. A recoverable file-routing failure. `method` names the surface that failed so
 a CLI or an agent can report the origin without a stack trace. Raw argv,
 input values, output values, schema issues, and implementation causes are
 deliberately not retained at this boundary.

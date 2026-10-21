@@ -64,7 +64,7 @@ The command name comes from the flow's directory, so this dispatches
 import surface: `./internal/*` and nested `*/index` paths do not resolve.
 
 A runnable, tested version of this program, which also serves the same route
-over HTTP, lives in `examples/agent-command.ts`.
+over HTTP, lives in `examples/agent-command.vibe`.
 
 ## Documentation
 
