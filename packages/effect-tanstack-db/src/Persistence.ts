@@ -31,6 +31,7 @@ import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import type { Registry } from "./Migrations.ts"
+import type { Lock } from "./Outbox.ts"
 
 /**
  * The database could not be opened: no OPFS, no Web Worker, storage refused,
@@ -85,6 +86,13 @@ export interface Options<D extends Database> {
    * its declaration.
    */
   readonly registry?: Registry | undefined
+  /**
+   * The lock service the programs sharing the database elect each persisted synced collection's writer with: only the
+   * program holding lock `persisted-sync:<collection id>` stores what the collection's source syncs, and every other
+   * one watches (`Collection.make`). Give it whenever `coordinator` shares the database between programs. Without
+   * it, every program stores what its own source syncs.
+   */
+  readonly lock?: Lock | undefined
 }
 
 /**
@@ -98,6 +106,8 @@ export interface Service {
   readonly persistence: Option.Option<PersistedCollectionPersistence>
   /** The stores the program declares, which every persisted collection must be one of; none to open any. */
   readonly registry?: Registry | undefined
+  /** The lock persisted synced collections elect their writer with (`Options.lock`); none when each program writes. */
+  readonly lock?: Lock | undefined
 }
 
 /**
@@ -128,6 +138,19 @@ export const unavailable = Metric.counter("persistence_unavailable", {
  */
 export const writeFailures = Metric.counter("persistence_write_failures", {
   description: "Writes to a persisted collection the device couldn't store, so they rolled back",
+  incremental: true
+})
+
+/**
+ * Times a persisted synced collection's source took a role in this program,
+ * by `collection` and `role`: `writer` (it stores what it syncs) or `watcher`
+ * (another program does, and this one's rows come from the device).
+ *
+ * @category metrics
+ * @since 0.2.0
+ */
+export const syncRoles = Metric.counter("persistence_sync_roles", {
+  description: "Times a persisted synced collection's source became its device's writer, or a watcher",
   incremental: true
 })
 
@@ -180,7 +203,11 @@ export const layer = <D extends Database>(options: Options<D>): Layer.Layer<Pers
       )
       const coordinator = options.coordinator?.()
       if (coordinator?.dispose) yield* Effect.addFinalizer(() => Effect.sync(() => coordinator.dispose!()))
-      return Persistence.of({ persistence: Option.some(options.make(database, coordinator)), ...registry })
+      return Persistence.of({
+        persistence: Option.some(options.make(database, coordinator)),
+        ...registry,
+        ...(options.lock === undefined ? {} : { lock: options.lock })
+      })
     })
   )
 

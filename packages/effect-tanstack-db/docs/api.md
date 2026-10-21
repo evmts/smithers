@@ -85,6 +85,26 @@ without `up-to-date` until the next batch. A read of the sync metadata inside a
 transaction hands the core what the transaction holds so far, so the read sees
 its own writes.
 
+With `Persistence`'s `lock`, one program of those sharing the database stores
+what the collection's source syncs: the one holding lock
+`persisted-sync:<id>`, which a program waits for and never steals. Every other
+program runs its source watching: what it writes, empties or commits is
+dropped, and it gets no sync metadata, so it neither reads nor stores resume
+state. Its rows come from the database, through the coordinator, while its
+source still reports the network and marks the collection ready. A watcher that
+comes to hold the lock ends its watching session and starts its source again,
+writing, from what the database stored. A writer that stops lets the lock go
+only once the database has stored, or refused, what it committed, so none of
+its commits lands after the next writer's. A source that throws as it starts
+fails the collection (`markError`), as it would alone, and the program lets
+the lock go. Each role a program's source takes is
+logged as `persisted sync role` at Info level, with `collection` and `role`
+(`writer` or `watcher`), and counted in `Persistence.syncRoles`. So one
+program's snapshot, taken before a row arrived and committed after another
+program stored that row, never erases it. A row reaches a watcher through the
+database, so wait for one with `awaitRow`, not with the sync adapter's own
+receipts, which follow the program's own stream.
+
 ### `Collection.Persist`
 
 ```ts
@@ -110,6 +130,7 @@ interface Collection<A extends object, K extends Key = Key, U extends UtilsRecor
   readonly preload: Effect.Effect<void, LoadFailed>
   readonly restored: Effect.Effect<void, LoadFailed>
   readonly changes: (options?: { readonly initial?: boolean }) => Stream.Stream<ReadonlyArray<Change<A, K>>>
+  readonly awaitRow: (match: (row: A) => boolean, timeout: Duration.Input) => Effect.Effect<A, Cause.TimeoutError>
   readonly insert: (rows: A | ReadonlyArray<A>) => Effect.Effect<Transaction, MutationRefused>
   readonly update: (key: K, recipe: (draft: WritableDeep<A>) => void) => Effect.Effect<Transaction, MutationRefused>
   readonly delete: (keys: K | ReadonlyArray<K>) => Effect.Effect<Transaction, MutationRefused>
@@ -125,6 +146,7 @@ interface Collection<A extends object, K extends Key = Key, U extends UtilsRecor
 | `preload`                    | Starts the sync and waits for the first rows: for a synced collection, the network's. Fails with `LoadFailed`.                                                                                                     |
 | `restored`                   | Starts the collection and waits until the rows kept on the device have loaded, whatever the network does. For a collection that keeps none, the same as `preload`. Fails with `LoadFailed` when the restore fails. |
 | `changes`                    | The change batches from when the stream starts. Without `initial`, every later change, including to rows that existed before; with `initial`, the current rows first.                                              |
+| `awaitRow`                   | The first row `match` accepts, there now or once it shows, however it came: from this program's sync source or, through the database, another program's. Fails with `TimeoutError` past `timeout`.                 |
 | `insert`, `update`, `delete` | Apply at once. Fail with `MutationRefused`. Return the `Transaction`.                                                                                                                                              |
 
 ### `Collection.Change<A, K>`
@@ -271,15 +293,17 @@ interface Options<D extends Database> {
   ) => PersistedCollectionPersistence
   readonly coordinator?: () => Coordinator
   readonly registry?: Migrations.Registry
+  readonly lock?: Outbox.Lock
 }
 ```
 
-| Option        | Is                                                                                                                                                                                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `open`        | Opens the database: `openBrowserWASQLiteOPFSDatabase` in a tab, a file in Node. A throw or rejection means the database is unavailable.                                                                |
-| `make`        | TanStack DB's persistence over the open database, sharing `coordinator` when there is one: `createBrowserWASQLitePersistence({ database, coordinator })`.                                              |
-| `coordinator` | Makes the coordinator that shares one database between a browser's tabs: `new BrowserCollectionCoordinator({ dbName })`.                                                                               |
-| `registry`    | Every store the program keeps (`Migrations.registry`). A persisted collection it doesn't declare, at that version and kind, dies with `Migrations.Undeclared` as it opens, with or without a database. |
+| Option        | Is                                                                                                                                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `open`        | Opens the database: `openBrowserWASQLiteOPFSDatabase` in a tab, a file in Node. A throw or rejection means the database is unavailable.                                                                                                                |
+| `make`        | TanStack DB's persistence over the open database, sharing `coordinator` when there is one: `createBrowserWASQLitePersistence({ database, coordinator })`.                                                                                              |
+| `coordinator` | Makes the coordinator that shares one database between a browser's tabs: `new BrowserCollectionCoordinator({ dbName })`.                                                                                                                               |
+| `registry`    | Every store the program keeps (`Migrations.registry`). A persisted collection it doesn't declare, at that version and kind, dies with `Migrations.Undeclared` as it opens, with or without a database.                                                 |
+| `lock`        | The lock service the programs sharing the database elect each synced collection's writer with (`Collection.make`): `WebLock` in a tab. Give it whenever `coordinator` shares the database. Without it, every program stores what its own source syncs. |
 
 Opens the database and builds the persistence. When the layer closes, the
 coordinator is disposed, then the database closed; a close that fails is
@@ -298,7 +322,8 @@ const DeviceStore = Persistence.layer({
   open: () => openBrowserWASQLiteOPFSDatabase({ databaseName: "app.sqlite" }),
   make: (database, coordinator) =>
     createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
-  coordinator: () => new BrowserCollectionCoordinator({ dbName: "app" })
+  coordinator: () => new BrowserCollectionCoordinator({ dbName: "app" }),
+  lock: WebLock.make(navigator.locks)
 })
 ```
 
@@ -317,20 +342,21 @@ or test that persists nothing.
 
 ### Models
 
-| Type          | Is                                                                                                                                                              |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Persistence` | The service: `{ readonly persistence: Option.Option<PersistedCollectionPersistence>; readonly registry?: Migrations.Registry }`, none when rows stay in memory. |
-| `Database`    | `{ readonly close?: () => Promise<void> \| void }`: whatever `open` returns and `make` builds on.                                                               |
-| `Coordinator` | TanStack DB's `PersistedCollectionCoordinator` with an optional `dispose`, run as the layer closes, before the database.                                        |
+| Type          | Is                                                                                                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Persistence` | The service: `{ readonly persistence: Option.Option<PersistedCollectionPersistence>; readonly registry?: Migrations.Registry; readonly lock?: Outbox.Lock }`, none when rows stay in memory. |
+| `Database`    | `{ readonly close?: () => Promise<void> \| void }`: whatever `open` returns and `make` builds on.                                                                                            |
+| `Coordinator` | TanStack DB's `PersistedCollectionCoordinator` with an optional `dispose`, run as the layer closes, before the database.                                                                     |
 
 ### Metrics and errors
 
-| Export                   | Is                                                                                                                                  |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `unavailable`            | Counter `persistence_unavailable`: times the database couldn't open, so rows stayed in memory.                                      |
-| `restoreMs`              | Histogram `persistence_restore_ms`, by `collection` (its id): milliseconds from making a persisted collection to its rows restored. |
-| `writeFailures`          | Counter `persistence_write_failures`, by `collection` and `operation`: writes to a persisted collection the device couldn't store.  |
-| `PersistenceUnavailable` | `Data.TaggedError` with `cause: unknown`: the database couldn't be opened. `cause` is what the host reported.                       |
+| Export                   | Is                                                                                                                                             |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unavailable`            | Counter `persistence_unavailable`: times the database couldn't open, so rows stayed in memory.                                                 |
+| `restoreMs`              | Histogram `persistence_restore_ms`, by `collection` (its id): milliseconds from making a persisted collection to its rows restored.            |
+| `writeFailures`          | Counter `persistence_write_failures`, by `collection` and `operation`: writes to a persisted collection the device couldn't store.             |
+| `syncRoles`              | Counter `persistence_sync_roles`, by `collection` and `role` (`writer` or `watcher`): roles a synced collection's source took in this program. |
+| `PersistenceUnavailable` | `Data.TaggedError` with `cause: unknown`: the database couldn't be opened. `cause` is what the host reported.                                  |
 
 ## `Outbox`
 
@@ -520,7 +546,9 @@ takes to say it: `true` when the lock was free and this program now holds it,
 after that answer, so a program alone admits its first write, never refusing it
 as a follower's. A program that answered `false` waits in line, and a lock
 granted later is reported through `onLeadershipChange`. Released before the
-lock manager answers, it answers `false`.
+lock manager answers, it answers `false`. A lock manager that refuses the
+request answers `false` too, logged as `outbox lock refused` at Warn level with
+the error's name (`error`); the next `requestLeadership` or `take` asks again.
 
 `take` makes this program lead at once, as the tab a person is using should: it
 steals the lock unless this program leads already, and completes once the

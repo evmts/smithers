@@ -128,6 +128,7 @@ export const CHAT_TELEMETRY = {
     "outbox write withdrawn",
     "outbox write failed",
     "outbox couldn't load its writes",
+    "outbox lock refused",
     "outbox_attempts",
     "outbox_refused",
     "outbox_queued_ms",
@@ -137,6 +138,8 @@ export const CHAT_TELEMETRY = {
     "persistence_restore_ms",
     "persisted write failed",
     "persistence_write_failures",
+    "persisted sync role",
+    "persistence_sync_roles",
     "collection cleanup failed",
   ],
   fields: [
@@ -164,5 +167,6 @@ export const CHAT_TELEMETRY = {
     "smithers.chat.outcome",
     "draft.length",
     "shared",
+    "role",
   ],
 } as const

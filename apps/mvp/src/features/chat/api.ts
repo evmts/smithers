@@ -6,12 +6,14 @@ export type Question = { readonly id: string; readonly answerId: string; readonl
 
 /**
  * What ChatApi did with a question:
- * - `inserted`: 202, both rows inserted in Postgres transaction `txid`;
+ * - `inserted`: 202, both rows inserted in one Postgres transaction;
  * - `existing`: 200, the question was already there, so this was a retry that changed nothing.
  */
-export type Taken = { readonly _tag: "inserted"; readonly txid: number } | { readonly _tag: "existing" }
+export type Taken = { readonly _tag: "inserted" } | { readonly _tag: "existing" }
 
-// 202's body. 200's is `{ txid: null, existing: true }`; its status alone says the question was already there.
+// 202's body, checked whole: the transaction id ChatApi inserted the rows in. 200's is `{ txid: null, existing: true }`;
+// its status alone says the question was already there. The device waits for the question itself, which reaches every
+// tab, so it reads no transaction id (src/features/chat/store.ts `delivered`).
 const Inserted = Schema.Struct({ txid: Schema.Number })
 
 /**
@@ -44,10 +46,10 @@ export const postQuestion = Effect.fn("chat.question.post")(function* (
     if (response.status !== 202) {
       return yield* new QuestionNotTaken({ reason: "refused", status: response.status })
     }
-    const { txid } = yield* HttpClientResponse.schemaBodyJson(Inserted)(response).pipe(
+    yield* HttpClientResponse.schemaBodyJson(Inserted)(response).pipe(
       Effect.mapError(() => new QuestionNotTaken({ reason: "invalid_response", status: 202 })),
     )
-    return { _tag: "inserted", txid } satisfies Taken
+    return { _tag: "inserted" } satisfies Taken
   }).pipe(
     // Interrupting the request, at any step, aborts its fetch (Effect HttpClient), so a stalled body stops too.
     Effect.timeoutOrElse({

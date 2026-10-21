@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { dispatches } from "../../flows/dispatch"
 import { TabRequests } from "../../flows/requests"
 import {
+  type Busy,
   type ChatApiOptions,
   failingWorker,
   idleWorker,
@@ -98,6 +99,19 @@ const switches = async <R, E>(
     sentQuestions: () => runtime.runSync(questions.asked),
     /** Throws a switch of the shape source. */
     shapes: (fault: (switches: ShapeSource.Switches) => Effect.Effect<void>) => runtime.runSync(fault(shapes)),
+  }
+}
+
+/** A faulty tab, with its switches and the offsets of the `messages` shape requests it sent. */
+const withSwitches = async <T extends { readonly runtime: ManagedRuntime.ManagedRuntime<any, any> }>(tab: T) => {
+  const sources = await tab.runtime.runPromise(Effect.service(ShapeSource.Faults))
+  return {
+    ...tab,
+    ...(await switches(tab.runtime)),
+    shapeRequests: () =>
+      tab.runtime.runSync(sources.sent)
+        .filter((url) => url.pathname.endsWith("/messages"))
+        .map((url) => url.searchParams.get("offset")),
   }
 }
 
@@ -439,6 +453,21 @@ describe("sending", () => {
     expect(tab.count(Metric.withAttributes(unsentActions, { action: "discard" }))).toBe(1)
   })
 
+  test("a device store in memory whose shape never answers still sends the question again in time", async () => {
+    // The device store couldn't open, so the conversation restores from the network, which never answers: the wait for
+    // the question counts from the restore, and waits for it as long at most.
+    const { api } = await openChat()
+    const device = nodeDevice({ agent: api })
+    const memory = { ...device, persistence: { ...device.persistence, open: () => Promise.reject(new Error("no OPFS")) } }
+    const tab = await tabOn(
+      openFaultyTab(api, { ...quick, host: memory, confirmWithin: "200 millis" }, (switches) => switches.down()),
+    ).then(withSwitches)
+    asked(tab.actions.ask("hello"))
+    await until(() => expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(1))
+    tab.actions.retry()
+    await until(() => expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(2))
+  })
+
   test("a question Electric doesn't deliver in time is sent again, and shows once Electric delivers it", async () => {
     const tab = await openFaulty({ ...quick, confirmWithin: "200 millis" })
     await until(() => expect(tab.connection()?.status).toBe("up"))
@@ -560,6 +589,43 @@ describe("the device store", () => {
     expect([await leads(first), await leads(second)]).toEqual([false, true])
     await until(() => expect(second.shown().filter((line) => line.startsWith("user unsent"))).toEqual([]))
   })
+
+  test("a tab whose snapshot reaches the device store late never erases a question another tab stored", async () => {
+    // A fresh device's two tabs each start their shape afresh. The second is busy: what it commits reaches the device
+    // store 1.5 s late. Its snapshot, taken before the question, used to land after the first tab stored the question:
+    // it emptied the device of it, and the reload that followed took it from both tabs (docs/work/local-first-conflicts.md).
+    const { api, onApi } = await openChat()
+    for (let seed = 0; seed < 80; seed++) await onApi(api.askElsewhere(`seed ${seed}`))
+    const device = nodeDevice()
+    const busy: Busy = { ms: 0, inFlight: 0 }
+    const down = (switches: ShapeSource.Switches) => switches.down()
+    const one = await tabOn(openFaultyTab(api, { ...quick, host: device }, down)).then(withSwitches)
+    await one.runtime.runPromise(Effect.ignore(one.store.messages.restored))
+    const two = await tabOn(openFaultyTab(api, { ...quick, host: device.busyTab(busy) }, down)).then(withSwitches)
+    await two.runtime.runPromise(Effect.ignore(two.store.messages.restored))
+    const deleted: Array<string> = []
+    for (const tab of [one, two]) {
+      tab.store.messages.tanstack.subscribeChanges((batch) => {
+        for (const change of batch) if (change.type === "delete") deleted.push(String(change.key))
+      })
+    }
+    one.shapes((shapes) => shapes.heal)
+    await until(() => expect(device.stored("chat-messages")).toBe(160), 20_000)
+
+    busy.ms = 1_500
+    two.shapes((shapes) => shapes.heal)
+    // Its snapshot is in: it asks for what comes after it. Its long polls then wait, so the question reaches it only
+    // through the device store.
+    await until(() => expect(two.shapeRequests().some((offset) => offset !== "-1")).toBe(true), 20_000)
+    two.shapes((shapes) => shapes.stall("live"))
+    const { questionId } = await onApi(api.askElsewhere("arrives"))
+    await until(() => expect(one.synced(questionId)).toBe(true), 20_000)
+    await until(() => expect(busy.inFlight).toBe(0), 20_000)
+    two.shapes((shapes) => shapes.heal)
+    await until(() => expect([one.synced(questionId), two.synced(questionId)]).toEqual([true, true]), 20_000)
+    expect(device.stored("chat-messages")).toBe(162)
+    expect(deleted.filter((key) => key === questionId)).toEqual([])
+  }, 90_000)
 
   test("the tab that gets focus leads the outbox at once, and the one that led leads again once that tab closes", async () => {
     const { api, onApi } = await openChat()

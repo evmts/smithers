@@ -732,6 +732,36 @@ export interface NodeDevice extends Host {
   readonly copied: ReadonlyArray<string>
   /** Every path this device's tabs navigated to, in order. */
   readonly navigated: ReadonlyArray<string>
+  /**
+   * The device as one busy tab of it sees it: that tab's coordinator hands the device store each transaction it
+   * committed `busy.ms` late (read at each one), as a tab whose main thread is busy does, and counts those not handed
+   * over yet in `busy.inFlight`.
+   */
+  readonly busyTab: (busy: Busy) => NodeDevice
+}
+
+/** How late a busy tab hands the device store what it committed, and how many it holds now. */
+export interface Busy {
+  ms: number
+  inFlight: number
+}
+
+// TanStack DB's coordinator between a device's tabs, handing the device store what this tab committed `busy.ms` late.
+class LateCoordinator extends BrowserCollectionCoordinator {
+  readonly busy: Busy
+  constructor(dbName: string, busy: Busy) {
+    super({ dbName })
+    this.busy = busy
+  }
+  override async requestApplyCommittedTx(...args: Parameters<BrowserCollectionCoordinator["requestApplyCommittedTx"]>) {
+    this.busy.inFlight++
+    try {
+      if (this.busy.ms > 0) await new Promise((resume) => setTimeout(resume, this.busy.ms))
+      return await super.requestApplyCommittedTx(...args)
+    } finally {
+      this.busy.inFlight--
+    }
+  }
 }
 
 /** A device's own overrides of the host, and `agent`: the ChatApi whose questions its engine answers. */
@@ -843,7 +873,7 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
   const navigated: Array<string> = []
   const engineName = `${device}-engine`
   const turn = deviceTurn()
-  return {
+  const host: Omit<NodeDevice, "busyTab"> = {
     // As main.tsx's: one database per device, shared by its tabs through TanStack DB's coordinator, which Node runs on
     // its own Web Locks and BroadcastChannel.
     persistence: {
@@ -881,6 +911,12 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     copied,
     navigated,
   }
+  const busyTab = (busy: Busy): NodeDevice => ({
+    ...made,
+    persistence: { ...made.persistence, coordinator: () => new LateCoordinator(device, busy) },
+  })
+  const made: NodeDevice = { ...host, busyTab }
+  return made
 }
 
 /**

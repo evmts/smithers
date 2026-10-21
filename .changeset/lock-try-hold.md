@@ -14,7 +14,8 @@ The outbox's leader asks the lock instead of guessing from a timer.
   lock, `false` when another program holds it or waits for it. The outbox
   starts only after that answer, so a program alone admits its first write
   instead of refusing it as a follower's. Released before the lock manager
-  answers, it answers `false`.
+  answers, it answers `false`; a lock manager that refuses the request answers
+  `false` too, logged as `outbox lock refused`.
 - Breaking: `lockLeader`'s `grantWithin` option is removed. Before, a lock
   granted after it (100 ms by default) made a program alone a follower until
   the grant arrived. A `Lock` you implement yourself needs `tryHold`.

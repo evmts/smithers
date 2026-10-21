@@ -37,7 +37,9 @@ scope.
   collection made with `persist`, or with `Collection.persisted`, restores its
   rows from it before the network answers; `restored` waits for them. When the
   database can't open, rows stay in memory: the layer logs
-  `persistence unavailable` and never fails.
+  `persistence unavailable` and never fails. With a `lock`, one of the
+  programs sharing the database stores what each synced collection syncs, and
+  the others take their rows from the database.
 - **Durable writes.** `Outbox.layer` sends writes through
   `@tanstack/offline-transactions`: each is stored before it is sent, sent
   again with the library's backoff until a mutation succeeds or refuses it, and

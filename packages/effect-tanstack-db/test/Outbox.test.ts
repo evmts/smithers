@@ -1,30 +1,14 @@
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
-import {
-  Context,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Metric,
-  Option,
-  Queue,
-  References,
-  Scope,
-  Stream,
-  Tracer
-} from "effect"
+import { Context, Effect, Exit, Fiber, Layer, Metric, Option, Queue, References, Scope, Stream, Tracer } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { Collection, Outbox } from "../src/index.ts"
-import { id, memoryStorage, Note, note, withLogs } from "./fixtures.ts"
+import { id, memoryStorage, Note, note, webLocks, withLogs } from "./fixtures.ts"
 
 // The outbox over TanStack DB's real offline executor, in Node: its storage is the library's `StorageAdapter` in
 // memory, shared by every executor a test starts on it, as IndexedDB is shared by a tab's reloads. The only scripted
 // piece is the mutation, a test's stand-in for a server: each send takes the next outcome the test queued.
 
 type Outcome = "ok" | Outbox.Refused | Outbox.Retry | "defect"
-
-type LockOptions = { readonly steal?: boolean; readonly ifAvailable?: boolean }
 
 // One program alone: it always leads, so tests never wait on an election. Tests of the election pass `leader: undefined`.
 const single: Outbox.Leader = {
@@ -725,45 +709,7 @@ describe("Online.always and leadership", () => {
 })
 
 describe("lockLeader", () => {
-  // A lock service over Node's own Web Locks, shaped as @smthrs/platform-browser's WebLock: `hold` waits for the lock,
-  // or takes it at once with `steal`, and holds it until the scope closes; `tryHold` takes it only if it is free;
-  // `lost` completes when another program steals it. Interrupting the wait withdraws the request. With `answerAfter`,
-  // the lock manager answers each request that much later, as a busy browser does.
-  const locks = (answerAfter = 0): Outbox.Lock => {
-    const request = (name: string, options: LockOptions) =>
-      Effect.gen(function*() {
-        const lost = yield* Deferred.make<void>()
-        const release = yield* Effect.acquireRelease(
-          Effect.callback<(() => void) | undefined>((resume, signal) => {
-            let granted = false
-            const ask = () =>
-              navigator.locks.request(
-                name,
-                options.steal === true ? { steal: true } : options.ifAvailable === true ? { ifAvailable: true } : {
-                  signal
-                },
-                (held) => {
-                  if (held === null) return void resume(Effect.succeed(undefined))
-                  if (signal.aborted) return Promise.resolve()
-                  granted = true
-                  return new Promise<void>((release) => resume(Effect.succeed(release)))
-                }
-              ).catch(() => {
-                if (granted) Deferred.doneUnsafe(lost, Exit.void)
-              })
-            if (answerAfter === 0) ask()
-            else setTimeout(ask, answerAfter)
-          }).pipe(Effect.interruptible),
-          (release) => Effect.sync(() => release?.())
-        )
-        return release === undefined ? Option.none() : Option.some({ lost: Deferred.await(lost) })
-      })
-    return {
-      hold: (name, options) => Effect.map(request(name, options ?? {}), Option.getOrThrow),
-      tryHold: (name) => request(name, { ifAvailable: true })
-    }
-  }
-  const lock = locks()
+  const lock = webLocks()
 
   test("the first program leads; the next waits, and when the first closes it leads and sends what was stored", async () => {
     const world = await setup([new Outbox.Retry({}), "ok"])
@@ -919,7 +865,7 @@ describe("lockLeader", () => {
     const world = await setup(["ok"])
     const name = id("outbox")
     const seen = await scoped(Effect.gen(function*() {
-      const leader = yield* Outbox.lockLeader({ lock: locks(300), name })
+      const leader = yield* Outbox.lockLeader({ lock: webLocks({ answerAfter: 300 }), name })
       const { notes, outbox } = yield* start({ ...world, leader })
       // The outbox has started: its first write is admitted at once, never refused as a follower's.
       const write = yield* Effect.exit(save(outbox, notes, note("a", 1)))
@@ -947,6 +893,32 @@ describe("lockLeader", () => {
       return { firstLeads, secondLeads, again }
     }))
     expect(seen).toEqual({ firstLeads: true, secondLeads: false, again: false })
+  })
+
+  test("a lock manager that refuses the request leaves the program not leading, logged, and asked again next time", async () => {
+    const name = id("outbox")
+    const asked: Array<string> = []
+    // A lock manager refuses with an error, or with anything else a browser throws.
+    const refusals: Array<unknown> = [new DOMException("reserved", "NotSupportedError"), "refused"]
+    const refusing: Outbox.Lock = {
+      hold: () => Effect.never,
+      tryHold: (lockName) => Effect.andThen(Effect.sync(() => asked.push(lockName)), Effect.die(refusals.shift()))
+    }
+    const { result, logs } = await withLogs(
+      Effect.scoped(Effect.gen(function*() {
+        const leader = yield* Outbox.lockLeader({ lock: refusing, name })
+        const first = yield* Effect.promise(() => leader.requestLeadership())
+        const again = yield* Effect.promise(() => leader.requestLeadership())
+        return { first, again, leads: leader.isLeader() }
+      })).pipe(Effect.provide(ownMetrics()))
+    )
+    expect(result).toEqual({ first: false, again: false, leads: false })
+    expect(asked).toEqual([name, name])
+    expect(
+      logs.filter(({ message }) => (message as Array<unknown>)[0] === "outbox lock refused").map(({ annotations }) =>
+        annotations.error
+      )
+    ).toEqual(["NotSupportedError", "string"])
   })
 
   test("a program let go before its lock manager answers answers that it doesn't lead", async () => {

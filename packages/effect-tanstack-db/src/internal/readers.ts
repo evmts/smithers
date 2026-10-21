@@ -80,6 +80,33 @@ export const changes = <A extends object, K extends Key>(
     return Stream.fromQueue(queue)
   }))
 
+/**
+ * The first row that satisfies `match`: one there now, or the first a change
+ * then shows. It stops listening once it has one, or is interrupted.
+ *
+ * @category reads
+ * @since 0.2.0
+ */
+export const awaitRow = <A extends object, K extends Key>(
+  collection: Pick<TanStackCollection<A, K, any>, "subscribeChanges">,
+  match: (row: A) => boolean
+): Effect.Effect<A> =>
+  Effect.callback<A>((resume) => {
+    let found = false
+    // TanStack DB hands over the rows there now inside `subscribeChanges`, before it returns the subscription.
+    const listening: { subscription?: { readonly unsubscribe: () => void } } = {}
+    const subscription = collection.subscribeChanges((batch) => {
+      const shown = batch.find((message) => message.type !== "delete" && match(message.value))
+      if (shown === undefined) return
+      found = true
+      listening.subscription?.unsubscribe()
+      resume(Effect.succeed(shown.value))
+    }, { includeInitialState: true })
+    listening.subscription = subscription
+    if (found) subscription.unsubscribe()
+    return Effect.sync(() => subscription.unsubscribe())
+  })
+
 const change = <A extends object, K extends Key>(message: ChangeMessage<A, K>): Change<A, K> => ({
   type: message.type,
   key: message.key,

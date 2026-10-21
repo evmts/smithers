@@ -66,7 +66,11 @@ A collection synced from an Electric shape, cleaned up when the scope closes.
   resumes from the stored handle and offset instead of the start. A new
   `schemaVersion` drops the rows kept under the old one and syncs from the
   start. Synced rows are stored a moment after they show, so a program closed
-  at once may sync them again next time.
+  at once may sync them again next time. With `Persistence`'s `lock`, one of
+  the programs sharing the database stores the shape's rows and every other
+  one watches (`Collection.make`): a watcher's rows come from the database, so
+  its `awaitTxId` and `awaitMatch`, which follow its own stream, can answer
+  before the row shows there. Wait for a row with `awaitRow` instead.
 
 ### `ElectricCollection.Options<A, E, R>`
 

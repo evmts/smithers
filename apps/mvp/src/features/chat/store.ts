@@ -24,7 +24,7 @@ import { ChatDraftsStore, outboxUpgrade } from "../../device/registry"
 import type { ChatDraftV1 } from "../../device/history"
 import { OutboxWrites } from "../../outbox"
 import { ViewsStore } from "../views/store"
-import { ChatClient, type Taken } from "./api"
+import { ChatClient } from "./api"
 import { PAGE_SIZE, SHAPE_ROUTE } from "./contract"
 import { askFailures, connectionDrops, firstAnswerText } from "./metrics"
 import {
@@ -295,15 +295,16 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
 
   // --- Sending: the outbox's `ask` mutation (docs/decisions/0002-local-first.md §3) ---
 
-  // Waits until Electric delivers the question: by the transaction id ChatApi inserted it in, or, for a question that
-  // was already there (a resend, 200), by its id, unless the device already has it.
-  // The question's own conversation: the home one, or the branch's it was asked in.
-  const delivered = (taken: Taken, row: Asking) =>
+  // Waits until the question shows in the device's rows, of its own conversation (the home one, or the branch's it was
+  // asked in): there already (a resend, 200), or once Electric delivers it. It arrives through this tab's shape when
+  // this tab writes the device's rows, or from the tab that does (Collection.make's one writer), so the wait is on the
+  // row, never on this tab's own stream. Rows arrive only once the device has restored the conversation, so the wait
+  // counts from then, and the restore waits as long at most: a device store in memory restores from the network.
+  const delivered = (row: Asking) =>
     Effect.gen(function* () {
       const synced = row.conversationId === undefined ? messages : (yield* open(row.conversationId)).messages
-      if (taken._tag === "inserted") return yield* synced.awaitTxId(taken.txid, confirmWithin)
-      if (Option.isSome(yield* synced.get(row.id))) return
-      yield* synced.awaitMatch((change) => change.value.id === row.id, confirmWithin)
+      yield* Effect.ignore(Effect.timeout(synced.restored, confirmWithin))
+      yield* synced.awaitRow((message) => message.id === row.id, confirmWithin)
     })
 
   // This device's agent answers the question ChatApi took: `chat/Answer`, with the answer's id as its execution id. It
@@ -370,7 +371,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       )
       yield* Effect.annotateCurrentSpan({ taken: taken._tag })
       yield* answer(row)
-      yield* delivered(taken, row).pipe(Effect.mapError(() => new Outbox.Retry({})))
+      yield* delivered(row).pipe(Effect.mapError(() => new Outbox.Retry({})))
       yield* Effect.logInfo("question stored").pipe(Effect.annotateLogs({ taken: taken._tag }))
     }).pipe(
       Effect.annotateLogs({ feature: "chat", questionId: row.id, answerId: row.answerId }),

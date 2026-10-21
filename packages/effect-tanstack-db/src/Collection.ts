@@ -26,7 +26,9 @@ import {
   type WritableDeep
 } from "@tanstack/db"
 import { persistedCollectionOptions } from "@tanstack/db-sqlite-persistence-core"
+import type * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
@@ -34,10 +36,12 @@ import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import type * as Stream from "effect/Stream"
 import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "./internal/model.ts"
-import { changes, mutate, preload, release, toArray } from "./internal/readers.ts"
+import { oneWriter } from "./internal/oneWriter.ts"
+import { awaitRow, changes, mutate, preload, release, toArray } from "./internal/readers.ts"
 import { wholeTransactions } from "./internal/wholeTransactions.ts"
 import { declared } from "./Migrations.ts"
-import { Persistence, restoreMs, writeFailures } from "./Persistence.ts"
+import type { Lock } from "./Outbox.ts"
+import { Persistence, restoreMs, syncRoles, writeFailures } from "./Persistence.ts"
 
 export { LoadFailed, MutationRefused, TransactionFailed } from "./internal/model.ts"
 export type { Change, Key, Transaction } from "./internal/model.ts"
@@ -88,6 +92,13 @@ export interface Collection<A extends object, K extends Key = Key, U extends Uti
    * publishes. With `initial`, the current rows are the first batch.
    */
   readonly changes: (options?: { readonly initial?: boolean }) => Stream.Stream<ReadonlyArray<Change<A, K>>>
+  /**
+   * The first row that satisfies `match`, there now or once it shows, however
+   * it came: from this program's sync source, or from another program through
+   * the database they share. Fails with `TimeoutError` when none has within
+   * `timeout`.
+   */
+  readonly awaitRow: (match: (row: A) => boolean, timeout: Duration.Input) => Effect.Effect<A, Cause.TimeoutError>
   /** Inserts rows. They show at once. */
   readonly insert: (rows: A | ReadonlyArray<A>) => Effect.Effect<Transaction, MutationRefused>
   /** Changes one row through a draft. The change shows at once. */
@@ -135,6 +146,18 @@ const indexing = { autoIndex: "eager", defaultIndexType: BasicIndex } as const
  * `Persistence.restoreMs`. Without a database (`Persistence.memory`, or one
  * that couldn't open), the rows stay in memory.
  *
+ * With `Persistence`'s `lock`, the sync source stores what it syncs in one
+ * program only: the one holding lock `persisted-sync:<id>`, which it
+ * waits for and never steals. Every other program sharing the database runs
+ * its source watching: nothing it syncs is stored or shown, so its rows come
+ * from the database through the coordinator, and its source still reports the
+ * network and marks the collection ready. A watcher that comes to hold the
+ * lock starts its source again, writing. Each role is logged as
+ * `persisted sync role` and counted in `Persistence.syncRoles`. So a
+ * program's late snapshot never erases rows another program stored, and a
+ * row reaches a watcher through the database: wait for it with `awaitRow`,
+ * not with a sync adapter's own receipts.
+ *
  * @category constructors
  * @since 0.1.0
  */
@@ -155,16 +178,21 @@ export function make<A extends object, K extends Key, U extends UtilsRecord = Ut
   const config = { ...options, ...indexing, gcTime: 0, schema: Schema.toStandardSchemaV1(schema) }
   if (settings === undefined) return create<A, K, U>(config)
   return Effect.gen(function*() {
-    const { persistence, registry } = yield* Persistence
+    const { persistence, registry, lock } = yield* Persistence
     yield* mustBeDeclared(registry, options.id, "synced", settings.persist.schemaVersion)
     if (Option.isNone(persistence)) return yield* create<A, K, U>(config)
+    // Each of the source's transactions reaches the persisted core whole, so none crosses a hydration cycle; with a
+    // lock, the source stores what it syncs in one program only. A persisted synced collection is always eager: its
+    // network-first restore refuses on-demand sync.
+    const sync = lock === undefined
+      ? wholeTransactions(options.sync)
+      : yield* elected(options.sync, lock, `persisted-sync:${options.id}`, options.id!)
     // Network-first with no wait: restored rows show at once, and the readiness of the restore is observable.
     return yield* timedRestore(
       create<A, K, U>(
         persistedCollectionOptions({
           ...config,
-          // Each of the source's transactions reaches the persisted core whole, so none crosses a hydration cycle.
-          sync: wholeTransactions(options.sync),
+          sync,
           persistence: persistence.value,
           schemaVersion: settings.persist.schemaVersion,
           initialRender: { strategy: "network-first", networkTimeoutMs: 0 }
@@ -173,6 +201,33 @@ export function make<A extends object, K extends Key, U extends UtilsRecord = Ut
     )
   })
 }
+
+// `sync`, writing only in the program that holds the collection's lock (internal/oneWriter.ts), its turn at the lock
+// run in the background with the program's services, and each role it takes logged and counted.
+const elected = <C extends { readonly sync: (params: never) => unknown }>(
+  sync: C,
+  lock: Lock,
+  name: string,
+  id: string
+) =>
+  Effect.gen(function*() {
+    const context = yield* Effect.context<never>()
+    const fork = Effect.runForkWith(context)
+    const run = Effect.runSyncWith(context)
+    return oneWriter(sync, {
+      lock,
+      name,
+      fork: (turn) => {
+        const fiber = fork(turn)
+        return () => fiber.interruptUnsafe()
+      },
+      became: (role) =>
+        run(Effect.andThen(
+          Metric.update(Metric.withAttributes(syncRoles, { collection: id, role }), 1),
+          Effect.logInfo("persisted sync role").pipe(Effect.annotateLogs({ collection: id, role }))
+        ))
+    })
+  })
 
 // A persisted collection the registry doesn't declare, at this version and kind, is a defect: it would skip its
 // migrations. Without a registry, any collection opens.
@@ -342,6 +397,7 @@ const wrap = <A extends object, K extends Key, U extends UtilsRecord>(
   preload: preload(tanstack),
   restored: restored(tanstack),
   changes: (options) => changes(tanstack, options),
+  awaitRow: (match, timeout) => awaitRow(tanstack, match).pipe(Effect.timeout(timeout)),
   insert: (rows) => mutate("insert", () => tanstack.insert(Array.isArray(rows) ? [...rows] : rows as A)),
   update: (key, recipe) => mutate("update", () => tanstack.update(key, recipe)),
   delete: (keys) => mutate("delete", () => tanstack.delete(Array.isArray(keys) ? [...keys] : keys as K))

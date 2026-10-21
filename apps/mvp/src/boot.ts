@@ -275,9 +275,12 @@ export const appLayer = <S = never>(
     Layer.provideMerge(Clipboard.layer(host.clipboard)),
     // The device store opens through the leading tab's engine worker; if this tab's worker fails, it opens in memory
     // at once instead of waiting for a leader that will never answer.
-    // Every persisted collection must be one the device's registry declares, at its version (decision 0021).
+    // Every persisted collection must be one the device's registry declares, at its version (decision 0021). One tab
+    // stores what each synced collection syncs: the one holding its lock on the host's lock service (decision 0002 §1).
     Layer.provideMerge(
-      Layer.unwrap(Effect.map(failFastOnEngine({ ...host.persistence, registry: deviceRegistry }), Persistence.layer)),
+      Layer.unwrap(
+        Effect.map(failFastOnEngine({ ...host.persistence, registry: deviceRegistry, lock: host.lock }), Persistence.layer),
+      ),
     ),
     // Built before the device store: the leading tab's engine worker serves the store's SQLite, so this tab starts
     // its worker first.

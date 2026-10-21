@@ -820,6 +820,8 @@ export const lockLeader = (options: {
           })
         )
         : options.lock.hold(options.name, how === "steal" ? { steal: true } : undefined)
+    // A lock manager that refuses the request (a defect of the lock service) leaves this program not leading: whoever
+    // waits hears so, and the next `requestLeadership` or `take` asks again.
     const hold = (how: "wait" | "steal" | { readonly taken: () => void }) => {
       holding = fork(
         Effect.scoped(
@@ -828,10 +830,24 @@ export const lockLeader = (options: {
             Effect.tap(() => Effect.sync(() => set(true))),
             Effect.flatMap((held) => held.lost)
           )
-        ).pipe(Effect.andThen(Effect.sync(() => {
-          set(false)
-          hold("wait")
-        })))
+        ).pipe(
+          Effect.andThen(Effect.sync(() => {
+            set(false)
+            hold("wait")
+          })),
+          Effect.catchDefect((defect) =>
+            Effect.andThen(
+              Effect.logWarning("outbox lock refused").pipe(
+                Effect.annotateLogs({ error: defect instanceof Error ? defect.name : typeof defect })
+              ),
+              Effect.sync(() => {
+                holding = undefined
+                set(false)
+                tell(false)
+              })
+            )
+          )
+        )
       )
     }
     // Interrupted at once, so a hold let go never leads: a wait is withdrawn, a held lock released.

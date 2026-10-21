@@ -1,8 +1,9 @@
 import { createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
-import { Effect, Logger, References, Schema } from "effect"
+import { Deferred, Effect, Exit, Logger, Option, References, Schema } from "effect"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
+import type { Outbox } from "../src/index.ts"
 import { Persistence } from "../src/index.ts"
 
 // Rows the suites store, and a logger that records what the package logs.
@@ -62,5 +63,47 @@ export const memoryStorage = () => {
     delete: async (key: string) => void entries.delete(key),
     keys: async () => [...entries.keys()],
     clear: async () => entries.clear()
+  }
+}
+
+/**
+ * A lock service over Node's own Web Locks, shaped as @smthrs/platform-browser's WebLock: `hold` waits for the lock,
+ * or takes it at once with `steal`, and holds it until the scope closes; `tryHold` takes it only if it is free; `lost`
+ * completes when another program steals it. Interrupting the wait withdraws the request. Lock names are `prefix`'s,
+ * as each browser has its own Web Locks; with `answerAfter`, the lock manager answers each request that much later, as
+ * a busy browser does.
+ */
+export const webLocks = (options: { readonly prefix?: string; readonly answerAfter?: number } = {}): Outbox.Lock => {
+  const prefix = options.prefix ?? ""
+  const answerAfter = options.answerAfter ?? 0
+  const request = (name: string, how: { readonly steal?: boolean; readonly ifAvailable?: boolean }) =>
+    Effect.gen(function*() {
+      const lost = yield* Deferred.make<void>()
+      const release = yield* Effect.acquireRelease(
+        Effect.callback<(() => void) | undefined>((resume, signal) => {
+          let granted = false
+          const ask = () =>
+            navigator.locks.request(
+              `${prefix}${name}`,
+              how.steal === true ? { steal: true } : how.ifAvailable === true ? { ifAvailable: true } : { signal },
+              (held) => {
+                if (held === null) return void resume(Effect.succeed(undefined))
+                if (signal.aborted) return Promise.resolve()
+                granted = true
+                return new Promise<void>((release) => resume(Effect.succeed(release)))
+              }
+            ).catch(() => {
+              if (granted) Deferred.doneUnsafe(lost, Exit.void)
+            })
+          if (answerAfter === 0) ask()
+          else setTimeout(ask, answerAfter)
+        }).pipe(Effect.interruptible),
+        (release) => Effect.sync(() => release?.())
+      )
+      return release === undefined ? Option.none() : Option.some({ lost: Deferred.await(lost) })
+    })
+  return {
+    hold: (name, how) => Effect.map(request(name, how ?? {}), Option.getOrThrow),
+    tryHold: (name) => request(name, { ifAvailable: true })
   }
 }

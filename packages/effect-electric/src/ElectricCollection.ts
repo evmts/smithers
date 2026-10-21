@@ -145,7 +145,11 @@ export interface ElectricCollection<A extends object>
   readonly sync: Stream.Stream<SyncEvent>
   /** Sends every request waiting out the sync policy now, and restarts a stopped shape where it stopped. */
   readonly reconnect: Effect.Effect<void>
-  /** Waits until Electric delivers transaction `txid` and TanStack DB has applied it. */
+  /**
+   * Waits until Electric delivers transaction `txid` and TanStack DB has applied it. It follows this program's own
+   * stream: a persisted collection whose rows another program stores (`Persistence`'s `lock`) gets them from the
+   * database, so wait for a row there with `awaitRow`.
+   */
   readonly awaitTxId: (txid: number, timeout: Duration.Input) => Effect.Effect<void, AwaitTimeout | SyncFailed>
   /**
    * Waits until Electric delivers a change `match` accepts and TanStack DB has

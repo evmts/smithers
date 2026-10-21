@@ -71,12 +71,11 @@ const send = (row: CloneRow) =>
     }
     const accepted = dispatched.success.value
     yield* startSync
-    const delivered = accepted.txid !== null
-      ? store.repositories.awaitTxId(accepted.txid, store.confirmWithin)
-      : Effect.flatMap(store.repositories.get(accepted.id), (found) =>
-        Option.isSome(found)
-          ? Effect.void
-          : store.repositories.awaitMatch((change) => change.value.id === accepted.id, store.confirmWithin))
+    // The repository's row reaches every tab of the device, the one that stores the shape's rows and the ones that
+    // watch, so the wait is on the row, there already or once it shows. Rows show only once the device has restored
+    // them, so the wait counts from then, and the restore waits as long at most.
+    yield* Effect.ignore(Effect.timeout(store.repositories.restored, store.confirmWithin))
+    const delivered = store.repositories.awaitRow((repository) => repository.id === accepted.id, store.confirmWithin)
     if ((yield* Effect.result(delivered))._tag === "Failure") {
       yield* put<CloneRow>(store.clones, row.id, { ...row, status: "failed" })
       return yield* Effect.logWarning("repo.clone.unconfirmed")

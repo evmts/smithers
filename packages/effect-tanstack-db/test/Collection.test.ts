@@ -142,6 +142,48 @@ describe("changes", () => {
   })
 })
 
+describe("awaitRow", () => {
+  // A predicate that counts the rows it is asked about, so a test sees whether anything still listens.
+  const counting = (accept: (row: Note) => boolean) => {
+    const asked = { count: 0 }
+    return { asked, match: (row: Note) => (asked.count++, accept(row)) }
+  }
+
+  test("answers a row there now at once, and one that shows later once it does; other changes and deletes don't count", async () => {
+    const seen = await run(Effect.gen(function*() {
+      const collection = yield* notes([note("a", 1)])
+      yield* collection.preload
+      const now = counting((row) => row.id === "a")
+      const there = yield* collection.awaitRow(now.match, "1 second")
+      const soon = counting((row) => row.n === 3)
+      const later = yield* Effect.forkChild(collection.awaitRow(soon.match, "5 seconds"), { startImmediately: true })
+      yield* collection.insert(note("b", 2))
+      yield* collection.delete("a")
+      yield* collection.update("b", (draft) => void (draft.n = 3))
+      const shown = yield* Fiber.join(later)
+      // Once each has its row, neither listens: a later change isn't even looked at.
+      const before = [now.asked.count, soon.asked.count]
+      yield* collection.insert(note("c", 3))
+      return { there: there.id, shown: shown.id, before, after: [now.asked.count, soon.asked.count] }
+    }))
+    expect({ there: seen.there, shown: seen.shown }).toEqual({ there: "a", shown: "b" })
+    expect(seen.after).toEqual(seen.before)
+  })
+
+  test("fails with TimeoutError when no row shows in time, and stops listening", async () => {
+    const seen = await run(Effect.gen(function*() {
+      const collection = yield* notes()
+      const never = counting((row) => row.id === "never")
+      const waited = yield* Effect.exit(collection.awaitRow(never.match, "20 millis"))
+      const asked = never.asked.count
+      yield* collection.insert(note("never", 1))
+      return { waited, after: never.asked.count - asked }
+    }))
+    expect(Exit.isFailure(seen.waited) && Cause.squash(seen.waited.cause)).toMatchObject({ _tag: "TimeoutError" })
+    expect(seen.after).toBe(0)
+  })
+})
+
 describe("make, over a sync adapter", () => {
   // A sync adapter that serves `rows`, writes back what its handler persists, and fails the way a test asks.
   const adapter = (options: {

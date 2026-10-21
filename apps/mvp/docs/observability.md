@@ -78,6 +78,8 @@ Logs:
 | `collection cleanup failed` | a collection's cleanup rejected as its scope closed (`@smthrs/effect-tanstack-db`) | Warn | `collection` (its id), `error` (the error's name, never its message) |
 | `persistence unavailable` | the device store's database couldn't open, so rows stay in memory (`@smthrs/effect-tanstack-db`) | Warn | `error` (the error's tag) |
 | `persisted write failed` | the device couldn't store a write to a persisted collection, such as an unsent question, so it rolled back; TanStack DB fails one whose coordinator tab closed mid-write (`IndeterminateCommitError`) (`@smthrs/effect-tanstack-db`) | Warn | `collection` (its id), `operation` (`insert`, `update`, `delete`), `error` (the error's name, never its message) |
+| `persisted sync role` | this tab's source for a synced collection took a role: `writer`, the one tab of the device that stores what the shape syncs (it holds the collection's lock, `persisted-sync:<id>`), or `watcher`, a tab whose rows come from the device store while its shape only tells it how the network is (`@smthrs/effect-tanstack-db`, decision 0002 §1) | Info | `collection` (its id), `role` |
+| `outbox lock refused` | the browser's lock manager refused the outbox's lock request, so this tab doesn't lead; it asks again on its next focus (`@smthrs/effect-tanstack-db`) | Warn | `error` (the error's name) |
 | `outbox couldn't load its writes` | the outbox's storage couldn't be read at start (`@smthrs/effect-tanstack-db`) | Warn | |
 | `outbox write failed` | a send died with a defect; it is never sent again (`@smthrs/effect-tanstack-db`) | Error | `name`, `outcome: defect` |
 | `session loaded` | the tab learned who is signed in (`features/auth`) | Info | `feature: auth`, `signedIn`; never the login |
@@ -133,6 +135,7 @@ Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smt
 | `persistence_restore_ms` | histogram | `collection`: from creating a persisted collection to its rows restored |
 | `persistence_unavailable` | counter | the database couldn't open |
 | `persistence_write_failures` | counter | `collection`, `operation`: writes to a persisted collection the device couldn't store |
+| `persistence_sync_roles` | counter | `collection`, `role` = `writer` or `watcher`: roles a tab's source took for a synced collection; one `writer` per device at a time |
 | `smithers_web_sign_in_presses` | counter | Sign in with GitHub presses |
 | `smithers_web_sign_outs` | counter | `outcome` = `signed_out` or `failed` |
 | `smithers_web_device_wipes` | counter | `outcome` = `wiped` or `failed` |
