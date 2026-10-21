@@ -2,7 +2,7 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Context, type Effect, Layer, Schema } from "effect"
 import { COPY_KINDS, isFilePath, isRepository, MAX_BLOB_BYTES, SHA_PATTERN } from "./contract"
-import { About, CloneAccepted, Refs, TreeListing } from "./schema"
+import { About, CloneAccepted, CloneLaunched, Refs, TreeListing } from "./schema"
 
 // The repository flows (decision 0006 §1, docs/features/repo.md#flows): `repo/tree` lists a cloned repository's files
 // at a commit, `repo/read` reads one file there, and `repo/refs` lists its branches and tags. `repo/clone` asks RepoApi
@@ -249,12 +249,35 @@ export type CloneFailure = typeof CloneFailure.Type
 
 const clonePayload = { repo: RepoName }
 
-/** The step: ask RepoApi for the clone. */
+/** The step: ask RepoApi for the clone, which it persists and answers at once. */
 export const RequestClone = Action.make("repo/clone/request", {
   payload: clonePayload,
   success: CloneAccepted,
   error: CloneFailure,
   retryPolicy: ONCE,
+})
+
+/**
+ * How long a launch keeps trying while RepoApi or its Durable Object can't be reached: 1 s doubling to 15 s, for at
+ * most 2 minutes. A refusal is final.
+ */
+export const LAUNCH_RETRY = RetryPolicy.make({
+  initialMs: 1_000,
+  factor: 2,
+  maxMs: 15_000,
+  expirationMs: 2 * 60_000,
+  nonRetryable: ["@smthrs/mvp/repo/RepoCloneRefused"],
+})
+
+/**
+ * The step: start the remote `repo/Clone` for the attempt the request persisted. Starting it again changes nothing, so
+ * the engine tries it again after a failure, and again on this device's next boot after a crash.
+ */
+export const LaunchClone = Action.make("repo/clone/launch", {
+  payload: { repo: RepoName, cloneId: Schema.String },
+  success: CloneLaunched,
+  error: CloneFailure,
+  retryPolicy: LAUNCH_RETRY,
 })
 
 /** `repo/clone { repo }`: asks RepoApi to clone a public GitHub repository into Code Storage. */
@@ -268,7 +291,12 @@ export const RepoCloneRequest = Flow.make("repo/clone", {
   payload: clonePayload,
   success: CloneAccepted,
   error: CloneFailure,
-  body: Node.capture({ action: RequestClone.name }, (payload) => RequestClone.call(payload)),
+  body: Node.capture({ request: RequestClone.name, launch: LaunchClone.name }, (payload) =>
+    RequestClone.call(payload).pipe(
+      // The request's answer is the flow's: the launch only starts what it persisted.
+      Node.bindPlanned(Node.capture({ launch: LaunchClone.name }, (accepted) =>
+        LaunchClone.call({ repo: payload.repo, cloneId: accepted.cloneId }).pipe(Node.andThen(Node.succeed(accepted))))),
+    )),
 }).annotate(Flow.Placement, Placement.client())
 
 /** `owner/name` as its two parts; `RepoName` has checked it. */

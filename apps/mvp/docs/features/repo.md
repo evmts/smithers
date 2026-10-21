@@ -9,8 +9,10 @@ browser                         ChatApi (Cloudflare)                            
 Clone, /clone, the agent
   └ repo/clone (engine worker)
      ── POST /api/repos ──────▶ RepoApi: sign-in, Member, bounds, REPO_MAX_REPOSITORIES
-            202 {txid} ◀──────── INSERT repositories 'cloning' ── FlowStarter ─┐
-                                 FlowExecution Durable Object (alarm) ◀────────┘
+            202 {txid, cloneId} ◀ INSERT repositories 'cloning'   (answers at once, starts nothing)
+     ── POST /api/repos/launch ▶ RepoApi: the row still holds cloneId? ── FlowStarter ─┐
+            202 {launched}  (the step retries a 503)                                 │
+                                 FlowExecution Durable Object (alarm) ◀─────────────┘
                                    repo/Clone: Inspect ── HEAD (git smart HTTP) + size (REST) ──▶ GitHub
                                                   └── admission (Postgres, one row lock)
                                                Import ── POST /api/repos {upstream: public} ────▶ Code Storage
@@ -35,7 +37,8 @@ about        ◀── GET /api/repos/<o>/<n>/about ◀── immutable cache (b
 
 | Route | Who | Answers |
 |---|---|---|
-| `POST /api/repos` `{ owner, name }` | signed in | `202 { txid, id, attempt }` for a new clone or Try again on a `failed` or `capacity` row; `200 { txid: null, id, status }` for a row already `cloning` or `ready` (a `cloning` row's execution is started again under its own [execution id](#execution-ids), which changes nothing) |
+| `POST /api/repos` `{ owner, name }` | signed in | persists the request and answers at once, starting nothing: `202 { txid, id, attempt, cloneId }` for a new clone or Try again on a `failed` or `capacity` row; `200 { txid: null, id, status, cloneId }` for a row already `cloning` or `ready` |
+| `POST /api/repos/launch` `{ owner, name, cloneId }` | signed in | starts the durable `repo/Clone` for attempt `cloneId` under its own [execution id](#execution-ids), so starting it again changes nothing: `202 { launched: true }` while the row holds that attempt `cloning`; `200 { launched: false, status }` for an attempt the row no longer holds or one that settled; `503 unavailable` when the Durable Object couldn't take it, and the row stays `cloning` for the next launch |
 | `GET /api/shapes/repositories` | anyone | Electric's `repositories`, whole: `ShapeProxy` with the table fixed and no subset requests |
 | `GET /api/repos/<owner>/<name>/tree/<sha>` | anyone | `{ paths, truncated }`: every file's path, in pages of 5,000, up to `REPO_TREE_MAX_PATHS` |
 | `GET /api/repos/<owner>/<name>/blob/<sha>/<path>` | anyone | the file's bytes (`application/octet-stream`, `x-blob-sha`) |
@@ -55,7 +58,7 @@ Refusals are `{ code }` JSON with `Cache-Control: no-store`:
 | 413 | `too_large` | a body over 1 KiB; a file over 512 KiB, with its `size` when Code Storage declared it, never reading the body |
 | 429 | `repository_limit` | `REPO_MAX_REPOSITORIES` rows are already `cloning` or `ready` |
 | 503 | `capacity` | this month's read budget is spent and the answer isn't cached |
-| 503 | `unavailable` | Postgres, sessions, the Durable Object or Code Storage couldn't answer; `retry-after` (seconds) when Code Storage said when. Also a clone whose start conflicted: its attempt is settled `failed` `unavailable` ([execution ids](#execution-ids)) |
+| 503 | `unavailable` | Postgres, sessions, the Durable Object or Code Storage couldn't answer; `retry-after` (seconds) when Code Storage said when |
 | 503 | `not_configured` | this deployment has no Code Storage organization |
 
 ## Postgres
@@ -151,7 +154,7 @@ Every repository action is one registered client flow (`src/features/repo/flows.
 
 ### Cloning
 
-`repo/clone`'s one step (`src/features/repo/clone.ts`) is `POST /api/repos`, so RepoApi admits every clone: sign-in, the Member role, the repository cap and the budgets, then the durable `repo/Clone` ([no remote door](remote-flows.md#no-remote-door)). Its doors: Clone and Try again in the header, `/clone owner/name` for a Member or above, and the agent ("clone octocat/Spoon-Knife").
+`repo/clone` has two steps (`src/features/repo/clone.ts`). `repo/clone/request` is `POST /api/repos`, so RepoApi admits every clone (sign-in, the Member role, the repository cap and the budgets), persists it and answers at once. `repo/clone/launch` is `POST /api/repos/launch` for the attempt it answered, which starts the durable `repo/Clone` ([no remote door](remote-flows.md#no-remote-door)); its retry policy (1 s doubling to 15 s, for 2 minutes) tries again while RepoApi or the Durable Object can't take it, and the device's engine resumes it after a reload or a crash. A launch whose start conflicts with another payload (a bug: attempt ids never repeat) settles the attempt `failed` `unavailable`, never leaving it `cloning`. Its doors: Clone and Try again in the header, `/clone owner/name` for a Member or above, and the agent ("clone octocat/Spoon-Knife").
 
 ### Copy
 

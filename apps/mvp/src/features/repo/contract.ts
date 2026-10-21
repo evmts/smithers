@@ -8,6 +8,12 @@
  */
 export const REPOS_ROUTE = "/api/repos"
 
+/**
+ * RepoApi's clone launch, `POST` `{ owner, name, cloneId }`: starts the durable remote `repo/Clone` for the attempt a
+ * clone request persisted (`repo/clone`'s second step). `POST /api/repos` answers at once and starts nothing.
+ */
+export const LAUNCH_ROUTE = `${REPOS_ROUTE}/launch`
+
 /** RepoApi's Electric shape proxy for `repositories`: `GET`. */
 export const REPOSITORIES_SHAPE_ROUTE = "/api/shapes/repositories"
 
@@ -330,6 +336,8 @@ export const REPO_TELEMETRY = {
     "repo.clone.unconfirmed",
     "repo.copy",
     "repo.clone.post",
+    "repo.clone.launch",
+    "repo.clone.launch.post",
     "repo.tree.get",
     "repo.blob.get",
     "repo.refs.get",

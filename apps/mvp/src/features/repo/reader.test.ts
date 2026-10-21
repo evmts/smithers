@@ -20,6 +20,7 @@ const client = (answers: {
     RepoClient,
     RepoClient.of({
       clone: () => Effect.die(new Error("unused")),
+      launch: () => Effect.die(new Error("unused")),
       tree: () => answers.tree ?? Effect.die(new Error("unused")),
       blob: () => answers.blob ?? Effect.die(new Error("unused")),
       refs: () => answers.refs ?? Effect.die(new Error("unused")),

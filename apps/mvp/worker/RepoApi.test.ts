@@ -44,7 +44,7 @@ describe("POST /api/repos", () => {
     expect(response.status).toBe(202)
     expect(response.headers.get("cache-control")).toBe("no-store")
     const body = await response.json()
-    expect(body).toEqual({ txid: expect.any(Number), id: "github/octocat/spoon-knife", attempt: 1 })
+    expect(body).toEqual({ txid: expect.any(Number), id: "github/octocat/spoon-knife", attempt: 1, cloneId: expect.any(String) })
     await h.settled()
     const row = await repositoryRow(runtime, "github/octocat/spoon-knife")
     // The execution is named by the attempt's own id, a UUID, never the attempt counter.
@@ -69,13 +69,21 @@ describe("POST /api/repos", () => {
     expect(h.scripted.calls.filter((call) => call.startsWith("createRepo"))).toEqual([
       "createRepo:github/octocat/spoon-knife",
     ])
-    expect(h.count(RepoMetrics.cloneRequests, { outcome: "started" })).toBe(1)
+    expect(h.count(RepoMetrics.cloneRequests, { outcome: "requested" })).toBe(1)
+    expect(h.count(RepoMetrics.cloneLaunches, { outcome: "launched" })).toBe(1)
     expect(h.count(RepoMetrics.clones, { outcome: "ready", reason: "none" })).toBe(1)
     expect(h.only("repo.clone.request").annotations).toMatchObject({
       id: "github/octocat/spoon-knife",
       attempt: 1,
       cloneId: row!.cloneId,
-      outcome: "started",
+      outcome: "requested",
+      status: 202,
+    })
+    expect(h.only("repo.clone.launch").annotations).toMatchObject({
+      id: "github/octocat/spoon-knife",
+      attempt: 1,
+      cloneId: row!.cloneId,
+      outcome: "launched",
       status: 202,
     })
     expect(h.line("repo.clone.step").map((log) => log.annotations.step)).toEqual([
@@ -95,14 +103,77 @@ describe("POST /api/repos", () => {
     expect((await usageRow(runtime))?.imported).toBe(640 * 1024)
   })
 
-  test("a second request starts nothing: 200 with the row's status", async () => {
+  test("a second request starts nothing: 200 with the row's status, and its launch finds it settled", async () => {
     const h = await repoHarness(runtime)
     await h.seed("octocat", "Spoon-Knife")
-    const again = await h.clone("OctoCat", "spoon-knife")
+    const { cloneId } = (await repositoryRow(runtime, "github/octocat/spoon-knife"))!
+    const again = await h.request("OctoCat", "spoon-knife")
     expect(again.status).toBe(200)
-    expect(await again.json()).toEqual({ txid: null, id: "github/octocat/spoon-knife", status: "ready" })
+    expect(await again.json()).toEqual({ txid: null, id: "github/octocat/spoon-knife", status: "ready", cloneId })
+    const launched = await h.launch("OctoCat", "spoon-knife", cloneId)
+    expect([launched.status, await launched.json()]).toEqual([200, { launched: false, status: "ready" }])
     expect(h.started()).toHaveLength(1)
     expect(h.count(RepoMetrics.cloneRequests, { outcome: "existing" })).toBe(1)
+    expect(h.count(RepoMetrics.cloneLaunches, { outcome: "settled" })).toBe(1)
+  })
+
+  test("the request answers at once and starts nothing; the attempt's launch starts it, and only that attempt's", async () => {
+    // Before, the request waited for the clone's Durable Object to take the start before it answered (the
+    // instant-acknowledgment rule), and a start that failed left the row cloning until some later request.
+    const starts: Array<string> = []
+    const h = await repoHarness(runtime, {
+      starter: FlowStarter.of({ start: (_flow, start) => Effect.sync(() => void starts.push(start.executionId)) }),
+    })
+    const requested = await h.request("octocat", "Spoon-Knife")
+    expect(requested.status).toBe(202)
+    const { cloneId } = await requested.json() as { readonly cloneId: string }
+    expect(starts).toEqual([])
+    expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toMatchObject({ status: "cloning", stage: "requested", cloneId })
+    // Another attempt's id, or none the row holds, launches nothing.
+    const stale = await h.launch("octocat", "Spoon-Knife", crypto.randomUUID())
+    expect([stale.status, await stale.json()]).toEqual([200, { launched: false, status: "cloning" }])
+    expect((await h.launch("octocat", "Hello-World", cloneId)).status).toBe(404)
+    expect(starts).toEqual([])
+    const launched = await h.launch("octocat", "Spoon-Knife", cloneId)
+    expect([launched.status, await launched.json()]).toEqual([202, { launched: true }])
+    expect(starts).toEqual([cloneExecutionId("github/octocat/spoon-knife", cloneId)])
+  })
+
+  test("a launch the Durable Object can't take is 503 and leaves the row cloning; launched again, it starts", async () => {
+    let down = true
+    const starts: Array<string> = []
+    const h = await repoHarness(runtime, {
+      starter: FlowStarter.of({
+        start: (_flow, start) =>
+          down ? Effect.fail(new StartUnavailable({ errorCode: "do" })) : Effect.sync(() => void starts.push(start.executionId)),
+      }),
+    })
+    const { cloneId } = await (await h.request("octocat", "Spoon-Knife")).json() as { readonly cloneId: string }
+    const refused = await h.launch("octocat", "Spoon-Knife", cloneId)
+    expect([refused.status, await refused.json()]).toEqual([503, { code: "unavailable" }])
+    expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toMatchObject({ status: "cloning" })
+    expect(h.only("repo.clone.launch").annotations).toMatchObject({
+      outcome: "unavailable",
+      status: 503,
+      errorCode: "@smthrs/mvp/flows/StartUnavailable",
+    })
+    down = false
+    expect((await h.launch("octocat", "Spoon-Knife", cloneId)).status).toBe(202)
+    expect(starts).toEqual([cloneExecutionId("github/octocat/spoon-knife", cloneId)])
+  })
+
+  test("a launch refuses whom a request refuses: signed out, below Member, no Code Storage, bad input", async () => {
+    const body = JSON.stringify({ owner: "octocat", name: "Spoon-Knife", cloneId: "c" })
+    const post = (h: Awaited<ReturnType<typeof repoHarness>>, text = body, method = "POST") =>
+      h.fetch("/api/repos/launch", { method, headers: { "content-type": "application/json" }, ...(method === "POST" ? { body: text } : {}) })
+    expect((await post(await repoHarness(runtime, { actor: null }))).status).toBe(401)
+    expect((await post(await repoHarness(runtime, { actor: { subject: { kind: "person", id: "g" }, role: "guest" } }))).status).toBe(403)
+    expect((await post(await repoHarness(runtime, { codeStorage: "none" }))).status).toBe(503)
+    const h = await repoHarness(runtime)
+    expect((await post(h, "{")).status).toBe(400)
+    expect((await post(h, JSON.stringify({ owner: "app", name: "x", cloneId: "c" }))).status).toBe(400)
+    expect((await post(h, "x".repeat(70_000))).status).toBe(413)
+    expect((await post(h, body, "GET")).status).toBe(405)
   })
 
   test("a request while the clone runs starts the same execution again, which changes nothing", async () => {
@@ -161,7 +232,8 @@ describe("POST /api/repos", () => {
     const executions = [before!, after!].map((row) => cloneExecutionId("github/octocat/spoon-knife", row.cloneId))
     expect(h.started()).toEqual(executions)
     expect(await h.status(executions[1]!)).toBe("completed")
-    expect(h.count(RepoMetrics.cloneRequests, { outcome: "started" })).toBe(2)
+    expect(h.count(RepoMetrics.cloneRequests, { outcome: "requested" })).toBe(2)
+    expect(h.count(RepoMetrics.cloneLaunches, { outcome: "launched" })).toBe(2)
   })
 
   test("a start another payload holds settles that attempt failed, never leaving it cloning", async () => {
@@ -170,35 +242,33 @@ describe("POST /api/repos", () => {
     const h = await repoHarness(runtime, {
       starter: FlowStarter.of({ start: () => (conflicts ? Effect.fail(new StartConflict()) : Effect.void) }),
     })
-    // A new clone's start conflicts.
+    // A new clone's launch conflicts.
     conflicts = true
-    const fresh = await h.clone("octocat", "Spoon-Knife")
-    expect(fresh.status).toBe(503)
-    expect(await fresh.json()).toEqual({ code: "unavailable" })
+    const fresh = await h.request("octocat", "Spoon-Knife")
+    expect(fresh.status).toBe(202)
+    const { cloneId } = await fresh.json() as { readonly cloneId: string }
+    const launched = await h.launch("octocat", "Spoon-Knife", cloneId)
+    expect([launched.status, await launched.json()]).toEqual([200, { launched: false, status: "failed" }])
     expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toMatchObject({
       status: "failed",
       failure: "unavailable",
       attempt: 1,
     })
-    expect(h.only("repo.clone.request").annotations).toMatchObject({
-      outcome: "conflict",
-      status: 503,
-      errorCode: "conflict",
-    })
-    expect(h.only("repo.clone.request").level).toBe("ERROR")
-    expect(h.count(RepoMetrics.cloneRequests, { outcome: "conflict" })).toBe(1)
-    // Try again starts attempt 2; while it runs, a request that starts it again conflicts and settles it too.
+    expect(h.only("repo.clone.launch").annotations).toMatchObject({ outcome: "conflict", status: 200, errorCode: "conflict" })
+    expect(h.only("repo.clone.launch").level).toBe("ERROR")
+    expect(h.count(RepoMetrics.cloneLaunches, { outcome: "conflict" })).toBe(1)
+    // Try again starts attempt 2; while it runs, a launch of it again that conflicts settles it too.
     conflicts = false
     expect((await h.clone("octocat", "Spoon-Knife")).status).toBe(202)
+    const second = (await repositoryRow(runtime, "github/octocat/spoon-knife"))!.cloneId
     conflicts = true
-    const running = await h.clone("octocat", "Spoon-Knife")
-    expect(running.status).toBe(503)
+    expect(await (await h.launch("octocat", "Spoon-Knife", second)).json()).toEqual({ launched: false, status: "failed" })
     expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toMatchObject({
       status: "failed",
       failure: "unavailable",
       attempt: 2,
     })
-    expect(h.count(RepoMetrics.cloneRequests, { outcome: "conflict" })).toBe(2)
+    expect(h.count(RepoMetrics.cloneLaunches, { outcome: "conflict" })).toBe(2)
   })
 
   test("signed out: 401 authentication, and nothing is written", async () => {
@@ -264,20 +334,13 @@ describe("POST /api/repos", () => {
     expect(await repositoryRow(runtime, "github/octocat/hello-world")).toBeUndefined()
   })
 
-  test("Postgres unreachable, or the start refused: 503 unavailable, logged by code", async () => {
+  test("Postgres unreachable: 503 unavailable, logged by code", async () => {
     const down = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
     const h = await repoHarness(runtime, { database: down })
     const response = await h.clone("octocat", "Spoon-Knife")
     expect(response.status).toBe(503)
     expect(await response.json()).toEqual({ code: "unavailable" })
     expect(h.only("repo.clone.request").annotations).toMatchObject({ status: 503, errorCode: expect.stringMatching(/^sql:/) })
-    const refused = await repoHarness(runtime, {
-      starter: FlowStarter.of({ start: () => Effect.fail(new StartUnavailable({ errorCode: "do" })) }),
-    })
-    const unstarted = await refused.clone("octocat", "Spoon-Knife")
-    expect(unstarted.status).toBe(503)
-    // The row says cloning, so the next request starts it again.
-    expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toMatchObject({ status: "cloning" })
   })
 })
 

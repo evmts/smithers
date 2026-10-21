@@ -339,7 +339,8 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 
 | Message | When | Level | Fields |
 |---|---|---|---|
-| `repo.clone.request` | every `POST /api/repos` | Info 2xx, Warn 4xx, Error 5xx | `outcome` (`started`, `existing`, `method`, `conflict`, or the refusal's code), `status`, `durationMs`; `id`, `attempt` and `cloneId` once valid; `row` (the existing row's status); `errorCode` for 503 (`conflict` when the start found another payload under the attempt's execution id, and the attempt settled `failed`) |
+| `repo.clone.request` | every `POST /api/repos`, which persists the request and starts nothing | Info 2xx, Warn 4xx, Error 5xx | `outcome` (`requested`, `existing`, `method`, or the refusal's code), `status`, `durationMs`; `id`, `attempt` and `cloneId` once valid; `row` (the existing row's status); `errorCode` for 503 |
+| `repo.clone.launch` | every `POST /api/repos/launch` | Info 2xx, Warn 4xx, Error 5xx and `conflict` | `outcome` (`launched`, `settled`, `conflict`, `method`, or the refusal's code), `status`, `durationMs`; `id` and `cloneId` once valid, `attempt` for a launch; `row` (a settled or superseded row's status); `errorCode` for 503 and for `conflict` (the start found another payload under the attempt's execution id, and the attempt settled `failed`) |
 | `repo.tree`, `repo.blob`, `repo.raw`, `repo.refs` | every read | Info 200, Warn 4xx, Error 5xx | `repoId`, `status`, `bytes` (returned), `durationMs`; `sha` for a tree or a file; `errorCode` (`not_found`, `too_large`, `capacity`, `unavailable`, or a defect's name) |
 | `repo.about` | every `GET /api/repos/<owner>/<name>/about` | Info 200, Warn 4xx, Error 5xx | `repoId`, `status`, `bytes`, `cached` (`hit`, or `miss` when GitHub was read), `durationMs`; `errorCode` (`not_found`, `unavailable`, or a defect's name) |
 | `repo.meter` | a read's bytes Postgres didn't record; the read still answered | Warn | `bytes`, `errorCode` |
@@ -353,6 +354,7 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 | Span | Kind | Attributes |
 |---|---|---|
 | `repo.clone.request` | server | `smithers.repo.id`, `http.response.status_code` |
+| `repo.clone.launch` | server | `http.response.status_code` |
 | `repo.tree`, `repo.blob`, `repo.raw`, `repo.refs` | server | `http.response.status_code`, `smithers.repo.bytes` |
 | `repo.about` | server; GitHub's ten-odd reads under `repo.about.github`, each a `GitHubClient.request` or `GitHubClient.count` span | `http.response.status_code` |
 | `repo.clone.inspect`, `repo.clone.import`, `repo.clone.pull`, `repo.clone.await_sync`, `repo.clone.index`, `repo.clone.settle` | internal, inside the engine's step spans | `smithers.repo.id` |
@@ -364,6 +366,7 @@ RepoApi (`worker/RepoApi.ts`), the clone (`worker/flows/RepoClone.ts`) and the b
 | Metric | Kind | Attributes |
 |---|---|---|
 | `repo_clone_requests` | counter | `outcome` |
+| `repo_clone_launches` | counter | `outcome` |
 | `repo_reads` | counter | `kind` (`tree`, `blob`, `raw`, `refs`), `status` |
 | `repo_read_bytes_total` | counter | bytes returned |
 | `repo_shape_requests` | counter | `status`, `live` |
@@ -381,6 +384,7 @@ The browser (`src/features/repo/`), the tab's and the engine worker's, relayed t
 |---|---|---|
 | `repo.open` | log and span | `kind` (`tree`, `blob`); the span's `smithers.repo.kind` |
 | `repo.clone` | log and span, `repo/clone`'s step; Info `started` and `existing`, Warn otherwise | `outcome` (`started`, `existing`, `sign_in`, `forbidden`, `limit`, `invalid`, `not_configured`, `unavailable`), `status` (RepoApi's, for a refusal), `durationMs` |
+| `repo.clone.launch` | log and span, `repo/clone`'s second step; Info `launched` and `settled`, Warn otherwise | `outcome` (`launched`, `settled`, `sign_in`, `forbidden`, `limit`, `invalid`, `not_configured`, `unavailable`), `status` (RepoApi's, for a refusal) |
 | `repo.clone.unconfirmed` | log, Warn: a person's clone RepoApi took whose row Electric didn't deliver in time | |
 | `repo.copy` | log and span, `repo/copy`'s step; Info `copied`, Warn `refused`, Error otherwise | `what` (`permalink`, `path`, `contents`, `clone-url`), `door` (the dispatch's, `agent`, or `unknown` when the tab that asked is gone), `outcome` (`copied`, `failed`, `refused`, `unavailable`, `gone`), `executionId`, `durationMs`; the span's `smithers.repo.copy` |
 | `repo.tree.load`, `repo.blob.load`, `repo.refs.load`, `repo.about.load` | log | `outcome`, `durationMs`, `status` |

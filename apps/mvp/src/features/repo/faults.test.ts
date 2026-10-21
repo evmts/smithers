@@ -29,13 +29,21 @@ afterEach(async () => {
   for (const tab of tabs.splice(0)) await tab.dispose()
 })
 
-/** A client whose `clone` answers `answer`, counting its calls; reads are never expected. */
-const cloning = (answer: () => Effect.Effect<{ txid: number; id: string; attempt: number }, RepoRefused>) => {
+/**
+ * A client whose `clone` answers `answer`, counting its calls, and whose launch answers `launch` (launched unless
+ * set), counting its calls too; reads are never expected.
+ */
+const cloning = (
+  answer: () => Effect.Effect<{ txid: number; id: string; attempt: number; cloneId: string }, RepoRefused>,
+  launch: () => Effect.Effect<{ readonly launched: true }, RepoRefused> = () => Effect.succeed({ launched: true }),
+) => {
   const calls: Array<string> = []
+  const launches: Array<string> = []
   const layer = Layer.succeed(
     RepoClient,
     RepoClient.of({
       clone: (owner, name) => Effect.suspend(() => (calls.push(`${owner}/${name}`), answer())),
+      launch: (owner, name, cloneId) => Effect.suspend(() => (launches.push(`${owner}/${name} ${cloneId}`), launch())),
       tree: () => Effect.die(new Error("no reads in this test")),
       blob: () => Effect.die(new Error("no reads in this test")),
       refs: () => Effect.die(new Error("no reads in this test")),
@@ -43,7 +51,7 @@ const cloning = (answer: () => Effect.Effect<{ txid: number; id: string; attempt
       about: () => Effect.fail(new RepoRefused({})),
     }),
   )
-  return { calls, layer }
+  return { calls, launches, layer }
 }
 
 const open = async (
@@ -124,8 +132,35 @@ describe("cloning when RepoApi doesn't take it", () => {
     expect(tab.count(clones, { outcome: "not_configured" })).toBe(1)
   })
 
+  test("a launch RepoApi can't take for a moment is tried again by this device's engine, and goes through", async () => {
+    // The request persisted the attempt and answered at once; its launch is the flow's own durable step.
+    let refusals = 1
+    const client = cloning(
+      () => Effect.succeed({ txid: 42, id: "github/o/n", attempt: 1, cloneId: "c1" }),
+      () => (refusals-- > 0 ? Effect.fail(new RepoRefused({ status: 503, code: "unavailable" })) : Effect.succeed({ launched: true })),
+    )
+    const tab = await open(client.layer)
+    tab.repo.actions.open({ owner: "o", name: "n", kind: "tree", ref: null, path: "", line: null, lineEnd: null })
+    tab.repo.actions.clone("o", "n")
+    await waitFor(() => expect(client.launches).toEqual(["o/n c1", "o/n c1"]))
+    expect(client.calls).toEqual(["o/n"])
+    expect(tab.lines("repo.clone.launch").map((line) => line.annotations.outcome)).toEqual(["unavailable", "launched"])
+  })
+
+  test("a launch RepoApi refuses is final: Couldn't clone, and it isn't asked again", async () => {
+    const client = cloning(
+      () => Effect.succeed({ txid: 42, id: "github/o/n", attempt: 1, cloneId: "c1" }),
+      () => Effect.fail(new RepoRefused({ status: 403, code: "forbidden" })),
+    )
+    const tab = await open(client.layer)
+    tab.repo.actions.open({ owner: "o", name: "n", kind: "tree", ref: null, path: "", line: null, lineEnd: null })
+    tab.repo.actions.clone("o", "n")
+    await waitFor(() => expect(header(tab)).toEqual({ kind: "refused", text: FAILURE_COPY.unavailable }))
+    expect(client.launches).toEqual(["o/n c1"])
+  })
+
   test("taken, but Electric never delivers the row: failed, unconfirmed", async () => {
-    const client = cloning(() => Effect.succeed({ txid: 42, id: "github/o/n", attempt: 1 }))
+    const client = cloning(() => Effect.succeed({ txid: 42, id: "github/o/n", attempt: 1, cloneId: "c1" }))
     const tab = await open(client.layer)
     tab.repo.actions.open({ owner: "o", name: "n", kind: "tree", ref: null, path: "", line: null, lineEnd: null })
     tab.repo.actions.clone("o", "n")

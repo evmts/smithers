@@ -4,12 +4,18 @@ import type { Spend } from "./Repos.ts"
 // The repository feature's server metrics, listed with their log lines in docs/observability.md#repositories. Labels
 // carry outcomes, statuses and reasons, never a repository's files, commit messages or Code Storage's text.
 
-/**
- * `POST /api/repos` requests, by `outcome`: `started`, `existing`, `conflict` (a start that collided with another
- * payload), or the refusal's code.
- */
+/** `POST /api/repos` requests, by `outcome`: `requested` (a new attempt), `existing`, or the refusal's code. */
 export const cloneRequests = Metric.counter("repo_clone_requests", {
   description: "POST /api/repos requests, by outcome",
+  incremental: true,
+})
+
+/**
+ * `POST /api/repos/launch` requests, by `outcome`: `launched`, `settled` (an attempt the row no longer holds, or one
+ * that settled), `conflict` (a start that collided with another payload), or the refusal's code.
+ */
+export const cloneLaunches = Metric.counter("repo_clone_launches", {
+  description: "POST /api/repos/launch requests, by outcome",
   incremental: true,
 })
 

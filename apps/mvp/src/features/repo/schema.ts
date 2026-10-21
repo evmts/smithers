@@ -119,10 +119,17 @@ export type About = typeof About.Type
 
 /** `POST /api/repos`'s answer: `202` with the transaction to wait for, or `200` for a clone already running or done. */
 export const CloneAccepted = Schema.Union([
-  Schema.Struct({ txid: Schema.Number, id: Schema.String, attempt: Schema.Number }),
-  Schema.Struct({ txid: Schema.Null, id: Schema.String, status: Schema.Literals(STATUSES) }),
+  Schema.Struct({ txid: Schema.Number, id: Schema.String, attempt: Schema.Number, cloneId: Schema.String }),
+  Schema.Struct({ txid: Schema.Null, id: Schema.String, status: Schema.Literals(STATUSES), cloneId: Schema.String }),
 ])
 export type CloneAccepted = typeof CloneAccepted.Type
+
+/** What a clone's launch did: started its remote `repo/Clone`, or found the attempt superseded or settled. */
+export const CloneLaunched = Schema.Union([
+  Schema.Struct({ launched: Schema.Literal(true) }),
+  Schema.Struct({ launched: Schema.Literal(false), status: Schema.Literals(STATUSES) }),
+])
+export type CloneLaunched = typeof CloneLaunched.Type
 
 /** A refusal's body: its code, and a too-large file's size. */
 export const RefusalBody = Schema.Struct({ code: Schema.String, size: Schema.optional(Schema.Number) })

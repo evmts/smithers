@@ -134,6 +134,15 @@ export const request = (
     }))
   })
 
+/** The clone row `id` holds now, with its status; `None` when there is no row. Reads only. */
+export const current = (id: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<Clone & { readonly status: Status }>`
+      SELECT status, owner, name, ${attemptColumns(sql)} FROM repositories WHERE id = ${id}`
+    return Option.fromUndefinedOr(row)
+  })
+
 /** What GitHub said about a repository's size: its bytes, or that it is rate limiting until `retryAt` (epoch ms). */
 export type Size = { readonly bytes: number } | { readonly retryAt: number }
 

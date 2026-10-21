@@ -389,14 +389,17 @@ describe("the agent's repository flows on this device", () => {
     })
   })
 
-  test("repo/clone asks RepoApi, which starts the clone; asked again, it answers the row's status", async () => {
+  test("repo/clone asks RepoApi, which persists the clone, then launches it; asked again, it answers the row's status", async () => {
     const h = await repoHarness(server)
     h.scripted.publish("octocat", "Spoon-Knife")
     const started = await runFlow(RepoCloneRequest, { repo: "octocat/Spoon-Knife" }, flows(h))
-    expect(started.exit).toEqual(Exit.succeed({ txid: expect.any(Number), id: "github/octocat/spoon-knife", attempt: 1 }))
+    const cloneId = expect.stringMatching(/^[0-9a-f-]{36}$/)
+    expect(started.exit).toEqual(Exit.succeed({ txid: expect.any(Number), id: "github/octocat/spoon-knife", attempt: 1, cloneId }))
+    // Its second step launched the attempt the first persisted.
+    expect(h.started()).toHaveLength(1)
     await h.settled()
     const again = await runFlow(RepoCloneRequest, { repo: "octocat/Spoon-Knife" }, flows(h))
-    expect(again.exit).toEqual(Exit.succeed({ txid: null, id: "github/octocat/spoon-knife", status: "ready" }))
+    expect(again.exit).toEqual(Exit.succeed({ txid: null, id: "github/octocat/spoon-knife", status: "ready", cloneId }))
     expect(h.started()).toHaveLength(1)
   })
 

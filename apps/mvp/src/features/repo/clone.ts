@@ -1,12 +1,21 @@
 import { Interpreter } from "@smthrs/flow"
-import { Clock, Effect, Metric } from "effect"
+import { Clock, Effect, Layer, Metric } from "effect"
 import { RepoClient, type RepoRefused } from "./api"
-import { type CloneFailure, parts, RepoCloneRefused, RepoCloneRequest, RepoCloneUnavailable, RequestClone } from "./flows"
+import {
+  type CloneFailure,
+  LaunchClone,
+  parts,
+  RepoCloneRefused,
+  RepoCloneRequest,
+  RepoCloneUnavailable,
+  RequestClone,
+} from "./flows"
 import { clones } from "./metrics"
 
-// `repo/clone`'s step (docs/features/repo.md#flows): asks RepoApi for the clone, `POST /api/repos` through `RepoClient`.
-// RepoApi admits it (sign-in, the Member role, the repository cap, the budgets) and starts the durable remote
-// `repo/Clone`; no route starts that flow by its name (docs/features/remote-flows.md#no-remote-door). A person's Clone,
+// `repo/clone`'s steps (docs/features/repo.md#flows): asks RepoApi for the clone, `POST /api/repos` through `RepoClient`,
+// which RepoApi admits (sign-in, the Member role, the repository cap, the budgets), persists and answers at once; then
+// launches it, `POST /api/repos/launch`, which starts the durable remote `repo/Clone` for that attempt. No route starts
+// that flow by its name (docs/features/remote-flows.md#no-remote-door). A person's Clone,
 // Try again and `/clone`, and the agent's call, all run this one step on this device's engine.
 
 /** What RepoApi's refusal means to the flow, and the outcome it counts as. */
@@ -57,5 +66,35 @@ export const requestClone = ({ repo }: { readonly repo: string }) =>
     return yield* Effect.fail(failure)
   }).pipe(Effect.withSpan("repo.clone"))
 
-/** Registers `repo/clone` with its step, asking through the host's `RepoClient`. */
-export const registration = Interpreter.layerWithImplementations(RepoCloneRequest, RequestClone.toLayer(requestClone))
+/**
+ * What `repo/clone/launch` does: one `POST /api/repos/launch` for the attempt `cloneId`, which starts its remote
+ * `repo/Clone`. A failure the step's retry policy takes (RepoApi or its Durable Object unreachable) is tried again by
+ * the engine; a refusal is final. Records a `repo.clone.launch` line with the outcome: `launched`, `settled`, the
+ * refusal's reason, or `unavailable`.
+ */
+export const launchClone = ({ repo, cloneId }: { readonly repo: string; readonly cloneId: string }) =>
+  Effect.gen(function* () {
+    const [owner, name] = parts(repo)
+    const answer = yield* Effect.result((yield* RepoClient).launch(owner, name, cloneId))
+    if (answer._tag === "Success") {
+      yield* Effect.logInfo("repo.clone.launch").pipe(
+        Effect.annotateLogs({ outcome: answer.success.launched ? "launched" : "settled", feature: "repo" }),
+      )
+      return answer.success
+    }
+    const failure = cloneFailure(answer.failure)
+    yield* Effect.logWarning("repo.clone.launch").pipe(
+      Effect.annotateLogs({
+        outcome: failure._tag === "@smthrs/mvp/repo/RepoCloneRefused" ? failure.reason : "unavailable",
+        ...(answer.failure.status === undefined ? {} : { status: answer.failure.status }),
+        feature: "repo",
+      }),
+    )
+    return yield* Effect.fail(failure)
+  }).pipe(Effect.withSpan("repo.clone.launch"))
+
+/** Registers `repo/clone` with its steps, asking through the host's `RepoClient`. */
+export const registration = Interpreter.layerWithImplementations(
+  RepoCloneRequest,
+  Layer.merge(RequestClone.toLayer(requestClone), LaunchClone.toLayer(launchClone)),
+)

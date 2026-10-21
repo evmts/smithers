@@ -240,6 +240,18 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     return HomeApi.handles(new URL(request.url).pathname) ? homeHandler(request) : handler(request)
   }) as typeof globalThis.fetch
   const line = (message: string) => logs.filter((log) => log.message === message)
+  const request = (owner: string, name: string) =>
+    fetch("/api/repos", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ owner, name }),
+    })
+  const launch = (owner: string, name: string, cloneId: string) =>
+    fetch("/api/repos/launch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ owner, name, cloneId }),
+    })
 
   return {
     origin,
@@ -248,13 +260,22 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     scripted,
     /** GitHub's REST API as the about route reaches it, scripted. */
     github,
-    /** Asks for a clone of `owner/name`. */
-    clone: (owner: string, name: string) =>
-      fetch("/api/repos", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner, name }),
-      }),
+    /**
+     * Asks for a clone of `owner/name` and launches the attempt it answers, as `repo/clone`'s two steps do; answers the
+     * request's response.
+     */
+    clone: async (owner: string, name: string) => {
+      const requested = await request(owner, name)
+      if (requested.status === 200 || requested.status === 202) {
+        const { cloneId } = (await requested.clone().json()) as { readonly cloneId: string }
+        await (await launch(owner, name, cloneId)).text()
+      }
+      return requested
+    },
+    /** Asks for a clone of `owner/name` and nothing more: `POST /api/repos`. */
+    request,
+    /** Launches attempt `cloneId` of `owner/name`: `POST /api/repos/launch`. */
+    launch,
     /** Waits for every clone started so far to end. */
     settled: async () => {
       for (const fiber of fibers.values()) await Effect.runPromise(Effect.exit(Fiber.join(fiber)))
@@ -264,11 +285,8 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     /** Publishes `owner/name` on the scripted GitHub, clones it to the end, and answers its id and head commit. */
     seed: async (owner: string, name: string, repository: GitHubRepository = fixture()) => {
       scripted.publish(owner, name, repository)
-      const answer = await (await fetch("/api/repos", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner, name }),
-      })).json()
+      const answer = await (await request(owner, name)).json() as { readonly cloneId: string }
+      await (await launch(owner, name, answer.cloneId)).text()
       for (const fiber of fibers.values()) await Effect.runPromise(Effect.exit(Fiber.join(fiber)))
       return { id: repoId(owner, name), headSha: repository.commit.sha, answer }
     },

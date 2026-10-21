@@ -12,6 +12,7 @@ import {
   MAX_REQUEST_BYTES,
   type Refusal,
   repoId,
+  LAUNCH_ROUTE,
   REPOS_ROUTE,
   REPOSITORIES_SHAPE_ROUTE,
   REPOSITORIES_TABLE,
@@ -51,6 +52,8 @@ const encoder = new TextEncoder()
 
 const CloneBody = Schema.fromJsonString(Schema.Struct({ owner: Schema.String, name: Schema.String }))
 const decodeCloneBody = Schema.decodeUnknownOption(CloneBody)
+const LaunchBody = Schema.fromJsonString(Schema.Struct({ owner: Schema.String, name: Schema.String, cloneId: Schema.String }))
+const decodeLaunchBody = Schema.decodeUnknownOption(LaunchBody)
 
 /** What a read route reads: a tree, a file's bytes (`blob`), a file as a page shows it (`raw`), or the refs. */
 type ReadKind = "tree" | "blob" | "raw" | "refs"
@@ -147,11 +150,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         fields.outcome = outcome
         return refuse(status, code)
       }
-      /** A start another payload held: its attempt settled `failed`, and the request is refused as unavailable. */
-      const conflicted = () => {
-        fields.errorCode = "conflict"
-        return refused(503, "unavailable", "conflict")
-      }
       const response = yield* Effect.gen(function* () {
         if (request.method !== "POST") {
           fields.outcome = "method"
@@ -177,26 +175,22 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         if (requested.kind === "limit") return refused(429, "repository_limit")
         fields.attempt = requested.attempt
         fields.cloneId = requested.cloneId
+        // The request is persisted: it answers now, and the asker's `repo/clone` launches it (`launch`, below).
         if (requested.kind === "existing") {
-          // A clone that is still running is started again with its own execution id: a start that never reached
-          // its Durable Object gets there now, and one that did changes nothing.
-          if (requested.status === "cloning" && !(yield* start(id, requested))) return conflicted()
           fields.outcome = "existing"
           fields.row = requested.status
           return HttpServerResponse.jsonUnsafe(
-            { txid: null, id, status: requested.status },
+            { txid: null, id, status: requested.status, cloneId: requested.cloneId },
             { status: 200, headers: noStore },
           )
         }
-        if (!(yield* start(id, requested))) return conflicted()
-        fields.outcome = "started"
+        fields.outcome = "requested"
         return HttpServerResponse.jsonUnsafe(
-          { txid: requested.txid, id, attempt: requested.attempt },
+          { txid: requested.txid, id, attempt: requested.attempt, cloneId: requested.cloneId },
           { status: 202, headers: noStore },
         )
       }).pipe(
-        // Postgres or the Durable Object couldn't be reached: the row may say `cloning`, and the next request starts
-        // its clone again.
+        // Postgres couldn't be reached: nothing was persisted, and the asker asks again.
         Effect.catchCause((cause) =>
           Effect.sync(() => {
             fields.errorCode = codeOf(Cause.squash(cause))
@@ -219,6 +213,77 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       )
       return response
     }).pipe(Effect.withSpan("repo.clone.request", { kind: "server" }))
+
+    /**
+     * `POST /api/repos/launch` `{ owner, name, cloneId }`: starts the durable remote `repo/Clone` for the attempt a
+     * request persisted, the asker's `repo/clone`'s second step, which its engine retries until it lands. `202
+     * { launched: true }` when the attempt is the row's and still `cloning`: started, or started already, since its
+     * execution id is the attempt's own. `200 { launched: false, status }` for an attempt the row no longer holds or one
+     * that settled. A start another payload holds (a bug: attempt ids never repeat) settles the attempt `failed`
+     * `unavailable` and answers `200 { launched: false, status: "failed" }`; a Durable Object that can't be reached is
+     * `503`, which the step tries again.
+     */
+    const launch = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const startedAt = yield* Clock.currentTimeMillis
+      const fields: Record<string, string | number> = {}
+      const refused = (status: number, code: Refusal, outcome: string = code) => {
+        fields.outcome = outcome
+        return refuse(status, code)
+      }
+      const response = yield* Effect.gen(function* () {
+        if (request.method !== "POST") {
+          fields.outcome = "method"
+          return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
+        }
+        const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+        if (Option.isNone(actor)) return refused(503, "unavailable")
+        if (Option.isNone(actor.value)) return refused(401, "authentication")
+        if (!canClone(actor.value.value)) return refused(403, "forbidden")
+        if (Option.isNone(options.codeStorage)) return refused(503, "not_configured")
+        const text = yield* readBounded(request, MAX_REQUEST_BYTES).pipe(Effect.result)
+        if (text._tag === "Failure") {
+          return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
+        }
+        const body = decodeLaunchBody(text.success)
+        if (Option.isNone(body) || !isRepository(body.value.owner, body.value.name)) return refused(400, "invalid")
+        const id = repoId(body.value.owner, body.value.name)
+        fields.id = id
+        fields.cloneId = body.value.cloneId
+        const row = yield* Repos.current(id).pipe(Effect.provide(database))
+        if (Option.isNone(row)) return refused(404, "not_found")
+        if (row.value.cloneId !== body.value.cloneId || row.value.status !== "cloning") {
+          fields.outcome = "settled"
+          fields.row = row.value.status
+          return HttpServerResponse.jsonUnsafe({ launched: false, status: row.value.status }, { status: 200, headers: noStore })
+        }
+        fields.attempt = row.value.attempt
+        if (!(yield* start(id, row.value))) {
+          fields.outcome = "conflict"
+          fields.errorCode = "conflict"
+          return HttpServerResponse.jsonUnsafe({ launched: false, status: "failed" }, { status: 200, headers: noStore })
+        }
+        fields.outcome = "launched"
+        return HttpServerResponse.jsonUnsafe({ launched: true }, { status: 202, headers: noStore })
+      }).pipe(
+        // Postgres or the Durable Object couldn't be reached: the row still says `cloning`, and the step tries again.
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            fields.errorCode = codeOf(Cause.squash(cause))
+            return refused(503, "unavailable")
+          })
+        ),
+      )
+      const outcome = String(fields.outcome)
+      yield* Metric.update(Metric.withAttributes(RepoMetrics.cloneLaunches, { outcome }), 1)
+      yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+      yield* Effect.logWithLevel(
+        response.status >= 500 || outcome === "conflict" ? "Error" : response.status >= 400 ? "Warn" : "Info",
+      )("repo.clone.launch").pipe(
+        Effect.annotateLogs({ ...fields, outcome, status: response.status, durationMs: (yield* Clock.currentTimeMillis) - startedAt }),
+      )
+      return response
+    }).pipe(Effect.withSpan("repo.clone.launch", { kind: "server" }))
 
     /**
      * A tree, file or refs read: validated, answered from the cache or Code Storage, and recorded. The refs answer
@@ -408,6 +473,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const path = request.url.split("?")[0]!
       if (path === REPOSITORIES_SHAPE_ROUTE) return yield* shape
       if (path === REPOS_ROUTE) return yield* clone
+      if (path === LAUNCH_ROUTE) return yield* launch
       const aboutTarget = parseAbout(path)
       if (aboutTarget !== undefined) return yield* about(aboutTarget)
       if (path.startsWith(`${REPOS_ROUTE}/`)) return yield* read(path)

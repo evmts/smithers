@@ -1,7 +1,7 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
-import { aboutRoute, blobRoute, refsRoute, REPOS_ROUTE, treeRoute } from "./contract"
-import { About, CloneAccepted, RefusalBody, Refs, TreeListing } from "./schema"
+import { aboutRoute, blobRoute, LAUNCH_ROUTE, refsRoute, REPOS_ROUTE, treeRoute } from "./contract"
+import { About, CloneAccepted, CloneLaunched, RefusalBody, Refs, TreeListing } from "./schema"
 
 // RepoApi's routes as the browser calls them (docs/features/repo.md#routes), through Effect's HttpClient. Each request
 // has one deadline covering the whole exchange, its body included.
@@ -72,7 +72,10 @@ const json = <A>(schema: Schema.Codec<A, unknown>) => (response: HttpClientRespo
     Effect.mapError(() => new RepoRefused({ status: response.status })),
   )
 
-/** `POST /api/repos`: asks for a clone of `owner/name`. `202` started one; `200` one is running or done. */
+/**
+ * `POST /api/repos`: asks for a clone of `owner/name`, which RepoApi persists and answers at once. `202` a new attempt;
+ * `200` one is running or done. `postLaunch` starts it.
+ */
 export const postClone = Effect.fn("repo.clone.post")(function* (
   origin: string,
   repository: { readonly owner: string; readonly name: string },
@@ -83,6 +86,20 @@ export const postClone = Effect.fn("repo.clone.post")(function* (
     within,
     (status) => status === 200 || status === 202,
     json(CloneAccepted),
+  )
+})
+
+/** `POST /api/repos/launch`: starts the clone attempt `cloneId` a request persisted. `202` launched; `200` it settled. */
+export const postLaunch = Effect.fn("repo.clone.launch.post")(function* (
+  origin: string,
+  attempt: { readonly owner: string; readonly name: string; readonly cloneId: string },
+  within: Duration.Input,
+) {
+  return yield* exchange(
+    HttpClientRequest.post(`${origin}${LAUNCH_ROUTE}`).pipe(HttpClientRequest.bodyJsonUnsafe(attempt)),
+    within,
+    (status) => status === 200 || status === 202,
+    json(CloneLaunched),
   )
 })
 
@@ -154,6 +171,7 @@ export class RepoClient extends Context.Service<
   RepoClient,
   {
     readonly clone: (owner: string, name: string) => Effect.Effect<CloneAccepted, RepoRefused>
+    readonly launch: (owner: string, name: string, cloneId: string) => Effect.Effect<CloneLaunched, RepoRefused>
     readonly tree: (owner: string, name: string, sha: string) => Effect.Effect<TreeListing, RepoRefused>
     readonly blob: (owner: string, name: string, sha: string, path: string) => Effect.Effect<Blob, RepoRefused>
     readonly refs: (owner: string, name: string) => Effect.Effect<Refs, RepoRefused>
@@ -168,6 +186,7 @@ export class RepoClient extends Context.Service<
         const withClient = Effect.provideService(HttpClient.HttpClient, client)
         return RepoClient.of({
           clone: (owner, name) => withClient(postClone(options.origin, { owner, name }, options.within)),
+          launch: (owner, name, cloneId) => withClient(postLaunch(options.origin, { owner, name, cloneId }, options.within)),
           tree: (owner, name, sha) => withClient(getTree(options.origin, { owner, name, sha }, options.within)),
           blob: (owner, name, sha, path) =>
             withClient(getBlob(options.origin, { owner, name, sha, path }, options.within)),
