@@ -7,7 +7,7 @@ import { requires } from "./target"
 // a second run finds it ready and browses it. Locally the run needs the Code Storage organization in the dev server's
 // environment; a deployment holds it. Every test asks for a clone, a Member's request (worker/RepoApi.ts `canClone`),
 // and waits on the `repo/clone` remote flow (worker/RepoApi.ts `start`, worker/flows/RepoClone.ts), which decides
-// both ready and Not found.
+// both ready and the clone refusal. About establishes Not found before a clone is requested.
 
 requires("codeStorage", "member")
 
@@ -71,9 +71,14 @@ test("refusals: a repository GitHub doesn't have says Not found, and so does a m
   await page.goto(`/octocat/${name}`)
   const header = page.locator('header[aria-label="Repository"]')
   await expect(header).toContainText(`octocat / ${name}`, { timeout: 30_000 })
-  await header.getByRole("button", { name: "Clone" }).click()
-  await expect(header.getByRole("status").filter({ hasText: "Not found" })).toBeVisible({ timeout: 60_000 })
-  await expect(header.getByRole("button", { name: "Try again" })).toBeVisible()
+  // About answers independently of a clone's launch, execution and Electric settlement.
+  await expect(header.getByRole("status")).toHaveText("Not found", { timeout: 30_000 })
+  await header.getByRole("button", { name: "Clone", exact: true }).click()
+  // The same header text cannot prove the requested clone finished: require its feed outcome and recovery action.
+  const subject = `clone:github/octocat/${name}`
+  const entry = page.locator(`[data-slot="toast"][data-subject="${subject}"]`)
+  await expect(entry).toContainText(`Clone · octocat/${name} · Not found`, { timeout: 120_000 })
+  await expect(entry.getByRole("button", { name: "Try again", exact: true })).toBeVisible()
   await openReady(page)
   await page.goto(`${REPO}/blob/main/no-such-file.md`)
   await expect(page.getByText("Not found").first()).toBeVisible({ timeout: 30_000 })
