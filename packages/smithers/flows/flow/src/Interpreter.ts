@@ -63,7 +63,7 @@ import * as Predicate from "effect/Predicate"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import { type Implementation, Implementations, layerImplementations } from "./Action/Implementations.ts"
-import { DispatchReport, DispatchSite } from "./Action/StepIdentity.ts"
+import { type DispatchOutcome, DispatchReport, DispatchSite } from "./Action/StepIdentity.ts"
 import * as DurableDeferred from "./DurableDeferred.ts"
 import { attenuateCapabilities } from "./Flow/CapabilityCeiling.ts"
 import type { Any as AnyFlow, AnyStructSchema, AnyWithProps, Flow } from "./Flow/Flow.ts"
@@ -263,165 +263,223 @@ const summarize = (node: Graph.GraphNode): NodeRecord.NodeSummary => {
  *
  * @private
  */
-const planPages = (
+const planPages = Effect.fnUntraced(function*(
   flow: string,
   graph: Graph.Graph,
   measure: (record: NodeRecord.NodeRecord) => Effect.Effect<number, never, FlowInstance>
-): Effect.Effect<
-  ReadonlyArray<NodeRecord.PlanRecorded | NodeRecord.SubgraphAppended>,
-  InterpreterError,
-  FlowInstance | Crypto.Crypto
-> =>
-  Effect.gen(function*() {
-    const identity = yield* StepKey.content({
-      body: { flow, nodes: recordedPlanDrafts(graph), edges: Graph.edges(graph) },
-      inputs: {},
-      layers: [],
-      capabilities: {}
-    }).pipe(Effect.mapError((cause) =>
-      new InterpreterError({
-        code: "incomplete_graph",
-        flow,
-        node: "root",
-        message: `Cannot identify recorded plan: ${String(cause)}`
-      })
-    ))
-    const incoming = new Map<string, Array<NodeRecord.EdgeSummary>>()
-    let edgeCount = 0
-    for (const edge of Graph.edges(graph)) {
-      edgeCount += 1
-      const summary = { from: edge.from, to: edge.to, reason: edge.reason }
-      const existing = incoming.get(edge.to)
-      if (existing === undefined) incoming.set(edge.to, [summary])
-      else existing.push(summary)
-    }
-    type Page = { nodes: Array<NodeRecord.NodeSummary>; edges: Array<NodeRecord.EdgeSummary> }
-    const graphNodes = Graph.nodes(graph)
-    const pages: Array<Page> = []
-    let current: Page = { nodes: [], edges: [] }
-    const record = (
-      page: Page,
-      index: number,
-      count: number
-    ): NodeRecord.PlanRecorded | NodeRecord.SubgraphAppended => ({
-      ...(index === 0
-        ? { _tag: "PlanRecorded" as const, nodeCount: graphNodes.length, digest: identity }
-        : { _tag: "SubgraphAppended" as const }),
-      sourceId: `plan/0/${index}`,
-      flow,
-      generation: 0,
-      page: index,
-      pages: count,
-      ...page
-    })
-    // Every page is started by a node seat or by an edge, and a node is seated
-    // once plus at most once per dependency that starts a continuation page,
-    // so the page count is at most nodes + dependencies + edges. Reserving
-    // that many digits is what makes replacing the reservation with the final
-    // count shrink an encoded envelope or leave it alone, never grow it.
-    const reserved = graphNodes.reduce(
+) {
+  const graphNodes = Graph.nodes(graph)
+  const incoming = incomingEdges(graph)
+  const pager: Pager = {
+    flow,
+    measure,
+    identity: yield* planIdentity(flow, graph),
+    nodeCount: graphNodes.length,
+    reserved: graphNodes.reduce(
       (total, node) => total + KeyMaterial.dependencies(node.draft.material).length,
-      graphNodes.length + edgeCount
-    )
-    const fits = (page: Page) =>
-      Effect.map(measure(record(page, pages.length, reserved)), (bytes) => bytes <= maximumPageBytes)
-    const flush = () => {
-      pages.push(current)
-      current = { nodes: [], edges: [] }
+      graphNodes.length + Graph.edges(graph).length
+    ),
+    pages: [],
+    current: emptyPage()
+  }
+  for (const node of graphNodes) yield* pageNode(pager, node, incoming.get(node.id) ?? [])
+  pager.pages.push(pager.current)
+  return pager.pages.map((page, index) => pageRecord(pager, page, index, pager.pages.length))
+})
+
+/** One page of the recorded plan: whole node summaries and the edges it carries. @private */
+interface Page {
+  readonly nodes: ReadonlyArray<NodeRecord.NodeSummary>
+  readonly edges: ReadonlyArray<NodeRecord.EdgeSummary>
+}
+
+/** The plan being paged: the pages already full, and the page being filled. @private */
+interface Pager {
+  readonly flow: string
+  readonly measure: (record: NodeRecord.NodeRecord) => Effect.Effect<number, never, FlowInstance>
+  /** The content identity of the whole recorded plan, carried by its first page. */
+  readonly identity: string
+  readonly nodeCount: number
+  /**
+   * Every page is started by a node seat or by an edge, and a node is seated
+   * once plus at most once per dependency that starts a continuation page, so
+   * the page count is at most nodes + dependencies + edges. Reserving that
+   * many digits is what makes replacing the reservation with the final count
+   * shrink an encoded envelope or leave it alone, never grow it.
+   */
+  readonly reserved: number
+  readonly pages: Array<Page>
+  current: Page
+}
+
+/** A page with nothing on it yet. @private */
+const emptyPage = (): Page => ({ nodes: [], edges: [] })
+
+/** The content identity of the plan a graph records. @private */
+const planIdentity = (flow: string, graph: Graph.Graph): Effect.Effect<string, InterpreterError, Crypto.Crypto> =>
+  StepKey.content({
+    body: { flow, nodes: recordedPlanDrafts(graph), edges: Graph.edges(graph) },
+    inputs: {},
+    layers: [],
+    capabilities: {}
+  }).pipe(Effect.mapError((cause) =>
+    new InterpreterError({
+      code: "incomplete_graph",
+      flow,
+      node: "root",
+      message: `Cannot identify recorded plan: ${String(cause)}`
+    })
+  ))
+
+/** Appends `value` to the list `lists` keeps under `key`. @private */
+const append = <V>(lists: Map<string, Array<V>>, key: string, value: V): void => {
+  const list = lists.get(key)
+  if (list === undefined) lists.set(key, [value])
+  else list.push(value)
+}
+
+/** The edges that end on each node, in graph order. @private */
+const incomingEdges = (graph: Graph.Graph): Map<string, Array<NodeRecord.EdgeSummary>> => {
+  const incoming = new Map<string, Array<NodeRecord.EdgeSummary>>()
+  for (const edge of Graph.edges(graph)) {
+    append(incoming, edge.to, { from: edge.from, to: edge.to, reason: edge.reason })
+  }
+  return incoming
+}
+
+/** The record page `index` of `count` is written as. @private */
+const pageRecord = (
+  pager: Pager,
+  page: Page,
+  index: number,
+  count: number
+): NodeRecord.PlanRecorded | NodeRecord.SubgraphAppended => ({
+  ...(index === 0
+    ? { _tag: "PlanRecorded" as const, nodeCount: pager.nodeCount, digest: pager.identity }
+    : { _tag: "SubgraphAppended" as const }),
+  sourceId: `plan/0/${index}`,
+  flow: pager.flow,
+  generation: 0,
+  page: index,
+  pages: count,
+  ...page
+})
+
+/** Whether `page`, written as the next page, stays within {@link maximumPageBytes}. @private */
+const fits = (pager: Pager, page: Page) =>
+  Effect.map(
+    pager.measure(pageRecord(pager, page, pager.pages.length, pager.reserved)),
+    (bytes) => bytes <= maximumPageBytes
+  )
+
+/** Closes the current page and starts an empty one. @private */
+const flush = (pager: Pager): void => {
+  pager.pages.push(pager.current)
+  pager.current = emptyPage()
+}
+
+/**
+ * How many of the remaining items the page still holds.
+ *
+ * A page only grows as items are added to it, so the boundary is found by
+ * bisection: a thousand-way fan-in costs a logarithmic number of measurements
+ * per page rather than one per item. Taking none is the page as it stands,
+ * which was measured before anything was offered to it.
+ *
+ * @private
+ */
+const admits = <T>(pager: Pager, rest: ReadonlyArray<T>, grow: (take: number) => Page) =>
+  Effect.gen(function*() {
+    if (yield* fits(pager, grow(rest.length))) return rest.length
+    let low = 0
+    let high = rest.length - 1
+    while (low < high) {
+      const mid = low + Math.ceil((high - low) / 2)
+      if (yield* fits(pager, grow(mid))) low = mid
+      else high = mid - 1
     }
-    /**
-     * How many of the remaining items the page still holds.
-     *
-     * A page only grows as items are added to it, so the boundary is found by
-     * bisection: a thousand-way fan-in costs a logarithmic number of
-     * measurements per page rather than one per item. Taking none is the page
-     * as it stands, which was measured before anything was offered to it.
-     */
-    const admits = <T>(rest: ReadonlyArray<T>, grow: (take: number) => Page) =>
-      Effect.gen(function*() {
-        if (yield* fits(grow(rest.length))) return rest.length
-        let low = 0
-        let high = rest.length - 1
-        while (low < high) {
-          const mid = low + Math.ceil((high - low) / 2)
-          if (yield* fits(grow(mid))) low = mid
-          else high = mid - 1
-        }
-        return low
-      })
-    /**
-     * Puts every item somewhere, starting a page whenever the current one is
-     * full. `resume` prepares a freshly started page so what follows still
-     * says which node it belongs to, and a page that was just started and
-     * admits nothing is the end of what paging can do.
-     */
-    const spread = <T>(
-      items: ReadonlyArray<T>,
-      onto: (page: Page, taken: ReadonlyArray<T>) => Page,
-      resume: (page: Page) => Page,
-      refusal: () => InterpreterError
-    ): Effect.Effect<void, InterpreterError, FlowInstance> =>
-      Effect.gen(function*() {
-        let rest = items
-        let started = false
-        while (rest.length > 0) {
-          const take = yield* admits(rest, (count) => onto(current, rest.slice(0, count)))
-          if (take > 0) {
-            current = onto(current, rest.slice(0, take))
-            rest = rest.slice(take)
-            started = false
-            continue
-          }
-          if (started) return yield* refusal()
-          flush()
-          current = resume(current)
-          started = true
-        }
-      })
-    for (const node of graphNodes) {
-      const summary = summarize(node)
-      const arriving = incoming.get(node.id) ?? []
-      // The summary alone first. What a page must hold whole is the node
-      // itself, and that is the only thing left to refuse.
-      const bare: NodeRecord.NodeSummary = { ...summary, dependsOn: [] }
-      const seat = (page: Page): Page => ({ nodes: [...page.nodes, bare], edges: page.edges })
-      const tooLarge = () =>
-        new InterpreterError({
-          code: "node_record_too_large",
-          flow,
-          node: node.id,
-          message:
-            `Node "${node.id}" and its encoded envelope exceed ${maximumPageBytes} bytes with no dependencies on it`
-        })
-      if (!(yield* fits(seat(current)))) {
-        if (current.nodes.length > 0 || current.edges.length > 0) flush()
-        if (!(yield* fits(seat(current)))) return yield* tooLarge()
-      }
-      current = seat(current)
-      // Then its dependencies, onto the summary the page just seated, and then
-      // the edges that end on it. Either may run past this page onto the next.
-      yield* spread(
-        summary.dependsOn,
-        (page, taken) => {
-          const seated = page.nodes[page.nodes.length - 1]!
-          return {
-            nodes: [...page.nodes.slice(0, -1), { ...seated, dependsOn: [...seated.dependsOn, ...taken] }],
-            edges: page.edges
-          }
-        },
-        seat,
-        tooLarge
-      )
-      yield* spread(
-        arriving,
-        (page, taken) => ({ nodes: page.nodes, edges: [...page.edges, ...taken] }),
-        (page) => page,
-        tooLarge
-      )
-    }
-    pages.push(current)
-    return pages.map((page, index) => record(page, index, pages.length))
+    return low
   })
+
+/**
+ * Puts every item somewhere, starting a page whenever the current one is
+ * full. `resume` prepares a freshly started page so what follows still says
+ * which node it belongs to, and a page that was just started and admits
+ * nothing is the end of what paging can do.
+ *
+ * @private
+ */
+const spread = <T>(
+  pager: Pager,
+  items: ReadonlyArray<T>,
+  onto: (page: Page, taken: ReadonlyArray<T>) => Page,
+  resume: (page: Page) => Page,
+  refusal: () => InterpreterError
+): Effect.Effect<void, InterpreterError, FlowInstance> =>
+  Effect.gen(function*() {
+    let rest = items
+    let started = false
+    while (rest.length > 0) {
+      const take = yield* admits(pager, rest, (count) => onto(pager.current, rest.slice(0, count)))
+      if (take > 0) {
+        pager.current = onto(pager.current, rest.slice(0, take))
+        rest = rest.slice(take)
+        started = false
+        continue
+      }
+      if (started) return yield* refusal()
+      flush(pager)
+      pager.current = resume(pager.current)
+      started = true
+    }
+  })
+
+/** Adds dependencies to the summary the page seated last. @private */
+const withDependencies = (page: Page, taken: ReadonlyArray<string>): Page => {
+  const seated = page.nodes[page.nodes.length - 1]!
+  return {
+    nodes: [...page.nodes.slice(0, -1), { ...seated, dependsOn: [...seated.dependsOn, ...taken] }],
+    edges: page.edges
+  }
+}
+
+/** Adds edges to the page. @private */
+const withEdges = (page: Page, taken: ReadonlyArray<NodeRecord.EdgeSummary>): Page => ({
+  nodes: page.nodes,
+  edges: [...page.edges, ...taken]
+})
+
+/**
+ * Pages one node: its summary alone first, because what a page must hold
+ * whole is the node itself and that is the only thing left to refuse. Then
+ * its dependencies, onto the summary the page just seated, and then the
+ * edges that end on it. Either may run past this page onto the next.
+ *
+ * @private
+ */
+const pageNode = Effect.fnUntraced(function*(
+  pager: Pager,
+  node: Graph.GraphNode,
+  arriving: ReadonlyArray<NodeRecord.EdgeSummary>
+) {
+  const summary = summarize(node)
+  const bare: NodeRecord.NodeSummary = { ...summary, dependsOn: [] }
+  const seat = (page: Page): Page => ({ nodes: [...page.nodes, bare], edges: page.edges })
+  const tooLarge = () =>
+    new InterpreterError({
+      code: "node_record_too_large",
+      flow: pager.flow,
+      node: node.id,
+      message: `Node "${node.id}" and its encoded envelope exceed ${maximumPageBytes} bytes with no dependencies on it`
+    })
+  if (!(yield* fits(pager, seat(pager.current)))) {
+    if (pager.current.nodes.length > 0 || pager.current.edges.length > 0) flush(pager)
+    if (!(yield* fits(pager, seat(pager.current)))) return yield* tooLarge()
+  }
+  pager.current = seat(pager.current)
+  yield* spread(pager, summary.dependsOn, withDependencies, seat, tooLarge)
+  yield* spread(pager, arriving, withEdges, (page) => page, tooLarge)
+})
 
 /**
  * Interprets a flow body, or a bare node, against real values.
@@ -442,7 +500,14 @@ export const interpret = (
   options: Graph.BuildOptions = {}
 ): Effect.Effect<Interpretation, unknown, Services> => interpretWithPolicy(flowOrNode, payload, options)
 
-/** Every interpreter requires versions before permitting content-key reuse. @private */
+/**
+ * Every interpreter requires versions before permitting content-key reuse.
+ *
+ * The graph is built and checked in full before the first node runs, and
+ * then driven from the root.
+ *
+ * @private
+ */
 const interpretWithPolicy = (
   flowOrNode: Parameters<typeof Graph.build>[0],
   payload: unknown,
@@ -452,83 +517,17 @@ const interpretWithPolicy = (
   Effect.gen(function*() {
     const table = yield* Implementations
     const name = "_tag" in flowOrNode ? flowOrNode._tag : "node"
-    const refuse = (
-      code: InterpreterError["code"],
-      node: string,
-      message: string
-    ): Effect.Effect<never, InterpreterError> => Effect.fail(new InterpreterError({ code, flow: name, node, message }))
-
     const graph = yield* Effect.try({
       try: () => Graph.build(flowOrNode, payload, options),
-      catch: (cause) => {
-        // Graph.build normalizes its own refusals to GraphBuildError, but the
-        // flow body runs inside this boundary and a body throws whatever it
-        // throws. Reading `node` and `message` off the value without checking
-        // built an InterpreterError its own schema rejects, and the
-        // constructor's "Schema validation failed" then replaced the reason
-        // the author needed. All three fields are read through own data
-        // descriptors and narrowed here so a plain Error from a body arrives
-        // as a typed failure that still says why. A body that threw produced no
-        // topology, so it reports `incomplete_graph`.
-        const refusalNode = ownDataProperty(cause, "node")
-        const refusalCode = ownDataProperty(cause, "code")
-        const refusalMessage = ownDataProperty(cause, "message")
-        const node = typeof refusalNode === "string" ? refusalNode : ""
-        const reported = typeof refusalMessage === "string" ? refusalMessage : ""
-        return new InterpreterError({
-          code: refusalCode === "duplicate_node" ? "duplicate_node_id" : "incomplete_graph",
-          flow: name,
-          node,
-          message: reported === ""
-            ? `building the graph of flow ${name} threw ${
-              typeof cause === "string" ? cause : BoundedJson.render(cause, 512)
-            }`
-            : reported
-        })
-      }
+      catch: (cause) => buildRefusal(name, cause)
     })
-
-    const graphNodes = Graph.nodes(graph)
-    const byId = new Map(graphNodes.map((node) => [node.id, node]))
-
-    // Advisory diagnostics describe a graph that is exactly what will run, so
-    // they are reported by `Graph.diagnostics` and do not stop a run. A fatal
-    // one means the topology is not what the author wrote.
-    const fatal = graph.diagnostics.find(isFatalDiagnostic)
-    if (fatal !== undefined) {
-      return yield* refuse(
-        "incomplete_graph",
-        fatal.node,
-        `Graph of "${name}" is missing topology and cannot be driven: ${fatal.message}`
-      )
-    }
-
-    /**
-     * The node records this walk writes, if the runtime keeps any.
-     *
-     * A runtime without the seam costs a comparison per node and nothing else:
-     * the record is built by the thunk only when something will hold it.
-     */
+    const fatal = fatalRefusal(name, graph)
+    if (fatal !== undefined) return yield* fatal
     const runtime = yield* FlowRuntime
-    const recordNode = runtime.recordNode
-    const record = recordNode === undefined
-      ? (_: () => NodeRecord.NodeRecord) => Effect.void as Effect.Effect<void, never, FlowInstance>
-      : (make: () => NodeRecord.NodeRecord) => recordNode(make())
-    // The whole graph, before the first node runs. Planning is pure, so this
-    // is the complete declared ceiling of the round rather than a prefix of
-    // what happened to run, and a monitor can draw the round it is watching
-    // from the first record it receives.
-    if (recordNode !== undefined) {
-      const measure = runtime.nodeRecordBytes ??
-        ((record: NodeRecord.NodeRecord) => Effect.succeed(new TextEncoder().encode(JSON.stringify(record)).byteLength))
-      // Validate every page before writing the first or dispatching any action.
-      const pages = yield* planPages(name, graph, measure)
-      yield* Effect.forEach(pages, (page) => recordNode(page), { discard: true })
-    }
-
+    yield* recordPlan(runtime, name, graph)
     // Everything the walk needs that the built graph can be asked for before it
-    // runs, is asked for here — so no such refusal can surface halfway through a
-    // body with the actions ahead of it already committed.
+    // runs, is asked for here — so no such refusal can surface halfway through
+    // a body with the actions ahead of it already committed.
     //
     // A reference out of the graph is the first: a round may be PLANNED against
     // a node an earlier generation settled — `Plan.append` exists for exactly
@@ -539,799 +538,907 @@ const interpretWithPolicy = (
     // have reached, because the plan is the declared ceiling of what may run.
     // Deferred operations must likewise survive beside every AST, even when
     // the walk would skip their branch or catch arm.
-    const implementations = new Map<string, Implementation>()
-    const handoffDeclarations = new Map<string, AnyFlow>()
-    const childDeclarations = new Map<string, AnyWithProps>()
-    for (const node of graphNodes) {
-      const ast = node.ast
-      if (ast._tag === "Map" && Node.mapper(ast) === undefined) {
-        return yield* refuse("missing_operation", node.id, `Map at "${node.id}" lost its mapper.`)
-      }
-      if (ast._tag === "Branch" && Node.predicate(ast) === undefined) {
-        return yield* refuse("missing_operation", node.id, `Branch at "${node.id}" lost its predicate.`)
-      }
-      if (ast._tag === "Catch" && ast.filter !== undefined && Node.catchFilter(ast) === undefined) {
-        return yield* refuse("missing_operation", node.id, `Catch at "${node.id}" lost its schema filter.`)
-      }
-      for (const dependency of KeyMaterial.dependencies(node.draft.material)) {
-        if (byId.has(dependency)) continue
-        return yield* refuse(
-          "unresolved_reference",
-          node.id,
-          `Node "${node.id}" reads "${dependency}", which this graph does not hold.`
-        )
-      }
-    }
-    // Diagnose lost operations before action declarations, regardless of graph order.
-    for (const node of graphNodes) {
-      if (node.ast._tag === "FlowCall" && node.ast.mode === "handoff") {
-        const declaration = Node.declaration(node.ast)
-        if (!Predicate.hasProperty(declaration, FlowTypeId)) {
-          return yield* refuse(
-            "unsupported_call",
-            node.id,
-            `Handoff to flow "${node.ast.flow}" at "${node.id}" lost its declaration. ` +
-              "Build and interpret the authored node in the same process so its payload can be encoded."
-          )
-        }
-        handoffDeclarations.set(node.id, declaration as unknown as AnyFlow)
-        if (registerReachable !== undefined) yield* registerReachable(declaration as unknown as AnyWithProps)
-        continue
-      }
-      if (node.ast._tag === "FlowCall" && node.ast.mode === "boundary") {
-        // A boundary is one node here and a real execution underneath, so what
-        // it needs resolved up front is the callee itself: the declaration is
-        // what `execute` is called on, and losing it is a wiring error rather
-        // than a run-time contingency, exactly like an unimplemented action.
-        const declaration = Node.declaration(node.ast)
-        if (!Predicate.hasProperty(declaration, FlowTypeId)) {
-          return yield* refuse(
-            "unsupported_call",
-            node.id,
-            `Child boundary to flow "${node.ast.flow}" at "${node.id}" lost its declaration. ` +
-              "Build and interpret the authored node in the same process so the child can be executed."
-          )
-        }
-        childDeclarations.set(node.id, declaration as unknown as AnyWithProps)
-        if (registerReachable !== undefined) yield* registerReachable(declaration as unknown as AnyWithProps)
-        continue
-      }
-      if (node.ast._tag !== "ActionCall") continue
-      const implementation = yield* table.get(node.ast.action)
-      if (Option.isNone(implementation)) {
-        return yield* refuse(
-          "unresolved_action",
-          node.id,
-          `Action "${node.ast.action}" has no implementation. ` +
-            `Provide ONE Action.layerImplementations under both ${node.ast.action}.toLayer(execute) and ` +
-            "this interpreter layer: an implementation files itself with the table that is in scope " +
-            "while IT is built, so a table merged beside it, or a second one built above it, is not the " +
-            "table this driver reads."
-        )
-      }
-      const declaration = Node.declaration(node.ast)
-      const declaredVersion = ownDataProperty(declaration, "implementationVersion")
-      const tier = ownDataProperty(declaration, "tier")
-      if (tier === undefined) {
-        return yield* refuse(
-          "incomplete_graph",
-          node.id,
-          `Action "${node.ast.action}" lost its declaration, so its implementation identity cannot be checked. ` +
-            "Build the canonical composition from the authored action nodes."
-        )
-      }
-      if (
-        tier === "sealed" && ownDataProperty(declaration, "idempotencyKey") !== undefined &&
-        declaredVersion === undefined
-      ) {
-        return yield* refuse(
-          "missing_implementation_version",
-          node.id,
-          `Sealed action "${node.ast.action}" declares an idempotency key and can reuse recorded content. ` +
-            "Declare implementationVersion on Action.make and attest the same version in toLayer."
-        )
-      }
-      if (declaredVersion !== implementation.value.implementationVersion) {
-        return yield* refuse(
-          "implementation_version_mismatch",
-          node.id,
-          `Action "${node.ast.action}" does not match its registered implementationVersion. ` +
-            "Register the declared version and start a newly planned execution when its semantics change."
-        )
-      }
-      implementations.set(node.ast.action, implementation.value)
-    }
-
-    // Graph.build also accepts authored references. Unlike Plan.compile, this
-    // entry point has not yet checked them for cycles: a self-reference would
-    // join its own in-flight deferred forever. Validate the entire dependency
-    // graph before dispatch, including branch arms the execution might skip.
-    const remaining = new Map<string, number>()
-    const dependents = new Map<string, Array<string>>()
-    const ready: Array<string> = []
-    for (const node of graphNodes) {
-      const dependencies = KeyMaterial.dependencies(node.draft.material)
-      remaining.set(node.id, dependencies.length)
-      if (dependencies.length === 0) ready.push(node.id)
-      for (const dependency of dependencies) {
-        const consumers = dependents.get(dependency)
-        if (consumers === undefined) dependents.set(dependency, [node.id])
-        else consumers.push(node.id)
-      }
-    }
-    for (let index = 0; index < ready.length; index++) {
-      for (const consumer of dependents.get(ready[index]!) ?? []) {
-        const count = remaining.get(consumer)! - 1
-        remaining.set(consumer, count)
-        if (count === 0) ready.push(consumer)
-      }
-    }
-    if (ready.length !== graphNodes.length) {
-      const blocked = graphNodes.find((node) => remaining.get(node.id)! > 0)!
-      return yield* refuse(
-        "incomplete_graph",
-        blocked.id,
-        `Graph of "${name}" contains a dependency cycle blocking "${blocked.id}". ` +
-          "Use an acyclic reference, a child boundary, or a trampoline handoff."
-      )
-    }
-    // The children a node settles with, in the order graph building recorded
-    // them: `first` then the arms of a branch, `first` then the continuation of
-    // a sequence, the members of a combination, the spliced body of an inline
-    // call. Payload references are NOT here — they are named by the key
-    // material, and settled from it.
-    const sources = new Map<string, Array<string>>()
-    for (const edge of Graph.edges(graph)) {
-      if (edge.reason !== "value") continue
-      sources.set(edge.to, [...sources.get(edge.to) ?? [], edge.from])
-    }
-
-    const settled = new Map<string, unknown>()
-    const failed = new Map<string, unknown>()
-
-    /**
-     * Projects a settled value along the property path a `Ref` recorded —
-     * through `StepKey.project`, the one projection semantics for the value
-     * channel. The scheduler digests exactly what this returns; resolving a
-     * `Ref` any other way here would let two executions that key identically
-     * consume different values.
-     */
-    const project = StepKey.project
-
-    /**
-     * Replaces every placeholder in a hydrated payload with what it stands for.
-     *
-     * The record is rebuilt with a null prototype and `defineProperty`, for the
-     * reason {@link module:Graph.build}'s cloners are: `output[key] = …` on an
-     * object literal routes `__proto__` through `Object.prototype`'s accessor,
-     * which drops an own `__proto__` field carrying a primitive and reparents
-     * the clone when it carries an object. A graph hydrates that field as data,
-     * so the value handed to an action has to keep it as data too.
-     */
-    const resolve = (value: unknown): unknown => {
-      const reference = Planned.reference(value)
-      if (reference !== undefined) {
-        return project(
-          settled.has(reference.node) ? settled.get(reference.node) : failed.get(reference.node),
-          reference.path
-        )
-      }
-      if (Array.isArray(value)) return value.map((item) => resolve(item))
-      if (!isRecord(value)) return value
-      const output: Record<string, unknown> = Object.create(null) as Record<string, unknown>
-      for (const key of Object.keys(value)) {
-        Object.defineProperty(output, key, {
-          configurable: true,
-          enumerable: true,
-          value: resolve(value[key]),
-          writable: true
-        })
-      }
-      const outcome = Object.getOwnPropertyDescriptor(value, OutcomeValueTypeId)
-      if (outcome !== undefined && "value" in outcome) {
-        Object.defineProperty(output, OutcomeValueTypeId, {
-          configurable: false,
-          enumerable: false,
-          value: outcome.value,
-          writable: false
-        })
-      }
-      return output
-    }
-
-    /**
-     * The settlement currently in flight for a node, for as long as it is.
-     *
-     * `settled.has(id)` alone is not a memo once the walk runs concurrently: it
-     * answers "has this node FINISHED", and two demands that arrive while the
-     * node is still running both see `false` and both execute it. A diamond
-     * would then run its shared node twice, which for an action with effects is
-     * a correctness bug rather than a wasted cycle.
-     *
-     * The check-and-register below is the whole reason this is a `suspend` and
-     * not a generator: the callback runs synchronously, so no other fiber can
-     * observe the gap between the lookup and the insert.
-     *
-     * Every computation runs on a fiber forked into `nodes`, the
-     * interpretation's own scope, and every demand — the first included — is a
-     * join on the node's deferred. Ownership by the interpretation rather than
-     * by whichever demand arrived first is what makes a ref-diamond sound: a
-     * failing `All` interrupts its member JOINS, never a shared node's
-     * execution, so recovery arms above can still join the shared work; and
-     * when the walk itself ends, closing the scope interrupts whatever is
-     * still running, so an orphaned execution cannot outlive the
-     * interpretation or write a phantom success into `settled` afterwards
-     * (Skyframe's and `MemoMap`'s ownership model).
-     */
-    const inFlight = new Map<string, Deferred.Deferred<unknown, unknown>>()
-    const nodes = yield* Scope.make()
-    /**
-     * The execution fiber of every node still running, so a join that settled
-     * early can interrupt the work of the members it no longer waits for.
-     */
-    const executions = new Map<string, Fiber.Fiber<unknown, unknown>>()
-    /**
-     * The child execution id each `.child()` node opened. Interrupting the
-     * node's fiber only stops its join: a losing child is cancelled through
-     * the runtime, the same request a caller's cancellation makes.
-     */
-    const childExecutions = new Map<string, string>()
-
-    /**
-     * The nodes this walk has already settled a record for.
-     *
-     * Everything else is what the walk never reached, which is exactly the
-     * `skipped` set reported below — an untaken branch arm, or a dependent of
-     * something that failed.
-     */
-    const reported = new Set<string>()
-
-    const settleNode = (id: string): Effect.Effect<unknown, unknown, Services> =>
-      Effect.suspend(() => {
-        if (settled.has(id)) return Effect.succeed(settled.get(id))
-        const waiting = inFlight.get(id)
-        // A later demand joins the execution rather than starting one.
-        if (waiting !== undefined) return Deferred.await(waiting)
-        const deferred = Deferred.makeUnsafe<unknown, unknown>()
-        inFlight.set(id, deferred)
-        const node = byId.get(id)!
-        const action = actionTag(node.ast)
-        // What this node's dispatches did, reported by the engine underneath
-        // it: a node whose dispatches were ALL served from durable records
-        // rebuilt nothing, and says so. The digests name those dispatches, so
-        // the attempt rows the engine wrote under them belong to THIS node,
-        // and the highest attempt reported is the node's real attempt count.
-        // A `Set` keeps the digests unrepeated in report order: one dispatch
-        // retried three times keeps one step key and reports it three times.
-        const dispatches = { executed: 0, replayed: 0, attempts: 1, digests: new Set<string>() }
-        const settleRecord =
-          (outcome: NodeRecord.NodeOutcome, settlement: { readonly value: unknown }) => (): NodeRecord.NodeRecord => ({
-            _tag: "NodeSettled",
-            sourceId: `node/${id}/1/settled`,
-            nodeId: id,
-            outcome,
-            attempts: dispatches.attempts,
-            stepKeyDigests: [...dispatches.digests],
-            value: settlement.value,
-            ...(action === undefined ? {} : { action })
-          })
-        const execution = record(() => ({
-          _tag: "NodeScheduled",
-          sourceId: `node/${id}/1`,
-          nodeId: id,
-          kind: node.kind,
-          attempt: 1,
-          ...(action === undefined ? {} : { action })
-        })).pipe(
-          Effect.andThen(
-            compute(node).pipe(
-              Effect.provideService(
-                DispatchReport,
-                DispatchReport.of({
-                  dispatched: (dispatch) =>
-                    Effect.sync(() => {
-                      if (dispatch.outcome === "executed") dispatches.executed = dispatches.executed + 1
-                      else dispatches.replayed = dispatches.replayed + 1
-                      // Bounded where it is COLLECTED, not where it is
-                      // written: a cap applied at the end still holds every
-                      // digest in memory until then, and the point of the cap
-                      // is that one node cannot grow without bound.
-                      if (
-                        dispatch.stepKeyDigest !== undefined &&
-                        dispatches.digests.size < maximumDispatchDigests
-                      ) {
-                        dispatches.digests.add(dispatch.stepKeyDigest)
-                      }
-                      if (dispatch.attempt !== undefined && dispatch.attempt > dispatches.attempts) {
-                        dispatches.attempts = dispatch.attempt
-                      }
-                    })
-                })
-              )
-            )
-          ),
-          Effect.tap((value) =>
-            Effect.sync(() => {
-              settled.set(id, value)
-              reported.add(id)
-            }).pipe(
-              Effect.andThen(record(
-                settleRecord(dispatches.executed === 0 && dispatches.replayed > 0 ? "clean" : "built", { value })
-              ))
-            )
-          ),
-          Effect.tapError((error) =>
-            Effect.sync(() => {
-              failed.set(id, error)
-              reported.add(id)
-            }).pipe(Effect.andThen(record(settleRecord("failed", { value: error }))))
-          ),
-          Effect.onExit((exit) => {
-            // An interrupted execution is evicted, not memoized: current
-            // joiners observe the interruption, but a LATER demand — a
-            // recovery arm, a re-driven walk — re-executes the node instead
-            // of replaying an interrupt that says nothing about it.
-            if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) inFlight.delete(id)
-            executions.delete(id)
-            return Deferred.done(deferred, exit)
-          })
-        )
-        // `startImmediately` keeps the first demand's latency identical to the
-        // old inline execution: the node runs synchronously until its first
-        // real suspension, so a body that parks does so before the driver's
-        // next tick — the same observable cadence a sequential walk had.
-        return Effect.forkIn(
-          Effect.withFiber((fiber) => {
-            executions.set(id, fiber)
-            return execution
-          }),
-          nodes,
-          { startImmediately: true }
-        ).pipe(Effect.andThen(Deferred.await(deferred)))
-      })
-
-    /**
-     * The nodes that read each node's value through their key material: the
-     * payload references and barriers a structural subtree does not show.
-     */
-    const readers = new Map<string, Array<string>>()
-    for (const node of graphNodes) {
-      for (const dependency of KeyMaterial.dependencies(node.draft.material)) {
-        readers.set(dependency, [...readers.get(dependency) ?? [], node.id])
-      }
-    }
-
-    /**
-     * The work of the members a join no longer waits for: their running node
-     * fibers and the child executions those nodes opened.
-     *
-     * A member's structural subtree is its own, so its running executions are
-     * interrupted; nothing else demands them again. A node something outside that
-     * subtree also reads is shared work the interpretation owns — the same
-     * ownership an `All` failure respects — and keeps running, together with
-     * everything inside the subtree it depends on.
-     */
-    // Graph building gives every node exactly one structural parent and reads
-    // each child through that parent's key material, so the walk below never
-    // reaches a node twice and every node in a subtree has a reader.
-    const losingWork = (joinId: string, roots: ReadonlyArray<string>) => {
-      const subtree = new Set<string>()
-      const pending = [...roots]
-      while (pending.length > 0) {
-        const id = pending.pop()!
-        subtree.add(id)
-        pending.push(...sources.get(id) ?? [])
-      }
-      const kept = new Set<string>()
-      const shared = [...subtree].filter((id) =>
-        readers.get(id)!.some((reader) => reader !== joinId && !subtree.has(reader))
-      )
-      while (shared.length > 0) {
-        const id = shared.pop()!
-        if (kept.has(id) || !subtree.has(id)) continue
-        kept.add(id)
-        shared.push(...sources.get(id) ?? [], ...KeyMaterial.dependencies(byId.get(id)!.draft.material))
-      }
-      const fibers: Array<Fiber.Fiber<unknown, unknown>> = []
-      const childRuns: Array<JoinChild> = []
-      for (const id of subtree) {
-        if (kept.has(id)) continue
-        const fiber = executions.get(id)
-        if (fiber === undefined) continue
-        fibers.push(fiber)
-        const executionId = childExecutions.get(id)
-        if (executionId !== undefined) childRuns.push({ node: id, executionId })
-      }
-      return { fibers, childRuns }
-    }
-
-    /**
-     * Cancels the child executions a join's losers opened, through the
-     * runtime: interrupting a node's fiber only stops its join, so a losing
-     * child is cancelled with the same request a caller's cancellation makes.
-     */
-    const cancelChildren = (childRuns: ReadonlyArray<JoinChild>): Effect.Effect<void, never, Services> =>
-      Effect.forEach(
-        childRuns,
-        ({ executionId, node }) =>
-          Effect.orDie(runtime.interrupt(childDeclarations.get(node)! as AnyFlow, executionId)),
-        { discard: true }
-      )
-
-    /**
-     * Settles a `Race` node: `race`, `any`, or `quorum`.
-     *
-     * The members that decided are journaled, in the order they decided,
-     * under a durable deferred named for the node before any loser is
-     * interrupted. A resumed walk that finds the record settles exactly those
-     * members — whose own dispatches replay from their durable records — and
-     * never demands the others, so it reaches the same verdict without
-     * running a loser again. A defect or an interpreter refusal in a member is
-     * not a decision: it propagates unjournaled, as it would from an `All`.
-     *
-     * The same record names the child executions the losers had opened, so a
-     * process that dies between the journal write and their cancellation does
-     * not orphan them: the resumed walk never demands a loser, and it cancels
-     * those children from the record instead (#2892). Cancellation is a
-     * first-writer-wins request, so repeating it on every replay is harmless.
-     */
-    const join = (
-      node: Graph.GraphNode,
-      ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
-      children: ReadonlyArray<string>
-    ): Effect.Effect<unknown, unknown, Services> =>
-      Effect.gen(function*() {
-        const members = Object.keys(ast.nodes)
-        const journal = DurableDeferred.make(`join/${node.id}`, { success: JoinDecision })
-        const instance = yield* FlowInstance
-        // A join is not a wait: reading its record must not consume the
-        // waiting classification a parked sibling declared.
-        const waiting = instance.waiting
-        const recorded = yield* runtime.deferredResult(journal)
-        instance.waiting = waiting
-        if (Option.isSome(recorded) && Exit.isSuccess(recorded.value)) {
-          const record = recorded.value.value
-          const decided = "members" in record ? record.members : record
-          const opened = "members" in record ? record.children : []
-          const indices = decided.map((member) => members.indexOf(member))
-          if (indices.some((index) => index < 0) || new Set(indices).size !== indices.length) {
-            return yield* refuse(
-              "join_mismatch",
-              node.id,
-              `Join at "${node.id}" journaled members ${JSON.stringify(decided)}, which it no longer holds.`
-            )
-          }
-          const lost = opened.find((child) => !childDeclarations.has(child.node))
-          if (lost !== undefined) {
-            return yield* refuse(
-              "join_mismatch",
-              node.id,
-              `Join at "${node.id}" journaled a losing child at "${lost.node}", which the plan no longer holds.`
-            )
-          }
-          yield* cancelChildren(opened)
-          // The losers are never demanded, so nothing of theirs starts again.
-          const exits = yield* Effect.forEach(indices, (index) => Effect.exit(settleNode(children[index]!)), {
-            concurrency: "unbounded"
-          })
-          // The verdict must close on the LAST journaled member, exactly as it
-          // did live: one that closes earlier, or never, is a different join.
-          const outcomes: Array<Decision> = []
-          for (let position = 0; position < exits.length; position++) {
-            const exit = exits[position]!
-            if (classify(exit) !== "decisive") return yield* exit
-            outcomes.push({ member: members[indices[position]!]!, exit })
-            const verdict = decide(ast, members.length, outcomes)
-            if (verdict !== undefined && position === exits.length - 1) return yield* verdict
-            if (verdict !== undefined) break
-          }
-          return yield* refuse(
-            "join_mismatch",
-            node.id,
-            `Join at "${node.id}" replayed members ${JSON.stringify(decided)} without reaching its verdict.`
-          )
-        }
-
-        const outcomes: Array<Decision> = []
-        let verdict: Exit.Exit<unknown, unknown> | undefined
-        let journaled = false
-        const over = Deferred.makeUnsafe<void>()
-        const watch = (index: number) =>
-          Effect.exit(settleNode(children[index]!)).pipe(
-            Effect.flatMap((exit) =>
-              Effect.sync(() => {
-                if (verdict !== undefined) return
-                const kind = classify(exit)
-                // An interrupted member is still undecided: it parked, or a
-                // join elsewhere cancelled shared work. The others may still
-                // decide without it.
-                if (kind === "pending") return
-                if (kind === "fatal") {
-                  verdict = exit
-                } else {
-                  outcomes.push({ member: members[index]!, exit })
-                  verdict = decide(ast, members.length, outcomes)
-                  journaled = verdict !== undefined
-                }
-                if (verdict !== undefined) Deferred.doneUnsafe(over, Exit.void)
-              })
-            )
-          )
-        yield* Effect.raceFirst(
-          Effect.forEach(children, (_, index) => watch(index), { concurrency: "unbounded", discard: true }),
-          Deferred.await(over)
-        )
-        // Every member ended interrupted: the join cannot decide in this
-        // round, and the walk parks or ends with it.
-        if (verdict === undefined) return yield* Effect.interrupt
-        const decidedMembers = outcomes.map((outcome) => outcome.member)
-        yield* Effect.uninterruptible(
-          Effect.gen(function*() {
-            const { childRuns, fibers } = losingWork(
-              node.id,
-              children.filter((_, index) => !decidedMembers.includes(members[index]!))
-            )
-            if (journaled) {
-              yield* runtime.deferredDone(journal, {
-                flowName: instance.flow._tag,
-                executionId: instance.executionId,
-                deferredName: journal.name,
-                exit: Exit.succeed({ members: decidedMembers, children: childRuns })
-              })
-            }
-            // The interruption is requested, not awaited: a loser's finalizers
-            // may wait on work that only settles after the join returns, and
-            // the node scope awaits every fiber when the walk ends anyway.
-            yield* Effect.withFiber((current) =>
-              Effect.sync(() => {
-                for (const fiber of fibers) fiber.interruptUnsafe(current.id)
-              })
-            )
-            yield* cancelChildren(childRuns)
-          })
-        )
-        return yield* verdict
-      })
-
-    const compute: (node: Graph.GraphNode) => Effect.Effect<unknown, unknown, Services> = Effect.fnUntraced(
-      function*(node: Graph.GraphNode) {
-        const children = sources.get(node.id) ?? []
-        const ast = node.ast
-        if (ast._tag === "AndThen" && ast.next !== undefined) {
-          // An explicit sequence is a success boundary for the WHOLE next
-          // subtree. Joining first and then concurrently lets a nested All,
-          // Map, or inline call start effects before its prerequisite settles.
-          // bindPlanned is distinct: it declares data dependencies and can
-          // expose independent work while the producer is still running.
-          yield* settleNode(children[0]!)
-          return yield* settleNode(children[1]!)
-        }
-        if (ast._tag === "Branch") {
-          // The predicate decides on the REAL value, and only the arm it chose
-          // is settled. Both arms are still in the plan; the untaken one is
-          // reported as skipped.
-          const decide = Node.predicate(ast)!
-          const subject = yield* settleNode(children[0]!)
-          return yield* settleNode(decide(subject) ? children[1]! : children[2]!)
-        }
-        if (ast._tag === "Catch") {
-          // DECIDED: catch observes only typed
-          // failures from ordinary protected execution. Interpreter refusals
-          // propagate unchanged. Effect defects and
-          // compensation failures remain outside this interpreter's error
-          // channel, so recovery cannot conceal a broken invariant or weaken
-          // withRollback's compensation guarantees.
-          const protectedId = children[0]!
-          return yield* Effect.matchEffect(settleNode(protectedId), {
-            onFailure: (error) => {
-              if (Schema.is(InterpreterError)(error)) return Effect.fail(error)
-              const filter = Node.catchFilter(ast)
-              if (filter !== undefined && !Schema.is(filter)(error)) {
-                return Effect.fail(error)
-              }
-              // The failure arm's planned subject resolves through the
-              // protected node id. Filing the typed failure as that settlement
-              // also prevents its static failure edge from re-running the
-              // protected graph while the recovery arm is driven.
-              failed.set(protectedId, error)
-              return settleNode(children[1]!)
-            },
-            onSuccess: Effect.succeed
-          })
-        }
-        if (ast._tag === "Race") {
-          // A join must not wait for every member, so its members are left
-          // out of the dependency barrier below; its other dependencies — the
-          // references and barriers it reads — still settle first.
-          const members = new Set(children)
-          yield* Effect.forEach(
-            KeyMaterial.dependencies(node.draft.material).filter((dependency) =>
-              !members.has(dependency) && !failed.has(dependency)
-            ),
-            settleNode,
-            { concurrency: "unbounded", discard: true }
-          )
-          return yield* join(node, ast, children)
-        }
-        // Dependency order, from the key material: the same `Ref` and `Pending`
-        // inputs the plan turns into edges, settled before the node that reads
-        // them — and settled CONCURRENTLY, because independent dependencies are
-        // exactly what the scheduler admits under separate permits. Two
-        // execution surfaces disagreeing about concurrency is a correctness
-        // hazard, not just a latency one.
-        yield* Effect.forEach(
-          KeyMaterial.dependencies(node.draft.material).filter((dependency) => !failed.has(dependency)),
-          settleNode,
-          { concurrency: "unbounded", discard: true }
-        )
-        switch (ast._tag) {
-          case "ActionCall":
-            // Resolved by the pre-pass above, which refuses the whole graph
-            // when an action it names has no implementation. The structural
-            // node address is durable dispatch identity, scoped to this one
-            // implementation call; it never comes from fiber arrival order.
-            return yield* implementations.get(ast.action)!.action(resolve(node.payload)).pipe(
-              Effect.provideService(DispatchSite, node.id),
-              attenuateCapabilities(node.capabilityCeilings)
-            )
-          case "Succeed":
-            return resolve(node.payload)
-          case "Fail":
-            // The typed error channel, from a constant the plan already holds.
-            // An enclosing catch observes it exactly as it observes an action's
-            // failure, and an uncaught one is the body's typed failure.
-            return yield* Effect.fail(resolve(node.payload))
-          case "Map": {
-            const transform = Node.mapper(ast)!
-            return transform(yield* settleNode(children[0]!))
-          }
-          case "All": {
-            // `All` is a combination, so its members settle concurrently — the
-            // same semantics `PlanScheduler` gives the same graph. Fail-fast
-            // matches `Effect.forEach`'s default and the scheduler's halt
-            // rule — with the ownership caveat: what a failure interrupts is
-            // each sibling's JOIN, not the node execution itself, which the
-            // interpretation owns and interrupts when the walk ends. A node
-            // whose execution was interrupted is evicted from the memo and
-            // records nothing, so it reports as skipped rather than as a
-            // phantom success.
-            const members = Object.keys(ast.nodes)
-            const values = yield* Effect.forEach(members, (_, index) => settleNode(children[index]!), {
-              concurrency: "unbounded"
-            })
-            const joined: Record<string, unknown> = Object.create(null) as Record<string, unknown>
-            for (let index = 0; index < members.length; index++) {
-              Object.defineProperty(joined, members[index]!, {
-                configurable: true,
-                enumerable: true,
-                value: values[index],
-                writable: true
-              })
-            }
-            return joined
-          }
-          case "AndThen":
-            return yield* settleNode(children[1]!)
-          case "FlowCall": {
-            if (ast.mode === "handoff") {
-              const declaration = handoffDeclarations.get(node.id)!
-              // DECIDED: a handoff target's schema
-              // services come from the context registration captured. A
-              // body's type cannot enumerate declarations hidden in its
-              // topology, so erase only that dynamic service parameter after
-              // resolving the concrete declaration here.
-              const payload = yield* Effect.flatMap(
-                Effect.orDie(declaration.payloadSchema.makeEffect(resolve(node.payload) as never)),
-                (decoded) =>
-                  Effect.orDie(
-                    Schema.encodeEffect(Schema.toCodecJson(declaration.payloadSchema))(decoded)
-                  )
-              ) as unknown as Effect.Effect<unknown, never, Services>
-              const ceiling = (yield* attenuateCapabilities(node.capabilityCeilings)(CapabilitySet.current)).groups
-              const outcome = {
-                _tag: "To",
-                flow: ast.flow,
-                payload,
-                ...(ceiling.length === 0 ? {} : { capabilityCeilings: ceiling })
-              } satisfies Outcome.To<unknown>
-              Object.defineProperty(outcome, OutcomeValueTypeId, {
-                configurable: false,
-                enumerable: false,
-                value: "To",
-                writable: false
-              })
-              return outcome
-            }
-            if (ast.mode === "boundary") {
-              // The real boundary of `docs/guides/run-a-child-flow.md`: an
-              // ordinary child execution, opened through the same `execute` a
-              // handler would call. The parent's `FlowInstance` is in scope, so
-              // the engine records the lineage edge, interrupts the child with
-              // the parent, and turns a suspended child into a suspended
-              // parent — genuine nesting, not a spliced imitation of it. It is
-              // deliberately NOT `Effect.scoped`: the interrupt link the engine
-              // installs is a finalizer of the PARENT's scope, and closing a
-              // scope of our own here would run it the moment the child
-              // settled. The same dynamic schema-service erasure the handoff
-              // above records applies to the cast: a body's type cannot
-              // enumerate the declarations hidden in its topology.
-              const declaration = childDeclarations.get(node.id)!
-              const instance = yield* FlowInstance
-              const childPayload = resolve(node.payload)
-              const executionId = yield* (childExecutionId(
-                instance.executionId,
-                node.id,
-                declaration._tag,
-                childPayload
-              ) as unknown as Effect.Effect<string, never, Services>)
-              childExecutions.set(node.id, executionId)
-              return yield* (declaration.execute(childPayload, {
-                executionId
-              }) as Effect.Effect<unknown, unknown, Services>).pipe(attenuateCapabilities(node.capabilityCeilings))
-            }
-            const spliced = children[0]
-            if (spliced === undefined) {
-              return yield* refuse(
-                "unsupported_call",
-                node.id,
-                `Flow "${ast.flow}" is called at "${node.id}" as a leaf, which this interpreter does not drive. ` +
-                  "An inline .call() is spliced into the graph with the callee's body and driven with it, and " +
-                  "only a call that lost its declaration has no body to splice. Build and interpret the authored " +
-                  `node in the same process, or call it as ${ast.flow}.child(payload) to run it as its own execution.`
-              )
-            }
-            return yield* settleNode(spliced)
-          }
-        }
-      }
-    )
-
+    const unready = unreadyNode(name, graph)
+    if (unready !== undefined) return yield* unready
+    const declarations = yield* resolveDeclarations(name, table, graph, registerReachable)
+    const cycle = cycleRefusal(name, graph)
+    if (cycle !== undefined) return yield* cycle
+    const walk = makeWalk(name, runtime, graph, declarations, yield* Scope.make())
     // Closing the node scope on every exit — value, failure, or the
     // interpretation's own interruption — is the fail-fast half of the
     // ownership model: whatever is still running when the walk ends is
     // interrupted before the interpretation reports, so no execution
     // outlives it.
-    /**
-     * Everything the walk never reached, recorded once the walk is over.
-     *
-     * Only a walk that ENDED reports this. An interrupted one is a run that
-     * parked or was cancelled, and its nodes are not skipped — the resumed
-     * walk settles them, and recording them as skipped first would leave the
-     * journal claiming a node never ran that later did. A typed failure is
-     * terminal for the round, so its stranded nodes are skipped exactly as a
-     * completed walk's untaken branch arm is.
-     */
-    const recordSkipped = (exit: Exit.Exit<unknown, unknown>) =>
-      Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) ? Effect.void : Effect.forEach(
-        graphNodes.filter((node) => !reported.has(node.id)),
-        (node) => {
-          const action = actionTag(node.ast)
-          return record(() => ({
-            _tag: "NodeSettled",
-            sourceId: `node/${node.id}/1/settled`,
-            nodeId: node.id,
-            outcome: "skipped",
-            attempts: 0,
-            // A node the walk never reached dispatched nothing, so it claims
-            // no step key and there is no value it settled with.
-            stepKeyDigests: [],
-            ...(action === undefined ? {} : { action })
-          }))
-        },
-        { discard: true }
-      )
-
-    const value = yield* settleNode(options.root ?? "root").pipe(
-      Effect.onExit((exit) => Scope.close(nodes, exit)),
-      Effect.onExit(recordSkipped)
+    const value = yield* settleNode(walk, options.root ?? "root").pipe(
+      Effect.onExit((exit) => Scope.close(walk.scope, exit)),
+      Effect.onExit((exit) => recordSkipped(walk, exit))
     )
-    return {
-      value,
-      settled,
-      failed,
-      skipped: Graph.nodes(graph).filter((node) => !settled.has(node.id) && !failed.has(node.id)).map((node) => node.id)
-    }
+    const skipped = walk.nodes.filter((node) => !walk.settled.has(node.id) && !walk.failed.has(node.id))
+    return { value, settled: walk.settled, failed: walk.failed, skipped: skipped.map((node) => node.id) }
   })
+
+/** An interpreter refusal of `flow` at `node`. @private */
+const refusal = (flow: string, code: InterpreterError["code"], node: string, message: string): InterpreterError =>
+  new InterpreterError({ code, flow, node, message })
+
+/**
+ * The refusal a graph build's throw becomes.
+ *
+ * Graph.build normalizes its own refusals to GraphBuildError, but the flow
+ * body runs inside this boundary and a body throws whatever it throws.
+ * Reading `node` and `message` off the value without checking built an
+ * InterpreterError its own schema rejects, and the constructor's "Schema
+ * validation failed" then replaced the reason the author needed. All three
+ * fields are read through own data descriptors and narrowed here so a plain
+ * Error from a body arrives as a typed failure that still says why. A body
+ * that threw produced no topology, so it reports `incomplete_graph`.
+ *
+ * @private
+ */
+const buildRefusal = (name: string, cause: unknown): InterpreterError => {
+  const thrownNode = ownDataProperty(cause, "node")
+  const thrownCode = ownDataProperty(cause, "code")
+  const thrownMessage = ownDataProperty(cause, "message")
+  const node = typeof thrownNode === "string" ? thrownNode : ""
+  const reported = typeof thrownMessage === "string" ? thrownMessage : ""
+  return refusal(
+    name,
+    thrownCode === "duplicate_node" ? "duplicate_node_id" : "incomplete_graph",
+    node,
+    reported === ""
+      ? `building the graph of flow ${name} threw ${typeof cause === "string" ? cause : BoundedJson.render(cause, 512)}`
+      : reported
+  )
+}
+
+/**
+ * The refusal of a graph with a fatal diagnostic. Advisory diagnostics
+ * describe a graph that is exactly what will run, so they are reported by
+ * `Graph.diagnostics` and do not stop a run. A fatal one means the topology
+ * is not what the author wrote.
+ *
+ * @private
+ */
+const fatalRefusal = (name: string, graph: Graph.Graph): InterpreterError | undefined => {
+  const fatal = graph.diagnostics.find(isFatalDiagnostic)
+  if (fatal === undefined) return undefined
+  return refusal(
+    name,
+    "incomplete_graph",
+    fatal.node,
+    `Graph of "${name}" is missing topology and cannot be driven: ${fatal.message}`
+  )
+}
+
+/**
+ * Writes the whole graph, before the first node runs. Planning is pure, so
+ * this is the complete declared ceiling of the round rather than a prefix of
+ * what happened to run, and a monitor can draw the round it is watching from
+ * the first record it receives. Every page is validated before the first is
+ * written or any action dispatched.
+ *
+ * @private
+ */
+const recordPlan = (runtime: FlowRuntime["Service"], name: string, graph: Graph.Graph) => {
+  const recordNode = runtime.recordNode
+  if (recordNode === undefined) return Effect.void
+  const measure = runtime.nodeRecordBytes ??
+    ((record: NodeRecord.NodeRecord) => Effect.succeed(new TextEncoder().encode(JSON.stringify(record)).byteLength))
+  return Effect.flatMap(
+    planPages(name, graph, measure),
+    (pages) => Effect.forEach(pages, (page) => recordNode(page), { discard: true })
+  )
+}
+
+/** What a deferred node lost beside its AST, if it lost anything. @private */
+const lostOperation = (node: Graph.GraphNode): string | undefined => {
+  const ast = node.ast
+  if (ast._tag === "Map" && Node.mapper(ast) === undefined) return `Map at "${node.id}" lost its mapper.`
+  if (ast._tag === "Branch" && Node.predicate(ast) === undefined) return `Branch at "${node.id}" lost its predicate.`
+  if (ast._tag === "Catch" && ast.filter !== undefined && Node.catchFilter(ast) === undefined) {
+    return `Catch at "${node.id}" lost its schema filter.`
+  }
+  return undefined
+}
+
+/** The refusal of the first node that lost an operation or reads outside the graph. @private */
+const unreadyNode = (name: string, graph: Graph.Graph): InterpreterError | undefined => {
+  const graphNodes = Graph.nodes(graph)
+  const ids = new Set(graphNodes.map((node) => node.id))
+  for (const node of graphNodes) {
+    const lost = lostOperation(node)
+    if (lost !== undefined) return refusal(name, "missing_operation", node.id, lost)
+    const missing = KeyMaterial.dependencies(node.draft.material).find((dependency) => !ids.has(dependency))
+    if (missing !== undefined) {
+      return refusal(
+        name,
+        "unresolved_reference",
+        node.id,
+        `Node "${node.id}" reads "${missing}", which this graph does not hold.`
+      )
+    }
+  }
+  return undefined
+}
+
+/** What the walk resolved before the first node ran. @private */
+interface Declarations {
+  /** Each named action's implementation, by tag. */
+  readonly implementations: Map<string, Implementation>
+  /** Each handoff node's target, by node id. */
+  readonly handoffs: Map<string, AnyFlow>
+  /** Each `.child()` node's callee, by node id. */
+  readonly children: Map<string, AnyWithProps>
+}
+
+/**
+ * Resolves every callee and implementation the graph names, in graph order.
+ * Lost operations were diagnosed first, regardless of graph order.
+ *
+ * @private
+ */
+const resolveDeclarations = Effect.fnUntraced(function*(
+  name: string,
+  table: Implementations["Service"],
+  graph: Graph.Graph,
+  registerReachable: ((flow: AnyWithProps) => Effect.Effect<void>) | undefined
+) {
+  const declarations: Declarations = { implementations: new Map(), handoffs: new Map(), children: new Map() }
+  for (const node of Graph.nodes(graph)) {
+    const ast = node.ast
+    if (ast._tag === "FlowCall" && (ast.mode === "handoff" || ast.mode === "boundary")) {
+      yield* resolveCallee(name, declarations, node, ast, ast.mode, registerReachable)
+    }
+    if (ast._tag === "ActionCall") yield* resolveImplementation(name, table, declarations, node, ast)
+  }
+  return declarations
+})
+
+/** What a handoff or a `.child()` boundary that lost its declaration is refused with. @private */
+const lostCallee = {
+  handoff: (flow: string, id: string) =>
+    `Handoff to flow "${flow}" at "${id}" lost its declaration. ` +
+    "Build and interpret the authored node in the same process so its payload can be encoded.",
+  boundary: (flow: string, id: string) =>
+    `Child boundary to flow "${flow}" at "${id}" lost its declaration. ` +
+    "Build and interpret the authored node in the same process so the child can be executed."
+}
+
+/**
+ * Resolves the flow a handoff or a `.child()` boundary names, and registers
+ * it. A boundary is one node here and a real execution underneath, so what it
+ * needs resolved up front is the callee itself: the declaration is what
+ * `execute` is called on, and losing it is a wiring error rather than a
+ * run-time contingency, exactly like an unimplemented action.
+ *
+ * @private
+ */
+const resolveCallee = Effect.fnUntraced(function*(
+  name: string,
+  declarations: Declarations,
+  node: Graph.GraphNode,
+  ast: Extract<Node.Ast, { readonly _tag: "FlowCall" }>,
+  mode: "handoff" | "boundary",
+  registerReachable: ((flow: AnyWithProps) => Effect.Effect<void>) | undefined
+) {
+  const declaration = Node.declaration(ast)
+  if (!Predicate.hasProperty(declaration, FlowTypeId)) {
+    return yield* refusal(name, "unsupported_call", node.id, lostCallee[mode](ast.flow, node.id))
+  }
+  if (mode === "handoff") declarations.handoffs.set(node.id, declaration as unknown as AnyFlow)
+  else declarations.children.set(node.id, declaration as unknown as AnyWithProps)
+  if (registerReachable !== undefined) yield* registerReachable(declaration as unknown as AnyWithProps)
+})
+
+/** Resolves an action's implementation, refusing a version it does not attest. @private */
+const resolveImplementation = Effect.fnUntraced(function*(
+  name: string,
+  table: Implementations["Service"],
+  declarations: Declarations,
+  node: Graph.GraphNode,
+  ast: Extract<Node.Ast, { readonly _tag: "ActionCall" }>
+) {
+  const implementation = yield* table.get(ast.action)
+  if (Option.isNone(implementation)) {
+    return yield* refusal(
+      name,
+      "unresolved_action",
+      node.id,
+      `Action "${ast.action}" has no implementation. ` +
+        `Provide ONE Action.layerImplementations under both ${ast.action}.toLayer(execute) and ` +
+        "this interpreter layer: an implementation files itself with the table that is in scope " +
+        "while IT is built, so a table merged beside it, or a second one built above it, is not the " +
+        "table this driver reads."
+    )
+  }
+  const refused = versionRefusal(name, node, ast, implementation.value)
+  if (refused !== undefined) return yield* refused
+  declarations.implementations.set(ast.action, implementation.value)
+})
+
+/** The refusal of an implementation whose version the declaration does not admit. @private */
+const versionRefusal = (
+  name: string,
+  node: Graph.GraphNode,
+  ast: Extract<Node.Ast, { readonly _tag: "ActionCall" }>,
+  implementation: Implementation
+): InterpreterError | undefined => {
+  const declaration = Node.declaration(ast)
+  const declaredVersion = ownDataProperty(declaration, "implementationVersion")
+  const tier = ownDataProperty(declaration, "tier")
+  if (tier === undefined) {
+    return refusal(
+      name,
+      "incomplete_graph",
+      node.id,
+      `Action "${ast.action}" lost its declaration, so its implementation identity cannot be checked. ` +
+        "Build the canonical composition from the authored action nodes."
+    )
+  }
+  if (
+    tier === "sealed" && ownDataProperty(declaration, "idempotencyKey") !== undefined &&
+    declaredVersion === undefined
+  ) {
+    return refusal(
+      name,
+      "missing_implementation_version",
+      node.id,
+      `Sealed action "${ast.action}" declares an idempotency key and can reuse recorded content. ` +
+        "Declare implementationVersion on Action.make and attest the same version in toLayer."
+    )
+  }
+  if (declaredVersion === implementation.implementationVersion) return undefined
+  return refusal(
+    name,
+    "implementation_version_mismatch",
+    node.id,
+    `Action "${ast.action}" does not match its registered implementationVersion. ` +
+      "Register the declared version and start a newly planned execution when its semantics change."
+  )
+}
+
+/**
+ * The refusal of a graph with a dependency cycle, naming the first node it
+ * blocks.
+ *
+ * Graph.build also accepts authored references. Unlike Plan.compile, this
+ * entry point has not yet checked them for cycles: a self-reference would
+ * join its own in-flight deferred forever. The entire dependency graph is
+ * validated before dispatch, including branch arms the execution might skip.
+ *
+ * @private
+ */
+const cycleRefusal = (name: string, graph: Graph.Graph): InterpreterError | undefined => {
+  const graphNodes = Graph.nodes(graph)
+  const remaining = new Map<string, number>()
+  const dependents = new Map<string, Array<string>>()
+  const ready: Array<string> = []
+  for (const node of graphNodes) {
+    const dependencies = KeyMaterial.dependencies(node.draft.material)
+    remaining.set(node.id, dependencies.length)
+    if (dependencies.length === 0) ready.push(node.id)
+    for (const dependency of dependencies) append(dependents, dependency, node.id)
+  }
+  for (let index = 0; index < ready.length; index++) {
+    for (const consumer of dependents.get(ready[index]!) ?? []) {
+      const count = remaining.get(consumer)! - 1
+      remaining.set(consumer, count)
+      if (count === 0) ready.push(consumer)
+    }
+  }
+  if (ready.length === graphNodes.length) return undefined
+  const blocked = graphNodes.find((node) => remaining.get(node.id)! > 0)!
+  return refusal(
+    name,
+    "incomplete_graph",
+    blocked.id,
+    `Graph of "${name}" contains a dependency cycle blocking "${blocked.id}". ` +
+      "Use an acyclic reference, a child boundary, or a trampoline handoff."
+  )
+}
+
+/** One interpretation being walked: its graph, what it resolved up front, and what it has settled. @private */
+interface Walk {
+  readonly name: string
+  readonly runtime: FlowRuntime["Service"]
+  readonly nodes: ReadonlyArray<Graph.GraphNode>
+  readonly byId: ReadonlyMap<string, Graph.GraphNode>
+  readonly declarations: Declarations
+  /**
+   * The children a node settles with, in the order graph building recorded
+   * them: `first` then the arms of a branch, `first` then the continuation of
+   * a sequence, the members of a combination, the spliced body of an inline
+   * call. Payload references are NOT here — they are named by the key
+   * material, and settled from it.
+   */
+  readonly sources: ReadonlyMap<string, ReadonlyArray<string>>
+  /**
+   * The nodes that read each node's value through their key material: the
+   * payload references and barriers a structural subtree does not show.
+   */
+  readonly readers: ReadonlyMap<string, ReadonlyArray<string>>
+  readonly settled: Map<string, unknown>
+  readonly failed: Map<string, unknown>
+  /**
+   * The settlement currently in flight for a node, for as long as it is.
+   *
+   * `settled.has(id)` alone is not a memo once the walk runs concurrently: it
+   * answers "has this node FINISHED", and two demands that arrive while the
+   * node is still running both see `false` and both execute it. A diamond
+   * would then run its shared node twice, which for an action with effects is
+   * a correctness bug rather than a wasted cycle.
+   */
+  readonly inFlight: Map<string, Deferred.Deferred<unknown, unknown>>
+  /**
+   * The interpretation's own scope. Every node computation runs on a fiber
+   * forked into it, so an orphaned execution cannot outlive the
+   * interpretation.
+   */
+  readonly scope: Scope.Closeable
+  /**
+   * The execution fiber of every node still running, so a join that settled
+   * early can interrupt the work of the members it no longer waits for.
+   */
+  readonly executions: Map<string, Fiber.Fiber<unknown, unknown>>
+  /**
+   * The child execution id each `.child()` node opened. Interrupting the
+   * node's fiber only stops its join: a losing child is cancelled through
+   * the runtime, the same request a caller's cancellation makes.
+   */
+  readonly childExecutions: Map<string, string>
+  /**
+   * The nodes this walk has already settled a record for.
+   *
+   * Everything else is what the walk never reached, which is exactly the
+   * `skipped` set reported at the end — an untaken branch arm, or a
+   * dependent of something that failed.
+   */
+  readonly reported: Set<string>
+  /**
+   * Writes a node record, if the runtime keeps any. A runtime without the
+   * seam costs a comparison per node and nothing else: the record is built
+   * by the thunk only when something will hold it.
+   */
+  readonly record: (make: () => NodeRecord.NodeRecord) => Effect.Effect<void, InterpreterError, FlowInstance>
+}
+
+/** Starts the walk of a checked graph. @private */
+const makeWalk = (
+  name: string,
+  runtime: FlowRuntime["Service"],
+  graph: Graph.Graph,
+  declarations: Declarations,
+  scope: Scope.Closeable
+): Walk => {
+  const graphNodes = Graph.nodes(graph)
+  const sources = new Map<string, Array<string>>()
+  for (const edge of Graph.edges(graph)) {
+    if (edge.reason === "value") append(sources, edge.to, edge.from)
+  }
+  const readers = new Map<string, Array<string>>()
+  for (const node of graphNodes) {
+    for (const dependency of KeyMaterial.dependencies(node.draft.material)) append(readers, dependency, node.id)
+  }
+  const recordNode = runtime.recordNode
+  return {
+    name,
+    runtime,
+    nodes: graphNodes,
+    byId: new Map(graphNodes.map((node) => [node.id, node])),
+    declarations,
+    sources,
+    readers,
+    settled: new Map(),
+    failed: new Map(),
+    inFlight: new Map(),
+    scope,
+    executions: new Map(),
+    childExecutions: new Map(),
+    reported: new Set(),
+    record: recordNode === undefined ? () => Effect.void : (make) => recordNode(make())
+  }
+}
+
+/** A null-prototype record of `entries`, each defined as data so a `__proto__` key stays a field. @private */
+const dataRecord = (entries: Iterable<readonly [string, unknown]>): Record<string, unknown> => {
+  const record = Object.create(null) as Record<string, unknown>
+  for (const [key, value] of entries) {
+    Object.defineProperty(record, key, { configurable: true, enumerable: true, value, writable: true })
+  }
+  return record
+}
+
+/** Marks `target` as the value of a flow outcome tagged `tag`. @private */
+const markOutcome = (target: object, tag: unknown): void => {
+  Object.defineProperty(target, OutcomeValueTypeId, {
+    configurable: false,
+    enumerable: false,
+    value: tag,
+    writable: false
+  })
+}
+
+/**
+ * Replaces every placeholder in a hydrated payload with what it stands for.
+ *
+ * A placeholder is projected along the property path its `Ref` recorded,
+ * through `StepKey.project`, the one projection semantics for the value
+ * channel. The scheduler digests exactly what this returns; resolving a `Ref`
+ * any other way here would let two executions that key identically consume
+ * different values.
+ *
+ * The record is rebuilt with a null prototype and `defineProperty`, for the
+ * reason {@link module:Graph.build}'s cloners are: `output[key] = …` on an
+ * object literal routes `__proto__` through `Object.prototype`'s accessor,
+ * which drops an own `__proto__` field carrying a primitive and reparents
+ * the clone when it carries an object. A graph hydrates that field as data,
+ * so the value handed to an action has to keep it as data too.
+ *
+ * @private
+ */
+const resolve = (walk: Walk, value: unknown): unknown => {
+  const reference = Planned.reference(value)
+  if (reference !== undefined) {
+    const upstream = walk.settled.has(reference.node)
+      ? walk.settled.get(reference.node)
+      : walk.failed.get(reference.node)
+    return StepKey.project(upstream, reference.path)
+  }
+  if (Array.isArray(value)) return value.map((item) => resolve(walk, item))
+  if (!isRecord(value)) return value
+  const output = dataRecord(Object.keys(value).map((key) => [key, resolve(walk, value[key])]))
+  const outcome = Object.getOwnPropertyDescriptor(value, OutcomeValueTypeId)
+  if (outcome !== undefined && "value" in outcome) markOutcome(output, outcome.value)
+  return output
+}
+
+/**
+ * Settles one node, at most once however many demands reach it.
+ *
+ * The check-and-register below is the whole reason this is a `suspend` and
+ * not a generator: the callback runs synchronously, so no other fiber can
+ * observe the gap between the lookup and the insert.
+ *
+ * Every computation runs on a fiber forked into the walk's scope, and every
+ * demand — the first included — is a join on the node's deferred. Ownership
+ * by the interpretation rather than by whichever demand arrived first is
+ * what makes a ref-diamond sound: a failing `All` interrupts its member
+ * JOINS, never a shared node's execution, so recovery arms above can still
+ * join the shared work; and when the walk itself ends, closing the scope
+ * interrupts whatever is still running, so an orphaned execution cannot
+ * outlive the interpretation or write a phantom success into `settled`
+ * afterwards (Skyframe's and `MemoMap`'s ownership model).
+ *
+ * @private
+ */
+const settleNode = (walk: Walk, id: string): Effect.Effect<unknown, unknown, Services> =>
+  Effect.suspend(() => {
+    if (walk.settled.has(id)) return Effect.succeed(walk.settled.get(id))
+    const waiting = walk.inFlight.get(id)
+    // A later demand joins the execution rather than starting one.
+    if (waiting !== undefined) return Deferred.await(waiting)
+    const deferred = Deferred.makeUnsafe<unknown, unknown>()
+    walk.inFlight.set(id, deferred)
+    const execution = execute(walk, walk.byId.get(id)!, deferred)
+    // `startImmediately` keeps the first demand's latency identical to the
+    // old inline execution: the node runs synchronously until its first
+    // real suspension, so a body that parks does so before the driver's
+    // next tick — the same observable cadence a sequential walk had.
+    return Effect.forkIn(
+      Effect.withFiber((fiber) => {
+        walk.executions.set(id, fiber)
+        return execution
+      }),
+      walk.scope,
+      { startImmediately: true }
+    ).pipe(Effect.andThen(Deferred.await(deferred)))
+  })
+
+/**
+ * What one node's dispatches did, as the engine underneath it reports them.
+ *
+ * A node whose dispatches were ALL served from durable records rebuilt
+ * nothing, and says so. The digests name those dispatches, so the attempt
+ * rows the engine wrote under them belong to THIS node, and the highest
+ * attempt reported is the node's real attempt count. A `Set` keeps the
+ * digests unrepeated in report order: one dispatch retried three times keeps
+ * one step key and reports it three times.
+ *
+ * @private
+ */
+interface Dispatches {
+  executed: number
+  replayed: number
+  attempts: number
+  readonly digests: Set<string>
+}
+
+/** Counts one dispatch the engine reported. @private */
+const countDispatch = (dispatches: Dispatches, dispatch: DispatchOutcome): void => {
+  if (dispatch.outcome === "executed") dispatches.executed = dispatches.executed + 1
+  else dispatches.replayed = dispatches.replayed + 1
+  // Bounded where it is COLLECTED, not where it is written: a cap applied at
+  // the end still holds every digest in memory until then, and the point of
+  // the cap is that one node cannot grow without bound.
+  if (dispatch.stepKeyDigest !== undefined && dispatches.digests.size < maximumDispatchDigests) {
+    dispatches.digests.add(dispatch.stepKeyDigest)
+  }
+  if (dispatch.attempt !== undefined && dispatch.attempt > dispatches.attempts) {
+    dispatches.attempts = dispatch.attempt
+  }
+}
+
+/** Whether a node rebuilt anything: one whose dispatches all replayed is `clean`. @private */
+const rebuilt = (dispatches: Dispatches): NodeRecord.NodeOutcome =>
+  dispatches.executed === 0 && dispatches.replayed > 0 ? "clean" : "built"
+
+/** Files a node's settlement in `into`, then writes the record it settled with. @private */
+const file = (
+  walk: Walk,
+  into: Map<string, unknown>,
+  id: string,
+  settlement: unknown,
+  make: () => NodeRecord.NodeRecord
+) =>
+  Effect.sync(() => {
+    into.set(id, settlement)
+    walk.reported.add(id)
+  }).pipe(Effect.andThen(walk.record(make)))
+
+/** The record a node settles with. @private */
+const settledRecord = (
+  id: string,
+  action: string | undefined,
+  dispatches: Dispatches,
+  outcome: NodeRecord.NodeOutcome,
+  value: unknown
+) =>
+(): NodeRecord.NodeRecord => ({
+  _tag: "NodeSettled",
+  sourceId: `node/${id}/1/settled`,
+  nodeId: id,
+  outcome,
+  attempts: dispatches.attempts,
+  stepKeyDigests: [...dispatches.digests],
+  value,
+  ...(action === undefined ? {} : { action })
+})
+
+/**
+ * Runs one node's computation, recording it scheduled and then settled, and
+ * completes its deferred with the exit. An interrupted execution is evicted,
+ * not memoized: current joiners observe the interruption, but a LATER demand
+ * — a recovery arm, a re-driven walk — re-executes the node instead of
+ * replaying an interrupt that says nothing about it.
+ *
+ * @private
+ */
+const execute = (walk: Walk, node: Graph.GraphNode, deferred: Deferred.Deferred<unknown, unknown>) => {
+  const id = node.id
+  const action = actionTag(node.ast)
+  const dispatches: Dispatches = { executed: 0, replayed: 0, attempts: 1, digests: new Set<string>() }
+  const report = DispatchReport.of({
+    dispatched: (dispatch) => Effect.sync(() => countDispatch(dispatches, dispatch))
+  })
+  return walk.record(() => ({
+    _tag: "NodeScheduled",
+    sourceId: `node/${id}/1`,
+    nodeId: id,
+    kind: node.kind,
+    attempt: 1,
+    ...(action === undefined ? {} : { action })
+  })).pipe(
+    Effect.andThen(compute(walk, node).pipe(Effect.provideService(DispatchReport, report))),
+    Effect.tap((value) =>
+      file(walk, walk.settled, id, value, settledRecord(id, action, dispatches, rebuilt(dispatches), value))
+    ),
+    Effect.tapError((error) =>
+      file(walk, walk.failed, id, error, settledRecord(id, action, dispatches, "failed", error))
+    ),
+    Effect.onExit((exit) => {
+      if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) walk.inFlight.delete(id)
+      walk.executions.delete(id)
+      return Deferred.done(deferred, exit)
+    })
+  )
+}
+
+/**
+ * What a node computes. A sequence, a branch, a catch, and a join settle
+ * their own children in their own order; every other node first settles the
+ * dependencies its key material names.
+ *
+ * @private
+ */
+const compute: (walk: Walk, node: Graph.GraphNode) => Effect.Effect<unknown, unknown, Services> = Effect.fnUntraced(
+  function*(walk: Walk, node: Graph.GraphNode) {
+    const children = walk.sources.get(node.id) ?? []
+    const ast = node.ast
+    if (ast._tag === "AndThen" && ast.next !== undefined) return yield* settleSequence(walk, children)
+    if (ast._tag === "Branch") return yield* settleBranch(walk, ast, children)
+    if (ast._tag === "Catch") return yield* settleCatch(walk, ast, children)
+    if (ast._tag === "Race") return yield* settleRace(walk, node, ast, children)
+    // Dependency order, from the key material: the same `Ref` and `Pending`
+    // inputs the plan turns into edges, settled before the node that reads
+    // them — and settled CONCURRENTLY, because independent dependencies are
+    // exactly what the scheduler admits under separate permits. Two
+    // execution surfaces disagreeing about concurrency is a correctness
+    // hazard, not just a latency one.
+    yield* Effect.forEach(
+      KeyMaterial.dependencies(node.draft.material).filter((dependency) => !walk.failed.has(dependency)),
+      (dependency) => settleNode(walk, dependency),
+      { concurrency: "unbounded", discard: true }
+    )
+    switch (ast._tag) {
+      case "ActionCall":
+        return yield* runAction(walk, node, ast)
+      case "Succeed":
+        return resolve(walk, node.payload)
+      case "Fail":
+        // The typed error channel, from a constant the plan already holds.
+        // An enclosing catch observes it exactly as it observes an action's
+        // failure, and an uncaught one is the body's typed failure.
+        return yield* Effect.fail(resolve(walk, node.payload))
+      case "Map": {
+        const transform = Node.mapper(ast)!
+        return transform(yield* settleNode(walk, children[0]!))
+      }
+      case "All":
+        return yield* combine(walk, ast, children)
+      case "AndThen":
+        return yield* settleNode(walk, children[1]!)
+      case "FlowCall":
+        return yield* settleCall(walk, node, ast, children)
+    }
+  }
+)
+
+/**
+ * An explicit sequence: a success boundary for the WHOLE next subtree.
+ * Joining first and then concurrently lets a nested All, Map, or inline call
+ * start effects before its prerequisite settles. bindPlanned is distinct: it
+ * declares data dependencies and can expose independent work while the
+ * producer is still running.
+ *
+ * @private
+ */
+const settleSequence = (walk: Walk, children: ReadonlyArray<string>) =>
+  Effect.andThen(settleNode(walk, children[0]!), settleNode(walk, children[1]!))
+
+/**
+ * A branch: the predicate decides on the REAL value, and only the arm it
+ * chose is settled. Both arms are still in the plan; the untaken one is
+ * reported as skipped.
+ *
+ * @private
+ */
+const settleBranch = Effect.fnUntraced(function*(
+  walk: Walk,
+  ast: Extract<Node.Ast, { readonly _tag: "Branch" }>,
+  children: ReadonlyArray<string>
+) {
+  const decide = Node.predicate(ast)!
+  const subject = yield* settleNode(walk, children[0]!)
+  return yield* settleNode(walk, decide(subject) ? children[1]! : children[2]!)
+})
+
+/**
+ * A catch: the recovery arm runs on a typed failure of the protected node
+ * that its filter admits.
+ *
+ * DECIDED: catch observes only typed failures from ordinary protected
+ * execution. Interpreter refusals propagate unchanged. Effect defects and
+ * compensation failures remain outside this interpreter's error channel, so
+ * recovery cannot conceal a broken invariant or weaken withRollback's
+ * compensation guarantees.
+ *
+ * @private
+ */
+const settleCatch = (
+  walk: Walk,
+  ast: Extract<Node.Ast, { readonly _tag: "Catch" }>,
+  children: ReadonlyArray<string>
+) => {
+  const protectedId = children[0]!
+  return Effect.matchEffect(settleNode(walk, protectedId), {
+    onFailure: (error) => {
+      if (Schema.is(InterpreterError)(error)) return Effect.fail(error)
+      const filter = Node.catchFilter(ast)
+      if (filter !== undefined && !Schema.is(filter)(error)) return Effect.fail(error)
+      // The failure arm's planned subject resolves through the protected
+      // node id. Filing the typed failure as that settlement also prevents
+      // its static failure edge from re-running the protected graph while
+      // the recovery arm is driven.
+      walk.failed.set(protectedId, error)
+      return settleNode(walk, children[1]!)
+    },
+    onSuccess: Effect.succeed
+  })
+}
+
+/**
+ * A join: its members are left out of the dependency barrier, because a join
+ * must not wait for every member; its other dependencies — the references
+ * and barriers it reads — still settle first.
+ *
+ * @private
+ */
+const settleRace = Effect.fnUntraced(function*(
+  walk: Walk,
+  node: Graph.GraphNode,
+  ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
+  children: ReadonlyArray<string>
+) {
+  const members = new Set(children)
+  yield* Effect.forEach(
+    KeyMaterial.dependencies(node.draft.material).filter((dependency) =>
+      !members.has(dependency) && !walk.failed.has(dependency)
+    ),
+    (dependency) => settleNode(walk, dependency),
+    { concurrency: "unbounded", discard: true }
+  )
+  return yield* join(walk, node, ast, children)
+})
+
+/**
+ * Runs an action with the implementation the pre-pass resolved, which
+ * refuses the whole graph when an action it names has none. The structural
+ * node address is durable dispatch identity, scoped to this one
+ * implementation call; it never comes from fiber arrival order.
+ *
+ * @private
+ */
+const runAction = (walk: Walk, node: Graph.GraphNode, ast: Extract<Node.Ast, { readonly _tag: "ActionCall" }>) =>
+  walk.declarations.implementations.get(ast.action)!.action(resolve(walk, node.payload)).pipe(
+    Effect.provideService(DispatchSite, node.id),
+    attenuateCapabilities(node.capabilityCeilings)
+  )
+
+/**
+ * An `All`: a combination, so its members settle concurrently — the same
+ * semantics `PlanScheduler` gives the same graph. Fail-fast matches
+ * `Effect.forEach`'s default and the scheduler's halt rule — with the
+ * ownership caveat: what a failure interrupts is each sibling's JOIN, not the
+ * node execution itself, which the interpretation owns and interrupts when
+ * the walk ends. A node whose execution was interrupted is evicted from the
+ * memo and records nothing, so it reports as skipped rather than as a
+ * phantom success.
+ *
+ * @private
+ */
+const combine = Effect.fnUntraced(function*(
+  walk: Walk,
+  ast: Extract<Node.Ast, { readonly _tag: "All" }>,
+  children: ReadonlyArray<string>
+) {
+  const members = Object.keys(ast.nodes)
+  const values = yield* Effect.forEach(members, (_, index) => settleNode(walk, children[index]!), {
+    concurrency: "unbounded"
+  })
+  return dataRecord(members.map((member, index) => [member, values[index]]))
+})
+
+/**
+ * A flow call: a handoff settles as the next round's outcome, a `.child()`
+ * boundary as its own execution, and an inline call as the body graph
+ * building spliced beneath it.
+ *
+ * @private
+ */
+const settleCall = (
+  walk: Walk,
+  node: Graph.GraphNode,
+  ast: Extract<Node.Ast, { readonly _tag: "FlowCall" }>,
+  children: ReadonlyArray<string>
+): Effect.Effect<unknown, unknown, Services> => {
+  if (ast.mode === "handoff") return handOff(walk, node, ast)
+  if (ast.mode === "boundary") return runChild(walk, node)
+  const spliced = children[0]
+  if (spliced !== undefined) return settleNode(walk, spliced)
+  return Effect.fail(refusal(
+    walk.name,
+    "unsupported_call",
+    node.id,
+    `Flow "${ast.flow}" is called at "${node.id}" as a leaf, which this interpreter does not drive. ` +
+      "An inline .call() is spliced into the graph with the callee's body and driven with it, and " +
+      "only a call that lost its declaration has no body to splice. Build and interpret the authored " +
+      `node in the same process, or call it as ${ast.flow}.child(payload) to run it as its own execution.`
+  ))
+}
+
+/**
+ * A handoff: the outcome that names the next round, its payload encoded by
+ * the target's own schema.
+ *
+ * DECIDED: a handoff target's schema services come from the context
+ * registration captured. A body's type cannot enumerate declarations hidden
+ * in its topology, so erase only that dynamic service parameter after
+ * resolving the concrete declaration here.
+ *
+ * @private
+ */
+const handOff = Effect.fnUntraced(function*(
+  walk: Walk,
+  node: Graph.GraphNode,
+  ast: Extract<Node.Ast, { readonly _tag: "FlowCall" }>
+) {
+  const declaration = walk.declarations.handoffs.get(node.id)!
+  const payload = yield* Effect.flatMap(
+    Effect.orDie(declaration.payloadSchema.makeEffect(resolve(walk, node.payload) as never)),
+    (decoded) => Effect.orDie(Schema.encodeEffect(Schema.toCodecJson(declaration.payloadSchema))(decoded))
+  ) as unknown as Effect.Effect<unknown, never, Services>
+  const ceiling = (yield* attenuateCapabilities(node.capabilityCeilings)(CapabilitySet.current)).groups
+  const outcome = {
+    _tag: "To",
+    flow: ast.flow,
+    payload,
+    ...(ceiling.length === 0 ? {} : { capabilityCeilings: ceiling })
+  } satisfies Outcome.To<unknown>
+  markOutcome(outcome, "To")
+  return outcome
+})
+
+/**
+ * The real boundary of `docs/guides/run-a-child-flow.md`: an ordinary child
+ * execution, opened through the same `execute` a handler would call. The
+ * parent's `FlowInstance` is in scope, so the engine records the lineage
+ * edge, interrupts the child with the parent, and turns a suspended child
+ * into a suspended parent — genuine nesting, not a spliced imitation of it.
+ * It is deliberately NOT `Effect.scoped`: the interrupt link the engine
+ * installs is a finalizer of the PARENT's scope, and closing a scope of our
+ * own here would run it the moment the child settled. The same dynamic
+ * schema-service erasure a handoff records applies to the cast: a body's
+ * type cannot enumerate the declarations hidden in its topology.
+ *
+ * @private
+ */
+const runChild = Effect.fnUntraced(function*(walk: Walk, node: Graph.GraphNode) {
+  const declaration = walk.declarations.children.get(node.id)!
+  const instance = yield* FlowInstance
+  const childPayload = resolve(walk, node.payload)
+  const executionId = yield* (childExecutionId(
+    instance.executionId,
+    node.id,
+    declaration._tag,
+    childPayload
+  ) as unknown as Effect.Effect<string, never, Services>)
+  walk.childExecutions.set(node.id, executionId)
+  return yield* (declaration.execute(childPayload, { executionId }) as Effect.Effect<unknown, unknown, Services>).pipe(
+    attenuateCapabilities(node.capabilityCeilings)
+  )
+})
+
+/**
+ * Everything the walk never reached, recorded once the walk is over.
+ *
+ * Only a walk that ENDED reports this. An interrupted one is a run that
+ * parked or was cancelled, and its nodes are not skipped — the resumed walk
+ * settles them, and recording them as skipped first would leave the journal
+ * claiming a node never ran that later did. A typed failure is terminal for
+ * the round, so its stranded nodes are skipped exactly as a completed walk's
+ * untaken branch arm is.
+ *
+ * @private
+ */
+const recordSkipped = (walk: Walk, exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) ? Effect.void : Effect.forEach(
+    walk.nodes.filter((node) => !walk.reported.has(node.id)),
+    (node) => {
+      const action = actionTag(node.ast)
+      return walk.record(() => ({
+        _tag: "NodeSettled",
+        sourceId: `node/${node.id}/1/settled`,
+        nodeId: node.id,
+        outcome: "skipped",
+        attempts: 0,
+        // A node the walk never reached dispatched nothing, so it claims
+        // no step key and there is no value it settled with.
+        stepKeyDigests: [],
+        ...(action === undefined ? {} : { action })
+      }))
+    },
+    { discard: true }
+  )
 
 /** A child execution a losing join member opened. @private */
 const JoinChild = Schema.Struct({ node: Schema.String, executionId: Schema.String })
@@ -1348,6 +1455,7 @@ const JoinDecision = Schema.Union([
   Schema.Struct({ members: Schema.Array(Schema.String), children: Schema.Array(JoinChild) }),
   Schema.Array(Schema.String)
 ])
+type JoinDecision = typeof JoinDecision.Type
 
 /** One member's decisive settlement. @private */
 interface Decision {
@@ -1391,19 +1499,310 @@ const decide = (
   const successes = outcomes.filter((outcome) => Exit.isSuccess(outcome.exit))
   if (successes.length >= ast.count) {
     if (ast.mode === "any") return successes[0]!.exit
-    const joined: Record<string, unknown> = Object.create(null) as Record<string, unknown>
-    for (const success of successes) {
-      Object.defineProperty(joined, success.member, {
-        configurable: true,
-        enumerable: true,
-        value: (success.exit as Exit.Success<unknown>).value,
-        writable: true
-      })
-    }
-    return Exit.succeed(joined)
+    return Exit.succeed(
+      dataRecord(successes.map((success) => [success.member, (success.exit as Exit.Success<unknown>).value]))
+    )
   }
   if (outcomes.length - successes.length > width - ast.count) return outcomes[outcomes.length - 1]!.exit
   return undefined
+}
+
+/**
+ * Settles a `Race` node: `race`, `any`, or `quorum`.
+ *
+ * The members that decided are journaled, in the order they decided, under a
+ * durable deferred named for the node before any loser is interrupted. A
+ * resumed walk that finds the record settles exactly those members — whose
+ * own dispatches replay from their durable records — and never demands the
+ * others, so it reaches the same verdict without running a loser again. A
+ * defect or an interpreter refusal in a member is not a decision: it
+ * propagates unjournaled, as it would from an `All`.
+ *
+ * The same record names the child executions the losers had opened, so a
+ * process that dies between the journal write and their cancellation does
+ * not orphan them: the resumed walk never demands a loser, and it cancels
+ * those children from the record instead (#2892). Cancellation is a
+ * first-writer-wins request, so repeating it on every replay is harmless.
+ *
+ * @private
+ */
+const join = Effect.fnUntraced(function*(
+  walk: Walk,
+  node: Graph.GraphNode,
+  ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
+  children: ReadonlyArray<string>
+) {
+  const journal = DurableDeferred.make(`join/${node.id}`, { success: JoinDecision })
+  const instance = yield* FlowInstance
+  // A join is not a wait: reading its record must not consume the waiting
+  // classification a parked sibling declared.
+  const waiting = instance.waiting
+  const recorded = yield* walk.runtime.deferredResult(journal)
+  instance.waiting = waiting
+  if (Option.isSome(recorded) && Exit.isSuccess(recorded.value)) {
+    return yield* replayJoin(walk, node, ast, children, recorded.value.value)
+  }
+  const journalDecision = (decision: JoinDecision) =>
+    walk.runtime.deferredDone(journal, {
+      flowName: instance.flow._tag,
+      executionId: instance.executionId,
+      deferredName: journal.name,
+      exit: Exit.succeed(decision)
+    })
+  return yield* raceJoin(walk, node, ast, children, journalDecision)
+})
+
+/** Settles a join from its journal: the members it decided on, and nothing of its losers. @private */
+const replayJoin = Effect.fnUntraced(function*(
+  walk: Walk,
+  node: Graph.GraphNode,
+  ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
+  children: ReadonlyArray<string>,
+  record: JoinDecision
+) {
+  const members = Object.keys(ast.nodes)
+  const decided = "members" in record ? record.members : record
+  const opened = "members" in record ? record.children : []
+  const indices = decided.map((member) => members.indexOf(member))
+  const mismatch = journalMismatch(walk, node, decided, indices, opened)
+  if (mismatch !== undefined) return yield* mismatch
+  yield* cancelChildren(walk, opened)
+  // The losers are never demanded, so nothing of theirs starts again.
+  const exits = yield* Effect.forEach(indices, (index) => Effect.exit(settleNode(walk, children[index]!)), {
+    concurrency: "unbounded"
+  })
+  const verdict = replayedVerdict(ast, members, indices, exits)
+  if (verdict !== undefined) return yield* verdict
+  return yield* refusal(
+    walk.name,
+    "join_mismatch",
+    node.id,
+    `Join at "${node.id}" replayed members ${JSON.stringify(decided)} without reaching its verdict.`
+  )
+})
+
+/** The refusal of a journal that names members or losing children this join no longer holds. @private */
+const journalMismatch = (
+  walk: Walk,
+  node: Graph.GraphNode,
+  decided: ReadonlyArray<string>,
+  indices: ReadonlyArray<number>,
+  opened: ReadonlyArray<JoinChild>
+): InterpreterError | undefined => {
+  if (indices.some((index) => index < 0) || new Set(indices).size !== indices.length) {
+    return refusal(
+      walk.name,
+      "join_mismatch",
+      node.id,
+      `Join at "${node.id}" journaled members ${JSON.stringify(decided)}, which it no longer holds.`
+    )
+  }
+  const lost = opened.find((child) => !walk.declarations.children.has(child.node))
+  if (lost === undefined) return undefined
+  return refusal(
+    walk.name,
+    "join_mismatch",
+    node.id,
+    `Join at "${node.id}" journaled a losing child at "${lost.node}", which the plan no longer holds.`
+  )
+}
+
+/**
+ * What a replayed join settles with: the first member that no longer decides,
+ * or the verdict, which must close on the LAST journaled member exactly as it
+ * did live. One that closes earlier, or never, is a different join, and has
+ * no verdict here.
+ *
+ * @private
+ */
+const replayedVerdict = (
+  ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
+  members: ReadonlyArray<string>,
+  indices: ReadonlyArray<number>,
+  exits: ReadonlyArray<Exit.Exit<unknown, unknown>>
+): Exit.Exit<unknown, unknown> | undefined => {
+  const outcomes: Array<Decision> = []
+  for (let position = 0; position < exits.length; position++) {
+    const exit = exits[position]!
+    if (classify(exit) !== "decisive") return exit
+    outcomes.push({ member: members[indices[position]!]!, exit })
+    const verdict = decide(ast, members.length, outcomes)
+    if (verdict !== undefined) return position === exits.length - 1 ? verdict : undefined
+  }
+  return undefined
+}
+
+/** A join being decided live. @private */
+interface JoinRace {
+  /** The members that decided, in the order they decided. */
+  readonly outcomes: Array<Decision>
+  verdict: Exit.Exit<unknown, unknown> | undefined
+  /** Whether the verdict is a decision, which is journaled, rather than a fatal member. */
+  journaled: boolean
+  /** Completes once the join has a verdict. */
+  readonly over: Deferred.Deferred<void>
+}
+
+/**
+ * Settles a join live: every member runs until the join has a verdict, then
+ * the decision is journaled and the losers' work is stopped.
+ *
+ * @private
+ */
+const raceJoin = Effect.fnUntraced(function*(
+  walk: Walk,
+  node: Graph.GraphNode,
+  ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
+  children: ReadonlyArray<string>,
+  journalDecision: (decision: JoinDecision) => Effect.Effect<void>
+) {
+  const members = Object.keys(ast.nodes)
+  const race: JoinRace = { outcomes: [], verdict: undefined, journaled: false, over: Deferred.makeUnsafe<void>() }
+  const watch = (index: number) =>
+    Effect.exit(settleNode(walk, children[index]!)).pipe(
+      Effect.flatMap((exit) => Effect.sync(() => observe(race, ast, members, index, exit)))
+    )
+  yield* Effect.raceFirst(
+    Effect.forEach(children, (_, index) => watch(index), { concurrency: "unbounded", discard: true }),
+    Deferred.await(race.over)
+  )
+  const verdict = race.verdict
+  // Every member ended interrupted: the join cannot decide in this round, and
+  // the walk parks or ends with it.
+  if (verdict === undefined) return yield* Effect.interrupt
+  const decided = race.outcomes.map((outcome) => outcome.member)
+  const losers = children.filter((_, index) => !decided.includes(members[index]!))
+  yield* Effect.uninterruptible(
+    stopLosers(walk, node.id, losers, decided, race.journaled ? journalDecision : undefined)
+  )
+  return yield* verdict
+})
+
+/**
+ * Stops the work of a decided join's losers: journals the decision, when it
+ * is one, together with the child executions the losers opened; interrupts
+ * the losers' running node fibers; and cancels those children.
+ *
+ * @private
+ */
+const stopLosers = Effect.fnUntraced(function*(
+  walk: Walk,
+  joinId: string,
+  losers: ReadonlyArray<string>,
+  decided: ReadonlyArray<string>,
+  journalDecision: ((decision: JoinDecision) => Effect.Effect<void>) | undefined
+) {
+  const { childRuns, fibers } = losingWork(walk, joinId, losers)
+  if (journalDecision !== undefined) yield* journalDecision({ members: decided, children: childRuns })
+  // The interruption is requested, not awaited: a loser's finalizers may wait
+  // on work that only settles after the join returns, and the node scope
+  // awaits every fiber when the walk ends anyway.
+  yield* Effect.withFiber((current) =>
+    Effect.sync(() => {
+      for (const fiber of fibers) fiber.interruptUnsafe(current.id)
+    })
+  )
+  yield* cancelChildren(walk, childRuns)
+})
+
+/**
+ * The work of the members a join no longer waits for: their running node
+ * fibers and the child executions those nodes opened.
+ *
+ * A member's structural subtree is its own, so its running executions are
+ * interrupted; nothing else demands them again. A node something outside that
+ * subtree also reads is shared work the interpretation owns — the same
+ * ownership an `All` failure respects — and keeps running, together with
+ * everything inside the subtree it depends on.
+ *
+ * @private
+ */
+const losingWork = (walk: Walk, joinId: string, roots: ReadonlyArray<string>) => {
+  const subtree = structuralSubtree(walk, roots)
+  const kept = sharedWork(walk, joinId, subtree)
+  const fibers: Array<Fiber.Fiber<unknown, unknown>> = []
+  const childRuns: Array<JoinChild> = []
+  for (const id of subtree) {
+    if (kept.has(id)) continue
+    const fiber = walk.executions.get(id)
+    if (fiber === undefined) continue
+    fibers.push(fiber)
+    const executionId = walk.childExecutions.get(id)
+    if (executionId !== undefined) childRuns.push({ node: id, executionId })
+  }
+  return { fibers, childRuns }
+}
+
+/**
+ * Every node beneath `roots` along structural edges. Graph building gives
+ * every node exactly one structural parent and reads each child through that
+ * parent's key material, so the walk never reaches a node twice and every
+ * node in a subtree has a reader.
+ *
+ * @private
+ */
+const structuralSubtree = (walk: Walk, roots: ReadonlyArray<string>): Set<string> => {
+  const subtree = new Set<string>()
+  const pending = [...roots]
+  while (pending.length > 0) {
+    const id = pending.pop()!
+    subtree.add(id)
+    pending.push(...walk.sources.get(id) ?? [])
+  }
+  return subtree
+}
+
+/** The nodes of `subtree` that work outside it also reads, and everything inside it they depend on. @private */
+const sharedWork = (walk: Walk, joinId: string, subtree: ReadonlySet<string>): Set<string> => {
+  const kept = new Set<string>()
+  const shared = [...subtree].filter((id) =>
+    walk.readers.get(id)!.some((reader) => reader !== joinId && !subtree.has(reader))
+  )
+  while (shared.length > 0) {
+    const id = shared.pop()!
+    if (kept.has(id) || !subtree.has(id)) continue
+    kept.add(id)
+    shared.push(...walk.sources.get(id) ?? [], ...KeyMaterial.dependencies(walk.byId.get(id)!.draft.material))
+  }
+  return kept
+}
+
+/**
+ * Cancels the child executions a join's losers opened, through the runtime:
+ * interrupting a node's fiber only stops its join, so a losing child is
+ * cancelled with the same request a caller's cancellation makes.
+ *
+ * @private
+ */
+const cancelChildren = (walk: Walk, childRuns: ReadonlyArray<JoinChild>): Effect.Effect<void, never, Services> =>
+  Effect.forEach(
+    childRuns,
+    ({ executionId, node }) =>
+      Effect.orDie(walk.runtime.interrupt(walk.declarations.children.get(node)! as AnyFlow, executionId)),
+    { discard: true }
+  )
+
+/** Counts one member's settlement toward a live join, closing the join once it has a verdict. @private */
+const observe = (
+  race: JoinRace,
+  ast: Extract<Node.Ast, { readonly _tag: "Race" }>,
+  members: ReadonlyArray<string>,
+  index: number,
+  exit: Exit.Exit<unknown, unknown>
+): void => {
+  if (race.verdict !== undefined) return
+  const kind = classify(exit)
+  // An interrupted member is still undecided: it parked, or a join elsewhere
+  // cancelled shared work. The others may still decide without it.
+  if (kind === "pending") return
+  if (kind === "fatal") {
+    race.verdict = exit
+  } else {
+    race.outcomes.push({ member: members[index]!, exit })
+    race.verdict = decide(ast, members.length, race.outcomes)
+    race.journaled = race.verdict !== undefined
+  }
+  if (race.verdict !== undefined) Deferred.doneUnsafe(race.over, Exit.void)
 }
 
 /**
