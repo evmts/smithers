@@ -491,6 +491,22 @@ describe("sleepIfIdle", () => {
     expect(fresh.map.has("checkpoint")).toBe(false)
   })
 
+  test("a save a closed terminal left due runs at the next ask, busy or not, and only once", async () => {
+    const machine = boxOf({ store: memory({ generation: 3, restored: 3 }) })
+    writeFileSync(join(machine.workdir, "typed.txt"), "typed in a terminal\n")
+    await Effect.runPromise(Machine.saveLater(machine.box))
+    expect(machine.map.get("saveDue")).toBe(true)
+    expect(machine.map.has("checkpoint")).toBe(false)
+    // Used just now, so the machine stays awake; the save runs anyway, in the ask.
+    expect(await Effect.runPromise(Machine.sleepIfIdle(machine.box, 3, 60_000))).toBe("busy")
+    expect(saved(machine.map)).toMatchObject({ generation: 3, seq: 1 })
+    expect(machine.map.has("saveDue")).toBe(false)
+    // Nothing due: the next ask saves nothing.
+    expect(await Effect.runPromise(Machine.sleepIfIdle(machine.box, 3, 60_000))).toBe("busy")
+    expect(saved(machine.map)).toMatchObject({ seq: 1 })
+    expect(machine.state).toEqual({ running: true, destroyed: 0 })
+  })
+
   test("a call that comes while it saves keeps the machine awake", async () => {
     const machine = boxOf({ store: memory({ generation: 3, restored: 3, activeAt: 1 }) })
     // The call is admitted (and touches the machine) while the checkpoint is being written.

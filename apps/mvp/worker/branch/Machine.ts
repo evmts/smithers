@@ -109,6 +109,12 @@ const failureOf = (failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavaila
     ? { code: failure.code, ...(failure.exitCode === undefined ? {} : { exitCode: failure.exitCode }) }
     : {}
 
+/**
+ * Records that the machine was used and its working copy should be saved at the next ask (`sleepIfIdle`), as a
+ * terminal comes or goes: the save runs in the ask's own request, never the closing socket's.
+ */
+export const saveLater = <R>(box: Box<R>) => Effect.andThen(touch(box), box.storage.put("saveDue", true))
+
 /** Records that the machine was used now: a call, or a terminal coming or going. */
 export const touch = <R>(box: Box<R>) =>
   Effect.flatMap(Clock.currentTimeMillis, (now) => box.storage.put("activeAt", now))
@@ -291,6 +297,11 @@ exit 0`
 export const sleepIfIdle = <R>(box: Box<R>, generation: number, idleMs: number): Effect.Effect<SleepOutcome, unknown, R> =>
   Effect.gen(function* () {
     if ((yield* box.storage.get<number>("generation")) !== generation || !(yield* box.running)) return "gone" as const
+    // A save a closed terminal left due (`saveLater`) runs now, whether or not the machine then sleeps.
+    if ((yield* box.storage.get<boolean>("saveDue")) === true) {
+      yield* box.storage.delete("saveDue")
+      yield* save(box, generation)
+    }
     const now = yield* Clock.currentTimeMillis
     const activeAt = yield* box.storage.get<number>("activeAt")
     if (now - (activeAt ?? 0) < idleMs) return "busy" as const

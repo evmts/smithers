@@ -349,12 +349,10 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       }
 
       /** Saves the running generation's working copy, as a terminal comes or goes; nothing when the box is stopped. */
-      const saveNow = Effect.gen(function* () {
-        yield* Machine.touch(machine)
-        const generation = yield* state.storage.get<number>("generation")
-        if (generation === undefined || !(yield* box.running)) return
-        yield* Machine.save(machine, generation)
-      }).pipe(Effect.ignore)
+      // A socket that closed leaves a save due for the next ask (`Machine.sleepIfIdle`, within a minute) rather than
+      // saving here: run from the closed socket's own request, the checkpoint was killed (exit 137) every time in
+      // production, while the same save from an ask or a tool call succeeds.
+      const saveNow = Machine.saveLater(machine).pipe(Effect.ignore)
 
       /** Runs one sandbox tool on the branch's machine, waking it first (worker/branch/Machine.ts). */
       const tool = (branch: SandboxBranch, ownerId: string, callId: string, call: SandboxTools.Call) =>
