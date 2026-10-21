@@ -92,24 +92,24 @@ test("closed before its run started: a question ChatApi took, whose tab closed b
 
 test("late joiner: a device that opens later shows the same latest messages, and Load earlier pages back through Postgres' order", { annotation: { type: "summary", description: "A device that opens later shows the same conversation, and Load earlier pages back in order." } }, async ({ devices, request }) => {
   const word = devices.word
-  // Load earlier needs more than one page. A conversation holding less, as on a fresh database, first gets answered
-  // questions of its own from another real API client, as timeline.spec.ts records them, with a tag that isn't `word`.
-  await step("Fill the conversation past one page", async () => {
-    const tag = `fill${Date.now().toString(36)}`
-    const missing = PAGE_SIZE + 1 - (await allServerRows(request)).length
-    for (let n = 0; n < Math.ceil(missing / 2); n++) {
+  const asked = [`Reply with exactly the word: first-${word}`, `Reply with exactly the word: second-${word}`]
+  await step("Record a conversation longer than one page", async () => {
+    // A real client writes completed exchanges before either device joins. No model is needed to prove paging.
+    const history = crypto.randomUUID()
+    const questions = [
+      ...Array.from({ length: Math.ceil(PAGE_SIZE / 2) }, (_, n) => `Earlier exchange ${n + 1}: ${history}`),
+      ...asked,
+    ]
+    for (const [n, text] of questions.entries()) {
       const id = crypto.randomUUID()
       const answerId = crypto.randomUUID()
-      expect((await request.post("/api/questions", questionPost({ id, answerId, text: `Earlier question ${n + 1}, ${tag}` }))).status()).toBe(202)
-      expect((await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `Earlier answer ${n + 1}, ${tag}` }, headers: writeHeaders() })).status()).toBe(200)
+      const question = await request.post("/api/questions", questionPost({ id, answerId, text }))
+      expect(question.status()).toBe(202)
+      const answer = await request.post(`/api/answers/${answerId}`, { data: { status: "done", text: `Recorded exchange ${n + 1}.` }, headers: writeHeaders() })
+      expect(answer.status()).toBe(200)
     }
   })
   const [a] = await devices.open("A")
-  const asked = [`Reply with exactly the word: first-${word}`, `Reply with exactly the word: second-${word}`]
-  for (const [index, question] of asked.entries()) {
-    await a.ask(question)
-    await a.expectAnswered(question, `${index === 0 ? "first" : "second"}-${word}`)
-  }
 
   // A new device, with nothing in memory, gets this test's messages exactly as A has them...
   const [late] = await devices.open("Late")
@@ -127,7 +127,7 @@ test("late joiner: a device that opens later shows the same latest messages, and
   // Load earlier pages back: the late device then shows the latest two pages, questions in Postgres' order.
   expect(total, "the conversation holds more than one page").toBeGreaterThan(PAGE_SIZE)
   await expect(late.loadEarlier).toBeVisible()
-  await late.loadEarlier.click()
+  await step("Read the previous page on the new device", () => late.loadEarlier.click())
   await expect(async () => {
     const [onLate, rows] = await Promise.all([late.transcript(), allServerRows(request)])
     const latest = rows.slice(-2 * PAGE_SIZE)
