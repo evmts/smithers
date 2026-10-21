@@ -1,0 +1,14 @@
+/* The stream's status pill. */
+.stream-pill {
+  --pill: #2c6a58;
+  display: inline-flex;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  color: var(--pill);
+}
+@media (prefers-color-scheme: dark) {
+  .stream-pill {
+    --pill: #7cc6ae;
+  }
+}

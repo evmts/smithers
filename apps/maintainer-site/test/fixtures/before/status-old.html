@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status pill, before</title>
+<style>
+body { margin: 0; font: 16px/1.5 -apple-system, system-ui, sans-serif; background: #f6f6f4; color: #1d2125; }
+main { padding: 40px; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+.row { display: flex; gap: 4px; }
+.pill { padding: 2px 8px; border-radius: 4px; background: #eeeeea; color: #9a9a94; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Agent status</h1>
+  <p class="row"><span class="pill">Working</span><span class="pill">Waiting</span><span class="pill">Needs you</span><span class="pill">Failed</span></p>
+  <p id="script-ran">Script did not run.</p>
+</main>
+<script>document.getElementById("script-ran").textContent = "Script ran in the sandbox."</script>
+</body>
+</html>

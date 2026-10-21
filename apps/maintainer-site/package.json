@@ -3,10 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "A local site for maintainers: every e2e flow GIF and a linked knowledge base of the repository's docs.",
+  "description": "A local site for maintainers: Will's decision queue, every e2e flow GIF and a linked knowledge base of the repository's docs.",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test markdown.test.mjs",
+    "serve": "node serve.mjs",
+    "test": "node --test markdown.test.mjs test/serve.test.mjs",
+    "test:queue": "node test/queue.e2e.mjs",
     "screenshots": "node screenshots.mjs"
   }
 }

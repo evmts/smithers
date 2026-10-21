@@ -1,0 +1,6 @@
+[
+  { "t": 0, "label": "Open the app" },
+  { "t": 2.25, "label": "Sign in" },
+  { "t": 4.65, "label": "Open chat" },
+  { "t": 6, "label": "Scroll the answer" }
+]

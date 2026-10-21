@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-20T12:00:00Z",
+  "items": [
+    {
+      "id": "question:scratch-repo",
+      "kind": "question",
+      "title": "Which repository should the issue e2e tests write to?",
+      "priority": 400,
+      "why": "The issue e2e suite waits on it",
+      "area": "github",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "The tests create and close issues. Pick a repository, or type its name.",
+      "options": [
+        {
+          "key": "1",
+          "label": "A new scratch repository",
+          "detail": "smithersai/queue-scratch",
+          "recommended": true
+        },
+        {
+          "key": "2",
+          "label": "The wrapped repository",
+          "detail": "Issues land beside real ones"
+        }
+      ],
+      "links": [
+        {
+          "label": "Shape stream source",
+          "path": "src/shape-stream.ts"
+        }
+      ]
+    },
+    {
+      "id": "decision:electric-shapes",
+      "kind": "decision",
+      "title": "Read rows through Electric shapes, not polling",
+      "priority": 900,
+      "why": "Blocks the chat list and the run page",
+      "area": "sdk:effect-electric",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "Electric streams each table's changes as a **shape**. Polling costs a request a second per tab.\n\n- Shapes: one long request per table, rows arrive in order.\n- Polling: simpler, slower, and it misses deletes.\n\nThe module is [`src/shape-stream.ts`](src/shape-stream.ts).",
+      "options": [
+        {
+          "key": "1",
+          "label": "Shapes",
+          "detail": "One long request per table",
+          "recommended": true
+        },
+        {
+          "key": "2",
+          "label": "Polling",
+          "detail": "A request a second per tab"
+        },
+        {
+          "key": "3",
+          "label": "Neither; type why"
+        }
+      ],
+      "links": [
+        {
+          "label": "Shape stream",
+          "path": "src/shape-stream.ts"
+        }
+      ]
+    },
+    {
+      "id": "code:shape-stream@3f2a",
+      "kind": "code",
+      "title": "Code: shape-stream.ts and its pill",
+      "priority": 800,
+      "why": "Changed since the last review; the chat list reads through it",
+      "area": "sdk:effect-electric",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "The stream that every live list reads. Approve, or press r and say what to change.",
+      "files": [
+        {
+          "path": "src/shape-stream.ts",
+          "from": 1,
+          "to": 80,
+          "note": "Correctness of `push()` at the limit, and whether `load()` should retry."
+        },
+        {
+          "path": "src/shape-stream.css",
+          "note": "The pill's colours in both themes."
+        }
+      ],
+      "revision": "3f2a9c1e7b"
+    },
+    {
+      "id": "design:status-pill@9124",
+      "kind": "design",
+      "title": "Design: agent status pills",
+      "priority": 700,
+      "why": "Nobody has judged it yet",
+      "area": "agent",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "Four states. Judge words, colour and spacing.",
+      "revision": "9124ce33",
+      "media": [
+        {
+          "path": "design/status.html",
+          "type": "html"
+        },
+        {
+          "path": "design/status.svg",
+          "type": "png"
+        }
+      ]
+    },
+    {
+      "id": "gif:chat-shortcut@bf47",
+      "kind": "gif",
+      "title": "Watch: the chat shortcut",
+      "priority": 600,
+      "why": "Feature walkthrough; recorded today",
+      "area": "chat",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "Does the shortcut behave as you expect?",
+      "revision": "bf478225",
+      "media": [
+        {
+          "path": "videos/chat-shortcut.mp4",
+          "type": "video",
+          "chapters": "videos/chat-shortcut.chapters.json"
+        },
+        {
+          "path": "gifs/flow.gif",
+          "type": "gif"
+        }
+      ]
+    },
+    {
+      "id": "verify:chat-shortcut-speed",
+      "kind": "verify",
+      "title": "Verify: the chat opens sooner",
+      "priority": 500,
+      "why": "A fix to your review landed",
+      "area": "chat",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "Same flow, recorded before and after the fix.",
+      "before": {
+        "media": {
+          "path": "$QUEUE/before/verify-chat-shortcut-speed/chat-shortcut-old.mp4",
+          "type": "video",
+          "chapters": "$QUEUE/before/verify-chat-shortcut-speed/chat-shortcut-old.chapters.json"
+        },
+        "note": "[00:05 Open chat] The chat opens too late. [00:06 Scroll the answer] The answer jumps.",
+        "stamp": "[00:05 Open chat]"
+      },
+      "after": {
+        "media": {
+          "path": "videos/chat-shortcut.mp4",
+          "type": "video",
+          "chapters": "videos/chat-shortcut.chapters.json"
+        }
+      }
+    },
+    {
+      "id": "verify:shape-stream-limit",
+      "kind": "verify",
+      "title": "Verify: the limit now comes from the caller",
+      "priority": 480,
+      "why": "A fix to your code review landed",
+      "area": "sdk:effect-electric",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "The constructor takes `limit`; `DEFAULT_LIMIT` is only the default.",
+      "answerRef": "code:shape-stream@old",
+      "before": {
+        "media": {
+          "path": "$QUEUE/before/verify-shape-stream-limit/shape-stream.old.ts",
+          "type": "code"
+        },
+        "note": "L16: the limit should come from the caller, not a constant."
+      },
+      "after": {
+        "media": {
+          "path": "src/shape-stream.ts",
+          "type": "code"
+        }
+      },
+      "links": [
+        {
+          "label": "shape-stream.ts",
+          "path": "src/shape-stream.ts"
+        }
+      ]
+    },
+    {
+      "id": "verify:status-pill-contrast",
+      "kind": "verify",
+      "title": "Verify: the pills have more contrast",
+      "priority": 460,
+      "why": "A fix to your design review landed",
+      "area": "agent",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "Judge the new pills against the old ones.",
+      "before": {
+        "media": {
+          "path": "$QUEUE/before/verify-status-pill-contrast/status-old.html",
+          "type": "html"
+        },
+        "note": "The pills are too faint to read."
+      },
+      "after": {
+        "media": {
+          "path": "design/status.html",
+          "type": "html"
+        }
+      }
+    },
+    {
+      "id": "verify:chat-opens-in-time",
+      "kind": "verify",
+      "title": "Verify: the chat opens on time",
+      "priority": 450,
+      "why": "A fix landed; the old recording wasn't kept",
+      "area": "chat",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "Your note is pinned where you made it.",
+      "before": {
+        "note": "[00:03 Open chat] The chat opens too late.",
+        "stamp": "[00:03 Open chat]"
+      },
+      "after": {
+        "media": {
+          "path": "videos/chat-shortcut.mp4",
+          "type": "video",
+          "chapters": "videos/chat-shortcut.chapters.json"
+        }
+      }
+    },
+    {
+      "id": "design:shape-stream-readme@77aa",
+      "kind": "design",
+      "title": "README: ShapeStream",
+      "priority": 650,
+      "why": "First draft of the package README",
+      "area": "sdk:effect-electric",
+      "addedAt": "2026-10-20T12:00:00Z",
+      "context": "Does it read well on GitHub?",
+      "revision": "77aa01",
+      "media": [
+        {
+          "path": "docs/README.md",
+          "type": "md"
+        }
+      ]
+    }
+  ]
+}

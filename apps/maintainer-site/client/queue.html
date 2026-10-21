@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Queue</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f5d50'/%3E%3Cpath d='M9 11h14M9 16h14M9 21h9' stroke='%23fff' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/queue/queue.css">
+</head>
+<body>
+<div class="q">
+  <header class="q-head">
+    <a class="q-brand" href="/" title="Maintainer site">Queue</a>
+    <span class="q-pos" id="q-pos" aria-live="polite"><b id="q-at">0</b> / <b id="q-total">0</b></span>
+    <span class="q-kinds" id="q-kinds"></span>
+    <span class="q-spacer"></span>
+    <span class="q-cov" id="q-cov" hidden></span>
+    <span class="q-done"><b id="q-done">0</b> done today</span>
+  </header>
+  <main class="q-stage" id="q-stage" aria-live="polite"></main>
+  <footer class="q-keys" id="q-keys"></footer>
+</div>
+<div class="q-viewer" id="q-viewer" hidden></div>
+<div class="q-sheet" id="q-sheet" hidden></div>
+<div class="q-toast" id="q-toast" role="status" hidden></div>
+<script src="/queue/queue.js"></script>
+</body>
+</html>

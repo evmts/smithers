@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repository home</title>
+<meta name="description" content="A repository's home in Smithers for a visitor, a contributor and a maintainer: VibeLang's own .smithers/home.json first, Effect's curated home second.">
+<style>
+/* The Paper palette, as @smthrs/ui-styleguide's standaloneThemeCss defines it (light, then dark). */
+:root { color-scheme:light; --font-sans:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; --font-mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  --bg:#f7f4ee; --text:#211d18; --text-muted:#665f54; --text-faint:#6c655a; --surface:#fffefa; --surface-2:#efeae0; --border:rgba(33,29,24,.08); --border-strong:rgba(33,29,24,.14); --border-solid:#e4ddcf; --inverse-bg:#211d18; --inverse-text:#f7f4ee; --code-bg:#f3efe6;
+  --brand:#0f766e; --success:#0b5b57; --danger:#a4442a; --warning:#8c5a08; --info:#3c6879; --shadow-rgb:33 29 24; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme:dark; --bg:#0d1514; --text:#ece7db; --text-muted:#a8a193; --text-faint:#969083; --surface:#131b1a; --surface-2:#1a2422; --border:rgba(236,231,219,.1); --border-strong:rgba(236,231,219,.18); --border-solid:#293532; --inverse-bg:#ece7db; --inverse-text:#211d18; --code-bg:#101917; --brand:#45c4b2; --success:#7fbfb3; --danger:#d97757; --warning:#f0c169; --info:#82a8b8; --shadow-rgb:0 0 0; } }
+:root[data-theme="dark"] { color-scheme:dark; --bg:#0d1514; --text:#ece7db; --text-muted:#a8a193; --text-faint:#969083; --surface:#131b1a; --surface-2:#1a2422; --border:rgba(236,231,219,.1); --border-strong:rgba(236,231,219,.18); --border-solid:#293532; --inverse-bg:#ece7db; --inverse-text:#211d18; --code-bg:#101917; --brand:#45c4b2; --success:#7fbfb3; --danger:#d97757; --warning:#f0c169; --info:#82a8b8; --shadow-rgb:0 0 0; }
+:root { --brand-soft:color-mix(in srgb, var(--brand) 10%, var(--surface)); --brand-border:color-mix(in srgb, var(--brand) 38%, transparent); --warning-soft:color-mix(in srgb, var(--warning) 12%, var(--surface)); --warning-border:color-mix(in srgb, var(--warning) 45%, transparent); --danger-soft:color-mix(in srgb, var(--danger) 10%, var(--surface)); --danger-border:color-mix(in srgb, var(--danger) 40%, transparent); --success-soft:color-mix(in srgb, var(--success) 10%, var(--surface)); --info-soft:color-mix(in srgb, var(--info) 10%, var(--surface)); }
+
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body { margin:0; font:15px/1.55 var(--font-sans); background:var(--bg); color:var(--text); }
+a { color:inherit; }
+code, pre { font-family:var(--font-mono); }
+
+/* ── The design document around the mock ─────────────────────────────── */
+.doc { max-width:1240px; margin:0 auto; padding:24px 16px 72px; }
+.doc-head { display:flex; flex-wrap:wrap; gap:12px 20px; align-items:flex-end; justify-content:space-between; margin-bottom:16px; }
+.doc-head h1 { font-size:26px; line-height:1.2; margin:0; letter-spacing:-.01em; }
+.doc-head p { margin:4px 0 0; color:var(--text-muted); font-size:14px; max-width:68ch; }
+.controls { display:flex; flex-wrap:wrap; gap:8px 14px; }
+.seg { display:inline-flex; padding:3px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); }
+.seg button { font:inherit; font-size:12.5px; font-weight:600; height:28px; padding:0 12px; border-radius:999px; border:0; background:transparent; color:var(--text-muted); cursor:pointer; }
+.seg button[aria-pressed="true"] { background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgb(var(--shadow-rgb) / .12); }
+.seg button:focus-visible { outline:2px solid var(--brand); outline-offset:1px; }
+
+.frame { margin:0 auto; border:1px solid var(--border-strong); border-radius:14px; overflow:hidden; background:var(--bg); box-shadow:0 1px 2px rgb(var(--shadow-rgb) / .05), 0 24px 64px rgb(var(--shadow-rgb) / .10); transition:max-width .2s ease; }
+.frame[data-width="phone"] { max-width:390px; }
+.chrome { display:flex; align-items:center; gap:10px; height:38px; padding:0 12px; background:var(--surface-2); border-bottom:1px solid var(--border); }
+.chrome .dots { display:flex; gap:6px; flex:none; }
+.chrome .dots i { width:10px; height:10px; border-radius:50%; background:var(--border-strong); }
+.chrome .url { flex:1; min-width:0; height:24px; display:flex; align-items:center; padding:0 10px; border-radius:7px; background:var(--surface); color:var(--text-muted); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chrome .who { flex:none; font-size:12px; font-weight:650; color:var(--text-muted); }
+
+.notes { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap:14px; margin-top:28px; }
+.note { background:var(--surface); border:1px solid var(--border-strong); border-radius:12px; padding:16px 18px; }
+.note h2 { font-size:15px; margin:0 0 8px; }
+.note table { width:100%; border-collapse:collapse; font-size:13.5px; }
+.note th, .note td { text-align:left; padding:6px 8px 6px 0; border-top:1px solid var(--border); vertical-align:top; }
+.note th { font-size:11.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted); border-top:0; }
+.note ul { margin:0; padding-left:18px; font-size:13.5px; }
+.note li + li { margin-top:4px; }
+.note code { font-size:12.5px; background:var(--surface-2); padding:1px 5px; border-radius:4px; overflow-wrap:anywhere; }
+.yes { color:var(--success); font-weight:700; }
+.no { color:var(--text-faint); }
+
+/* ── The app page: header, tabs ──────────────────────────────────────── */
+.app { container-type:inline-size; }
+.app-head { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; padding:14px 24px 0; }
+.app-head .name { margin:0 auto 0 0; font-size:17px; font-weight:650; letter-spacing:-.005em; min-width:0; overflow-wrap:anywhere; }
+.app-head .name span { color:var(--text-muted); font-weight:500; }
+.ghost { display:inline-flex; align-items:center; height:30px; padding:0 10px; border-radius:7px; font-size:13.5px; font-weight:550; text-decoration:none; color:var(--text); }
+.ghost:hover { background:var(--surface-2); }
+.outline { display:inline-flex; align-items:center; height:30px; padding:0 12px; border-radius:7px; border:1px solid var(--border-strong); background:var(--surface); font-size:13.5px; font-weight:600; text-decoration:none; color:var(--text); }
+.tabs { display:flex; gap:20px; padding:0 24px; border-bottom:1px solid var(--border); margin-top:10px; }
+.tabs a { padding:8px 0 9px; font-size:13.5px; font-weight:600; text-decoration:none; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
+.tabs a[aria-current="page"] { color:var(--text); border-bottom-color:var(--text); }
+
+/* ── RepositoryHome: sections and blocks ─────────────────────────────── */
+.home { padding:8px 24px 56px; display:flex; flex-direction:column; gap:56px; }
+.section { display:flex; flex-direction:column; gap:22px; }
+.section-head { display:flex; align-items:center; flex-wrap:wrap; gap:8px 10px; }
+.section-head h2 { margin:0; font-size:20px; letter-spacing:-.01em; }
+.audience { display:inline-flex; align-items:center; gap:6px; height:22px; padding:0 9px; border-radius:999px; font-size:11.5px; font-weight:700; letter-spacing:.02em; background:var(--surface-2); color:var(--text-muted); border:1px solid var(--border-strong); }
+.audience::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.audience.maintainer { background:var(--brand-soft); color:var(--brand); border-color:var(--brand-border); }
+.block-title { margin:0; font-size:13px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); }
+.block { display:flex; flex-direction:column; gap:12px; min-width:0; }
+.more { font-size:13.5px; font-weight:600; color:var(--brand); text-decoration:none; }
+.more:hover { text-decoration:underline; text-underline-offset:3px; }
+
+/* hero */
+.hero { position:relative; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.05fr); gap:40px; align-items:center; padding:48px 0 8px; }
+.hero::before { content:""; position:absolute; inset:-8px -24px auto; height:340px; z-index:-1; background:radial-gradient(60% 80% at 15% 0%, var(--brand-soft), transparent 70%); pointer-events:none; }
+.announce { justify-self:start; display:inline-flex; align-items:center; gap:8px; height:28px; padding:0 4px 0 12px; border-radius:999px; border:1px solid var(--brand-border); background:var(--surface); font-size:13px; font-weight:600; color:var(--brand); text-decoration:none; }
+.announce b { display:inline-grid; place-items:center; height:20px; padding:0 8px; border-radius:999px; background:var(--brand-soft); font-weight:700; }
+.hero h1 { margin:18px 0 0; font-size:64px; line-height:1; letter-spacing:-.035em; font-weight:750; }
+.hero .tagline { margin:14px 0 0; font-size:24px; line-height:1.3; letter-spacing:-.015em; font-weight:600; max-width:22ch; }
+.hero .lede { margin:12px 0 0; font-size:16.5px; color:var(--text-muted); max-width:46ch; }
+.actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:26px; }
+.btn { display:inline-flex; align-items:center; gap:6px; height:40px; padding:0 18px; border-radius:9px; font-size:14.5px; font-weight:650; text-decoration:none; border:1px solid var(--border-strong); background:var(--surface); color:var(--text); }
+.btn.primary { background:var(--inverse-bg); color:var(--inverse-text); border-color:transparent; }
+.btn:hover { border-color:var(--text-faint); }
+.install { display:flex; align-items:center; gap:10px; margin-top:16px; max-width:380px; height:44px; padding:0 6px 0 14px; border-radius:10px; border:1px solid var(--border-strong); background:var(--surface); font:14px var(--font-mono); }
+.install .p { color:var(--text-faint); user-select:none; }
+.install code { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.copy { flex:none; height:32px; padding:0 10px; border-radius:7px; border:0; background:var(--surface-2); font:600 12.5px var(--font-sans); color:var(--text); cursor:pointer; }
+
+/* code */
+.code { min-width:0; border-radius:12px; border:1px solid var(--border-strong); background:var(--code-bg); box-shadow:0 1px 2px rgb(var(--shadow-rgb) / .04), 0 18px 48px rgb(var(--shadow-rgb) / .08); overflow:hidden; }
+.code-bar { display:flex; align-items:center; gap:8px; height:38px; padding:0 8px 0 14px; border-bottom:1px solid var(--border); font:12.5px var(--font-mono); color:var(--text-muted); }
+.code-bar span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.code pre { margin:0; padding:16px 18px 18px; font-size:13px; line-height:1.65; overflow-x:auto; color:var(--text); }
+.k { color:var(--brand); font-weight:600; } .s { color:var(--warning); } .f { color:var(--info); } .c { color:var(--text-faint); font-style:italic; } .n { color:var(--danger); } .t { color:var(--info); font-weight:600; }
+
+/* stats */
+.stats { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); border:1px solid var(--border-strong); border-radius:12px; background:var(--surface); overflow:hidden; }
+.stat { padding:16px 18px; display:flex; flex-direction:column; gap:2px; min-width:0; }
+.stat + .stat { border-left:1px solid var(--border); }
+.stat .v { font-size:22px; font-weight:700; letter-spacing:-.02em; line-height:1.2; overflow-wrap:anywhere; }
+.stat .l { font-size:12.5px; color:var(--text-muted); font-weight:550; }
+
+/* cards */
+.cards { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; }
+.cards.four { grid-template-columns:repeat(4, minmax(0,1fr)); }
+.card { display:flex; flex-direction:column; gap:6px; min-width:0; padding:16px 18px; border-radius:12px; border:1px solid var(--border-strong); background:var(--surface); text-decoration:none; color:var(--text); transition:border-color .12s ease, transform .12s ease; }
+a.card:hover { border-color:var(--brand-border); transform:translateY(-1px); }
+.card .label { font:12px var(--font-mono); color:var(--brand); overflow-wrap:anywhere; }
+.card h3 { margin:0; font-size:15px; letter-spacing:-.005em; }
+.card p { margin:0; font-size:13.5px; color:var(--text-muted); }
+
+/* releases */
+.releases { list-style:none; margin:0; padding:0; border:1px solid var(--border-strong); border-radius:12px; background:var(--surface); }
+.releases li { display:grid; grid-template-columns:minmax(0,13rem) minmax(0,1fr) auto; gap:16px; align-items:baseline; padding:13px 18px; }
+.releases li + li { border-top:1px solid var(--border); }
+.releases a { font:600 13.5px var(--font-mono); color:var(--text); text-decoration:none; overflow-wrap:anywhere; }
+.releases a:hover { color:var(--brand); }
+.releases p { margin:0; font-size:13.5px; color:var(--text-muted); min-width:0; }
+.releases time { font-size:12.5px; color:var(--text-faint); white-space:nowrap; }
+
+/* links row */
+.links { display:flex; flex-wrap:wrap; gap:8px; }
+.links a { display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 14px; border-radius:999px; border:1px solid var(--border-strong); background:var(--surface); font-size:13.5px; font-weight:600; text-decoration:none; }
+.links a:hover { border-color:var(--brand-border); color:var(--brand); }
+
+/* ask */
+.ask { display:flex; align-items:center; flex-wrap:wrap; gap:16px 24px; padding:24px; border-radius:14px; background:var(--inverse-bg); color:var(--inverse-text); }
+.ask h2 { margin:0; font-size:20px; letter-spacing:-.01em; flex:1 1 220px; }
+.ask a { flex:1 1 280px; display:flex; align-items:center; justify-content:space-between; gap:12px; height:46px; padding:0 8px 0 16px; border-radius:10px; background:var(--bg); color:var(--text-muted); text-decoration:none; font-size:14.5px; }
+.ask a kbd { height:30px; display:grid; place-items:center; padding:0 12px; border-radius:7px; background:var(--inverse-bg); color:var(--inverse-text); font:600 13px var(--font-sans); }
+
+/* ── Live blocks (Members, Maintainers) ──────────────────────────────── */
+.tiles { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:10px; }
+.tile { display:flex; flex-direction:column; gap:2px; padding:14px 16px; border-radius:12px; border:1px solid var(--border-strong); background:var(--surface); text-decoration:none; min-width:0; }
+.tile .v { font-size:28px; font-weight:750; letter-spacing:-.03em; line-height:1.15; font-variant-numeric:tabular-nums; }
+.tile .l { font-size:12.5px; font-weight:600; color:var(--text-muted); }
+.tile.warn { background:var(--warning-soft); border-color:var(--warning-border); } .tile.warn .v { color:var(--warning); }
+.tile.bad { background:var(--danger-soft); border-color:var(--danger-border); } .tile.bad .v { color:var(--danger); }
+.grid2 { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; }
+.grid3 { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; }
+.panel { display:flex; flex-direction:column; min-width:0; border-radius:12px; border:1px solid var(--border-strong); background:var(--surface); }
+.panel-head { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid var(--border); }
+.panel-head h3 { margin:0; font-size:14px; flex:1; }
+.count { font-size:12px; font-weight:700; padding:1px 8px; border-radius:999px; background:var(--surface-2); color:var(--text-muted); }
+.rows { list-style:none; margin:0; padding:4px 0; }
+.rows li { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; align-items:center; padding:8px 16px; font-size:13.5px; }
+.rows li a { text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rows li a:hover { color:var(--brand); }
+.num { font:12.5px var(--font-mono); color:var(--text-faint); }
+.meta { font-size:12px; color:var(--text-faint); white-space:nowrap; }
+.pill { display:inline-flex; align-items:center; gap:5px; height:20px; padding:0 8px; border-radius:999px; font-size:11.5px; font-weight:650; white-space:nowrap; background:var(--surface-2); color:var(--text-muted); }
+.pill::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.pill.ok { background:var(--success-soft); color:var(--success); }
+.pill.bad { background:var(--danger-soft); color:var(--danger); }
+.pill.run { background:var(--info-soft); color:var(--info); }
+.pill.wait { background:var(--warning-soft); color:var(--warning); }
+.avatar { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:10.5px; font-weight:700; color:var(--inverse-text); background:var(--brand); }
+.avatar.b { background:var(--info); } .avatar.c { background:var(--warning); }
+.flows { display:flex; flex-wrap:wrap; gap:8px; }
+.flows a { display:inline-flex; align-items:center; gap:8px; height:36px; padding:0 14px; border-radius:9px; border:1px solid var(--border-strong); background:var(--surface); font-size:13.5px; font-weight:600; text-decoration:none; }
+.flows a code { font-size:12.5px; color:var(--brand); }
+.flows a:hover { border-color:var(--brand-border); }
+
+/* Who sees what: only the chosen audience's sections show. The real page never receives the others (see the notes). */
+.app[data-view="visitor"] [data-audience="contributor"], .app[data-view="visitor"] [data-audience="maintainer"], .app[data-view="contributor"] [data-audience="maintainer"] { display:none; }
+.app[data-repo="vibelang"] [data-repo="effect"], .app[data-repo="effect"] [data-repo="vibelang"] { display:none; }
+.app[data-view="visitor"] .when-in { display:none; }
+.app:not([data-view="visitor"]) .when-out { display:none; }
+
+/* ── Narrow: the page reflows as a phone sees it ─────────────────────── */
+@container (max-width: 860px) {
+  .hero { grid-template-columns:minmax(0,1fr); gap:28px; padding-top:28px; }
+  .hero h1 { font-size:48px; }
+  .hero .tagline { font-size:21px; }
+  .cards, .cards.four { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  .tiles { grid-template-columns:repeat(3, minmax(0,1fr)); }
+  .grid2, .grid3 { grid-template-columns:minmax(0,1fr); }
+  .stats { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  .stat:nth-child(3) { border-left:0; }
+  .stat:nth-child(n+3) { border-top:1px solid var(--border); }
+}
+@container (max-width: 520px) {
+  .app-head, .tabs { padding-left:16px; padding-right:16px; }
+  .home { padding:4px 16px 40px; gap:44px; }
+  .hero h1 { font-size:42px; }
+  .cards, .cards.four { grid-template-columns:minmax(0,1fr); }
+  .tiles { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  .releases li { grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; }
+  .releases p { grid-column:1 / -1; grid-row:2; }
+  .code pre { font-size:12px; }
+  .ask { padding:18px; }
+}
+
+/* New branch: the maintainer's one prominent action, with its key */
+.section-head .spacer { flex:1; }
+.action { display:inline-flex; align-items:center; gap:10px; height:40px; padding:0 8px 0 16px; border-radius:10px; border:0; background:var(--brand); color:var(--inverse-text); font:650 15px var(--font-sans); cursor:pointer; box-shadow:0 1px 2px rgb(var(--shadow-rgb) / .12); }
+.action kbd { display:grid; place-items:center; min-width:24px; height:24px; padding:0 6px; border-radius:6px; background:color-mix(in srgb, var(--inverse-text) 18%, transparent); font:650 12px var(--font-mono); }
+.audience.contributor { background:var(--info-soft); color:var(--info); border-color:color-mix(in srgb, var(--info) 40%, transparent); }
+.steps { counter-reset:step; }
+.steps .card { position:relative; padding-top:44px; }
+.steps .card::before { counter-increment:step; content:counter(step); position:absolute; top:14px; left:18px; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; background:var(--inverse-bg); color:var(--inverse-text); font-size:12px; font-weight:700; }
+.warnpill { display:inline-flex; align-items:center; gap:8px; height:28px; padding:0 12px; border-radius:999px; border:1px solid var(--warning-border); background:var(--warning-soft); color:var(--warning); font-size:13px; font-weight:650; }
+.method { font:12px var(--font-mono); color:var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="doc">
+  <div class="doc-head">
+    <div>
+      <h1>Repository home</h1>
+      <p>One page, three audiences. Visitors get a landing page; contributors get how to start and what to pick up; maintainers get the day first, with New branch. VibeLang declares its own <code>.smithers/home.json</code>; Effect has none, so Smithers curates one.</p>
+    </div>
+    <div class="controls" role="group" aria-label="Mock controls">
+      <div class="seg" role="group" aria-label="Repository" id="repo">
+        <button type="button" data-r="vibelang" aria-pressed="true">VibeLang</button>
+        <button type="button" data-r="effect" aria-pressed="false">Effect</button>
+      </div>
+      <div class="seg" role="group" aria-label="Who is viewing" id="view">
+        <button type="button" data-v="visitor" aria-pressed="true">Visitor</button>
+        <button type="button" data-v="contributor" aria-pressed="false">Contributor</button>
+        <button type="button" data-v="maintainer" aria-pressed="false">Maintainer</button>
+      </div>
+      <div class="seg" role="group" aria-label="Width" id="width">
+        <button type="button" data-w="desktop" aria-pressed="true">Desktop</button>
+        <button type="button" data-w="phone" aria-pressed="false">Phone</button>
+      </div>
+      <div class="seg" role="group" aria-label="Theme" id="theme">
+        <button type="button" data-t="auto" aria-pressed="true">Auto</button>
+        <button type="button" data-t="light" aria-pressed="false">Light</button>
+        <button type="button" data-t="dark" aria-pressed="false">Dark</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="frame" id="frame" data-width="desktop">
+    <div class="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="url" id="url">smithers.sh/smithersai/vibelang</div><div class="who" id="who">Signed out</div></div>
+    <div class="app" id="app" data-view="visitor" data-repo="vibelang">
+      <header class="app-head">
+        <h1 class="name" data-repo="vibelang"><span>smithersai /</span> vibelang</h1>
+        <h1 class="name" data-repo="effect"><span>Effect-TS /</span> effect</h1>
+        <a class="ghost" href="#">Issues</a>
+        <a class="ghost" href="#">Stack</a>
+        <a class="outline when-out" href="#">Sign in</a>
+      </header>
+      <nav class="tabs" aria-label="Repository pages"><a href="#" aria-current="page">Home</a><a href="#">Code</a></nav>
+
+      <main class="home" aria-label="Home">
+        <!-- ── VibeLang · Maintainers: the day, and New branch ───────── -->
+        <section class="section" data-repo="vibelang" data-audience="maintainer" aria-label="Today">
+          <div class="section-head"><h2>Today</h2><span class="audience maintainer">Maintainers</span><span class="spacer"></span>
+            <button class="action" type="button">New branch <kbd>B</kbd></button></div>
+          <div class="tiles">
+            <a class="tile warn" href="#"><span class="v">5</span><span class="l">Proposed</span></a>
+            <a class="tile" href="#"><span class="v">21</span><span class="l">Accepted</span></a>
+            <a class="tile" href="#"><span class="v">3</span><span class="l">Not accepted</span></a>
+            <a class="tile" href="#"><span class="v">4</span><span class="l">Pull requests</span></a>
+            <a class="tile bad" href="#"><span class="v">1</span><span class="l">Failed runs</span></a>
+          </div>
+          <div class="grid2">
+            <div class="panel"><div class="panel-head"><h3>Needs triage</h3><span class="count">5</span></div>
+              <ul class="rows">
+                <li><span class="num">#212</span><a href="#">`await.race` loses the loser's interruption in the LSP hover</a><span class="meta">40 min</span></li>
+                <li><span class="num">#209</span><a href="#">create-vibelang on Windows arm64: missing binary</a><span class="meta">3 h</span></li>
+                <li><span class="num">#207</span><a href="#">Docs: `provide` inside a loop</a><span class="meta">1 d</span></li>
+              </ul></div>
+            <div class="panel"><div class="panel-head"><h3>Pull requests waiting</h3><span class="count">4</span></div>
+              <ul class="rows">
+                <li><span class="num">#211</span><a href="#">compiler: EK4402 quick fix for `Date.now()`</a><span class="pill wait">Review</span></li>
+                <li><span class="num">#208</span><a href="#">vite: watch `.vibe` imports of `.ts` files</a><span class="pill ok">Approved</span></li>
+                <li><span class="num">#205</span><a href="#">runtime: release 0.0.2 binaries</a><span class="pill bad">Checks fail</span></li>
+              </ul></div>
+          </div>
+          <div class="grid3">
+            <div class="panel"><div class="panel-head"><h3>Stack</h3><span class="count">3</span></div>
+              <ul class="rows">
+                <li><span class="num">T12</span><a href="#">Ship the arm64 Windows binary</a><span class="pill run">Working</span></li>
+                <li><span class="num">T13</span><a href="#">Hover shows a call's contract</a><span class="pill">Queued</span></li>
+                <li><span class="num">T14</span><a href="#">Cheat sheet: `handle` and `resume`</a><span class="pill wait">Needs you</span></li>
+              </ul></div>
+            <div class="panel"><div class="panel-head"><h3>Runs</h3><span class="count">1 failed</span></div>
+              <ul class="rows">
+                <li><span class="pill bad">Failed</span><a href="#">check-snippets · docs</a><span class="meta">18 min</span></li>
+                <li><span class="pill run">Working</span><a href="#">T12 · build and test</a><span class="meta">now</span></li>
+                <li><span class="pill ok">Done</span><a href="#">e2e · scaffold and run</a><span class="meta">2 h</span></li>
+              </ul></div>
+            <div class="panel"><div class="panel-head"><h3>Branches</h3><span class="count">3 active</span></div>
+              <ul class="rows">
+                <li><span class="avatar">WC</span><a href="#">will/race-hover · compiler</a><span class="meta">now</span></li>
+                <li><span class="avatar b">AL</span><a href="#">ada/win-arm64 · Terminal</a><span class="meta">6 min</span></li>
+                <li><span class="avatar c">SM</span><a href="#">smithers/t13 · src/hover.go</a><span class="meta">1 h</span></li>
+              </ul></div>
+          </div>
+        </section>
+
+        <!-- ── VibeLang · Contributors: how to start, and what to pick up ─ -->
+        <section class="section" data-repo="vibelang" data-audience="contributor" aria-label="Contribute">
+          <div class="section-head"><h2>Contribute</h2><span class="audience contributor">Contributors</span></div>
+          <div class="hero" style="padding-top:0">
+            <div class="block">
+              <h3 class="block-title">Set up</h3>
+              <p class="lede" style="margin:0">Go, Bun and Node on your PATH, then one command builds the compiler, the runtime and the editor extension.</p>
+              <div class="install"><span class="p">$</span><code>sh scripts/setup.sh</code><button class="copy" type="button">Copy</button></div>
+              <div class="install" style="margin-top:8px"><span class="p">$</span><code>sh scripts/e2e.sh</code><button class="copy" type="button">Copy</button></div>
+            </div>
+            <div class="panel"><div class="panel-head"><h3>Open TODOs</h3><span class="count">3</span></div>
+              <ul class="rows">
+                <li><span class="num">T13</span><a href="#">Hover shows a call's contract</a><span class="pill">Queued</span></li>
+                <li><span class="num">T15</span><a href="#">EK4403 message names the Clock service</a><span class="pill">Queued</span></li>
+                <li><span class="num">T16</span><a href="#">Example: SQLite with `@effect/sql-sqlite-node`</a><span class="pill">Queued</span></li>
+              </ul></div>
+          </div>
+          <div class="block">
+            <h3 class="block-title">How a change lands</h3>
+            <div class="cards four steps">
+              <div class="card"><h3>Pick a TODO or an issue</h3><p>Or ask Smithers for a new TODO.</p></div>
+              <div class="card"><h3>Work on its branch</h3><p>With its conversation, terminal and views.</p></div>
+              <div class="card"><h3>Open a pull request</h3><p>Tests and docs in the same change.</p></div>
+              <div class="card"><h3>A maintainer reviews and merges</h3><p>People merge; agents never do.</p></div>
+            </div>
+          </div>
+          <div class="block">
+            <h3 class="block-title">Where to ask</h3>
+            <div class="links"><a href="#">Issues</a><a href="#">Specification</a><a href="#">Decision log</a></div>
+          </div>
+        </section>
+
+        <!-- ── VibeLang · Everyone: the landing page ─────────────────── -->
+        <section class="section" data-repo="vibelang" data-audience="everyone" aria-label="VibeLang">
+          <div class="hero">
+            <div>
+              <span class="warnpill">v0: the language will change</span>
+              <h1>VibeLang</h1>
+              <p class="tagline">Reliable TypeScript for the AI era, built on Effect.</p>
+              <p class="lede">A simple, readable syntax for Effect that compiles to TypeScript, with first-class access to the TypeScript ecosystem.</p>
+              <div class="actions">
+                <a class="btn primary" href="#">Get started</a>
+                <a class="btn" href="#">Cheat sheet</a>
+                <a class="btn" href="#">Docs</a>
+              </div>
+              <div class="install"><span class="p">$</span><code>npm create vibelang@latest my-app</code><button class="copy" type="button">Copy</button></div>
+            </div>
+            <figure class="code" style="margin:0">
+              <div class="code-bar"><span>main.vibe</span><button class="copy" type="button">Copy</button></div>
+<pre><span class="k">error</span> <span class="t">NotFound</span> { id: <span class="t">string</span> }
+
+<span class="k">service</span> <span class="t">Users</span> {
+  <span class="f">find</span>(id: <span class="t">string</span>): <span class="t">User</span>!<span class="t">NotFound</span>
+}
+
+<span class="k">function</span> <span class="f">greet</span>(id: <span class="t">string</span>) {
+  <span class="k">return</span> <span class="s">`Welcome, ${Users.find(id).name}`</span>
+    <span class="k">catch</span> (e) =&gt; <span class="s">`No user ${e.id}`</span>
+}
+
+<span class="k">export</span> <span class="k">function</span> <span class="f">main</span>() {
+  <span class="k">provide</span> UsersLive {
+    <span class="k">const</span> [ada, missing] = <span class="k">await</span>.all [<span class="f">greet</span>(<span class="s">"42"</span>), <span class="f">greet</span>(<span class="s">"7"</span>)]
+    Console.<span class="f">log</span>(ada, missing)
+  }
+}</pre>
+            </figure>
+          </div>
+
+          <div class="stats" role="list">
+            <div class="stat" role="listitem"><span class="v">MIT</span><span class="l">License</span></div>
+            <div class="stat" role="listitem"><span class="v">Effect 4</span><span class="l">Runtime</span></div>
+            <div class="stat" role="listitem"><span class="v">macOS · Linux · Windows</span><span class="l">arm64 and x64</span></div>
+            <div class="stat" role="listitem"><span class="v">0.0.1</span><span class="l">Latest on npm</span></div>
+          </div>
+
+          <div class="block">
+            <h3 class="block-title">Why VibeLang</h3>
+            <div class="cards">
+              <div class="card"><h3>Every function is an Effect</h3><p>A call runs where it stands; no `yield*`, no generators.</p></div>
+              <div class="card"><h3>Typed errors</h3><p>`error NotFound { id }` and `User!NotFound` in the signature.</p></div>
+              <div class="card"><h3>Services and layers</h3><p>`service`, `provide` and `Layer` as language.</p></div>
+              <div class="card"><h3>Concurrency</h3><p>`await.all`, `await.race`, `fork` and `join`.</p></div>
+              <div class="card"><h3>Your editor knows it</h3><p>Diagnostics, hovers and completions from the compiler.</p></div>
+              <div class="card"><h3>TypeScript interop</h3><p>Checks `.vibe` and `.ts` together; emits JavaScript and types.</p></div>
+            </div>
+          </div>
+
+          <div class="block">
+            <h3 class="block-title">Benchmarks</h3>
+            <div class="cards">
+              <a class="card" href="#"><span class="label">scripts/bench/compiler.sh</span><h3>Compiler</h3><p>Check and emit time and memory against tsgo on the same Effect program. Run it yourself; results land with their run.</p></a>
+              <a class="card" href="#"><span class="label">scripts/bench/lsp.mjs</span><h3>Language server</h3><p>Hover and diagnostics latency. Method first, numbers with their run.</p></a>
+            </div>
+          </div>
+
+          <div class="block">
+            <h3 class="block-title">Ecosystem</h3>
+            <div class="cards four">
+              <a class="card" href="#"><span class="label">vibelang</span><h3>Compiler</h3><p>The compiler and language server.</p></a>
+              <a class="card" href="#"><span class="label">vibelang-runtime</span><h3>Runtime</h3><p>The continuation kernel generated code runs on.</p></a>
+              <a class="card" href="#"><span class="label">vibelang-vite</span><h3>Vite</h3><p>Compile `.vibe` modules in Vite and Vitest.</p></a>
+              <a class="card" href="#"><span class="label">create-vibelang</span><h3>Starter</h3><p>`npm create vibelang@latest my-app`.</p></a>
+            </div>
+          </div>
+
+          <div class="block">
+            <h3 class="block-title">Releases</h3>
+            <ul class="releases">
+              <li><a href="#">vibelang@0.0.1</a><p>The first release on npm: the compiler, runtime and starter.</p><time>Oct 18</time></li>
+            </ul>
+            <a class="more" href="#">All releases →</a>
+          </div>
+
+          <div class="ask">
+            <h2>Questions about VibeLang?</h2>
+            <a href="#">Ask Smithers about this repository… <kbd>Ask</kbd></a>
+          </div>
+        </section>
+
+<!-- ── Maintainers: what needs a decision today ─────────────── -->
+        <section class="section" data-repo="effect" data-audience="maintainer" aria-label="Today">
+          <div class="section-head"><h2>Today</h2><span class="audience maintainer">Maintainers</span><span class="spacer"></span>
+            <button class="action" type="button">New branch <kbd>B</kbd></button></div>
+
+          <div class="block">
+            <div class="tiles">
+              <a class="tile warn" href="#"><span class="v">12</span><span class="l">Proposed</span></a>
+              <a class="tile" href="#"><span class="v">48</span><span class="l">Accepted</span></a>
+              <a class="tile" href="#"><span class="v">7</span><span class="l">Not accepted</span></a>
+              <a class="tile" href="#"><span class="v">9</span><span class="l">Pull requests waiting</span></a>
+              <a class="tile bad" href="#"><span class="v">2</span><span class="l">Failed runs</span></a>
+            </div>
+          </div>
+
+          <div class="grid2">
+            <div class="panel">
+              <div class="panel-head"><h3>Needs triage</h3><span class="count">12</span></div>
+              <ul class="rows">
+                <li><span class="num">#6131</span><a href="#">Schema.decodeUnknown drops the path on nested unions</a><span class="meta">2 h</span></li>
+                <li><span class="num">#6128</span><a href="#">sql-pg: listen() reconnects without re-subscribing</a><span class="meta">5 h</span></li>
+                <li><span class="num">#6125</span><a href="#">Docs: Layer.provideMerge example uses the v3 name</a><span class="meta">1 d</span></li>
+                <li><span class="num">#6119</span><a href="#">Stream.groupedWithin emits an empty chunk on interrupt</a><span class="meta">2 d</span></li>
+              </ul>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h3>Pull requests waiting</h3><span class="count">9</span></div>
+              <ul class="rows">
+                <li><span class="num">#6127</span><a href="#">fix(platform-node): close sockets with the run loop's exit code</a><span class="pill wait">Review</span></li>
+                <li><span class="num">#6122</span><a href="#">feat(ai): OpenRouter tool-call streaming</a><span class="pill ok">Approved</span></li>
+                <li><span class="num">#6117</span><a href="#">perf(Schema): cache compiled parsers per AST</a><span class="pill wait">Review</span></li>
+                <li><span class="num">#6110</span><a href="#">chore: bump vitest to 4.1</a><span class="pill bad">Checks fail</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="grid3">
+            <div class="panel">
+              <div class="panel-head"><h3>Stack</h3><span class="count">4</span></div>
+              <ul class="rows">
+                <li><span class="num">T41</span><a href="#">Fix #6128: re-subscribe after reconnect</a><span class="pill run">Running</span></li>
+                <li><span class="num">T42</span><a href="#">Port Layer docs to v4 names</a><span class="pill">Queued</span></li>
+                <li><span class="num">T43</span><a href="#">Cache Schema parsers</a><span class="pill wait">Needs you</span></li>
+              </ul>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h3>Runs</h3><span class="count">24 today</span></div>
+              <ul class="rows">
+                <li><span class="pill bad">Failed</span><a href="#">triage · #6131</a><span class="meta">12 min</span></li>
+                <li><span class="pill run">Working</span><a href="#">T41 · fix and test</a><span class="meta">now</span></li>
+                <li><span class="pill ok">Done</span><a href="#">release-notes · effect@4.0.5</a><span class="meta">1 d</span></li>
+              </ul>
+            </div>
+            <div class="panel">
+              <div class="panel-head"><h3>Branches</h3><span class="count">3 active</span></div>
+              <ul class="rows">
+                <li><span class="avatar">MA</span><a href="#">next-minor · src/Schema.ts</a><span class="meta">now</span></li>
+                <li><span class="avatar b">TS</span><a href="#">fix/sql-pg-listen · test/Listen.test.ts</a><span class="meta">8 min</span></li>
+                <li><span class="avatar c">GC</span><a href="#">docs/v4-layers · Terminal</a><span class="meta">1 h</span></li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Members: their work and the flows they can run ───────── -->
+        <section class="section" data-repo="effect" data-audience="contributor" aria-label="Your work">
+          <div class="section-head"><h2>Your work</h2><span class="audience contributor">Contributors</span></div>
+          <div class="ask">
+            <h2>What should we work on?</h2>
+            <a href="#">Ask Smithers about Effect… <kbd>Ask</kbd></a>
+          </div>
+          <div class="block">
+            <h3 class="block-title">Flows</h3>
+            <div class="flows">
+              <a href="#"><code>/todo.new</code>New TODO</a>
+              <a href="#"><code>/issue</code>Open an issue</a>
+              <a href="#"><code>/triage</code>Triage an issue</a>
+              <a href="#"><code>/flow.new</code>Make a flow</a>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Everyone: the landing page ───────────────────────────── -->
+        <section class="section" data-repo="effect" data-audience="everyone" aria-label="Effect">
+          <div class="hero">
+            <div>
+              <a class="announce" href="#">Effect 4.0 is here <b>Read →</b></a>
+              <h1>Effect</h1>
+              <p class="tagline">Build production-ready applications in TypeScript.</p>
+              <p class="lede">Typed errors, dependency injection, structured concurrency, retries, tracing and schemas in one library with zero dependencies.</p>
+              <div class="actions">
+                <a class="btn primary" href="#">Get started</a>
+                <a class="btn" href="#">Playground</a>
+                <a class="btn" href="#">Discord</a>
+              </div>
+              <div class="install"><span class="p">$</span><code>npm install effect</code><button class="copy" type="button">Copy</button></div>
+            </div>
+            <figure class="code" style="margin:0">
+              <div class="code-bar"><span>fetch-user.ts</span><button class="copy" type="button">Copy</button></div>
+<pre><span class="k">import</span> { Data, Effect, Schedule } <span class="k">from</span> <span class="s">"effect"</span>
+
+<span class="k">class</span> <span class="t">FetchError</span> <span class="k">extends</span> Data.<span class="f">TaggedError</span>(<span class="s">"FetchError"</span>)&lt;{
+  <span class="k">readonly</span> cause: <span class="t">unknown</span>
+}&gt; {}
+
+<span class="k">const</span> <span class="f">getUser</span> = (id: <span class="t">string</span>) =&gt;
+  Effect.<span class="f">tryPromise</span>({
+    try: (signal) =&gt; <span class="f">fetch</span>(<span class="s">`/users/${id}`</span>, { signal }),
+    catch: (cause) =&gt; <span class="k">new</span> <span class="t">FetchError</span>({ cause })
+  })
+
+<span class="c">// Typed failure, retried with backoff, bounded in time.</span>
+<span class="k">const</span> program = <span class="f">getUser</span>(<span class="s">"42"</span>).<span class="f">pipe</span>(
+  Effect.<span class="f">retry</span>({
+    times: <span class="n">3</span>,
+    schedule: Schedule.<span class="f">exponential</span>(<span class="s">"100 millis"</span>)
+  }),
+  Effect.<span class="f">timeout</span>(<span class="s">"5 seconds"</span>)
+)</pre>
+            </figure>
+          </div>
+
+          <div class="stats" role="list">
+            <div class="stat" role="listitem"><span class="v">MIT</span><span class="l">License</span></div>
+            <div class="stat" role="listitem"><span class="v">0</span><span class="l">Dependencies</span></div>
+            <div class="stat" role="listitem"><span class="v">TypeScript 5.9+</span><span class="l">Strict mode</span></div>
+            <div class="stat" role="listitem"><span class="v">Node · Bun · Deno</span><span class="l">and browsers</span></div>
+          </div>
+
+          <div class="block">
+            <h3 class="block-title">Why Effect</h3>
+            <div class="cards">
+              <div class="card"><h3>Typed errors</h3><p>Every failure is in the type, so the compiler lists what you haven't handled.</p></div>
+              <div class="card"><h3>Dependency injection</h3><p>Services and layers, checked at compile time, swapped in tests.</p></div>
+              <div class="card"><h3>Structured concurrency</h3><p>Fibers that cancel cleanly, with no leaked work.</p></div>
+              <div class="card"><h3>Retries and scheduling</h3><p>Backoff, jitter and timeouts as values you compose.</p></div>
+              <div class="card"><h3>Built-in tracing</h3><p>Spans and metrics with OpenTelemetry, no extra code.</p></div>
+              <div class="card"><h3>Schema</h3><p>One definition to validate, decode, encode and document data.</p></div>
+            </div>
+          </div>
+
+          <div class="block">
+            <h3 class="block-title">Ecosystem</h3>
+            <div class="cards four">
+              <a class="card" href="#"><span class="label">effect</span><h3>Core</h3><p>Effect, Layer, Schema, Stream and the rest.</p></a>
+              <a class="card" href="#"><span class="label">@effect/platform-node</span><h3>Node.js</h3><p>HTTP, files, sockets and workers.</p></a>
+              <a class="card" href="#"><span class="label">@effect/sql-pg</span><h3>PostgreSQL</h3><p>Typed SQL with pooling and migrations.</p></a>
+              <a class="card" href="#"><span class="label">@effect/ai-anthropic</span><h3>AI</h3><p>Model calls as effects: retries, tools, streaming.</p></a>
+              <a class="card" href="#"><span class="label">@effect/opentelemetry</span><h3>Tracing</h3><p>Export spans and metrics anywhere.</p></a>
+              <a class="card" href="#"><span class="label">@effect/vitest</span><h3>Testing</h3><p>Run effects as tests, with test clocks.</p></a>
+              <a class="card" href="#"><span class="label">@effect/atom-react</span><h3>React</h3><p>Reactive state backed by effects.</p></a>
+              <a class="card" href="#"><span class="label">@effect/platform-bun</span><h3>Bun</h3><p>The platform services on Bun.</p></a>
+            </div>
+            <a class="more" href="#">All packages →</a>
+          </div>
+
+          <div class="block">
+            <h3 class="block-title">Releases</h3>
+            <ul class="releases">
+              <li><a href="#">effect@3.22.3</a><p>LayerMap releases preloaded entries after their idle TTL.</p><time>Oct 16</time></li>
+              <li><a href="#">@effect/sql-pg@0.53.1</a><p>Closes the pool when the first connection check fails.</p><time>Oct 16</time></li>
+              <li><a href="#">effect@4.0.5</a><p>Patch release of the 4.0 line.</p><time>Oct 15</time></li>
+            </ul>
+            <a class="more" href="#">All releases →</a>
+          </div>
+
+          <div class="block">
+            <h3 class="block-title">Community</h3>
+            <div class="links"><a href="#">Discord</a><a href="#">X</a><a href="#">Bluesky</a><a href="#">YouTube</a><a href="#">Community hub</a></div>
+          </div>
+
+          <div class="ask">
+            <h2>Questions about Effect?</h2>
+            <a href="#">Ask Smithers about this repository… <kbd>Ask</kbd></a>
+          </div>
+        </section>
+      
+      </main>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h2>Who sees what</h2>
+      <table>
+        <thead><tr><th>Section</th><th>Visitor</th><th>Contributor</th><th>Maintainer</th></tr></thead>
+        <tbody>
+          <tr><td>Today: New branch, triage, pull requests, stack, runs, branches</td><td class="no">no</td><td class="no">no</td><td class="yes">yes</td></tr>
+          <tr><td>Contribute: setup, open TODOs, how a change lands, where to ask</td><td class="no">no*</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+          <tr><td>Landing: hero, code, why, benchmarks, ecosystem, releases, ask</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+        </tbody>
+      </table>
+      <p style="margin:8px 0 0; font-size:12px; color:var(--text-faint)">* A repository can open Contribute to anyone with the link: <code>"contributors": "anyone"</code>.</p>
+    </div>
+    <div class="note">
+      <h2>Who is who</h2>
+      <ul>
+        <li><b>Maintainer:</b> a Maintainer or an Admin.</li>
+        <li><b>Contributor:</b> anyone signed in with a role on the repository, Guest included; or anyone, when the repository opts in.</li>
+        <li><b>Visitor:</b> everyone else, signed out included.</li>
+        <li>ChatApi decides the audience from the session and never sends a curated section above it. Each live block's rows come from its own shape, which checks the role again.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>New branch</h2>
+      <ul>
+        <li>An <code>action</code> block: a primary button that runs one flow, <code>branch.new</code>, and its key, <kbd>B</kbd>, while you aren't typing.</li>
+        <li>It makes the branch at the default branch's head on the repository's forge and opens its workspace: conversation, terminal and views (0013).</li>
+        <li>The same <code>branch/create</code> flow is <code>/branch.new</code> and the agent's.</li>
+        <li>Branches shows who is on which branch; it needs a branches shape and is not built yet.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<script>
+  const app = document.getElementById("app")
+  const who = { visitor: "Signed out", contributor: "Signed in · Guest", maintainer: "Signed in · Maintainer" }
+  const urls = { vibelang: "smithers.sh/smithersai/vibelang", effect: "smithers.sh/Effect-TS/effect" }
+  const group = (id, attribute, apply) => {
+    const buttons = [...document.querySelectorAll(`#${id} button`)]
+    buttons.forEach((button) => button.addEventListener("click", () => {
+      buttons.forEach((other) => other.setAttribute("aria-pressed", String(other === button)))
+      apply(button.dataset[attribute])
+    }))
+  }
+  group("repo", "r", (repo) => { app.dataset.repo = repo; document.getElementById("url").textContent = urls[repo] })
+  group("view", "v", (view) => { app.dataset.view = view; document.getElementById("who").textContent = who[view] })
+  group("width", "w", (width) => { document.getElementById("frame").dataset.width = width })
+  group("theme", "t", (theme) => { if (theme === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.dataset.theme = theme })
+</script>
+</body>
+</html>

@@ -407,6 +407,7 @@ writeFileSync(
         <a href="#/flows" data-view="flows">Flows <span class="count">${flows.length}</span></a>
         <a href="#/graph" data-view="graph">Graph</a>
         <a href="#/apps/mvp/docs/todo.md" data-view="todo">TODO <span class="count">${openTodos}</span></a>
+        <a href="http://localhost:4747/queue" title="Will's decision queue: node apps/maintainer-site/serve.mjs">Queue</a>
       </nav>
       <nav class="tree" id="ms-tree" aria-label="Notes"></nav>
     </div>

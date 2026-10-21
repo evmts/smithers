@@ -1,0 +1,1 @@
+{"itemId":"code:shape-stream@old","at":"2026-10-19T10:00:00.000Z","action":"changes","text":"L12: the limit should come from the caller, not a constant.","revision":"old","title":"Code: shape-stream.ts"}

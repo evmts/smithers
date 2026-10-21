@@ -1,0 +1,6 @@
+body { margin: 0; font: 16px/1.5 -apple-system, system-ui, sans-serif; background: #f6f6f4; color: #1d2125; }
+main { padding: 40px; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+.row { display: flex; gap: 10px; }
+.pill { padding: 4px 12px; border-radius: 999px; border: 1px solid #cfcfc9; background: #fff; }
+.working { color: #3b6fb6; } .waiting { color: #8a7a2b; } .needs { color: #b0662b; } .failed { color: #b4372f; }

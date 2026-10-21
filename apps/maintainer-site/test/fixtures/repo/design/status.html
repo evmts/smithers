@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status pill</title>
+<link rel="stylesheet" href="status.css">
+</head>
+<body>
+<main>
+  <h1>Agent status</h1>
+  <p class="row"><span class="pill working">Working</span><span class="pill waiting">Waiting</span><span class="pill needs">Needs you</span><span class="pill failed">Failed</span></p>
+  <p id="script-ran">Script did not run.</p>
+</main>
+<script>document.getElementById("script-ran").textContent = "Script ran in the sandbox."</script>
+</body>
+</html>
