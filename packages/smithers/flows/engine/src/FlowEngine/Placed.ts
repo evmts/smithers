@@ -62,6 +62,9 @@ const transportRetry = Schedule.max([
 const retryTransport = <A, E, R>(ask: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.retry(ask, { while: isTransport, schedule: transportRetry })
 
+/** An RPC client for one flow's `FlowProxy` group, by operation address. */
+type Client = Record<string, (request: object) => Effect.Effect<any, any>>
+
 /**
  * Runs `use` against an RPC client for `flow`'s group. A transport failure
  * that outlives the caller's retries is a defect of this execution.
@@ -69,10 +72,7 @@ const retryTransport = <A, E, R>(ask: Effect.Effect<A, E, R>): Effect.Effect<A, 
 const remote = <A, E>(
   binding: Proxy,
   flow: Flow.Any,
-  use: (
-    client: Record<string, (request: object) => Effect.Effect<any, any>>,
-    operation: FlowProxy.OperationAddresses
-  ) => Effect.Effect<A, E, Scope.Scope>
+  use: (client: Client, operation: FlowProxy.OperationAddresses) => Effect.Effect<A, E, Scope.Scope>
 ): Effect.Effect<A, E> =>
   Effect.scoped(
     Effect.flatMap(
@@ -84,6 +84,38 @@ const remote = <A, E>(
     // execution: none of them is an answer the flow declared.
     Effect.catchIf((error): error is never => error instanceof RpcClientError, (error) => Effect.die(error))
   )
+
+/** Asks the remote engine to cancel a run: best effort, bounded, and logged when it fails. */
+const cancelRemote = (
+  client: Client,
+  operation: FlowProxy.OperationAddresses,
+  flow: Flow.Any,
+  executionId: string
+) =>
+  client[operation.interrupt]!({ executionId }).pipe(
+    Effect.interruptible,
+    Effect.timeout("5 seconds"),
+    Effect.ignore({ log: "Warn" }),
+    Effect.annotateLogs({ flow: flow._tag, executionId })
+  )
+
+/**
+ * Forwards the parent's cancellation to the remote run when the call's scope
+ * closes on an interrupted parent: the remote engine has no lineage edge to
+ * carry it.
+ */
+const forwardCancellation = (
+  client: Client,
+  operation: FlowProxy.OperationAddresses,
+  flow: Flow.Any,
+  executionId: string
+) =>
+  Effect.flatMap(Effect.serviceOption(FlowRuntime.FlowInstance), (parent) => {
+    if (Option.isNone(parent)) return Effect.void
+    return Effect.addFinalizer(() =>
+      parent.value.interrupted ? cancelRemote(client, operation, flow, executionId) : Effect.void
+    )
+  })
 
 /**
  * Runs `flow` on the binding's engine under `request.executionId` and answers
@@ -105,20 +137,7 @@ export const callRemote = (
 ): Effect.Effect<unknown, unknown> =>
   remote(binding, flow, (client, operation) =>
     Effect.gen(function*() {
-      const parent = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
-      if (Option.isSome(parent)) {
-        yield* Effect.addFinalizer(() =>
-          parent.value.interrupted
-            ? Effect.ignore(
-              client[operation.interrupt]!({ executionId: request.executionId }).pipe(
-                Effect.interruptible,
-                Effect.timeout("5 seconds")
-              ),
-              { log: "Warn" }
-            ).pipe(Effect.annotateLogs({ flow: flow._tag, executionId: request.executionId }))
-            : Effect.void
-        )
-      }
+      yield* forwardCancellation(client, operation, flow, request.executionId)
       const capabilityCeilings = yield* requestedAuthority(flow)
       const wire = { payload: request.payload, executionId: request.executionId, capabilityCeilings }
       const ask = request.discard === true
@@ -141,6 +160,23 @@ export const placeExecute = <Execute extends FlowRuntime.FlowRuntime["Service"][
         ? inner(flow as never, options as never)
         : callRemote(binding, flow, options))) as never
 
+/** Asks the binding's engine to resume a run, under the caller's authority. */
+const resumeRemote = (
+  binding: Proxy,
+  flow: Flow.Any,
+  executionId: string,
+  options: FlowRuntime.ResumeOptions | undefined
+) =>
+  remote(binding, flow, (client, operation) =>
+    Effect.flatMap(requestedAuthority(flow), (capabilityCeilings) => {
+      const request = {
+        executionId,
+        capabilityCeilings,
+        ...(options?.poll === undefined ? {} : { poll: options.poll })
+      }
+      return Effect.orDie(retryTransport(client[operation.resume]!(request)))
+    }))
+
 /**
  * `resume` for a placed flow: here, or the remote engine's resume. A lost
  * transport is asked again as {@link callRemote} asks, because a second
@@ -153,22 +189,23 @@ export const placeResume = (
   inner: FlowRuntime.FlowRuntime["Service"]["resume"]
 ): FlowRuntime.FlowRuntime["Service"]["resume"] =>
 (flow, executionId, options) =>
-  Effect.flatMap(bindingOf(flow), (binding) =>
-    binding._tag === "Here"
-      ? inner(flow, executionId, options)
-      : options?.delegated === true
-      // The remote resume API is the operator's own request. Forwarding a
-      // delegated resume through it would promote it to recovery consent.
-      ? Effect.die(new Error(`A delegated resume of ${flow._tag} cannot cross a remote placement`))
-      : remote(binding, flow, (client, operation) =>
-        Effect.flatMap(requestedAuthority(flow), (capabilityCeilings) =>
-          Effect.orDie(
-            retryTransport(client[operation.resume]!({
-              executionId,
-              capabilityCeilings,
-              ...(options?.poll === undefined ? {} : { poll: options.poll })
-            }))
-          ))))
+  Effect.flatMap(bindingOf(flow), (binding) => {
+    if (binding._tag === "Here") return inner(flow, executionId, options)
+    // The remote resume API is the operator's own request. Forwarding a
+    // delegated resume through it would promote it to recovery consent.
+    if (options?.delegated === true) {
+      return Effect.die(new Error(`A delegated resume of ${flow._tag} cannot cross a remote placement`))
+    }
+    return resumeRemote(binding, flow, executionId, options)
+  })
+
+/** Asks the binding's engine to cancel a run, under the caller's authority. */
+const interruptRemote = (binding: Proxy, flow: Flow.Any, executionId: string) =>
+  remote(binding, flow, (client, operation) =>
+    Effect.flatMap(
+      requestedAuthority(flow),
+      (capabilityCeilings) => retryTransport(client[operation.interrupt]!({ executionId, capabilityCeilings }))
+    ))
 
 /**
  * `interrupt` for a placed flow: here, or the remote engine's interrupt. A
@@ -182,11 +219,7 @@ export const placeInterrupt = (
   inner: FlowRuntime.FlowRuntime["Service"]["interrupt"]
 ): FlowRuntime.FlowRuntime["Service"]["interrupt"] =>
 (flow, executionId) =>
-  Effect.flatMap(bindingOf(flow), (binding) =>
-    binding._tag === "Here"
-      ? inner(flow, executionId)
-      : remote(binding, flow, (client, operation) =>
-        Effect.flatMap(
-          requestedAuthority(flow),
-          (capabilityCeilings) => retryTransport(client[operation.interrupt]!({ executionId, capabilityCeilings }))
-        )))
+  Effect.flatMap(
+    bindingOf(flow),
+    (binding) => binding._tag === "Here" ? inner(flow, executionId) : interruptRemote(binding, flow, executionId)
+  )

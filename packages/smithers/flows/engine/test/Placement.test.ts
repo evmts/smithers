@@ -11,7 +11,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Placement from "@smthrs/plan/Placement"
-import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Scope } from "effect"
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Logger, Option, References, Schema, Scope } from "effect"
 import { FetchHttpClient, HttpClient, HttpRouter } from "effect/http"
 import { HttpClientErrorSchema } from "effect/http/HttpClientError"
 import { RpcClient, RpcSerialization, RpcServer } from "effect/rpc"
@@ -556,4 +556,113 @@ describe("Hosts.layer", () => {
       ) expect(hosts.resolve(placement)).toEqual({ _tag: "Here" })
       expect((yield* Hosts.Hosts).resolve(Placement.sandbox({ target: "box" }))).toEqual({ _tag: "Here" })
     }))
+})
+
+/**
+ * Wraps `proxy` so every request for `operation` answers `answer` instead of
+ * reaching the remote engine.
+ */
+const answerWith =
+  (operation: string, answer: () => Effect.Effect<unknown, unknown>) => (proxy: Hosts.Binding): Hosts.Binding => ({
+    _tag: "Proxy",
+    connect: (group) =>
+      Effect.map(
+        (proxy as Extract<Hosts.Binding, { _tag: "Proxy" }>).connect(group),
+        (client) =>
+          new Proxy(client as Record<string, (request: object) => Effect.Effect<unknown, unknown>>, {
+            get: (target, name: string) => (request: object) =>
+              name === operation ? Effect.suspend(answer) : target[name]!(request)
+          })
+      )
+  })
+
+interface Logged {
+  readonly logLevel: string
+  readonly cause: Cause.Cause<unknown>
+  readonly annotations: Readonly<Record<string, unknown>>
+}
+
+const captureLogs = (logs: Array<Logged>) =>
+  Logger.make((entry) => {
+    logs.push({
+      logLevel: entry.logLevel,
+      cause: entry.cause,
+      annotations: entry.fiber.getRef(References.CurrentLogAnnotations)
+    })
+  })
+
+describe("a placed .child()'s forwarded cancellation", () => {
+  it.effect("logs a refused forward against the child, and the parent settles as cancelled", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        const b = yield* engineB(() => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)))
+        const refused = new Error("remote engine refused the cancellation")
+        const a = yield* engineA(b, [], answerWith("placement/releaseInterrupt", () => Effect.fail(refused)))
+        const logs: Array<Logged> = []
+        const running = yield* Effect.forkChild(
+          Parent.execute({ version: "14.0" }, { executionId: "parent-14" }).pipe(
+            onA(a),
+            Effect.provideService(Logger.CurrentLoggers, new Set([captureLogs(logs)]))
+          )
+        )
+        yield* Deferred.await(started)
+        yield* runtimeOf(a as never).interrupt(Parent, "parent-14")
+        const exit = yield* Fiber.await(running)
+
+        expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+        const warnings = logs.filter((entry) => entry.logLevel === "Warn")
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]!.annotations).toMatchObject({
+          flow: Release._tag,
+          executionId: yield* childId("parent-14", "14.0")
+        })
+        expect(Cause.squash(warnings[0]!.cause)).toBe(refused)
+      }).pipe(Effect.scoped)
+    ))
+
+  it.effect("bounds a forward the remote engine never answers to five seconds", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        const entered = yield* Deferred.make<void>()
+        const blocked = yield* Deferred.make<void>()
+        const b = yield* engineB(() => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)))
+        const a = yield* engineA(
+          b,
+          [],
+          answerWith(
+            "placement/releaseInterrupt",
+            () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(blocked)))
+          )
+        )
+        const logs: Array<Logged> = []
+        const running = yield* Effect.forkChild(
+          Parent.execute({ version: "15.0" }, { executionId: "parent-15" }).pipe(
+            onA(a),
+            Effect.provideService(Logger.CurrentLoggers, new Set([captureLogs(logs)]))
+          )
+        )
+        yield* Deferred.await(started)
+        yield* runtimeOf(a as never).interrupt(Parent, "parent-15")
+        yield* Deferred.await(entered)
+        yield* TestClock.adjust("4999 millis")
+        expect(running.pollUnsafe()).toBeUndefined()
+        yield* TestClock.adjust("1 millis")
+        for (let turn = 0; turn < 100 && running.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
+        const settled = running.pollUnsafe()
+        // Release even when the bound failed, so a regression fails the
+        // assertion below instead of hanging the test's own finalizers.
+        yield* Deferred.succeed(blocked, undefined)
+
+        expect(settled !== undefined && Exit.isFailure(settled) && Cause.hasInterruptsOnly(settled.cause)).toBe(true)
+        const warnings = logs.filter((entry) => entry.logLevel === "Warn")
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]!.annotations).toMatchObject({
+          flow: Release._tag,
+          executionId: yield* childId("parent-15", "15.0")
+        })
+        expect(Cause.squash(warnings[0]!.cause)).toMatchObject({ _tag: "TimeoutError" })
+      }).pipe(Effect.scoped)
+    ))
 })
