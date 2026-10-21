@@ -239,23 +239,23 @@ export const steps = <E, R>(services: Services<E, R>) => {
         const login = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
           sql<{ readonly login: string }>`SELECT github_login AS login FROM people WHERE id::text = ${request.ownerId}`)
         return yield* Effect.gen(function* () {
-          // A review this run already posted, after a lost answer, is found by its marker.
-          const posted = yield* GitHub.Pulls.findReviewByWrite(repository.owner, repository.name, request.prNumber, {
-            writeId: id,
-          })
-          if (Option.isNone(posted)) {
-            const compared = yield* GitHub.Commits.compare(repository.owner, repository.name, request.baseSha, request.sha)
-            const result = yield* ModelStep.run({ name: "checks/Review/model", ...services.judge, request: reviewRequest(compared.files) })
-            if (result.error !== undefined) return "failed" as const
-            const message = ModelEvent.settledMessage(result.events).message
-            const findings = message.content.filter((part) => part.type === "text").map((part) => part.text).join("")
-            if (findings.trim() === "") return "failed" as const
-            yield* GitHub.Pulls.createReview(repository.owner, repository.name, request.prNumber, {
+          // The judge's findings come from a durable model step, so a step run again after a lost answer replays them.
+          const compared = yield* GitHub.Commits.compare(repository.owner, repository.name, request.baseSha, request.sha)
+          const result = yield* ModelStep.run({ name: "checks/Review/model", ...services.judge, request: reviewRequest(compared.files) })
+          if (result.error !== undefined) return "failed" as const
+          const message = ModelEvent.settledMessage(result.events).message
+          const findings = message.content.filter((part) => part.type === "text").map((part) => part.text).join("")
+          if (findings.trim() === "") return "failed" as const
+          // One review, keyed by this run's check: a step run again after a lost answer finds it by that key.
+          yield* Action.once(
+            "review",
+            GitHub.Once.review(repository.owner, repository.name, request.prNumber, {
               commitId: request.sha,
               event: "COMMENT",
-              body: GitHub.Issues.withWriteMarker(reviewBodyOf(findings, login[0]?.login ?? "unknown"), id),
-            })
-          }
+              body: reviewBodyOf(findings, login[0]?.login ?? "unknown"),
+            }),
+            { key: id },
+          )
           // Read the pull request back, so its page shows the review before the webhook rings.
           yield* projectPull(repository, request.prNumber, yield* fetchPull(repository, request.prNumber))
           return "done" as const
