@@ -39,12 +39,12 @@ starting point. Note each candidate and why it is a good template.
 ### 3. Inventory the patterns already available
 
 `@smthrs/patterns` ships `Loop`, `ReviewLoop`, `MapReduce`, `Escalation`,
-`Saga`, `Trellis`, `Quarantine`, `WithApproval`, and `TryCatchFinally`, among
-others. Declare retries with an action's `retryPolicy` and cache policies with
+`Saga`, `Trellis`, `Quarantine`, and `WithApproval`, among others.
+Use `Node.catch` to recover and `Effect.ensuring` in the action's handler to clean up.
+Declare retries with an action's `retryPolicy` and cache policies with
 `Action.withCache(action, { ttlMs, scope })`. Use the library catalog's
 "Make a durable workflow" entry for these engine APIs. List the patterns that
-match a stage in the specification. Composing one of these is always preferable to hand-rolling the
-same topology.
+match a stage in the specification. Compose a pattern when it fits the topology.
 
 ### 4. Confirm the seats resolve
 

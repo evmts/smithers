@@ -1,6 +1,6 @@
 ---
 title: "Module index"
-description: "All 29 modules of @smthrs/patterns, what each one is for, its import specifier, and the page that documents it."
+description: "All 26 modules of @smthrs/patterns, what each one is for, its import specifier, and the page that documents it."
 ---
 
 The root entry point exports every module as a namespace, and each module is
@@ -47,14 +47,15 @@ Several opinions, and a rule for settling them.
 
 How many calls run at once, and what a failure does to the calls beside it.
 
-| Module                                        | Import specifier                   | What it does                                                                       |
-| --------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
-| [`Bounded`](./api.md#bounded)                 | `@smthrs/patterns/Bounded`         | Run a named set of members at most `concurrency` at a time, highest priority first |
-| [`Quarantine`](./api.md#quarantine)           | `@smthrs/patterns/Quarantine`      | Settle every member in an explicit envelope so one failure does not halt the rest  |
-| [`MapReduce`](./api.md#mapreduce)             | `@smthrs/patterns/MapReduce`       | Map every shard at a bounded concurrency, then reduce the results in shard order   |
-| [`Recursion`](./api.md#recursion)             | `@smthrs/patterns/Recursion`       | Expand a literal tree of work under a fuel, depth, and fan-out envelope            |
-| [`TryCatchFinally`](./api.md#trycatchfinally) | `@smthrs/patterns/TryCatchFinally` | Protect a body, recover the errors you select, and finalize on every path          |
-| [`Saga`](./api.md#saga)                       | `@smthrs/patterns/Saga`            | Run forward steps whose compensations unwind in reverse when one fails             |
+Use `Node.catch` to recover and `Effect.ensuring` in the action's handler to clean up.
+
+| Module                              | Import specifier              | What it does                                                                       |
+| ----------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
+| [`Bounded`](./api.md#bounded)       | `@smthrs/patterns/Bounded`    | Run a named set of members at most `concurrency` at a time, highest priority first |
+| [`Quarantine`](./api.md#quarantine) | `@smthrs/patterns/Quarantine` | Settle every member in an explicit envelope so one failure does not halt the rest  |
+| [`MapReduce`](./api.md#mapreduce)   | `@smthrs/patterns/MapReduce`  | Map every shard at a bounded concurrency, then reduce the results in shard order   |
+| [`Recursion`](./api.md#recursion)   | `@smthrs/patterns/Recursion`  | Expand a literal tree of work under a fuel, depth, and fan-out envelope            |
+| [`Saga`](./api.md#saga)             | `@smthrs/patterns/Saga`       | Run forward steps whose compensations unwind in reverse when one fails             |
 
 ## Teams and queues
 
@@ -85,8 +86,8 @@ Plans a model writes, admitted against bounds it cannot widen.
 
 Wrappers around one flow, and the pieces the patterns are built from.
 
-| Module                                  | Import specifier                | What it does                                                             |
-| --------------------------------------- | ------------------------------- | ------------------------------------------------------------------------ |
-| [`Pattern`](./api.md#pattern)           | `@smthrs/patterns/Pattern`      | Flow-valued slots and the decorator combinator every wrapper applies     |
-| [`WithApproval`](./api.md#withapproval) | `@smthrs/patterns/WithApproval` | Run a typed approval flow ahead of the flow it gates                     |
-| [`PatternError`](./api.md#patternerror) | `@smthrs/patterns/PatternError` | The tagged failure most of these modules report a refusal through        |
+| Module                                  | Import specifier                | What it does                                                         |
+| --------------------------------------- | ------------------------------- | -------------------------------------------------------------------- |
+| [`Pattern`](./api.md#pattern)           | `@smthrs/patterns/Pattern`      | Flow-valued slots and the decorator combinator every wrapper applies |
+| [`WithApproval`](./api.md#withapproval) | `@smthrs/patterns/WithApproval` | Run a typed approval flow ahead of the flow it gates                 |
+| [`PatternError`](./api.md#patternerror) | `@smthrs/patterns/PatternError` | The tagged failure most of these modules report a refusal through    |

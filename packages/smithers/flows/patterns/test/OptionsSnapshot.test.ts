@@ -22,7 +22,6 @@ import * as Runbook from "../src/Runbook.ts"
 import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.ts"
 import * as Trellis from "../src/Trellis.ts"
-import * as TryCatchFinally from "../src/TryCatchFinally.ts"
 import * as WithApproval from "../src/WithApproval.ts"
 
 // Every field any pattern here hands a member, as the one struct a
@@ -265,17 +264,6 @@ const declarations: ReadonlyArray<Declaration> = [
       options.fuel = 8
       options.depth = 3
       options.fanout = 3
-    }
-  ),
-  ported(
-    "TryCatchFinally.make",
-    { input: "job" },
-    () => ({ try: runtimeStep, catch: runtimeStep, finally: runtimeStep }),
-    (options) => TryCatchFinally.make(options),
-    (options) => {
-      options.try = runtimeOther
-      options.catch = runtimeOther
-      options.finally = runtimeOther
     }
   ),
   ported(
@@ -644,26 +632,6 @@ describe("options are snapshotted at the call", () => {
 
       expect(yield* running).toEqual(["a"])
       expect(trace).toEqual(["map a", "reduce"])
-    }))
-
-  it.effect("TryCatchFinally.run runs the arms it was called with", () =>
-    Effect.gen(function*() {
-      const { trace, record } = recorder()
-      const options = {
-        try: record("try"),
-        catch: record("catch"),
-        catchErrors: () => true,
-        finally: record("finally")
-      }
-      const running = TryCatchFinally.run("job", options)
-
-      options.try = record("swapped try")
-      options.catch = record("swapped catch")
-      options.catchErrors = () => false
-      options.finally = record("swapped finally")
-
-      expect(yield* running).toBe("try")
-      expect(trace).toEqual(["try", "finally"])
     }))
 
   it.effect("Loop.run runs the body, predicate, and bound it was called with", () =>

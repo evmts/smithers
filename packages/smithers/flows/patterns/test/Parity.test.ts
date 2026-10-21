@@ -32,7 +32,6 @@ import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.ts"
 import * as Supervisor from "../src/Supervisor.ts"
 import * as Trellis from "../src/Trellis.ts"
-import * as TryCatchFinally from "../src/TryCatchFinally.ts"
 import { approval, check, fail, flow, type Pattern, roles, scripted, settleRun } from "./Parity.ts"
 
 const drift: Pattern<{ readonly alerts: boolean }> = {
@@ -507,43 +506,6 @@ const saga: Pattern<SagaCase> = {
   ])
 }
 
-interface TryCase {
-  readonly handles: boolean
-  readonly finalizes: boolean
-}
-
-const tryScript = (tryFails: boolean, catchFails: boolean, finallyFails: boolean) => ({
-  try: () => tryFails ? fail({ code: "try_failed", message: "try failed" }) : "tried",
-  catch: ({ error }: { readonly error: unknown }) =>
-    catchFails ? fail({ code: "catch_failed", message: "catch failed" }) : { recovered: error },
-  finally: () => finallyFails ? fail({ code: "finally_failed", message: "finally failed" }) : "cleaned"
-})
-
-const tryCatchFinally: Pattern<TryCase> = {
-  make: (m, o) =>
-    TryCatchFinally.make({
-      try: m.try!,
-      ...(o.handles ? { catch: m.catch! } : {}),
-      ...(o.finalizes ? { finally: m.finally! } : {})
-    }),
-  run: (e, input, o) =>
-    TryCatchFinally.run(input, {
-      try: e.try!,
-      ...(o.handles ? { catch: (error: unknown, value: unknown) => e.catch!({ error, input: value }) } : {}),
-      ...(o.finalizes ? { finally: (value: unknown) => e.finally!({ input: value }) } : {})
-    }),
-  cases: [true, false].flatMap((tryFails) =>
-    [true, false].flatMap((handles) =>
-      [true, false].flatMap((finallyFails) => ({
-        name: `try-fails-${tryFails}-handles-${handles}-finally-fails-${finallyFails}`,
-        input: { prompt: "x" },
-        options: { handles, finalizes: true },
-        script: tryScript(tryFails, false, finallyFails)
-      }))
-    )
-  )
-}
-
 const sidecarScript = (shadowFails: boolean, scores = { primary: 0.5, shadow: 0.75 }) => ({
   primary: ({ prompt }: { readonly prompt: string }) => `primary:${prompt}`,
   shadow: ({ prompt }: { readonly prompt: string }) =>
@@ -957,8 +919,7 @@ const table: Readonly<Record<string, Pattern<any>>> = {
   ScanFixVerify: scanFixVerify,
   Sidecar: sidecar,
   Supervisor: supervisor,
-  Trellis: trellis,
-  TryCatchFinally: tryCatchFinally
+  Trellis: trellis
 }
 
 describe("declared and run forms agree", () => {

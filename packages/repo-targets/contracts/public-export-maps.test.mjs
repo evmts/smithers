@@ -129,7 +129,8 @@ describe("explicit public entrypoints", () => {
       "@smthrs/flows/SandboxedFlow",
       "@smthrs/std/NodeLanguageServer",
       "@smthrs/patterns/WithRetry",
-      "@smthrs/patterns/WithCache"
+      "@smthrs/patterns/WithCache",
+      "@smthrs/patterns/TryCatchFinally"
 ])
     let retained = 0
     for (const previous of baseline.packages) {
@@ -156,7 +157,7 @@ describe("explicit public entrypoints", () => {
       }
       retained += previous.subpaths.length - removed.length
     }
-    assert.equal(retained, 734)
+    assert.equal(retained, 733)
   })
 
   it("retires CLI CodexAuth credentials while preserving the reviewed export history", () => {

@@ -1652,6 +1652,11 @@
       "name": "@smthrs/patterns",
       "subpath": "./WithCache",
       "reason": "Deleted under the approved flows-as-code design (FLOW-10, section 7.5): it restated Action.withCache, and its ttlMs and scope never reached a nested call's dispatched action. Declare the cache policy on the action with Action.withCache(action, { ttlMs, scope })."
+    },
+    {
+      "name": "@smthrs/patterns",
+      "subpath": "./TryCatchFinally",
+      "reason": "Deleted under the approved flows-as-code design (FLOW-10, section 7.5): it restated Node.catch plus Effect.ensuring in an action's handler, and its declared finalizer was skipped on a defect or an interruption. Use Node.catch with an error schema to recover and Effect.ensuring in the resource-acquiring action's handler to clean up."
     }
   ],
   "packages": [

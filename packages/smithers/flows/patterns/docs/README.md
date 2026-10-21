@@ -126,14 +126,16 @@ each step a stable identity.
 | Get a second opinion, then settle what it says                          | `Debate`, `Panel`, `ReviewLoop`                                            | [API reference](./api.md)     |
 | Try one strategy, then a stronger one, then ask a person                | `Escalation`                                                               | [API reference](./api.md)     |
 | Fan out, bound the concurrency, and decide what a failure interrupts    | `Bounded`, `Quarantine`, `MapReduce`, `Recursion`                          | [API reference](./api.md)     |
-| Recover, clean up, and undo                                             | `TryCatchFinally`, `Saga`                                                  | [API reference](./api.md)     |
+| Recover, clean up, and undo                                             | `Saga`                                                                     | [API reference](./api.md)     |
 | Coordinate several agents as a team, with approvals and a landing order | `Supervisor`, `Intervene`, `CheckSuite`, `Kanban`, `Runbook`, `MergeQueue` | [Teams](./teams.md)           |
 | Claim and work every backlog item that is ours, round after round       | `Burndown`                                                                 | [Burndown](./burndown.md)     |
 | Run a plan a model wrote, inside bounds it cannot widen                 | `Trellis`, `DelegationChain`                                               | [Delegation](./delegation.md) |
-| Wrap one flow with an approval                                         | `WithApproval`, `Pattern`                                                 | [API reference](./api.md)     |
+| Wrap one flow with an approval                                          | `WithApproval`, `Pattern`                                                  | [API reference](./api.md)     |
 
-The [module index](./modules.md) lists all 27 modules with their import
+The [module index](./modules.md) lists all 26 modules with their import
 specifiers.
+
+Use `Node.catch` to recover and `Effect.ensuring` in the action's handler to clean up.
 
 ## How this fits with @smthrs/flows
 
@@ -166,7 +168,7 @@ start there.
 - [API reference](./api.md): the two halves of a pattern, string identity and
   ownership, the three error types, and every module the pages below do not
   cover.
-- [Module index](./modules.md): all 29 modules, their import specifiers, and
+- [Module index](./modules.md): all 26 modules, their import specifiers, and
   where each one is documented.
 - [Loops](./loops.md): `Loop`, `Optimizer`, `ScanFixVerify`, `DriftDetector`,
   and `Sidecar`, plus why a declaration cannot branch on a value.

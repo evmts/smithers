@@ -9,7 +9,6 @@ import * as MergeQueue from "../src/MergeQueue.ts"
 import * as Optimizer from "../src/Optimizer.ts"
 import * as Pattern from "../src/Pattern.ts"
 import * as ReviewLoop from "../src/ReviewLoop.ts"
-import * as TryCatchFinally from "../src/TryCatchFinally.ts"
 
 // Every pattern member is a `@smthrs/flow` flow, and a pattern's declared name
 // is the flow TAG, which is where `Compose.label`'s answer lands.
@@ -56,9 +55,6 @@ describe("pattern flow names", () => {
         failurePolicy: "halt"
       })._tag
     ).toBe("mergeQueue(members=hotfix,docs, concurrency=1, failurePolicy=halt)")
-    expect(TryCatchFinally.make({ try: runtimeStage, catch: runtimeStage })._tag).toBe(
-      "tryCatchFinally(catch=true, finally=false)"
-    )
   })
 
   it("leaves an undeclared bound out of the label", () => {

@@ -62,7 +62,7 @@
     "./Sidecar": "./src/Sidecar.ts",
     "./Supervisor": "./src/Supervisor.ts",
     "./Trellis": "./src/Trellis.ts",
-    "./TryCatchFinally": "./src/TryCatchFinally.ts",
+    "./TryCatchFinally": null,
     "./WithApproval": "./src/WithApproval.ts",
     "./WithCache": null,
     "./WithRetry": null,
@@ -348,16 +348,7 @@
           "default": "./dist/cjs/Trellis.js"
         }
       },
-      "./TryCatchFinally": {
-        "import": {
-          "types": "./dist/esm/TryCatchFinally.d.ts",
-          "default": "./dist/esm/TryCatchFinally.js"
-        },
-        "require": {
-          "types": "./dist/cjs/TryCatchFinally.d.ts",
-          "default": "./dist/cjs/TryCatchFinally.js"
-        }
-      },
+      "./TryCatchFinally": null,
       "./WithApproval": {
         "import": {
           "types": "./dist/esm/WithApproval.d.ts",

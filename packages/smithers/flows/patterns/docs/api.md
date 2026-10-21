@@ -115,6 +115,8 @@ Every other result is a fresh plain object the caller may keep or edit.
 
 ## Errors
 
+Use `Node.catch` to recover and `Effect.ensuring` in the action's handler to clean up.
+
 The package raises three tagged errors. `PatternError` is the shared one:
 every module except `Trellis` and `DelegationChain` reports its refusals and
 exhaustions through it. Those two own their own errors because every
@@ -136,7 +138,6 @@ optional `cause` with the reported error or errors.
 | `envelope_conflict`   | A supplied flow declares authority its template excludes                                                            |
 | `recursion_bound`     | `Recursion.recurse` hit its declared depth                                                                          |
 | `exhausted`           | A runtime pattern reached its declared iteration or round limit, or `MapReduce` was configured to fail on no shards |
-| `finalizer_failed`    | A `TryCatchFinally` finalizer failed after the protected body settled                                               |
 | `compensation_failed` | One or more `Saga` compensations failed while unwinding                                                             |
 | `quarantined`         | `Quarantine.settle` was called on a result holding quarantined members                                              |
 
@@ -180,12 +181,12 @@ fails with one. See
 [Delegation patterns](./delegation.md#delegationchain) for how the
 chain climbs its tier ladder and what a repair looks like.
 
-| Code             | Path     | Cause                                                                                                     | Raised when                                                                                                                                  |
-| ---------------- | -------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid_bounds` | `root`   | none                                                                                                      | `maxDepth` or `maxDeriskRounds` is not a positive safe integer, `concurrency` is set and is not one, or `tierOrder` is empty                 |
-| `missing_tier`   | `root`   | none                                                                                                      | `tierOrder` names a tier that `execute` has no flow or callback for                                                                          |
-| `derisk_failed`  | `root`   | none                                                                                                      | A `PatternError` was raised inside the derisk loop; the message is that error's                                                              |
-| `leaf_failed`    | the leaf | The per-tier attempts, `{ tier, error }` or `{ tier, rejected }`, or the `PatternError` the ladder raised | No tier settled the leaf                                                                                                                     |
+| Code             | Path     | Cause                                                                                                     | Raised when                                                                                                                  |
+| ---------------- | -------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_bounds` | `root`   | none                                                                                                      | `maxDepth` or `maxDeriskRounds` is not a positive safe integer, `concurrency` is set and is not one, or `tierOrder` is empty |
+| `missing_tier`   | `root`   | none                                                                                                      | `tierOrder` names a tier that `execute` has no flow or callback for                                                          |
+| `derisk_failed`  | `root`   | none                                                                                                      | A `PatternError` was raised inside the derisk loop; the message is that error's                                              |
+| `leaf_failed`    | the leaf | The per-tier attempts, `{ tier, error }` or `{ tier, rejected }`, or the `PatternError` the ladder raised | No tier settled the leaf                                                                                                     |
 
 ## `Pattern`
 
@@ -359,27 +360,6 @@ or `ok: false`.
 
 Rungs are alternative strategies, not model-seat fallback. Provider and seat
 fallback belong to model routing, before a flow is selected.
-
-## `TryCatchFinally`
-
-`TryCatchFinally.make({ try, catch?, catchSchema?, finally? })` declares the
-protected call, the recovery arm `catchSchema` selects, and a finalizer call on
-the settled arm and on the arm no handler claimed. The unhandled arm ends in
-`Node.fail`, so the plan states that the finalizer cleans up and hands the
-failure back rather than absorbing it. A finalizer that fails on that arm is
-caught there, so the body failure the arm re-raises is still the one the
-boundary reports; the failed finalizer call remains a step of its own. Both
-arms are wrapped in `Node.capture`, so the boundary keys the same way on every
-build.
-
-`TryCatchFinally.run(input, options)` takes `catchErrors`, a predicate rather
-than a schema, because the runtime form already holds the decoded typed error. The finalizer
-runs after success, after recovery, after an unclaimed failure, and after
-interruption. A finalizer that fails on its own becomes `finalizer_failed`; a
-body failure outranks it, so cleanup trouble never hides the reason the body
-failed. When both fail, the `finalizer_failed` error rides behind the body
-failure on the same cause rather than being dropped, so a lock left held is
-still on the record.
 
 ## `Saga`
 

@@ -18,7 +18,6 @@ import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.ts"
 import * as Supervisor from "../src/Supervisor.ts"
 import * as Trellis from "../src/Trellis.ts"
-import * as TryCatchFinally from "../src/TryCatchFinally.ts"
 import { execute, member } from "./Execute.ts"
 
 // Every field any pattern in this file hands a member, as the one struct a
@@ -166,22 +165,6 @@ describe("ported pattern declaration execution", () => {
 
     expect(Object.keys(board.board as object)).toEqual(["a", "b", "c"])
     expect(board.completed).toEqual(["a", "b", "c"])
-  })
-
-  it("hands a successful body back after the finalizer ran", async () => {
-    const attempt = member("attempt", () => "value", { input: Schema.Unknown, error: Schema.optional(Schema.Unknown) })
-    const finalizer = member("finalizer", () => "cleaned", {
-      input: Schema.Unknown,
-      error: Schema.optional(Schema.Unknown)
-    })
-
-    expect(
-      await execute(
-        TryCatchFinally.make({ try: attempt, finally: finalizer }),
-        { input: "input" },
-        "trycatchfinally-success"
-      )
-    ).toBe("value")
   })
 
   it("scores a sidecar's pair and reports the measured delta", async () => {

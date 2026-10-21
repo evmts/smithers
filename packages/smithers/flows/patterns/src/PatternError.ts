@@ -27,7 +27,6 @@ export const PatternErrorCode = Schema.Literals([
   "invalid_input",
   "exhausted",
   "stalled",
-  "finalizer_failed",
   "quarantined",
   "compensation_failed"
 ])

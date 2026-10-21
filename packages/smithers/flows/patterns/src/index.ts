@@ -70,12 +70,6 @@ export * as Bounded from "./Bounded.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as TryCatchFinally from "./TryCatchFinally.ts"
-
-/**
- * @category patterns
- * @since 0.1.0
- */
 export * as Quarantine from "./Quarantine.ts"
 
 /**

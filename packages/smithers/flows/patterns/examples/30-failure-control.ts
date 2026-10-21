@@ -7,12 +7,12 @@
  * the Effect that performs the value-dependent branch.
  *
  * This example releases a build: bounded checks, a quarantined flake, an
- * escalating fixer, a saga that unwinds a half-finished deploy, and a lock the
- * finalizer always releases.
+ * escalating fixer, and a saga that unwinds a half-finished deploy. Plain
+ * Effect recovers a typed rejection and releases the lock even on interruption.
  */
 import { Node } from "@smthrs/core"
 import { Flow, Graph } from "@smthrs/flow"
-import { Bounded, Escalation, type PatternError, Quarantine, Saga, TryCatchFinally } from "@smthrs/patterns"
+import { Bounded, Escalation, type PatternError, Quarantine, Saga } from "@smthrs/patterns"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
@@ -60,6 +60,17 @@ export interface Summary {
  */
 export type ReleaseError = PatternError.PatternError | Rejected
 
+/** Recovers a deploy rejection and releases its lock on every exit. */
+export const protectRelease = <R, R2>(
+  body: Effect.Effect<unknown, ReleaseError, R>,
+  release: Effect.Effect<unknown, never, R2>
+): Effect.Effect<string, PatternError.PatternError, R | R2> =>
+  body.pipe(
+    Effect.as("released"),
+    Effect.catchTag("examples/Rejected", () => Effect.succeed("compensated")),
+    Effect.ensuring(release)
+  )
+
 export const main = (): Effect.Effect<Summary, ReleaseError> =>
   Effect.gen(function*() {
     const trace: Array<string> = []
@@ -95,44 +106,42 @@ export const main = (): Effect.Effect<Summary, ReleaseError> =>
     })
 
     // The deploy holds a lock, and the finalizer releases it on every path.
-    const outcome = yield* TryCatchFinally.run({ release: "v1" }, {
-      try: (input: { readonly release: string }) =>
-        Saga.run(input, {
-          steps: [
-            {
-              id: "reserve",
-              action: () => record("reserve", "slot-7"),
-              compensation: () => record("release", undefined)
-            },
-            {
-              id: "upload",
-              action: () => record("upload", "bundle-9"),
-              compensation: () => record("delete", undefined)
-            },
-            {
-              id: "activate",
-              action: () =>
-                Effect.flatMap(
-                  record("activate", undefined),
-                  () => Effect.fail(new Rejected({ step: "activate" }))
-                ),
-              compensation: () => record("roll-back", undefined)
-            }
-          ],
-          onFailure: "compensate"
-        }),
-      finally: () =>
-        Effect.sync(() => {
-          lockHeld = false
-        })
-    })
+    const outcome = yield* protectRelease(
+      Saga.run({ release: "v1" }, {
+        steps: [
+          {
+            id: "reserve",
+            action: () => record("reserve", "slot-7"),
+            compensation: () => record("release", undefined)
+          },
+          {
+            id: "upload",
+            action: () => record("upload", "bundle-9"),
+            compensation: () => record("delete", undefined)
+          },
+          {
+            id: "activate",
+            action: () =>
+              Effect.flatMap(
+                record("activate", undefined),
+                () => Effect.fail(new Rejected({ step: "activate" }))
+              ),
+            compensation: () => record("roll-back", undefined)
+          }
+        ],
+        onFailure: "compensate-and-fail"
+      }),
+      Effect.sync(() => {
+        lockHeld = false
+      })
+    )
 
     return {
       checks,
       quarantined,
       fixedAt: fixed.level,
       deploy: trace,
-      outcome: outcome._tag === "Compensated" ? "compensated" : "released",
+      outcome,
       lockHeld
     }
   })
