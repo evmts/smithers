@@ -3,7 +3,7 @@ title: E2e tests against production
 status: in-progress
 area: test
 owner: prod-e2e builder (Claude Opus)
-updated: 2026-10-21 11:50 PDT
+updated: 2026-10-21 11:41 PDT
 links: [../rulings.md, ../rules.md, ../infrastructure.md, e2e-suite-and-gifs.md, major-feature-e2e-derisk.md, sign-in.md]
 ---
 
@@ -11,19 +11,26 @@ links: [../rulings.md, ../rules.md, ../infrastructure.md, e2e-suite-and-gifs.md,
 
 **Design:** the four-model panel's merged plan. A setup project signs the test account `codeplanesmithers` in through real GitHub from its browser profile, or reuses the stored session. It keeps only the app's session cookie, in `~/.smithers-e2e/<host>/`. Every spec declares its needs in `e2e/target.ts`. A summary reporter fails the run on a failure, an undeclared skip or a blocked need. A spend guard stops model-using tests at the run's token budget.
 
-**Evidence, 2026-10-21:**
-- 10:01 PDT: the setup signed the test account in to production through GitHub in 11.4 s and stored one cookie, the app's `__Host-smithers_session`, with no GitHub cookie. Identity: codeplanesmithers, guest.
-- 10:03 PDT: a second run reused the session (319 ms) and signed nobody in.
-- 10:09 PDT: `pnpm e2e:prod answer-ordering.spec.ts observability.spec.ts` ran. Its 3 tests skipped with the declared need `localLogs`, and the run passed.
+**Evidence, 2026-10-21 (Pacific):**
+- 10:01: the setup signed `codeplanesmithers` in to production through GitHub in 11.4 s. It stored one cookie, the app's `__Host-smithers_session`, with no GitHub cookie. The account was then a guest.
+- 10:03: a second run reused the session (0.3 s) and signed nobody in.
+- About 10:20: the test account accepted Will's Write invitations on `smithersai/smithers` and `roninjin10/smithers-github-tests` through its profile. A fresh sign-in read role member.
+- 10:29: `chat`, `start-app` and `sign-in` passed with 10 passed and 8 declared skips. That includes chat's streamed answer and the `github` sign-in test. Five run-tagged questions from this run are in the production home conversation.
+- 11:05: the first full run (124 tests) gave 15 passed, 14 failed, 17 broken (expected), 43 declared skips and 35 blocked. Of the 14 failures, 8 were asking tests failing on the new gate instead of skipping; they now skip as blocked. The home conversation gained no rows.
+- 11:35: after the review fixes, `chat`, `start-app` and `navigate` hover passed, and 4 asking tests skipped as blocked.
 
-- 10:30 PDT: piece A landed on main as e93c4812547a.
-- Will sent Write invitations on `smithersai/smithers` and `roninjin10/smithers-github-tests`. The test account accepted both through its profile. A fresh sign-in (`E2E_FRESH_SIGN_IN=1`) then read role member, and the setup requested the `octocat/Spoon-Knife` clone (202).
-- 11:45 PDT: `pnpm e2e:prod chat.spec.ts start-app.spec.ts sign-in.spec.ts` passed. That is 10 passed, among them chat's streamed answer as a Member and sign-in's `github` test, and 8 declared skips. The GIFs are in `~/Desktop/smithers-mvp/prod/`.
-- Every one of the 37 specs now declares its needs. `e2e/target.test.ts` fails on a `test.skip(`, a localhost check or `E2E_SESSION_COOKIE` in a spec.
+**Production state found by the runs:**
+- In production a branch is read from its repository's Code Storage mirror, and only the remote flow `repo/Clone` makes one. Until remote flows run, the run can't track its own branch, so every asking test reports blocked (`ownConversation`).
+- `flows.spec`: a run reaches Done, but its Steps list has no `flow/run/load`. This fails twice in a row.
+- Timing flakes in production: `navigate` hover opened in 348 ms against its 300 ms budget, `flow-usage` showed the Runs row before its success rate, and `start-app` landing took more than 5 s once.
 
-**Waiting on:** the MigrationError fix. Remote flows fail in production, and their tests are marked `broken remoteFlows` (TEST-5).
+**Waiting on:**
+- Remote flows in production, which fail MigrationError and then QuickJS. The `broken remoteFlows` marks and the blocked `ownConversation` tests depend on them. The lead says when to remove the marks.
+- A Workers tail adapter for `LogTail`, which the prod-flows builder owns.
 
-**Next:**
-- The first full production run.
-- Chat specs should ask in the test account's own branch conversation instead of the team's home conversation.
-- A Workers tail adapter for `LogTail`; the prod-flows builder owns it.
+**Built:**
+- `e2e/target.ts` declares needs.
+- The setup project in `e2e/deployment/` signs in, requests the fixture clones and tracks the run's own branch.
+- `e2e/summary.ts` and `e2e/reporter.ts` report each spec; `e2e/spend.ts` guards spend; `e2e/redact.ts` keeps the cookie out of errors.
+- All 38 specs declare their needs, factory.spec included.
+- Docs: `infrastructure.md` "Against a deployment", the rule `test.e2e-declared-needs`, and the decision record "How e2e tests sign in to a deployment".
