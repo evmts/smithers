@@ -232,7 +232,8 @@ const writeLog = async (path: string, log: Array<string>) => {
 export const guardSpend = (() => {
   let open: () => Promise<APIRequestContext> = () => Promise.reject(new Error("the spend guard has no request context"))
   const guard = spendGuard({
-    applies: () => target === "deployment" && meets("member"),
+    // Only a run that can ask spends: a Member, with its own conversation to ask in (e2e/target.ts).
+    applies: () => target === "deployment" && meets("member") && meets("ownConversation"),
     budget: () => tokenBudget(process.env),
     since: () => runStartedAt(process.env),
     // Shown on the test, never failing it: the test reads the same conversation through the app.
