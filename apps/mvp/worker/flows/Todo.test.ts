@@ -5,10 +5,13 @@
 // metering are the model endpoint's own (`ModelEndpoint.local`). The writer, the engine, the GitHub client, the tokens
 // and the projection are the real ones.
 import { Agent } from "@smthrs/agent"
+import { FlowRuntime } from "@smthrs/flow"
+import { RunStore } from "@smthrs/flows"
 import { Model, type ModelEvent } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
 import type { SandboxTools } from "@smthrs/sandbox"
-import { Cause, ConfigProvider, Context, Effect, Exit, Layer, Option, Redacted, Stream } from "effect"
+import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Scope, Stream } from "effect"
+import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -18,7 +21,7 @@ import { REPOSITORY, reset, services as githubServices, sql } from "../github/te
 import { BOT_LOGIN, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
 import * as Stack from "../stack/Stack.ts"
-import { runFlow } from "../test/flowHost.ts"
+import { build, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import { ChecksRun } from "./Checks.ts"
 import * as Todo from "./Todo.ts"
@@ -321,6 +324,107 @@ describe("the todo run", { timeout: 120_000 }, () => {
   })
 })
 
+// Cloudflare stops an alarm after 15 minutes of wall time, and `todo/Implement` may run 40 (docs/infrastructure.md#limits).
+// The next alarm, often on a new incarnation, resumes it: this is that resume on the Node host's engine.
+describe("the todo run on a host that dies mid-implement", { timeout: 180_000 }, () => {
+  /** Frame 1 writes, frame 2 runs the check, frame 3 answers. */
+  const FRAMES = [
+    `await ctx.call("sandbox/write", { path: "README.md", content: "# Widgets\\n\\nA line\\n" })`,
+    `await ctx.call("sandbox/run", { command: "sh .smithers/checks/readme.sh" })`,
+    `ctx.done({ summary: "Added a line; the check passed." })`,
+  ]
+
+  /**
+   * A model that answers frame `n` (the number of its answers the request already holds) with `FRAMES[n]`, and the
+   * frames it was asked; while `hold` is set it never answers frame 3.
+   */
+  const frames = () => {
+    const asked: Array<number> = []
+    const state = { hold: true }
+    const model = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          const frame = request.messages.filter((message) => message.role === "assistant").length
+          asked.push(frame)
+          if (state.hold && frame === 2) return Stream.never
+          return Stream.fromIterable<ModelEvent.ModelEvent>([
+            { type: "text-delta", id: "t", text: "```cell\n" + FRAMES[Math.min(frame, FRAMES.length - 1)]! + "\n```" },
+            { type: "usage", inputTokens: 10, outputTokens: 10 },
+            { type: "settle", stopReason: "stop" },
+          ])
+        }),
+    })
+    return { model, asked, state }
+  }
+
+  test("a new engine resumes the agent where it stopped: no answered frame is asked again, and each tool call keeps its id", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    github.files.set(".smithers/checks/readme.sh", "test -s README.md\n")
+    github.onPullOpened = (number) => void github.merge(number, "maya")
+    const machine = machines(github)
+    const { services } = await githubServices(runtime, github)
+    const todoServices: Todo.Services<unknown, never> = {
+      database: services.database,
+      tokens: services.tokens,
+      http: services.http,
+      apiBaseUrl: services.apiBaseUrl,
+      start: () => Effect.void,
+    }
+    const agent = frames()
+    const registration = Todo.registration(
+      todoServices,
+      TodoAgent.registration(await agentSeat(agent.model), await database(), Agent.layerDefaults),
+    ).pipe(Layer.provide(machine.layer))
+    const start = (await commit("Add a line to README", "Add a line to the README."))!
+    const executionId = todoExecutionId(start.attemptId)
+    /** A Durable Object's engine: one incarnation of the object, over the engine schema `schema` when it resumes one. */
+    const engine = async (schema?: string) => {
+      const scope = Effect.runSync(Scope.make())
+      const built = await Effect.runPromise(
+        Scope.provide(scope)(
+          build(registration, {
+            hostId: "durable-object",
+            isAlive: RunStore.Ownership.singleIncarnationLiveness,
+            maxConnections: 3,
+            ...(schema === undefined ? {} : { schema }),
+          }),
+        ),
+      )
+      const execute = Context.get(built.context, FlowRuntime.FlowRuntime).execute(Todo.Todo, { executionId, payload: start })
+        .pipe(Effect.provide(built.context)) as Effect.Effect<unknown, unknown>
+      return { built, execute, close: () => Effect.runPromise(Scope.close(scope, Exit.void)) }
+    }
+
+    const first = await engine()
+    const running = Effect.runFork(Effect.exit(first.execute))
+    // Frames 1 and 2 are answered and their calls ran; frame 3 is being asked when the alarm is cut off.
+    await expect.poll(() => agent.asked.length, { interval: 20, timeout: 60_000 }).toBe(3)
+    await runtime.runPromise(
+      Effect.flatMap(SqlClient.SqlClient, (client) =>
+        client`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+          WHERE pid <> pg_backend_pid() AND query LIKE ${`%${first.built.engine.schema}%`}`),
+    )
+    const before = machine.calls.map((call) => `${call.tool} ${call.callId}`)
+    agent.state.hold = false
+    const second = await engine(first.built.engine.schema)
+    const resumed = await Effect.runPromise(Effect.exit(second.execute))
+    await Effect.runPromise(Fiber.interrupt(running))
+    await second.close()
+    await first.close()
+
+    expect(resumed).toEqual(Exit.succeed({ state: "merged" }))
+    // Frames 1 and 2 replay from their sealed steps; only frame 3, never answered, is asked again.
+    expect(agent.asked).toEqual([0, 1, 2, 2])
+    // A tool call the resumed agent made again carries the call id it had, which the machine runs once.
+    const writes = machine.calls.filter((call) => call.tool === "write" || call.tool === "run")
+    expect(new Set(writes.map((call) => `${call.tool} ${call.callId}`))).toEqual(
+      new Set(before.filter((call) => call.startsWith("write ") || call.startsWith("run "))),
+    )
+    expect(github.tree("main").get("README.md")).toBe("# Widgets\n\nA line\n")
+    expect(await todo(1)).toMatchObject({ state: "merged" })
+  })
+})
+
 describe("the run's steps", () => {
   test("await closes the pull request a dropped TODO's run opened, as the App, and ends", async () => {
     const ctx = await setup()
@@ -409,6 +513,8 @@ describe("the run's steps", () => {
         owner: REPOSITORY.owner,
         name: REPOSITORY.name,
         branch: "smithers/t1-machine",
+        // The branch is GitHub's: `todo/Begin` makes it there, so the machine reads it there (worker/branch/Forge.ts).
+        forge: "github",
       },
       ownerId: maya.id,
     })

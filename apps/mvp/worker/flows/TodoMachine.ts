@@ -6,6 +6,8 @@ import type { SandboxBranch } from "../branch/Sandboxes.ts"
 // The machine a TODO's attempt works on (decision 0016, the factory simplified): its own branch machine, one per attempt
 // (`todo-<attemptId>`), checking out the attempt's branch on GitHub, the TODO's branch, and running each tool as the
 // person who committed the TODO. The `todo` run's steps, its agent's tools and the checks on its head all reach it here.
+// Its branch says `forge: "github"`: `todo/Begin` makes the branch on GitHub, so the machine reads it there even where the
+// deployment's forge is the Code Storage mirror, which never has it (worker/branch/Forge.ts `forgeOf`).
 
 /** An attempt's machine: the branch it serves, and the person its tools run as. */
 export interface TodoMachine {
@@ -25,7 +27,7 @@ export const machineOf = (options: {
 }): TodoMachine => {
   const [owner = "", name = ""] = options.repoId.replace(/^github\//, "").split("/")
   return {
-    branch: { branchId: machineId(options.attemptId), owner, name, branch: options.branch },
+    branch: { branchId: machineId(options.attemptId), owner, name, branch: options.branch, forge: "github" },
     ownerId: options.ownerId,
   }
 }

@@ -29,6 +29,16 @@ export interface Repository {
   readonly name: string
 }
 
+/**
+ * The public repository on GitHub, read with no credential (`Forge.gitHub`). It can't create a branch, which needs a
+ * credential this forge never holds.
+ */
+const gitHubForge = {
+  upstream: ({ owner, name }: Repository): Effect.Effect<GitRemote.Upstream> =>
+    Effect.succeed({ url: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}.git` }),
+  create: (): Effect.Effect<void, CreateRefused> => Effect.fail(new CreateRefused({ code: "not_configured" })),
+}
+
 /** The remote a branch's git is read from, with its credential. */
 export class Forge extends Context.Service<
   Forge,
@@ -67,16 +77,12 @@ export class Forge extends Context.Service<
    * The public repository on GitHub, read with no credential: GitHub answers a private one as missing. It can't create
    * a branch, which needs a credential this forge never holds.
    */
-  static readonly gitHub = Layer.succeed(
-    Forge,
-    Forge.of({
-      upstream: ({ owner, name }) =>
-        Effect.succeed({ url: `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}.git` }),
-      create: () => Effect.fail(new CreateRefused({ code: "not_configured" })),
-    }),
-  )
+  static readonly gitHub = Layer.succeed(Forge, gitHubForge)
 
-  /** Code Storage when `CODE_STORAGE_ORG` and `CODE_STORAGE_KEY` are set, else GitHub with no credential. */
+  /**
+   * Code Storage when `CODE_STORAGE_ORG` and `CODE_STORAGE_KEY` are set, else GitHub with no credential. A branch that
+   * lives on GitHub reads GitHub whichever this is (`forgeOf`).
+   */
   static readonly layerConfig: Layer.Layer<Forge, never, HttpClient.HttpClient> = Layer.unwrap(
     Effect.map(RepoConfig.codeStorage, (client) => (Option.isSome(client) ? Forge.codeStorage(client.value) : Forge.gitHub)),
   )
@@ -95,3 +101,11 @@ export const createBranch = (repository: Repository, branch: string, from: strin
 export const defaultBranch = (repository: Repository) =>
   Effect.flatMap(Forge, (forge) =>
     Effect.flatMap(forge.upstream(repository), (upstream) => GitRemote.head(upstream)))
+
+/**
+ * The forge a branch's machine checks `branch` out through: GitHub for a branch that lives there (`forge: "github"`, a
+ * TODO's attempt branch, which `todo/Begin` makes on GitHub as the App), else `deployment`, the deployment's own forge.
+ * With Code Storage the deployment's forge is the mirror, which never holds a branch made on GitHub after its last pull.
+ */
+export const forgeOf = (deployment: Forge["Service"], branch: { readonly forge?: "github" | undefined }): Forge["Service"] =>
+  branch.forge === "github" ? gitHubForge : deployment

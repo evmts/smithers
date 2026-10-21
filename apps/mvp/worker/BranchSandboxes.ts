@@ -15,7 +15,7 @@ import { checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
 import * as Machine from "./branch/Machine.ts"
 import { Machines, type SleepOutcome, type ToolOutcome } from "./branch/Machines.ts"
 import { provisionArgv, userOf } from "./branch/Users.ts"
-import { Forge } from "./branch/Forge.ts"
+import { Forge, forgeOf } from "./branch/Forge.ts"
 import {
   type Attachment,
   CheckoutFailed,
@@ -352,7 +352,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         Effect.gen(function* () {
           const branch = yield* branchOf
           if (branch === undefined) return HttpServerResponse.empty({ status: 403 })
-          const upstream = yield* forge.upstream({ owner: branch.owner, name: branch.name })
+          const upstream = yield* forgeOf(forge, branch).upstream({ owner: branch.owner, name: branch.name })
           return yield* GitProxy.uploadPack(request, upstream).pipe(Effect.provide(FetchHttpClient.layer))
         })
 

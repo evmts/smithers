@@ -2,11 +2,12 @@
 // the one repository when the deployment has an organization, else the public repository on GitHub with no credential
 // at all. GitHub is the scripted git host of worker/test/branch.ts, reached through Effect's `FetchHttpClient`.
 import { GitProxy, GitRemote } from "@smthrs/effect-code-storage"
-import { ConfigProvider, Effect, Exit, Layer, Redacted } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Redacted } from "effect"
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { gitHost, shaOf } from "../test/branch.ts"
-import { branchHead, defaultBranch, Forge } from "./Forge.ts"
+import { machineOf } from "../flows/TodoMachine.ts"
+import { branchHead, defaultBranch, Forge, forgeOf } from "./Forge.ts"
 
 /** A fresh ES256 key, as Code Storage's Keys page hands one out: a PKCS#8 PEM. */
 const pem = async () => {
@@ -69,6 +70,44 @@ describe("Forge.layerConfig", () => {
     const token = atob(authorization.slice("Basic ".length)).slice("t:".length)
     const claims = JSON.parse(atob(token.split(".")[1]!.replaceAll("-", "+").replaceAll("_", "/")))
     expect(claims).toMatchObject({ repo: "github/octocat/spoon-knife", scopes: ["git:read"] })
+  })
+})
+
+describe("forgeOf: the forge a branch's machine checks out through", () => {
+  const codeStorage = async () => ({ CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() })
+  const upstreamOf = (branch: { readonly owner: string; readonly name: string; readonly forge?: "github" }) =>
+    Effect.flatMap(Forge, (forge) => forgeOf(forge, branch).upstream(branch))
+
+  test("a TODO's machine reads its attempt branch on GitHub, with no credential, where the deployment's forge is Code Storage", async () => {
+    // `todo/Begin` makes the branch on GitHub; the mirror never has it, so a checkout through the mirror failed.
+    const machine = machineOf({
+      attemptId: "6f0e2b9c-1d4a-4c3b-9e8f-7a6b5c4d3e2f",
+      repoId: "github/OctoCat/Spoon-Knife",
+      branch: "smithers/t1-greet",
+      ownerId: "maya",
+    })
+    expect(machine.branch.forge).toBe("github")
+    expect(value(await run(upstreamOf(machine.branch), await codeStorage()))).toEqual({
+      url: "https://github.com/OctoCat/Spoon-Knife.git",
+    })
+  })
+
+  test("any other branch keeps the deployment's forge: the mirror with Code Storage, GitHub without", async () => {
+    const remote = value(await run(upstreamOf({ owner: "OctoCat", name: "Spoon-Knife" }), await codeStorage()))
+    expect(remote.url).toBe("https://acme.code.storage/github/octocat/spoon-knife.git")
+    expect(remote.authorization).toBeDefined()
+    expect(value(await run(upstreamOf({ owner: "octocat", name: "Spoon-Knife" }), {}))).toEqual({
+      url: "https://github.com/octocat/Spoon-Knife.git",
+    })
+  })
+
+  test("GitHub's forge never creates a branch: it holds no credential", async () => {
+    const exit = await run(
+      Effect.flatMap(Forge, (forge) =>
+        forgeOf(forge, { forge: "github" }).create({ owner: "octocat", name: "Spoon-Knife" }, "b", shaOf("main"))),
+      await codeStorage(),
+    )
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ _tag: "CreateRefused", code: "not_configured" })
   })
 })
 

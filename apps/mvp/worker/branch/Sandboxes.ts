@@ -7,12 +7,17 @@ import type { Policy } from "./Access.ts"
 // which the host provides. On Cloudflare it is the branch's `SandboxObject` Durable Object and its container
 // (worker/BranchSandboxes.ts); a test provides its own. Nothing here names a host.
 
-/** The branch a sandbox serves: its id, its repository on GitHub, and the branch name its checkout follows. */
+/**
+ * The branch a sandbox serves: its id, its repository on GitHub, the branch name its checkout follows, and where that
+ * branch lives when it isn't the deployment's forge: `github` for a TODO's attempt branch, which `todo/Begin` makes on
+ * GitHub (worker/flows/TodoMachine.ts, worker/branch/Forge.ts `forgeOf`).
+ */
 export const SandboxBranch = Schema.Struct({
   branchId: Schema.String,
   owner: Schema.String,
   name: Schema.String,
   branch: Schema.String,
+  forge: Schema.optional(Schema.Literal("github")),
 })
 export type SandboxBranch = typeof SandboxBranch.Type
 

@@ -65,6 +65,10 @@ export const props = {
   },
   // Workers Logs keeps every JSON log line; Cloudflare.Telemetry() below turns on Workers Traces.
   observability: { enabled: true, logs: { enabled: true, invocationLogs: true, persist: true } },
+  // Five minutes of CPU per request or alarm, the most Cloudflare allows, rather than the default 30 seconds: the
+  // `FlowExecution` objects this Worker hosts run the `todo` run's agent, whose QuickJS cells and replayed frames are CPU
+  // (docs/infrastructure.md#limits). Waiting on a model or a machine costs none.
+  limits: { cpuMs: 300_000 },
   // Browsers reach it only through the site, so locally it takes any free port and the site keeps 1337.
   dev: { port: 0 },
 }
