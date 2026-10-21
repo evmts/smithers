@@ -89,8 +89,8 @@ returned. The deferred body that core runs when the graph builds reads that
 snapshot and never the caller's option object again. `run` snapshots its
 options when it is called, before the `Effect` is returned, so an edit
 between the call and the execution does not reach the effect. The decorator
-factories `WithCache.make` and `WithApproval.make` snapshot when `make` is
-called, not when the decorator is applied. `Pattern.slot` returns a
+factory `WithApproval.make` snapshots when `make` is called, not when the
+decorator is applied. `Pattern.slot` returns a
 frozen copy of its declaration, which is what `Pattern.bind` reads.
 
 ### What is copied
@@ -214,7 +214,7 @@ list left to right, which puts the last decorator outermost.
 supplied flow: the capabilities, reads, writes, mode, and tier that the
 re-declaration removes.
 
-The two `With*` modules are this combinator with a policy attached.
+`WithApproval` uses this combinator to attach an approval policy.
 
 A retry is not a decorator. Declare it as the `retryPolicy` of the action that
 can fail: the engine records every attempt and the wait before the next one,
@@ -231,65 +231,6 @@ decode, and it fails on the typed schema-error channel before the gated flow
 starts, rather than arriving as a boolean the gated flow is trusted to honor.
 An empty `reason` is refused with `invalid_decorator`. `WithApproval.make`
 is the decorator form.
-
-## `WithCache`
-
-`WithCache.withCache(flow, { ttlMs?, scope?, version? })` wraps a flow with a
-cache declaration. `WithCache.make(options)` is the decorator form, usable with
-`Pattern.decorate` and `Pattern.decorateAll`.
-
-The input must explicitly declare effects with `mode: "hermetic"` and a
-`"sealed"` or omitted tier. A pure body without an effects declaration is
-rejected. Every option is optional:
-
-| Field     | Contract                                                                                                  |
-| --------- | --------------------------------------------------------------------------------------------------------- |
-| `ttlMs`   | Positive safe integer in milliseconds, measured from when the result was recorded. Omit for no age bound. |
-| `scope`   | `"run"`, `"flow"`, or `"shared"`. Omit to retain the composition's reach.                                 |
-| `version` | Nonblank string naming the body revision. Omit for no extra revision in the key.                          |
-
-Invalid effects, TTL, scope, or version throw `PatternError` with code
-`invalid_decorator` synchronously when the decorator is applied.
-`make` snapshots its options at construction and validates them on application.
-
-All declared fields enter the wrapper's name and captured key material.
-`version` changes declaration identity only. `ttlMs` and `scope` also travel
-in `WithCache.CachePolicyAnnotation`, under `@smthrs/flow/Action/CachePolicy`.
-That key is [`@smthrs/plan`](/docs/reference/api/plan/#cachepolicy)'s
-`CachePolicy.CachePolicyAnnotation`, the same object `@smthrs/flow` publishes
-and the engine reads at dispatch, so `Scope` and `Policy` here are that one
-model. `WithCache.policyOf(annotations)` reads that bag. Decorator composition
-preserves annotations, with an outer decorator's values overriding inner ones.
-
-The flow-level bag requires a host to lower it. The [`@smthrs/registry`](/docs/reference/api/registry/)
-bridge lowers a module's default-exported core flow policy onto a dispatched
-action. An ordinary nested core flow call does not propagate that bag onto its
-call node. The durable engine reads the action-level policy set by
-`CacheEnvironment.withCache(action, policy)` from [`@smthrs/flow`](/docs/reference/api/flow/).
-See [`@smthrs/step-cache`](/docs/reference/api/step-cache/) for enforcement. `WithCache` itself
-allocates no cache and performs no expiry checks.
-
-```ts
-import { Flow } from "@smthrs/flow"
-import { WithCache } from "@smthrs/patterns"
-import * as Node from "@smthrs/plan/Node"
-import * as Schema from "effect/Schema"
-
-const echo = Flow.make("echo", {
-  payload: { input: Schema.String },
-  success: Schema.String,
-  effects: {
-    reads: [],
-    writes: [],
-    mode: "hermetic",
-    onConflict: "serialize"
-  },
-  body: ({ input }) => Node.succeed(input)
-})
-
-// The registry bridge lowers this default export's policy onto an action.
-export default WithCache.withCache(echo, { ttlMs: 60_000, version: "v1" })
-```
 
 ## `Bounded`
 
@@ -604,7 +545,7 @@ with a `graph_too_deep` `GraphBuildError` naming the node.
 
 The root exports each module as a namespace, and every module is also
 importable as `@smthrs/patterns/<Module>`. The `internal/*` and nested
-`*/index` subpaths are private. The [module index](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/modules.md) lists all 28
+`*/index` subpaths are private. The [module index](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/modules.md) lists all 27
 modules with their specifiers.
 
 [`@smthrs/flow`](/docs/reference/api/flow/) supplies `Flow` and `Graph`, and

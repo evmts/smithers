@@ -88,6 +88,5 @@ Wrappers around one flow, and the pieces the patterns are built from.
 | Module                                  | Import specifier                | What it does                                                             |
 | --------------------------------------- | ------------------------------- | ------------------------------------------------------------------------ |
 | [`Pattern`](./api.md#pattern)           | `@smthrs/patterns/Pattern`      | Flow-valued slots and the decorator combinator every wrapper applies     |
-| [`WithCache`](./api.md#withcache)       | `@smthrs/patterns/WithCache`    | Declare how long a recorded result stays servable and how far it travels |
 | [`WithApproval`](./api.md#withapproval) | `@smthrs/patterns/WithApproval` | Run a typed approval flow ahead of the flow it gates                     |
 | [`PatternError`](./api.md#patternerror) | `@smthrs/patterns/PatternError` | The tagged failure most of these modules report a refusal through        |

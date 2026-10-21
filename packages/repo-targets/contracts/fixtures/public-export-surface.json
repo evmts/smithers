@@ -1647,6 +1647,11 @@
       "name": "@smthrs/patterns",
       "subpath": "./WithRetry",
       "reason": "Deleted under the approved flows-as-code design (FLOW-10, section 7.5): it restated the engine's RetryPolicy, and its retryEffect retried without durable attempt state (DUR-2). A retry is an action's retryPolicy; DelegationChain's tiers retry through their actions' policies."
+    },
+    {
+      "name": "@smthrs/patterns",
+      "subpath": "./WithCache",
+      "reason": "Deleted under the approved flows-as-code design (FLOW-10, section 7.5): it restated Action.withCache, and its ttlMs and scope never reached a nested call's dispatched action. Declare the cache policy on the action with Action.withCache(action, { ttlMs, scope })."
     }
   ],
   "packages": [

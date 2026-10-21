@@ -133,12 +133,10 @@ export const cachePolicyOf = PlanCachePolicy.cachePolicyOf
 /**
  * Declares a cache policy on an action.
  *
- * This is the form the engine honors today: `@smthrs/engine-store` reads
- * {@link CachePolicyAnnotation} off the dispatched action, bounds the age of
- * the row it may serve by `ttlMs`, and narrows the address that row is stored
- * under from `scope`. `@smthrs/patterns`' `WithCache` declares the same policy
- * over a `@smthrs/core` flow under the same annotation key, for the
- * declaration surface, so a policy written by either is read by the engine.
+ * `@smthrs/engine-store` reads {@link CachePolicyAnnotation} off the
+ * dispatched action, bounds the age of the row it may serve by `ttlMs`, and
+ * narrows the address that row is stored under from `scope`. Declare the
+ * policy on the action so it applies through nested flow calls.
  *
  * The action is not mutated. `annotate` returns a new declaration carrying the
  * policy, which is what a plan captures.

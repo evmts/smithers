@@ -64,7 +64,7 @@
     "./Trellis": "./src/Trellis.ts",
     "./TryCatchFinally": "./src/TryCatchFinally.ts",
     "./WithApproval": "./src/WithApproval.ts",
-    "./WithCache": "./src/WithCache.ts",
+    "./WithCache": null,
     "./WithRetry": null,
     "./index": "./src/index.ts"
   },
@@ -368,16 +368,7 @@
           "default": "./dist/cjs/WithApproval.js"
         }
       },
-      "./WithCache": {
-        "import": {
-          "types": "./dist/esm/WithCache.d.ts",
-          "default": "./dist/esm/WithCache.js"
-        },
-        "require": {
-          "types": "./dist/cjs/WithCache.d.ts",
-          "default": "./dist/cjs/WithCache.js"
-        }
-      },
+      "./WithCache": null,
       "./WithRetry": null,
       "./index": {
         "import": {

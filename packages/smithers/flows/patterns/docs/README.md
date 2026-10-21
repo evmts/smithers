@@ -130,9 +130,9 @@ each step a stable identity.
 | Coordinate several agents as a team, with approvals and a landing order | `Supervisor`, `Intervene`, `CheckSuite`, `Kanban`, `Runbook`, `MergeQueue` | [Teams](./teams.md)           |
 | Claim and work every backlog item that is ours, round after round       | `Burndown`                                                                 | [Burndown](./burndown.md)     |
 | Run a plan a model wrote, inside bounds it cannot widen                 | `Trellis`, `DelegationChain`                                               | [Delegation](./delegation.md) |
-| Wrap one flow with a cache policy or an approval                        | `WithCache`, `WithApproval`, `Pattern`                                     | [API reference](./api.md)     |
+| Wrap one flow with an approval                                         | `WithApproval`, `Pattern`                                                 | [API reference](./api.md)     |
 
-The [module index](./modules.md) lists all 28 modules with their import
+The [module index](./modules.md) lists all 27 modules with their import
 specifiers.
 
 ## How this fits with @smthrs/flows

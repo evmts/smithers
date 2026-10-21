@@ -8,7 +8,7 @@
  * ceiling and effect envelope as literal fields, so reading them was a property
  * access; `@smthrs/flow` carries both in the annotation bag, under the keys
  * `Graph.build` itself consults. This module is where that difference lives, so
- * `Pattern`, `WithApproval` and `WithCache` state a wrapper the same way.
+ * `Pattern` and `WithApproval` state a wrapper the same way.
  *
  * The envelope algebra it narrows with is `Compose`'s, which is
  * `@smthrs/plan/Effects`: a decorator that narrows a wrapped flow's authority
@@ -100,20 +100,6 @@ export const schemasCompatible = (
  */
 export type SchemaCompatibilityIssue = Exclude<ReturnType<typeof Compose.declaredSchemasCompatible>, undefined>
 
-/** A declaration's own annotating half, which `Flow.Any` does not state. */
-interface Annotatable {
-  readonly annotate: <I, S>(key: Context.Key<I, S>, value: S) => Flow.Any
-}
-
-/**
- * Adds one annotation to a declaration without disturbing the rest of it.
- *
- * @since 1.0.0
- * @private
- */
-export const annotate = <I, S>(flow: Flow.Any, key: Context.Key<I, S>, value: S): Flow.Any =>
-  (flow as unknown as Annotatable).annotate(key, value)
-
 /**
  * The annotation bag a wrapper starts from: both inner bags, with the supplied
  * outer declaration taking precedence.
@@ -169,24 +155,4 @@ export const redeclare = (
         call<unknown>(supplied, payload)
       ))
   })
-}
-
-/**
- * States the wrapped declaration hermetic and sealed.
- *
- * A flow that declared no envelope gets the closed one, and a flow that
- * declared one keeps its paths under `Effects.sealed`.
- *
- * @since 1.0.0
- * @private
- */
-export const seal = (flow: Flow.Any): Flow.Any => {
-  const envelope = envelopeOf(flow)
-  return annotate(
-    flow,
-    Flow.EffectEnvelope,
-    envelope === undefined
-      ? Effects.make({ reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" })
-      : Effects.sealed(envelope)
-  )
 }

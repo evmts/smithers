@@ -8,19 +8,17 @@
  * the digest the row is addressed by, so a sibling run simply never finds it.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Digest, Effects } from "@smthrs/core"
+import { Digest } from "@smthrs/core"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
-import * as WithCache from "@smthrs/patterns/WithCache"
 import { Node } from "@smthrs/plan"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
-import type * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
@@ -86,50 +84,30 @@ const activate = (runId: string) =>
     if (activated._tag !== "Activated") return yield* Effect.die(new Error("activation lost"))
   })
 
-/** The one opaque step the inner flow performs. */
-const readStep = Action.make("cache-ttl/read-step", {
-  payload: { path: Schema.String },
-  success: Schema.String,
-  error: Schema.Never
-})
+/** A revision changes action identity, independently of its cache policy. */
+type CacheDeclarationOptions = CacheEnvironment.CachePolicy & { readonly version?: string }
 
-/**
- * The inner flow every `WithCache` declaration in this suite wraps: hermetic,
- * sealed, and otherwise featureless, so the only thing that varies between two
- * declarations is the policy the test declares.
- */
-const inner = Flow.make("cache-ttl/read", {
-  payload: { path: Schema.String },
-  success: Schema.String,
-  error: Schema.Never,
-  effects: Effects.make({ reads: [], writes: [], mode: "hermetic", onConflict: "serialize" }),
-  body: Node.capture({}, ({ path }: { readonly path: string }) => readStep.call({ path }))
-}) as unknown as Flow.Any
-
-/**
- * A real `WithCache` declaration's annotation bag, in the shape the dispatch
- * seam reads it out of.
- *
- * The bag is not fabricated here. `WithCache.withCache` builds it, and
- * `ActionPersistence` reads it back through
- * `CacheEnvironment.CachePolicyAnnotation`, so these tests fail if the two
- * halves of the policy ever stop naming one key — which is the whole of what
- * makes a declared policy reach the engine.
- */
-const declaredBy = (options: WithCache.Options) => ({
-  annotations: WithCache.withCache(inner, options).annotations
-})
-
-/**
- * The canonical digest of everything `/keys` hashes for a declaration.
- *
- * `@smthrs/flow` publishes the material one node at a time rather than as an
- * aggregate, so the digest is taken over the built graph's nodes in order.
- */
-const declaredKey = (options: WithCache.Options): string =>
-  Digest.canonical(
-    Graph.nodes(Graph.build(WithCache.withCache(inner, options), { path: "file" })).map((node) => node.draft.material)
+/** Builds the annotation bag through the public action API the engine reads. */
+const declaredBy = ({ version, ...policy }: CacheDeclarationOptions) =>
+  Action.withCache(
+    Action.make("cache-ttl/read-step", {
+      payload: { path: Schema.String },
+      success: Schema.String,
+      implementationVersion: version
+    }),
+    policy
   )
+
+/** The canonical key material of a flow calling the annotated action. */
+const declaredKey = (options: CacheDeclarationOptions): string => {
+  const read = declaredBy(options)
+  const flow = Flow.make("cache-ttl/read", {
+    payload: { path: Schema.String },
+    success: Schema.String,
+    body: (payload) => read.call(payload)
+  })
+  return Digest.canonical(Graph.nodes(Graph.build(flow, { path: "file" })).map((node) => node.draft.material))
+}
 
 /**
  * Dispatches under a NAMED journal source.
@@ -144,7 +122,7 @@ const dispatchFrom = (
   runId: string,
   key: string,
   execute: () => Effect.Effect<unknown, unknown>,
-  policy?: WithCache.Options,
+  policy?: CacheDeclarationOptions,
   attempt = 1
 ) =>
   ActionPersistence.make({ runId, owner, sourceId, execute })({
@@ -159,7 +137,7 @@ const dispatch = (
   runId: string,
   key: string,
   execute: () => Effect.Effect<unknown, unknown>,
-  policy?: WithCache.Options,
+  policy?: CacheDeclarationOptions,
   attempt = 1
 ) => dispatchFrom(`cache-ttl-${runId}`, runId, key, execute, policy, attempt)
 
@@ -177,7 +155,7 @@ const dispatchInFlow = (
   runId: string,
   key: string,
   execute: () => Effect.Effect<unknown, unknown>,
-  policy: WithCache.Options
+  policy: CacheDeclarationOptions
 ) =>
   dispatch(runId, key, execute, policy).pipe(
     Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, runId))
@@ -889,27 +867,8 @@ describe("declared version", () => {
     ))
 })
 
-/**
- * The same policy, on a real engine.
- *
- * Everything above drives `ActionPersistence` directly, which is the right
- * altitude for the seam's own rules. This suite is the end-to-end claim: a
- * sealed `@smthrs/flow` action carrying a declared cache policy, executed by
- * `EngineStore` over real SQLite, actually stops dispatching inside the bound
- * and starts again past it.
- *
- * The policy is declared with `CacheEnvironment.withCache`, the action form,
- * because that is the form the engine executes at HEAD. The core-flow form,
- * `@smthrs/patterns`' `WithCache`, writes the same policy under the same
- * annotation identifier: `packages/smithers/flows/patterns/test/WithCache.test.ts` reads a
- * real `WithCache` wrapper's bag back with `@smthrs/flow`'s own reader, and the
- * seam suites above dispatch bags that a real `WithCache` declaration
- * produced. What is missing between the two is the descriptor-to-interpreter
- * bridge, which no flows HEAD has: a `@smthrs/core` flow is a declaration the
- * durable engine cannot run yet, so its policy is honored once that bridge
- * lowers it onto the dispatched action.
- */
-describe("a WithCache policy on the durable engine", () => {
+/** Action-level policies on the durable engine over real SQLite stores. */
+describe("an action cache policy on the durable engine", () => {
   const Bundle = Action.make("cache-ttl/bundle", {
     payload: { target: Schema.String },
     success: Schema.String
@@ -922,20 +881,8 @@ describe("a WithCache policy on the durable engine", () => {
   })
 
   /**
-   * The sealed step whose result travels. It needs an idempotency key (an
-   * identity another run can derive), a HARD file boundary (only a hermetic
-   * step is reusable across runs), and the policy annotation a real
-   * `WithCache` declaration carries.
-   *
-   * `version` is that identity's revision, and it is the caller's dial for
-   * "the inputs did not change but the meaning did". It rides the idempotency
-   * key rather than the policy annotation because on this side of the seam a
-   * version is declaration identity and nothing else: `@smthrs/engine`'s
-   * `ActionKey` folds a sealed action's `idempotencyKey` into the step key, so
-   * a revised version addresses a different row. `@smthrs/patterns`' `WithCache`
-   * spells the same thing for a `@smthrs/core` flow — `Options.version` enters
-   * the wrapper's captured key material and is deliberately absent from the
-   * `Policy` the engine reads, for exactly this reason.
+   * A sealed, keyed action with a hard boundary and a cache policy. A body
+   * revision changes its idempotency key, independently of the policy.
    */
   const compile = (policy: CacheEnvironment.CachePolicy, onExecute: () => void, version = "v1") =>
     CacheEnvironment.withCache(
@@ -1070,6 +1017,57 @@ describe("a WithCache policy on the durable engine", () => {
         const expired = (yield* provenance("ttl-engine-c")).filter((record) => record.action === "expired")
         expect(expired.length).toBe(1)
         expect(expired[0]!.ttlMs).toBe(1000)
+      }).pipe(Effect.scoped, Effect.provide(engineLayers), Effect.provide(TestClock.layer()))
+    ))
+
+  it.effect("honors an action TTL through an ordinary nested flow call", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        let executions = 0
+        const Read = Action.withCache(
+          Action.make("cache-ttl/nested-read", {
+            payload: { path: Schema.String },
+            success: Schema.String,
+            idempotencyKey: ({ path }: { readonly path: string }) => `nested-read:${path}`,
+            implementationVersion: "v1",
+            fileBoundary: { readSet: [], writeSet: [], boundaryMode: "hard" }
+          }),
+          { ttlMs: 1000 }
+        )
+        const Inner = Flow.make("cache-ttl/nested-inner", {
+          payload: { path: Schema.String },
+          success: Schema.String,
+          body: (payload) => Read.call(payload)
+        })
+        const Outer = Flow.make("cache-ttl/nested-outer", {
+          payload: { path: Schema.String },
+          success: Schema.String,
+          body: (payload) => Inner.call(payload)
+        })
+        const engine = yield* EngineStore.make({
+          owner: { hostId: "nested-ttl" },
+          journalSource: "nested-ttl",
+          isAlive: () => Effect.succeed(false)
+        })
+        const wiring = Layer.mergeAll(
+          Read.toLayer(() => Effect.sync(() => `recorded-${++executions}`), { implementationVersion: "v1" }),
+          Interpreter.layer(Inner),
+          Interpreter.layer(Outer)
+        ).pipe(
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
+        )
+        const run = (executionId: string) =>
+          Outer.execute({ path: "input.txt" }, { executionId }).pipe(Effect.provide(wiring))
+
+        expect(yield* run("nested-ttl-first")).toBe("recorded-1")
+        expect(executions).toBe(1)
+        yield* TestClock.adjust("900 millis")
+        expect(yield* run("nested-ttl-cached")).toBe("recorded-1")
+        expect(executions).toBe(1)
+        yield* TestClock.adjust("200 millis")
+        expect(yield* run("nested-ttl-expired")).toBe("recorded-2")
+        expect(executions).toBe(2)
       }).pipe(Effect.scoped, Effect.provide(engineLayers), Effect.provide(TestClock.layer()))
     ))
 

@@ -1337,7 +1337,7 @@ The annotation key a declared placement is carried under, identified by `"@smthr
 
 [src/CachePolicy.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/CachePolicy.ts)
 
-The one cache-policy model. [`@smthrs/flow`](/api/flow) publishes it as `CacheEnvironment.CachePolicy` and [`@smthrs/engine-store`](/api/engine-store) reads it off a dispatched action; [`@smthrs/patterns`](/api/smithers-patterns) declares it over a flow as `WithCache.Policy`. It was two declarations in those two packages, joined by nothing but a re-typed identifier string, so a field added on one side was invisible to the other.
+[`@smthrs/flow`](/api/flow) publishes this model as `CacheEnvironment.CachePolicy`. Declare it on an action with `Action.withCache` or `CachePolicy.annotate`. [`@smthrs/engine-store`](/api/engine-store) reads it off the dispatched action, including in nested flow calls.
 
 The annotation key reads `"@smthrs/flow/Action/CachePolicy"`. The engine reads stored and dispatched actions by that identifier, so retagging it would make every policy already written invisible at dispatch. The identifier is treated as a wire value rather than as a location.
 
@@ -1368,7 +1368,7 @@ const CachePolicyAnnotation: Context.Key<CachePolicy, CachePolicy>
 const cachePolicyOf: (annotations: Context.Context<never>) => CachePolicy | undefined
 ```
 
-The key a declared policy is carried under, identified by `"@smthrs/flow/Action/CachePolicy"`, and the reader for it. One key: `@smthrs/flow`'s `CacheEnvironment.CachePolicyAnnotation` and `@smthrs/patterns`' `WithCache.CachePolicyAnnotation` are both this object.
+The key a declared policy is carried under, identified by `"@smthrs/flow/Action/CachePolicy"`, and the reader for it. `@smthrs/flow`'s `Action.CachePolicyAnnotation` and `CacheEnvironment.CachePolicyAnnotation` both reference this object.
 
 ### CachePolicy.annotate
 

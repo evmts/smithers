@@ -1,7 +1,6 @@
 import { describe, it } from "@effect/vitest"
 import { Flow, Graph } from "@smthrs/flow"
 import * as PlanNode from "@smthrs/plan/Node"
-import type * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
@@ -25,7 +24,6 @@ import * as Sidecar from "../src/Sidecar.ts"
 import * as Trellis from "../src/Trellis.ts"
 import * as TryCatchFinally from "../src/TryCatchFinally.ts"
 import * as WithApproval from "../src/WithApproval.ts"
-import * as WithCache from "../src/WithCache.ts"
 
 // Every field any pattern here hands a member, as the one struct a
 // `@smthrs/flow` flow states. Two flows a plan can tell apart: a flow's tag
@@ -117,15 +115,6 @@ const approving = (name: string) =>
     body: PlanNode.capture({ name }, () => PlanNode.succeed("approved" as const))
   })
 
-const sealed = (name: string) =>
-  Flow.make(name, {
-    payload: memberFields,
-    success: Schema.Unknown,
-    error: Schema.Unknown,
-    effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
-    body: PlanNode.capture({ name }, ({ input }: { readonly input?: unknown }) => PlanNode.succeed(input))
-  })
-
 // Every node's kind and key material body, which is where a changed option has
 // to show up. `implementation` is dropped because a decorator a pattern builds
 // inside `make` can carry a per-instance body digest that never matches across
@@ -137,9 +126,6 @@ const shape = (flow: Flow.Any, input: unknown): unknown =>
       (key, value: unknown) => key === "implementation" ? undefined : value
     )
   )
-
-const annotationsOf = (flow: Flow.Any): Context.Context<never> =>
-  (flow as unknown as { readonly annotations: Context.Context<never> }).annotations
 
 interface Declaration {
   readonly name: string
@@ -493,18 +479,6 @@ describe("options are snapshotted at the call", () => {
       expect(entry.edited()).not.toEqual(before)
     })
   }
-
-  it("WithCache.make snapshots its policy before the decorator is applied", () => {
-    const options = { ttlMs: 1000, scope: "run" as WithCache.Scope, version: "v1" }
-    const decorator = WithCache.make(options)
-    options.ttlMs = 5
-    options.scope = "flow"
-    options.version = "v2"
-
-    const decorated = decorator(sealed("read"))
-    expect((decorated as { readonly _tag?: string })._tag).toBe("withCache(read, ttlMs=1000, scope=run, version=v1)")
-    expect(WithCache.policyOf(annotationsOf(decorated))).toEqual({ ttlMs: 1000, scope: "run" })
-  })
 
   it("WithApproval.make snapshots its options before the decorator is applied", () => {
     const options = { reason: "publish", approval: approving("gate") }

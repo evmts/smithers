@@ -753,9 +753,9 @@ const placementOf = (literal: Descriptor.Placement): CorePlacement.Placement => 
  * Reads the runtime decisions a loaded body and its descriptor declare.
  *
  * The body's annotation bag wins over the descriptor's frontmatter, because a
- * body is the later and more specific statement: `Flow.within(...)` and
- * `@smthrs/patterns`' `withCache` both write there, and frontmatter cannot
- * express either.
+ * body is the later and more specific statement. `Flow.within(...)` and
+ * explicit cache-policy annotations write there; frontmatter cannot express
+ * either.
  *
  * @category conversions
  * @since 1.0.0-rc.0
@@ -824,9 +824,8 @@ const captured = (lowered: Lowered): Readonly<Record<string, unknown>> => ({
  * `Annotations.Placement` and `@smthrs/flow` as `Flow.Placement`, and which
  * `@smthrs/flow` `Graph` reads while building the plan. The two used to be
  * separate keys over separate value types and this line was a cast. The cache policy is
- * stored under `CacheEnvironment.CachePolicyAnnotation`, the identifier
- * `@smthrs/patterns`' `withCache` writes on a flow, so a host reading the
- * bridged flow back sees the same declaration the descriptor made.
+ * stored under `CacheEnvironment.CachePolicyAnnotation`, so a host reading
+ * the bridged flow back sees the same declaration the descriptor made.
  *
  * A flow's bag is not an action's bag, and nothing carries one onto the other:
  * `@smthrs/engine-store` `ActionPersistence` reads a policy off the DISPATCHED

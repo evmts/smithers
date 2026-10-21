@@ -11,9 +11,12 @@ honored takes two more things, and both are stated in the descriptor.
 
 ## Declare the policy on the body
 
-The policy is `CacheEnvironment.CachePolicyAnnotation`, the annotation
-`@smthrs/patterns`' `withCache` writes. A module that delegates to an agent
-declares it on a schema/metadata record checked with `FlowBinding.Declared`. The `name` is the tag, and it is required: it is what the plan
+The registry lowers `CacheEnvironment.CachePolicyAnnotation` from a discovered
+body onto the action it dispatches. For ordinary flow calls, declare the policy
+on the action with `Action.withCache(action, { ttlMs, scope })`.
+
+A module that delegates to an agent declares the annotation on a schema/metadata
+record checked with `FlowBinding.Declared`. The `name` is the tag, and it is required: it is what the plan
 records and what a host binds to, so a file flow declares the name its path
 derives.
 

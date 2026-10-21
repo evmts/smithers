@@ -69,7 +69,6 @@ The root entry point exports every public module as a namespace; each is also im
 | ----------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `PatternError`    | `@smthrs/patterns/PatternError`    | Stable failures shared by higher-order flow patterns.                                                                                                              | `PatternErrorCode`, `PatternError`                                                                                                                                                                                                                                                                                                               |
 | `Pattern`         | `@smthrs/patterns/Pattern`         | Flow-valued slots and authority-narrowing decorators.                                                                                                              | `Slot`, `slot`, `bind`, `Decorator`, `Clipped`, `clipped`, `decorate`, `decorateAll`                                                                                                                                                                                                                                                             |
-| `WithCache`       | `@smthrs/patterns/WithCache`       | Engine step-key cache decoration.                                                                                                                                  | `Scope`, `Options`, `Policy`, `CachePolicyAnnotation`, `policyOf`, `make`, `withCache`                                                                                                                                                                                                                                                           |
 | `WithApproval`    | `@smthrs/patterns/WithApproval`    | Run-local approval decoration.                                                                                                                                     | `Approved`, `Options`, `make`, `withApproval`                                                                                                                                                                                                                                                                                                    |
 | `Debate`          | `@smthrs/patterns/Debate`          | A bounded, alternating deliberation pattern.                                                                                                                       | `Turn`, `RuntimeTurn`, `RuntimeOptions`, `MakeOptions`, `make`, `run`                                                                                                                                                                                                                                                                            |
 | `Panel`           | `@smthrs/patterns/Panel`           | A deterministic panel deliberation pattern.                                                                                                                        | `MakeOptions`, `RuntimeOptions`, `make`, `run`                                                                                                                                                                                                                                                                                                   |
@@ -119,22 +118,3 @@ its options at the call, so a later edit to the caller's objects does not
 change a declaration or a run. Flows, callbacks, inputs, and the values
 callbacks return stay the caller's references. The full contract is in
 [Identity and ownership](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md#identity-and-ownership).
-
-## Where a `WithCache` policy takes effect
-
-`WithCache` requires explicitly declared hermetic effects with a sealed or
-omitted tier. `ttlMs` must be a positive safe integer; `version` must be a
-nonblank string. Invalid declarations throw `PatternError` with code
-`invalid_decorator` synchronously when applied.
-
-The options enter declaration identity. `ttlMs` and `scope` also travel in the
-flow's annotation bag, preserved through decorator composition. The
-[`@smthrs/registry`](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/docs) bridge lowers a module's
-default-exported flow policy onto a dispatched action. Ordinary nested core
-calls do not propagate the flow's bag. The durable engine reads the action
-policy set by `CacheEnvironment.withCache(action, policy)` from
-[`@smthrs/flow`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/docs).
-
-See the [WithCache reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md#withcache)
-for the options, host boundary, and a minimal hermetic flow example, and
-[`@smthrs/step-cache`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/api.md) for enforcement.

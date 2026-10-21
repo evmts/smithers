@@ -69,11 +69,10 @@ describe("package manifest", () => {
   // `@smthrs/plan-store`, which is why neither this package nor `@smthrs/core`
   // carries `@smthrs/database` in its dependency closure. This case keeps the
   // import narrow anyway, so a future plan module
-  // cannot arrive here unnoticed. Five are named: the authoring vocabulary the
+  // cannot arrive here unnoticed. Four are named: the authoring vocabulary the
   // ported patterns build their bodies from, the planned reference those
-  // bodies thread, the effect model, the cache policy `WithCache` declares and
-  // the engine reads, and the ceiling vocabulary `Loop` shares with
-  // `@smthrs/flow`'s `Poll`.
+  // bodies thread, the effect model, and the ceiling vocabulary `Loop` shares
+  // with `@smthrs/flow`'s `Poll`.
   it("takes only shared vocabularies from @smthrs/plan", () => {
     const specifiers = new Set<string>()
     for (const file of sourceFiles(sourceDirectory)) {
@@ -83,7 +82,6 @@ describe("package manifest", () => {
     }
 
     expect([...specifiers].sort()).toEqual([
-      "@smthrs/plan/CachePolicy",
       "@smthrs/plan/Effects",
       "@smthrs/plan/Node",
       "@smthrs/plan/Planned",

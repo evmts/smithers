@@ -80,16 +80,15 @@ const securityReview = Smithers.SecurityReview({
       id: "decorator-envelope-no-widening",
       title: "A decorated or composed flow never declares fewer capabilities or effects than the flows it calls",
       threat:
-        "A flow author wraps a privileged flow (or adds an approval/cache member) so the composite's declared capabilities and effect envelope hide what actually runs, bypassing policy checks keyed on those declarations.",
+        "A flow author wraps a privileged flow (or adds an approval member) so the composite's declared capabilities and effect envelope hide what actually runs, bypassing policy checks keyed on those declarations.",
       lookFor: [
-        "Decorate or a decorator (WithApproval, WithCache) copying only the inner flow's capabilities while its body also calls a separately supplied flow such as the approval flow.",
+        "Decorate or WithApproval copying only the inner flow's capabilities while its body also calls a separately supplied flow such as the approval flow.",
         "Compose.intersectCapabilities or intersectEffects used where a union of called members is required, or an envelope_conflict check that can be skipped when the template declares none."
       ],
       paths: [
         "src/internal/Decorate.ts",
         "src/internal/Compose.ts",
-        "src/WithApproval.ts",
-        "src/WithCache.ts"
+        "src/WithApproval.ts"
       ]
     },
     {
@@ -142,14 +141,13 @@ const securityReview = Smithers.SecurityReview({
     },
     {
       id: "cache-key-isolation",
-      title: "A cached result is served only for the same inputs, version, and scope",
+      title: "Pattern option snapshots preserve validation and key material",
       threat:
-        "A run in one repository or account receives another run's cached model or tool output because WithCache or a pattern leaves input, version, or scope out of key material.",
+        "A caller changes pattern options after declaration to bypass validation or change key material, causing a run to reuse a result for different inputs.",
       lookFor: [
-        "WithCache accepting a scope wider than the caller asked for, or a blank version or non-positive ttlMs.",
         "A pattern that captures caller options by reference so a later edit changes key material or bypasses validation (DriftDetector, Kanban, Loop, MergeQueue snapshots)."
       ],
-      paths: ["src/WithCache.ts", "src/DriftDetector.ts", "src/Kanban.ts", "src/Loop.ts", "src/MergeQueue.ts"]
+      paths: ["src/DriftDetector.ts", "src/Kanban.ts", "src/Loop.ts", "src/MergeQueue.ts"]
     }
   ]
 })

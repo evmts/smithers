@@ -2,13 +2,9 @@
  * The caller-declared cache policy: how far a recorded sealed result may
  * travel, and how long it stays servable.
  *
- * This is the ONE cache-policy model. `@smthrs/flow` publishes it as
- * `CacheEnvironment.CachePolicy` and the engine reads it off a dispatched
- * action; `@smthrs/patterns` declares it over a flow as `WithCache.Policy`. It
- * used to be two declarations in those two packages, tied together by nothing
- * but a re-typed identifier string, so a field added on one side was invisible
- * to the other. It lives here because `@smthrs/plan` is the package both
- * already depend on.
+ * `@smthrs/flow` publishes this model as `CacheEnvironment.CachePolicy`.
+ * Declare it on an action with `Action.withCache` or {@link annotate}; the
+ * engine reads it off the dispatched action, including in nested flow calls.
  *
  * The annotation key still reads `"@smthrs/flow/Action/CachePolicy"`.
  * `@smthrs/engine-store`'s `ActionPersistence` reads the policy off stored and

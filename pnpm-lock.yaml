@@ -3742,9 +3742,6 @@ importers:
       '@smthrs/core':
         specifier: 1.0.0-rc.16
         version: link:../core
-      '@smthrs/patterns':
-        specifier: 1.0.0-rc.16
-        version: link:../patterns
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.16
         version: link:../platform-node
