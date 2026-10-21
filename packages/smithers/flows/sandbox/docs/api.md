@@ -300,7 +300,9 @@ const ran = yield* SandboxTools.execute(session, { tool: "run", command: "npm te
   which lies outside the workdir. The same call again answers what the first attempt recorded; a call whose first
   attempt never recorded an exit fails `ToolLost` and does not run again. Reads and writes are repeatable.
 - **Failures:** `ToolRefused` (`path`, `not_found`, `not_a_file`, `not_a_directory`, `not_a_repository`,
-  `too_large`), `ToolLost`, and `ToolUnavailable { code }` when the session failed.
+  `too_large`), `ToolLost`, and `ToolUnavailable { code, exitCode? }` when the session failed (`code` is the provider's)
+  or the tool's script failed (`code` `unknown`, `exitCode` its step: `checkpoint` exits 120 to 124 for `mktemp`,
+  `read-tree`, `add`, `diff` and `bundle`).
 - **Guests:** the scripts are POSIX `sh` with git. GNU `timeout`, when the guest has it, stops a command's whole process
   group; without it the watchdog stops the command's own process.
 - **Telemetry:** a span `sandbox.tool` with the tool, its outcome and a command's exit code; never a path, a command,

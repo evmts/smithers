@@ -345,14 +345,17 @@ export class ToolLost extends Schema.TaggedError<ToolLost>()("@smthrs/sandbox/Sa
 
 /**
  * The session failed: the machine couldn't run the tool. `code` is the
- * provider's failure kind; a caller may try the call again.
+ * provider's failure kind; a caller may try the call again. `exitCode` is the
+ * tool's script's own exit code when the script ran and failed (`code`
+ * `unknown`), which names the step that failed; absent when the session
+ * itself failed.
  *
  * @category errors
  * @since 1.0.0-rc.17
  */
 export class ToolUnavailable extends Schema.TaggedError<ToolUnavailable>()(
   "@smthrs/sandbox/SandboxTools/ToolUnavailable",
-  { code: ProviderErrorCode }
+  { code: ProviderErrorCode, exitCode: Schema.optional(Schema.Number) }
 ) {}
 
 /**
@@ -485,7 +488,7 @@ const failedWith = (code: number): ToolFailure => {
   const reason = refusals[code]
   if (reason !== undefined) return new ToolRefused({ reason })
   if (code === 76) return new ToolUnavailable({ code: "unavailable" })
-  return code === 75 ? new ToolLost() : new ToolUnavailable({ code: "unknown" })
+  return code === 75 ? new ToolLost() : new ToolUnavailable({ code: "unknown", exitCode: code })
 }
 
 const refused = (reason: ToolRefused["reason"]) => Effect.fail(new ToolRefused({ reason }))
@@ -756,15 +759,16 @@ export interface Checkpoint {
   readonly bundle?: Uint8Array | undefined
 }
 
+// Each step that can fail exits with its own code (120 to 124), so a failure names its step (`ToolUnavailable.exitCode`).
 const CHECKPOINT = `cd -- "$1" 2>/dev/null && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69
-dir=$(mktemp -d) || exit 125
+dir=$(mktemp -d) || exit 120
 trap 'rm -rf -- "$dir"' EXIT
-GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 125
-GIT_INDEX_FILE="$dir/index" git add -A || exit 125
-GIT_INDEX_FILE="$dir/index" git diff --cached --binary --no-color --no-ext-diff HEAD >"$dir/patch" || exit 125
+GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 121
+GIT_INDEX_FILE="$dir/index" git add -A || exit 122
+GIT_INDEX_FILE="$dir/index" git diff --cached --binary --no-color --no-ext-diff HEAD >"$dir/patch" || exit 123
 : >"$dir/bundle"
 if [ -n "$(git rev-list -n 1 HEAD --not --remotes)" ]; then
-  git bundle create "$dir/bundle" HEAD --not --remotes 2>/dev/null || exit 125
+  git bundle create "$dir/bundle" HEAD --not --remotes 2>/dev/null || exit 124
 fi
 p=$(($(wc -c <"$dir/patch"))); b=$(($(wc -c <"$dir/bundle")))
 printf '%s %s %s\\n' "$(git rev-parse HEAD)" "$p" "$b"

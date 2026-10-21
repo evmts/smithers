@@ -15,6 +15,7 @@ import { join } from "node:path"
 import { afterAll } from "vitest"
 import { ContainerSession } from "../src/index.ts"
 import * as ProcessContainer from "./fixtures/ProcessContainer.ts"
+import * as Telemetry from "./fixtures/Telemetry.ts"
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-container-session-")))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -145,6 +146,17 @@ describe("ContainerSession", () => {
       expect(yield* Effect.scoped(Effect.flatMap(deaf.spawn("echo ok", {}), (process) => text(process.stdout)))).toBe(
         "ok\n"
       )
+      // A stream that breaks off and an exit that can't be read fail unavailable, naming the operation.
+      const broken = yield* over({ brokenStdout: true })
+      expect(yield* Effect.flip(broken.ping!)).toMatchObject({
+        code: "unavailable",
+        message: "container session: stdout failed"
+      })
+      const lost = yield* over({ exitFails: "untagged" })
+      expect(yield* Effect.flip(lost.ping!)).toMatchObject({
+        code: "unavailable",
+        message: "container session: exit failed"
+      })
       const sick = yield* over({ exitCode: 1 })
       expect(yield* Effect.flip(sick.ping!)).toMatchObject({
         code: "unavailable",
@@ -152,4 +164,26 @@ describe("ContainerSession", () => {
       })
       expect(yield* Effect.flip(sick.readFile(join(root, "a-file")))).toMatchObject({ code: "unknown" })
     }))
+
+  it.effect("logs the container's own failures by operation and tag, never their text", () => {
+    const t = Telemetry.make()
+    return Effect.gen(function*() {
+      const over = (faults: ProcessContainer.Faults) =>
+        ContainerSession.make(ProcessContainer.make(faults).container, { id: "logged", workdir: root })
+      yield* Effect.flip((yield* over({ exec: true })).ping!)
+      yield* Effect.flip((yield* over({ brokenStdout: true })).ping!)
+      yield* Effect.flip((yield* over({ exitFails: "untagged" })).ping!)
+    }).pipe(
+      t.observed,
+      Effect.andThen(Effect.sync(() => {
+        expect(t.lines("cloudflare.container_session").map((line) => line.annotations)).toEqual([
+          expect.objectContaining({ operation: "exec", outcome: "failed", "error.type": "ProcessFailure" }),
+          expect.objectContaining({ operation: "stdout", outcome: "failed", "error.type": "ProcessFailure" }),
+          expect.objectContaining({ operation: "exit", outcome: "failed", "error.type": "unknown" })
+        ])
+        t.expectNoContent("exec broke")
+        t.expectNoContent("stdout broke")
+      }))
+    )
+  })
 })

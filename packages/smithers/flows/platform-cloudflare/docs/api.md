@@ -652,7 +652,9 @@ declare const make: <E, R>(
   path or a directory fails `not_found`, and `writeFile` makes the file's directories.
 - `ping` runs `true`.
 - It starts nothing: wake the container (`SandboxObject.wake`) before handing the session out. A failure of the
-  container itself is a `ProviderError` with code `unavailable`, naming the operation, never the command or a path.
+  container itself is a `ProviderError` with code `unavailable`, naming the operation, never the command or a path,
+  and logs `cloudflare.container_session` with the `operation` (`exec`, `stdout`, `stderr`, `exit`) and the failure's
+  tag as `error.type`, never its text.
 
 ### `ContainerSession.Container`, `ContainerSession.Process` and `ContainerSession.ExecOptions`
 

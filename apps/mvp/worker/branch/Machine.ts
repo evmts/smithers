@@ -95,13 +95,19 @@ export const checkpoints = Metric.counter("smithers_sandbox_checkpoints", {
   incremental: true,
 })
 
-const counted = (op: "save" | "restore", outcome: string) =>
+const counted = (op: "save" | "restore", outcome: string, failure?: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable) =>
   Effect.andThen(
     Metric.update(Metric.withAttributes(checkpoints, { op, outcome }), 1),
     Effect.logWithLevel(outcome === "saved" || outcome === "restored" || outcome === "none" ? "Info" : "Warn")(
       `sandbox.checkpoint.${op}`,
-    ).pipe(Effect.annotateLogs({ outcome })),
+    ).pipe(Effect.annotateLogs({ outcome, ...failureOf(failure) })),
   )
+
+/** What a log line says about a checkpoint's failure: the provider's code, and the script step's exit code. */
+const failureOf = (failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable | undefined) =>
+  failure?._tag === "@smthrs/sandbox/SandboxTools/ToolUnavailable"
+    ? { code: failure.code, ...(failure.exitCode === undefined ? {} : { exitCode: failure.exitCode }) }
+    : {}
 
 /** Records that the machine was used now: a call, or a terminal coming or going. */
 export const touch = <R>(box: Box<R>) =>
@@ -122,7 +128,7 @@ export const save = <R>(box: Box<R>, generation: number) =>
       const outcome = error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused"
         ? error.reason === "too_large" ? "too_large" as const : "skipped" as const
         : "failed" as const
-      yield* counted("save", outcome)
+      yield* counted("save", outcome, error)
       return outcome
     }
     const { bundle, head, patch } = captured.success
@@ -171,6 +177,7 @@ export const restore = <R>(box: Box<R>, generation: number) =>
     if ((yield* box.storage.get<number>("restored")) === generation) return "done" as const
     const saved = yield* box.storage.get<Saved>("checkpoint")
     let outcome: string = "none"
+    let failure: SandboxTools.ToolRefused | SandboxTools.ToolUnavailable | undefined
     if (saved !== undefined && saved.generation < generation) {
       const blob = new Uint8Array(saved.bytes)
       for (let index = 0; index < saved.pieces; index++) {
@@ -182,7 +189,7 @@ export const restore = <R>(box: Box<R>, generation: number) =>
         SandboxTools.restore(session, { head: saved.head, patch: blob.subarray(0, patchBytes), bundle: blob.subarray(patchBytes) }),
       )
       if (restored._tag === "Failure" && isTransient(restored.failure)) {
-        yield* counted("restore", "unavailable")
+        yield* counted("restore", "unavailable", restored.failure)
         return yield* Effect.fail(restored.failure)
       }
       outcome = restored._tag === "Success"
@@ -191,13 +198,14 @@ export const restore = <R>(box: Box<R>, generation: number) =>
         ? restored.failure.reason
         : "failed"
       if (restored._tag === "Failure") {
+        failure = restored.failure
         yield* box.storage.put(`stranded:${saved.seq}`, saved)
         yield* box.storage.put("seq", Math.max((yield* box.storage.get<number>("seq")) ?? 0, saved.seq))
         yield* box.storage.delete("checkpoint")
       }
     }
     yield* box.storage.put("restored", generation)
-    yield* counted("restore", outcome)
+    yield* counted("restore", outcome, failure)
     return outcome
   }).pipe(Effect.withSpan("sandbox.checkpoint.restore", { attributes: { "smithers.sandbox.generation": generation } }))
 

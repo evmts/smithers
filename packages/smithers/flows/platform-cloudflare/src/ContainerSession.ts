@@ -24,6 +24,7 @@
  * @since 1.0.0-rc.17
  */
 
+import { RetryPolicy } from "@smthrs/flow"
 import { RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
 import type * as Scope from "effect/Scope"
@@ -98,6 +99,15 @@ const { ProviderError } = RemoteChildProcessSpawner
 const unavailable = (operation: string) => (cause: unknown) =>
   new ProviderError({ code: "unavailable", message: `container session: ${operation} failed`, cause })
 
+/**
+ * Logs the container's own failure of `operation` (`exec`, `stdout`, `stderr` or `exit`) as
+ * `cloudflare.container_session`, with the failure's tag and never its text.
+ */
+const logged = (operation: string) => (cause: unknown) =>
+  Effect.logWarning("cloudflare.container_session").pipe(
+    Effect.annotateLogs({ operation, outcome: "failed", "error.type": RetryPolicy.errorTag(cause) ?? "unknown" })
+  )
+
 const quote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`
 
 const uidGid = /^\d{1,10}:\d{1,10}$/
@@ -136,7 +146,7 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
           ...stdin === undefined ? {} : { stdin: "pipe" as const },
           stdout: "pipe",
           stderr: "pipe"
-        }).pipe(Effect.mapError(unavailable("exec")))
+        }).pipe(Effect.tapError(logged("exec")), Effect.mapError(unavailable("exec")))
         const { stdout, stderr } = process
         if (stdout === undefined || stderr === undefined || (stdin !== undefined && process.stdin === undefined)) {
           return yield* Effect.fail(unavailable("exec")("a stream the command needs is missing"))
@@ -146,9 +156,12 @@ export const make = <E, R>(container: Container<E, R>, options: Options): Effect
           yield* Stream.run(Stream.make(stdin), process.stdin!).pipe(Effect.ignore, Effect.forkScoped)
         }
         return {
-          stdout: Stream.mapError(stdout, unavailable("stdout")).pipe(Stream.provideContext(context)),
-          stderr: Stream.mapError(stderr, unavailable("stderr")).pipe(Stream.provideContext(context)),
-          exitCode: Effect.mapError(process.exitCode, unavailable("exit")).pipe(Effect.provideContext(context))
+          stdout: stdout.pipe(Stream.tapError(logged("stdout")), Stream.mapError(unavailable("stdout")))
+            .pipe(Stream.provideContext(context)),
+          stderr: stderr.pipe(Stream.tapError(logged("stderr")), Stream.mapError(unavailable("stderr")))
+            .pipe(Stream.provideContext(context)),
+          exitCode: process.exitCode.pipe(Effect.tapError(logged("exit")), Effect.mapError(unavailable("exit")))
+            .pipe(Effect.provideContext(context))
         }
       }).pipe(Effect.provideContext(context))
 

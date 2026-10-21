@@ -33,6 +33,10 @@ export interface Faults {
   readonly noStdout?: boolean
   readonly noStdin?: boolean
   readonly exitCode?: number
+  /** The command's output stream breaks off with the container's failure. */
+  readonly brokenStdout?: boolean
+  /** Waiting for the command's exit fails with this value: an untagged one, unlike the container's own. */
+  readonly exitFails?: unknown
 }
 
 /** The container, and every command's options in order. */
@@ -60,9 +64,15 @@ export const make = (faults: Faults = {}) => {
             : Sink.forEach((chunk: Uint8Array) =>
               Effect.promise(() => new Promise<void>((resolve) => child.stdin!.write(chunk, () => resolve())))
             ).pipe(Sink.mapEffect(() => Effect.sync(() => void child.stdin!.end()))),
-          stdout: faults.noStdout === true ? undefined : fromReadable(child.stdout!),
+          stdout: faults.noStdout === true
+            ? undefined
+            : faults.brokenStdout === true
+            ? Stream.fail(new ProcessFailure({ message: "stdout broke" }))
+            : fromReadable(child.stdout!),
           stderr: fromReadable(child.stderr!),
-          exitCode: Effect.promise(() => exited).pipe(Effect.map((code) => faults.exitCode ?? code))
+          exitCode: "exitFails" in faults
+            ? Effect.fail(faults.exitFails as ProcessFailure)
+            : Effect.promise(() => exited).pipe(Effect.map((code) => faults.exitCode ?? code))
         } satisfies ContainerSession.Process<ProcessFailure>
       })
   }
