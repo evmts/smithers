@@ -1,7 +1,7 @@
 import { Action, Flow } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Schema } from "effect"
-import { ACT_REFUSALS } from "./contract"
+import { ACT_REFUSALS, MAX_STEER_CHARS } from "./contract"
 
 // The acts on runs and the run reads, as flows (decision 0014 §2, docs/features/runs.md#acts): a person's button on the
 // run page and the agent's cell run the same declarations. Each is one step on this device's engine, which holds the
@@ -144,4 +144,40 @@ export const Inspect = Flow.make("run/inspect", {
   success: Inspected,
   error: RunActRefused,
   body: Node.capture({ inspect: InspectRun.name }, ({ runId }) => InspectRun.call({ runId })),
+}).annotate(Flow.Placement, Placement.client())
+
+/**
+ * Why a steer step didn't queue its message: the tab that asked couldn't keep it, or was gone, or the run that sent it
+ * has no credential to send it with (it never goes in the person's session).
+ */
+export class SteerStepRefused extends Schema.TaggedError<SteerStepRefused>()("@smthrs/mvp/runs/SteerStepRefused", {
+  reason: Schema.Literals(["not_kept", "tab_gone", "no_credential"]),
+}) {}
+
+/** A steer's payload: the TODO's run (`todo:<attempt id>`) and the message. */
+const SteerPayload = {
+  runId: Schema.String.check(Schema.isPattern(/^todo:[0-9a-f-]{36}$/)),
+  body: Schema.String.check(Schema.isBetweenLength(1, MAX_STEER_CHARS)),
+}
+
+/** What a steer answers: its message's id, requested. The route's answer and the agent's reading follow on the page. */
+export const SteerRequested = Schema.Struct({ steerId: Schema.String, status: Schema.Literal("requested") })
+
+/** The step: put the message in the device's outbox. */
+export const QueueSteer = Action.make("run/steer/queue", {
+  payload: SteerPayload,
+  success: SteerRequested,
+  error: SteerStepRefused,
+  tier: "sealed",
+})
+
+/** `run/steer`: a message to the agent working on a TODO, read at its next turn (ruling TODO-3). */
+export const Steer = Flow.make("run/steer", {
+  description: "Send a message to the agent working on a TODO, which reads it at its next turn. runId is the TODO's " +
+    "run, todo:<attempt id>. Answers { steerId, status: \"requested\" }; the run's page shows when the agent read it.",
+  modelInvocable: true,
+  payload: SteerPayload,
+  success: SteerRequested,
+  error: SteerStepRefused,
+  body: Node.capture({ steer: QueueSteer.name }, ({ runId, body }) => QueueSteer.call({ runId, body })),
 }).annotate(Flow.Placement, Placement.client())

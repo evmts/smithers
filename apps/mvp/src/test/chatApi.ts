@@ -484,6 +484,12 @@ export class TestChatApi extends Context.Service<
             readOnly: true,
             postgres: { maxConnections: 2, applicationName: remoteSchema },
           }),
+          writer: PostgresDatabase.layer({
+            url: server,
+            driver: Pg,
+            schema: remoteSchema,
+            postgres: { maxConnections: 1, applicationName: remoteSchema },
+          }),
           schema: remoteSchema,
           flows: [Pause.Pause],
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))

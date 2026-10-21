@@ -136,3 +136,31 @@ export const scrub = (at: number | null) => Effect.gen(function* () {
 }).pipe(Effect.withSpan("run.replay.select"))
 export const inspectStep = (stepId: string) => setView({ selected: stepId, inspectorOpen: true })
 export const showInspector = (inspectorOpen: boolean) => setView({ inspectorOpen })
+
+/**
+ * What a steer that couldn't be queued leaves in the view: `unavailable`, and its words back in the composer only while
+ * the view shows the run it was for and nothing new was typed there.
+ */
+export const afterFailedSteer = (latest: RunView, runId: string | null, body: string): Partial<Omit<RunView, "id">> =>
+  latest.runId === runId && (latest.steerDraft ?? "") === "" ? { steerDraft: body, refusal: "unavailable" } : { refusal: "unavailable" }
+
+/** What the steer composer holds, as a person types (docs/features/runs.md#steering). */
+export const setSteerDraft = (text: string) => setView({ steerDraft: text })
+
+/**
+ * Steer: `run/steer` on the open run with the composer's message, door `composer`. The composer empties at once; the
+ * message shows Sending from the outbox until the route answers. A run that couldn't queue it says `unavailable`, and
+ * gives the words back to the composer only while the page still shows that run and nothing new was typed there.
+ */
+export const steer = Effect.gen(function* () {
+  const store = yield* RunsStore
+  const current = Option.getOrThrow(yield* store.view.get(VIEW))
+  const body = (current.steerDraft ?? "").trim()
+  if (current.runId === null || body === "") return
+  yield* setView({ steerDraft: "", refusal: null })
+  const dispatched = yield* (yield* FlowDispatch).dispatch("run/steer", { runId: current.runId, body }, { door: "composer" })
+    .pipe(Effect.result)
+  if (dispatched._tag === "Failure" || dispatched.success._tag === "Failed") {
+    yield* setView(afterFailedSteer(Option.getOrThrow(yield* store.view.get(VIEW)), current.runId, body))
+  }
+})

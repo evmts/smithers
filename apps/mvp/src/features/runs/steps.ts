@@ -1,9 +1,22 @@
+import { Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
-import { Effect, Layer, Metric, Option, Schema } from "effect"
+import { Clock, Context, type Duration, Effect, Layer, Metric, Option, Schema } from "effect"
+import { asker } from "../../flows/askingTab"
+import { RunCredentials } from "../../flows/credentials"
 import { declarationOf as declared } from "../../flows/declarations"
+import type { Door } from "../../flows/dispatch"
 import { type FlowName, names } from "../../flows/registry"
-import { listed, RUN_LIST_LIMIT, retriedRunId, settled } from "./contract"
+import { requesterOf } from "../../flows/requests"
+import {
+  listed,
+  RUN_LIST_LIMIT,
+  retriedRunId,
+  runsChannel,
+  settled,
+  STEER_ID_NAMESPACE,
+  STEER_QUEUE_WITHIN,
+} from "./contract"
 import {
   Cancel,
   CancelRun,
@@ -11,12 +24,17 @@ import {
   InspectRun,
   List,
   ListRuns,
+  QueueSteer,
   Resume,
   ResumeRun,
   Retry,
   RetryRun,
   RunActRefused,
+  Steer,
+  SteerStepRefused,
 } from "./flows"
+import { steersQueued } from "./metrics"
+import { type RunsCall, SteerKept } from "./schema"
 import { retryable } from "./retry"
 import { startRoot } from "./start"
 
@@ -153,8 +171,96 @@ export const inspect = ({ runId }: { readonly runId: string }) =>
     }
   })
 
-/** The acts and reads, registered with their steps. Needs the engine's `FlowRuntime` and `RunInspection`. */
+/** The tabs of this browser, as a steer step reaches them: only the tab that started a request answers. */
+export class TabRuns extends Context.Service<
+  TabRuns,
+  {
+    /** Asks the tab that started `requester` to queue `call`'s message; none when no tab answered within the wait. */
+    readonly ask: (call: { readonly requester: string; readonly call: RunsCall }) => Effect.Effect<
+      Option.Option<{ readonly door: Door; readonly kept: boolean }>
+    >
+  }
+>()("@smthrs/mvp/runs/TabRuns") {
+  /** Over the runs channel of engine `name` (`TabChannel`), waiting `within` (`STEER_QUEUE_WITHIN` unless set). */
+  static readonly layerChannel = (options: { readonly name: string; readonly within?: Duration.Input }) =>
+    Layer.effect(
+      TabRuns,
+      Effect.gen(function* () {
+        const ask = yield* asker<RunsCall, typeof SteerKept>({
+          channel: runsChannel(options.name),
+          output: SteerKept,
+          within: options.within ?? STEER_QUEUE_WITHIN,
+        })
+        return TabRuns.of({
+          ask: ({ requester, call }) =>
+            ask(requester, call).pipe(Effect.map(Option.map(({ door, output }) => ({ door, kept: output.kept })))),
+        })
+      }),
+    )
+}
+
+/**
+ * What `run/steer/queue` does (docs/features/runs.md#steering): derive the message's id from the run, so a step run
+ * again names the same message, and ask the tab that started the run, the person's or the one whose agent asked, to put
+ * it in the device's outbox; answer `requested`. A run that isn't the person's own press, the agent's call among them,
+ * hands the tab its run credential with the message, so ChatApi reads who sent it from that (decision 0017 slice 0).
+ * Records a span `runs.steer.queue`, a log line and a count of `steersQueued` by door and outcome, never the message. A
+ * tab gone, an outbox that wouldn't take it, or a run with no credential to send fails `SteerStepRefused`.
+ */
+export const queueSteer = (payload: { readonly runId: string; readonly body: string }) =>
+  Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeMillis
+    const { executionId } = yield* FlowRuntime.FlowInstance
+    const requester = requesterOf(executionId)
+    const via = executionId !== requester ? "agent" : "person"
+    const steerId = yield* Uuid.v5(STEER_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+    const credential = yield* Effect.result((yield* RunCredentials).bearer)
+    // A run that has no credential to send queues nothing: its message never goes in the person's session.
+    const reply = credential._tag === "Failure" ? Option.none() : yield* (yield* TabRuns).ask({
+      requester,
+      call: {
+        kind: "steer",
+        steer: {
+          id: steerId,
+          runId: payload.runId,
+          body: payload.body,
+          ...(Option.isSome(credential.success) ? { credential: credential.success.value } : {}),
+        },
+      },
+    })
+    const door: Door | "unknown" = via === "agent"
+      ? "agent"
+      : Option.match(reply, { onNone: () => "unknown" as const, onSome: (answered) => answered.door })
+    const outcome = credential._tag === "Failure"
+      ? "no_credential" as const
+      : Option.isNone(reply)
+      ? "tab_gone" as const
+      : reply.value.kept
+      ? "kept" as const
+      : "not_kept" as const
+    yield* Metric.update(Metric.withAttributes(steersQueued, { door, outcome }), 1)
+    yield* Effect.annotateCurrentSpan({ steerId, runId: payload.runId, via, door, outcome })
+    yield* Effect.logWithLevel(outcome === "kept" ? "Info" : "Warn")("runs.steer.queue").pipe(
+      Effect.annotateLogs({
+        steerId,
+        runId: payload.runId,
+        via,
+        door,
+        outcome,
+        durationMs: (yield* Clock.currentTimeMillis) - startedAt,
+        feature: "runs",
+      }),
+    )
+    if (outcome !== "kept") return yield* new SteerStepRefused({ reason: outcome })
+    return { steerId, status: "requested" as const }
+  }).pipe(Effect.withSpan("runs.steer.queue"))
+
+/**
+ * The acts and reads, registered with their steps, and `run/steer` asking through the host's `TabRuns`. Needs the
+ * engine's `FlowRuntime` and `RunInspection`.
+ */
 export const registration = Layer.mergeAll(
+  Interpreter.layerWithImplementations(Steer, QueueSteer.toLayer(queueSteer)),
   Interpreter.layerWithImplementations(Cancel, CancelRun.toLayer(cancel)),
   Interpreter.layerWithImplementations(Retry, RetryRun.toLayer(retry)),
   Interpreter.layerWithImplementations(Resume, ResumeRun.toLayer(resume)),

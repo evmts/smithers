@@ -1,5 +1,5 @@
 {
-  "epoch": 54,
+  "epoch": 56,
   "stores": {
     "chat-unsent": {
       "kind": "local",
@@ -73,6 +73,12 @@
       "kind": "local",
       "versions": {
         "1": "dabd1d95e7d0a02f"
+      }
+    },
+    "steer-sent": {
+      "kind": "local",
+      "versions": {
+        "1": "f8521c8bcade1250"
       }
     },
     "timeline-summaries": {
@@ -241,12 +247,19 @@
       "versions": {
         "1": "3c0ca8e41d1eb3d4"
       }
+    },
+    "steer-sending": {
+      "kind": "payload",
+      "versions": {
+        "1": "630c242b6686e165"
+      }
     }
   },
   "mutations": [
     "ask",
     "issue-write",
     "text-update",
-    "todo-op"
+    "todo-op",
+    "run-steer"
   ]
 }

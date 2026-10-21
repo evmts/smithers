@@ -18,6 +18,7 @@ import {
 import { CheckRow, PullCommitRow, PullRow, ReviewRow } from "../features/pulls/schema"
 import { Repository } from "../features/repo/schema"
 import { AlertChannel, AlertDelivery, Seen, SpendAlert } from "../features/spend/schema"
+import { SteerSending, SteerSent } from "../features/runs/schema"
 import { Run } from "../features/status/schema"
 import { Preference } from "../features/theme/schema"
 import { Summary } from "../features/timeline/store"
@@ -100,6 +101,9 @@ export const TodoRequestedStore = Migrations.local({
   getKey: (row) => row.id,
 })
 
+/** Steers of a TODO's agent the server took or refused (src/features/runs/writes.ts). */
+export const SteerSentStore = Migrations.local({ id: "steer-sent", versions: [SteerSent], getKey: (row) => row.id })
+
 /** The timeline's summaries: a cache the summarizer fills again. */
 export const TimelineSummariesStore = Migrations.local({
   id: "timeline-summaries",
@@ -166,6 +170,9 @@ export const TextSendingPayload = Migrations.payload({ key: "text-sending", vers
 /** Changes to a stack (src/features/todos/writes.ts, mutation `todo-op`). */
 export const TodoSendingPayload = Migrations.payload({ key: "todo-sending", versions: [TodoSending] })
 
+/** Steers of a TODO's agent (src/features/runs/writes.ts, mutation `run-steer`). */
+export const SteerSendingPayload = Migrations.payload({ key: "steer-sending", versions: [SteerSending] })
+
 /** Every store this build keeps, and its outbox's writes. */
 export const deviceRegistry = Migrations.registry({
   stores: [
@@ -181,12 +188,13 @@ export const deviceRegistry = Migrations.registry({
     SpendSeenStore,
     TodoDraftsStore,
     TodoRequestedStore,
+    SteerSentStore,
     TimelineSummariesStore,
     ...synced,
   ],
   outbox: {
-    payloads: [AskingPayload, IssueSendingPayload, TextSendingPayload, TodoSendingPayload],
-    mutations: ["ask", "issue-write", "text-update", "todo-op"],
+    payloads: [AskingPayload, IssueSendingPayload, TextSendingPayload, TodoSendingPayload, SteerSendingPayload],
+    mutations: ["ask", "issue-write", "text-update", "todo-op", "run-steer"],
     // Builds before stamping (`7b96f878` and earlier) wrote every payload at its version 1.
     unstamped: { asking: 1, "issue-sending": 1, "text-sending": 1, "todo-sending": 1 },
   },

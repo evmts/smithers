@@ -123,3 +123,81 @@ test("nothing listening fails at once with no status", async () => {
   const result = await read(origin)
   expect(result._tag === "Failure" && result.failure.status).toBe(undefined)
 })
+
+/** A run credential as the engine mints one: its claims, base64url, then a signature this client never reads. */
+const credentialFor = (run: string, flow: string) =>
+  `${Buffer.from(JSON.stringify({ run, chain: [flow] })).toString("base64url")}.signature`
+
+const steer = (origin: string, credential?: string) =>
+  Effect.runPromise(
+    Effect.result(Effect.flatMap(RemoteRunsClient, (client) =>
+      client.steer(RUN, { id: "8a7f0c2e-5d1b-4c4a-9a43-0f2a1f7e9b10", body: "Use tabs" }, credential))).pipe(
+        Effect.provide(RemoteRunsClient.layer({ origin, within: "300 millis" })),
+        Effect.provide(FetchHttpClient.layer),
+      ),
+  )
+
+test("a steer goes to its run's route: taken, or had already", async () => {
+  const taken = await serve(json(202, { id: "x", seq: 4 }))
+  expect(await steer(taken.origin)).toMatchObject({ _tag: "Success", success: { existing: false } })
+  expect(taken.asked).toEqual([`POST /api/remote-runs/${encodeURIComponent(RUN)}/steers`])
+  const had = await serve(json(200, { id: "x", seq: 4 }))
+  expect(await steer(had.origin)).toMatchObject({ _tag: "Success", success: { existing: true } })
+})
+
+test("a refused steer fails with its status and the code its body names", async () => {
+  const named = await serve(json(409, { code: "not_working" }))
+  expect(await steer(named.origin)).toMatchObject({ _tag: "Failure", failure: { status: 409, code: "not_working" } })
+  const bare = await serve((_, response) => {
+    response.writeHead(503)
+    response.end()
+  })
+  const result = await steer(bare.origin)
+  expect(result).toMatchObject({ _tag: "Failure", failure: { status: 503 } })
+  expect(result._tag === "Failure" && result.failure.code).toBe(undefined)
+})
+
+test("an agent's steer goes as its run: a fresh credential of that run, then the steer with it", async () => {
+  const headers: Array<string | undefined> = []
+  const server = await serve((request, response) => {
+    headers.push(request.headers.authorization)
+    if (request.url?.endsWith("/credential")) return json(200, { token: "fresh-token" })(request, response)
+    return json(202, { id: "x", seq: 1 })(request, response)
+  })
+  const credential = credentialFor("answer-1/chat/Respond", "run/steer")
+  expect(await steer(server.origin, credential)).toMatchObject({ _tag: "Success" })
+  expect(server.asked).toEqual([
+    `POST /api/runs/${encodeURIComponent("answer-1/chat/Respond")}/credential`,
+    `POST /api/remote-runs/${encodeURIComponent(RUN)}/steers`,
+  ])
+  expect(headers).toEqual([undefined, "Bearer fresh-token"])
+})
+
+test("an agent's steer whose credential can't be renewed is not sent: the renewal's status, or none", async () => {
+  const refused = await serve(json(401, { code: "revoked" }))
+  expect(await steer(refused.origin, credentialFor("answer-1", "run/steer"))).toMatchObject({ _tag: "Failure", failure: { status: 401 } })
+  expect(refused.asked).toHaveLength(1)
+  // Not a credential at all, its claims unreadable or not base64url: nothing is asked.
+  const none = await serve(json(202, {}))
+  expect(await steer(none.origin, "not-a-credential")).toMatchObject({ _tag: "Failure", failure: { status: 403 } })
+  expect(await steer(none.origin, "!!!.signature")).toMatchObject({ _tag: "Failure", failure: { status: 403 } })
+  expect(none.asked).toEqual([])
+  // A renewal whose answer isn't a token, and one with nothing listening, fail with no status.
+  const garbled = await serve(json(200, { nope: true }))
+  const result = await steer(garbled.origin, credentialFor("answer-1", "run/steer"))
+  expect(result._tag === "Failure" && result.failure.status).toBe(undefined)
+  const gone = await serve(() => {})
+  await servers.pop()!()
+  const nothing = await steer(gone.origin, credentialFor("answer-1", "run/steer"))
+  expect(nothing._tag === "Failure" && nothing.failure.status).toBe(undefined)
+})
+
+test("a steer with nothing listening, or no answer in time, fails with no status", async () => {
+  const stalled = await serve(() => {})
+  const late = await steer(stalled.origin)
+  expect(late._tag === "Failure" && late.failure.status).toBe(undefined)
+  const gone = await serve(() => {})
+  await servers.pop()!()
+  const nothing = await steer(gone.origin)
+  expect(nothing._tag === "Failure" && nothing.failure.status).toBe(undefined)
+})

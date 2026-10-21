@@ -1,6 +1,7 @@
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import type { Effect } from "effect"
 import { Schema } from "effect"
+import { STEER_REFUSALS } from "./contract"
 
 // Runs on this tab (decision 0014 §1 "On the device", docs/features/runs.md#the-browser): this device's engine's runs,
 // read through `BrowserEngine` (its leader's `RunInspection`), kept in local collections, never in Postgres. Nothing
@@ -61,6 +62,8 @@ export const RunView = Schema.Struct({
   tab: Schema.Literals(["steps", "timeline", "journal"]),
   acting: Acting,
   refusal: Schema.NullOr(Schema.String),
+  /** What the steer composer holds (docs/features/runs.md#steering): kept with the view, never on the device. */
+  steerDraft: Schema.optionalKey(Schema.String),
 })
 export type RunView = typeof RunView.Type
 
@@ -73,3 +76,40 @@ export const VIEW = "view"
  */
 export const RunChange = Schema.Struct({ runId: Schema.String, revision: Schema.String })
 export type RunChange = typeof RunChange.Type
+
+/** A person's message to a TODO's running agent (docs/features/runs.md#steering): its id, its run and its words. */
+const SteerFields = { id: Schema.String, runId: Schema.String, body: Schema.String }
+
+/**
+ * A steer as a step asks the tab to queue it: its message, and the run credential of the run that sent it unless that
+ * run is the person's own press (decision 0017 slice 0). The tab sends it with that credential and without the session
+ * cookie, so ChatApi reads an agent's steer as the agent's, for the person.
+ */
+export const QueuedSteer = Schema.Struct({ ...SteerFields, credential: Schema.optional(Schema.String) })
+export type QueuedSteer = typeof QueuedSteer.Type
+
+/**
+ * A steer the outbox holds: the optimistic row of its outbox write (`steer-sending`), keyed by its id. `queuedAt` (epoch
+ * ms) orders it among the run's messages. `v` is the row's version in the outbox.
+ */
+export const SteerSending = Schema.Struct({ ...QueuedSteer.fields, queuedAt: Schema.Number, v: Schema.Literal(1) })
+export type SteerSending = typeof SteerSending.Type
+
+/**
+ * A steer the route answered on this tab: `sent` (taken, until the run's journal shows it) or `not_sent`, with why. In
+ * memory: after a reload the run's journal is where a sent message shows.
+ */
+export const SteerSent = Schema.Struct({
+  ...SteerFields,
+  queuedAt: Schema.Number,
+  status: Schema.Literals(["sent", "not_sent"]),
+  reason: Schema.NullOr(Schema.Literals(STEER_REFUSALS)),
+})
+export type SteerSent = typeof SteerSent.Type
+
+/** What a steer step asks the tab that started it to do: queue the message in the device's outbox. */
+export const RunsCall = Schema.Struct({ kind: Schema.Literal("steer"), steer: QueuedSteer })
+export type RunsCall = typeof RunsCall.Type
+
+/** What the tab answered: whether its outbox took the message. */
+export const SteerKept = Schema.Struct({ kept: Schema.Boolean })

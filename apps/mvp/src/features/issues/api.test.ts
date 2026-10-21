@@ -95,3 +95,23 @@ test("nothing listening fails at once with no status", async () => {
   expect(result._tag === "Failure" && result.failure).toEqual(expect.objectContaining({ _tag: "WriteNotTaken" }))
   expect(result._tag === "Failure" && result.failure.status).toBe(undefined)
 })
+
+/** Sends the write as a run, with run credential `credential`. */
+const sendAsRun = (origin: string, credential: string) =>
+  Effect.runPromise(
+    Effect.result(Effect.flatMap(IssuesClient, (client) => client.write("octo", "hello", write, credential))).pipe(
+      Effect.provide(IssuesClient.layer({ origin, within: "300 millis" })),
+      Effect.provide(FetchHttpClient.layer),
+    ),
+  )
+
+test("a run's write whose credential can't be renewed is never sent: the renewal's status, or none", async () => {
+  const credential = `${Buffer.from(JSON.stringify({ run: "answer-1", chain: ["issue/create"] })).toString("base64url")}.sig`
+  const revoked = await serve(json(401, {}))
+  expect(await sendAsRun(revoked.origin, credential)).toMatchObject({ _tag: "Failure", failure: { status: 401 } })
+  expect(revoked.asked.map((asked) => asked.url)).toEqual(["/api/runs/answer-1/credential"])
+  const garbled = await serve(json(200, { nope: true }))
+  const result = await sendAsRun(garbled.origin, credential)
+  expect(result._tag === "Failure" && result.failure.status).toBe(undefined)
+  expect(garbled.asked).toHaveLength(1)
+})

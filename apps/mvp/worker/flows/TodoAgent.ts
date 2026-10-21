@@ -1,8 +1,9 @@
 import { Agent, AgentAction, Budget, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { FlowRuntime } from "@smthrs/flow"
-import { FlowBinding } from "@smthrs/harness"
+import { FlowBinding, Notifications, type Sandbox } from "@smthrs/harness"
 import { Evaluator } from "@smthrs/model"
+import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Option, Schema } from "effect"
@@ -228,17 +229,26 @@ export const seats = (seat: EndpointSeat) =>
   })
 
 /**
- * `todo/Implement`'s implementation over `seat`, `database` and the host's `Machines`, with `sandbox`: the agent's cell
- * sandbox and steering (`Agent.layerDefaults` in Node and a browser; the QuickJS build a Worker bundles,
- * `Agent.layerDefaultsWithVariant`, on Cloudflare). Quota refusals park the step; the endpoint holds the budget.
+ * How a person steers the agent (ruling TODO-3, docs/features/runs.md#steering): the run's own durable notification
+ * queue, over the engine's journal, read at each of the agent's turn boundaries for the execution it works in
+ * (`Notifications.layerForExecution`). A Member's message admitted to `todo:<attempt id>` (worker/RemoteRuns.ts) reaches
+ * that attempt's agent at its next turn, once, and a replay delivers what the first drain delivered.
  */
-export const registration = <E, R, SO, SE, SR>(
+export const steering = Notifications.layerForExecution().pipe(Layer.provide(NotificationQueue.layer))
+
+/**
+ * `todo/Implement`'s implementation over `seat`, `database` and the host's `Machines`, with `sandbox`, the agent's cell
+ * sandbox (`Agent.layerSandbox` in Node; the QuickJS build a Worker bundles, `Agent.layerSandboxWithVariant`, on
+ * Cloudflare), and `steering` over the engine's `Journal`. Quota refusals park the step; the endpoint holds the budget.
+ */
+export const registration = <E, R, SE, SR>(
   seat: EndpointSeat,
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
-  sandbox: Layer.Layer<SO, SE, SR>,
+  sandbox: Layer.Layer<Sandbox.Sandbox, SE, SR>,
 ) =>
   Implement.layer.pipe(
-    Layer.provide(Layer.mergeAll(host(database), seats(seat), Agent.layer)),
+    // Steering first: the first layer that provides the agent's `Steering.Source` is the one it drains.
+    Layer.provide(Layer.mergeAll(host(database), seats(seat), Agent.layer, steering)),
     Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provide(Layer.mergeAll(sandbox, Evaluator.layerUnavailable())),
   )

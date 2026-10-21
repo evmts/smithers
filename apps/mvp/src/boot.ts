@@ -63,7 +63,9 @@ import { RepoStore } from "./features/repo/store"
 import { RunsNavigation } from "./features/runs/actions"
 import { Runs, type RunsView } from "./features/runs/runs"
 import { RemoteRunsClient } from "./features/runs/api"
+import { RunSteers, tabRuns } from "./features/runs/steers"
 import { RunsStore } from "./features/runs/store"
+import { SteerWrites } from "./features/runs/writes"
 import { Status, type StatusView } from "./features/status/status"
 import { Terminal, type TerminalView } from "./features/terminal/terminal"
 import { StatusStore, TabTitle } from "./features/status/store"
@@ -203,6 +205,9 @@ export const appLayer = <S = never>(
     tabTodos({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // Chat's Copy and Edit, answered by the tab that asked, from its conversation, clipboard and composer.
     tabChat({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
+    // Steering a TODO's agent (docs/features/runs.md#steering): this tab's answers to the steer steps it started, which
+    // put the message in the device's outbox.
+    tabRuns({ name: host.engineName }).pipe(Layer.provideMerge(RunSteers.layer), Layer.provide(TabChannel.layer)),
     // Your own flows and this device's runs (decision 0014): their pages, and the router's navigate their acts open.
     Layer.merge(Runs.layer.pipe(Layer.provide(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
       origin,
@@ -228,13 +233,14 @@ export const appLayer = <S = never>(
         Layer.provideMerge(SharedPromptLayer.layer.pipe(Layer.provideMerge(CoeditStore.layer({ origin })))),
       ),
     ),
-    // Chat's store, between the issues' and the TODOs' two: an issue write or a change to a stack goes through the
-    // device's one outbox, which chat's store builds over the writes below it hand over (src/outbox.ts) and leads for
-    // the stores above it.
+    // Chat's store, between the issues' and the TODOs' two: an issue write, a change to a stack or a steer goes through
+    // the device's one outbox, which chat's store builds over the writes below it hand over (src/outbox.ts) and leads
+    // for the stores above it.
     Layer.provideMerge(
       Layer.merge(IssuesStore.layer({ origin }), TodosStore.layer({ origin })).pipe(
         Layer.provideMerge(ChatStore.layer(chatConfig(origin, chat), host)),
         Layer.provideMerge(StackWrites.layer),
+        Layer.provideMerge(SteerWrites.layer),
         Layer.provideMerge(IssueWrites.layer),
         Layer.provideMerge(TextWrites.layer),
       ),

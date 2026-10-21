@@ -18,3 +18,12 @@
 .run-page-graph { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,340px); gap:12px; align-items:start; }
 .run-page-graph[data-inspector=false] { grid-template-columns:minmax(0,1fr); }
 @media(max-width:760px) { .run-page-graph { grid-template-columns:minmax(0,1fr); } }
+
+/* A TODO's run's messages to its agent, and the composer (docs/features/runs.md#steering). */
+.run-steers { display:flex; flex-direction:column; gap:0.5rem; }
+.run-steers-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:0.5rem; }
+.run-steer { display:flex; flex-direction:column; gap:0.25rem; }
+.run-steer-body { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.run-steer-meta { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; font-size:0.8125rem; opacity:0.8; }
+.run-steer-composer { display:flex; gap:0.5rem; align-items:flex-end; }
+.run-steer-composer > textarea { flex:1; min-width:0; }

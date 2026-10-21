@@ -118,12 +118,19 @@ export const program = (options: ProgramOptions = {}) =>
     // TODOs' shapes.
     const stack = yield* StackApi.make(database)
     // A TODO's run, watched from its page (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): the engine's own
-    // read of it, from the engine's schema, and its row of the engine's change feed through Electric.
+    // read of it, from the engine's schema, and its row of the engine's change feed through Electric. A Member steers
+    // its agent by admitting a message to the run's queue in the same schema (docs/features/runs.md#steering).
     const remoteRuns = yield* RemoteRuns.make(database, {
       database: Layer.unwrap(
         Effect.map(
           hyperdrive.connectionString,
           (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
+        ),
+      ),
+      writer: Layer.unwrap(
+        Effect.map(
+          hyperdrive.connectionString,
+          (url) => ExecutionHost.database(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
         ),
       ),
       schema: ExecutionHost.ENGINE_SCHEMA,

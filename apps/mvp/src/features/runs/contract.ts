@@ -16,6 +16,72 @@ export const REMOTE_RUNS_ROUTE = "/api/remote-runs"
 /** That route for one run. */
 export const remoteRunRoute = (runId: string): string => `${REMOTE_RUNS_ROUTE}/${encodeURIComponent(runId)}`
 
+/**
+ * `POST <route>/<runId>/steers { id, body }`: a person's message to a TODO's running agent (ruling TODO-3), admitted to
+ * the run's durable notification queue; the agent reads it at its next turn boundary.
+ */
+export const steersRoute = (runId: string): string => `${remoteRunRoute(runId)}/steers`
+
+/** The step whose agent a steer reaches: the `todo` run's agent (worker/flows/TodoAgent.ts `Implement`). */
+export const STEERED_ACTION = "todo/Implement"
+
+/**
+ * Whether a TODO's run still has an agent to steer: neither the run nor its agent's step has ended. The steer route
+ * admits a message only then, and the run page offers the composer only then.
+ */
+export const steerable = (
+  run: { readonly status: string },
+  steps: ReadonlyArray<{ readonly action: string | null; readonly status: string }>,
+): boolean =>
+  !settled(run.status) &&
+  !steps.some((step) => step.action === STEERED_ACTION && step.status !== "running" && step.status !== "waiting")
+
+/** The longest steer, in characters. */
+export const MAX_STEER_CHARS = 4_000
+
+/**
+ * The most a steer may take as JSON, in UTF-8 bytes: its admission record, which the run page reads its words back
+ * from, stays inside the engine's 16 KiB cut of a value however many characters escape.
+ */
+export const MAX_STEER_JSON_BYTES = 12 * 1024
+
+/** The most bytes the steer route reads of a body. */
+export const MAX_STEER_BODY_BYTES = 32 * 1024
+
+/**
+ * Why the steer route refused a message, as `{ code }`: `invalid` (400), `authentication` (401), `forbidden` (403: not
+ * a Member), `not_found` (404: no TODO's run has that id), `not_working` (409: the run or its agent has ended, or the
+ * engine hasn't begun it), `conflict` (409: the id was sent before with another message), `too_large` (413), `full`
+ * (429: the run holds 128 undelivered messages) and `unavailable` (503).
+ */
+export const STEER_REFUSALS = [
+  "invalid",
+  "authentication",
+  "forbidden",
+  "not_found",
+  "not_working",
+  "conflict",
+  "too_large",
+  "full",
+  "unavailable",
+] as const
+export type SteerRefusal = (typeof STEER_REFUSALS)[number]
+
+/**
+ * The namespace a `run/steer` run's message id is derived in (RFC 9562 version 5): its execution id's UUID, so a step
+ * run again names the same message, and the route takes it once.
+ */
+export const STEER_ID_NAMESPACE = "6f1d2b8e-4c57-4a93-b0e6-2d9c7f3a1e58"
+
+/** The engine channel a steer step asks the tab that started it on: `<engine name>/runs`. */
+export const runsChannel = (engineName: string): string => `${engineName}/runs`
+
+/** How long a steer step waits for the tab that asked to queue its message. */
+export const STEER_QUEUE_WITHIN = "10 seconds"
+
+/** Refusals a send never retries: the message is Not sent, with why. */
+export const STEER_FINAL = ["invalid", "authentication", "forbidden", "not_found", "not_working", "conflict", "too_large"] as const
+
 /** `GET ...?run=<runId>`: Electric's row of that run in the engine's change feed, which moves with the run. */
 export const REMOTE_RUN_SHAPE_ROUTE = "/api/shapes/remote-runs"
 
@@ -92,8 +158,32 @@ export const retryActId = (runId: string, n: number): string => `retry:${runId}:
  * counts, codes and sizes only: never a value of a run.
  */
 export const RUNS_TELEMETRY = {
-  records: ["run.inspect", "run.act", "run.read", "smithers_run_acts", "smithers_run_reads"],
-  fields: ["runId", "act", "host", "outcome", "events", "bytes", "clipped", "durationMs", "smithers.run.host"],
+  records: [
+    "run.inspect",
+    "run.act",
+    "run.read",
+    "run.steer",
+    "run.steer.send",
+    "smithers_run_acts",
+    "smithers_run_reads",
+    "smithers_run_steers",
+    "smithers_run_steer_sends",
+  ],
+  fields: [
+    "runId",
+    "act",
+    "host",
+    "outcome",
+    "events",
+    "bytes",
+    "clipped",
+    "durationMs",
+    "smithers.run.host",
+    "steerId",
+    "via",
+    "status",
+    "code",
+  ],
 } as const
 
 /** The run page's buttons and lines (MINIMAL TEXT: a word each). */
@@ -111,6 +201,30 @@ export const NOT_FOUND = "Not found"
 export const NOT_STARTED = "Not started"
 /** Where a run Smithers runs on Cloudflare runs, as its header says. */
 export const CLOUD = "Cloud"
+
+/** The steer composer's label and button, and a steer's states on the run page. */
+export const STEER = "Steer"
+export const STEER_LABEL = "Steer the agent"
+export const STEER_SENDING = "Sending"
+export const STEER_SENT = "Sent"
+export const STEER_DELIVERED = "Delivered"
+export const STEER_NOT_DELIVERED = "Not delivered"
+export const STEER_NOT_SENT = "Not sent"
+/** Selects the agent's step after a delivered steer: its response. */
+export const NEXT_STEP = "Next step"
+
+/** Why a steer is Not sent, in a few words, by the route's code. */
+export const STEER_REFUSAL_WORDS: Readonly<Record<SteerRefusal, string>> = {
+  invalid: "Can't send this",
+  authentication: "Sign in",
+  forbidden: "Members only",
+  not_found: "No such run",
+  not_working: "The agent finished",
+  conflict: "Sent before",
+  too_large: "Too long",
+  full: "Too many waiting",
+  unavailable: "Couldn't reach Smithers",
+}
 
 /** What a refused act reads as on the run page, by its code. */
 export const REFUSAL_WORDS: Readonly<Record<string, string>> = {

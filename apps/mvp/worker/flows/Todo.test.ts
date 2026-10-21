@@ -6,10 +6,11 @@
 // and the projection are the real ones.
 import { Agent } from "@smthrs/agent"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
-import { RunStore } from "@smthrs/flows"
+import { Database as FlowsDatabase, Journal, RunStore } from "@smthrs/flows"
 import { Node } from "@smthrs/plan"
 import { Model, type ModelEvent } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
+import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
@@ -20,6 +21,7 @@ import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/cont
 import { Machines } from "../branch/Machines.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
+import * as ExecutionHost from "../ExecutionHost.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
 import * as Stack from "../stack/Stack.ts"
 import { build, runFlow } from "../test/flowHost.ts"
@@ -176,7 +178,14 @@ const agentSeat = async (model: Model.Model) => {
 }
 
 /** Everything one run needs: the scripted GitHub, the machine, the agent, and the starts it asked its host for. */
-const setup = async (options: { readonly agent?: ReadonlyArray<string>; readonly run?: (command: string) => number } = {}) => {
+const setup = async (
+  options: {
+    readonly agent?: ReadonlyArray<string>
+    readonly model?: Model.Model
+    readonly run?: (command: string) => number
+    readonly schema?: string
+  } = {},
+) => {
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   const machine = machines(github, options.run)
   const { services } = await githubServices(runtime, github)
@@ -189,13 +198,16 @@ const setup = async (options: { readonly agent?: ReadonlyArray<string>; readonly
     start: (flow, start) => Effect.sync(() => void starts.push({ flow: flow._tag, ...start })),
   }
   const agent = cells(...(options.agent ?? [WRITES_README]))
-  const seat = await agentSeat(agent.model)
+  const seat = await agentSeat(options.model ?? agent.model)
   const registration = Todo.registration(
     todoServices,
-    TodoAgent.registration(seat, await database(), Agent.layerDefaults),
+    TodoAgent.registration(seat, await database(), Agent.layerSandbox),
   ).pipe(Layer.provide(machine.layer))
   const run = (start: Stack.AttemptStart) =>
-    runFlow(Todo.Todo, start, registration, { executionId: todoExecutionId(start.attemptId) })
+    runFlow(Todo.Todo, start, registration, {
+      executionId: todoExecutionId(start.attemptId),
+      ...(options.schema === undefined ? {} : { schema: options.schema }),
+    })
   return { github, machine, starts, agent, run, services: todoServices, registration }
 }
 
@@ -256,6 +268,78 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect(await sql(runtime, `SELECT number, merged, head_ref AS "headRef" FROM pulls`)).toEqual([
       { number: pull.number, merged: true, headRef: branch },
     ])
+  })
+
+  test("a person's steer, admitted while the agent works, reaches its next turn and is in the change", async () => {
+    // The engine's schema, named here so the steer can be admitted to it as ChatApi admits one: through a journal and a
+    // queue of its own over the same tables (worker/RemoteRuns.ts), beside the run's engine.
+    const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+    const server = await runtime.runPromise(TestDatabase.serverUrl)
+    const engineSchema = ExecutionHost.database(server.toString(), schema)
+    const queue = NotificationQueue.layer.pipe(
+      Layer.provide(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject", sourceEventCache: 1 })),
+      Layer.provide(Layer.provideMerge(FlowsDatabase.DurableWriter.layer(), engineSchema)),
+    )
+    const steer = "Also add the line `steered widget` to README.md."
+    let runId = ""
+    const requests: Array<string> = []
+    const model = Model.make({
+      stream: (request) =>
+        Stream.unwrap(Effect.gen(function* () {
+          const text = JSON.stringify(request.messages)
+          requests.push(text)
+          if (requests.length === 1) {
+            // A person presses Send while the agent's first turn is in flight.
+            yield* Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) =>
+              notifications.admit(runId, Notification.humanSteer({
+                runId,
+                id: crypto.randomUUID(),
+                actor: "person:person-ben",
+                attribution: { login: "ben", via: "person" },
+                payload: SteerPayload.encode({ kind: "Message", body: steer }),
+              }))).pipe(Effect.provide(queue), Effect.scoped, Effect.orDie)
+          }
+          const source = requests.length === 1
+            ? `await ctx.call("sandbox/write", { path: "README.md", content: "# Widgets\\n\\nA line\\n" })`
+            : text.includes("steered widget")
+            ? [
+              `await ctx.call("sandbox/write", { path: "README.md", content: "# Widgets\\n\\nA line\\nsteered widget\\n" })`,
+              `ctx.done({ summary: "Added a line and the steered one." })`,
+            ].join("\n")
+            : `ctx.done({ summary: "Added a line." })`
+          return Stream.fromIterable<ModelEvent.ModelEvent>([
+            { type: "text-delta", id: "t", text: "```cell\n" + source + "\n```" },
+            { type: "usage", inputTokens: 10, outputTokens: 10 },
+            { type: "settle", stopReason: "stop" },
+          ])
+        })),
+    })
+    const ctx = await setup({ model, schema })
+    try {
+      const start = (await commit("Add a line to README", "Add a line to the README."))!
+      runId = todoExecutionId(start.attemptId)
+      ctx.github.onPullOpened = (number) => void ctx.github.merge(number, "maya")
+
+      const ran = await ctx.run(start)
+
+      expect(ran.exit).toEqual(Exit.succeed({ state: "merged" }))
+      // Not in the turn it arrived during; in the next one, once, as the person's message.
+      expect(requests[0]).not.toContain("steered widget")
+      expect(requests[1]).toContain(`[notification `)
+      expect(requests[1]).toContain(`from person:person-ben at ${runId} turn 0`)
+      expect(requests[1]!.split("steered widget")).toHaveLength(2)
+      expect(ctx.github.tree("main").get("README.md")).toBe("# Widgets\n\nA line\nsteered widget\n")
+      // Delivered: nothing left for a later boundary.
+      const pending = await Effect.runPromise(
+        Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) => notifications.pending(runId)).pipe(
+          Effect.provide(queue),
+          Effect.scoped,
+        ),
+      )
+      expect(pending).toEqual([])
+    } finally {
+      await sql(runtime, `DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+    }
   })
 
   test("a pull request closed on GitHub drops the TODO", async () => {
@@ -389,7 +473,7 @@ describe("the todo run on a host that dies mid-implement", { timeout: 180_000 },
     const agent = frames()
     const registration = Todo.registration(
       todoServices,
-      TodoAgent.registration(await agentSeat(agent.model), await database(), Agent.layerDefaults),
+      TodoAgent.registration(await agentSeat(agent.model), await database(), Agent.layerSandbox),
     ).pipe(Layer.provide(machine.layer))
     const start = (await commit("Add a line to README", "Add a line to the README."))!
     const executionId = todoExecutionId(start.attemptId)

@@ -6,7 +6,8 @@ import { Effect, Layer } from "effect"
 import { newVariant, type QuickJSSyncVariant } from "quickjs-emscripten-core"
 
 // The cell sandbox the `todo` run's agent runs its cells in on Cloudflare (worker/flows/TodoAgent.ts): `@smthrs/agent`'s
-// defaults over the QuickJS build with a separate `.wasm` file, and no steering.
+// sandbox over the QuickJS build with a separate `.wasm` file. Steering is the run's own queue, which
+// `TodoAgent.registration` provides beside it.
 //
 // workerd refuses to compile WebAssembly from bytes, so the single-file build `Agent.layerDefaults` compiles can't run
 // here ("Wasm code generation disallowed by embedder"). It instantiates only a module its toolchain compiled: Alchemy's
@@ -33,7 +34,7 @@ export const layerFrom = (load: () => Promise<{ readonly default: WebAssembly.Mo
         new Sandbox.SandboxError({ code: "runtime_failed", message: "QuickJS WebAssembly module could not be loaded", cause }),
     }).pipe(
       Effect.map(({ default: wasmModule }) =>
-        Agent.layerDefaultsWithVariant.pipe(Layer.provide(QuickJSVariant.layerVariant(newVariant(base, { wasmModule }))))
+        Agent.layerSandboxWithVariant.pipe(Layer.provide(QuickJSVariant.layerVariant(newVariant(base, { wasmModule }))))
       ),
     ),
   )

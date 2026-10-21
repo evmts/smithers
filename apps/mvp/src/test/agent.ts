@@ -30,6 +30,7 @@ import { TabRequests } from "../flows/requests"
 import { TabClipboard } from "../features/repo/copy"
 import { TabChat } from "../features/chat/steps"
 import { TabIssues } from "../features/issues/steps"
+import { TabRuns } from "../features/runs/steps"
 import { TabTodos } from "../features/todos/steps"
 
 /** ChatApi's origin as the agent reaches it: the harness's in-process handler. */
@@ -142,6 +143,7 @@ export const openAgent = async (
       Layer.provide(TabClipboard.layerChannel({ name: `agent-${crypto.randomUUID()}`, origin: ORIGIN })),
       Layer.provide(TabIssues.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabTodos.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
+      Layer.provide(TabRuns.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChat.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChannel.layer),
       // The run reads the acts on runs need, which the browser's engine provides (decision 0014 §3).

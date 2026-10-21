@@ -2,10 +2,21 @@
 title: Show and steer the active run from a TODO
 status: in-progress
 area: app
-owner: Claude feature builder after TODO execution is proven
-updated: 2026-10-21 09:24 PDT
-links: [todos-and-stack.md, todos-draft-commit-drop.md, flow-debugging.md, ../rulings.md]
+owner: todo-steer builder (Claude Opus, session 6253ecf2) from 10:00 on 2026-10-21
+updated: 2026-10-21 11:55 PDT
+links: [todos-and-stack.md, todos-draft-commit-drop.md, flow-debugging.md, ../rulings.md, ../decisions/0026-watching-a-todo-run.md]
 ---
+
+## Steering — 2026-10-21, 11:55 PDT
+
+**What:** A Member steers a TODO's working agent from its run's page (TODO-3's second half).
+
+**Current state:** Watching is built (decision 0026). Steering is built and proven in tests: the todo agent drains its run's own `NotificationQueue` (`Notifications.layerForExecution`, new in `@smthrs/harness`, keyed by agent session), `POST /api/remote-runs/<run>/steers` admits a Member's message, `run/steer` queues it through the device's outbox (an agent's steer goes with its run credential), and the run page lists messages (Sending, Sent, Delivered once the agent acted after it, Not delivered, Not sent) with a composer while the agent works. Receipts: `worker/flows/Todo.test.ts` (the real todo flow and agent on Postgres read a mid-turn message at the next turn; its line lands in the merged README; fails with the old empty source), `worker/RemoteRuns.test.ts`, `src/features/runs/remote.test.ts` (tab → engine → outbox → ChatApi → queue), `steer.test.ts`, `api.test.ts`, `@smthrs/agent` `AgentActionSteering.test.ts`, `@smthrs/harness` `Notifications.test.ts`. A Codex Astra review's findings are fixed or answered (session-keyed drains, Delivered needs an act, run credentials, kept refusals, an encoded-size bound, the draft restore).
+
+**Next step:** the live e2e (`e2e/todo-steer.spec.ts`) locally with the GitHub App and the real model, then against production once these commits deploy.
+
+**Open questions for Will:** None.
+
 
 ## Tracker reconciliation — 2026-10-21 09:24 PDT
 

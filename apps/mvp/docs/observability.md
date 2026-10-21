@@ -589,6 +589,11 @@ Watching a TODO's run ([runs.md](features/runs.md#a-run-on-cloudflare)): ChatApi
 | `smithers_remote_run_reads` | counter | ChatApi | `outcome` |
 | `runs.shape.remote`; `smithers_remote_run_shape_requests` | log, span; counter | ChatApi | `status`, `live` |
 | `run.read`, `smithers_run_reads` | browser | the tab | as for this device's runs, `outcome` also `not_started` |
+| `run.steer`; `smithers_run_steers` | log, span; counter | ChatApi, each `POST /api/remote-runs/<run id>/steers` | `host` (`remote`), `runId`, `steerId`, `via`, `outcome` (`taken`, `existing`, or the refusal's code), `bytes`, `status`, `durationMs`, `errorCode` |
+| `runs.steer.queue`; `smithers_run_steers_queued` | log, span; counter | the engine worker | `steerId`, `runId`, `via`, `door`, `outcome` (`kept`, `not_kept`, `tab_gone`, `no_credential`) |
+| `run.steer.send`; `smithers_run_steer_sends` | log, span; counter | the tab | `steerId`, `runId`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code` |
+
+Steering a TODO's agent ([runs.md](features/runs.md#steering)) records ids, sizes and outcomes; a message's words reach only the run's queue and its model, never a record. `worker/RemoteRuns.test.ts` asserts a sentinel message in no record.
 
 ### Flow usage
 

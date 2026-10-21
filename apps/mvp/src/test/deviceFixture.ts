@@ -43,6 +43,29 @@ export const sqlite = (path: string) => {
   }
 }
 
+/**
+ * A device store that can't store: `Persistence.layer` over `path`, as `persistenceOn`, whose writes of rows fail once
+ * `failing` is set, as a full disk or a closed database fails them. Opening and reading still work.
+ */
+export const faultyPersistenceOn = (path: string, registry?: Migrations.Registry) => {
+  const state = { failing: false }
+  const layer = Persistence.layer({
+    open: () => {
+      const database = sqlite(path)
+      return {
+        ...database,
+        execute: <T>(sql: string, params?: ReadonlyArray<unknown>) =>
+          state.failing && /^\s*(insert|update|delete|replace)\b/i.test(sql)
+            ? Promise.reject(new Error("SQLITE_FULL: database or disk is full"))
+            : database.execute<T>(sql, params),
+      }
+    },
+    make: (database) => createBrowserWASQLitePersistence({ database }),
+    ...(registry === undefined ? {} : { registry }),
+  })
+  return { layer, failWrites: () => void (state.failing = true) }
+}
+
 /** `Persistence.layer` over `path`, with `registry` when given, as the app's is. */
 export const persistenceOn = (path: string, registry?: Migrations.Registry) =>
   Persistence.layer({

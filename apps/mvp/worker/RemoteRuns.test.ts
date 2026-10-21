@@ -6,7 +6,8 @@
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { Action, Flow, FlowRuntime, Interpreter, Sleep } from "@smthrs/flow"
-import { EngineStore } from "@smthrs/flows"
+import { Database, EngineStore, Journal } from "@smthrs/flows"
+import { Notification, NotificationQueue } from "@smthrs/notifications"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Node } from "@smthrs/plan"
 import { ConfigProvider, Context, Effect, Layer, Logger, Metric, Redacted, Schema, Tracer } from "effect"
@@ -15,7 +16,7 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { todoExecutionId } from "../src/features/pulls/contract.ts"
-import { REMOTE_RUN_SHAPE_ROUTE, remoteRunRoute } from "../src/features/runs/contract.ts"
+import { MAX_STEER_CHARS, REMOTE_RUN_SHAPE_ROUTE, remoteRunRoute, steersRoute } from "../src/features/runs/contract.ts"
 import * as Actor from "./Actor.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
@@ -59,19 +60,34 @@ const Watched = Flow.make("remote-runs-test/Watched", {
     )),
 })
 
+/** A step under the steered agent's action name, `todo/Implement`, that ends at once. */
+const Implemented = Action.make("todo/Implement", { payload: {}, success: Schema.String })
+
+/** A run whose agent's step has ended and which then waits `pauseMs` on a durable timer, as a TODO in review does. */
+const Reviewed = Flow.make("remote-runs-test/Reviewed", {
+  description: "A run past its agent's step.",
+  modelInvocable: false,
+  payload: { pauseMs: Schema.Number },
+  success: Schema.Void,
+  error: Sleep.SleepRequestInvalid,
+  body: Node.capture({}, ({ pauseMs }) => Implemented.call({}).pipe(Node.andThen(Sleep.action.call({ millis: pauseMs })))),
+})
+
 const registration = Layer.mergeAll(
   Produce.toLayer(({ size }) => Effect.succeed("x".repeat(size))),
+  Implemented.toLayer(() => Effect.succeed("done")),
   Interpreter.layer(Child, { callbackIdentity: "stable" }),
   Interpreter.layer(Watched, { callbackIdentity: "stable" }),
+  Interpreter.layer(Reviewed, { callbackIdentity: "stable" }),
 ).pipe(Layer.provideMerge(Action.layerImplementations))
 
-/** A TODO committed on a host that runs TODOs: its first attempt, recorded by the writer. */
-const attempt = () =>
+/** A TODO committed on a host that runs TODOs, to `repoId`'s stack: its first attempt, recorded by the writer. */
+const attempt = (repoId = "github/octo/hello") =>
   runtime.runPromise(
     Effect.map(
       Stack.apply({
         opId: uuid(),
-        repoId: "github/octo/hello",
+        repoId,
         actor: { id: member.subject.id, login: "maya" },
         via: "person",
         op: { kind: "commit", title: "Watch me", prompt: "Anything.", acceptance: [] },
@@ -84,10 +100,16 @@ const attempt = () =>
 interface Engine {
   readonly schema: string
   readonly database: Layer.Layer<SqlClient.SqlClient>
+  /** A writer of the engine's schema, as ChatApi admits a steer. */
+  readonly writer: Layer.Layer<SqlClient.SqlClient>
   /** Runs `Watched` as `executionId` to its end. */
   readonly run: (executionId: string, pauseMs?: number) => Promise<void>
   /** Starts `Watched` as `executionId` and returns at once; the run goes on until the engine closes. */
   readonly start: (executionId: string, pauseMs: number) => Promise<void>
+  /** Starts `Reviewed` as `executionId` and returns at once. */
+  readonly review: (executionId: string, pauseMs: number) => Promise<void>
+  /** A run's status in the engine. */
+  readonly status: (executionId: string) => Promise<string | undefined>
 }
 
 const withEngine = <A>(body: (engine: Engine) => Promise<A>): Promise<A> =>
@@ -108,6 +130,13 @@ const withEngine = <A>(body: (engine: Engine) => Promise<A>): Promise<A> =>
             schema: engine.schema,
             // As ChatApi reads the deployed engine: read-only.
             database: ExecutionHost.readDatabase(server.toString(), engine.schema),
+            writer: ExecutionHost.database(server.toString(), engine.schema),
+            review: (executionId, pauseMs) =>
+              Effect.runPromise(Effect.asVoid(Effect.forkIn(
+                Effect.ignore(flows.execute(Reviewed, { executionId, payload: { pauseMs } }).pipe(Effect.provide(context))),
+                scope,
+              ))),
+            status: (executionId) => Effect.runPromise(engine.status(executionId)),
             run: (executionId, pauseMs = 0) => Effect.runPromise(Effect.asVoid(Effect.orDie(execute(executionId, pauseMs)))),
             start: (executionId, pauseMs) =>
               Effect.runPromise(Effect.asVoid(Effect.forkIn(Effect.ignore(execute(executionId, pauseMs)), scope))),
@@ -121,7 +150,7 @@ type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
 
 /** The routes as ChatApi serves them, over this file's schema and `engine`, recording every log line, span and metric. */
 const routes = async (
-  engine: Pick<Engine, "schema" | "database">,
+  engine: Pick<Engine, "schema" | "database" | "writer">,
   options: {
     readonly actor?: Actor.Actor
     readonly sessions?: Layer.Layer<Actor.Sessions>
@@ -159,8 +188,9 @@ const routes = async (
     observed(
       RemoteRuns.make(options.database ?? scratch.database, {
         database: engine.database,
+        writer: engine.writer,
         schema: engine.schema,
-        flows: [Watched],
+        flows: [Watched, Reviewed],
       }),
     ),
   )
@@ -310,7 +340,12 @@ describe("GET /api/remote-runs/<runId>", () => {
       const cases: ReadonlyArray<[Awaited<ReturnType<typeof routes>>, string | undefined]> = [
         [await routes(engine, { sessions: sessionsDown }), undefined],
         [await routes(engine, { actor: member, database: missing("remote_runs_no_app") }), "sql:"],
-        [await routes({ schema: engine.schema, database: missing("remote_runs_no_engine") }, { actor: member }), "@smthrs/"],
+        [
+          await routes({ schema: engine.schema, database: missing("remote_runs_no_engine"), writer: engine.writer }, {
+            actor: member,
+          }),
+          "@smthrs/",
+        ],
       ]
       for (const [h, errorCode] of cases) {
         const response = await h.fetch(remoteRunRoute(runId))
@@ -405,11 +440,225 @@ describe("GET /api/shapes/remote-runs", () => {
   })
 })
 
+/** A queue over the engine's journal, as the run's agent and the route reach it. */
+const queueOver = (engine: Pick<Engine, "writer">) =>
+  NotificationQueue.layer.pipe(
+    Layer.provide(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject" })),
+    Layer.provide(Layer.provideMerge(Database.DurableWriter.layer(), engine.writer)),
+  )
+
+/** What a run holds undelivered. */
+const pendingOf = (engine: Pick<Engine, "writer">, runId: string) =>
+  Effect.runPromise(
+    Effect.flatMap(NotificationQueue.NotificationQueue, (queue) => queue.pending(runId)).pipe(
+      Effect.provide(queueOver(engine)),
+      Effect.scoped,
+    ),
+  )
+
+const STEER_SENTINEL = "sentinel-steer-9c1d-never-recorded"
+
+/** A steer's request. */
+const post = (body: unknown) => ({
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: typeof body === "string" ? body : JSON.stringify(body),
+})
+
+describe("POST /api/remote-runs/<runId>/steers", () => {
+  test("a Member's message joins the working run's queue once, as their steer; a resend answers what it answered", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) === "suspended" || (await engine.status(runId)) === "running", 10_000)
+      const h = await routes(engine, { actor: member })
+      const id = uuid()
+      const body = `Also add a line ${STEER_SENTINEL}`
+      const taken = await h.fetch(steersRoute(runId), post({ id, body }))
+      const receipt = (await taken.json()) as { id: string; seq: number }
+      expect([taken.status, taken.headers.get("cache-control"), receipt.id]).toEqual([202, "no-store", id])
+      expect(receipt.seq).toBeGreaterThanOrEqual(0)
+      // The same message again, as an outbox resends it: the same receipt, and still one message.
+      const again = await h.fetch(steersRoute(runId), post({ id: id.toUpperCase(), body }))
+      expect([again.status, await again.json()]).toEqual([200, receipt])
+      // Another message under the same id is a conflict, and changes nothing.
+      const other = await h.fetch(steersRoute(runId), post({ id, body: "Something else" }))
+      expect([other.status, await other.json()]).toEqual([409, { code: "conflict" }])
+
+      const pending = await pendingOf(engine, runId)
+      expect(pending).toEqual([
+        {
+          _tag: "human-steer",
+          id,
+          delivery: "steer",
+          targetLineageId: runId,
+          provenance: {
+            sourceRunId: runId,
+            sourceLineageId: runId,
+            sourceTurn: 0,
+            sourceActor: `person:${member.subject.id}`,
+            attribution: { login: "maya", via: "person" },
+          },
+          payload: { kind: "Message", body },
+        },
+      ])
+      // Ids, outcomes and sizes only: never the message.
+      const lines = h.line("run.steer").map((line) => line.annotations)
+      expect(lines.map((line) => [line.outcome, line.status])).toEqual([["taken", 202], ["existing", 200], ["conflict", 409]])
+      expect(lines[0]).toMatchObject({ host: "remote", runId, steerId: id, via: "person" })
+      expect(h.count(RemoteRuns.steers, { outcome: "taken" })).toBe(1)
+      expect(h.spans.filter((span) => span.name === "run.steer")).toHaveLength(3)
+      expect(recorded(h)).not.toContain(STEER_SENTINEL)
+    })
+  }, 60_000)
+
+  test("an agent acting for a Member steers too, and the run's model reads that it came through an agent", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) !== undefined, 10_000)
+      const h = await routes(engine, { actor: { ...member, act: { kind: "agent", id: "chat-run-1" } } })
+      const id = uuid()
+      expect((await h.fetch(steersRoute(runId), post({ id, body: "Keep it short" }))).status).toBe(202)
+      expect((await pendingOf(engine, runId))[0]!.provenance.attribution).toEqual({ login: "maya", via: "agent" })
+      expect(h.line("run.steer")[0]!.annotations.via).toBe("agent")
+    })
+  }, 60_000)
+
+  test("refuses who may not steer, a bad message, a run no TODO started, and a run with no agent left to steer", async () => {
+    const first = await attempt()
+    const runId = todoExecutionId(first.attemptId)
+    await withEngine(async (engine) => {
+      const body = { id: uuid(), body: "Use tabs" }
+      // Recorded by the writer and not begun by the engine: nothing reads a queue yet.
+      const cases: ReadonlyArray<[Parameters<typeof routes>[1], string, RequestInit, number, string]> = [
+        [{}, runId, post(body), 401, "authentication"],
+        [{ actor: guest }, runId, post(body), 403, "forbidden"],
+        [{ actor: member }, runId, post("{"), 400, "invalid"],
+        [{ actor: member }, runId, { method: "POST", body: new Uint8Array([0x7b, 0xff, 0xfe, 0x7d]) }, 400, "invalid"],
+        [{ actor: member }, runId, post({ id: "not-a-uuid", body: "x" }), 400, "invalid"],
+        [{ actor: member }, runId, post({ id: uuid(), body: " \n " }), 400, "invalid"],
+        [{ actor: member }, runId, post({ id: uuid(), body: "x".repeat(MAX_STEER_CHARS + 1) }), 413, "too_large"],
+        // Few enough characters, but each escapes to six bytes: its record would pass the engine's cut of a value.
+        [{ actor: member }, runId, post({ id: uuid(), body: "\u0001".repeat(MAX_STEER_CHARS) }), 413, "too_large"],
+        [{ actor: member }, runId, post({ id: uuid(), body: "x".repeat(40_000) }), 413, "too_large"],
+        [{ actor: member }, todoExecutionId(uuid()), post(body), 404, "not_found"],
+        [{ actor: member }, runId, post(body), 409, "not_working"],
+      ]
+      for (const [options, target, init, status, code] of cases) {
+        const h = await routes(engine, options)
+        const response = await h.fetch(steersRoute(target), init)
+        expect([code, response.status, await response.json(), response.headers.get("cache-control")]).toEqual([
+          code,
+          status,
+          { code },
+          "no-store",
+        ])
+        expect(h.line("run.steer").map((line) => line.annotations.outcome)).toEqual([code])
+        expect(h.count(RemoteRuns.steers, { outcome: code })).toBe(1)
+      }
+      const h = await routes(engine, { actor: member })
+      expect((await h.fetch(steersRoute(runId))).status).toBe(405)
+      expect(h.line("run.steer").map((line) => line.annotations.outcome)).toEqual(["method"])
+
+      // Settled: nothing will read the queue again.
+      await engine.run(runId)
+      expect((await h.fetch(steersRoute(runId), post(body))).status).toBe(409)
+      // Working, but its agent's step has ended: the message would never be read.
+      // Another stack's TODO: one stack runs one TODO at a time.
+      const second = todoExecutionId((await attempt("github/octo/other")).attemptId)
+      await engine.review(second, 60_000)
+      await eventually(async () => (await engine.status(second)) === "suspended", 10_000)
+      const late = await h.fetch(steersRoute(second), post({ id: uuid(), body: "Too late" }))
+      expect([late.status, await late.json()]).toEqual([409, { code: "not_working" }])
+      expect(await pendingOf(engine, second)).toEqual([])
+    })
+  }, 60_000)
+
+  test("a run holding 128 undelivered messages refuses the next one as full, keeping nothing", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    await withEngine(async (engine) => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) !== undefined, 10_000)
+      // 127 messages already wait, admitted through the run's queue as the route admits them; the route takes the 128th.
+      await Effect.runPromise(
+        Effect.flatMap(NotificationQueue.NotificationQueue, (queue) =>
+          Effect.forEach(Array.from({ length: 127 }, (_, n) => n), (n) =>
+            queue.admit(runId, Notification.humanSteer({
+              runId,
+              id: uuid(),
+              actor: `person:${member.subject.id}`,
+              payload: { kind: "Message", body: `message ${n}` },
+            })))).pipe(Effect.provide(queueOver(engine)), Effect.scoped),
+      )
+      const h = await routes(engine, { actor: member })
+      expect((await h.fetch(steersRoute(runId), post({ id: uuid(), body: "the 128th" }))).status).toBe(202)
+      const full = await h.fetch(steersRoute(runId), post({ id: uuid(), body: "one more" }))
+      expect([full.status, await full.json()]).toEqual([429, { code: "full" }])
+      expect(await pendingOf(engine, runId)).toHaveLength(128)
+    })
+  }, 120_000)
+
+  test("answers 503 when sessions, the app's database or the engine can't", async () => {
+    const start = await attempt()
+    const runId = todoExecutionId(start.attemptId)
+    const server = await Effect.runPromise(TestDatabase.serverUrl)
+    const empty = `remote_runs_no_journal_${crypto.randomUUID().replaceAll("-", "")}`
+    const noJournal = PostgresDatabase.layer({ url: server.toString(), driver: Pg, schema: empty, postgres: { maxConnections: 1 } })
+      .pipe(Layer.orDie)
+    const sessionsDown = Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }))
+    await withEngine(async (engine) => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) !== undefined, 10_000)
+      const cases: ReadonlyArray<[Awaited<ReturnType<typeof routes>>, string | undefined]> = [
+        [await routes(engine, { sessions: sessionsDown }), undefined],
+        [await routes(engine, { actor: member, database: missing("remote_runs_no_app") }), "sql:"],
+        [
+          await routes({ schema: engine.schema, database: missing("remote_runs_no_engine"), writer: engine.writer }, {
+            actor: member,
+          }),
+          "@smthrs/",
+        ],
+        [
+          await routes({ schema: engine.schema, database: engine.database, writer: missing("remote_runs_no_writer") }, {
+            actor: member,
+          }),
+          undefined,
+        ],
+        // A writer whose schema has no journal: the queue can't be read, and says so as a code.
+        [
+          await routes({ schema: engine.schema, database: engine.database, writer: noJournal }, { actor: member }),
+          "@smthrs/journal",
+        ],
+      ]
+      for (const [h, errorCode] of cases) {
+        const response = await h.fetch(steersRoute(runId), post({ id: uuid(), body: "Use tabs" }))
+        expect([response.status, await response.json(), response.headers.get("retry-after")]).toEqual([
+          503,
+          { code: "unavailable" },
+          "5",
+        ])
+        const line = h.line("run.steer")[0]!.annotations
+        expect(line.outcome).toBe("unavailable")
+        if (errorCode !== undefined) expect(String(line.errorCode)).toContain(errorCode)
+      }
+    })
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.unsafe(`DROP SCHEMA IF EXISTS ${empty} CASCADE`)))
+  }, 60_000)
+})
+
 describe("the routes", () => {
   test("handle the run route and the shape, and nothing else", () => {
     const runId = todoExecutionId(uuid())
     expect(RemoteRuns.handles(remoteRunRoute(runId))).toBe(true)
     expect(RemoteRuns.handles(REMOTE_RUN_SHAPE_ROUTE)).toBe(true)
+    expect(RemoteRuns.handles(steersRoute(runId))).toBe(true)
+    expect(RemoteRuns.parseSteerPath(steersRoute(runId))).toBe(runId)
+    expect(RemoteRuns.parseSteerPath(remoteRunRoute(runId))).toBeUndefined()
+    expect(RemoteRuns.handles(`${steersRoute(runId)}/x`)).toBe(false)
     for (const path of ["/api/remote-runs", "/api/remote-runs/", `/api/remote-runs/${runId}/steer`, "/api/runs/x", "/api/remote-runs/%E0%A4%A"]) {
       expect([path, RemoteRuns.handles(path)]).toEqual([path, false])
     }

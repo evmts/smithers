@@ -148,6 +148,7 @@ A TODO starts the work through to a mergeable pull request; while it runs, it sh
 - **The link.** A Working or In review TODO links to its run: Watch at the end of its row, and a Run section in its page's side column. It opens the run's page, `/app/runs/todo:<attempt id>`, which reads the run from Cloudflare and follows it live ([a run on Cloudflare](runs.md#a-run-on-cloudflare)). Queued, Merged, Dropped and Failed TODOs link to none.
 - **How the link knows the run.** The writer records each attempt's run on its TODO, `todos.run_id` = `todo:<attempt id>`, in the transaction that records the attempt (migration `0036_todo_run`). It syncs with the rest of the row, to Members, as everything of a TODO does; `todo_attempts` still never syncs. A run started before the column existed got it from its attempt.
 - **Who watches.** A Member or above, as the TODO itself: the run's routes refuse anyone else, and a run no TODO started.
+- **Steering.** While its agent works, a Member steers it from the run's page: the message reaches the agent at its next turn, and the page shows it Sent, then Delivered, with the agent's next step ([steering](runs.md#steering)).
 
 | Test | Proves |
 |---|---|
@@ -158,7 +159,8 @@ A TODO starts the work through to a mergeable pull request; while it runs, it sh
 | `e2e/factory.spec.ts` | live: against an instance with the GitHub App on a scratch repository the test account administers (`E2E_FACTORY_REPOSITORY`, `E2E_SESSION_COOKIE`, `BASE_URL`; it skips without them), a person asks Smithers for a TODO and commits it; the run branches on GitHub, the agent writes the change on the branch's machine with the deployment's model, and the TODO reaches In review with an open, mergeable pull request on its `smithers/t<n>-` branch. On the way: the Working TODO blinks, Watch opens its run read from Cloudflare (`Cloud`, `todo/Implement`), and the pull request's page shows Squash and merge with `Merging into main deploys it.`, its checks and the README line in Files. It never merges. Over HTTPS (`https://localhost:1445` for a live dev instance): over plain HTTP/1.1 the browser's six connections fill with Electric's long polls |
 | `worker/stack/Stack.test.ts` | the writer's reports: step, branch, published, finished; stale reports; the next TODO started; each attempt's run recorded on its TODO |
 | `src/features/todos/view.test.ts` | a Working TODO's icon live; Watch on a Working or In review TODO's row and page, and none on any other |
-| `src/features/runs/remote.test.ts`, `worker/RemoteRuns.test.ts` | watching a TODO's run ([a run on Cloudflare](runs.md#a-run-on-cloudflare)) |
+| `src/features/runs/remote.test.ts`, `worker/RemoteRuns.test.ts` | watching a TODO's run ([a run on Cloudflare](runs.md#a-run-on-cloudflare)), and steering its agent ([steering](runs.md#steering)) |
+| `worker/flows/Todo.test.ts` "steer" | a person's message admitted while the agent's first turn is in flight reaches its second turn, once, and is in the merged change |
 | `src/features/todos/stack.test.ts` | the rules' `finish`: merged and dropped leave the stack, failed keeps its place, a stale finish changes nothing |
 
 ## Postgres
@@ -206,5 +208,4 @@ Run with the compose Postgres and Electric up (`pnpm db:up`).
 ## Not built yet
 
 - The run's step strip on a TODO's page.
-- Steering the running agent from the run's page (ruling TODO-3): its messages kept in Postgres, and the todo agent's `Steering.Source` reading them at its next boundary.
 - Slice 2: Before Tn and Amend, Move, two lanes, forward updates, out-of-order merges.

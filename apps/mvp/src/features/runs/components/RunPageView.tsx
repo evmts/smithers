@@ -23,11 +23,12 @@ import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs"
 import type { Inspection, RunTab, RunPage, RunView } from "../schema"
 import { useRuns } from "./RunsContext"
+import { RunSteers } from "./RunSteers"
 
 // One run's page (decision 0014 §5): its header with Stop, Retry and Resume, then its steps with each one's input and
 // output, its timeline and its journal. Every value is text the engine redacted and cut to 16 KiB before it left the
 // engine; nothing here renders a value as markup. A run on Cloudflare (a TODO's, ruling TODO-3) reads the same, with
-// `Cloud` in its header and no acts.
+// `Cloud` in its header and no acts, and lists the messages people sent its agent, with a composer while it works.
 export function RunPageView() {
   const { queries, actions } = useRuns()
   const { data } = useLiveQuery(queries.page)
@@ -85,6 +86,7 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
         }
       />
       {view.refusal === null ? null : <p role="alert">{REFUSAL_WORDS[view.refusal] ?? view.refusal}</p>}
+      <RunSteers page={page} view={view} steps={steps} />
       <div className="run-page-values">
         <JsonValue label="Input" value={run.input} />
         {run.result === null ? null : <JsonValue label="Result" value={run.result} defaultOpen />}

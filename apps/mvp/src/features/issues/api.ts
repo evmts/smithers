@@ -1,8 +1,6 @@
-import { Context, Data, type Duration, Effect, Layer, Schema, Option, Result } from "effect"
-import { Base64Url } from "effect/encoding"
+import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { credentialRoute } from "../../flows/contract"
-import { withBearer, withoutCookie } from "../../flows/bearer"
+import { renewed, withBearer, withoutCookie } from "../../flows/bearer"
 import { type TriageDecision, type WriteOp, writesRoute } from "./contract"
 import { WriteTaken } from "./schema"
 
@@ -38,16 +36,6 @@ export type WriteRequest =
 
 const decodeTaken = Schema.decodeUnknownEffect(WriteTaken)
 
-/** Routing hints only. Renewal verifies the signed token, never these client-decoded fields. */
-export const renewalOf = (token: string): Option.Option<{ readonly run: string; readonly flow: string }> => {
-  const payload = token.slice(0, token.lastIndexOf("."))
-  const decoded = Base64Url.decodeString(payload)
-  if (Result.isFailure(decoded)) return Option.none()
-  const claims = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({ run: Schema.String, chain: Schema.Array(Schema.String).check(Schema.isMinLength(1)) })))(decoded.success)
-  return Option.map(claims, ({ run, chain }) => ({ run, flow: chain[chain.length - 1]! }))
-}
-
-
 /**
  * `POST /api/repos/<owner>/<name>/writes`: `202` took a new write, `200` had it already. With `credential`, the write
  * goes as the run that wrote it, with that run credential and without the session cookie (decision 0017 slice 0).
@@ -64,19 +52,12 @@ export const postWrite = (
     const request = HttpClientRequest.post(`${origin}${writesRoute(repository.owner, repository.name)}`).pipe(
       HttpClientRequest.bodyJsonUnsafe(write),
     )
-    let authority = credential
-    if (credential !== undefined) {
-      const renewal = renewalOf(credential)
-      if (Option.isNone(renewal)) return yield* new WriteNotTaken({ status: 403 })
-      // This exchange authenticates the original person but never sends the write in their session. The server
-      // reads the old signature, revocation and exact authority; the untrusted decoded run only routes the request.
-      const response = yield* client.execute(HttpClientRequest.post(`${origin}${credentialRoute(renewal.value.run)}`).pipe(
-        HttpClientRequest.bodyJsonUnsafe({ flow: renewal.value.flow, renew: credential }),
-      )).pipe(Effect.mapError(() => new WriteNotTaken({})))
-      if (response.status !== 200) return yield* new WriteNotTaken({ status: response.status })
-      const body = yield* response.json.pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ token: Schema.String }))), Effect.mapError(() => new WriteNotTaken({})))
-      authority = body.token
-    }
+    // A run's write goes with a fresh credential of that run, never in the person's session (flows/bearer.ts `renewed`).
+    const authority = credential === undefined
+      ? undefined
+      : yield* renewed(origin, credential).pipe(
+        Effect.mapError(({ status }) => new WriteNotTaken(status === undefined ? {} : { status })),
+      )
     const response = yield* (authority === undefined
       ? client.execute(request)
       : withoutCookie(client.execute(withBearer(request, authority))))

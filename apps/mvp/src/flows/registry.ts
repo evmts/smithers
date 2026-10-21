@@ -32,7 +32,7 @@ import {
 } from "../features/flows-ui/reference"
 import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
 import { Classify, Evaluate } from "../features/jev/flows"
-import { Cancel, Inspect, List, Resume, Retry } from "../features/runs/flows"
+import { Cancel, Inspect, List, Resume, Retry, Steer } from "../features/runs/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet } from "../features/spend/flows"
@@ -196,6 +196,9 @@ export const registry = {
   "run/resume": { flow: Resume, changes: "resumes a run" },
   "run/list": { flow: List },
   "run/inspect": { flow: Inspect },
+  // Steering a TODO's agent (ruling TODO-3, docs/features/runs.md#steering): the run page's composer, and the agent, which
+  // may do what a person does (ruling FLOW-3).
+  "run/steer": { flow: Steer, changes: "sends a message to the agent working on a TODO" },
   // The branch workspace (decision 0013): a page opening a branch runs branch/track, and the agent can too.
   "branch/track": { flow: BranchTrack, changes: "tracks the branch for the person" },
   // A home's New branch (docs/features/branch-workspace.md#new-branch): makes a branch and tracks it; `/branch.new`

@@ -61,6 +61,8 @@ const open = (answers: Answers) => {
   }))
   const remote = Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({
     inspect: (runId, options) => answers.remote === undefined ? Effect.die("unused") : answers.remote(runId, options),
+    // The store never steers: the outbox's mutation does (writes.ts).
+    steer: () => Effect.die("unused"),
   }))
   const runtime = ManagedRuntime.make(
     RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provide(Layer.merge(engine, remote))),

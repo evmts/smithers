@@ -39,7 +39,7 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
     ExecutionHost.remote({ database: services.database, expiry: Expire.DEFAULT_EXPIRY }),
     Effect.succeed({ ...services, judge: seat, start: () => Effect.void }),
     machines,
-    TodoAgent.registration(seat, services.database, Agent.layerDefaults),
+    TodoAgent.registration(seat, services.database, Agent.layerSandbox),
   )
   expect(flows.flows.slice(-2)).toEqual([Todo.Todo, Checks.ChecksRun])
   expect(flows.flows.some((flow) => flow._tag === "issue/Prototype")).toBe(false)

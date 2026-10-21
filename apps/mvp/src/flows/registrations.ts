@@ -127,6 +127,7 @@ export const workerRegistrations = (scope: Endpoint, options: WorkerOptions) =>
     Layer.provide(TabClipboard.layerChannel({ name: options.name, origin: options.origin })),
     Layer.provide(Issues.TabIssues.layerChannel({ name: options.name })),
     Layer.provide(TodoSteps.TabTodos.layerChannel({ name: options.name })),
+    Layer.provide(Runs.TabRuns.layerChannel({ name: options.name })),
     Layer.provide(ChatSteps.TabChat.layerChannel({ name: options.name })),
     Layer.provide(TabChannel.layer),
   )

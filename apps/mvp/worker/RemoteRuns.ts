@@ -1,20 +1,27 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
 import type { Flow } from "@smthrs/flow"
-import { EngineStore } from "@smthrs/flows"
-import { Cause, Clock, Effect, type Layer, Metric, Option, Predicate, Schema } from "effect"
+import { Database, EngineStore, Journal } from "@smthrs/flows"
+import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
+import { Cause, Clock, Effect, Layer, Metric, Option, Predicate, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import {
   isRemoteRun,
   JOURNAL_PAGE,
+  MAX_STEER_BODY_BYTES,
+  MAX_STEER_CHARS,
+  MAX_STEER_JSON_BYTES,
   REMOTE_RUN_SHAPE_ROUTE,
   type RemoteReadRefusal,
   REMOTE_RUNS_ROUTE,
   RUN_CHANGE_COLUMNS,
   RUN_CHANGES_TABLE,
+  steerable,
+  type SteerRefusal,
 } from "../src/features/runs/contract.ts"
-import { Sessions } from "./Actor.ts"
+import { type Actor, Sessions } from "./Actor.ts"
+import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 import { mayRead } from "./stack/Access.ts"
@@ -33,10 +40,27 @@ import { mayRead } from "./stack/Access.ts"
 //
 // Each read is a span and a log line `run.inspect` with the host (`remote`), its outcome, how many events and bytes it
 // released, how many values were cut and how long it took, and one count by outcome: never a value of a run.
+//
+// A Member steers the run's agent through a third route (docs/features/runs.md#steering):
+//
+// - `POST /api/remote-runs/<runId>/steers { id, body }`: the message is admitted to the run's own durable notification
+//   queue (`@smthrs/notifications`) in the engine's schema, keyed by `id`, the outbox's id for it, as a person's steer
+//   (`Notification.humanSteer`). The run's agent drains that queue at each turn boundary
+//   (worker/flows/TodoAgent.ts `registration`), so the message reaches the agent's next turn; the delivery is the
+//   queue's own journal record, which the run page reads. Only while the run and its agent haven't ended.
+//
+// Each steer is a span and a log line `run.steer` with its id, who sent it (`person` or `agent`), its outcome and size,
+// and one count by outcome: never the message.
 
 /** Remote run reads, by `outcome`: `read`, or the refusal's code. */
 export const reads = Metric.counter("smithers_remote_run_reads", {
   description: "GET /api/remote-runs/<runId> requests, by outcome",
+  incremental: true,
+})
+
+/** Steers, by `outcome`: `taken`, `existing`, or the refusal's code. */
+export const steers = Metric.counter("smithers_run_steers", {
+  description: "POST /api/remote-runs/<runId>/steers requests, by outcome",
   incremental: true,
 })
 
@@ -48,8 +72,13 @@ export const shapeRequests = Metric.counter("smithers_remote_run_shape_requests"
 
 /** Where the runs are: the engine's own database, its schema (the shape's table lives there), and its flows. */
 export interface Engine<E, R> {
-  /** The engine's `SqlClient`, in its schema (worker/ExecutionHost.ts `database`). */
+  /** A reader of the engine's schema (worker/ExecutionHost.ts `readDatabase`). */
   readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
+  /**
+   * A writer of the engine's schema (worker/ExecutionHost.ts `database`), for admitting a steer to a run's queue. It
+   * takes the engine's writer lock, so it and the run's own engine never write the run's journal at once.
+   */
+  readonly writer: Layer.Layer<SqlClient.SqlClient, E, R>
   /** The engine's Postgres schema, `smithers_flows` when deployed (worker/ExecutionHost.ts `ENGINE_SCHEMA`). */
   readonly schema: string
   /** The flows whose runs render through their own schemas: the remote flows a TODO starts. */
@@ -68,8 +97,29 @@ export const parseRunPath = (path: string): string | undefined => {
   }
 }
 
+/** A steer route's run, from `/api/remote-runs/<runId>/steers`: the id, as the path names it; none for any other path. */
+export const parseSteerPath = (path: string): string | undefined =>
+  path.endsWith("/steers") ? parseRunPath(path.slice(0, -"/steers".length)) : undefined
+
 /** Whether a path is one of the remote runs' routes. */
-export const handles = (path: string): boolean => path === REMOTE_RUN_SHAPE_ROUTE || parseRunPath(path) !== undefined
+export const handles = (path: string): boolean =>
+  path === REMOTE_RUN_SHAPE_ROUTE || parseRunPath(path) !== undefined || parseSteerPath(path) !== undefined
+
+/** A steer's body: the outbox's id for it, and the message. */
+const SteerBody = Schema.Struct({
+  id: Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)),
+  body: Schema.String,
+})
+const decodeSteerBody = Schema.decodeUnknownOption(Schema.fromJsonString(SteerBody))
+
+/** Who a steer comes from, as the run's model reads it: the person, and whether an agent sent it for them. */
+const steererOf = (actor: Actor) => ({
+  actor: `person:${actor.subject.id}`,
+  via: actor.act === undefined ? "person" as const : "agent" as const,
+  login: actor.login ?? actor.subject.id,
+})
+
+
 
 const AfterSeq = Schema.Int.check(Schema.isGreaterThanOrEqualTo(-1))
 const Limit = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: JOURNAL_PAGE }))
@@ -117,6 +167,108 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const inspection = EngineStore.RunInspection.layerWith({ flows: engine.flows })
+    // The run's queue, over the engine's own journal in its schema. The route runs no migrations (the engine owns
+    // them) and remembers one journal event at startup, not the journal's default thousands: it admits one steer.
+    const queue = NotificationQueue.layer.pipe(
+      Layer.provide(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject", sourceEventCache: 1 })),
+      Layer.provide(Layer.provideMerge(Database.DurableWriter.layer(), engine.writer)),
+    )
+
+    /** `POST /api/remote-runs/<runId>/steers`. */
+    const steer = (runId: string) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const startedAt = yield* Clock.currentTimeMillis
+        const fields: Record<string, string | number> = { host: "remote" }
+        const refused = (status: number, code: SteerRefusal) => {
+          fields.outcome = code
+          return HttpServerResponse.jsonUnsafe({ code }, {
+            status,
+            headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
+          })
+        }
+        const response = yield* Effect.gen(function* () {
+          if (request.method !== "POST") {
+            fields.outcome = "method"
+            return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
+          }
+          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          if (Option.isNone(actor)) return refused(503, "unavailable")
+          if (Option.isNone(actor.value)) return refused(401, "authentication")
+          // A Member or above, in person or through an agent acting for them (ruling FLOW-3): steering neither commits,
+          // approves nor merges.
+          if (!mayRead(actor.value)) return refused(403, "forbidden")
+          const steerer = steererOf(actor.value.value)
+          fields.via = steerer.via
+          const text = yield* readBounded(request, MAX_STEER_BODY_BYTES, (bytes) => (fields.bytes = bytes)).pipe(
+            Effect.result,
+          )
+          if (text._tag === "Failure") return refused(text.failure.reason === "too_large" ? 413 : 400, text.failure.reason === "too_large" ? "too_large" : "invalid")
+          const body = decodeSteerBody(text.success)
+          if (Option.isNone(body)) return refused(400, "invalid")
+          if (body.value.body.trim() === "") return refused(400, "invalid")
+          if (
+            body.value.body.length > MAX_STEER_CHARS ||
+            new TextEncoder().encode(JSON.stringify(body.value.body)).length > MAX_STEER_JSON_BYTES
+          ) return refused(413, "too_large")
+          const id = body.value.id.toLowerCase()
+          fields.steerId = id
+          const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
+          if (Option.isNone(attempt)) return refused(404, "not_found")
+          fields.runId = runId
+          const read = yield* Effect.flatMap(
+            EngineStore.RunInspection.RunInspection,
+            (reads) => reads.inspect(runId, { limit: 1 }),
+          ).pipe(Effect.provide(inspection), Effect.provide(engine.database), Effect.result)
+          if (read._tag === "Failure") {
+            if (Predicate.isTagged(read.failure, "@smthrs/engine-store/RunNotFound")) return refused(409, "not_working")
+            fields.errorCode = codeOf(read.failure)
+            return refused(503, "unavailable")
+          }
+          if (!steerable(read.success.run, read.success.steps)) return refused(409, "not_working")
+          const admitted = yield* Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) =>
+            notifications.admit(
+              runId,
+              Notification.humanSteer({
+                runId,
+                id,
+                actor: steerer.actor,
+                attribution: { login: steerer.login, via: steerer.via },
+                payload: SteerPayload.encode({ kind: "Message", body: body.value.body }),
+              }),
+            )).pipe(Effect.provide(queue), Effect.scoped, Effect.result)
+          if (admitted._tag === "Failure") {
+            const failure = admitted.failure
+            if (Predicate.isTagged(failure, "/notifications/NotificationError") && failure.code === "notification_id_reused") {
+              return refused(409, "conflict")
+            }
+            fields.errorCode = codeOf(failure)
+            return refused(503, "unavailable")
+          }
+          if (admitted.success.decision === "rejected-full") return refused(429, "full")
+          fields.outcome = admitted.success.duplicate ? "existing" : "taken"
+          return HttpServerResponse.jsonUnsafe(
+            { id, seq: admitted.success.seq },
+            { status: admitted.success.duplicate ? 200 : 202, headers: noStore },
+          )
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.sync(() => {
+              fields.errorCode = codeOf(Cause.squash(cause))
+              return refused(503, "unavailable")
+            })
+          ),
+        )
+        const outcome = String(fields.outcome)
+        fields.status = response.status
+        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+        yield* Metric.update(Metric.withAttributes(steers, { outcome }), 1)
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.run.host": "remote", outcome })
+        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+          "run.steer",
+        ).pipe(Effect.annotateLogs({ ...fields, outcome }))
+        return response
+      }).pipe(Effect.withSpan("run.steer", { kind: "server" }))
 
     /** `GET /api/remote-runs/<runId>`. */
     const read = (runId: string) =>
@@ -211,6 +363,8 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
       const request = yield* HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
       if (path === REMOTE_RUN_SHAPE_ROUTE) return yield* changes
+      const steered = parseSteerPath(path)
+      if (steered !== undefined) return yield* steer(steered)
       const runId = parseRunPath(path)
       return runId === undefined ? HttpServerResponse.empty({ status: 404 }) : yield* read(runId)
     })

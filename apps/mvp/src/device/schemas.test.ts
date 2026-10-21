@@ -67,7 +67,7 @@ describe("the device's stores", () => {
   })
 
   test("every outbox mutation the app sends has a payload version, and builds compare by the epoch", () => {
-    expect(deviceRegistry.outbox.mutations).toEqual(["ask", "issue-write", "text-update", "todo-op"])
+    expect(deviceRegistry.outbox.mutations).toEqual(["ask", "issue-write", "text-update", "todo-op", "run-steer"])
     expect(read()?.epoch).toBe(deviceRegistry.epoch)
   })
 })

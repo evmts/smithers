@@ -32,7 +32,7 @@ openRun ─▶ follow ─▶ Electric: GET /api/shapes/remote-runs?run=<run id> 
 - **Which runs.** A run whose id is a TODO's, `todo:<attempt id>` (`isRemoteRun`), reads from Cloudflare; every other run from this device's engine. The routes serve only a run some TODO's attempt started (`todo_attempts`), to a signed-in Member or above, as the TODO itself ([who reads](todos.md#who-reads-who-writes)).
 - **The same read.** ChatApi's read is the engine's own `RunInspection` over the engine's Postgres schema, through a read-only client (`ExecutionHost.readDatabase`): every value redacted, rendered through its flow's or step's schema (`<redacted>`, `<withheld>`), a failure reduced to its code, cut to 16 KiB. The browser decodes it with the engine's wire shape (`BrowserEngine.Inspection`), so the page, its steps, timeline and journal, is the one a device's run gets. The agent's model turns and tool calls are attempts and call facts of `todo/Implement`.
 - **Live, with no polling.** The engine keeps a change feed, `flows_run_changes`: one row per run whose revision moves whenever the run's row is written. The tab follows the run's row through Electric, as it follows every synced table, and reads the run again on each change. A settled run changes no more, so nothing reads it again. Electric sets the table's `REPLICA IDENTITY FULL` itself, as the owner of the engine's tables.
-- **What it shows.** Its header says `Cloud` where a device's says `This device`, and it offers no acts: Stop, Retry and Resume run on this device's engine. A TODO's run stops when its TODO is dropped. Until the engine begins a run its TODO started, the page reads `Not started`; a run no TODO started, or one this person may not read, `Not found`. It is never one of this device's runs, so the list doesn't show it.
+- **What it shows.** Its header says `Cloud` where a device's says `This device`, and it offers no acts but Steer ([steering](#steering)): Stop, Retry and Resume run on this device's engine. A TODO's run stops when its TODO is dropped. Until the engine begins a run its TODO started, the page reads `Not started`; a run no TODO started, or one this person may not read, `Not found`. It is never one of this device's runs, so the list doesn't show it.
 
 ### Routes
 
@@ -52,6 +52,44 @@ The read's refusals are `{ code }`, `Cache-Control: no-store`:
 | 403 | `forbidden` | not a Member |
 | 404 | `not_found` | no TODO's attempt started this run |
 | 404 | `not_started` | its attempt is recorded and the engine hasn't begun it |
+| 503 | `unavailable` | sessions, Postgres or the engine couldn't answer; `Retry-After: 5` |
+
+## Steering
+
+While a TODO's agent works, a Member sends it a message from the run's page, and the agent reads it at its next turn (ruling TODO-3, decision [0026](../decisions/0026-watching-a-todo-run.md) §6). The message is the run's own: it lives in the run's durable notification queue (`@smthrs/notifications`), in the engine's journal, never in the app's tables.
+
+```
+run page ─ Steer ─▶ run/steer { runId, body } (client flow, door composer; the agent may call it too, ruling FLOW-3)
+   run/steer/queue: id = UUIDv5(execution id) ─▶ the tab that asked ─▶ the device's outbox, mutation run-steer (Sending)
+   outbox ─▶ POST /api/remote-runs/<run id>/steers { id, body } ─▶ ChatApi (worker/RemoteRuns.ts)
+      a Member or above; the run a TODO's attempt; it and its todo/Implement step not ended
+      NotificationQueue.admit(run id, Notification.humanSteer(...)) over the engine's journal in smithers_flows   (Sent)
+todo run's agent (worker/flows/TodoAgent.ts) ─ at each turn boundary ─▶ Notifications.layerForExecution drains the
+   queue of the execution it works in, keyed by its agent session ─▶ the message is a user message of its next model
+   request; the queue journals flows/notifications/Promoted ─▶ that turn acts (a cell call, or its answer)   (Delivered)
+run page ─▶ the run's journal: Admitted (who, what), Promoted (when), the turn's act ─▶ Next step selects its step
+```
+
+- **When.** The composer shows on a TODO's run until the run settles or its `todo/Implement` step ends, and the route admits a message only then (`steerable`, `src/features/runs/contract.ts`). A message reaches the agent at its next turn boundary: a turn already in flight, such as a long `sandbox/run`, finishes first. One the agent never read, because it ended first, reads `Not delivered`.
+- **Once.** The message's id is its `run/steer` run's, so a step run again or an outbox resend names the same message; the queue admits an id once, and refuses the same id with other words (`409 conflict`). A replayed turn delivers what its first drain delivered. Each drain is keyed by the agent session as well as the boundary, so a retry or a correction of the agent's step, which numbers its turns from the start again, drains afresh rather than being handed an earlier session's drain. A run holds at most 128 unread messages; the outbox sends the next one again once the agent reads some.
+- **Who.** A Member or above, in person or through an agent acting for them. The agent's steer goes from the tab with its run's credential and without the person's session (decision 0017 slice 0), so ChatApi reads it as the agent's, for the person; a run with no credential to send queues nothing. The run's model reads it as `[notification <id> from person:<id> at todo:<attempt> turn 0 attribution {"login":…,"via":…}]` followed by the words.
+- **States.** `Sending` (in the outbox), `Sent` (taken; then the run's journal holds it), `Delivered` (the queue handed it to a turn, and that turn acted: the journal records a cell call after it, or the agent's answer), `Not delivered` (the agent ended first), and `Not sent` with why: `The agent finished`, `Sent before`, `Too long`, `Members only`. A Not sent message is kept on the device (`steer-sent`), so a reload still shows its words. Delivered offers `Next step`, which selects the agent's first step after it: its response.
+- **Live.** The sender sees a message at once. Another Member's page shows it at the run's next step, since admitting it writes the run's journal, not the run's row the page follows; a long tool call delays that.
+
+| Route | Answers |
+|---|---|
+| `POST /api/remote-runs/<run id>/steers { id, body }` | `202 { id, seq }` taken; `200` the same for an id it has. `id` is a UUID, `body` 1 to 4,000 characters, not blank, at most 12 KiB as JSON. Never cached |
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `invalid` | the body isn't `{ id, body }`, the id isn't a UUID, or the message is blank |
+| 401 | `authentication` | signed out |
+| 403 | `forbidden` | not a Member |
+| 404 | `not_found` | no TODO's attempt started this run |
+| 409 | `not_working` | the engine hasn't begun the run, or it or its agent's step has ended |
+| 409 | `conflict` | the id was sent before with other words |
+| 413 | `too_large` | over 4,000 characters or 12 KiB as JSON, or a body over 32 KiB |
+| 429 | `full` | the run holds 128 unread messages |
 | 503 | `unavailable` | sessions, Postgres or the engine couldn't answer; `Retry-After: 5` |
 
 ## Flows
@@ -101,8 +139,11 @@ Each act is a registered flow on this device's engine, model-invocable, so a per
 | `run.inspect` | log, span (ChatApi, [a run on Cloudflare](#a-run-on-cloudflare)) | `host` (`remote`), `runId`, `outcome` (`read`, or the refusal's code), `events`, `bytes`, `clipped`, `status`, `durationMs`, `errorCode` |
 | `smithers_remote_run_reads` | counter (ChatApi) | `outcome` |
 | `runs.shape.remote`, `smithers_remote_run_shape_requests` | log, span; counter (ChatApi) | `status`, `live` |
+| `run.steer`, `smithers_run_steers` | log, span; counter (ChatApi, [steering](#steering)) | `host` (`remote`), `runId`, `steerId`, `via` (`person`, `agent`), `outcome` (`taken`, `existing`, or the refusal's code), `bytes`, `status`, `durationMs`, `errorCode` |
+| `runs.steer.queue`, `smithers_run_steers_queued` | log, span; counter (engine worker) | `steerId`, `runId`, `via`, `door`, `outcome` (`kept`, `not_kept`, `tab_gone`, `no_credential`), `durationMs` |
+| `run.steer.send`, `smithers_run_steer_sends` | log, span; counter (tab) | `steerId`, `runId`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code`, `durationMs` |
 
-A read of a run on Cloudflare is the tab's `run.read` with `outcome` `read`, `not_found`, `not_started` or `unavailable`. No record carries a value of a run.
+A read of a run on Cloudflare is the tab's `run.read` with `outcome` `read`, `not_found`, `not_started` or `unavailable`. No record carries a value of a run, nor a message to its agent.
 
 ## Tests
 
@@ -115,7 +156,11 @@ A read of a run on Cloudflare is the tab's `run.read` with `outcome` `read`, `no
 | `src/features/runs/page.test.ts` | The steps, the selected step, the journal with More, the acts a run offers, and the list's rows; a run on Cloudflare's header, its empty states and no acts |
 | `worker/RemoteRuns.test.ts` | Through the real handler, over a real engine on its own schema: a Member reads a TODO's run as `RunInspection` reads it, a page at a time, a `Redacted` sentinel never sent and a long value cut; every refusal; `503` when sessions, Postgres or the engine can't answer; the shape's table, filter and columns, its refusals, and a live request answered when the run's next step begins; records without values |
 | `src/features/runs/planned.test.ts` | A flow shaped like the `todo` run, held mid-step on the real engine: the steps after it, which the engine schedules with the plan, read Queued and have no bar until they start; settled, every step is done |
-| `src/features/runs/remote.test.ts` | A tab on ChatApi's real handler and Electric: a TODO's run reads `Not started`, then each step as the engine takes it, then done, read again only when its change-feed row moves; a Guest reads `Not found` |
+| `src/features/runs/remote.test.ts` | A tab on ChatApi's real handler and Electric: a TODO's run reads `Not started`, then each step as the engine takes it, then done, read again only when its change-feed row moves; a Guest reads `Not found`. A Member steers it: the composer empties, the message goes through the device's engine, outbox and ChatApi into the run's queue and reads `Sent`, then `Not delivered` once the run ends; a later steer reads `Not sent` with `not_working` |
+| `worker/RemoteRuns.test.ts` "steers" | The steer route over a real engine: a Member's message in the run's queue once as their steer, a resend answering the same, another message under its id `409 conflict`, an agent acting for a Member, every refusal, `not_working` once the run or its agent's step ended, `429 full` at 128, `503` when sessions, the app's database, the engine or its writer can't answer; a sentinel message in no record |
+| `worker/flows/Todo.test.ts` "steer" | The `todo` run's real agent on the Node host's engine over Postgres: a steer admitted through a journal of its own while the agent's first turn is in flight reaches its second turn, once, and its words are in the merged README; the queue is empty after. Fails with the old empty steering source |
+| `src/features/runs/steer.test.ts` | The page's fold of the run's journal and this device's messages into states; the composer's rule; the response step; which refusals are final; the steer step's id, the agent's door, a tab that won't keep it and none at all |
+| `packages/smithers/agent/test/AgentActionSteering.test.ts` | `@smthrs/agent`'s action with `Agent.layerSandbox` and `Notifications.layerForExecution`: a message admitted while turn 1 streams is in turn 2 only, once; another execution's never arrives |
 | `src/features/runs/store.test.ts` | The store's reads over a test engine and a test remote runs client: pages, More, refusals, the list, following events; a run on Cloudflare read from ChatApi with the runs it started, never this device's engine or list, and each of ChatApi's refusals as the page's state |
 | `src/features/runs/api.test.ts` | The remote runs client against a local server: the route and its paging, a refusal's status and code, a body that isn't a run, a stalled body and nothing listening |
 | `src/features/flows-ui/tab.test.ts` | The run page from a tab following a run to its answer, Retry opening the new run, the list, Stop, and Resume refused |
