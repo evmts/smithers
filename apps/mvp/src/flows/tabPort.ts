@@ -1,4 +1,4 @@
-import { Context, Deferred, Duration, Effect, Layer, Schema } from "effect"
+import { Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Schema, Scope } from "effect"
 
 // The engine worker's line to its own tab (docs/features/flows.md#the-tab-port). The leader tab's dedicated worker
 // runs every client flow (decision 0011 §4), but this device's collections live in the tab, so a step that writes one,
@@ -23,6 +23,8 @@ const Reply = Schema.Struct({
   output: Schema.optional(Schema.Json),
 })
 
+const Cancel = Schema.Struct({ kind: Schema.Literal("smithers/tab-cancel"), id: Schema.String })
+const isCancel = Schema.is(Cancel)
 const isCall = Schema.is(Call)
 const isReply = Schema.is(Reply)
 
@@ -67,14 +69,20 @@ export class TabPort extends Context.Service<
             Effect.gen(function* () {
               const id = crypto.randomUUID()
               const reply = yield* Deferred.make<typeof Reply.Type>()
-              waiting.set(id, reply)
-              yield* Effect.sync(() => scope.postMessage({ kind: "smithers/tab-call", id, method, input }))
-              const answered = yield* Deferred.await(reply).pipe(
+              const answered = yield* Effect.gen(function* () {
+                waiting.set(id, reply)
+                yield* Effect.sync(() => scope.postMessage({ kind: "smithers/tab-call", id, method, input }))
+                return yield* Deferred.await(reply)
+              }).pipe(
                 Effect.timeoutOrElse({
                   duration: within,
                   orElse: () => Effect.fail(new TabCallFailed({ method, reason: "timeout" })),
                 }),
-                Effect.ensuring(Effect.sync(() => waiting.delete(id))),
+                Effect.ensuring(Effect.gen(function* () {
+                  waiting.delete(id)
+                  // Cancellation is best effort: the original transport failure must survive.
+                  yield* Effect.sync(() => scope.postMessage({ kind: "smithers/tab-cancel", id })).pipe(Effect.ignoreCause)
+                })),
               )
               if (!answered.ok) {
                 return yield* new TabCallFailed({
@@ -91,31 +99,43 @@ export class TabPort extends Context.Service<
 
 /**
  * The tab's side: answers `worker`'s calls with `handlers`, running each handler with the services this effect runs
- * with, until the returned `stop` is called or the worker ends. A handler's failure is answered as refused, by no more
- * than that.
+ * with, until its scope closes or `stop` is called. Listener and handlers share that scope; a caller's cancellation
+ * interrupts its handler. A handler's failure is answered as refused, by no more than that.
  */
-export const answer = (worker: Endpoint, handlers: Handlers): Effect.Effect<() => void> =>
+export const answer = (worker: Endpoint, handlers: Handlers): Effect.Effect<() => void, never, Scope.Scope> =>
   Effect.gen(function* () {
+    const scope = yield* Scope.make()
+    yield* Effect.addFinalizer((exit) => Scope.close(scope, exit))
     const run = Effect.runForkWith(yield* Effect.context<never>())
+    const active = new Map<string, Fiber.Fiber<unknown, unknown>>()
+    let stopped = false
     const listener = (event: MessageEvent) => {
+      if (stopped) return
+      if (isCancel(event.data)) {
+        const fiber = active.get(event.data.id)
+        if (fiber !== undefined) run(Fiber.interrupt(fiber))
+        return
+      }
       if (!isCall(event.data)) return
       const { id, method, input } = event.data
-      const handler = handlers[method]
+      const handler = Object.hasOwn(handlers, method) ? handlers[method] : undefined
       run(
-        (handler === undefined ? Effect.fail("unknown_method" as const) : handler(input)).pipe(
+        Effect.suspend(() => handler === undefined ? Effect.fail("unknown_method" as const) : handler(input)).pipe(
           Effect.match({
             onSuccess: (output) => ({ kind: "smithers/tab-reply", id, ok: true, output }),
-            onFailure: (error) => ({
-              kind: "smithers/tab-reply",
-              id,
-              ok: false,
-              output: error === "unknown_method" ? "unknown_method" : "refused",
-            }),
+            onFailure: (error) => ({ kind: "smithers/tab-reply", id, ok: false, output: error === "unknown_method" ? "unknown_method" : "refused" }),
           }),
           Effect.flatMap((reply) => Effect.sync(() => worker.postMessage(reply))),
+          Effect.ensuring(Effect.sync(() => { active.delete(id) })),
+          Effect.forkScoped,
+          Effect.tap((fiber) => Effect.sync(() => { active.set(id, fiber) })),
+          Scope.provide(scope),
         ),
       )
     }
-    worker.addEventListener("message", listener)
-    return () => worker.removeEventListener("message", listener)
+    yield* Effect.acquireRelease(
+      Effect.sync(() => worker.addEventListener("message", listener)),
+      () => Effect.sync(() => { stopped = true; worker.removeEventListener("message", listener) }),
+    ).pipe(Scope.provide(scope))
+    return () => { stopped = true; run(Scope.close(scope, Exit.void)) }
   })
