@@ -91,6 +91,33 @@ describe("run/answer under faults", () => {
     ])
   })
 
+  test("408 and 429 say to try again later: an answer and a question are sent again, not refused", async () => {
+    for (const status of [408, 429]) {
+      const e = await engine({ answers: [new RunsRefused({ status })] })
+      const answer = payload()
+      expect(await e.run((flows) => flows.execute(AnswerRun, { executionId: crypto.randomUUID(), payload: answer })))
+        .toEqual(Exit.succeed({ delivered: false }))
+      expect(e.answered).toHaveLength(2)
+      const asked = await engine({ reports: [new RunsRefused({ status })] })
+      const execution = `${crypto.randomUUID()}/chat/Respond@x:1#0/call/0.0`
+      await asked.run((flows) =>
+        flows.execute(Ask, { executionId: execution, payload: { kind: "question", prompt: "Which?" }, discard: true }))
+      await asked.run((flows) =>
+        flows.execute(Deliver, { executionId: `deliver-${execution}`, payload: { execution, value: "main" } }))
+      expect(await asked.run((flows) => flows.execute(Ask, { executionId: execution, payload: { kind: "question", prompt: "Which?" } })))
+        .toEqual(Exit.succeed({ answered: true, answer: "main" }))
+      expect(asked.reported.map(([, report]) => report.status)).toEqual(["needs_you", "needs_you", "working"])
+    }
+  })
+
+  test("a question the route can't write, as for a settled run, isn't asked: the agent hears no answer", async () => {
+    const e = await engine({ reports: [new RunsRefused({ status: 409, code: "not_writable" })] })
+    const exit = await e.run((flows) =>
+      flows.execute(Ask, { executionId: `${crypto.randomUUID()}/call/0.0`, payload: { kind: "question", prompt: "Which?" } }))
+    expect(exit).toEqual(Exit.succeed({ answered: false }))
+    expect(e.reported.map(([, report]) => report.status)).toEqual(["needs_you", "working"])
+  })
+
   test("a refusal, or a question no longer open, is final", async () => {
     const refused = await engine({ answers: [new RunsRefused({ status: 403, code: "forbidden" })] })
     expect(await refused.run((flows) => flows.execute(AnswerRun, { executionId: crypto.randomUUID(), payload: payload() })))

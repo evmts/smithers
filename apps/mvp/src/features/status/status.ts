@@ -2,19 +2,29 @@ import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { answer, focus, setDraft } from "./actions"
 import type { AnswerValue } from "./schema"
+import { ChatStore } from "../chat/store"
 import { StatusStore } from "./store"
 
 // Agent status as a frontend sees it (decision 0015): live queries to read and plain functions to act, with no Effect
-// in sight. The conversation renders each answer's state and question from `statuses`; the header reads `latest`. The
-// tab title follows the store's `needs`. The toast stack and the top bar's bell read the feed (decision 0009,
-// src/features/attention/).
+// in sight. The conversation a tab shows renders each answer's state and question from its own `statuses`; the header
+// reads that conversation's `latest`. The tab title follows the store's `needs`. The toast stack and the top bar's bell
+// read the feed (decision 0009, src/features/attention/).
 
 type Store = StatusStore["Service"]
 
-/** What a frontend reads live. */
-export interface StatusQueries {
+/** One conversation's live queries. */
+export interface ConversationStatusQueries {
   readonly statuses: Store["statuses"]["tanstack"]
   readonly latest: Store["latest"]["tanstack"]
+}
+
+/** What a frontend reads live. */
+export interface StatusQueries {
+  /**
+   * A conversation's statuses and latest answer, by its id, once chat has it open: a branch's, or the home one's for
+   * `null` and for a branch chat hasn't opened.
+   */
+  readonly of: (conversationId: string | null | undefined) => ConversationStatusQueries
 }
 
 /** What a person does, as plain functions. Each returns at once. */
@@ -34,9 +44,23 @@ export class Status extends Context.Service<Status, { readonly queries: StatusQu
     Status,
     Effect.gen(function* () {
       const store = yield* StatusStore
+      const chat = yield* ChatStore
       const run = Effect.runSyncWith(yield* Effect.context<StatusStore | FlowDispatch>())
+      const queriesOf = ({ statuses, latest }: { readonly statuses: Store["statuses"]; readonly latest: Store["latest"] }) => ({
+        statuses: statuses.tanstack,
+        latest: latest.tanstack,
+      })
       return Status.of({
-        queries: { statuses: store.statuses.tanstack, latest: store.latest.tanstack },
+        queries: {
+          // A branch chat has open: chat opens a conversation before a tab shows it (src/features/chat/actions.ts
+          // `show`), so the view that reads it finds it whole, built on its first read.
+          of: (conversationId) =>
+            queriesOf(
+              conversationId !== null && conversationId !== undefined && chat.opened(conversationId) !== undefined
+                ? run(store.open(conversationId))
+                : store,
+            ),
+        },
         actions: {
           answer: (id, value) => run(answer(id, value)),
           setDraft: (id, text) => run(setDraft(id, text)),

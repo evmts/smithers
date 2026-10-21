@@ -69,8 +69,12 @@ export class AnswerUnrecorded extends Schema.TaggedError<AnswerUnrecorded>()("@s
 /** The run holds the question but hasn't parked on it yet, as while the next tab wakes it: tried again. */
 export class NotWaitingYet extends Schema.TaggedError<NotWaitingYet>()("@smthrs/mvp/status/NotWaitingYet", {}) {}
 
-/** Whether a status is a refusal: final, never tried again. */
-const isRefusal = (status: number | undefined): status is number => status !== undefined && status >= 400 && status < 500
+/**
+ * Whether a status is a refusal: a 4xx, final, never tried again; but 408 (the request timed out) and 429 (too many
+ * requests), which say to try again later.
+ */
+export const isRefusal = (status: number | undefined): status is number =>
+  status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429
 
 /** The question is tried for a minute, then the agent hears it wasn't answered; a refusal is final. */
 export const QUESTION_RETRY = RetryPolicy.make({

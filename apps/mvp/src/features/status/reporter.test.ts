@@ -1,6 +1,6 @@
 // `RunReporter` over a `RunsClient` given here (faults by injection, docs/rules.md): what it sends, what it skips, and
 // how it fails. The real client and routes run in flows.test.ts and status.test.ts.
-import { Effect, Exit, Layer, Metric } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Metric } from "effect"
 import { describe, expect, test } from "vitest"
 import { RunsClient, RunsRefused } from "./api"
 import { reports, RunReporter } from "./reporter"
@@ -81,5 +81,34 @@ describe("RunReporter", () => {
   test("reportOrFail fails with the client's refusal", async () => {
     const refusal = new RunsRefused({ status: 404, code: "not_found" })
     expect(await reporter(refusal).run((reporter) => reporter.reportOrFail("a", question))).toEqual(Exit.fail(refusal))
+  })
+
+  test("a run's reports land in order: one still on its way holds back the next, which isn't skipped", async () => {
+    const sent: Array<string> = []
+    const gate = Deferred.makeUnsafe<void>()
+    const runs = RunsClient.of({
+      report: (_runId, report) =>
+        Effect.andThen(
+          report.status === "needs_you" ? Deferred.await(gate) : Effect.void,
+          Effect.sync(() => void sent.push(report.status)),
+        ),
+      answer: () => Effect.void,
+    })
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const reporter = yield* RunReporter
+        yield* reporter.report("a", { status: "working" })
+        const asking = yield* Effect.forkChild(reporter.reportOrFail("a/chat/Respond@x:1#0/call/0.0", question))
+        yield* Effect.yieldNow
+        const working = yield* Effect.forkChild(reporter.report("a", { status: "working" }))
+        yield* Effect.yieldNow
+        // The question is still on its way; the next report waits for it rather than being skipped as sent.
+        expect(sent).toEqual(["working"])
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(asking)
+        yield* Fiber.join(working)
+      }).pipe(Effect.provide(RunReporter.layer.pipe(Layer.provide(Layer.succeed(RunsClient, runs))))),
+    )
+    expect(sent).toEqual(["working", "needs_you", "working"])
   })
 })

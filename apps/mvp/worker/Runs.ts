@@ -19,7 +19,8 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 // - `POST /api/runs/<id>`: a run reports. In this slice a run is an agent's answer, so `<id>` is an answer's id and only
 //   the person who asked its question may report for it (an agent acting for them is them), while they may still ask.
 //   A settled row (`done`, `failed`) never changes; a new question bumps `version` and clears the answer; a report
-//   that changes nothing writes nothing.
+//   that changes nothing writes nothing (`200 {txid: null}`). A report that can't be written says why:
+//   `409 not_writable` with `reason` `no_row` (the answer is in no conversation), `settled` or `other_launcher`.
 // - `POST /api/runs/<id>/answer`: the person answers the open question `version` names. The first accepted answer
 //   settles it; the same answer again is taken as landed; anything else is `409 not_open`. Only the person answers:
 //   anyone acting for them is `403 person_only`.
@@ -85,7 +86,8 @@ const decodedRun = (segment: string): string | undefined => {
 type Fields = Record<string, string | number | boolean>
 
 const noStore = { "cache-control": "no-store" }
-const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+const refusal = (status: number, code: string, fields: Record<string, string> = {}) =>
+  HttpServerResponse.jsonUnsafe({ code, ...fields }, { status, headers: noStore })
 const ok = (txid: number | null) => HttpServerResponse.jsonUnsafe({ txid }, { headers: noStore })
 
 /** Who asked the question of the answer `runId`: `undefined` when it isn't an answer, `null` for an unknown asker. */
@@ -134,6 +136,27 @@ const applyReport = (runId: string, launchedBy: string, report: Report) =>
         AND NOT (EXCLUDED.wait IS NOT NULL AND r.wait->>'execution' = EXCLUDED.wait->>'execution' AND r.answer IS NOT NULL)
       RETURNING pg_current_xact_id()::xid::text AS txid`
     return row === undefined ? undefined : Number(row.txid)
+  })
+
+/** Why a report for `launchedBy` wrote nothing to run `runId`'s row: none of these is a report already landed. */
+export type NotWritable = "no_row" | "settled" | "other_launcher"
+
+/**
+ * Why a report wrote nothing: `no_row` when the run has no row and none could be made (its answer is in no
+ * conversation), `settled` or `other_launcher` for a row that can't take it, and `undefined` when the row already says
+ * what the report says.
+ */
+const unwrittenBecause = (runId: string, launchedBy: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly reason: NotWritable | null }>`
+      SELECT CASE
+          WHEN r.id IS NULL THEN 'no_row'
+          WHEN r.launched_by <> ${launchedBy} THEN 'other_launcher'
+          WHEN r.status IN ('done', 'failed') THEN 'settled'
+        END AS reason
+      FROM (SELECT 1) AS one LEFT JOIN runs r ON r.id = ${runId}`
+    return row!.reason ?? undefined
   })
 
 /** The run's row as the answer route reads it. */
@@ -213,8 +236,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         }
         // The feed folds the report in its own transaction (decision 0009 decision 2): a report that lands routes.
         const txid = yield* withFold(applyReport(runId, actorId, decoded.value), runId, login)
-        if (txid === undefined) fields.existing = true
-        return ok(txid ?? null)
+        if (txid !== undefined) return ok(txid)
+        // Nothing written: a report already landed is taken as landed; any other is refused with its reason, so the
+        // run never goes on as if the person could see a question nobody shows.
+        const reason = yield* unwrittenBecause(runId, actorId)
+        if (reason === undefined) {
+          fields.existing = true
+          return ok(null)
+        }
+        fields.errorCode = "not_writable"
+        fields.reason = reason
+        return refusal(409, "not_writable", { reason })
       })
 
     /** `POST /api/runs/<id>/answer`: the person answers the open question. */

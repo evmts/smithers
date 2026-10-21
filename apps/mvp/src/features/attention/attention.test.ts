@@ -17,6 +17,7 @@ import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Status } from "../status/status"
 import { StatusStore } from "../status/store"
+import { dropped } from "./actions"
 import { Attention } from "./attention"
 import { panel as panelActs, shown } from "./metrics"
 import { AttentionStore } from "./store"
@@ -60,6 +61,8 @@ const openDevice = async (api: TestChatApi["Service"], options: { readonly answe
     query.tanstack.startSyncImmediate()
   }
   for (const query of [store.panelState, store.detail]) query.tanstack.startSyncImmediate()
+  // The conversation's statuses, which its view reads (src/features/chat/components/Conversation.tsx).
+  statuses.statuses.tanstack.startSyncImmediate()
   return {
     host,
     chat,
@@ -464,5 +467,25 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
     // Open goes to the repository.
     ann.attention.actions.open(subject, "page")
     expect(ann.host.navigated).toEqual(["/acme/widgets"])
+  })
+
+  test("an act the device still holds is sent again when the app opens; one that can't land leaves the device", async () => {
+    const api = await openApi()
+    const host = nodeDevice({ agent: api })
+    const before: Tab = openTab(api, { host })
+    runtimes.push(before)
+    const store = await before.runPromise(Effect.service(AttentionStore))
+    await before.runPromise(store.pending.restored)
+    // A Hide the tab recorded but closed before its engine took it: here, of a notification ChatApi doesn't have.
+    const subject = `run:${crypto.randomUUID()}`
+    await before.runPromise(store.pending.insert({ id: `${subject}:hide`, subject, act: "hide", version: 1 }))
+    const reopened: Tab = openTab(api, { host })
+    runtimes.push(reopened)
+    const pending = (await reopened.runPromise(Effect.service(AttentionStore))).pending
+    await reopened.runPromise(Effect.service(Attention))
+    // Sent again, refused (ChatApi has no such notification), and taken back: the toast would show as it is.
+    await until(() => expect(pending.tanstack.toArray).toEqual([]))
+    const refused = { act: "hide", reason: "@smthrs/mvp/attention/ActRefused" }
+    await until(() => expect(reopened.runSync(Metric.value(Metric.withAttributes(dropped, refused))).count).toBe(1))
   })
 })

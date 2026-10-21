@@ -2,15 +2,17 @@ import { AgentStatusPill, NeedsYouCard } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useBranch } from "../../branch/components/BranchContext"
 import { answerOf } from "../../coedit/view"
+import type { ConversationStatusQueries } from "../status"
 import { useStatus } from "./StatusContext"
 
 // An answer's agent status in the conversation (decision 0015): its question card while it needs the person, the
 // answer once given, and a Waiting pill while its turn waits. Working, done and failed show as the answer itself. The
 // question's field is a text the person's devices type together, with each other's carets (docs/features/coedit.md).
-export function AnswerStatus({ id }: { readonly id: string }) {
-  const { queries, actions } = useStatus()
+// `statuses` are the statuses of the conversation the answer is in.
+export function AnswerStatus({ id, statuses: query }: { readonly id: string; readonly statuses: ConversationStatusQueries["statuses"] }) {
+  const { actions } = useStatus()
   const { coedit } = useBranch()
-  const { data: statuses } = useLiveQuery(queries.statuses)
+  const { data: statuses } = useLiveQuery(query)
   const { data: texts } = useLiveQuery(coedit.queries.texts)
   const status = statuses.find((row) => row.id === id)
   if (status === undefined) return null

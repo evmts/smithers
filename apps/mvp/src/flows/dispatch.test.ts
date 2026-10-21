@@ -19,10 +19,14 @@ import { TabRequests } from "./requests"
 /** What an exit failed with, stack traces aside. */
 const failure = (exit: Exit.Exit<unknown, unknown>) => (Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit)
 
-/** The app's theme flow and `probe/Pause`, whose payload carries free text, in one registry. */
+/**
+ * The app's theme flow, `probe/Pause`, whose payload carries free text, and `notification/ack`, which only the person
+ * runs at its route, in one registry.
+ */
 const entries = {
   "app/theme/set": registry["app/theme/set"],
   "probe/Pause": { flow: Pause },
+  "notification/ack": registry["notification/ack"],
 } as const
 
 const scopes: Array<Scope.Closeable> = []
@@ -151,6 +155,36 @@ describe("a client flow", () => {
       level: "WARN",
       annotations: { outcome: "failed" },
     })
+  })
+
+  test("a flow only the person runs at its route starts only through a person door", async () => {
+    const started: Array<string> = []
+    const d = await open({
+      engine: Layer.succeed(
+        ClientEngine,
+        ClientEngine.of({
+          start: (_flow, run) => Effect.sync(() => void started.push(run.executionId)),
+          result: () => Effect.succeed(Exit.succeed({ recorded: true })),
+        }),
+      ),
+    })
+    const ack = { subject: "run:1", version: 1, act: "hide" } as const
+
+    for (const door of ["view", "sync", "agent"] as const) {
+      const refused = await d.observed(d.dispatch("notification/ack", ack, { door, executionId: `ack-${door}` }))
+      expect(failure(refused)).toEqual(
+        new DispatchFailed({ flow: "notification/ack", reason: "refused", refusal: "person_only" }),
+      )
+      expect(d.count({ flow: "notification/ack", door, outcome: "error" })).toBe(1)
+    }
+    expect(started).toEqual([])
+    for (const door of ["button", "slash", "composer"] as const) {
+      const exit = await d.observed(d.dispatch("notification/ack", ack, { door, executionId: `ack-${door}` }))
+      expect(exit).toEqual(Exit.succeed({ _tag: "Done", value: { recorded: true } }))
+    }
+    expect(started).toEqual(["ack-button", "ack-slash", "ack-composer"])
+    expect(d.recorded.logs.find((log) => log.message === "flow.dispatch" && log.annotations.door === "view"))
+      .toMatchObject({ level: "ERROR", annotations: { outcome: "error", reason: "refused", refusal: "person_only" } })
   })
 
   test("fails as DispatchFailed when the flow dies, is interrupted, or the engine refuses it", async () => {

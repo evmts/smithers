@@ -128,7 +128,7 @@ describe("POST /api/runs/<id>: a run reports its status", () => {
     })
   })
 
-  test("a settled run never changes again", async () => {
+  test("a settled run never changes again, and a report to it says so", async () => {
     const h = await open()
     const runId = await asked(h)
     await report(h, runId, { status: "done" })
@@ -137,13 +137,30 @@ describe("POST /api/runs/<id>: a run reports its status", () => {
       { status: "failed" },
       { status: "needs_you", wait: wait() },
     ] as const) {
-      expect(await json(await report(h, runId, body))).toEqual([200, { txid: null }])
+      expect(await json(await report(h, runId, body))).toEqual([409, { code: "not_writable", reason: "settled" }])
     }
     expect(await runRow(runId)).toMatchObject({ status: "done", version: 0 })
+    expect(h.line("agent.status.report").at(-1)).toMatchObject({
+      annotations: { errorCode: "not_writable", reason: "settled", status: 409 },
+    })
     const failed = await asked(h)
     await report(h, failed, { status: "failed" })
     await report(h, failed, { status: "done" })
     expect((await runRow(failed))!.status).toBe("failed")
+  })
+
+  test("a report to a row someone else launched is refused with its reason, and writes nothing", async () => {
+    const h = await open()
+    const runId = await asked(h)
+    // A row whose launcher isn't the asker: not one ChatApi writes, but the report must never take it over.
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`INSERT INTO runs (id, flow, status, version, launched_by, conversation_id)
+        SELECT ${runId}, 'chat/Answer', 'working', 0, ${other.subject.id}, conversation_id FROM messages WHERE id = ${runId}`))
+    expect(await json(await report(h, runId, { status: "needs_you", wait: wait() }))).toEqual([
+      409,
+      { code: "not_writable", reason: "other_launcher" },
+    ])
+    expect(await runRow(runId)).toMatchObject({ status: "working", launchedBy: other.subject.id, version: 0 })
   })
 
   test("only the asker reports, while they may ask; anything else is refused and writes nothing", async () => {

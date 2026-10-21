@@ -50,20 +50,35 @@ export const statusesQuery = (
 /** Every answer's status. */
 export type Statuses = Effect.Success<ReturnType<typeof statusesQuery>>
 
-/** The questions that need the person, oldest first: open, unanswered, on an answer still streaming. */
-export const needsQuery = (statuses: Statuses) =>
+/**
+ * The questions that need the person, oldest first, in every conversation: each run whose question is open and
+ * unanswered, from the person's `runs` alone, so a question on a branch this tab never opened counts too. An answer in
+ * the home conversation that already settled still wins over its run's row, as in `statusesQuery`; ChatApi fails a
+ * run's row when it settles its answer itself (worker/flows/Expire.ts, worker/Answers.ts).
+ */
+export const needsQuery = (home: Collection.Collection<Message>, runs: Collection.Collection<Run>) =>
   LiveQuery.make((q) =>
     q
-      .from({ status: statuses.tanstack })
-      .where(({ status }) => Query.eq(status.state, "needs_you"))
-      .select(({ status }) => ({ id: status.id, version: status.version, wait: status.wait }))
-      .orderBy(({ status }) => status.position),
+      .from({ run: runs.tanstack })
+      .leftJoin({ message: home.tanstack }, ({ run, message }) => Query.eq(run.id, message.id))
+      .where(({ run, message }) =>
+        Query.and(
+          Query.eq(run.status, "needs_you"),
+          Query.isNull(run.answeredAt),
+          Query.or(
+            Query.isUndefined(message?.id),
+            Query.not(Query.or(Query.eq(message?.status, "done"), Query.eq(message?.status, "failed"))),
+          ),
+        )
+      )
+      .select(({ run }) => ({ id: run.id, version: run.version, wait: run.wait, createdAt: run.createdAt }))
+      .orderBy(({ $selected }) => $selected.createdAt),
   )
 
 /** The questions that need the person. */
 export type Needs = Effect.Success<ReturnType<typeof needsQuery>>
 
-/** The latest answer's status: what the header shows when nothing needs the person. */
+/** The latest answer's status in one conversation: what the header shows while it shows that conversation. */
 export const latestQuery = (statuses: Statuses) =>
   LiveQuery.make((q) =>
     q

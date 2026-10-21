@@ -12,12 +12,52 @@ import { AttentionNavigation, AttentionStore } from "./store"
 // What a person does with the feed (decision 0009 decision 10): open an entry, hide a toast, dismiss an entry, mark one
 // read, and use the notifications panel: open it, expand an entry in it, answer or retry from it. Read, Hide and
 // Dismiss show on this device straight away, kept on the device until the synced row shows them, and run on as
-// `notification/ack` (door `button`), one execution per subject, act and version. The panel is this tab's own.
+// `notification/ack` (door `button`), one execution per subject, act and version. An act that can't land (the engine
+// refused it, or ChatApi did) leaves the device too, so the entry shows as it is and the person can act again; one the
+// device still holds when the app opens again is sent again (`resendPending`). The panel is this tab's own.
+
+/** Acts this device took back because they couldn't land, by `act` and `reason`: the failure's tag. */
+export const dropped = Metric.counter("smithers_notification_acts_dropped", {
+  description: "Read, Dismiss and Hide this device took back because they couldn't land, by act and reason",
+  incremental: true,
+})
+
+/**
+ * Runs `notification/ack` for the act this device holds as pending row `id`, at `version`, in the store's scope: once
+ * per subject, act and version, however often it is sent (the same execution joins the run its start admitted). When it
+ * can't land (the engine refused it, or ChatApi did, or it went unsent for a day), the pending row goes, unless a later
+ * act replaced it; a log line `notifications.pending` and a count of `dropped` say so.
+ */
+const send = (id: string, request: { readonly subject: string; readonly version: number; readonly act: Inbox.Act }) =>
+  Effect.gen(function* () {
+    const { pending, scope } = yield* AttentionStore
+    const flows = yield* FlowDispatch
+    const drop = (reason: string) =>
+      Effect.gen(function* () {
+        const held = Option.filter(yield* pending.get(id), (row) => row.version === request.version)
+        yield* Effect.forEach(Option.toArray(held), () =>
+          Effect.gen(function* () {
+            yield* pending.delete(id)
+            yield* Metric.update(Metric.withAttributes(dropped, { act: request.act, reason }), 1)
+            yield* Effect.logWarning("notifications.pending").pipe(
+              Effect.annotateLogs({ ...request, outcome: "dropped", reason }),
+            )
+          }))
+      }).pipe(Effect.orDie)
+    yield* flows.dispatch("notification/ack", request, {
+      door: "button",
+      executionId: `ack/${request.subject}/${request.act}/${request.version}`,
+    }).pipe(
+      Effect.flatMap((done) => (done._tag === "Done" ? Effect.void : Effect.fail(done.error))),
+      Effect.catch((error) => drop(error._tag)),
+      Effect.forkIn(scope),
+    )
+  })
 
 /** Records `act` on entry `subject` at the version this tab shows: at once here, then through ChatApi. */
 const record = (subject: string, act: Inbox.Act) =>
   Effect.gen(function* () {
-    const { entries, pending, scope } = yield* AttentionStore
+    const { entries, pending } = yield* AttentionStore
     const entry = yield* entries.get(subject)
     if (Option.isNone(entry)) return entry
     const { version } = entry.value
@@ -26,16 +66,24 @@ const record = (subject: string, act: Inbox.Act) =>
     if (Option.isSome(held) && held.value.version >= version) return entry
     if (Option.isSome(held)) yield* pending.update(id, (draft) => void (draft.version = version))
     else yield* pending.insert({ id, subject, act, version })
-    const flows = yield* FlowDispatch
-    yield* flows.dispatch("notification/ack", { subject, version, act }, {
-      door: "button",
-      executionId: `ack/${subject}/${act}/${version}`,
-    }).pipe(Effect.ignore, Effect.forkIn(scope))
+    yield* send(id, { subject, version, act })
     return entry
   }).pipe(
     // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
     Effect.orDie,
   )
+
+/**
+ * Sends again every act this device holds that hasn't landed: what a tab closed or reloaded before its engine took it
+ * left behind. Each joins its earlier run when the engine has one, so an act lands once however many tabs send it.
+ */
+export const resendPending = Effect.gen(function* () {
+  const { pending } = yield* AttentionStore
+  yield* pending.restored.pipe(Effect.ignore)
+  for (const row of yield* pending.toArray) {
+    yield* send(row.id, { subject: row.subject, version: row.version, act: row.act })
+  }
+})
 
 /** Hides entry `subject`'s toast: on every device, and it stays in the person's list. */
 export const hide = (subject: string) => Effect.asVoid(record(subject, "hide"))

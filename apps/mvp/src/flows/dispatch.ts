@@ -1,8 +1,9 @@
 import type { Flow as FlowTypes } from "@smthrs/flow"
 import { FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { BrowserEngine } from "@smthrs/platform-browser"
-import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Metric, Option, Schema } from "effect"
-import type { DOORS } from "./contract"
+import { Cause, Clock, Context, Deferred, Effect, Exit, Layer, Metric, Option, Result, Schema } from "effect"
+import { type DOORS, PERSON_DOORS } from "./contract"
+import { refusesCredential } from "./personOnly"
 import { type Entry, type FlowName, type FlowOf, FlowRegistry } from "./registry"
 import { TabRequests } from "./requests"
 
@@ -166,7 +167,9 @@ export const dispatches = Metric.counter("smithers_flow_dispatches", {
 /**
  * Dispatch over `entries`, a registry: runs the entry named `name` on this device's engine, remembers the execution as
  * this tab's (`TabRequests`, src/flows/requests.ts), and records the dispatch as a span `flow.dispatch`, a log line and
- * a count of `dispatches`, with the flow, the door and the outcome, never the payload.
+ * a count of `dispatches`, with the flow, the door and the outcome, never the payload. A flow only the person may run
+ * at its route (`refusesCredential`) starts only through a person door: through any other it is `refused`
+ * (`person_only`) and never starts, so each such run is the person's own press (src/flows/credentials.ts).
  * `FlowDispatch.layer` binds the app's registry; a test binds its own.
  */
 export const makeDispatch = <Entries extends Readonly<Record<string, Entry>>>(entries: Entries) =>
@@ -196,12 +199,14 @@ export const makeDispatch = <Entries extends Readonly<Record<string, Entry>>>(en
           RunMetrics.withOrigin({ door: options.door, actor: actorOf(options.door) }),
           Effect.onExit(admit),
         )
-        const dispatched = yield* Effect.result(
-          started.pipe(
-            Effect.andThen(engine.result(entry.flow, run)),
-            Effect.flatMap((exit) => settled(name, exit)),
-          ),
-        )
+        const dispatched = refusesCredential(name) && !PERSON_DOORS.includes(options.door)
+          ? Result.fail(new DispatchFailed({ flow: name, reason: "refused", refusal: "person_only" }))
+          : yield* Effect.result(
+            started.pipe(
+              Effect.andThen(engine.result(entry.flow, run)),
+              Effect.flatMap((exit) => settled(name, exit)),
+            ),
+          )
         const outcome: DispatchOutcome = dispatched._tag === "Failure"
           ? "error"
           : dispatched.success._tag === "Done"

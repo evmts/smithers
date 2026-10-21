@@ -229,19 +229,35 @@ describe("who a run's requests go as", () => {
       .toEqual([{ bearer: false, credentials: undefined }, { bearer: true, credentials: "omit" }])
   })
 
-  test("the person's own press goes in their session; the same flow nobody pressed is refused", async () => {
+  test("the person's own press goes in their session; the same flow through another door is refused", async () => {
     const d = await device(member)
     const answerId = await asked(d.h)
     expect((await d.h.fetch(`/api/runs/${answerId}`, { method: "POST", body: JSON.stringify({ status: "needs_you", wait: waiting }) })).status)
       .toBe(200)
     const answer = { path: `/api/runs/${answerId}/answer`, body: { version: 1, value: "main" } }
-    // A door that isn't the person's (a page's own `view`), and none at all (the tab that started it is gone).
+    // A door that isn't the person's (a page's own `view`).
     expect(await d.run(Answer, crypto.randomUUID(), answer, "view")).toEqual({ status: 403, code: "person_only" })
-    expect(await d.run(Answer, `retry:${crypto.randomUUID()}:1`, answer)).toEqual({ status: 403, code: "person_only" })
     expect(d.seenFor(answer.path)).toEqual([])
     // The person's press.
     expect(await d.run(Answer, crypto.randomUUID(), answer, "button")).toEqual({ status: 200 })
     expect(d.seenFor(answer.path)).toEqual([{ path: answer.path, bearer: false, credentials: undefined }])
+  })
+
+  test("a person's press of a flow only they run goes in their session when its tab doesn't answer", async () => {
+    const d = await device(member)
+    const answerId = await asked(d.h)
+    expect((await d.h.fetch(`/api/runs/${answerId}`, { method: "POST", body: JSON.stringify({ status: "needs_you", wait: waiting }) })).status)
+      .toBe(200)
+    const answer = { path: `/api/runs/${answerId}/answer`, body: { version: 1, value: "main" } }
+    // No tab answers: busy past the wait, or reloaded while the engine resumed the run. Dispatch starts run/answer only
+    // through a person door (src/flows/dispatch.ts), so it is the person's press; a credential would be refused.
+    expect(await d.run(Answer, `retry:${crypto.randomUUID()}:1`, answer)).toEqual({ status: 200 })
+    expect(d.seenFor(answer.path)).toEqual([{ path: answer.path, bearer: false, credentials: undefined }])
+    expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
+    // Any other person's flow whose tab is silent still gets a credential, and the wait is a record.
+    expect(await d.run(Watch, crypto.randomUUID(), { path: "/api/watches", body: { conversationId: null } }))
+      .toMatchObject({ status: 200 })
+    expect(d.seenFor("/api/watches")).toEqual([{ path: "/api/watches", bearer: true, credentials: "omit" }])
   })
 
   test("a run nested in the person's press asks for its credential in their session", async () => {

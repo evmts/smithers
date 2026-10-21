@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Metric } from "effect"
+import { Context, Effect, Layer, Metric, Semaphore } from "effect"
 import { requesterOf } from "../../flows/requests"
 import { RunsClient, type RunsRefused } from "./api"
 import type { Report } from "./schema"
@@ -11,7 +11,9 @@ import type { Report } from "./schema"
 // `report` never fails: a status that can't land must not fail the answer, and the conversation reads the answer's
 // own settled status first (src/features/status/queries.ts). It skips a report this engine already sent for the run,
 // so a step that retries while it waits (`chat/LoadTurn`) reports `waiting` once. `reportOrFail` is for the one report
-// a step can't go on without: the question, which the person can't answer unless they see it.
+// a step can't go on without: the question, which the person can't answer unless they see it. A run's reports go one
+// at a time, in the order its steps make them, so a report still on its way can't land after the one that followed it,
+// and a report is skipped only against the last one that landed.
 
 /** Reports the steps sent, by `status` and `outcome` (`sent`, `skipped`, `failed`). */
 export const reports = Metric.counter("smithers_agent_status_reports", {
@@ -38,9 +40,22 @@ export class RunReporter extends Context.Service<
     Effect.gen(function* () {
       const client = yield* RunsClient
       const last = new Map<string, string>()
+      // One permit per run, for as long as it reports; a settled run's goes with its last report.
+      const turns = new Map<string, Semaphore.Semaphore>()
+      const turnOf = (runId: string) => {
+        const known = turns.get(runId)
+        if (known !== undefined) return known
+        const made = Semaphore.makeUnsafe(1)
+        turns.set(runId, made)
+        return made
+      }
       const send = (executionId: string, report: Report) =>
-        Effect.gen(function* () {
+        Effect.suspend(() => {
           const runId = requesterOf(executionId)
+          return Semaphore.withPermits(turnOf(runId), 1)(sendNow(runId, report))
+        })
+      const sendNow = (runId: string, report: Report) =>
+        Effect.gen(function* () {
           const key = keyOf(report)
           if (last.get(runId) === key) {
             yield* Metric.update(Metric.withAttributes(reports, { status: report.status, outcome: "skipped" }), 1)
@@ -63,7 +78,10 @@ export class RunReporter extends Context.Service<
           )
           last.set(runId, key)
           // A settled run reports nothing more.
-          if (report.status === "done" || report.status === "failed") last.delete(runId)
+          if (report.status === "done" || report.status === "failed") {
+            last.delete(runId)
+            turns.delete(runId)
+          }
           yield* Metric.update(Metric.withAttributes(reports, { status: report.status, outcome: "sent" }), 1)
           yield* Effect.logDebug("agent.status.report").pipe(
             Effect.annotateLogs({ runId, status: report.status, outcome: "sent" }),

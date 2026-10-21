@@ -7,11 +7,15 @@ import { StatusStore } from "./store"
 // to take focus. Hiding its toast is the feed's (decision 0009, src/features/attention/actions.ts). Each finishes at once; an answer runs on as `run/answer` in the store's scope, and
 // the card shows it sending until the run's row says it was answered.
 
-/** This tab's row for run `id`'s question `version`, made fresh when it has none or an older question's. */
+/**
+ * This tab's row for run `id`'s question `version`, made fresh when it has none or an older question's. A newer
+ * question's row is left as it is: an older answer settling late never clears the draft of the question after it.
+ */
 const touch = (id: string, version: number, change: (row: Local) => Partial<Local>) =>
   Effect.gen(function* () {
     const { local } = yield* StatusStore
     const current = yield* local.get(id)
+    if (Option.isSome(current) && current.value.version > version) return
     const fresh: Local = { id, version, draft: "", sending: false, focus: 0 }
     const base = Option.isSome(current) && current.value.version === version ? current.value : fresh
     const next = { ...base, ...change(base) }
@@ -62,14 +66,17 @@ export const focus = (id: string) =>
 /**
  * Answers run `id`'s open question with `value`: dispatches `run/answer` (door `button`) in the background, which
  * records it and delivers it to the run. The card shows it sending until the row says it was answered; a refused
- * answer clears that, so the person can answer again. Does nothing unless the question is open.
+ * answer clears that, so the person can answer again. Does nothing unless the question is open, or while this tab is
+ * still sending an answer to it.
  */
 export const answer = (id: string, value: AnswerValue) =>
   Effect.gen(function* () {
     const open = yield* openQuestion(id)
     if (Option.isNone(open)) return
     const { version, execution } = open.value
-    const { scope } = yield* StatusStore
+    const { scope, local } = yield* StatusStore
+    const mine = yield* local.get(id)
+    if (Option.isSome(mine) && mine.value.version === version && mine.value.sending) return
     const flows = yield* FlowDispatch
     yield* touch(id, version, () => ({ sending: true }))
     yield* flows.dispatch("run/answer", { runId: id, version, execution, value }, { door: "button" }).pipe(

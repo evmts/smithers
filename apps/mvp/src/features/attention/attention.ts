@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { answer, closePanel, dismiss, expand, hide, open, openPanel, read, retry, togglePanel } from "./actions"
+import { answer, closePanel, dismiss, expand, hide, open, openPanel, read, resendPending, retry, togglePanel } from "./actions"
 import type { PanelVia, Surface } from "./contract"
 import { AttentionStore } from "./store"
 
@@ -50,11 +50,15 @@ export class Attention extends Context.Service<
   Attention,
   { readonly queries: AttentionQueries; readonly actions: AttentionActions }
 >()("@smthrs/mvp/attention/Attention") {
-  /** Binds the store's queries and the actions for frontends, run with the services this layer was built with. */
+  /**
+   * Binds the store's queries and the actions for frontends, run with the services this layer was built with. Sends
+   * again, once, the acts the device held when the app opened (`resendPending`).
+   */
   static readonly layer = Layer.effect(
     Attention,
     Effect.gen(function* () {
       const store = yield* AttentionStore
+      yield* resendPending.pipe(Effect.forkIn(store.scope, { startImmediately: true }))
       type Needs<A> = A extends (...args: never) => Effect.Effect<unknown, unknown, infer R> ? R : never
       const run = Effect.runSyncWith(
         yield* Effect.context<

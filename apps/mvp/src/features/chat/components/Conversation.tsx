@@ -22,10 +22,11 @@ import { debugRunOf, timeOf } from "../view"
 // wordmark on /app, the branch's own empty state on a branch's page.
 export function Conversation({ empty = <Wordmark /> }: { readonly empty?: ReactNode } = {}) {
   const { queries, actions } = useChat()
-  const { data: statuses } = useLiveQuery(useStatus().queries.statuses)
   // The conversation this tab shows: the branch's on a branch's page (decision 0013 §1), the home one on /app.
   const { data: place } = useLiveQuery(queries.place)
   const shown = queries.of(place?.conversationId)
+  const status = useStatus().queries.of(place?.conversationId)
+  const { data: statuses } = useLiveQuery(status.statuses)
   const { data: conversation } = useLiveQuery(shown.conversation)
   const { data: history } = useLiveQuery(shown.history)
   const { data: summaries } = useLiveQuery(queries.summaries)
@@ -122,7 +123,7 @@ export function Conversation({ empty = <Wordmark /> }: { readonly empty?: ReactN
           )}
         </ChatMessage>
         )}
-        {message.role === "assistant" ? <div id={message.text === "" && statuses.find(status => status.id === message.id)?.state === "needs_you" ? message.id : undefined}><AnswerStatus id={message.id} /></div> : null}
+        {message.role === "assistant" ? <div id={message.text === "" && statuses.find(status => status.id === message.id)?.state === "needs_you" ? message.id : undefined}><AnswerStatus id={message.id} statuses={status.statuses} /></div> : null}
         {/* A TODO the agent drafted in this answer, private to this device until the person commits it (0016 §3). */}
         {message.role === "assistant" ? <AnswerDrafts id={message.id} /> : null}
         </Fragment>

@@ -6,6 +6,7 @@ import { asker } from "./askingTab"
 import { withBearer, withoutCookie } from "./bearer"
 import { CREDENTIAL_TTL_MS, credentialRoute, doorChannel, PERSON_DOORS } from "./contract"
 import { DoorCall } from "./doors"
+import { refusesCredential } from "./personOnly"
 import { FlowRegistry } from "./registry"
 import { requesterOf } from "./requests"
 
@@ -17,6 +18,12 @@ import { requesterOf } from "./requests"
 // cookie never rides along (`credentials: "omit"`). A nested run's credential is minted under its parent's, so the
 // server narrows it at every hop and refuses one a person-only flow or a wider callee asks for; that refusal is the
 // request's answer. A run whose person is signed out sends its requests with no credential at all.
+//
+// A root run of a flow whose route only the person may use (`refusesCredential`: `notification/ack`, `run/answer`, …)
+// whose tab doesn't answer in time goes in the session too: dispatch starts one only through a person door
+// (src/flows/dispatch.ts), and nothing else starts one (Retry runs no person-only flow), so it is the person's own press
+// whose tab is busy, or was reloaded while the engine resumed it. Minting for it would only be refused, every time.
+// A tab that answers with another door is still refused.
 
 /** How long before a credential ends the engine mints the next. */
 export const RENEW_BEFORE_MS = 60 * 1000
@@ -120,9 +127,11 @@ export const layer = (options: {
 
       /**
        * How run `run`'s requests go. The person's own press, a parentless run of a person's flow its tab started through
-       * a person door, goes in their session, for good. Any other run asks for a credential: in the person's session when
-       * it has no parent or its parent is the person's press, else under its parent's, which it gets first. A run under a
-       * parent that can't act gets nothing more: the parent's refusal, or its signed-out state.
+       * a person door (or whose tab is silent, for a flow only the person may run), goes in their session, for good.
+       * Any other run asks for a credential: in the person's session when it has no parent or its parent is the
+       * person's press, else under its parent's, which it gets first. A run under a parent that can't act gets nothing
+       * more: the parent's refusal, or its signed-out state. A door nobody answered in time is a log line
+       * `auth.run_credential` with `outcome: door_timeout`.
        */
       const credentials: Cache.Cache<string, Credential, CredentialUnavailable> = yield* Cache.makeWith(
         (run: string): Effect.Effect<Credential, CredentialUnavailable> =>
@@ -131,6 +140,10 @@ export const layer = (options: {
             if (parent === null && personFlow(registry, flow)) {
               const answered = yield* askDoor(run, {})
               if (Option.isSome(answered) && PERSON_DOORS.includes(answered.value.door)) return { _tag: "Session" } as const
+              if (Option.isNone(answered)) {
+                yield* Effect.logWarning("auth.run_credential").pipe(Effect.annotateLogs({ flow, outcome: "door_timeout" }))
+                if (refusesCredential(flow)) return { _tag: "Session" } as const
+              }
             }
             const under = parent === null ? { _tag: "Session" } as const : yield* Cache.get(credentials, parent)
             if (under._tag === "Session") return yield* mint(run, flow, undefined)
