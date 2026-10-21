@@ -26,19 +26,20 @@ import * as Schema from "effect/Schema"
  * them (`actionReplayKey`) before it writes under the newest. A change to the
  * derivation adds an encoding at the front and keeps the rest.
  *
- * - `2` hashes the declaration's `Node.representationIdentity` version 2,
- *   written since `effect@4.0.4` (2026-10-13).
- * - `1` hashes version 1, which every key written under
+ * - `3` names itself in the key (`keyEncoding: 3`) and hashes the
+ *   declaration's `Node.representationIdentity` version 2. Every later
+ *   encoding names itself the same way.
+ * - `2` is encoding 3 without the name: the unversioned key written from
+ *   `effect@4.0.4` (2026-10-13) until 2026-10-21.
+ * - `1` hashes identity version 1, which every key written under
  *   `effect@4.0.0-rc.115` hashed: the same document with `Schema.brand`
- *   restored.
- *
- * Neither names itself in the key, because both were written before keys were
- * versioned. The two derive the same key for a declaration with no brand.
+ *   restored. It does not name itself either, and derives the key encoding
+ *   2 derives for a declaration with no brand.
  *
  * @category identity
  * @since 1.0.0
  */
-export const keyEncodings = [2, 1] as const
+export const keyEncodings = [3, 2, 1] as const
 
 /**
  * One encoding of {@link keyEncodings}.
@@ -155,12 +156,12 @@ export const uncanonicalKey = (
   })
 
 // Schemas are immutable and shared by separately constructed actions. Weak
-// keys keep discarded declarations collectible. Version 2 depends on the AST
-// alone, so it is cached by AST and shared across schema values; version 1
-// reads the brand off the schema value, so it is cached by that value. Cache
-// only successful hashes so a failed Crypto operation can be retried with a
-// working service.
-const declarations: Record<KeyEncoding, WeakMap<object, WeakMap<object, StoredKey>>> = {
+// keys keep discarded declarations collectible. Identity version 2 depends on
+// the AST alone, so it is cached by AST and shared across schema values;
+// version 1 reads the brand off the schema value, so it is cached by that
+// value. Cache only successful hashes so a failed Crypto operation can be
+// retried with a working service.
+const declarations: Record<Node.RepresentationIdentityVersion, WeakMap<object, WeakMap<object, StoredKey>>> = {
   1: new WeakMap(),
   2: new WeakMap()
 }
@@ -178,7 +179,7 @@ const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProp
   const version = identityVersion(encoding)
   const success = version === 1 ? action.successSchema : action.successSchema.ast
   const error = version === 1 ? action.errorSchema : action.errorSchema.ast
-  let errors = declarations[encoding].get(success)
+  let errors = declarations[version].get(success)
   const cached = errors?.get(error)
   if (cached !== undefined) return cached
   const digest = yield* Schema.decodeUnknownEffect(DerivedKey)({
@@ -187,7 +188,7 @@ const declarationDigest = Effect.fnUntraced(function*(action: Action.AnyWithProp
   })
   if (errors === undefined) {
     errors = new WeakMap()
-    declarations[encoding].set(success, errors)
+    declarations[version].set(success, errors)
   }
   errors.set(error, digest)
   return digest
@@ -286,6 +287,9 @@ export const actionKey = Effect.fnUntraced(function*(
       [] :
       (yield* Flow.attenuateCapabilities(Flow.capabilityCeilings(action.annotations))(CapabilitySet.current)).groups
     return yield* Schema.decodeUnknownEffect(DerivedKey)({
+      // An encoding names itself from 3 on; 2 and 1 were written before keys
+      // were versioned and emit nothing, so their bytes stay derivable.
+      ...(encoding < 3 ? {} : { keyEncoding: encoding }),
       kind: environment === undefined ? "run" : "cache",
       ...(ceiling.length === 0 ? {} : {
         capabilityCeilings: ceiling.map((group) => group.map(({ action, resource }) => ({ action, resource })))

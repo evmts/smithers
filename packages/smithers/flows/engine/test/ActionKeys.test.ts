@@ -45,9 +45,17 @@ describe("action execution keys", () => {
         idempotencyKey: "row",
         execute: Effect.succeed("ok")
       })
-      // Intentional key-bytes break, following the schema-folding change in issue #120.
-      expect(yield* actionKey(action, "run", 1, undefined, "scope"))
+      // Encodings 1 and 2, written before keys named their encoding, never
+      // change: recorded runs are found under them. They agree for a
+      // declaration with no brand.
+      expect(yield* actionKey(action, "run", 1, undefined, "scope", 1))
         .toBe("key1_5ba06eea63e4a5187bb73bb4ea7951e5048014dd09e18c33d7408b80dc4bc124")
+      expect(yield* actionKey(action, "run", 1, undefined, "scope", 2))
+        .toBe("key1_5ba06eea63e4a5187bb73bb4ea7951e5048014dd09e18c33d7408b80dc4bc124")
+      // Encoding 3 names itself, so its bytes differ, and new records are written under it by default.
+      const current = yield* actionKey(action, "run", 1, undefined, "scope")
+      expect(current).toBe(yield* actionKey(action, "run", 1, undefined, "scope", 3))
+      expect(current).toBe("key1_e61fb72d3a7a261dd0ae28244d4893a2b4676d011fcf640b0ab853c4e4323692")
     }))
 
   effect(
@@ -69,7 +77,7 @@ describe("action execution keys", () => {
           idempotencyKey: "row",
           execute: Effect.succeed("ord-1")
         })
-        expect(yield* actionKey(action, "run", 1, undefined, "scope"))
+        expect(yield* actionKey(action, "run", 1, undefined, "scope", 1))
           .toBe("key1_840e188c5c26df4ba4b9cdfd7b5a8e543e28524b31840a8fae11529e63fc2f84")
       })
   )
@@ -115,11 +123,9 @@ describe("action execution keys", () => {
           execute: Effect.die("unused")
         })
         // The key this action derived on rc.115, and the one it derives now.
-        expect(FlowEngine.keyEncodings).toEqual([2, 1])
+        expect(FlowEngine.keyEncodings).toEqual([3, 2, 1])
         expect(yield* actionKey(action, "run", 1, undefined, "scope", 1))
           .toBe("key1_74c8862a35bde5cafe29effa5914ea0bf56540df0b3920271a603bebdcf1608a")
-        expect(yield* actionKey(action, "run", 1, undefined, "scope"))
-          .toBe("key1_690b4cf451009c72a16a06e4f3df233b7c3ed88c9b7b8171be68a15da7ef7752")
         expect(yield* actionKey(action, "run", 1, undefined, "scope", 2))
           .toBe("key1_690b4cf451009c72a16a06e4f3df233b7c3ed88c9b7b8171be68a15da7ef7752")
         // A declaration whose shared definition is branded at one position and

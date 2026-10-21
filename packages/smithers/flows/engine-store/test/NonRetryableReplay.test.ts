@@ -93,9 +93,11 @@ const declaration = {
 }
 const environment = { layers: [], capabilities: {} } satisfies Action.CacheEnvironment
 // `form` names which idempotency-key form built `input`, so a caller object
-// that spells the string form's encoding cannot alias it (B3).
+// that spells the string form's encoding cannot alias it (B3). New records are
+// written under the current key encoding, which names itself (`keyEncoding`).
 const actionKey = (name: string, idempotencyKey: string) =>
   key({
+    keyEncoding: 3,
     kind: "cache",
     form: "declared",
     input: { action: name, idempotencyKey, declaration: key(declaration) },

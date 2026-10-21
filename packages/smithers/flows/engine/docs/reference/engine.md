@@ -103,7 +103,7 @@ interpreter pages the graph. It must reserve allocated sequence/time fields
 deterministically, so a resume keeps exactly the same page identities. The
 interpreter refuses a node that cannot fit alone before recording any page.
 
-`actionReplayKey` chooses the key a dispatch replays under. It receives `derive(executionId, runScoped)`, the dispatch's key under the current encoding, and `legacy(executionId, runScoped)`, its keys under every older key encoding that differ from the current one, newest first. A store answers a fork's copied attempt key, or an older encoding's key when this run recorded under it, so a record an earlier engine wrote replays instead of running again. Without it, every dispatch takes the current key.
+`actionReplayKey` chooses the key a dispatch replays under. It receives `derive(executionId, runScoped)`, the dispatch's key under the current encoding, and `legacy(executionId, runScoped)`, its keys under every older key encoding that differ from the current one, newest first and each once. A store answers a fork's copied attempt key, or an older encoding's key when this run recorded under it, so a record an earlier engine wrote replays instead of running again. Without it, every dispatch takes the current key.
 
 `actionRetryOrigin` returns the persisted start time of the first surviving attempt for `key`, so a `RetryPolicy.expirationMs` bound survives park, resume, and process death. `Option.none()` means no attempt row survives, and the engine then falls back to the current clock and logs a warning. `actionLatestAttempt` returns the highest persisted attempt number for `key`, so the attempt counter resumes from the persisted sequence rather than from `1`.
 
@@ -140,15 +140,15 @@ The refusal raised when a caller reuses an execution id for different persisted 
 
 ### `FlowEngine.keyEncodings`
 
-- **Type:** `readonly [2, 1]`
+- **Type:** `readonly [3, 2, 1]`
 - **Since:** `1.0.0`
 - **Related:** `FlowEngine.KeyEncoding`, `FlowEngine.ActionKeyEncoding`
 
-The encodings a keyed sealed action's key has been written in, newest first. A record is found again only under the key it was written with, so every earlier encoding stays derivable and a change to the derivation adds one at the front. `2` hashes the declaration's `Node.representationIdentity` version 2, written since `effect@4.0.4`; `1` hashes version 1, what every key written under `effect@4.0.0-rc.115` hashed, `Schema.brand` included. Neither names itself in the key, and the two derive one key for a declaration with no brand.
+The encodings a keyed sealed action's key has been written in, newest first. A record is found again only under the key it was written with, so every earlier encoding stays derivable and a change to the derivation adds one at the front. `3` names itself in the key (`keyEncoding: 3`) and hashes the declaration's `Node.representationIdentity` version 2. `2` is the same key without the name, written from `effect@4.0.4` until 2026-10-21. `1` hashes identity version 1, what every key written under `effect@4.0.0-rc.115` hashed, `Schema.brand` included; it derives encoding 2's key for a declaration with no brand.
 
 ### `FlowEngine.KeyEncoding`
 
-- **Type:** `2 | 1`
+- **Type:** `3 | 2 | 1`
 - **Since:** `1.0.0`
 
 One encoding of `FlowEngine.keyEncodings`.

@@ -65,24 +65,28 @@ how a sealed key is derived must not strand the outcomes recorded before it.
 The engine numbers each derivation as a key encoding and keeps every earlier
 one derivable. `FlowEngine.keyEncodings` lists them newest first:
 
-| Encoding | Written                     | Declaration digest                                                             |
-| -------- | --------------------------- | ------------------------------------------------------------------------------ |
-| `2`      | since `effect@4.0.4`        | `Node.representationIdentity` version 2: a `Schema.brand` contributes nothing. |
-| `1`      | under `effect@4.0.0-rc.115` | Version 1: each brand restored as rc.115 wrote it.                             |
+| Encoding | Written                           | Key                                                                                                       |
+| -------- | --------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `3`      | since 2026-10-21                  | Names itself (`keyEncoding: 3`); declaration digest from `Node.representationIdentity` version 2.         |
+| `2`      | from `effect@4.0.4` to 2026-10-21 | Encoding 3 without the name: identity version 2, where a `Schema.brand` contributes nothing.              |
+| `1`      | under `effect@4.0.0-rc.115`       | No name; identity version 1, each brand restored as rc.115 wrote it. Equal to encoding 2 without a brand. |
 
 New keys take the newest encoding. Before it dispatches, the engine hands the
 store the dispatch's keys under every older encoding that differs from the
-current one (`Encoded.actionReplayKey`'s `legacy`). The SQL store looks each up
-in this run's attempts, newest first, and replays a record found there instead
-of running the step again. Most declarations derive one key under every
-encoding, so the lookup costs nothing for them. Only a string-form key folds the
-declaration, so the object form and invocation keys are the same under every
-encoding.
+current one, each once (`Encoded.actionReplayKey`'s `legacy`). The SQL store
+looks each up in this run's attempts, newest first, and replays a record found
+there instead of running the step again. Only a keyed sealed action's key
+differs between encodings, so every other dispatch is offered nothing older and
+probes nothing. The lookup reads this run's attempts only: a cross-run cache row
+written under an older encoding misses once, and the step runs again under the
+newest.
 
-A change to the derivation adds an encoding at the front of
-`keyEncodings`; it never edits one. `FlowEngine.ActionKeyEncoding` selects the
-encoding new keys take. A host leaves it at its default, the newest; a test sets
-an older one to write a journal the way an earlier engine did.
+A change to the derivation adds an encoding at the front of `keyEncodings` and
+names it in the key; it never edits one. `FlowEngine.ActionKeyEncoding` selects
+the encoding new keys take. A host leaves it at its default, the newest; a test
+sets an older one to write a journal the way an earlier engine did. Rows written
+before encoding 1 (the schema-folding break of issue #120) miss, and the action
+executes again.
 
 ## The invocation key: everything else
 

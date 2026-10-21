@@ -84,12 +84,24 @@ const sonnet: Action.CacheEnvironment = {
 describe("sealed cache keys fold the resolved environment (issue #75)", () => {
   effect("pins compact declaration and boundary digests in sealed key bytes", () =>
     Effect.gen(function*() {
-      // Intentional key-bytes break, following the schema-folding change in issue #120.
+      // Encodings 1 and 2, written before keys named their encoding, never
+      // change: recorded runs and cache rows are found under them.
+      for (const encoding of [1, 2] as const) {
+        const older = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          Effect.provideService(effect, FlowEngine.ActionKeyEncoding, encoding)
+        expect(yield* older(keyUnder(sealed("order-123"), sonnet))).toBe(
+          "key1_473bad0add0fa0b2995bbabffafdeaa8dc0df4e0be0c72e861da2e5d951c5db7"
+        )
+        expect(yield* older(keyUnder(sealed({ operation: "stable" }), sonnet))).toBe(
+          "key1_1ff577a43eb9d96de10e62a98d4a65b45d6743e192f3660e45b28b058d4b5db4"
+        )
+      }
+      // New records are written under encoding 3, which names itself.
       expect(yield* keyUnder(sealed("order-123"), sonnet)).toBe(
-        "key1_473bad0add0fa0b2995bbabffafdeaa8dc0df4e0be0c72e861da2e5d951c5db7"
+        "key1_9d63d4f9dc261788d17d59ab85664b2567cd79eb83c8f4697cec3b7b4cde35a5"
       )
       expect(yield* keyUnder(sealed({ operation: "stable" }), sonnet)).toBe(
-        "key1_1ff577a43eb9d96de10e62a98d4a65b45d6743e192f3660e45b28b058d4b5db4"
+        "key1_a043263d97aae8aee91d61f4a740d980b53968bcd5fb41356289f499a127c431"
       )
     }))
 
@@ -259,4 +271,64 @@ describe("sealed cache keys fold the resolved environment (issue #75)", () => {
       )
     })
   })
+})
+
+describe("older key encodings reach a driver's replay lookup", () => {
+  /** Dispatches `action` through a driver whose replay lookup answers what `choose` picks from the offered keys. */
+  const offered = (
+    action: Action.Action,
+    choose: (current: string, legacy: ReadonlyArray<string>) => string
+  ) =>
+    Effect.gen(function*() {
+      let captured: string | undefined
+      const seen: { current?: string; legacy?: ReadonlyArray<string>; runScoped?: ReadonlyArray<string> } = {}
+      const engine = scriptedEngine({
+        actionExecute: (input) =>
+          Effect.sync(() => {
+            captured = input.key
+            return new Flow.Complete({ exit: Exit.void })
+          }),
+        actionReplayKey: (derive, legacy) =>
+          Effect.gen(function*() {
+            const instance = yield* FlowRuntime.FlowInstance
+            seen.current = yield* derive(instance.executionId, false)
+            seen.legacy = yield* legacy(instance.executionId, false)
+            seen.runScoped = yield* legacy(instance.executionId, true)
+            return choose(seen.current, seen.legacy)
+          })
+      })
+      yield* Effect.flatMap(FlowRuntime.FlowRuntime, (service) => service.actionExecute(action, 1)).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "legacy-run")),
+        Effect.provide(Layer.succeed(FlowRuntime.FlowRuntime)(engine))
+      )
+      return { captured: captured!, ...seen }
+    })
+
+  effect(
+    "a keyed sealed action is offered its one older key once, and runs under the key the driver picks",
+    () =>
+      Effect.gen(function*() {
+        // Encodings 2 and 1 derive one key for a declaration with no brand; the
+        // driver is offered it once.
+        const original = yield* Effect.provideService(
+          keyUnder(sealed("order-123"), undefined, "legacy-run"),
+          FlowEngine.ActionKeyEncoding,
+          2
+        )
+        const picked = yield* offered(sealed("order-123"), (_current, legacy) => legacy[0]!)
+        expect(picked.legacy).toEqual([original])
+        // Without a cache environment the run-scoped key is the same key.
+        expect(picked.runScoped).toEqual([original])
+        expect(picked.current).not.toBe(original)
+        expect(picked.captured).toBe(original)
+      })
+  )
+
+  effect("an action whose key no encoding changes is offered nothing older", () =>
+    Effect.gen(function*() {
+      const plain = Action.make({ name: "CacheEnvironmentKeys/plain", success: Schema.Void, execute: Effect.void })
+      const picked = yield* offered(plain, (current) => current)
+      expect(picked.legacy).toEqual([])
+      expect(picked.captured).toBe(picked.current)
+    }))
 })

@@ -121,30 +121,36 @@ describe("actionReplayKey", () => {
     }))
 
   effect(
-    "hands the hook a branded declaration's key under the older encoding, and the hook may pick it",
+    "hands the hook a branded declaration's keys under both older encodings, newest first",
     () =>
       Effect.gen(function*() {
         const current = yield* legacyKeys(branded)
-        const older = yield* dispatchedKey(branded, "run", undefined, 1)
-        // Encoding 1 restores the brand the current encoding omits, so it keys the
-        // same dispatch differently, run-scoped or not.
-        expect(current.cached).toEqual([older])
-        expect(current.runScoped).toHaveLength(1)
-        expect(current.runScoped[0]).not.toBe(older)
-        expect(current.key).not.toBe(older)
+        const second = yield* dispatchedKey(branded, "run", undefined, 2)
+        const first = yield* dispatchedKey(branded, "run", undefined, 1)
+        // Encoding 1 restores the brand encoding 2 omits, and encoding 3 names
+        // itself, so all three key the same dispatch differently.
+        expect(new Set([current.key, second, first]).size).toBe(3)
+        expect(current.cached).toEqual([second, first])
+        expect(current.runScoped).toHaveLength(2)
         const replayed = yield* dispatchedKey(branded, "run", (_derive, legacy) =>
           Effect.map(legacy("run", false), (keys) =>
-            keys[0]!))
-        expect(replayed).toBe(older)
+            keys[1]!))
+        expect(replayed).toBe(first)
       })
   )
 
-  effect("hands the hook no older key when every encoding derives the current one", () =>
-    Effect.gen(function*() {
-      // A brandless declaration, an unkeyed action, and an engine already
-      // writing the oldest encoding all have nothing older to look under.
-      expect(yield* legacyKeys(lookup)).toMatchObject({ cached: [], runScoped: [] })
-      expect(yield* legacyKeys(charge)).toMatchObject({ cached: [], runScoped: [] })
-      expect(yield* legacyKeys(branded, 1)).toMatchObject({ cached: [], runScoped: [] })
-    }))
+  effect(
+    "hands the hook each older key once, and none an encoding shares with the current one",
+    () =>
+      Effect.gen(function*() {
+        // Encodings 2 and 1 derive one key for a brandless declaration: offered once.
+        const lookupKeys = yield* legacyKeys(lookup)
+        expect(lookupKeys.cached).toEqual([yield* dispatchedKey(lookup, "run", undefined, 2)])
+        expect(lookupKeys.cached).toEqual([yield* dispatchedKey(lookup, "run", undefined, 1)])
+        // An unkeyed action's key and an engine already writing the oldest
+        // encoding have nothing older to look under.
+        expect(yield* legacyKeys(charge)).toMatchObject({ cached: [], runScoped: [] })
+        expect(yield* legacyKeys(branded, 1)).toMatchObject({ cached: [], runScoped: [] })
+      })
+  )
 })
