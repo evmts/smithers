@@ -188,14 +188,14 @@ A step fails with a member of `AgentAction.AgentFailure`:
   for. See [Park on quota refusals and limit model admission](./quota-and-budgets.md).
 - `HarnessError` and `PluginError`: the composition failed underneath the step.
 
-Provider refusals do not reach the caller as-is. The model boundary runs a
-bounded transport retry ladder (five jittered retries inside a 45-second
-window by default), a quota-shaped refusal parks the step instead of failing
-it, and a terminal model error arrives inside the `HarnessError` cause with its
-code and reset fields intact.
+Provider refusals do not reach the caller as-is. The durable engine retries a
+model call's dropped connection or provider overload as its next attempt (six
+attempts, doubling from one second, by default), so the attempt count and each
+failed attempt's spend survive a restart. A quota-shaped refusal parks the step
+instead of failing it, and a terminal model error arrives inside the
+`HarnessError` cause with its code and reset fields intact.
 
-The durable model and cell-call boundaries do not add an engine retry ladder.
-Receipt allocation failures and malformed host results reach the typed harness
-channel without repeating the boundary; provider retries remain bounded
-by the model policy above. Sandbox configuration refusals ask the person to
+The cell-call boundary adds no engine retries. Receipt allocation failures and
+malformed host results reach the typed harness channel without repeating the
+boundary; provider retries remain bounded by the model policy above. Sandbox configuration refusals ask the person to
 configure a suitable provider (`user` faults).

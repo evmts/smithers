@@ -13,19 +13,16 @@
 
 import { Permission } from "@smthrs/capability"
 import { Digest, type KeyMaterial } from "@smthrs/core"
-import { Action, FlowRuntime, type RetryPolicy, RunMetrics, SpanFailure } from "@smthrs/flow"
+import { Action, FlowRuntime, RetryPolicy, RunMetrics, SpanFailure } from "@smthrs/flow"
 import { EngineLike, HarnessError } from "@smthrs/harness"
 import { Model, ModelError, ModelEvent, ModelRequest, RequestExecutor, type Route } from "@smthrs/model"
 import { StepKey } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Crypto from "effect/Crypto"
-import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
-import { identity } from "effect/Function"
 import * as Metric from "effect/Metric"
-import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { tokensOf } from "../Budget.ts"
@@ -107,127 +104,44 @@ export const Failure = Schema.Union([
 ])
 
 /**
- * The first delay the production transport policy waits, in milliseconds.
+ * The engine retry policy of the agent loop's model steps.
+ *
+ * Every provider attempt is one engine attempt, so the attempt number, its
+ * backoff and its usage survive a process restart: the engine restores the
+ * attempt sequence from its own records, and each failed attempt's spend is
+ * recorded as that attempt ends.
+ *
+ * Only a `transport` failure and a `provider_internal` refusal retry. A
+ * transport-class failure is almost never local: a destroyed HTTP/2 session, a
+ * 5xx, an overloaded provider. All three persist for seconds to tens of
+ * seconds, so a retry that fires inside that window is a wasted attempt, and a
+ * budget that empties inside it turns one provider incident into a dead run.
+ * Wave 4 of the SWE-bench harness lost `pytest-dev__pytest-6197` exactly that
+ * way. Doubling from one second across five retries spans about 31 s, and
+ * jitter keeps a fleet of runs that hit one incident from re-converging on the
+ * provider in lockstep. A rate limit or a spent quota never retries here: it
+ * reaches the controller, which parks on it.
+ *
+ * On the last attempt the step seals a transport failure as its value, as it
+ * seals every terminal answer, so a replay reads the same error without asking
+ * the provider again; a `provider_internal` refusal still reaches the
+ * controller. A policy a host supplies in its place must bound `maxAttempts`
+ * for the same reason.
  *
  * @category policies
  * @since 0.1.0
  */
-export const defaultModelRetryBaseMillis = 1000
-
-/**
- * The factor each successive production transport delay multiplies by.
- *
- * @category policies
- * @since 0.1.0
- */
-export const defaultModelRetryFactor = 2
-
-/**
- * How many times the production transport policy retries one sealed step.
- *
- * @category policies
- * @since 0.1.0
- */
-export const defaultModelRetryTimes = 5
-
-/**
- * The wall clock the production transport ladder may span, in milliseconds.
- *
- * The count alone is not a bound. Five rungs of jittered doubling from one
- * second sum to at most 37.2 s of *sleeping*, but a ladder also spends whatever
- * each failing attempt spends, and a dying HTTP/2 session does not fail
- * quickly: r92 of the SWE-bench full benchmark burned ten `transport` retries
- * and $0.85 across two instances against a socket that stayed dead for about
- * half a minute, and each of those attempts re-sent a whole prompt and streamed
- * a partial body before dying. A ladder whose only bound is a count charges for
- * that as many times as the count allows.
- *
- * 45,000 ms is the declared ladder's own jittered ceiling plus one rung's worth
- * of headroom for the attempts between the sleeps, so a ladder that fails as
- * fast as this policy assumes still runs all five rungs and nothing here
- * changes for it. What changes is the ladder whose attempts are slow: it stops
- * when the wall clock says the incident has outlasted the window this policy
- * was written to cover, rather than when the fifth rung happens to arrive. Past
- * that point waiting is not what is wrong, which is exactly what
- * `@smthrs/model` `RequestExecutor` `makeWith` and its `Transport` are for: a
- * client the host can replace, rather than a longer wait on the one that died.
- *
- * The elapsed time is the schedule's own, taken on the injected clock, so a
- * test that supplies one sees the window it declared and never a wall-clock
- * wait.
- *
- * @category policies
- * @since 1.0.0-rc.0
- */
-export const defaultModelRetryWindowMillis = 45_000
-
-/**
- * The production transport retry budget: five retries over a jittered
- * exponential backoff spanning roughly thirty seconds, inside a 45-second
- * wall-clock window.
- *
- * The shape is load-bearing, not decorative. A transport-class failure is
- * almost never local: a destroyed HTTP/2 session, a 5xx, an overloaded
- * provider. All three persist for seconds to tens of seconds, so a retry that
- * fires inside that window is a wasted attempt, and a budget that empties
- * inside it turns one provider incident into a dead run. Wave 4 of the
- * SWE-bench harness lost `pytest-dev__pytest-6197` exactly that way: both of
- * its `transport` retries were spent, and the run ended `failed`, while the
- * provider was still refusing.
- *
- * Doubling from one second across five retries spans about 31 s, which is
- * long enough for a connection pool to re-establish and for a short rate-limit
- * window to pass. Jitter is what keeps a fleet of runs that all hit the same
- * incident from re-converging on the provider in lockstep; {@link
- * Schedule.jittered} scales each delay by a random factor in `[0.8, 1.2]`
- * drawn from the injected `Random` service, and the sleep itself is taken on
- * the injected clock, so a test that supplies both sees the schedule it
- * declared and never a wall-clock wait.
- *
- * {@link defaultModelRetryWindowMillis} bounds the same ladder by elapsed time,
- * because five rungs is a bound on how many attempts are made and not on what
- * they cost. Whichever limit arrives first ends the ladder.
- *
- * @category policies
- * @since 0.1.0
- */
-export const defaultModelRetryPolicy: Schedule.Schedule<unknown, Model.ModelFailure> = Schedule
-  .exponential(defaultModelRetryBaseMillis, defaultModelRetryFactor)
-  .pipe(
-    Schedule.jittered,
-    Schedule.upTo({ times: defaultModelRetryTimes, duration: Duration.millis(defaultModelRetryWindowMillis) })
-  )
-
-/**
- * The model error codes worth trying again.
- *
- * A provider call is the one step in the loop that fails for reasons that have
- * nothing to do with the task: a dropped HTTP/2 session, a 5xx, a rate limit.
- * Without a retry the first of those ends the run — an agent working a real
- * repository lost twenty minutes of context to
- * `ERR_HTTP2_INVALID_SESSION: The session has been destroyed`, with the frame,
- * the run, and the workspace state all discarded.
- *
- * `call_timeout` joins them for a different reason. It is the caller's own
- * doing — the request was interrupted at the budget the controller armed — but
- * it is retryable for the same reason the other two are: nothing about the
- * task changed, and the next attempt can succeed. What separates it is that
- * waiting alone would not help, so the re-issue also carries
- * {@link overrunTeaching} — and that it does not get this set's whole retry
- * budget, because it is the one code whose every attempt costs a full wall
- * clock ceiling rather than a refused connection. {@link defaultModelOverruns}
- * bounds it separately.
- *
- * Everything absent from this set is terminal for the request as written — a
- * bad key, a malformed request, a context overflow, a refusal — and retrying
- * one is pure latency. `context_overflow` in particular must reach the caller
- * unchanged: it is the typed signal compaction reads.
- */
-const retryableModelCodes: ReadonlySet<string> = new Set([
-  "provider_internal",
-  "transport",
-  "call_timeout"
-])
+export const defaultModelRetryPolicy: RetryPolicy.RetryPolicy = RetryPolicy.make({
+  initialMs: 1_000,
+  factor: 2,
+  maxMs: 16_000,
+  maxAttempts: 6,
+  jitterRatio: 0.2,
+  retryable: [
+    { tag: "flows/model/ModelError", code: "transport" },
+    { tag: "flows/model/ModelError", code: "provider_internal" }
+  ]
+})
 
 const seconds = (millis: number): number => Math.round(millis / 1000)
 
@@ -371,63 +285,63 @@ export const withOverrunTeaching = (
   })
 
 /**
- * Retries transient provider failures inside the sealed step.
+ * How {@link recordModelStep} treats one engine attempt.
  *
- * The retry is deliberately here rather than on the action's `retryPolicy`.
- * The engine's policy classifies by error *tag*, and every provider failure
- * shares the one `flows/model/ModelError` tag, so a tag-level policy either
- * retries a bad API key four times or retries nothing. It also replaces an
- * exhausted failure with `RetryAttemptsExhausted`, which would hide the very
- * `code` the caller branches on. Retrying in place keeps the classification
- * precise and lets the original typed error surface unchanged when the
- * backoff gives up.
+ * @category models
+ * @since 1.0.0
+ */
+export interface RecordOptions {
+  /** The overrun budget of one provider call; absent or zero disarms it. */
+  readonly budgetMillis?: number | undefined
+  /** The correction ordinal stamped onto the record. */
+  readonly correction?: number | undefined
+  /**
+   * Observes cumulative spend across this attempt's provider calls. The caller
+   * uses its last snapshot when no sealed value survives (capacity refusal,
+   * permission failure, interruption, a transport failure the engine retries);
+   * partial text is never exposed. It must be synchronous and do no I/O.
+   */
+  readonly onUsage?: ((usage: ModelEvent.Usage) => void) | undefined
+  /** Receives each event live, a re-issue's `retry` event included. */
+  readonly onEvent?: ((event: ModelEvent.ModelEvent) => Effect.Effect<void>) | undefined
+  /**
+   * Re-issue one overrun, with {@link overrunTeaching}, and one stall inside
+   * the attempt, and bound the stream's silence by
+   * {@link modelIdleMsFor}. Off, an overrun is sealed as `call_timeout` at
+   * once and silence is the action heartbeat's to bound.
+   */
+  readonly reissue: boolean
+  /**
+   * Whether this is the step's last attempt: a transport failure is then sealed
+   * as the step's value instead of failing for the engine to retry.
+   */
+  readonly final: boolean
+}
+
+/**
+ * Makes one engine attempt of a model step: one provider call, and at most one
+ * in-step re-issue each of an overrun and a stall when `reissue` is set.
  *
- * Each retry states the delay the schedule chose for it. The delay cannot be
- * read back off the journal timestamps: every retry of one sealed step is
- * buffered and written when the step settles, so a run that backed off for
- * half a minute and one that did not back off at all are indistinguishable
- * there.
+ * Retrying a transient failure is the engine's, never the step's: a
+ * `transport` failure fails the attempt unsealed, so the action's
+ * `retryPolicy` decides whether another attempt runs and how long it waits,
+ * honoring any `retryAfterMillis` the provider named, and the attempt count
+ * survives a restart. A route's `RequestExecutor` repeats nothing either: one
+ * attempt is one request. On the `final` attempt a transport failure is sealed
+ * as the step's value. A capacity refusal always fails unsealed for the
+ * controller. Every other answer, an error included, is sealed.
  *
- * The classification is a `Schedule.while` *inside* the schedule rather than
- * `Effect.retry`'s `while` option, and the tap sits outside it. Both placements
- * matter. `Effect.retry` applies its `while` after stepping the schedule, so a
- * tap under it fires once for a terminal failure too and records a retry that
- * never happened — a `quota_exceeded` run journaled a phantom `model-retried`
- * exactly that way. Stopping the schedule first means the tap only ever sees a
- * step that will really recur, and `duration` is then the delay actually
- * slept — jitter and bound already applied — not the nominal one the base
- * schedule would have produced.
+ * The overrun and the stall are re-issued here rather than by the engine
+ * because they are not transient refusals: each already cost a whole budget or
+ * idle window, and the overrun's re-issue changes the request by putting
+ * {@link overrunTeaching} in front of it. Each is re-issued at most
+ * {@link defaultModelOverruns} times, after which it is sealed. A re-issue
+ * emits a `retry` event, so a consumer folding live events discards the
+ * partial output before it, and its spend is folded into the sealed usage.
  *
- * `budgetMillis` is the same retry, applied to the one failure the provider
- * never reports: a call that answers, slowly, forever. It is enforced here
- * rather than around the whole sealed step so an overrun is an attempt rather
- * than the end of the frame — it is interrupted, classified `call_timeout`,
- * and re-issued on this schedule with {@link overrunTeaching} in front of it.
- * Interruption is the only mechanism involved: `Effect.timeoutOrElse` closes
- * the attempt's scope, and the model layer's own request teardown follows from
- * that, so nothing threads an abort signal and nothing polls a flag.
- *
- * The overrun rides the schedule's delays but not its count. Every other
- * retryable code fails fast and costs a backoff; an overrun costs a whole
- * armed ceiling, so it stops after {@link defaultModelOverruns} re-issues and
- * the step's total model time stays bounded by twice the budget rather than by
- * six times it.
- *
- * `onUsage` observes cumulative spend across this invocation's provider
- * attempts. The caller uses its last snapshot when no sealed value survives
- * (capacity refusal, permission failure, or interruption); partial text is
- * never exposed. The callback must be synchronous and cannot perform I/O.
- *
- * `policy` may instead be `"engine"`, which leaves every transient failure to
- * the action's own `retryPolicy`, the one place `ModelStep.run` decides
- * retries. The step then makes one provider call, with no retries in the
- * route's `RequestExecutor` either, and retries nothing: a
- * `transport` failure fails it unsealed, as a capacity refusal does, so the
- * engine retries it and waits any `retryAfterMillis` the provider named. The
- * silence bound below is off too: the action's heartbeat bounds silence, and
- * it hears the keep-alives a provider sends while it thinks, which a bound on
- * events cannot. An overrun is still sealed as `call_timeout`, never
- * re-issued.
+ * `budgetMillis` bounds one provider call: a call that runs past it is
+ * interrupted (closing its scope tears the request down) and classified
+ * `call_timeout`.
  *
  * @category execution
  * @since 0.1.0
@@ -435,63 +349,21 @@ export const withOverrunTeaching = (
 export const recordModelStep = (
   model: Model.Model,
   request: ModelRequest.ModelRequest,
-  policy: Schedule.Schedule<unknown, Model.ModelFailure> | "engine",
-  budgetMillis?: number | undefined,
-  correction?: number | undefined,
-  onUsage?: ((usage: ModelEvent.Usage) => void) | undefined,
-  onEvent?: ((event: ModelEvent.ModelEvent) => Effect.Effect<void>) | undefined
+  options: RecordOptions
 ): Effect.Effect<Recorded, Model.ModelFailure> =>
   Effect.suspend(() => {
-    const retries: Array<ModelEvent.ModelEvent> = []
+    const { onEvent, onUsage, reissue } = options
+    const reissues: Array<ModelEvent.ModelEvent> = []
     const failedUsage: Array<ModelEvent.Usage> = []
     let attemptUsage: ModelEvent.Usage = {}
-    let attempt = 0
-    /** When the attempt in flight was issued, so a retry can say how long the failed one ran. */
-    let attemptStartedAt = 0
-    /** How many attempts this step has already had cut off at the budget. */
-    let overruns = 0
-    /**
-     * The stalls this step has cut off. Each one cost a whole idle window, so
-     * like an overrun a stall is re-issued {@link defaultModelOverruns} times,
-     * not the transport ladder's five.
-     */
-    const stalls = new Set<ModelError.ModelError>()
-    const engine = policy === "engine"
-    const schedule = (engine ? Schedule.recurs(0) : policy).pipe(
-      Schedule.while(({ input }) =>
-        input instanceof ModelError.ModelError && retryableModelCodes.has(input.code) &&
-        // The overrun's own bound. `overruns` was incremented by the attempt
-        // this failure came from, so the first cut-off call reads 1 and is
-        // re-issued, and the re-issue's own cut-off reads 2 and is not.
-        (input.code !== "call_timeout" || overruns <= defaultModelOverruns) &&
-        (!stalls.has(input) || stalls.size <= defaultModelOverruns)
-      ),
-      Schedule.tap(({ duration, input }) =>
-        Effect.gen(function*() {
-          attempt++
-          // Only a retryable `ModelError` reaches the tap: the classification
-          // above stops the schedule before it on anything else.
-          const error = input as ModelError.ModelError
-          const failedAt = yield* Clock.currentTimeMillis
-          const retry = ModelEvent.ModelEvent.Retry({
-            type: "retry",
-            attempt,
-            code: error.code,
-            // Jitter produces a fractional millisecond. The whole millisecond
-            // is the honest resolution for a report to read.
-            delayMillis: Math.round(Duration.toMillis(duration)),
-            // Read before the delay above is slept, so this is the failed
-            // attempt alone.
-            elapsedMs: Math.max(0, Math.round(failedAt - attemptStartedAt)),
-            ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus })
-          })
-          retries.push(retry)
-          if (onEvent !== undefined) yield* onEvent(retry)
-        })
-      )
-    )
-    const budget = budgetMillis === undefined || budgetMillis <= 0 ? undefined : budgetMillis
-    const idleFor = engine ? undefined : modelIdleMsFor(request.params.reasoningEffort)
+    /** When the call in flight was issued, so a re-issue can say how long the cut-off one ran. */
+    let callStartedAt = 0
+    /** The calls this attempt cut off at the budget; each cost a whole budget. */
+    const overruns = new Set<Model.ModelFailure>()
+    /** The calls this attempt cut off for silence; each cost a whole idle window. */
+    const stalls = new Set<Model.ModelFailure>()
+    const budget = options.budgetMillis === undefined || options.budgetMillis <= 0 ? undefined : options.budgetMillis
+    const idleFor = reissue ? modelIdleMsFor(request.params.reasoningEffort) : undefined
     const idle = budget !== undefined && idleFor !== undefined && idleFor < budget ? idleFor : undefined
     const silent = <A>(stream: Stream.Stream<A, Model.ModelFailure>): Stream.Stream<A, Model.ModelFailure> =>
       idle === undefined ? stream : stream.pipe(Stream.timeoutOrElse({
@@ -506,20 +378,20 @@ export const recordModelStep = (
             return Effect.fail(error)
           }))
       }))
-    // Every attempt, every event it streams and every chunk of bytes the
-    // provider sends (a keep-alive included, through `Model.Liveness`) is a
-    // heartbeat, so an action declared with `heartbeatTimeoutMs` fails only a
-    // call that goes silent. Outside such an action a heartbeat does nothing.
+    // Every call, every event it streams and every chunk of bytes the provider
+    // sends (a keep-alive included, through `Model.Liveness`) is a heartbeat,
+    // so an action declared with `heartbeatTimeoutMs` fails only a call that
+    // goes silent. Outside such an action a heartbeat does nothing.
     const collect = (input: ModelRequest.ModelRequest) =>
       Effect.flatMap(Clock.currentTimeMillis, (issuedAt) => {
-        attemptStartedAt = issuedAt
+        callStartedAt = issuedAt
         attemptUsage = {}
         const streamed = model.stream(input).pipe(
           Model.withGenAiSpan(input, model.providerName),
           Stream.provideService(Model.Liveness, Action.heartbeat),
-          // When the engine decides retries, a route's executor repeats
-          // nothing either: one attempt is one request.
-          engine ? Stream.provideService(RequestExecutor.Retries, 0) : identity
+          // The engine decides retries, so a route's executor repeats nothing:
+          // one attempt is one request.
+          Stream.provideService(RequestExecutor.Retries, 0)
         )
         return Action.heartbeat.pipe(Effect.andThen(Stream.runCollect(
           silent(streamed).pipe(Stream.tap((event) =>
@@ -535,47 +407,37 @@ export const recordModelStep = (
           ))
         )))
       })
-    const collected = budget === undefined
-      // Disarmed. The call is bounded by nothing but the caller's own process,
-      // which is what every model call was before this budget existed.
-      ? collect(request)
-      // Suspended so each attempt reads the overrun count the attempt before it
-      // left. That is what puts the teaching on a re-issue and never on the
-      // first call, and what keeps the original request the one thing every
-      // attempt derives from.
-      : Effect.suspend(() =>
-        collect(overruns === 0 ? request : withOverrunTeaching(request, budget)).pipe(
+    // Suspended so each call reads the overruns the call before it left: that
+    // is what puts the teaching on a re-issue and never on the first call.
+    const collected = Effect.suspend(() =>
+      budget === undefined
+        // Disarmed. The call is bounded by nothing but the caller's own process.
+        ? collect(request)
+        : collect(overruns.size === 0 ? request : withOverrunTeaching(request, budget)).pipe(
           Effect.timeoutOrElse({
             duration: budget,
             orElse: () =>
-              Effect.sync(() => {
-                overruns++
-              }).pipe(
-                Effect.andThen(Effect.fail(
-                  new ModelError.ModelError({
-                    code: "call_timeout",
-                    message: `The model call ran past its ${seconds(budget)}-second budget and was interrupted`
-                  })
-                ))
-              )
+              Effect.suspend(() => {
+                const error = new ModelError.ModelError({
+                  code: "call_timeout",
+                  message: `The model call ran past its ${seconds(budget)}-second budget and was interrupted`
+                })
+                overruns.add(error)
+                return Effect.fail(error)
+              })
           })
         )
-      )
-    // A response body that ends without a settlement is a dead socket, and until
-    // now it was the one way a socket could end a run outright. `Stream.runCollect`
-    // *succeeds* on a truncated body — the events it did receive are returned,
-    // `settledMessage` folds them into an `aborted` assistant message, and the
-    // controller then raises `model_failed` because no `settle` is among them.
-    // That failure is a `HarnessError`, not a `ModelError`, so no retry
-    // classification ever saw it: one dropped HTTP/2 session, no backoff, run
-    // over. Two r91 instances were lost to that class and re-run as
-    // infrastructure crashes.
-    //
-    // Classifying it as `transport` puts it on the ladder every other socket
-    // failure already rides. It cannot be confused with an interruption: an
-    // interrupted fiber never reaches here with a value at all, and a settled
-    // stream always carries its settlement.
-    const attemptOnce = Effect.flatMap(collected, (events) =>
+    )
+    // A response body that ends without a settlement is a dead socket.
+    // `Stream.runCollect` *succeeds* on a truncated body, `settledMessage` would
+    // fold its events into an `aborted` message, and the controller would raise
+    // `model_failed`, a `HarnessError` no retry classification ever sees: one
+    // dropped HTTP/2 session, no backoff, run over. Two r91 instances were lost
+    // to that class. Classifying it as `transport` puts it on the same engine
+    // retries every other socket failure takes. It cannot be confused with an
+    // interruption: an interrupted fiber never reaches here with a value, and a
+    // settled stream always carries its settlement.
+    const callOnce = Effect.flatMap(collected, (events) =>
       Array.from(events).some((event) => event.type === "settle")
         ? Effect.succeed(events)
         : Effect.fail(
@@ -589,22 +451,46 @@ export const recordModelStep = (
             if (Object.keys(attemptUsage).length > 0) failedUsage.push(attemptUsage)
           })
         ),
-        // The failure is recorded and re-raised from its record, which is
-        // its schema and nothing else: the wire timing the model package
-        // attached to the live error ends here unless it is reported now.
+        // The failure is recorded and re-raised from its record, which is its
+        // schema and nothing else: the wire timing the model package attached
+        // to the live error ends here unless it is reported now.
         Effect.tapError((error) =>
           error instanceof ModelError.ModelError && error.timing !== undefined
             ? Effect.flatMap(EngineLike.FailedTimings, (report) => report(error.timing!))
             : Effect.void
         )
       )
+    // One cut-off call of each kind is re-issued in place, and the re-issue
+    // says so. Only a call this attempt cut off qualifies: a provider's own
+    // `call_timeout` is its answer, sealed like any other.
+    const reissuable = (error: Model.ModelFailure): error is ModelError.ModelError =>
+      reissue &&
+      ((overruns.has(error) && overruns.size <= defaultModelOverruns) ||
+        (stalls.has(error) && stalls.size <= defaultModelOverruns))
+    const call: Effect.Effect<ReadonlyArray<ModelEvent.ModelEvent>, Model.ModelFailure> = callOnce.pipe(
+      Effect.catchIf(reissuable, (error) =>
+        Effect.gen(function*() {
+          const failedAt = yield* Clock.currentTimeMillis
+          // Both cut-off errors are this attempt's own, so neither carries a
+          // status, and the re-issue follows at once.
+          const retry = ModelEvent.ModelEvent.Retry({
+            type: "retry",
+            attempt: reissues.length + 1,
+            code: error.code,
+            delayMillis: 0,
+            elapsedMs: Math.max(0, Math.round(failedAt - callStartedAt))
+          })
+          reissues.push(retry)
+          if (onEvent !== undefined) yield* onEvent(retry)
+          return yield* call
+        }))
+    )
 
-    // Partial text from a failed attempt is unsafe to replay, but provider usage
-    // is actual spend. Keep each attempt's final counters (not the sum of its
-    // cumulative updates), then fold attempts into one usage event for the
-    // sealed step. The explicit total also handles providers that report only
-    // totals on some attempts and component counters on others.
-    const accountFailedAttempts = (
+    // Partial text from a re-issued call is unsafe to replay, but its usage is
+    // actual spend. Keep each call's final counters, then fold them into one
+    // usage event for the sealed step. Spend of an earlier engine attempt is
+    // not here: that attempt recorded its own as it ended.
+    const accountReissued = (
       events: ReadonlyArray<ModelEvent.ModelEvent>
     ): ReadonlyArray<ModelEvent.ModelEvent> => {
       if (failedUsage.length === 0) return events
@@ -617,16 +503,15 @@ export const recordModelStep = (
     // Spread rather than always present: a call outside a correction ladder has
     // no ordinal, and writing one anyway would make every ordinary model step
     // claim to be correction zero of a ladder that never ran.
-    const ladder = correction === undefined ? {} : { correction }
-    return attemptOnce.pipe(
-      Effect.retry(schedule),
-      Effect.map((events) => ({ ...ladder, events: [...retries, ...accountFailedAttempts(events)] })),
+    const ladder = options.correction === undefined ? {} : { correction: options.correction }
+    return call.pipe(
+      Effect.map((events) => ({ ...ladder, events: [...reissues, ...accountReissued(events)] })),
       Effect.catchIf(
         (error): error is ModelError.ModelError => error instanceof ModelError.ModelError,
         (error) =>
-          isCapacityRefusal(error) || (engine && error.code === "transport")
+          isCapacityRefusal(error) || (!options.final && error.code === "transport" && !stalls.has(error))
             ? Effect.fail(error)
-            : Effect.succeed({ ...ladder, events: [...retries, ...accountFailedAttempts([])], error })
+            : Effect.succeed({ ...ladder, events: [...reissues, ...accountReissued([])], error })
       )
     )
   })
@@ -832,11 +717,16 @@ export interface Dispatch {
   /** Milliseconds the call may go without an event or a chunk of bytes; absent, unwatched. */
   readonly heartbeatTimeoutMs?: number | undefined
   /**
-   * The in-step transport ladder; {@link defaultModelRetryPolicy} when absent.
-   * `"engine"` retries nothing in the step and leaves every transient failure
-   * to `retryPolicy` (see {@link recordModelStep}).
+   * Re-issue one overrun and one stall inside an attempt, and bound the
+   * stream's silence (see {@link RecordOptions.reissue}); off when absent.
    */
-  readonly transport?: Schedule.Schedule<unknown, Model.ModelFailure> | "engine" | undefined
+  readonly reissue?: boolean | undefined
+  /**
+   * Seal a transport failure as the step's value on `retryPolicy`'s last
+   * attempt, so a replay reads it without a provider call; off when absent, so
+   * the last failure fails the step. Needs a policy that bounds `maxAttempts`.
+   */
+  readonly sealExhausted?: boolean | undefined
   /** The overrun budget of one provider attempt; absent or zero disarms it. */
   readonly callTimeoutMs?: number | undefined
   /** The correction ordinal stamped onto the record. */
@@ -872,12 +762,12 @@ export interface Dispatched {
 /**
  * Runs one model call as a sealed action under its key.
  *
- * The action calls the provider through {@link recordModelStep}, so transport
- * faults are retried inside it, unless `transport` is `"engine"`, and every
- * other provider answer, an error included, is sealed as its value. A capacity
- * refusal fails the action instead, and `retryPolicy` decides whether the
- * engine tries again. A replayed step returns its record without calling the
- * provider.
+ * Each engine attempt calls the provider once through {@link recordModelStep}.
+ * A transport failure or a capacity refusal fails the attempt, and
+ * `retryPolicy` decides whether the engine tries again; every other provider
+ * answer, an error included, is sealed as its value, and so is a transport
+ * failure on the last attempt when `sealExhausted` is set. A replayed step
+ * returns its record without calling the provider.
  *
  * Each attempt that starts after an earlier one of this dispatch failed, or
  * after an earlier execution of the same attempt was cut off mid-call, first
@@ -943,17 +833,20 @@ export const dispatch = (
         }
         const unsealed = options.unsealedUsage === undefined ? undefined : yield* options.unsealedUsage
         let reported: ModelEvent.Usage | undefined
-        return yield* recordModelStep(
-          options.model,
-          options.request,
-          options.transport ?? defaultModelRetryPolicy,
-          options.callTimeoutMs,
-          options.correction,
-          (usage) => {
+        // The attempt number is the engine's, restored from its own records
+        // after a restart, so the last attempt is the last one however many
+        // processes the earlier ones ran in.
+        const last = options.sealExhausted === true ? options.retryPolicy.maxAttempts : undefined
+        return yield* recordModelStep(options.model, options.request, {
+          budgetMillis: options.callTimeoutMs,
+          correction: options.correction,
+          onUsage: (usage) => {
             reported = usage
           },
-          options.onEvent
-        ).pipe(
+          onEvent: options.onEvent,
+          reissue: options.reissue === true,
+          final: last !== undefined && attempt >= last
+        }).pipe(
           Effect.flatMap(options.settle ?? Effect.succeed),
           // A sealed value is accounted by the caller, on replay too. This
           // covers only exits that cannot seal, and runs uninterruptibly.

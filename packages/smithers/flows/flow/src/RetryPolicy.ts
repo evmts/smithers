@@ -37,7 +37,11 @@ import * as Schema from "effect/Schema"
  * `expirationMs` bounds the total wall-clock retry duration
  * (schedule-to-close, mirroring Temporal's `expirationInterval`);
  * `jitterRatio` spreads the final portion of each delay uniformly;
- * `nonRetryable` lists error tags that must never be retried.
+ * `nonRetryable` lists error tags that must never be retried; `retryable`,
+ * when present, lists the only failures that retry, each an error tag and
+ * optionally the `code` it carries, so one tag shared by transient and
+ * terminal failures (a provider's `ModelError`) can retry only the transient
+ * codes. `nonRetryable` still wins over `retryable`.
  *
  * The bounds are per STEP KEY, which is what makes them the provider-retry
  * budget for one agent ask rather than a budget for the exchange the ask
@@ -57,7 +61,11 @@ const RetryPolicyFields = Schema.Struct({
   maxAttempts: Schema.optional(Schema.Number),
   expirationMs: Schema.optional(Schema.Number),
   jitterRatio: Schema.optional(Schema.Number),
-  nonRetryable: Schema.optional(Schema.Array(Schema.String))
+  nonRetryable: Schema.optional(Schema.Array(Schema.String)),
+  retryable: Schema.optional(Schema.Array(Schema.Struct({
+    tag: Schema.String,
+    code: Schema.optional(Schema.String)
+  })))
 })
 
 type RetryPolicyFields = typeof RetryPolicyFields.Type
@@ -94,6 +102,10 @@ const validationIssue = (policy: RetryPolicyFields): string | undefined => {
     (!Number.isFinite(policy.jitterRatio) || policy.jitterRatio < 0 || policy.jitterRatio > 1)
   ) {
     return `"jitterRatio" must be a finite number between zero and one, inclusive, and was ${policy.jitterRatio}.`
+  }
+  const blank = policy.retryable?.find((entry) => entry.tag.length === 0 || entry.code === "")
+  if (blank !== undefined) {
+    return `"retryable" entries name a non-empty tag and, when present, a non-empty code.`
   }
   return undefined
 }
@@ -138,6 +150,7 @@ export const make = (options: {
   readonly expirationMs?: number | undefined
   readonly jitterRatio?: number | undefined
   readonly nonRetryable?: ReadonlyArray<string> | undefined
+  readonly retryable?: ReadonlyArray<{ readonly tag: string; readonly code?: string | undefined }> | undefined
 }): RetryPolicy => {
   const issue = validationIssue(options)
   if (issue !== undefined) throw new RangeError(`RetryPolicy.make: ${issue}`)
@@ -150,6 +163,15 @@ export const make = (options: {
     ...(options.jitterRatio !== undefined ? { jitterRatio: options.jitterRatio } : {}),
     ...(options.nonRetryable !== undefined
       ? { nonRetryable: Object.freeze([...options.nonRetryable]) }
+      : {}),
+    ...(options.retryable !== undefined
+      ? {
+        retryable: Object.freeze(
+          options.retryable.map((entry) =>
+            Object.freeze(entry.code === undefined ? { tag: entry.tag } : { tag: entry.tag, code: entry.code })
+          )
+        )
+      }
       : {})
   })
 }
@@ -459,21 +481,38 @@ export const defaultNonRetryable: ReadonlyArray<string> = [
 ]
 
 /**
- * Whether an error is classified non-retryable, either by type (see
- * {@link defaultNonRetryable}) or by the policy's declared tag list.
+ * The string `code` an error carries as an own data property, read inertly as
+ * {@link errorTag} reads `_tag`, or `undefined`.
+ */
+const errorCode = (error: unknown): string | undefined => {
+  if (typeof error !== "object" || error === null) return undefined
+  try {
+    const code = Object.getOwnPropertyDescriptor(error, "code")
+    return code !== undefined && "value" in code && typeof code.value === "string" ? code.value : undefined
+  } catch {
+    // An uninspectable failure carries no code.
+    return undefined
+  }
+}
+
+/**
+ * Whether an error is classified non-retryable: by type (see
+ * {@link defaultNonRetryable}), by the policy's `nonRetryable` tags, or, when
+ * the policy declares `retryable`, by matching none of its entries. An entry
+ * matches an error with its tag and, when the entry names one, its `code`.
+ * Without `retryable`, an error the first two do not name retries.
  *
  * @category attempts
  * @since 0.1.0
  */
 export const isNonRetryable = (policy: RetryPolicy, error: unknown): boolean => {
   const tag = errorTag(error)
-  if (tag === undefined) {
-    return false
-  }
-  if (defaultNonRetryable.includes(tag)) {
+  if (tag !== undefined && (defaultNonRetryable.includes(tag) || policy.nonRetryable?.includes(tag) === true)) {
     return true
   }
-  return policy.nonRetryable !== undefined && policy.nonRetryable.includes(tag)
+  if (policy.retryable === undefined) return false
+  const code = errorCode(error)
+  return !policy.retryable.some((entry) => entry.tag === tag && (entry.code === undefined || entry.code === code))
 }
 
 /**

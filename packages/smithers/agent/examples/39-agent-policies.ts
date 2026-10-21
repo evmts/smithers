@@ -31,7 +31,6 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
-import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 
@@ -130,10 +129,9 @@ const policies = (calls: Array<string>) =>
       }),
       limits: { calls: 8 },
       capabilityEnvelope: [],
-      maxFrames: 4,
-      // A quota refusal is not a transport hiccup, so the transport ladder is
-      // off: the park is the only thing that waits.
-      modelRetryPolicy: Schedule.recurs(0)
+      // A quota refusal is never retried by the model step's engine policy:
+      // the park is the only thing that waits.
+      maxFrames: 4
     }),
     SeatResolver.layer({
       resolve: (id) =>

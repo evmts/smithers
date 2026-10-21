@@ -31,14 +31,14 @@ import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import * as Jj from "@smthrs/kernel/Jj"
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect, Exit, Layer, Option, Schedule, Schema, Stream } from "effect"
+import { Effect, Exit, Layer, Option, Schema, Stream } from "effect"
 import type * as Crypto from "effect/Crypto"
 import type * as Scope from "effect/Scope"
 import { SqlClient } from "effect/sql/SqlClient"
@@ -106,7 +106,7 @@ const host: AgentAction.Host = {
   limits: { calls: 8 },
   capabilityEnvelope: [],
   maxFrames: 4,
-  modelRetryPolicy: Schedule.recurs(0)
+  modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
 }
 
 const seats = (model: Model.Model): Layer.Layer<SeatResolver.SeatResolver> =>

@@ -11,7 +11,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { FlowEngine } from "@smthrs/engine"
-import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import * as DurableClock from "@smthrs/flow/DurableClock"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
@@ -61,7 +61,6 @@ import {
   Option,
   Path,
   References,
-  Schedule,
   Schema,
   Scope,
   Stream,
@@ -624,7 +623,7 @@ describe("capacity seat chain", () => {
       model,
       registry: registryOf([]),
       sink: events,
-      modelRetryPolicy: Schedule.recurs(1)
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 })
     }))
     expect(outcome._tag).toBe("completed")
     expect(calls).toBe(2)
@@ -738,7 +737,7 @@ describe("capacity seat chain", () => {
       fallbackSeats: [Seat.make({ id: "second", modelId: "second", model: second, route, contextWindowTokens: 0 })],
       registry: registryOf([]),
       sink: events,
-      modelRetryPolicy: Schedule.recurs(0)
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
     }))
     expect(outcome._tag).toBe("completed")
     expect(contacted).toEqual(["first"])
@@ -771,7 +770,7 @@ describe("capacity seat chain", () => {
         seat: Seat.make({ id: "first", modelId: "first", model: first, route, contextWindowTokens: 0 }),
         fallbackSeats: [Seat.make({ id: "second", modelId: "second", model: second, route, contextWindowTokens: 0 })],
         registry: registryOf([]),
-        modelRetryPolicy: Schedule.recurs(0)
+        modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
       }))
       expect(outcome._tag).toBe("failed")
       expect(contacted).toEqual(["first"])
@@ -793,7 +792,7 @@ describe("capacity seat chain", () => {
       fallbackSeats: [Seat.make({ id: "second", modelId: "second", model, route, contextWindowTokens: 0 })],
       registry: registryOf([]),
       sink: events,
-      modelRetryPolicy: Schedule.recurs(0)
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
     }))
     expect(outcome._tag).toBe("failed")
     expect(JSON.stringify(outcome)).toContain("still unavailable")
@@ -838,7 +837,7 @@ describe("capacity seat chain", () => {
         })],
         registry: registryOf([]),
         sink: events,
-        modelRetryPolicy: Schedule.recurs(0)
+        modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
       }))
       expect(outcome._tag).toBe("completed")
       expect(contacted).toEqual(["first", "second", "second"])
@@ -886,7 +885,7 @@ describe("capacity seat chain", () => {
         })
       ],
       registry: registryOf([]),
-      modelRetryPolicy: Schedule.recurs(0)
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
     }))
     expect(outcome._tag).toBe("completed")
     expect(contacted).toEqual(quotaScope === "account" ? ["first", "other", "other"] : ["first", "sibling", "sibling"])
@@ -988,7 +987,7 @@ describe("capacity seat chain", () => {
       })],
       registry: registryOf([]),
       sink: events,
-      modelRetryPolicy: Schedule.recurs(0)
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
     }))
     expect(outcome._tag).toBe("completed")
     expect(contacted).toEqual(["first", "second", "first"])
@@ -1157,7 +1156,7 @@ describe("capacity seat chain", () => {
         contextWindowTokens: 0
       })],
       registry: registryOf([]),
-      modelRetryPolicy: Schedule.recurs(0)
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
     }))
     expect(outcome._tag).toBe("failed")
     expect(JSON.stringify(outcome)).toContain("second has no credit")
@@ -1199,7 +1198,7 @@ describe("capacity seat chain", () => {
       registry: registryOf([]),
       sink: events,
       capacity: { park: true },
-      modelRetryPolicy: Schedule.recurs(0)
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
     }))
     expect(outcome._tag).toBe("failed")
     expect(JSON.stringify(outcome)).toContain("second seat limited")

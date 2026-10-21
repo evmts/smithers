@@ -154,6 +154,13 @@ off each so steps refused together don't return together. A provider's
 up, `ModelStep.run` fails with the last refusal, such as a `ModelError` whose
 `code` is `rate_limited`.
 
+The agent loop's model steps retry on the engine too, under
+`FlowEngineLike.defaultModelRetryPolicy`: only `transport` and
+`provider_internal` retry, a rate limit or a spent quota reaches the loop at
+once so it can park, and the last attempt seals a `transport` failure as the
+step's value. Inside one attempt the loop re-issues a call cut off at
+`callTimeoutMs` or for silence once.
+
 ## Liveness
 
 Each attempt, each streamed event and each chunk of bytes the provider sends is

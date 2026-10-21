@@ -24,7 +24,7 @@ import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import * as Jj from "@smthrs/kernel/Jj"
 import * as Model from "@smthrs/model/Model"
@@ -36,7 +36,7 @@ import * as Registry from "@smthrs/registry/Registry"
 import type * as Fixture from "@smthrs/testing/Fixture"
 import type * as ModelLike from "@smthrs/testing/ModelLike"
 import * as RecordedModel from "@smthrs/testing/RecordedModel"
-import { Cause, Effect, Exit, Fiber, Layer, Metric, Option, Schedule, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Metric, Option, Schema, Stream } from "effect"
 import * as Clock from "effect/Clock"
 import type * as Crypto from "effect/Crypto"
 import type * as Scope from "effect/Scope"
@@ -165,9 +165,9 @@ const hostWith = (overrides: Partial<AgentAction.Host> = {}): AgentAction.Host =
   limits: { calls: 8 },
   capabilityEnvelope: [],
   maxFrames: 3,
-  // A refusal this suite parks on is never a transport hiccup, so the
-  // transport ladder is off and the park is the only thing that waits.
-  modelRetryPolicy: Schedule.recurs(0),
+  // A refusal this suite parks on is never a transport hiccup, so the model
+  // step makes one attempt and the park is the only thing that waits.
+  modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 }),
   ...overrides
 })
 

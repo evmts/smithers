@@ -34,7 +34,7 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
-import { Cause, Clock, Effect, Exit, Fiber, Latch, Layer, Option, Schedule, Schema, Stream } from "effect"
+import { Cause, Clock, Effect, Exit, Fiber, Latch, Layer, Option, Schema, Stream } from "effect"
 import type * as Crypto from "effect/Crypto"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
@@ -107,7 +107,7 @@ const host: AgentAction.Host = {
   limits: { calls: 8 },
   capabilityEnvelope: [],
   maxFrames: 4,
-  modelRetryPolicy: Schedule.recurs(0)
+  modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
 }
 
 const seats = (model: Model.Model): Layer.Layer<SeatResolver.SeatResolver> =>

@@ -269,7 +269,7 @@ different `SeatResolver`.
 
 `Host` also carries the defaults a step inherits: `defaultCorrections` (the
 correction budget for a step that declares none), `modelRetryPolicy` (the
-transport retry ladder one model call runs under, which `Schedule.recurs(0)`
+engine `RetryPolicy` one model call's attempts run under, which `maxAttempts: 1`
 turns off), `maxQuotaParks` (how many quota waits one step may take), `system`,
 `maxFrames`, and `capabilityEnvelope`.
 

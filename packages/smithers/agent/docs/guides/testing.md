@@ -45,9 +45,9 @@ is in [Add a model-backed step to a flow](./model-backed-steps.md#compose-the-ho
 
 Two time details matter in a test:
 
-- The transport retry ladder sleeps on the injected clock and draws its jitter
-  from the injected `Random`, so a test that supplies both sees the schedule it
-  declared and never a wall-clock wait.
+- The engine's model retries sleep on the injected clock and draw their jitter
+  from the injected `Random`. A test that wants none passes `modelRetryPolicy`
+  with `maxAttempts: 1`, or a millisecond `initialMs` and `maxMs`.
 - The quota classifier is pure: `classify(error, nowMillis)` takes the instant
   as an argument, so a test states it outright.
 

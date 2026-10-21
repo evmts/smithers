@@ -24,7 +24,7 @@ import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import * as Jj from "@smthrs/kernel/Jj"
 import * as Model from "@smthrs/model/Model"
@@ -35,7 +35,7 @@ import * as ObservabilityMetric from "@smthrs/observability/Metric"
 import * as Registry from "@smthrs/registry/Registry"
 import { RunStore } from "@smthrs/run-store"
 import * as AttemptStore from "@smthrs/run-store/AttemptStore"
-import { Cause, Effect, Exit, Fiber, Layer, Metric, Option, Schedule, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Metric, Option, Schema, Stream } from "effect"
 import type * as Crypto from "effect/Crypto"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
@@ -647,11 +647,15 @@ describe("a rejection on the durable engine", () => {
     const model = Model.make({
       stream: (request) => replaying ? refuses.stream(request) : recording.stream(request)
     })
-    // No transport ladder: a refused call after the boundary is the assertion,
+    // One model attempt: a refused call after the boundary is the assertion,
     // and retrying it would only spend the test's wall clock. One frame per
     // run leaves no frame to correct in, so every miss takes the fresh-session
     // fallback this case is about.
-    const composition = host({ defaultCorrections: 2, maxFrames: 1, modelRetryPolicy: Schedule.recurs(0) })
+    const composition = host({
+      defaultCorrections: 2,
+      maxFrames: 1,
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
+    })
 
     const observed = await durable(
       Effect.gen(function*() {
@@ -766,10 +770,14 @@ describe("a correction ladder interrupted mid-flight", () => {
     const asked: Array<Asked> = []
     const phase = { current: "before" as Asked["phase"] }
     const model = parkingMidCorrection(asked, phase)
-    // No transport ladder: the quota refusal is the park, not a hiccup to
+    // One model attempt: the quota refusal is the park, not a hiccup to
     // retry, and the correction budget is one so the ladder is exactly two
     // asks long. One frame per run makes the correction a fresh session.
-    const composition = host({ defaultCorrections: 1, maxFrames: 1, modelRetryPolicy: Schedule.recurs(0) })
+    const composition = host({
+      defaultCorrections: 1,
+      maxFrames: 1,
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
+    })
     const rejections = Metric.value(ObservabilityMetric.structuredOutputRejections)
     const counted = (await Effect.runPromise(rejections)).count
 

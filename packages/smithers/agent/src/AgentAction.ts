@@ -48,7 +48,7 @@
 
 import type * as Capability from "@smthrs/capability/Capability"
 import * as Digest from "@smthrs/core/Digest"
-import { Action, DurableClock, type Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, DurableClock, type Flow, FlowRuntime, type RetryPolicy } from "@smthrs/flow"
 import * as Fault from "@smthrs/flow/Fault"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
@@ -62,7 +62,6 @@ import { Journal, JournalEvent, type StepFact } from "@smthrs/journal"
 import type * as MemorySnapshot from "@smthrs/memory/SnapshotRecorder"
 import * as MemorySource from "@smthrs/memory/Source"
 import type * as Evaluator from "@smthrs/model/Evaluator"
-import type * as Model from "@smthrs/model/Model"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as ObservabilityMetric from "@smthrs/observability/Metric"
 import type { FlowsHooks, PluginInput } from "@smthrs/plugin"
@@ -79,7 +78,6 @@ import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
-import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { Agent, type Options as AgentOptions } from "./Agent.ts"
@@ -156,15 +154,13 @@ export interface Host {
    */
   readonly defaultCorrections?: number | undefined
   /**
-   * Overrides the bounded transport retry schedule at the model boundary for
-   * every model-backed action in this composition.
+   * Overrides the engine retry policy of every model step for every
+   * model-backed action in this composition
+   * (`FlowEngineLike.defaultModelRetryPolicy`). It must bound `maxAttempts`.
    *
-   * Forwarded to `Agent.Options.modelRetryPolicy`. A host that classifies its
-   * own quota parks (see {@link module:QuotaPolicy}) sets this to keep the
-   * transport ladder from spending a run's wall clock on a refusal a park will
-   * wait out properly.
+   * Forwarded to `Agent.Options.modelRetryPolicy`.
    */
-  readonly modelRetryPolicy?: Schedule.Schedule<unknown, Model.ModelFailure> | undefined
+  readonly modelRetryPolicy?: RetryPolicy.RetryPolicy | undefined
   /**
    * How many times one ask may park on a quota refusal before the refusal is
    * reported. Must be a non-negative safe integer.

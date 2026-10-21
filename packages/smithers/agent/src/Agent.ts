@@ -40,7 +40,7 @@
  */
 
 import * as Capability from "@smthrs/capability/Capability"
-import { Action, DurableClock, Fault, FlowRuntime, RunMetrics } from "@smthrs/flow"
+import { Action, DurableClock, Fault, FlowRuntime, type RetryPolicy, RunMetrics } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as CellCalls from "@smthrs/harness/CellCalls"
@@ -82,7 +82,6 @@ import type * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
-import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as Budget from "./Budget.ts"
@@ -109,8 +108,11 @@ import * as StandardFlows from "./StandardFlows.ts"
 export interface Options {
   /** The durable session or lineage every call identity is scoped to. */
   readonly session: string
-  /** Overrides the bounded transport retry schedule at the model boundary. */
-  readonly modelRetryPolicy?: Schedule.Schedule<unknown, Model.ModelFailure> | undefined
+  /**
+   * Overrides the engine retry policy of every model step
+   * (`FlowEngineLike.defaultModelRetryPolicy`). It must bound `maxAttempts`.
+   */
+  readonly modelRetryPolicy?: RetryPolicy.RetryPolicy | undefined
   /**
    * The resolved seat this run streams from.
    *

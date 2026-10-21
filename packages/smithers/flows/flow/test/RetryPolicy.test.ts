@@ -817,6 +817,56 @@ describe("nextDelay numeric boundaries", () => {
     }))
 })
 
+describe("retryable", () => {
+  const base = { initialMs: 100, factor: 2, maxMs: 1_000 }
+  class Provider extends Schema.TaggedError<Provider>()("Provider", { code: Schema.String }) {}
+
+  it("retries only the listed failures, by tag and optionally code; nonRetryable still wins", () => {
+    const policy = RetryPolicy.make({
+      ...base,
+      nonRetryable: ["Fatal"],
+      retryable: [{ tag: "Provider", code: "transport" }, { tag: "Flaky" }, { tag: "Fatal" }]
+    })
+    expect(RetryPolicy.isNonRetryable(policy, new Provider({ code: "transport" }))).toBe(false)
+    expect(RetryPolicy.isNonRetryable(policy, new Provider({ code: "rate_limited" }))).toBe(true)
+    expect(RetryPolicy.isNonRetryable(policy, { _tag: "Flaky", code: "anything" })).toBe(false)
+    expect(RetryPolicy.isNonRetryable(policy, { _tag: "Flaky" })).toBe(false)
+    expect(RetryPolicy.isNonRetryable(policy, { _tag: "Fatal" })).toBe(true)
+    expect(RetryPolicy.isNonRetryable(policy, { _tag: "Other" })).toBe(true)
+    // An untagged failure, or one whose code cannot be read inertly, matches no entry.
+    expect(RetryPolicy.isNonRetryable(policy, "boom")).toBe(true)
+    expect(RetryPolicy.isNonRetryable(policy, { _tag: "Provider", code: 7 })).toBe(true)
+    const hostile = new Proxy({ _tag: "Provider" }, {
+      getOwnPropertyDescriptor: (target, key) => {
+        if (key === "code") throw new Error("no")
+        return Reflect.getOwnPropertyDescriptor(target, key)
+      }
+    })
+    expect(RetryPolicy.isNonRetryable(policy, hostile)).toBe(true)
+    expect(RetryPolicy.decide(policy, { attempt: 1, error: new Provider({ code: "transport" }) })).toEqual(
+      RetryPolicy.decide(RetryPolicy.make(base), { attempt: 1, error: new Provider({ code: "transport" }) })
+    )
+    expect(RetryPolicy.decide(policy, { attempt: 1, error: new Provider({ code: "quota_exceeded" }) })._tag).toBe(
+      "GiveUp"
+    )
+  })
+
+  it("leaves a policy without it unchanged, and is copied, frozen and checked like the rest", () => {
+    expect("retryable" in RetryPolicy.make(base)).toBe(false)
+    const entries = [{ tag: "Provider", code: "transport" }, { tag: "Flaky", code: undefined }]
+    const policy = RetryPolicy.make({ ...base, retryable: entries })
+    entries.push({ tag: "AddedLater", code: undefined })
+    expect(policy.retryable).toEqual([{ tag: "Provider", code: "transport" }, { tag: "Flaky" }])
+    expect(Object.isFrozen(policy.retryable)).toBe(true)
+    expect(Object.isFrozen(policy.retryable![0])).toBe(true)
+    expect(() => RetryPolicy.make({ ...base, retryable: [{ tag: "" }] })).toThrow(/retryable/)
+    expect(() => RetryPolicy.make({ ...base, retryable: [{ tag: "Provider", code: "" }] })).toThrow(/retryable/)
+    const decode = Schema.decodeUnknownSync(RetryPolicy.RetryPolicy)
+    expect(decode({ ...base, retryable: [{ tag: "Provider" }] }).retryable).toEqual([{ tag: "Provider" }])
+    expect(() => decode({ ...base, retryable: [{ tag: "" }] })).toThrow(/retryable/)
+  })
+})
+
 describe("defaultRetryPolicy", () => {
   it("mirrors the historical exponential(200, 1.5) / spaced(30000) envelope", () => {
     expect(Object.isFrozen(RetryPolicy.defaultRetryPolicy)).toBe(true)

@@ -18,7 +18,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { FlowEngine } from "@smthrs/engine"
-import { Flow as EngineFlow, FlowRuntime } from "@smthrs/flow"
+import { Flow as EngineFlow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -54,7 +54,6 @@ import {
   Layer,
   Option,
   Path,
-  Schedule,
   Schema,
   Scope,
   Sink,
@@ -1629,7 +1628,7 @@ describe("a retried model call says what the failed try took", () => {
   const running = (options: {
     readonly model: Model.Model
     readonly fallback?: Model.Model
-    readonly modelRetryPolicy?: Schedule.Schedule<unknown, unknown>
+    readonly modelRetryPolicy?: RetryPolicy.RetryPolicy
   }) =>
     Effect.gen(function*() {
       const collected: Array<AgentEvent.AgentEvent> = []
@@ -1666,11 +1665,12 @@ describe("a retried model call says what the failed try took", () => {
         700,
         new ModelError.ModelError({ code: "provider_internal", message: "bad gateway", httpStatus: 502 })
       ),
-      modelRetryPolicy: Schedule.recurs(1)
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 })
     })))
     expect(outcome._tag).toBe("completed")
 
-    expect(retries(outcome)).toEqual([{ attempt: 1, code: "provider_internal", elapsedMs: 700, httpStatus: 502 }])
+    // The engine retried it, so the event names the attempt it started.
+    expect(retries(outcome)).toEqual([{ attempt: 2, code: "provider_internal", elapsedMs: 700, httpStatus: 502 }])
   })
 
   it(
@@ -1749,10 +1749,10 @@ describe("a retried model call says what the failed try took", () => {
     const clock = moved()
     const outcome = await drive(clock.under(running({
       model: failingOnce(clock.advance, 45, new ModelError.ModelError({ code: "transport", message: "socket closed" })),
-      modelRetryPolicy: Schedule.recurs(1)
+      modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 })
     })))
 
-    expect(retries(outcome)).toEqual([{ attempt: 1, code: "transport", elapsedMs: 45, httpStatus: undefined }])
+    expect(retries(outcome)).toEqual([{ attempt: 2, code: "transport", elapsedMs: 45, httpStatus: undefined }])
   })
 
   it("times a try that failed over to the next seat", async () => {

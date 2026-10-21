@@ -154,6 +154,29 @@ Your own tags go in `nonRetryable`. `RetryPolicy.errorTag` is how a tag is read
 off an error: an own string `_tag` when present, otherwise the first own `name`
 descriptor found while walking a bounded prototype chain.
 
+## Retry only the failures you name
+
+When one tag covers failures that differ, list the ones that retry in
+`retryable`. Each entry names a tag and, optionally, the `code` the error carries
+as an own string field. With `retryable` present, only a matching failure
+retries; everything else, an untagged failure included, gives up at once.
+`nonRetryable` and `defaultNonRetryable` still win:
+
+```ts
+const transient = RetryPolicy.make({
+  initialMs: 1_000,
+  factor: 2,
+  maxMs: 16_000,
+  maxAttempts: 6,
+  retryable: [
+    { tag: "flows/model/ModelError", code: "transport" },
+    { tag: "flows/model/ModelError", code: "provider_internal" }
+  ]
+})
+```
+
+A policy without `retryable` classifies exactly as before.
+
 ## Bound a hung attempt
 
 A retry policy only sees attempts that end. Declare `attemptTimeoutMs` to end

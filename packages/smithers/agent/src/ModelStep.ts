@@ -235,8 +235,6 @@ export const run = (
       model: options.model,
       retryPolicy: options.retryPolicy ?? defaultRetryPolicy,
       heartbeatTimeoutMs: heartbeatTimeoutMs === 0 ? undefined : heartbeatTimeoutMs,
-      // The engine's policy is the one place a run's retries are decided.
-      transport: "engine",
       callTimeoutMs: options.callTimeoutMs ?? callTimeoutMsFor(effort),
       onEvent: options.onEvent
     })

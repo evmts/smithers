@@ -13,7 +13,7 @@ import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -39,7 +39,6 @@ import {
   ManagedRuntime,
   Metric,
   Option,
-  Schedule,
   Schema,
   SchemaGetter,
   Stream
@@ -2001,7 +2000,7 @@ describe("AgentAction seat auto", () => {
           judge([toSonnet, toOpus], routed),
           catalog,
           Layer.merge(Budget.layerUnbounded(), QuotaPolicy.layerDefault()),
-          { ...host, modelRetryPolicy: Schedule.recurs(0) },
+          { ...host, modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 }) },
           engine === undefined ? FlowEngine.layerMemory : Layer.succeed(FlowRuntime.FlowRuntime)(engine)
         )
       })
@@ -2853,7 +2852,12 @@ describe("AgentAction ordered fallback seats", () => {
         })
     })
     const stack = Layer.mergeAll(Step.layer, Interpreter.layer(Workflow)).pipe(
-      Layer.provideMerge(AgentAction.layerHost({ ...host, modelRetryPolicy: Schedule.recurs(0) })),
+      Layer.provideMerge(
+        AgentAction.layerHost({
+          ...host,
+          modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
+        })
+      ),
       Layer.provideMerge(seats(model)),
       Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
       Layer.provideMerge(Safety.layer),

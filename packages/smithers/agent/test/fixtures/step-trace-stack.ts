@@ -2,7 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
-import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Journal, StepFact } from "@smthrs/journal"
 import type { JournalEvent } from "@smthrs/journal"
 import * as Jj from "@smthrs/kernel/Jj"
@@ -10,7 +10,7 @@ import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
+import { Effect, Layer, Option, Schema, Stream } from "effect"
 import * as Crypto from "effect/Crypto"
 import * as Agent from "../../src/Agent.ts"
 import * as AgentAction from "../../src/AgentAction.ts"
@@ -151,7 +151,7 @@ export const incarnation = (
           capabilityEnvelope: [],
           limits: { calls: 8 },
           maxFrames: 3,
-          modelRetryPolicy: Schedule.recurs(0),
+          modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 }),
           // The workflow arms the claim judge, so a step's facts include the
           // decision its completion reading journals (#3993).
           claimCap: 3,

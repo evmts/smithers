@@ -27,7 +27,6 @@ import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as References from "effect/References"
 import * as Result from "effect/Result"
-import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { TestClock } from "effect/testing"
@@ -295,41 +294,33 @@ describe("ModelStep.defaultRetryPolicy", () => {
   })
 })
 
-describe("ModelStep's in-step transport ladder", () => {
-  // The agent loop keeps its own ladder; `ModelStep.run` passes `"engine"`.
-  it("retries a provider fault inside the step for the agent loop, telling onEvent its status", async () => {
-    const model = scripted((call) =>
-      call === 1
-        ? Stream.fail(new ModelError.ModelError({ code: "transport", httpStatus: 502, message: "Bad gateway" }))
-        : Stream.fromIterable(reply("Paris"))
-    )
-    const seen: Array<ModelEvent.ModelEvent> = []
-    const recorded = await Effect.runPromise(
-      InternalModelStep.recordModelStep(
-        model.model,
-        ask(["capital of France"]),
-        Schedule.recurs(1),
-        undefined,
-        undefined,
-        undefined,
-        (event) => Effect.sync(() => void seen.push(event))
-      )
-    )
-    expect(model.calls).toHaveLength(2)
-    expect(recorded.events[0]).toMatchObject({ type: "retry", attempt: 1, code: "transport", httpStatus: 502 })
-    expect(seen[0]).toMatchObject({ type: "retry", attempt: 1, code: "transport", httpStatus: 502 })
+describe("ModelStep's one engine attempt", () => {
+  // Retries are the engine's on both paths: an attempt makes one provider call.
+  const attempt = (answer: Stream.Stream<ModelEvent.ModelEvent, ModelError.ModelError>, final: boolean) => {
+    const model = scripted(() => answer)
+    return Effect.runPromiseExit(
+      InternalModelStep.recordModelStep(model.model, ask(["capital of France"]), { reissue: false, final })
+    ).then((exit) => ({ exit, calls: model.calls.length }))
+  }
+
+  it("fails a dropped connection unsealed for the engine, and seals it on the last attempt", async () => {
+    const dropped = new ModelError.ModelError({ code: "transport", httpStatus: 502, message: "Bad gateway" })
+    const retried = await attempt(Stream.fail(dropped), false)
+    expect(retried.calls).toBe(1)
+    expect(Exit.isFailure(retried.exit)).toBe(true)
+    expect(Cause.squash((retried.exit as Exit.Failure<unknown, unknown>).cause)).toMatchObject({ code: "transport" })
+    const sealed = await attempt(Stream.fail(dropped), true)
+    expect(sealed.calls).toBe(1)
+    expect(sealed.exit).toMatchObject({ _tag: "Success", value: { events: [], error: { code: "transport" } } })
   })
 
-  it("fails a dropped connection unsealed when the engine decides retries", async () => {
-    const model = scripted(() =>
-      Stream.fail(new ModelError.ModelError({ code: "transport", message: "Model response stream failed" }))
-    )
-    const exit = await Effect.runPromiseExit(
-      InternalModelStep.recordModelStep(model.model, ask(["capital of France"]), "engine")
-    )
-    expect(exit).toMatchObject({ _tag: "Failure" })
-    expect(Cause.squash((exit as Exit.Failure<unknown, unknown>).cause)).toMatchObject({ code: "transport" })
-    expect(model.calls).toHaveLength(1)
+  it("fails a capacity refusal unsealed on the last attempt too", async () => {
+    const overloaded = new ModelError.ModelError({ code: "provider_internal", httpStatus: 529, message: "Overloaded" })
+    const last = await attempt(Stream.fail(overloaded), true)
+    expect(Exit.isFailure(last.exit)).toBe(true)
+    expect(Cause.squash((last.exit as Exit.Failure<unknown, unknown>).cause)).toMatchObject({
+      code: "provider_internal"
+    })
   })
 })
 

@@ -70,7 +70,6 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Queue from "effect/Queue"
-import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as Budget from "./Budget.ts"
@@ -88,11 +87,7 @@ const singleAttempt = RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxA
 export {
   defaultModelIdleMs,
   defaultModelOverruns,
-  defaultModelRetryBaseMillis,
-  defaultModelRetryFactor,
   defaultModelRetryPolicy,
-  defaultModelRetryTimes,
-  defaultModelRetryWindowMillis,
   RecordedModelStep
 } from "./internal/ModelStep.ts"
 
@@ -403,8 +398,13 @@ export const sandboxed = (
  */
 export interface Options {
   readonly model: Model.Model
-  /** Bounded model-boundary retry policy; injectable so tests and hosts control time. */
-  readonly modelRetryPolicy?: Schedule.Schedule<unknown, Model.ModelFailure> | undefined
+  /**
+   * The engine retry policy of every model step; {@link defaultModelRetryPolicy}
+   * when absent. It must bound `maxAttempts`: the last attempt seals a
+   * transport failure as the step's value, so a replay reads it without a
+   * provider call.
+   */
+  readonly modelRetryPolicy?: RetryPolicy.RetryPolicy | undefined
   readonly route: RouteResolver
   readonly calls?: CallRunner | undefined
   /**
@@ -686,6 +686,12 @@ export const make = (
   Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
 > =>
   Effect.gen(function*() {
+    const modelRetryPolicy = options.modelRetryPolicy ?? ModelStep.defaultModelRetryPolicy
+    if (modelRetryPolicy.maxAttempts === undefined) {
+      return yield* Effect.die(
+        new RangeError("FlowEngineLike.make: modelRetryPolicy must bound maxAttempts, so its last attempt can seal")
+      )
+    }
     const instance = yield* FlowRuntime.FlowInstance
     const services: Context.Context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance> = yield* Effect
       .context<
@@ -812,11 +818,15 @@ export const make = (
             key,
             request: step.request,
             model: options.model,
-            // Provider retries belong to the step's transport ladder. A port
-            // failure must reach the controller rather than silently starting
-            // another call.
-            retryPolicy: singleAttempt,
-            transport: options.modelRetryPolicy,
+            // Provider retries are the engine's: each attempt is one provider
+            // call, and its number and spend survive a restart. The default
+            // policy retries only a `transport` failure and a
+            // `provider_internal` refusal, so a rate limit, a spent quota or a
+            // port failure reaches the controller unretried. The last attempt
+            // seals a transport failure as the step's value.
+            retryPolicy: modelRetryPolicy,
+            reissue: true,
+            sealExhausted: true,
             callTimeoutMs: step.modelCallMs,
             correction,
             onEvent: onLive,

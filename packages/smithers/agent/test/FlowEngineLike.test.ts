@@ -7,7 +7,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as CellTurn from "@smthrs/harness/CellTurn"
@@ -42,7 +42,6 @@ import {
   Redacted,
   References,
   Result,
-  Schedule,
   Schema,
   Scope,
   Stream
@@ -374,7 +373,20 @@ describe("FlowEngineLike.make", () => {
     expect(calls).toBe(1)
   })
 
-  it("sums final usage per retry attempt without replaying partial text or leaking recorder state", async () => {
+  /** Runs one attempt with a 5-second overrun budget armed, on the test clock. */
+  const overrunning = (model: Model.Model, text: string, live?: Array<ModelEvent.ModelEvent>) =>
+    Effect.gen(function*() {
+      const fiber = yield* InternalModelStep.recordModelStep(model, request(text), {
+        budgetMillis: 5_000,
+        reissue: true,
+        final: false,
+        ...(live === undefined ? {} : { onEvent: (event) => Effect.sync(() => void live.push(event)) })
+      }).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* TestClock.adjust("1 minute")
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
+
+  it("sums final usage per re-issued call without replaying partial text or leaking recorder state", async () => {
     let calls = 0
     const model = Model.make({
       stream: () =>
@@ -388,7 +400,8 @@ describe("FlowEngineLike.make", () => {
                 ModelEvent.ModelEvent.Usage({ inputTokens: 200, totalTokens: 260 }),
                 ModelEvent.ModelEvent.Usage({ inputTokens: undefined })
               ),
-              Stream.fail(new ModelError({ code: "transport", message: "dropped after usage" }))
+              // Runs past the budget, so the attempt cuts it off and re-issues it.
+              Stream.fromEffect(Effect.never)
             )
             : Stream.make(
               ModelEvent.ModelEvent.Usage({ outputTokens: 40 }),
@@ -396,10 +409,21 @@ describe("FlowEngineLike.make", () => {
             )
         })
     })
-    const recording = InternalModelStep.recordModelStep(model, request("retry usage"), Schedule.recurs(1))
     for (let i = 0; i < 2; i++) {
-      const recorded = InternalModelStep.normalizeRecordedModelStep(await Effect.runPromise(recording))
+      const live: Array<ModelEvent.ModelEvent> = []
+      const recorded = InternalModelStep.normalizeRecordedModelStep(await overrunning(model, "re-issue usage", live))
       expect(recorded.events.map((event) => event.type)).toEqual(["retry", "usage", "settle"])
+      // The caller hears the re-issue live, between the cut-off call's output
+      // and the re-issued call's.
+      expect(live.map((event) => event.type)).toEqual([
+        "text-delta",
+        "usage",
+        "usage",
+        "usage",
+        "retry",
+        "usage",
+        "settle"
+      ])
       expect(ModelEvent.ModelEvent.settledMessage(recorded.events).usage).toEqual({
         inputTokens: 200,
         outputTokens: 40,
@@ -410,7 +434,7 @@ describe("FlowEngineLike.make", () => {
     expect(calls).toBe(4)
   })
 
-  it("cannot cancel invalid negative usage against a later positive retry", async () => {
+  it("cannot cancel invalid negative usage against a later positive re-issue", async () => {
     let calls = 0
     const model = Model.make({
       stream: () =>
@@ -419,7 +443,7 @@ describe("FlowEngineLike.make", () => {
           return calls === 1
             ? Stream.concat(
               Stream.make(ModelEvent.ModelEvent.Usage({ totalTokens: -600 })),
-              Stream.fail(new ModelError({ code: "transport", message: "retry after malformed usage" }))
+              Stream.fromEffect(Effect.never)
             )
             : Stream.make(
               ModelEvent.ModelEvent.Usage({ totalTokens: 700 }),
@@ -427,11 +451,7 @@ describe("FlowEngineLike.make", () => {
             )
         })
     })
-    const recorded = InternalModelStep.normalizeRecordedModelStep(
-      await Effect.runPromise(
-        InternalModelStep.recordModelStep(model, request("malformed usage"), Schedule.recurs(1))
-      )
-    )
+    const recorded = InternalModelStep.normalizeRecordedModelStep(await overrunning(model, "malformed usage"))
     const usage = ModelEvent.ModelEvent.settledMessage(recorded.events).usage
     // Previously this became an apparently valid 100-token bill. Preserve the
     // invalid accounting signal so Budget.record cannot durably accept it.
@@ -595,29 +615,39 @@ describe("FlowEngineLike.make", () => {
     expect(calls).toEqual([])
   })
 
-  it("retains reported spend from earlier attempts when interrupted during retry backoff", async () => {
+  it("retains a failed attempt's reported spend when interrupted during the engine's backoff", async () => {
     const outcome = await drive(
       Effect.gen(function*() {
         const budget = yield* Budget.make({ tokens: { max: 1_000 } })
-        const waiting = yield* Deferred.make<void>()
+        let calls = 0
         const model = Model.make({
           stream: () =>
-            Stream.concat(
-              Stream.make(
-                ModelEvent.ModelEvent.Usage({ inputTokens: 200 }),
-                ModelEvent.ModelEvent.Usage({ totalTokens: 300 })
-              ),
-              Stream.fail(new ModelError({ code: "transport", message: "partial response" }))
-            )
+            Stream.suspend(() => {
+              calls++
+              return Stream.concat(
+                Stream.make(
+                  ModelEvent.ModelEvent.Usage({ inputTokens: 200 }),
+                  ModelEvent.ModelEvent.Usage({ totalTokens: 300 })
+                ),
+                Stream.fail(new ModelError({ code: "transport", message: "partial response" }))
+              )
+            })
         })
         const engine = yield* FlowEngineLike.make({
           model,
           route: staticRoute(),
-          modelRetryPolicy: Schedule.spaced("1 hour").pipe(Schedule.tap(() => Deferred.succeed(waiting, undefined)))
+          modelRetryPolicy: RetryPolicy.make({
+            ...FlowEngineLike.defaultModelRetryPolicy,
+            initialMs: 3_600_000,
+            maxMs: 3_600_000
+          })
         }).pipe(Effect.provideService(Budget.Budget, budget))
         const running = yield* Stream.runCollect(engine.sealStep(step("backoff"))).pipe(Effect.forkChild)
-        yield* Deferred.await(waiting)
+        // The failed attempt is charged as it ends, before the engine sleeps
+        // the hour its policy asks for.
+        while ((yield* budget.usage).tokens === 0) yield* Effect.yieldNow
         yield* Fiber.interrupt(running)
+        expect(calls).toBe(1)
         const fresh = yield* Budget.make({})
         return { live: yield* budget.usage, fresh: yield* fresh.usage }
       }).pipe(Effect.provide(TestJournal.layer()))
@@ -820,43 +850,90 @@ describe("FlowEngineLike.make", () => {
     expect(completed(outcome)).toBe(2)
   })
 
+  /** The production classification on a millisecond backoff, so a case waits on nothing. */
+  const fastRetries = (maxAttempts: number) =>
+    RetryPolicy.make({ ...FlowEngineLike.defaultModelRetryPolicy, initialMs: 1, maxMs: 1, maxAttempts })
+
+  /** A model that answers its calls from `answers` in turn, noting the engine attempt of each. */
+  const byAttempt = (
+    answers: ReadonlyArray<Stream.Stream<ModelEvent.ModelEvent, ModelError>>,
+    attempts: Array<number>
+  ): Model.Model =>
+    Model.make({
+      stream: () =>
+        Stream.unwrap(Effect.gen(function*() {
+          attempts.push(yield* Action.CurrentAttempt)
+          return answers[Math.min(attempts.length, answers.length) - 1]!
+        }))
+    })
+
+  const answer = [
+    ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "0" }),
+    ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "0", text: "reply" }),
+    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+  ]
+
+  it("keeps the production policy on the engine: two transient codes, six bounded attempts", () => {
+    const policy = FlowEngineLike.defaultModelRetryPolicy
+    expect(policy).toMatchObject({ initialMs: 1_000, factor: 2, maxMs: 16_000, maxAttempts: 6, jitterRatio: 0.2 })
+    const decide = (error: ModelError, attempt = 1) => RetryPolicy.decide(policy, { attempt, error })._tag
+    expect(decide(new ModelError({ code: "transport", message: "reset" }))).toBe("RetryAfter")
+    expect(decide(new ModelError({ code: "provider_internal", message: "overloaded" }))).toBe("RetryAfter")
+    expect(decide(new ModelError({ code: "transport", message: "reset" }), 6)).toBe("GiveUp")
+    for (const code of ["rate_limited", "quota_exceeded", "call_timeout", "authentication"] as const) {
+      expect(decide(new ModelError({ code, message: code }))).toBe("GiveUp")
+    }
+    // Doubling from one second, capped at sixteen: about 31 s of cover.
+    expect([1, 2, 3, 4, 5].map((attempt) => Option.getOrThrow(RetryPolicy.nextDelay(policy, attempt)))).toEqual([
+      1_000,
+      2_000,
+      4_000,
+      8_000,
+      16_000
+    ])
+  })
+
+  it("refuses a model retry policy that does not bound its attempts", async () => {
+    const outcome = await drive(
+      FlowEngineLike.make({
+        model: countingModel([]),
+        route: staticRoute(),
+        modelRetryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1 })
+      }).pipe(Effect.catchDefect((defect) => Effect.succeed(defect)))
+    )
+    expect(completed(outcome)).toBeInstanceOf(RangeError)
+    expect(String(completed(outcome))).toContain("must bound maxAttempts")
+  })
+
   it.each(
     [
       ["transport", "connection reset"],
       ["provider_internal", "provider overloaded"]
     ] as const
-  )("retries one transient %s model failure inside the sealed step", async (code, message) => {
-    let attempts = 0
-    const transient = new ModelError({ code, message })
-    const model = Model.make({
-      stream: () =>
-        Stream.suspend(() => {
-          attempts++
-          return attempts === 1
-            ? Stream.fail(transient)
-            : Stream.fromIterable([
-              ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "0" }),
-              ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "0", text: "reply" }),
-              ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
-            ])
-        })
-    })
+  )("retries one transient %s failure as the engine's next attempt", async (code, message) => {
+    const attempts: Array<number> = []
+    const model = byAttempt([Stream.fail(new ModelError({ code, message })), Stream.fromIterable(answer)], attempts)
     const outcome = await drive(Effect.gen(function*() {
-      const engine = yield* FlowEngineLike.make({
-        model,
-        route: staticRoute(),
-        modelRetryPolicy: Schedule.recurs(2)
-      })
-      return Array.from(yield* Stream.runCollect(engine.sealStep(step("hello"))))
+      const engine = yield* FlowEngineLike.make({ model, route: staticRoute(), modelRetryPolicy: fastRetries(3) })
+      const live = Array.from(yield* Stream.runCollect(engine.sealStepWithEvents!(step("hello"), () => Effect.void)))
+      const replayed = Array.from(yield* Stream.runCollect(engine.sealStep(step("hello"))))
+      return { live, replayed }
     }))
 
-    expect(completed(outcome)).toMatchObject([
-      { type: "retry", attempt: 1, code },
+    const { live, replayed } = completed(outcome) as {
+      readonly live: ReadonlyArray<ModelEvent.ModelEvent>
+      readonly replayed: ReadonlyArray<ModelEvent.ModelEvent>
+    }
+    // The retry is the engine's: the provider saw the second attempt's number.
+    expect(attempts).toEqual([1, 2])
+    expect(live).toMatchObject([
+      { type: "retry", attempt: 2, code },
       { type: "text-start" },
       { type: "text-delta" },
       { type: "settle" }
     ])
-    expect(attempts).toBe(2)
+    // The record holds the answer alone; the failed attempt is not in it.
+    expect(replayed).toEqual(answer)
   })
 
   it.each(["invalid_provider_output", "quota_exceeded"] as const)(
@@ -874,7 +951,7 @@ describe("FlowEngineLike.make", () => {
               })
           }),
           route: staticRoute(),
-          modelRetryPolicy: Schedule.recurs(2)
+          modelRetryPolicy: fastRetries(3)
         })
         return yield* Stream.runCollect(engine.sealStep(step(code)))
       }))
@@ -892,7 +969,7 @@ describe("FlowEngineLike.make", () => {
       const engine = yield* FlowEngineLike.make({
         model: Model.make({ stream: () => Stream.fail(original) }),
         route: staticRoute(),
-        modelRetryPolicy: Schedule.recurs(0)
+        modelRetryPolicy: fastRetries(1)
       }).pipe(Effect.provideService(QuotaPolicy.QuotaClassifier, quota))
       return yield* Stream.runCollect(engine.sealStep(step("provider-specific wait")))
     }))
@@ -900,25 +977,23 @@ describe("FlowEngineLike.make", () => {
     expect(failure(outcome)).toStrictEqual(original)
   })
 
-  it("surfaces the original typed transport error after bounded retries are exhausted", async () => {
-    let attempts = 0
+  it("seals the original typed transport error on the last attempt and replays it without a call", async () => {
+    const attempts: Array<number> = []
     const original = new ModelError({ code: "transport", message: "destroyed HTTP/2 session" })
     const outcome = await drive(Effect.gen(function*() {
       const engine = yield* FlowEngineLike.make({
-        model: Model.make({
-          stream: () =>
-            Stream.suspend(() => {
-              attempts++
-              return Stream.fail(original)
-            })
-        }),
+        model: byAttempt([Stream.fail(original)], attempts),
         route: staticRoute(),
-        modelRetryPolicy: Schedule.recurs(2)
+        modelRetryPolicy: fastRetries(3)
       })
-      return yield* Stream.runCollect(engine.sealStep(step("exhausted")))
+      const first = yield* Effect.exit(Stream.runCollect(engine.sealStep(step("exhausted"))))
+      const replayed = yield* Effect.exit(Stream.runCollect(engine.sealStep(step("exhausted"))))
+      return { first: classify(first), replayed: classify(replayed) }
     }))
-    expect(failure(outcome)).toStrictEqual(original)
-    expect(attempts).toBe(3)
+    const { first, replayed } = completed(outcome) as { readonly first: Outcome; readonly replayed: Outcome }
+    expect(failure(first)).toStrictEqual(original)
+    expect(failure(replayed)).toStrictEqual(original)
+    expect(attempts).toEqual([1, 2, 3])
   })
 
   it("retries a body that dies after the headers, and keeps the frame the socket would have ended", async () => {
@@ -931,41 +1006,29 @@ describe("FlowEngineLike.make", () => {
     //
     // The scripted abort is the shape a real one takes: some text, then the end
     // of the stream, with no settle event behind it.
-    let attempts = 0
-    const model = Model.make({
-      stream: () =>
-        Stream.suspend(() => {
-          attempts++
-          const partial = [
-            ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "0" }),
-            ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "0", text: "const found = await" })
-          ]
-          return attempts === 1
-            ? Stream.fromIterable(partial)
-            : Stream.fromIterable([...partial, ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })])
-        })
-    })
+    const attempts: Array<number> = []
+    const partial = answer.slice(0, 2)
+    const model = byAttempt([Stream.fromIterable(partial), Stream.fromIterable(answer)], attempts)
     const outcome = await drive(Effect.gen(function*() {
-      const engine = yield* FlowEngineLike.make({
-        model,
-        route: staticRoute(),
-        modelRetryPolicy: Schedule.recurs(2)
-      })
-      return Array.from(yield* Stream.runCollect(engine.sealStep(step("hello"))))
+      const engine = yield* FlowEngineLike.make({ model, route: staticRoute(), modelRetryPolicy: fastRetries(3) })
+      return Array.from(yield* Stream.runCollect(engine.sealStepWithEvents!(step("hello"), () => Effect.void)))
     }))
 
-    // The abort is journaled as the transport failure it is, and the frame the
-    // socket would have ended settles on the attempt after it.
-    expect(completed(outcome)).toMatchObject([
-      { type: "retry", attempt: 1, code: "transport" },
-      { type: "text-start" },
-      { type: "text-delta" },
-      { type: "settle" }
+    // The abort is the transport failure it is, the engine runs the next
+    // attempt, and the frame the socket would have ended settles on it.
+    expect((completed(outcome) as ReadonlyArray<ModelEvent.ModelEvent>).map((event) => event.type)).toEqual([
+      "text-start",
+      "text-delta",
+      "retry",
+      "text-start",
+      "text-delta",
+      "settle"
     ])
-    expect(attempts).toBe(2)
+    expect(completed(outcome)).toContainEqual(expect.objectContaining({ type: "retry", attempt: 2, code: "transport" }))
+    expect(attempts).toEqual([1, 2])
   })
 
-  it("surfaces an unsettled stream as a transport failure once the ladder is spent", async () => {
+  it("surfaces an unsettled stream as a transport failure once the attempts are spent", async () => {
     // Exhaustion is still exhaustion — but it arrives as a typed `transport`
     // error the caller can branch on, rather than as the harness's own
     // "ended without a recorded settlement", which is terminal for the run.
@@ -980,7 +1043,7 @@ describe("FlowEngineLike.make", () => {
             })
         }),
         route: staticRoute(),
-        modelRetryPolicy: Schedule.recurs(2)
+        modelRetryPolicy: fastRetries(3)
       })
       return yield* Stream.runCollect(engine.sealStep(step("aborted")))
     }))
@@ -2029,233 +2092,13 @@ describe("FlowEngineLike.CallReadings (#3010)", () => {
   })
 })
 
-describe("FlowEngineLike.defaultModelRetryPolicy", () => {
-  /** What the provider actually saw: how often it was called, and how far apart. */
-  interface Observed {
-    attempts: number
-    readonly gaps: Array<number>
-  }
-
-  /**
-   * Fails every attempt with `code`, timing itself on the injected clock.
-   *
-   * The gaps are read off the clock the run slept on, so they are the delays
-   * the schedule really took rather than the ones it claims to have taken.
-   */
-  const alwaysFailing = (
-    code: "transport" | "quota_exceeded",
-    observed: Observed
-  ): { readonly model: Model.Model; readonly error: ModelError } => {
-    const error = new ModelError({ code, message: `always ${code}` })
-    let previous: number | undefined
-    return {
-      error,
-      model: Model.make({
-        stream: () =>
-          Stream.fromEffect(
-            Effect.gen(function*() {
-              const now = yield* Clock.currentTimeMillis
-              observed.attempts++
-              if (previous !== undefined) observed.gaps.push(now - previous)
-              previous = now
-              return yield* Effect.fail(error)
-            })
-          )
-      })
-    }
-  }
-
-  /**
-   * Runs one sealed model step to exhaustion on the test clock.
-   *
-   * A single large adjustment settles every sleep the schedule asks for in
-   * order, so the delays the run actually took are whatever the policy chose,
-   * not a cadence the test imposed.
-   */
-  const exhaust = (model: Model.Model): Promise<typeof FlowEngineLike.RecordedModelStep.Type> =>
-    Effect.gen(function*() {
-      const fiber = yield* InternalModelStep.recordModelStep(
-        model,
-        request("hello"),
-        FlowEngineLike.defaultModelRetryPolicy
-      ).pipe(Effect.forkChild({ startImmediately: true }))
-      yield* TestClock.adjust("10 minutes")
-      return yield* Fiber.join(fiber)
-    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
-
-  const retriesOf = (
-    recorded: typeof FlowEngineLike.RecordedModelStep.Type
-  ): ReadonlyArray<ModelEvent.Retry> =>
-    InternalModelStep.normalizeRecordedModelStep(recorded).events.filter(
-      (event): event is ModelEvent.Retry => event.type === "retry"
-    )
-
-  const nominalMillis = (index: number): number =>
-    FlowEngineLike.defaultModelRetryBaseMillis * Math.pow(FlowEngineLike.defaultModelRetryFactor, index)
-
-  it("waits a growing, jittered delay before each transport attempt", async () => {
-    const observed: Observed = { attempts: 0, gaps: [] }
-    const { model } = alwaysFailing("transport", observed)
-    const recorded = await exhaust(model)
-
-    const retries = retriesOf(recorded)
-    expect(retries.map((retry) => retry.attempt)).toEqual([1, 2, 3, 4, 5])
-    expect(new Set(retries.map((retry) => retry.code))).toEqual(new Set(["transport"]))
-
-    // The defect this closes is two attempts inside one provider incident.
-    // Every delay is real, and each is larger than the one before it: with
-    // jitter bounded to [0.8, 1.2] and a factor of two, 1.2x one delay is
-    // still below 0.8x the next, so the growth is guaranteed, not luck.
-    const delays = retries.map((retry) => retry.delayMillis)
-    delays.reduce((previous, delay) => {
-      expect(delay).toBeGreaterThan(previous)
-      return delay
-    }, 0)
-    delays.forEach((delay, index) => {
-      expect(delay).toBeGreaterThanOrEqual(nominalMillis(index) * 0.8)
-      expect(delay).toBeLessThanOrEqual(nominalMillis(index) * 1.2)
-    })
-    // Jitter, not a fixed ladder: at least one delay is off its nominal value.
-    expect(delays.some((delay, index) => delay !== nominalMillis(index))).toBe(true)
-
-    // The recorded delays are the delays the run actually slept on the injected
-    // clock, so a report reading the journaled events reads the real schedule.
-    expect(observed.gaps.map((gap) => Math.round(gap))).toEqual(delays)
-    // Roughly thirty seconds of cover, long enough to outlast a provider blip.
-    expect(observed.gaps.reduce((total, gap) => total + gap, 0)).toBeGreaterThan(24_000)
-  })
-
-  it("stops at the declared budget and surfaces the original transport error", async () => {
-    const observed: Observed = { attempts: 0, gaps: [] }
-    const { error, model } = alwaysFailing("transport", observed)
-    const recorded = await exhaust(model)
-
-    // One first attempt plus the budget, and not one call more.
-    expect(observed.attempts).toBe(FlowEngineLike.defaultModelRetryTimes + 1)
-    expect(retriesOf(recorded)).toHaveLength(FlowEngineLike.defaultModelRetryTimes)
-    // Exhaustion returns the provider's own typed error, never a wrapper.
-    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toStrictEqual(error)
-  })
-
-  it("puts a scripted stream abort on the same ladder, at the same delays", async () => {
-    // The delays are the assertion, so the abort is driven on the injected
-    // clock beside the failures it now shares a classification with. A body
-    // that stops arriving is a transport failure whether the socket said so or
-    // simply stopped, and 32 seconds of jittered cover is what a dropped
-    // HTTP/2 session needs to outlast.
-    const observed: Observed = { attempts: 0, gaps: [] }
-    let previous: number | undefined
-    const aborting = Model.make({
-      stream: () =>
-        Stream.fromEffect(
-          Effect.gen(function*() {
-            const now = yield* Clock.currentTimeMillis
-            observed.attempts++
-            if (previous !== undefined) observed.gaps.push(now - previous)
-            previous = now
-            // Text arrives; the settlement never does.
-            return ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "0", text: "partial" })
-          })
-        )
-    })
-    const recorded = await exhaust(aborting)
-
-    const retries = retriesOf(recorded)
-    expect(retries.map((retry) => retry.attempt)).toEqual([1, 2, 3, 4, 5])
-    expect(new Set(retries.map((retry) => retry.code))).toEqual(new Set(["transport"]))
-    expect(observed.attempts).toBe(FlowEngineLike.defaultModelRetryTimes + 1)
-    expect(observed.gaps.map((gap) => Math.round(gap))).toEqual(retries.map((retry) => retry.delayMillis))
-    expect(observed.gaps.reduce((total, gap) => total + gap, 0)).toBeGreaterThan(24_000)
-    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toMatchObject({
-      code: "transport",
-      message: "The model response stream ended without a settlement"
-    })
-  })
-
-  it("stops the ladder when the wall clock, rather than the count, runs out", async () => {
-    // The count bounds attempts; it does not bound what they cost. r92 burned
-    // ten `transport` retries against a socket that stayed dead for half a
-    // minute, and each of those attempts re-sent a whole prompt and streamed a
-    // partial body before dying. Here every attempt spends ten seconds of the
-    // injected clock before failing, so the declared window closes before the
-    // fifth rung arrives and the ladder stops early instead of charging for
-    // rungs the policy never budgeted the time for.
-    const observed: Observed = { attempts: 0, gaps: [] }
-    let previous: number | undefined
-    const slow = Model.make({
-      stream: () =>
-        Stream.fromEffect(
-          Effect.gen(function*() {
-            const now = yield* Clock.currentTimeMillis
-            observed.attempts++
-            if (previous !== undefined) observed.gaps.push(now - previous)
-            previous = now
-            yield* Effect.sleep("10 seconds")
-            return yield* Effect.fail(new ModelError({ code: "transport", message: "slow dead socket" }))
-          })
-        )
-    })
-    const recorded = await exhaust(slow)
-
-    const retries = retriesOf(recorded)
-    // Four rungs, not five, and it is not luck: the fourth is granted at
-    // 40 s of attempts plus 7 s of jittered sleeping, which is past the window
-    // however the jitter falls, and `Schedule.upTo` reads elapsed time at the
-    // following step — so the window is detected there and the fifth is never
-    // granted. Under jitter alone the third rung is granted at 33 s and the
-    // fourth at 47 s, so neither side of this is close.
-    expect(retries).toHaveLength(4)
-    expect(retries.length).toBeLessThan(FlowEngineLike.defaultModelRetryTimes)
-    expect(observed.attempts).toBe(retries.length + 1)
-    // Every rung it did run is still the declared, jittered one — the window
-    // ends the ladder, it does not reshape it.
-    retries.map((retry) => retry.delayMillis).forEach((delay, index) => {
-      expect(delay).toBeGreaterThanOrEqual(nominalMillis(index) * 0.8)
-      expect(delay).toBeLessThanOrEqual(nominalMillis(index) * 1.2)
-    })
-    // What the bound is worth, in the currency the r92 report priced it in: one
-    // whole attempt — one prompt re-sent, one partial body streamed, one more
-    // charge — that the count alone would have allowed.
-    const unbounded = (FlowEngineLike.defaultModelRetryTimes + 1) * 10_000
-    expect(observed.attempts * 10_000).toBeLessThan(unbounded)
-    expect(InternalModelStep.normalizeRecordedModelStep(recorded).error).toMatchObject({ code: "transport" })
-  })
-
-  it("runs every declared rung when the attempts themselves are cheap", async () => {
-    // The window is headroom over the ladder's own jittered ceiling, not a
-    // second, tighter budget: a transport that fails fast still gets all five
-    // rungs and the roughly thirty seconds of cover they were chosen for.
-    const observed: Observed = { attempts: 0, gaps: [] }
-    const { model } = alwaysFailing("transport", observed)
-    const recorded = await exhaust(model)
-
-    expect(retriesOf(recorded)).toHaveLength(FlowEngineLike.defaultModelRetryTimes)
-    expect(observed.gaps.reduce((total, gap) => total + gap, 0))
-      .toBeLessThan(FlowEngineLike.defaultModelRetryWindowMillis)
-  })
-
-  it("spends no delay and no attempt on a terminal failure", async () => {
-    const observed: Observed = { attempts: 0, gaps: [] }
-    const { error, model } = alwaysFailing("quota_exceeded", observed)
-    await expect(exhaust(model)).rejects.toStrictEqual(error)
-
-    // Widening the backoff must not widen what it applies to: an exhausted
-    // quota is terminal for the request as written, and waiting on it is pure
-    // latency. The step is not retried, and — because the classification stops
-    // the schedule before the tap — it does not journal a retry that never
-    // happened either.
-    expect(observed.attempts).toBe(1)
-    expect(observed.gaps).toEqual([])
-    // Capacity is not a recorded value at all: the sealed action fails so no
-    // later run can inherit this provider window as a durable success.
-  })
-
+describe("FlowEngineLike model step attempts", () => {
   it.each(
     [
       ["provider_internal", undefined],
       ["unknown", 503]
     ] as const
-  )("never records capacity spelled as %s / %s", async (code, httpStatus) => {
+  )("never records capacity spelled as %s / %s, even on the last attempt", async (code, httpStatus) => {
     const error = new ModelError({
       code,
       message: "provider overloaded",
@@ -2263,11 +2106,32 @@ describe("FlowEngineLike.defaultModelRetryPolicy", () => {
     })
     const model = Model.make({ stream: () => Stream.fail(error) })
 
+    // Capacity is not a recorded value at all: the sealed action fails so no
+    // later run can inherit this provider window as a durable success.
     await expect(
       Effect.runPromise(
-        InternalModelStep.recordModelStep(model, request("hello"), Schedule.recurs(0))
+        InternalModelStep.recordModelStep(model, request("hello"), { reissue: true, final: true })
       )
     ).rejects.toStrictEqual(error)
+  })
+
+  it("seals a transport failure only on the last attempt, and a provider's own call_timeout at once", async () => {
+    const dropped = new ModelError({ code: "transport", message: "socket closed" })
+    const timedOut = new ModelError({ code: "call_timeout", message: "the provider gave up" })
+    const attempt = (error: ModelError, final: boolean) =>
+      Effect.runPromiseExit(
+        InternalModelStep.recordModelStep(Model.make({ stream: () => Stream.fail(error) }), request("hello"), {
+          budgetMillis: 5_000,
+          reissue: true,
+          final
+        })
+      )
+    // Before the last attempt a dropped connection is the engine's to retry.
+    expect(await attempt(dropped, false)).toMatchObject({ _tag: "Failure" })
+    expect(await attempt(dropped, true)).toMatchObject({ _tag: "Success", value: { events: [], error: dropped } })
+    // Only a call this attempt cut off is re-issued; the provider's own
+    // timeout is its answer.
+    expect(await attempt(timedOut, false)).toMatchObject({ _tag: "Success", value: { events: [], error: timedOut } })
   })
 })
 
@@ -2281,9 +2145,8 @@ describe("FlowEngineLike.defaultModelRetryPolicy", () => {
  * model call was capped at nothing.
  *
  * Time is the whole assertion here, so `recordModelStep` is exercised directly
- * and forked, the way the backoff cases above are: the test clock advances
- * past the budget and past every scheduled sleep, and no case waits on a real
- * millisecond.
+ * and forked: the test clock advances past the budget and past every sleep,
+ * and no case waits on a real millisecond.
  */
 describe("FlowEngineLike model-call budget", () => {
   /** Short enough to advance past several times, long enough to see delays inside. */
@@ -2335,12 +2198,11 @@ describe("FlowEngineLike model-call budget", () => {
     budget: number | undefined = budgetMillis
   ): Promise<typeof FlowEngineLike.RecordedModelStep.Type> =>
     Effect.gen(function*() {
-      const fiber = yield* InternalModelStep.recordModelStep(
-        model,
-        request("hello"),
-        FlowEngineLike.defaultModelRetryPolicy,
-        budget
-      ).pipe(Effect.forkChild({ startImmediately: true }))
+      const fiber = yield* InternalModelStep.recordModelStep(model, request("hello"), {
+        budgetMillis: budget,
+        reissue: true,
+        final: false
+      }).pipe(Effect.forkChild({ startImmediately: true }))
       yield* TestClock.adjust("30 minutes")
       return yield* Fiber.join(fiber)
     }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
@@ -2357,18 +2219,12 @@ describe("FlowEngineLike model-call budget", () => {
     // One attempt that would take twice the budget, then one that answers.
     const recorded = await drive(slow([budgetMillis * 2, budgetMillis / 5], seen))
 
-    // The overrun is a retry on the existing transport schedule, journaled
-    // with the delay it slept, so the same wave report that reads a backoff
-    // reads this without learning a second vocabulary.
+    // The overrun is journaled as a retry, so the same wave report that reads
+    // a backoff reads this without learning a second vocabulary. Waiting
+    // cannot shorten an answer, so the re-issue follows at once.
     const retries = retriesOf(recorded)
     expect(retries.map((retry) => retry.code)).toEqual(["call_timeout"])
-    expect(retries[0]!.attempt).toBe(1)
-    expect(retries[0]!.delayMillis).toBeGreaterThanOrEqual(
-      FlowEngineLike.defaultModelRetryBaseMillis * 0.8
-    )
-    expect(retries[0]!.delayMillis).toBeLessThanOrEqual(
-      FlowEngineLike.defaultModelRetryBaseMillis * 1.2
-    )
+    expect(retries[0]).toMatchObject({ attempt: 1, delayMillis: 0, elapsedMs: budgetMillis })
     // Interrupted, not abandoned in flight: the first attempt's stream never
     // reached its end, and only the second one did.
     expect(seen.completed).toEqual([1])
@@ -2439,14 +2295,10 @@ describe("FlowEngineLike model-call budget", () => {
     // gave a whole run, and 2.7x the single 667 s call the budget was written
     // to bound.
     expect(seen.requests).toHaveLength(FlowEngineLike.defaultModelOverruns + 1)
-    // Measured on the injected clock rather than counted: the last attempt
-    // opens one budget plus one jittered backoff in, so the step's total model
-    // time is two budgets and change, whatever the schedule's other codes do.
+    // Measured on the injected clock rather than counted: the re-issue opens
+    // one budget in, so the step's total model time is two budgets.
     const opened = seen.startedAt[seen.startedAt.length - 1]! - seen.startedAt[0]!
-    expect(opened).toBeLessThanOrEqual(
-      budgetMillis + FlowEngineLike.defaultModelRetryBaseMillis * 1.2
-    )
-    expect(opened).toBeGreaterThanOrEqual(budgetMillis)
+    expect(opened).toBe(budgetMillis)
   })
 
   /** A thinking delta, the event a long think streams on the ChatGPT route. */
@@ -2500,8 +2352,7 @@ describe("FlowEngineLike model-call budget", () => {
           ...request("hello"),
           params: ModelRequest.GenerationParams.make({ reasoningEffort: effort })
         }),
-        FlowEngineLike.defaultModelRetryPolicy,
-        budget
+        { budgetMillis: budget, reissue: true, final: false }
       ).pipe(Effect.forkChild({ startImmediately: true }))
       for (let minute = 0; minute < minutes; minute++) yield* TestClock.adjust("1 minute")
       return yield* Fiber.join(fiber)
@@ -2522,8 +2373,8 @@ describe("FlowEngineLike model-call budget", () => {
     const recorded = await driveStepped(thinking(10_000, 20_000, seen, 1), CellTurn.modelCallMsFor("max"))
 
     // A silent stream is a dead socket, not a model that talked too long: it
-    // is re-issued on the transport ladder after the idle window, not after
-    // the whole 30-minute ceiling, and the model is not told to hurry.
+    // is re-issued after the idle window, not after the whole 30-minute
+    // ceiling, and the model is not told to hurry.
     expect(retriesOf(recorded).map((retry) => retry.code)).toEqual(["transport"])
     expect(seen.requests).toHaveLength(2)
     expect(seen.requests[1]!.system).toEqual([])
@@ -2538,7 +2389,7 @@ describe("FlowEngineLike model-call budget", () => {
     const recorded = await driveStepped(thinking(10_000, 20_000, seen, 10), CellTurn.modelCallMsFor("max"))
 
     // Like an overrun, a stall costs a whole window, so it is re-issued once
-    // and not on the transport ladder's five rungs.
+    // and then sealed, never handed to the engine's transport retries.
     expect(seen.requests).toHaveLength(FlowEngineLike.defaultModelOverruns + 1)
     const error = InternalModelStep.normalizeRecordedModelStep(recorded).error
     expect(error).toMatchObject({ code: "transport" })
