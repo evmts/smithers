@@ -2,11 +2,12 @@
 // the writer that streams each answer's text and parts, over an `AnswerApi` that records or refuses its writes.
 import type { AgentEvent } from "@smthrs/harness"
 import { EventSink } from "@smthrs/agent"
-import { Context, Effect, Exit, Layer, Scope } from "effect"
+import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect"
 import { describe, expect, test, vi } from "vitest"
-import { AnswerApi, AnswersUnavailable } from "./answers"
-import { settlement, sink } from "./host"
+import { AnswerApi, AnswerSettled, AnswersUnavailable } from "./answers"
+import { settlement, settleAnswer, sink } from "./host"
 import { AnswerProgress, empty, failureOf, fold, type Progress } from "./progress"
+import { RunReporter } from "../status/reporter"
 import { prompt } from "./flows"
 import type { AnswerWrite } from "./schema"
 
@@ -131,7 +132,7 @@ describe("prompt", () => {
 })
 
 describe("AnswerProgress", () => {
-  const open = async (write: (answerId: string, write: AnswerWrite) => Effect.Effect<void, AnswersUnavailable>) => {
+  const open = async (write: (answerId: string, write: AnswerWrite) => Effect.Effect<void, AnswersUnavailable | AnswerSettled>) => {
     const scope = Effect.runSync(Scope.make())
     const progress = await Effect.runPromise(
       Scope.provide(scope)(
@@ -147,6 +148,86 @@ describe("AnswerProgress", () => {
     )
     return { progress, close: () => Effect.runPromise(Scope.close(scope, Exit.void)) }
   }
+
+  test("a stalled write does not block a later answer", async () => {
+    const delivered: string[] = []
+    const entered = Effect.runSync(Deferred.make<void>())
+    const { progress, close } = await open((id) => id === "stalled"
+      ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+      : Effect.sync(() => { delivered.push(id) }))
+    try {
+      await Effect.runPromise(progress.record("stalled", started(0, 0)))
+      await Effect.runPromise(Deferred.await(entered))
+      await Effect.runPromise(progress.record("next", started(0, 0)))
+      await vi.waitFor(() => expect(delivered).toEqual(["next"]), { timeout: 500 })
+    } finally { await close() }
+  })
+
+  test("a terminal refusal releases the answer's retained progress", async () => {
+    let attempted = false
+    const { progress, close } = await open(() => Effect.sync(() => { attempted = true }).pipe(
+      Effect.andThen(Effect.fail(new AnswerSettled())),
+    ))
+    try {
+      await Effect.runPromise(progress.record("settled", started(0, 0)))
+      await vi.waitFor(() => expect(attempted).toBe(true))
+      expect(await Effect.runPromise(progress.get("settled"))).toBeUndefined()
+    } finally { await close() }
+  })
+
+  test("a terminal settlement refusal releases progress without changing its failure", async () => {
+    const api = AnswerApi.of({ heartbeat: () => Effect.void, turn: () => Effect.die("unused"), write: () => Effect.fail(new AnswerSettled()) })
+    const result = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const progress = yield* AnswerProgress
+      yield* progress.record("a", started(0, 0))
+      const exit = yield* Effect.exit(settleAnswer({ answerId: "a", ending: { text: "Done", timedOut: false } }))
+      return { exit, retained: yield* progress.get("a") }
+    }).pipe(
+      Effect.provide(AnswerProgress.layer("1 seconds")),
+      Effect.provideService(AnswerApi, api),
+      Effect.provideService(RunReporter, RunReporter.of({ report: () => Effect.die("must not report success"), reportOrFail: () => Effect.die("unused") })),
+    )))
+    expect(Exit.isFailure(result.exit)).toBe(true)
+    expect(result.retained).toBeUndefined()
+  })
+
+  test("transient settlement failure retains progress for the durable retry", async () => {
+    const api = AnswerApi.of({ heartbeat: () => Effect.void, turn: () => Effect.die("unused"), write: () => Effect.fail(new AnswersUnavailable({})) })
+    const retained = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const progress = yield* AnswerProgress
+      yield* progress.record("a", started(0, 0))
+      yield* Effect.exit(settleAnswer({ answerId: "a", ending: { text: "Done", timedOut: false } }))
+      return yield* progress.get("a")
+    }).pipe(
+      Effect.provide(AnswerProgress.layer("1 seconds")),
+      Effect.provideService(AnswerApi, api),
+      Effect.provideService(RunReporter, RunReporter.of({ report: () => Effect.die("must not report success"), reportOrFail: () => Effect.die("unused") })),
+    )))
+    expect(retained?.parts).toHaveLength(1)
+  })
+
+  test("coalesces changes during a write without overlapping writes for that answer", async () => {
+    const entered = Effect.runSync(Deferred.make<void>())
+    const release = Effect.runSync(Deferred.make<void>())
+    const writes: Array<[string, AnswerWrite]> = []
+    const { progress, close } = await open((id, write) => Effect.gen(function* () {
+      writes.push([id, write])
+      if (writes.length === 1) {
+        yield* Deferred.succeed(entered, undefined)
+        yield* Deferred.await(release)
+      }
+    }))
+    try {
+      await Effect.runPromise(progress.record("a", started(0, 0)))
+      await Effect.runPromise(Deferred.await(entered))
+      await Effect.runPromise(progress.record("a", delta('```cell\nctx.done("Latest')))
+      await Effect.runPromise(progress.record("b", started(0, 0)))
+      await vi.waitFor(() => expect(writes.map(([id]) => id)).toEqual(["a", "b"]))
+      await Effect.runPromise(Deferred.succeed(release, undefined))
+      await vi.waitFor(() => expect(writes.map(([id]) => id)).toEqual(["a", "b", "a"]))
+      expect(writes[2]?.[1]).toMatchObject({ status: "streaming", text: "Latest" })
+    } finally { await close() }
+  })
 
   test("writes each answer's latest text and parts as they change, and nothing for events that show nothing", async () => {
     const writes: Array<[string, AnswerWrite]> = []

@@ -36,6 +36,12 @@ export const ANSWER_SETTLE_WITHIN = "10 minutes"
 export const AGENT_TELEMETRY = {
   records: [
     "chat.answer.heartbeat.failed",
+    "chat.answer.exchange",
+    "chat.answer.exchange.timeout",
+    "smithers_answer_exchange_timeouts",
+    "chat.answer.progress",
+    "chat.answer.progress.failed",
+    "smithers_answer_progress_writes",
     "invoke_agent",
     "chat agent",
     "ModelStep",
@@ -55,6 +61,7 @@ export const AGENT_TELEMETRY = {
     "flows_agent_structured_output_exhausted",
   ],
   fields: [
+    "operation",
     "answerId",
     "status",
     "gen_ai.operation.name",

@@ -2,7 +2,7 @@
 // worker/Answers.test.ts and the agent's run against them in agent.test.ts; here `AnswerApi` reads each answer a
 // transport can give, injected as the `fetch` its `HttpClient` uses.
 import { Cause, Effect, Exit, Layer } from "effect"
-import { FetchHttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { AnswerApi, AnswerSettled, AnswersUnavailable, NotYourTurn } from "./answers"
 
@@ -43,8 +43,9 @@ describe("turn", () => {
     expect(notYourTurn).toBeInstanceOf(NotYourTurn)
     expect((notYourTurn as NotYourTurn).waitedMs).toBe(1_500)
     // A refusal that doesn't say how long the turn has waited, or says something that isn't a duration, counts as none.
-    for (const waitedMs of [undefined, -1, "5", Number.NaN]) {
-      const unsaid = failure(await turn(answering(409, JSON.stringify({ code: "not_your_turn", waitedMs }))))
+    for (const waitedMs of [undefined, -1, "5", null]) {
+      const encoded = JSON.stringify({ code: "not_your_turn", waitedMs })
+      const unsaid = failure(await turn(answering(409, encoded)))
       expect(unsaid).toBeInstanceOf(NotYourTurn)
       expect((unsaid as NotYourTurn).waitedMs).toBe(0)
     }
@@ -108,4 +109,43 @@ test("heartbeat renews with PATCH and respects terminal/server failures", async 
     .toEqual(new AnswersUnavailable({ status: 409 }))
   expect(failure(await over(() => Promise.reject(new TypeError("offline")), (api) => api.heartbeat("a"))))
     .toEqual(new AnswersUnavailable({}))
+})
+
+// Fault injection through the HTTP Effect service, including a body that never completes.
+test.each(["request", "success body", "refusal body"] as const)("stalled %s fails within the exchange deadline", async (phase) => {
+  for (const operation of ["turn", "heartbeat", "write"] as const) {
+    if (phase === "success body" && operation !== "turn") continue // Successful writes have no body to read.
+    let aborted = false
+    const client = HttpClient.make((_request, _url, signal) => {
+      signal.addEventListener("abort", () => { aborted = true }, { once: true })
+      return phase === "request"
+        ? Effect.never
+        : Effect.succeed({ status: phase === "success body" ? 200 : 409, json: Effect.never } as never)
+    })
+    const result = await Effect.runPromise(Effect.gen(function* () {
+      const api = yield* AnswerApi
+      const call: Effect.Effect<unknown, NotYourTurn | AnswerSettled | AnswersUnavailable> =
+        operation === "write" ? api.write("a", { status: "done", text: "Done" }) : api[operation]("a")
+      return yield* Effect.exit(call).pipe(Effect.timeout("200 millis"))
+    }).pipe(
+      Effect.provide(AnswerApi.layerHttp("http://chat.test", "10 millis")),
+      Effect.provide(Layer.succeed(HttpClient.HttpClient, client)),
+    ))
+    expect(failure(result)).toBeInstanceOf(AnswersUnavailable)
+    expect(aborted).toBe(true)
+  }
+})
+
+test("the NaN refusal reaches the decoder as NaN", async () => {
+  const waitedMs = Number.NaN
+  const body = { code: "not_your_turn", waitedMs }
+  // Unlike JSON.stringify, the Effect service preserves non-JSON numbers.
+  const client = HttpClient.make(() => Effect.succeed({ status: 409, json: Effect.succeed(body) } as never))
+  const result = await Effect.runPromise(Effect.flatMap(AnswerApi, (api) => Effect.exit(api.turn("a"))).pipe(
+    Effect.provide(AnswerApi.layerHttp("http://chat.test")),
+    Effect.provide(Layer.succeed(HttpClient.HttpClient, client)),
+  ))
+  expect(Number.isNaN(body.waitedMs)).toBe(true)
+  expect(failure(result)).toBeInstanceOf(NotYourTurn)
+  expect((failure(result) as NotYourTurn).waitedMs).toBe(0)
 })

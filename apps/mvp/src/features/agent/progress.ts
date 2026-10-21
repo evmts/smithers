@@ -1,5 +1,5 @@
 import { type AgentEvent, DoneText } from "@smthrs/harness"
-import { Context, Effect, Layer, Option, Queue, Stream } from "effect"
+import { Context, Effect, Layer, Metric, Option, Queue, Stream } from "effect"
 import { AnswerApi } from "./answers"
 import type { AnswerFailure, Part } from "./schema"
 
@@ -91,6 +91,9 @@ export const fold = (progress: Progress, event: AgentEvent.AgentEvent): Progress
 export const failureOf = (progress: Progress | undefined): AnswerFailure =>
   progress === undefined ? "model_error" : progress.modelFailure ?? "unfinished"
 
+/** Progress writes accepted by the answer routes. */
+export const progressWrites = Metric.counter("smithers_answer_progress_writes", { incremental: true })
+
 /** Each answer's progress in this engine, and the writer that streams its text and parts. */
 export class AnswerProgress extends Context.Service<
   AnswerProgress,
@@ -114,6 +117,8 @@ export class AnswerProgress extends Context.Service<
         const api = yield* AnswerApi
         const answers = new Map<string, Progress>()
         const changed = yield* Queue.unbounded<string>()
+        const scope = yield* Effect.scope
+        const writing = new Set<string>()
         yield* Stream.fromQueue(changed).pipe(
           Stream.groupedWithin(Number.MAX_SAFE_INTEGER, every),
           Stream.runForEach((ids) =>
@@ -121,13 +126,30 @@ export class AnswerProgress extends Context.Service<
               new Set(ids),
               (id) => {
                 const progress = answers.get(id)
-                return progress === undefined
-                  ? Effect.void
-                  : api.write(id, {
-                    status: "streaming",
-                    parts: progress.parts,
-                    ...(progress.text === undefined ? {} : { text: progress.text }),
-                  }).pipe(Effect.ignore)
+                if (progress === undefined || writing.has(id)) return Effect.void
+                writing.add(id)
+                // Each answer owns at most one write. Other answers and later batches keep moving.
+                return api.write(id, {
+                  status: "streaming",
+                  parts: progress.parts,
+                  ...(progress.text === undefined ? {} : { text: progress.text }),
+                }).pipe(
+                  Effect.tap(() => Metric.update(progressWrites, 1)),
+                  Effect.catchTag("@smthrs/mvp/agent/AnswerSettled", () => Effect.sync(() => void answers.delete(id))),
+                  Effect.catchTag("@smthrs/mvp/agent/AnswersUnavailable", (error) =>
+                    Effect.logWarning("chat.answer.progress.failed").pipe(Effect.annotateLogs({ answerId: id, status: error.status ?? 0 }))),
+                  Effect.ensuring(Effect.suspend(() => {
+                    writing.delete(id)
+                    const latest = answers.get(id)
+                    // Changes received during this write are coalesced into the next tick, never retried here.
+                    return latest !== undefined && (latest.parts !== progress.parts || latest.text !== progress.text)
+                      ? Queue.offer(changed, id).pipe(Effect.asVoid)
+                      : Effect.void
+                  })),
+                  Effect.withSpan("chat.answer.progress"),
+                  Effect.forkIn(scope),
+                  Effect.asVoid,
+                )
               },
               { discard: true },
             )

@@ -1,6 +1,6 @@
 import { AgentAction } from "@smthrs/agent"
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
-import { Node, Placement } from "@smthrs/plan"
+import { Node, Placement, type Planned } from "@smthrs/plan"
 import { Schema } from "effect"
 import { AnswerSettled, AnswersUnavailable, NotYourTurn, TurnOutOfTime } from "./answers"
 import { SETTLE_RETRY } from "./close"
@@ -103,6 +103,20 @@ export const Settle = Action.make("chat/Settle", {
   retryPolicy: SETTLE_RETRY,
 })
 
+/** Releases host progress only after settlement's durable retries have ended. */
+export const ForgetProgress = Action.make("chat/ForgetProgress", {
+  payload: { answerId: Schema.String },
+  success: Schema.Void,
+  tier: "sealed",
+})
+
+/** The settlement graph: terminal failures release progress and retain their original error. */
+export const settle = (payload: Parameters<typeof Settle.call>[0]) =>
+  Settle.call(payload).pipe(Node.catch({
+    onFailure: Node.capture({ forget: ForgetProgress.name }, (error: Planned.Planned<AnswerSettled | AnswersUnavailable>) =>
+      ForgetProgress.call({ answerId: payload.answerId }).pipe(Node.andThen(Node.fail(error)))),
+  }))
+
 /**
  * `chat/Answer { answerId }`: answers the question asked with this answer's id, on this device. Its tag and schemas are
  * its reference's (./reference.ts), the very objects the tab dispatches by.
@@ -130,7 +144,7 @@ export const Answer = Flow.make(AnswerReference._tag, {
           error: Schema.Struct({ _tag: Schema.Literal("@smthrs/mvp/agent/TurnOutOfTime") }),
           onFailure: Node.capture({ timedOut: true }, () => Node.succeed<Ending>({ text: null, timedOut: true })),
         }),
-        Node.bindPlanned(Node.capture({ settle: Settle.name }, (ending) => Settle.call({ answerId, ending }))),
+        Node.bindPlanned(Node.capture({ settle: Settle.name }, (ending) => settle({ answerId, ending }))),
       ),
   ),
 }).annotate(Flow.Placement, Placement.client())

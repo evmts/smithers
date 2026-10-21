@@ -670,3 +670,5 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | `ops/grafana/dashboard.test.ts` | the flow usage dashboard filters only on lines the relay keeps or ChatApi writes, and parses only fields they carry |
 | `e2e/flow-usage.spec.ts` | locally, the theme button's `flow.run.started` and `flow.run.settled` lines (door `button`, actor `person`, placement `browser`, `succeeded`) relayed to ChatApi, and the Runs page's flows summary counting the run |
 | `e2e/navigate.spec.ts` | locally, the engine worker's `web.navigate` lines for the agent's navigation and refusal, read from ChatApi's relayed records |
+
+Answer exchange deadlines emit `chat.answer.exchange`, `chat.answer.exchange.timeout` and `smithers_answer_exchange_timeouts`, by `operation`. Independent progress writers emit `chat.answer.progress`, `chat.answer.progress.failed` (`answerId`, `status`) and `smithers_answer_progress_writes` for accepted writes. These records contain no answer content.

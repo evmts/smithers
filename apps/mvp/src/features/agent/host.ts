@@ -8,7 +8,7 @@ import { MODEL_ROUTE } from "../model/contract"
 import * as Close from "./close"
 import { AnswerApi, type NotYourTurn, TurnOutOfTime } from "./answers"
 import { ANSWER_TURN_WAIT, MAX_FRAMES } from "./contract"
-import { Answer, type Ending, LoadTurn, Respond, Settle } from "./flows"
+import { Answer, type Ending, ForgetProgress, LoadTurn, Respond, Settle } from "./flows"
 import { RunReporter } from "../status/reporter"
 import { AnswerProgress, failureOf, type Progress } from "./progress"
 import type { AnswerWrite } from "./schema"
@@ -122,6 +122,26 @@ export const settlement = (
   return { status: "failed", failure: text === null ? failureOf(progress) : "empty", ...shown }
 }
 
+/** One settlement attempt; the durable action owns retries. */
+export const settleAnswer = ({ answerId, ending }: { readonly answerId: string; readonly ending: Ending }) =>
+  Effect.gen(function* () {
+    const api = yield* AnswerApi
+    const progress = yield* AnswerProgress
+    const write = settlement(ending, yield* progress.get(answerId))
+    yield* api.write(answerId, write).pipe(
+      Effect.tapErrorTag("@smthrs/mvp/agent/AnswerSettled", () => progress.forget(answerId)),
+    )
+    yield* progress.forget(answerId)
+    yield* (yield* RunReporter).report(answerId, { status: write.status })
+    return { status: write.status }
+  })
+
+/** The implementation layers for the settlement graph. */
+export const settlementLayers = Layer.mergeAll(
+  Settle.toLayer(settleAnswer),
+  ForgetProgress.toLayer(({ answerId }) => Effect.flatMap(AnswerProgress, (progress) => progress.forget(answerId))),
+)
+
 /**
  * `chat/Answer` and its steps: the turn and the settle through `AnswerApi`, the agent through `Agent`, and a turn wait
  * of `turnWait`, counted by the routes from when the queue before the answer last moved.
@@ -151,17 +171,7 @@ export const registration = (turnWait: Duration.Input = ANSWER_TURN_WAIT) => {
         })
       ),
       Respond.layer,
-      Settle.toLayer(({ answerId, ending }) =>
-        Effect.gen(function* () {
-          const api = yield* AnswerApi
-          const progress = yield* AnswerProgress
-          const write = settlement(ending, yield* progress.get(answerId))
-          yield* api.write(answerId, write)
-          yield* progress.forget(answerId)
-          yield* (yield* RunReporter).report(answerId, { status: write.status })
-          return { status: write.status }
-        })
-      ),
+      settlementLayers,
     ),
     { onHeartbeat: (answerId) => api.heartbeat(answerId).pipe(
       // Lost server authority ends the receipt. Subsequent writes remain

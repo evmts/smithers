@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, type Duration, Effect, Layer, Metric, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import { ANSWERS_ROUTE } from "./contract"
 import { type AnswerWrite, AnswerWrite as AnswerWriteSchema, Turn } from "./schema"
@@ -24,11 +24,14 @@ export class TurnOutOfTime extends Schema.TaggedError<TurnOutOfTime>()("@smthrs/
 /** The answer has settled already, so nothing more is written to it. */
 export class AnswerSettled extends Schema.TaggedError<AnswerSettled>()("@smthrs/mvp/agent/AnswerSettled", {}) {}
 
-/** The answer routes refused or couldn't be reached: `status` is the HTTP status, absent when nothing answered. */
+/** The routes refused or the exchange failed: `status` is absent for a transport failure or deadline. */
 export class AnswersUnavailable extends Schema.TaggedError<AnswersUnavailable>()(
   "@smthrs/mvp/agent/AnswersUnavailable",
   { status: Schema.optional(Schema.Number) },
 ) {}
+
+/** Exchanges whose request or response body exceeded the host's deadline. */
+export const exchangeTimeouts = Metric.counter("smithers_answer_exchange_timeouts", { incremental: true })
 
 /** The answer routes, as the agent's flow reaches them. */
 export class AnswerApi extends Context.Service<
@@ -42,8 +45,8 @@ export class AnswerApi extends Context.Service<
     readonly write: (answerId: string, write: AnswerWrite) => Effect.Effect<void, AnswerSettled | AnswersUnavailable>
   }
 >()("@smthrs/mvp/agent/AnswerApi") {
-  /** ChatApi's answer routes on `origin`. */
-  static readonly layerHttp = (origin: string) =>
+  /** ChatApi's answer routes on `origin`, with one deadline for the request and decoded body. */
+  static readonly layerHttp = (origin: string, within: Duration.Input = "15 seconds") =>
     Layer.effect(
       AnswerApi,
       Effect.gen(function* () {
@@ -51,24 +54,35 @@ export class AnswerApi extends Context.Service<
         const url = (answerId: string) => `${origin}${ANSWERS_ROUTE}/${answerId}`
         const send = (request: HttpClientRequest.HttpClientRequest) =>
           client.execute(request).pipe(Effect.mapError(() => new AnswersUnavailable({})))
+        const exchange = <A, E>(operation: string, effect: Effect.Effect<A, E>) => effect.pipe(
+          Effect.timeoutOrElse({
+            duration: within,
+            orElse: () => Effect.gen(function* () {
+              yield* Metric.update(Metric.withAttributes(exchangeTimeouts, { operation }), 1)
+              yield* Effect.logWarning("chat.answer.exchange.timeout").pipe(Effect.annotateLogs({ operation }))
+              return yield* new AnswersUnavailable({})
+            }),
+          }),
+          Effect.withSpan("chat.answer.exchange", { kind: "client", attributes: { operation } }),
+        )
         return AnswerApi.of({
           turn: (answerId) =>
-            Effect.gen(function* () {
+            exchange("turn", Effect.gen(function* () {
               const response = yield* send(HttpClientRequest.get(url(answerId)))
               if (response.status !== 200) return yield* refused(response)
               return yield* response.json.pipe(
                 Effect.flatMap(Schema.decodeUnknownEffect(Turn)),
                 Effect.mapError(() => new AnswersUnavailable({ status: response.status })),
               )
-            }),
-          heartbeat: (answerId) => Effect.gen(function* () {
+            })),
+          heartbeat: (answerId) => exchange("heartbeat", Effect.gen(function* () {
             const response = yield* send(HttpClientRequest.patch(url(answerId)))
             if (response.status !== 200) return yield* refused(response).pipe(
               Effect.catchTag("@smthrs/mvp/agent/NotYourTurn", () => new AnswersUnavailable({ status: 409 })),
             )
-          }),
+          })),
           write: (answerId, write) =>
-            Effect.gen(function* () {
+            exchange("write", Effect.gen(function* () {
               const body = Schema.encodeSync(AnswerWriteSchema)(write)
               const response = yield* send(
                 HttpClientRequest.post(url(answerId)).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
@@ -78,7 +92,7 @@ export class AnswerApi extends Context.Service<
                   Effect.catchTag("@smthrs/mvp/agent/NotYourTurn", () => new AnswersUnavailable({ status: 409 })),
                 )
               }
-            }),
+            })),
         })
       }),
     )
