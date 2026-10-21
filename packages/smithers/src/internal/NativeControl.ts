@@ -283,6 +283,20 @@ export interface HostState {
 const emptyHost = (): HostState => ({ catalog: undefined, revision: undefined, executor: undefined })
 
 /**
+ * Where a platform failure happened, as `<syscall> <path> in <module>.<method>`,
+ * or `""` when the reason names neither a syscall nor a path. Redacted and
+ * bounded like a cause line, since a path is whatever the flow or the host
+ * asked to open.
+ */
+const platformSite = (reason: PlatformError.PlatformError["reason"]): string => {
+  if (reason._tag === "BadArgument") return ""
+  if (reason.syscall === undefined && reason.pathOrDescriptor === undefined) return ""
+  const target = [reason.syscall, reason.pathOrDescriptor].filter((part) => part !== undefined).join(" ")
+  return [...Failure.causeLine(`${target} in ${reason.module}.${reason.method}`)].slice(0, Failure.fieldValueLimit)
+    .join("")
+}
+
+/**
  * The `Cannot load flow` issue for a flow whose body this host could not load.
  *
  * The underlying cause leads: what the module imported and could not find, a
@@ -292,7 +306,10 @@ const emptyHost = (): HostState => ({ catalog: undefined, revision: undefined, e
  * investigations blamed the wrong package (#4253). Only the first line of an
  * `Error` or a thrown string travels, redacted and bounded; a flow's top level
  * can throw any text, and its stack is not an operator's answer. A
- * `PlatformError` keeps its designed remedy instead.
+ * `PlatformError` keeps its designed remedy instead, followed by the syscall
+ * and path a `SystemError` names: "Operation not permitted" alone sent an
+ * investigation through every file the loader walks before it found the one
+ * the helper refused.
  */
 const loadIssue = (
   flow: string,
@@ -300,7 +317,7 @@ const loadIssue = (
 ): string => {
   const cause = refusal?.cause
   const sentence = (cause instanceof PlatformError.PlatformError
-    ? cause.reason.description ?? refusal?.message
+    ? [cause.reason.description ?? refusal?.message, platformSite(cause.reason)].filter(Boolean).join("; ")
     : refusal?.message) ?? "No registered executable on this host"
   const line = cause instanceof PlatformError.PlatformError ? "" : (() => {
     try {

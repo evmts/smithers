@@ -362,6 +362,37 @@ ${source}`
       PlatformError.systemError({ _tag: "PermissionDenied", module: "AtomicFileSystem", method: "readFile" }),
       "Flow source cannot be read"
     ],
+    // The helper refuses a hard-linked file with a bare EPERM. Without the
+    // syscall and path, `docs:check` failed on "Operation not permitted" and
+    // the file it could not read had to be found by hand.
+    [
+      PlatformError.systemError({
+        _tag: "PermissionDenied",
+        module: "AtomicFileSystem",
+        method: "readFile",
+        syscall: "open",
+        pathOrDescriptor: "/repo/bun.lock",
+        description: "Operation not permitted (os error 1)"
+      }),
+      "Operation not permitted (os error 1); open /repo/bun.lock in AtomicFileSystem.readFile"
+    ],
+    [
+      PlatformError.systemError({
+        _tag: "NotFound",
+        module: "AtomicFileSystem",
+        method: "stat",
+        pathOrDescriptor: "/repo/.smithers/flows/native/helper.ts"
+      }),
+      "Flow source cannot be read; /repo/.smithers/flows/native/helper.ts in AtomicFileSystem.stat"
+    ],
+    [
+      PlatformError.badArgument({
+        module: "AtomicFileSystem",
+        method: "glob",
+        description: "glob pattern expands past 64 alternatives"
+      }),
+      "glob pattern expands past 64 alternatives"
+    ],
     [new Error("first line\n    at stack (flow.ts:1:1)"), "Error: first line; Flow source cannot be read"],
     ["thrown string\nsecond line", "thrown string; Flow source cannot be read"],
     [{ message: "not an error" }, "Flow source cannot be read"]
