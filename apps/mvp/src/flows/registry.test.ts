@@ -4,9 +4,10 @@
 import { Flow } from "@smthrs/flow"
 import { Placement } from "@smthrs/plan"
 import { Context, Effect, Option } from "effect"
-import { readdirSync, readFileSync } from "node:fs"
+import { readdirSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
+import ts from "typescript"
 import { agentFlows, catalogDescription, childExecutionId, publicError } from "./catalog"
 import { clientFlows, declarationOf, declarations, modelInvocable } from "./declarations"
 import { entryOf, FlowRegistry, names, registry } from "./registry"
@@ -20,6 +21,25 @@ const sources = (dir: string): ReadonlyArray<string> =>
     if (entry.isDirectory()) return entry.name === "test" ? [] : sources(path)
     return /\.tsx?$/.test(entry.name) && !entry.name.endsWith(".test.ts") ? [path] : []
   })
+
+// Kept separately so syntax coverage is itself a regression test.
+const dispatchArguments = (source: ts.SourceFile): ReadonlyArray<ts.Expression> => {
+  const args: ts.Expression[] = []
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "dispatch") {
+      expect(node.arguments.length).toBeGreaterThan(0)
+      args.push(node.arguments[0]!)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return args
+}
+
+test("dispatch scanning includes single quotes, template literals and constants", () => {
+  const source = ts.createSourceFile("dispatch.ts", "const FLOW = 'app/theme/set'; f.dispatch('app/theme/set', {}); f.dispatch(`app/navigate`, {}); f.dispatch(FLOW, {})", ts.ScriptTarget.Latest)
+  expect(dispatchArguments(source).map((argument) => argument.getText(source))).toEqual(["'app/theme/set'", "`app/navigate`", "FLOW"])
+})
 
 describe("the parity law", () => {
   test("every registered flow the agent may not run says why, and declares itself not model-invocable", () => {
@@ -43,13 +63,26 @@ describe("the parity law", () => {
   })
 
   test("the UI dispatches only registered names", () => {
-    const dispatched = sources(join(import.meta.dirname, "..")).flatMap((path) =>
-      [...readFileSync(path, "utf8").matchAll(/\.dispatch\(\s*"([^"]+)"/g)].map((match) => match[1]!)
-    )
-
+    const paths = sources(join(import.meta.dirname, ".."))
+    const config = ts.readConfigFile(join(import.meta.dirname, "../../tsconfig.json"), ts.sys.readFile)
+    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, join(import.meta.dirname, "../.."))
+    const program = ts.createProgram(paths, parsed.options)
+    const checker = program.getTypeChecker()
+    const dispatched: string[] = []
+    for (const path of paths) {
+      const source = program.getSourceFile(path)!
+      for (const argument of dispatchArguments(source)) {
+        const type = checker.getTypeAtLocation(argument)
+        for (const member of type.isUnion() ? type.types : [type]) {
+          // Constants, unions and template literals must resolve to registered names; an unconstrained string fails.
+          expect(member.isStringLiteral(), `${path}: ${argument.getText(source)}`).toBe(true)
+          if (member.isStringLiteral()) dispatched.push(member.value)
+        }
+      }
+    }
     expect(dispatched).toContain("app/theme/set")
     for (const name of dispatched) expect(names).toContain(name)
-  })
+  }, 90_000)
 
   test("the agent's catalog is every model-invocable flow", () => {
     expect(agentFlows).toEqual(names.filter(modelInvocable))

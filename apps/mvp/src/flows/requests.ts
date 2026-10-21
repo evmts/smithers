@@ -10,11 +10,16 @@ import type { Door } from "./dispatch"
 export const REMEMBERED = 1_024
 
 /**
- * The run an execution belongs to, its requester: its id up to its first `/`. A tab's dispatch is its own requester;
+ * The dispatch an execution belongs to: its full id, including a retry's embedded run id. A tab's dispatch is its own
+ * requester;
  * the agent's flow call (`<answerId>/chat/Respond@…/call/<frame>.<ordinal>`, src/flows/catalog.ts `childExecutionId`)
  * belongs to the answer whose run made it, which the asking tab dispatched.
  */
-export const requesterOf = (executionId: string): string => executionId.split("/", 1)[0]!
+export const requesterOf = (executionId: string): string => {
+  // A retry embeds the previous run id, including its slashes. Only an agent session/call suffix is stripped.
+  const retry = /^(retry:.*:\d+)(?:\/run)?(?:\/[^@]+@[^/]+\/call\/.*)?$/.exec(executionId)
+  return retry?.[1] ?? executionId.split("/", 1)[0]!
+}
 
 /** The executions this tab started, each with the door it came through. */
 export class TabRequests extends Context.Service<

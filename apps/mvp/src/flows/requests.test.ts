@@ -30,7 +30,6 @@ describe("a tab's requests", () => {
     expect(Effect.runSync(requests.doorOf("a"))).toEqual(Option.some("view"))
     expect(Effect.runSync(requests.doorOf("b"))).toEqual(Option.none())
     expect(Effect.runSync(requests.doorOf("c"))).toEqual(Option.some("button"))
-    expect(REMEMBERED).toBe(1_024)
   })
 
   test("each tab remembers its own", () => {
@@ -48,4 +47,27 @@ describe("an execution's requester", () => {
     expect(requesterOf("theme-1")).toBe("theme-1")
     expect(requesterOf("answer-1/chat/Respond@abc:1/call/2.0")).toBe("answer-1")
   })
+})
+
+
+test("the default store retains its real REMEMBERED dispatches and evicts only the oldest", () => {
+  expect(REMEMBERED).toBe(1_024)
+  const requests = tab()
+  for (let i = 0; i < REMEMBERED; i++) Effect.runSync(requests.add(`request:${i}`, "button"))
+  for (let i = 0; i < REMEMBERED; i++) expect(Effect.runSync(requests.doorOf(`request:${i}`))).toEqual(Option.some("button"))
+  Effect.runSync(requests.add("last", "view"))
+  expect(Effect.runSync(requests.doorOf("request:0"))).toEqual(Option.none())
+  expect(Effect.runSync(requests.doorOf("request:1"))).toEqual(Option.some("button"))
+  expect(Effect.runSync(requests.doorOf("last"))).toEqual(Option.some("view"))
+})
+
+test("a retry of a retry keeps its requesting tab, including an agent call inside it", () => {
+  const requests = tab()
+  const executionId = "retry:retry:original:1/run:2"
+  Effect.runSync(requests.add(executionId, "button"))
+  expect(requesterOf(executionId)).toBe(executionId)
+  expect(Effect.runSync(requests.doorOf(requesterOf(executionId)))).toEqual(Option.some("button"))
+  expect(requesterOf(`${executionId}/chat/Respond@abc:1/call/2.0`)).toBe(executionId)
+  expect(requesterOf(`${executionId}/run`)).toBe(executionId)
+  expect(requesterOf(`${executionId}/run/flow/run/agent@abc:1/call/2.0`)).toBe(executionId)
 })
