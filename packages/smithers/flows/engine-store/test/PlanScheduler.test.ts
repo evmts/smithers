@@ -1723,6 +1723,71 @@ describe("PlanScheduler reconciliation", () => {
     expect(outcomes(report)).toEqual({ "install-a": "built", "install-b": "built" })
   })
 
+  it("judges a sibling's deviation only once its own settlement is processed", async () => {
+    const plan = await runPromise(compile([
+      draft("first", { writes: ["first.out"], boundaryMode: "expected" }),
+      draft("second", { writes: ["second.out"], boundaryMode: "expected" })
+    ]))
+    const boundary = Layer.succeed(
+      StepBoundary.StepBoundary,
+      StepBoundary.make({
+        prepare: (descriptor) => Effect.succeed({ descriptor, readSnapshot: StepBoundary.exactReads(descriptor) }),
+        settle: (prepared) => {
+          const paths = [`${prepared.descriptor.writeSet[0]}.extra`]
+          return Effect.succeed({
+            declaredOutputs: {},
+            diffIdentity: paths[0]!,
+            wholeTreeWritesVerified: true as const,
+            hermeticReadsVerified: true as const,
+            deviation: { _tag: "ExpectedSetDeviation" as const, paths, diffIdentity: paths[0]! }
+          })
+        },
+        replayOutputs: () => Effect.void
+      })
+    )
+    const executor: PlanScheduler.Executor = { execute: ({ node }) => Effect.succeed(node.id) }
+    const { events, report } = await runPromise(
+      Effect.gen(function*() {
+        yield* activate("run-sibling-deviation")
+        const journal = yield* Journal.Journal
+        // The first settlement's drain sees both deviations, so the sibling's
+        // is journaled before its own terminal event is processed.
+        const together = {
+          ...journal,
+          entries: (options: Parameters<typeof journal.entries>[0]) =>
+            Effect.gen(function*() {
+              let page = yield* journal.entries(options)
+              if (page.entries.some((entry) => entry.eventType === "flows.engine.expected-set-deviation")) {
+                yield* TestDatabase.until(Effect.gen(function*() {
+                  page = yield* journal.entries(options)
+                  return page.entries.filter((entry) => entry.eventType === "flows.engine.expected-set-deviation")
+                    .length >= 2
+                }))
+              }
+              return page
+            })
+        }
+        const report = yield* Effect.provide(
+          scheduler({ runId: "run-sibling-deviation", executor }).run(plan).pipe(
+            Effect.provideService(Journal.Journal, together)
+          ),
+          harness({ runId: "run-sibling-deviation", executor, boundary, reconciliation: Reconciliation.layerDefault })
+        )
+        return { report, events: yield* JournalRecords.entries("run-sibling-deviation", undefined, 512) }
+      }).pipe(Effect.provide(TestStores.layer()))
+    )
+    expect(report.verdicts.map((entry) => entry.verdict._tag)).toEqual(["Fail", "Fail"])
+    expect(outcomes(report)).toEqual({ first: "failed", second: "failed" })
+    // One terminal fact per node, and it is the verdict's, not the dispatch's.
+    expect(
+      events.entries.filter((entry) => entry.eventType === "flows.engine.node-settled").map((entry) => entry.payload)
+    ).toEqual(expect.arrayContaining([
+      expect.objectContaining({ nodeId: "first", outcome: "failed" }),
+      expect.objectContaining({ nodeId: "second", outcome: "failed" })
+    ]))
+    expect(events.entries.filter((entry) => entry.eventType === "flows.engine.node-settled")).toHaveLength(2)
+  })
+
   it("drains deviations past the first page of the journal", async () => {
     // The reconciliation seam reads the journal a page at a time. Concurrent
     // dispatches can journal more records than one page holds, and the final
@@ -1941,6 +2006,26 @@ describe("PlanScheduler elaboration", () => {
     expect(Exit.isFailure(observed.exit) && Cause.hasInterruptsOnly(observed.exit.cause)).toBe(true)
   })
 
+  it("interrupts the run when a dispatch is interrupted, rather than failing its node", async () => {
+    const plan = await runPromise(compile([
+      draft("interrupted"),
+      draft("after", { inputs: [{ _tag: "Pending", from: "interrupted" }] })
+    ]))
+    const executor: PlanScheduler.Executor = { execute: () => Effect.interrupt }
+    const exit = await runPromise(
+      Effect.gen(function*() {
+        yield* activate("run-dispatch-interrupted")
+        return yield* Effect.exit(Effect.provide(
+          scheduler({ runId: "run-dispatch-interrupted", executor }).run(plan),
+          harness({ runId: "run-dispatch-interrupted", executor })
+        ))
+      }).pipe(Effect.provide(TestStores.layer()))
+    )
+    // An interrupted dispatch is the run losing ownership. Reporting the node
+    // `failed` and settling its dependent `skipped` would continue past it.
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+  })
+
   it("surfaces a host that cannot measure the plan's inputs", async () => {
     const plan = await runPromise(compile([draft("reader", { reads: ["absent.txt"] })]))
     const executor: PlanScheduler.Executor = { execute: ({ node }) => Effect.succeed(node.id) }
@@ -2072,6 +2157,40 @@ describe("PlanScheduler invalidation and journal plumbing", () => {
     const invalidated = events.entries.filter((entry) => entry.eventType === "flows.engine.node-invalidated")
     expect(invalidated).toHaveLength(1)
     expect(invalidated[0]?.payload).toMatchObject({ nodeId: "racer", reason: "measured-inputs-changed" })
+  })
+
+  it("journals an invalidation under the attempt whose key it replaced", async () => {
+    const plan = await runPromise(compile([
+      draft("producer", { writes: ["shared.out"] }),
+      draft("racer", { reads: ["shared.out"] })
+    ]))
+    const events = await runPromise(
+      Effect.gen(function*() {
+        const seen = yield* Ref.make(0)
+        const executor: PlanScheduler.Executor = {
+          execute: ({ node }) =>
+            node.id === "producer" ? Effect.succeed("produced") : Effect.flatMap(
+              Ref.updateAndGet(seen, (count) => count + 1),
+              (count) => count === 1 ? Effect.fail(conflict()) : Effect.succeed("landed")
+            )
+        }
+        yield* activate("run-invalidated-source")
+        yield* Effect.provide(
+          scheduler({ runId: "run-invalidated-source", executor }).run(plan),
+          harness({ runId: "run-invalidated-source", executor, boundary: shifting() })
+        )
+        return yield* JournalRecords.entries("run-invalidated-source", undefined, 512)
+      }).pipe(Effect.provide(TestStores.layer()))
+    )
+    const racer = events.entries.filter((entry) =>
+      (entry.eventType === "flows.engine.node-scheduled" || entry.eventType === "flows.engine.node-invalidated") &&
+      (entry.payload as { readonly nodeId?: string }).nodeId === "racer"
+    )
+    expect(racer.map((entry) => [entry.eventType, entry.sourceId])).toEqual([
+      ["flows.engine.node-scheduled", "scheduler/run-invalidated-source/node/racer/1"],
+      ["flows.engine.node-invalidated", "scheduler/run-invalidated-source/node/racer/1/invalidated"],
+      ["flows.engine.node-scheduled", "scheduler/run-invalidated-source/node/racer/2"]
+    ])
   })
 
   it("keeps a read of its own future write pinned across a rebase", async () => {
