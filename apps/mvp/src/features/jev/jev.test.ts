@@ -367,11 +367,16 @@ describe("the agent", () => {
     const verdictsOf = (text: string) => (JSON.parse(text) as Verdicts).verdicts.map((verdict) => verdict.verdict)
     expect(verdictsOf(call.run.result!.text)).toEqual(["yes", "no", "unsure"])
 
-    // The flow view: the answer's own steps, and the Jev step its call ran, done, with the verdicts as its output and a
-    // link to the call's own run, whose page holds the input.
+    // The flow view: the answer's own steps, its opening memory among them, and the Jev step its call ran, done, with the
+    // verdicts as its output and a link to the call's own run, whose page holds the input.
     const graph = graphOf(page, null, Date.now())
-    expect(graph.nodes.map((node) => [node.label, node.state])).toEqual([
+    const nodes = graph.nodes.map((node) => [node.label, node.state])
+    // chat/ForgetProgress releases the answer's progress after Settle, so the page can be read before or after it ran.
+    expect(nodes.map(([label]) => label)).toContain("chat/ForgetProgress")
+    expect(nodes.filter(([label]) => label !== "chat/ForgetProgress")).toEqual([
       ["chat/LoadTurn", "done"],
+      ["chat/RecallOpening", "done"],
+      ["chat/Opening", "done"],
       ["chat/Respond", "done"],
       ["chat/Settle", "done"],
       ["app/jev/classify/judge", "done"],

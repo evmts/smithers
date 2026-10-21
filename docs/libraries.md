@@ -200,7 +200,7 @@ in a host package.
 | [`@smthrs/std`](../packages/smithers/agent/std/docs/README.md) | `packages/smithers/agent/std` | Give an agent read, write, edit, grep, glob, bash, test, LSP, fetch, web search and apply-patch tools with bounded output and SSRF-safe fetch. | `Manifest.flows`, `Manifest.handlers`, `Read.run`, `Bash.run`, `Edit.run` | All; file, shell and search tools need host `FileSystem` and `ChildProcessSpawner`, and web tools a pinning host: `EgressHttpClient.layer` from `@smthrs/platform-node` |
 | [`@smthrs/mcp`](../packages/smithers/mcp/docs/README.md) | `packages/smithers/mcp` | Connect to an MCP server over stdio or Streamable HTTP and expose its tools as flows. | `McpFlows.connected({ server, command \| url, env, include })`, then `.bindings()`; `McpClient.connect` | All; stdio needs a host `ChildProcessSpawner` |
 | [`@smthrs/registry`](../packages/smithers/agent/registry/docs/README.md) | `packages/smithers/agent/registry` | Discover `flow.ts`, `flow.mdx` and `SKILL.md` flows without running them, list them, show them to a model, or run one by name; read one `flow.ts`'s declaration and tag from text you hold. | `Registry.layerProject({ root })`, `Registry.layer({ sources })`, `Discovery`, `ModuleFlow.fromModule` | All; `Discovery` needs host `FileSystem` |
-| [`@smthrs/memory`](../packages/smithers/agent/memory/docs/README.md) | `packages/smithers/agent/memory` | Keep durable agent memory: facts, notes and message history, with keyword, full-text or semantic recall. | `Flows.runRemember`, `Flows.runRecall`, `MemoryStore.layer`, `RecallKeyword.layer` | All; needs a SQL driver layer |
+| [`@smthrs/memory`](../packages/smithers/agent/memory/docs/README.md) | `packages/smithers/agent/memory` | Keep durable agent memory: facts, notes and message history, with keyword, full-text or semantic recall. | `Flows.runRemember`, `Flows.runRecall`, `MemoryStore.layer`, `RecallKeyword.layer`, `Opening.Sources`, `Opening.select` | All; needs a SQL driver layer |
 | [`@smthrs/plugin`](../packages/smithers/agent/plugin/docs/README.md) | `packages/smithers/agent/plugin` | Add a Vite-style typed plugin and hook kernel to an Effect host. | `Kernel.make([plugins])` | All |
 | [`@smthrs/harness-detect`](../packages/smithers/agent/harness-detect/README.md) (private) | `packages/smithers/agent/harness-detect` | Find installed coding-agent CLIs (Claude Code, Codex, Gemini, OpenCode and others), their versions, sign-in state and model flag. | `detectHarnessesWith(host)`, `harnessModelSpec`, `harnessModels` | Node; **violation** |
 | [`@smthrs/fs`](../packages/smithers/agent/fs/docs/README.md) (private) | `packages/smithers/agent/fs` | Expose a flows directory as named, schema-checked commands for a shell, HTTP, OpenAPI or MCP. | `FileRouter.scan({ root })`, `Command.make(routes)`, `Incur.createCli` | Node; **violation** |
@@ -378,3 +378,7 @@ Code outside the pnpm workspace:
   ([ADR 0004](architecture/0004-machined-wire.md)); branch sandboxes now run on
   Cloudflare Containers (ARCH-14).
 - `apps/patterns-site` is the static patterns.smithers.sh site.
+
+Opening memory and skill selection uses the `@smthrs/memory` entry above:
+`Opening.Sources`, `Opening.layerSources`, and `Opening.select`. Hosts inject
+sources and a Jev judge; selection has no filesystem or provider dependency.

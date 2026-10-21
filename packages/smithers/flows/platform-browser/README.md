@@ -246,3 +246,8 @@ vendor package: Node's own `node:fs/promises` satisfies `ZenFsPromisesLike`, and
 https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/testing.md.
 
 `BrowserRuntime.layerHost` and `run` accept `authorize(database)`, an Effect checked on every activation before the engine is constructed, any unfinished work resumes, or tabs read the shared database. Use it for device ownership checks that must never replay from a cached preparation. Failure ends activation and reports the stopped engine to its tab; it does not expose the database. `prepare` remains the durable, once-per-epoch schema upgrade after authorization.
+
+Worker flow registrations may require the engine's `SqlClient` and
+`DurableWriter` services, in addition to `BrowserRuntime.Host` and `FlowRuntime`.
+For example, an injected durable memory source uses these services over the
+engine's OPFS database; the application does not open a second database.

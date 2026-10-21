@@ -1,3 +1,5 @@
+import type { MemoryError, Opening } from "@smthrs/memory"
+import * as OpeningMemory from "./memory"
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { Interpreter } from "@smthrs/flow"
 import { Evaluator, type Model, ModelProxy } from "@smthrs/model"
@@ -8,7 +10,7 @@ import { MODEL_ROUTE } from "../model/contract"
 import * as Close from "./close"
 import { AnswerApi, type NotYourTurn, TurnOutOfTime } from "./answers"
 import { ANSWER_TURN_WAIT, MAX_FRAMES } from "./contract"
-import { Answer, type Ending, ForgetProgress, LoadTurn, Respond, Settle } from "./flows"
+import { Answer, type Ending, ForgetProgress, LoadTurn, RecallOpening, Prepare, Respond, Settle } from "./flows"
 import { RunReporter } from "../status/reporter"
 import { AnswerProgress, failureOf, type Progress } from "./progress"
 import type { AnswerWrite } from "./schema"
@@ -40,6 +42,7 @@ export const MAX_CALLS_PER_CELL = 8
  * long one run waits for its turn while the queue before it doesn't move (`ANSWER_TURN_WAIT` unless set).
  */
 export interface HostOptions {
+  readonly memorySources?: Layer.Layer<Opening.Sources, MemoryError.MemoryError>
   readonly origin: string
   readonly partsEvery?: `${number} ${"millis" | "seconds"}`
   readonly turnWait?: Duration.Input
@@ -170,6 +173,8 @@ export const registration = (turnWait: Duration.Input = ANSWER_TURN_WAIT) => {
           return turn
         })
       ),
+      RecallOpening.toLayer(OpeningMemory.recall),
+      Prepare.toLayer(OpeningMemory.prepare),
       Respond.layer,
       settlementLayers,
     ),
@@ -188,10 +193,11 @@ export const registration = (turnWait: Duration.Input = ANSWER_TURN_WAIT) => {
  * `Preferences`).
  */
 export const layer = (options: HostOptions) =>
-  Layer.merge(registration(options.turnWait), Close.registration).pipe(
+  Layer.mergeAll(registration(options.turnWait), Close.registration, OpeningMemory.rememberRegistration).pipe(
     Layer.provide(Layer.mergeAll(agentHost, seats(options.origin, options.model), sink, Agent.layer)),
     Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provide(Layer.mergeAll(Agent.layerDefaults, Evaluator.layerUnavailable())),
+    Layer.provide(options.memorySources === undefined ? OpeningMemory.layer(options.origin) : Layer.merge(options.memorySources, OpeningMemory.judgeLayer(options.origin))),
     Layer.provideMerge(AnswerProgress.layer(options.partsEvery)),
     Layer.provideMerge(AnswerApi.layerHttp(options.origin)),
   )

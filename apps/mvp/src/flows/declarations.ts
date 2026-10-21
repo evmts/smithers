@@ -1,3 +1,4 @@
+import { Remember } from "../features/agent/memoryFlows"
 import { Summarize } from "../features/timeline/flow"
 import { Flow } from "@smthrs/flow"
 import { Context } from "effect"
@@ -55,6 +56,7 @@ export const declarations = {
   "chat/Close": Close,
   "chat/copy": ChatCopy,
   "chat/edit": ChatEdit,
+  "app/memory/remember": Remember,
   "repo/tree": RepoTree,
   "repo/read": RepoRead,
   "repo/refs": RepoRefs,

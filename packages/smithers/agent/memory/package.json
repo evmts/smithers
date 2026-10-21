@@ -47,6 +47,7 @@
     "./MemoryTrellis": "./src/MemoryTrellis.ts",
     "./Migrations": "./src/Migrations.ts",
     "./Namespace": "./src/Namespace.ts",
+    "./Opening": "./src/Opening.ts",
     "./Recall": "./src/Recall.ts",
     "./RecallFts": "./src/RecallFts.ts",
     "./RecallKeyword": "./src/RecallKeyword.ts",

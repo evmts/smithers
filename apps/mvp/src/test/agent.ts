@@ -20,6 +20,7 @@ import { Tabs } from "../features/navigation/flows"
 import type { Part } from "../features/agent/schema"
 import type { ThemeMode } from "../features/theme/contract"
 import { tabPreferences, ThemeStore } from "../features/theme/store"
+import type { HostOptions as AgentHostOptions } from "../features/agent/host"
 import * as RunCredentials from "../flows/credentials"
 import { clientFlows } from "../flows/declarations"
 import type { Door } from "../flows/dispatch"
@@ -110,6 +111,7 @@ export const openAgent = async (
       readonly turnWait?: Duration.Input
       /** A faulty transport for the browser's HTTP service; real handler transport unless set. */
       readonly fetch?: typeof globalThis.fetch
+      readonly memorySources?: AgentHostOptions["memorySources"]
     } = {},
   ): Promise<Engine> => {
     const scope = Effect.runSync(Scope.make())
@@ -125,6 +127,7 @@ export const openAgent = async (
         origin: ORIGIN,
         partsEvery: options.partsEvery ?? "20 millis",
         ...(engineOptions.turnWait === undefined ? {} : { turnWait: engineOptions.turnWait }),
+        ...(engineOptions.memorySources === undefined ? {} : { memorySources: engineOptions.memorySources }),
       }),
       // No tab dispatches here: the test is the person, so every root run it starts is their own press. The agent's
       // runs, and every run nested in one, still get run credentials (src/flows/credentials.ts).

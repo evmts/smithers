@@ -6,6 +6,8 @@
  * @since 1.0.0
  */
 
+import type { DurableWriter } from "@smthrs/database"
+import type { SqlClient } from "effect/sql/SqlClient"
 import { WebCrypto } from "@smthrs/crypto"
 import { OwnerIdentity, RunCatalogRead, RunInspection, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { type Flow, type FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
@@ -150,7 +152,7 @@ export interface RunOptions<Registered, RegistrationError, RegistrationRequireme
  * @category running
  * @since 1.0.0
  */
-export const program = <Registered, RegistrationError, RegistrationRequirements extends FlowRuntime.FlowRuntime | Host>(
+export const program = <Registered, RegistrationError, RegistrationRequirements extends FlowRuntime.FlowRuntime | Host | SqlClient | DurableWriter.DurableWriter>(
   options: RunOptions<Registered, RegistrationError, RegistrationRequirements>
 ): Effect.Effect<never, unknown, WebLock.WebLock | TabChannel.TabChannel> =>
   // Every service `RegistrationRequirements` may name is one the engine host

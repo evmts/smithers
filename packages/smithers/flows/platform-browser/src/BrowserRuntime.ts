@@ -18,6 +18,8 @@
  * @since 1.0.0
  */
 
+import type { DurableWriter } from "@smthrs/database"
+import type { SqlClient } from "effect/sql/SqlClient"
 import type { Flow, FlowRuntime } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import type * as Fiber from "effect/Fiber"
@@ -269,7 +271,7 @@ export interface RunOptions<Registered, RegistrationError, RegistrationRequireme
  * @category running
  * @since 1.0.0
  */
-export const run = <Registered, RegistrationError, RegistrationRequirements extends FlowRuntime.FlowRuntime | Host>(
+export const run = <Registered, RegistrationError, RegistrationRequirements extends FlowRuntime.FlowRuntime | Host | SqlClient | DurableWriter.DurableWriter>(
   options: RunOptions<Registered, RegistrationError, RegistrationRequirements>
 ): Fiber.Fiber<never, unknown> =>
   Effect.runFork(

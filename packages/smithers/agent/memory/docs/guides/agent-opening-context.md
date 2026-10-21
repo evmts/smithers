@@ -91,3 +91,27 @@ With a recorder in context, the first fetch for an identity goes through its bou
 
 - Pick what the snapshot ranks: [Recall memory](./recall-memory.md).
 - Understand why frozen context matters: [durable execution](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/README.md) on smithers.sh.
+
+## Ranked opening memory and skills
+
+The root `Opening` namespace exports `Sources`, `layerSources(banks, skills)`
+and `select`. The host authorizes the bank list; direct recall remains unscoped.
+`layerSources` reads the injected durable `Recall` service and joins optional
+skill candidates. An additional source, such as a future wiki, implements
+`Sources` without changing the selector or importing a filesystem.
+
+`select` keyword-shortlists at most 30 candidates across memories and skills,
+reserving half for each kind before filling unused slots,
+asks the injected judge once, sorts retained verdicts by increasing probability
+of being unnecessary, and packs whole rows. Invalid and duplicate verdicts are
+ignored. The budget includes the complete escaped `Source.render` output.
+UTF-8 bytes conservatively bound tokens by default; a host can inject a tokenizer.
+Oversized rows are skipped so smaller relevant rows still fit. Failures and
+cancellation propagate; the selector supplies no retry or persistence mechanism.
+Seal its output in a flow action before starting the agent so resumed runs keep
+the exact opening context. Pass retained rows through `AgentAction.memory`.
+Never place memory or the question in telemetry.
+
+`Opening.boundedQuery` retains the newest query context within the recall UTF-8
+limit, preserving whole code points. Bound long conversation context before
+calling recall or the judge so a long history cannot fail the recall input cap.

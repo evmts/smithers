@@ -5,6 +5,7 @@ import { FlowRegistry } from "../flows/registry"
 // `MessageChannel`: the leader reaches its tab through one port (`TabPort`), and the tab answers on the other. Only
 // the engine's store differs from a browser's: the compose Postgres in place of SQLite on OPFS. ChatApi is the agent
 // tests' harness (src/test/agent.ts), so the agent's model calls and writes reach the real handler.
+import type { HostOptions } from "../features/agent/host"
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { Persistence } from "@smthrs/effect-tanstack-db"
@@ -48,7 +49,7 @@ const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
 })
 
 /** A tab and its engine's leader, closed with `close`. */
-export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: DeviceTelemetry = {}) => {
+export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: DeviceTelemetry = {}, memorySources?: HostOptions["memorySources"]) => {
   const scope = Effect.runSync(Scope.make())
   const name = `smithers-${crypto.randomUUID()}`
   const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
@@ -62,7 +63,7 @@ export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: Devi
   const engine = BrowserRuntime.layer(
     // The flows' own schemas render their runs' values for the run page (decision 0014 §3), as the worker's do.
     { name, flows: clientFlows },
-    workerRegistrations(channel.port1, { origin: ORIGIN, name, partsEvery: "20 millis" }).pipe(Layer.provide(http)),
+    workerRegistrations(channel.port1, { origin: ORIGIN, name, partsEvery: "20 millis", ...(memorySources === undefined ? {} : { memorySources }) }).pipe(Layer.provide(http)),
   ).pipe(Layer.provide(PostgresDatabase.layer({ url: url.toString(), driver: Pg, schema })))
   const leader = Effect.runFork(
     BrowserRuntime.serve({ name, flows: clientFlows }, engine).pipe(

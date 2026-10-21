@@ -99,3 +99,9 @@ export * as SnapshotRecorder from "./SnapshotRecorder.ts"
  * @since 0.1.0
  */
 export * as WithMemory from "./WithMemory.ts"
+
+/**
+ * @category services
+ * @since 1.0.0
+ */
+export * as Opening from "./Opening.ts"

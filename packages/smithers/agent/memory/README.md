@@ -96,6 +96,7 @@ is on the [API reference](https://github.com/smithersai/smithers/blob/main/packa
 | `RecallFts`        | SQLite FTS5 recall.                                                               |
 | `RecallSemantic`   | In-process semantic recall and opt-in vector projection.                          |
 | `Embedding`        | The provider-neutral embedding port semantic recall reads.                        |
+| `Opening`          | Opening-context selection: injected sources, a keyword shortlist, a judged pick.  |
 | `Source`           | The frozen, byte-capped memory snapshot an agent's opening context reads.         |
 | `SnapshotRecorder` | The optional port that keeps that snapshot stable across a resumed process.       |
 | `Maintenance`      | TTL collection, history limiting, and compaction, as finite Effects you schedule. |

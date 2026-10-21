@@ -1,4 +1,5 @@
 import { Context, Layer } from "effect"
+import { Remember } from "../features/agent/memoryFlows"
 import { Summarize } from "../features/timeline/flow"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { BranchCreate, BranchTrack } from "../features/branch/flows"
@@ -132,6 +133,7 @@ export const registry = {
     userOnlyReason: "Only the person changes what they asked; the agent never edits a question.",
     slash: { command: "edit", minimum: "member", hints: { fields: { questionId: { hidden: true } } } },
   },
+  "app/memory/remember": { flow: Remember, changes: "stores a fact for future conversations on this device" },
   "repo/tree": { flow: RepoTree },
   "repo/read": { flow: RepoRead },
   "repo/refs": { flow: RepoRefs },

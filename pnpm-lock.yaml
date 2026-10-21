@@ -682,6 +682,9 @@ importers:
       '@smthrs/integrations':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/integrations
+      '@smthrs/memory':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/memory
       '@smthrs/model':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/model

@@ -76,8 +76,37 @@ export const WORD_CORRECTIONS = 2
  * The agent: answers the question, calling the app's flows from its cells, and finishes with the answer's text. The
  * text is declared `ProductWords`, so an answer naming a flow, a code or an id goes back to the agent to say plainly.
  */
+export const OpeningRow = Schema.Struct({
+  origin: Schema.Literal("recall"), bank: Schema.String, key: Schema.String, text: Schema.String,
+})
+export const RecalledTurn = Schema.Struct({
+  question: Schema.String, history: Schema.Array(Exchange),
+  candidates: Schema.Array(Schema.Struct({ kind: Schema.Literals(["memory", "skill"]), bank: Schema.String, key: Schema.String, text: Schema.String })),
+})
+export const PreparedTurn = Schema.Struct({
+  question: Schema.String, history: Schema.Array(Exchange), opening: Schema.Array(OpeningRow),
+  memoryDebug: Schema.Struct({ recalled: Schema.Int, inserted: Schema.Int, filtered: Schema.Int, skillsInserted: Schema.Int }),
+})
+export class OpeningFailed extends Schema.TaggedError<OpeningFailed>()("@smthrs/mvp/memory/OpeningFailed", {}) {}
+export class OpeningRefused extends Schema.TaggedError<OpeningRefused>()("@smthrs/mvp/memory/OpeningRefused", {}) {}
+export const OPENING_RETRY = RetryPolicy.make({
+  initialMs: 250, factor: 2, maxMs: 4000, maxAttempts: 3,
+  nonRetryable: ["@smthrs/mvp/memory/OpeningRefused"],
+})
+export const RecallOpening = Action.make("chat/RecallOpening", {
+  payload: Turn, success: RecalledTurn, error: Schema.Union([OpeningFailed, OpeningRefused]), tier: "sealed",
+  retryPolicy: OPENING_RETRY,
+})
+export const Prepare = Action.make("chat/Opening", {
+  payload: RecalledTurn,
+  success: PreparedTurn,
+  error: OpeningFailed,
+  tier: "sealed",
+})
+
 export const Respond = AgentAction.make("chat/Respond", {
-  payload: Turn,
+  payload: PreparedTurn,
+  memory: ({ opening }) => opening,
   output: ProductWords,
   seat: "agent",
   system: CHAT_SYSTEM,
@@ -128,11 +157,13 @@ export const Answer = Flow.make(AnswerReference._tag, {
   success: AnswerReference.successSchema,
   error: AnswerReference.errorSchema,
   body: Node.capture(
-    { load: LoadTurn.name, respond: Respond.name, settle: Settle.name },
+    { load: LoadTurn.name, recall: RecallOpening.name, opening: Prepare.name, respond: Respond.name, settle: Settle.name },
     ({ answerId }) =>
       LoadTurn.call({ answerId }).pipe(
-        Node.bindPlanned(Node.capture({ respond: Respond.name }, (turn) =>
-          Respond.call({ question: turn.question, history: turn.history }).pipe(
+        Node.bindPlanned(Node.capture({ recall: RecallOpening.name, opening: Prepare.name, respond: Respond.name }, (turn) =>
+          RecallOpening.call(turn).pipe(
+            Node.bindPlanned(Node.capture({ opening: Prepare.name }, (recalled) => Prepare.call(recalled))),
+            Node.bindPlanned(Node.capture({ respond: Respond.name }, (prepared) => Respond.call(prepared))),
             Node.map(Node.capture({ timedOut: false }, (text: string): Ending => ({ text, timedOut: false }))),
             // The agent failed: the settle reads why from the run's progress.
             Node.catch({
