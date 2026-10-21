@@ -1,0 +1,228 @@
+/**
+ * Edges of the in-memory engine the broader suites only pass through: a
+ * cancellation landing between two rounds, a deferred completed twice, a
+ * parent that fails without expiring, a follower's wake, and payloads that
+ * only the conservative shape comparison can tell apart.
+ */
+import { describe, expect } from "@effect/vitest"
+import { syncCrypto } from "@smthrs/crypto"
+import { DurableDeferred, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Cause, Crypto, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
+import { FlowEngine } from "../src/index.ts"
+import { effect, pollUntil } from "./Harness.ts"
+
+const settledComplete = <A, E>(result: Flow.Result<A, E>) => result._tag === "Complete"
+
+/** Reads "not admitted yet" as "not settled yet". */
+const pollOf = <A, R>(poll: Effect.Effect<Option.Option<A>, FlowRuntime.FlowExecutionNotFound, R>) =>
+  poll.pipe(Effect.catchTag("@smthrs/flow/FlowExecutionNotFound", () => Effect.succeedNone))
+
+const completedExit = (result: Option.Option<Flow.Result<unknown, unknown>>) =>
+  Option.isSome(result) && result.value._tag === "Complete" ? result.value.exit : undefined
+
+describe("a lineage cancelled between rounds", () => {
+  const Round = Flow.make("memory-edges/round", {
+    payload: { ordinal: Schema.Number },
+    success: Schema.String,
+    body: () => Node.succeed("inert")
+  })
+
+  /** SHA-256 that announces each digest on `reached` and computes it once `open` completes. */
+  const gatedCrypto = (reached: Deferred.Deferred<void>, open: Deferred.Deferred<void>) =>
+    Crypto.make({
+      randomBytes: () => {
+        throw new Error("the gated crypto computes digests only")
+      },
+      digest: (algorithm, input) =>
+        Deferred.succeed(reached, undefined).pipe(
+          Effect.andThen(Deferred.await(open)),
+          Effect.andThen(syncCrypto.digest(algorithm, input))
+        )
+    })
+
+  effect(
+    "refuses the next round when the cancellation lands before that round is admitted",
+    () =>
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        let nextCalls = 0
+        yield* engine.register(Round, ({ ordinal }) =>
+          ordinal === 0
+            ? Effect.gen(function*() {
+              const instance = yield* FlowRuntime.FlowInstance
+              instance.handoff = new Flow.Handoff({ flow: Round._tag, payload: { ordinal: 1 } })
+              return "ignored"
+            })
+            : Effect.sync(() => {
+              nextCalls++
+              return "forbidden"
+            }))
+        // The follower derives round 1's id through Crypto, so holding that
+        // digest holds it between round 0's handoff and round 1's admission.
+        const reached = yield* Deferred.make<void>()
+        const open = yield* Deferred.make<void>()
+        yield* engine.execute(Round, { executionId: "gap", payload: { ordinal: 0 }, discard: true }).pipe(
+          Effect.provideService(Crypto.Crypto, gatedCrypto(reached, open))
+        )
+        yield* Deferred.await(reached)
+        yield* engine.interrupt(Round, "gap")
+        yield* Deferred.succeed(open, undefined)
+
+        const next = yield* FlowEngine.Round.executionId({
+          rootExecutionId: "gap" as FlowEngine.Round.RootExecutionId,
+          ordinal: 1
+        })
+        const exit = completedExit(yield* pollUntil(pollOf(Round.poll(next)), settledComplete, { turns: 200 }))
+        expect(exit !== undefined && Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+        expect(nextCalls).toBe(0)
+      }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory))
+  )
+})
+
+describe("a deferred completed twice", () => {
+  effect("keeps the first completion", () =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const Gate = DurableDeferred.make("memory-edges/first-wins", { success: Schema.String })
+      const Waits = Flow.make("memory-edges/first-wins", {
+        payload: {},
+        success: Schema.String,
+        body: () => Node.succeed("inert")
+      })
+      yield* engine.register(Waits, () => DurableDeferred.await(Gate))
+      const token = DurableDeferred.tokenFromExecutionId(Gate, { flow: Waits, executionId: "first-wins" })
+      // Both completions land before the run first reads the deferred.
+      yield* DurableDeferred.succeed(Gate, { token, value: "first" })
+      yield* DurableDeferred.succeed(Gate, { token, value: "second" })
+
+      expect(yield* Waits.execute({}, { executionId: "first-wins" })).toBe("first")
+    }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory)))
+})
+
+describe("a parent that fails", () => {
+  effect("leaves its linked children running when the failure is not its deadline", () =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const Parent = Flow.make("memory-edges/failing-parent", {
+        payload: {},
+        success: Schema.String,
+        error: Schema.String,
+        body: () => Node.succeed("inert")
+      })
+      const Child = Flow.make("memory-edges/linked-child", {
+        payload: {},
+        success: Schema.String,
+        body: () => Node.succeed("inert")
+      })
+      let parent: FlowRuntime.FlowInstance["Service"] | undefined
+      const entered = yield* Deferred.make<void>()
+      const fail = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      yield* engine.register(Parent, () =>
+        Effect.gen(function*() {
+          parent = yield* FlowRuntime.FlowInstance
+          yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(fail)
+          return yield* Effect.fail("parent failed")
+        }))
+      yield* engine.register(Child, () => Effect.as(Deferred.await(release), "child done"))
+      yield* engine.execute(Parent, { executionId: "failing-parent", payload: {}, discard: true })
+      yield* Deferred.await(entered)
+      yield* engine.execute(Child, { executionId: "linked-child", payload: {}, discard: true }).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, parent!)
+      )
+      yield* Deferred.succeed(fail, undefined)
+
+      const failed = completedExit(
+        yield* pollUntil(pollOf(Parent.poll("failing-parent")), settledComplete, { turns: 200 })
+      )
+      expect(failed !== undefined && Exit.isFailure(failed) && Cause.squash(failed.cause)).toBe("parent failed")
+      expect(yield* pollOf(Child.poll("linked-child"))).toEqual(Option.none())
+      yield* Deferred.succeed(release, undefined)
+      const child = completedExit(yield* pollUntil(pollOf(Child.poll("linked-child")), settledComplete, { turns: 200 }))
+      expect(child).toEqual(Exit.succeed("child done"))
+    }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory)))
+})
+
+describe("a follower's wake", () => {
+  effect(
+    "wakes the follower once, then holds it to its backoff until an elapsed poll resumes the run",
+    () =>
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        const Parks = Flow.make("memory-edges/parks", {
+          payload: {},
+          success: Schema.String,
+          body: () => Node.succeed("inert")
+        })
+        let ready = false
+        let drives = 0
+        yield* engine.register(Parks, () =>
+          Effect.gen(function*() {
+            drives++
+            if (ready) return "ready"
+            return yield* Flow.suspend(yield* FlowRuntime.FlowInstance)
+          }))
+        const following = yield* Effect.forkChild(engine.execute(Parks, {
+          executionId: "parks",
+          payload: {},
+          suspendedRetryPolicy: RetryPolicy.make({ initialMs: 1000, factor: 1, maxMs: 1000 })
+        }))
+        const parked = (result: Flow.Result<unknown, unknown>) => result._tag === "Suspended"
+        yield* pollUntil(pollOf(Parks.poll("parks")), parked, { turns: 200 })
+        for (let turn = 0; turn < 50; turn++) yield* Effect.yieldNow
+        // An operator's resume re-drives the run, which parks again, and wakes
+        // the follower parked on its backoff.
+        yield* engine.resume(Parks, "parks")
+        for (let turn = 0; turn < 50; turn++) yield* Effect.yieldNow
+        expect(drives).toBe(2)
+
+        ready = true
+        yield* TestClock.adjust(1000)
+        for (let turn = 0; turn < 200 && following.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
+        expect(following.pollUnsafe()).toBeDefined()
+        expect(yield* Fiber.join(following)).toBe("ready")
+        expect(drives).toBe(3)
+      }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory))
+  )
+})
+
+describe("an opaque payload join", () => {
+  const Opaque = Flow.make("memory-edges/opaque", {
+    payload: { value: Schema.declare<object>((_value): _value is object => true) },
+    success: Schema.Void,
+    body: () => Node.succeed(undefined)
+  })
+
+  const joinExit = (executionId: string, first: object, second: object) =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* engine.execute(Opaque, { executionId, payload: { value: first }, discard: true })
+      return yield* engine.execute(Opaque, { executionId, payload: { value: second }, discard: true }).pipe(Effect.exit)
+    })
+
+  const payloadConflict = (exit: Exit.Exit<unknown, unknown>) => {
+    const defect = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isDieReason)?.defect : undefined
+    return defect instanceof FlowEngine.ExecutionIdentityConflict && defect.field === "payload"
+  }
+
+  effect("refuses another key even when both keys hold undefined", () =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* engine.register(Opaque, () => Effect.void)
+      expect(payloadConflict(yield* joinExit("opaque-keys", { left: undefined }, { right: undefined }))).toBe(true)
+    }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory)))
+
+  effect(
+    "refuses an array of another length even when its holes hide the difference from its keys",
+    () =>
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        yield* engine.register(Opaque, () => Effect.void)
+        const holed = Object.assign(new Array<string>(2), { 0: "x" })
+        expect(payloadConflict(yield* joinExit("opaque-holes", holed, ["x"]))).toBe(true)
+      }).pipe(Effect.scoped, Effect.provide(FlowEngine.layerMemory))
+  )
+})
