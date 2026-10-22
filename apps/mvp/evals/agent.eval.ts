@@ -11,8 +11,9 @@ const spec: SuiteSpec = {
   prefix: "agent",
   cases: CASES,
   baseline: new URL("baseline.json", import.meta.url),
-  // About $0.35 at the default model's list price, for about 20 cases (the lead's ruling, 2026-10-20).
-  maxTokens: 350_000,
+  // About $0.50 at the default model's list price, for its 21 cases, which spent about 455,000 tokens in full
+  // (the lead's ruling, 2026-10-22; 350,000 before).
+  maxTokens: 500_000,
   runtime: testFile("eval_agent"),
 }
 
