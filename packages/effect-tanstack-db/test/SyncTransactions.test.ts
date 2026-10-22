@@ -114,6 +114,29 @@ describe("a source's transaction on a persisted synced collection", () => {
     await until(() => ids(second.notes).join() === "b,c")
   })
 
+  test("metadata reads do not leave a core transaction across hydration", async () => {
+    const path = databaseFile()
+    const device = id("device")
+    const collection = id("notes")
+    const first = await tab(path, device, collection)
+    const second = await tab(path, device, collection)
+    second.source.begin()
+    second.source.metadata.collection.set("cursor", 2)
+    second.source.metadata.row.set("b", { tag: "pending" })
+    expect(second.source.metadata.collection.get("cursor")).toBe(2)
+    expect(second.source.metadata.collection.list("cur")).toEqual([{ key: "cursor", value: 2 }])
+    expect(second.source.metadata.row.get("b")).toEqual({ tag: "pending" })
+    second.source.write({ type: "insert", value: note("b", 2) })
+    first.source.begin()
+    first.source.write({ type: "insert", value: note("a", 1) })
+    await first.source.commit()
+    first.source.markReady()
+    await until(() => second.notes.tanstack.has("a"))
+    expect(() => second.source.commit()).not.toThrow()
+    await until(() => second.notes.tanstack.has("b"))
+    expect(second.source.metadata.collection.get("cursor")).toBe(2)
+  })
+
   test("a read of the sync metadata inside a transaction sees its own writes; the commit lands them", async () => {
     const { notes, source } = await tab(databaseFile(), id("device"), id("notes"))
     const { metadata } = source

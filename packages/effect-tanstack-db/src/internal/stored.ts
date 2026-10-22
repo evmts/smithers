@@ -36,7 +36,9 @@ const encodeValue = (value: unknown): unknown => {
     const encoded: Record<string, unknown> = {}
     for (const [key, entry] of Object.entries(record)) {
       const next = encodeValue(entry)
-      if (next !== undefined) encoded[key] = next
+      if (next !== undefined) {
+        Object.defineProperty(encoded, key, { value: next, enumerable: true, writable: true, configurable: true })
+      }
     }
     // The persistence escapes a row's own field named as its tag.
     if (typeof record[TYPE] === "string") encoded[TYPE] = tagged("string", record[TYPE])
@@ -69,7 +71,11 @@ const decodeValue = (value: unknown): unknown => {
     throw new Error(`unreadable stored value: ${value[TYPE]}`)
   }
   const decoded: Record<string, unknown> = {}
-  for (const [key, entry] of Object.entries(value)) decoded[key] = decodeValue(entry)
+  for (const [key, entry] of Object.entries(value)) {
+    Object.defineProperty(decoded, key, {
+      value: decodeValue(entry), enumerable: true, writable: true, configurable: true
+    })
+  }
   return decoded
 }
 

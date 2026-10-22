@@ -2,6 +2,10 @@
 
 ## 0.2.0 (unreleased)
 
+### Fixed
+
+- Stored row encoding and decoding preserve own `__proto__` fields without changing object prototypes.
+
 ### Added
 
 - `Persistence`: TanStack DB's SQLite persistence as an Effect service.
