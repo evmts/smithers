@@ -5,7 +5,7 @@
  * https://smithers.sh/docs/reference/api/registry.
  *
  * Discovery follows symbolic links when the host `FileSystem.stat` does,
- * confined to `Source.confinementRoot` when the root's real path resolves. A
+ * confined to `Source.confinementRoot`; an unresolved configured root refuses discovery. A
  * visited-directory identity set stops cycles and aliases, while a 32-segment
  * depth ceiling bounds hosts that cannot supply stable directory identities.
  *
@@ -21,6 +21,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import * as Result from "effect/Result"
+import * as Stream from "effect/Stream"
 import {
   DiscoveryWarning,
   FlowDescriptor,
@@ -104,7 +105,7 @@ const moduleMetadataChunkSize = 8 * 1024
  * Maximum complete entry size admitted to discovery and content hashing.
  *
  * Four MiB leaves ample room for authored metadata and bodies while refusing
- * build artifacts or hostile entries before `readFile` allocates their bytes.
+ * build artifacts or hostile entries before allocating their complete bytes.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -121,13 +122,13 @@ export const maximumTraversalDepth = 32
 
 /** The one wording both entry-size refusals use, so a consumer sees one message. */
 const oversizedEntry = (location: string, size: bigint | number): string =>
-  `Entry "${location}" is ${size} bytes, exceeding the ${entrySizeLimit}-byte discovery input ceiling`
+  `Entry "${location}" is at least ${size} bytes, exceeding the ${entrySizeLimit}-byte discovery input ceiling`
 
 /**
  * Either an entry's metadata, or the reason it was refused unread.
  *
- * `Oversized` carries the byte length actually read, which is what the
- * `entry_too_large` warning reports when a host's reported size was wrong.
+ * `Oversized` carries the measured lower bound: reading stops at the first
+ * byte past the ceiling even when a host's reported size was wrong.
  */
 type EntryMetadata =
   | { readonly _tag: "Oversized"; readonly size: number }
@@ -149,13 +150,10 @@ type EntryMetadata =
 /**
  * Reads just enough of an entry file to decide its metadata.
  *
- * The complete admitted file is read because discovery also hashes every body,
- * so `visit` refuses an entry whose REPORTED size is past `entrySizeLimit`
- * before this function allocates anything. That check is a fast path, not the
- * bound: it trusts `stat`, and a host that under-reports or omits a size — an
- * in-memory or remote `FileSystem`, a special file — would otherwise walk
- * straight past the ceiling. So the bytes actually read are measured here, and
- * an oversized entry is refused before it is hashed, decoded, or parsed.
+ * The complete admitted file is read because discovery also hashes every body.
+ * The reported-size check in `visit` is a fast path. This bounded stream reads
+ * at most one byte past the ceiling, so inaccurate sizes cannot cause an
+ * unbounded allocation. Oversized entries are never hashed, decoded, or parsed.
  * `metadataReadLimit` separately bounds how much of an admitted entry's bytes
  * is decoded and parsed. Module prefixes use larger chunks to avoid repeatedly
  * tokenizing hundreds of nearly identical 512-byte prefixes.
@@ -165,10 +163,18 @@ const readMetadata = (
   location: string,
   kind: "markdown" | "module"
 ) =>
-  fs.readFile(location).pipe(
-    Effect.map((bytes): EntryMetadata => {
-      if (bytes.length > entrySizeLimit) {
-        return { _tag: "Oversized", size: bytes.length }
+  fs.stream(location, { bytesToRead: entrySizeLimit + 1 }).pipe(
+    Stream.runCollect,
+    Effect.map((chunks): EntryMetadata => {
+      const size = chunks.reduce((total, chunk) => total + chunk.length, 0)
+      if (size > entrySizeLimit) {
+        return { _tag: "Oversized", size }
+      }
+      const bytes = new Uint8Array(size)
+      let position = 0
+      for (const chunk of chunks) {
+        bytes.set(chunk, position)
+        position += chunk.length
       }
       const contentDigest = Digest.digest(bytes)
       const decoder = new TextDecoder()
@@ -216,10 +222,18 @@ const holdsEntry = (
   fs: FileSystem.FileSystem,
   path: Path.Path,
   directory: string,
-  depth: number
+  depth: number,
+  visited: Map<string, number> = new Map()
 ): Effect.Effect<boolean> =>
   Effect.gen(function*() {
     if (depth > maximumTraversalDepth) return false
+    const info = yield* Effect.result(fs.stat(directory))
+    if (Result.isFailure(info) || info.success.type !== "Directory") return false
+    const identity = directoryIdentity(info.success, directory)
+    const priorDepth = visited.get(identity)
+    if (priorDepth !== undefined && priorDepth <= depth) return false
+    // A shallower alias can expose entries previously hidden by the depth limit.
+    visited.set(identity, depth)
     const listed = yield* Effect.result(fs.readDirectory(directory))
     if (Result.isFailure(listed)) return false
     const stats = yield* Effect.forEach(
@@ -237,7 +251,7 @@ const holdsEntry = (
       if (info.success.type === "Directory") children.push(path.join(directory, entry))
     }
     for (const child of children) {
-      if (yield* holdsEntry(fs, path, child, depth + 1)) return true
+      if (yield* holdsEntry(fs, path, child, depth + 1, visited)) return true
     }
     return false
   })
@@ -262,12 +276,18 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
         const realRoot = source.confinementRoot === undefined
           ? undefined
           : yield* Effect.result(fs.realPath(source.confinementRoot))
-        // A root that will not resolve means the host cannot answer
-        // `realPath`, so the pack keeps its lexical verdict. Once the root
-        // resolves, the host can answer, and a candidate it cannot resolve is
-        // refused: a dangling, looping, or racing link is never confined.
+        // An explicit confinement boundary must be provable before reading it.
         const withinRoot = Effect.fnUntraced(function*(location: string) {
-          if (realRoot === undefined || Result.isFailure(realRoot)) return true
+          if (realRoot === undefined) return true
+          if (Result.isFailure(realRoot)) {
+            warnings.push(warning(
+              "outside_root",
+              location,
+              `Confinement root "${source.confinementRoot}" could not be resolved; refusing path "${location}"`,
+              realRoot.failure
+            ))
+            return false
+          }
           const realLocation = yield* Effect.result(fs.realPath(location))
           if (Result.isFailure(realLocation)) {
             warnings.push(warning(

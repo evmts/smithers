@@ -148,8 +148,8 @@ and symlinked `flow.ts`, `flow.mdx`, and `SKILL.md` files are checked, so an
 outside target contributes no descriptor for body loading or executable
 catalog import. Links within the pack remain eligible. Once the pack root's
 real path resolves, a target whose real path cannot be resolved is refused as
-well; hosts that cannot resolve the pack root retain lexical manifest
-validation. These checks apply during discovery. They do not sandbox module
+well. If the pack root cannot resolve, discovery refuses the source with
+`outside_root`. These checks apply during discovery. They do not sandbox module
 imports or protect against concurrent filesystem changes.
 
 ## The content address

@@ -113,8 +113,9 @@ file whose real path is outside the root or cannot be resolved (a dangling,
 looping, or unreadable link) with `outside_root`, before reading its contents. Links
 within the pack remain eligible, including links outside the declared source
 directory but inside the pack. Ordinary project sources leave `confinementRoot`
-unset and retain unrestricted symlink traversal. Hosts that cannot resolve the
-confinement root retain lexical manifest validation.
+unset and retain unrestricted symlink traversal. If the configured
+confinement root cannot resolve, discovery refuses the source with
+`outside_root` before reading any directory contents.
 
 Two guards bound the walk:
 
@@ -134,13 +135,11 @@ Two more ceilings bound what one file can cost:
 | `Discovery.entrySizeLimit` | 4 MiB  | The size of an entry file discovery admits. A larger file is skipped with `entry_too_large` and contributes no descriptor, so a stray build artifact under `.smithers/flows/` cannot exhaust the process at layer construction. |
 | The metadata parse ceiling | 64 KiB | How much of an admitted file is decoded and parsed looking for frontmatter or module metadata. It bounds parsing only.                                                                                                          |
 
-The size ceiling is checked twice, because the first check trusts the host. A
-`stat` size past the limit skips the file unread, which is the fast path an
-ordinary file system takes. The bytes actually read are then measured against
-the same limit, so a host whose `stat` under-reports or omits a size still gets
-`entry_too_large` with the true byte count, and the entry is refused before it
-is hashed, decoded, or parsed. An in-memory or remote `FileSystem` and a
-special file are the hosts that need it.
+A `stat` size past the limit skips the file unread. Otherwise discovery reads
+at most `entrySizeLimit + 1` bytes through `FileSystem.stream`, independently
+of the reported size. The extra byte detects overflow; `entry_too_large`
+reports this measured lower bound without consuming the rest of the file.
+Oversized entries are refused before hashing, decoding, or parsing.
 
 ## Reading it back
 

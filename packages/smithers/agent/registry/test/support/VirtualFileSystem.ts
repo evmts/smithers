@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Option, PlatformError } from "effect"
+import { Effect, FileSystem, Option, PlatformError, Stream } from "effect"
 import * as ByteSize from "effect/ByteSize"
 
 /**
@@ -41,11 +41,26 @@ const info = (type: FileSystem.File.Type, size: number): FileSystem.File.Info =>
 
 export interface FileSystemCalls {
   readonly readFile: Array<string>
+  readonly stream?: Array<string>
 }
 
 export const virtualFileSystem = (nodes: Map<string, Node>, calls?: FileSystemCalls): FileSystem.FileSystem =>
   FileSystem.makeNoop({
     exists: (path) => Effect.succeed(nodes.has(path)),
+    realPath: (path) => nodes.has(path) ? Effect.succeed(path) : Effect.fail(denied("realPath", path)),
+    stream: (path, options) =>
+      Stream.suspend(() => {
+        calls?.stream?.push(path)
+        const node = nodes.get(path)
+        const limit = options?.bytesToRead === undefined
+          ? Infinity
+          : Number(ByteSize.fromInputUnsafe(options.bytesToRead))
+        return node?.kind === "file"
+          ? Stream.succeed(
+            new TextEncoder().encode(node.contents).subarray(0, limit)
+          )
+          : Stream.fail(denied("stream", path))
+      }),
     stat: (path) => {
       const node = nodes.get(path)
       switch (node?.kind) {

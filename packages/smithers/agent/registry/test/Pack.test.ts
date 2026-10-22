@@ -410,7 +410,7 @@ describe("pack discovery confinement", () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {
         const path = yield* Path.Path
-        const fs = virtualFileSystem(nodes, { readFile: reads })
+        const fs = virtualFileSystem(nodes, { readFile: reads, stream: reads })
         return yield* Discovery.make({
           ...fs,
           realPath: (location) =>
@@ -457,12 +457,22 @@ describe("pack discovery confinement", () => {
     expect(result.warnings).toEqual([expect.objectContaining({ code: "outside_root", path: "/pack/flows/review" })])
   })
 
-  it("keeps lexical confinement on hosts that cannot resolve the confinement root", async () => {
+  it("refuses discovery on hosts that cannot resolve the confinement root", async () => {
     const nodes = tree(packTree({ dir: "/pack", manifest: localManifest, flows: { review: "Body" } }))
     const result = await Effect.runPromise(
       Effect.gen(function*() {
         const path = yield* Path.Path
-        return yield* Discovery.make(virtualFileSystem(nodes), path).scan({
+        const fs = virtualFileSystem(nodes)
+        return yield* Discovery.make({
+          ...fs,
+          realPath: (location) =>
+            Effect.fail(PlatformError.systemError({
+              _tag: "PermissionDenied",
+              module: "FileSystem",
+              method: "realPath",
+              pathOrDescriptor: location
+            }))
+        }, path).scan({
           source: "confined",
           root: "/pack",
           confinementRoot: "/pack",
@@ -470,7 +480,8 @@ describe("pack discovery confinement", () => {
         })
       }).pipe(Effect.provide(NodePath.layerPosix))
     )
-    expect(result.entries.map((entry) => entry.name)).toEqual(["flows/review"])
+    expect(result.entries).toEqual([])
+    expect(result.warnings).toEqual([expect.objectContaining({ code: "outside_root", path: "/pack" })])
   })
 
   it.each(["NotFound", "Unknown", "PermissionDenied"] as const)(

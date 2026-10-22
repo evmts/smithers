@@ -738,12 +738,12 @@ body`)
     expect(Option.getOrThrow(all.descriptor).budget).toEqual({ tokens: 500, usd: 0.25 })
   })
 
-  it.each(["0", "-1", "free", "''", "Infinity"])("drops a dollar ceiling of %s and says so", (value) => {
+  it.each(["0", "-1", "free", "''", "Infinity"])("refuses a dollar ceiling of %s and says so", (value) => {
     const result = fromMarkdown(
       ["---", "description: Review", "budget:", "  tokens: 500", `  usd: ${value}`, "---", "Review."].join("\n")
     )
 
-    expect(Option.getOrThrow(result.descriptor).budget).toEqual({ tokens: 500 })
+    expect(Option.isNone(result.descriptor)).toBe(true)
     expect(result.warnings).toContainEqual(expect.objectContaining({
       code: "invalid_budget",
       message: "Frontmatter budget.usd must be a positive dollar amount; ignoring it"
@@ -783,7 +783,7 @@ body`)
     expect(Descriptor.declarationDigest(both)).not.toBe(Descriptor.declarationDigest(tokensOnly))
   })
 
-  it("drops a deadline that is not a positive whole-millisecond duration, and says so", () => {
+  it("refuses a deadline that is not a positive whole-millisecond duration, and says so", () => {
     for (
       const declaration of [
         "deadline: soon",
@@ -794,27 +794,27 @@ body`)
       ]
     ) {
       const result = fromMarkdown(["---", "description: Review", declaration, "---", "Review."].join("\n"))
-      expect(Option.getOrThrow(result.descriptor).budget).toBeUndefined()
+      expect(Option.isNone(result.descriptor)).toBe(true)
       expect(result.warnings).toContainEqual({
         code: "invalid_deadline",
         path: expect.any(String),
         message:
-          "Frontmatter deadline must be a positive duration such as 30 minutes, or whole milliseconds; ignoring it"
+          "Frontmatter deadline must be a positive duration such as 30 minutes, or whole milliseconds; flow refused"
       })
       expect(result.warnings).not.toContainEqual(expect.objectContaining({ code: "unknown_frontmatter_key" }))
     }
   })
 
-  it("drops a budget that is not an object, and says so", () => {
+  it("refuses a budget that is not an object, and says so", () => {
     for (const declaration of ["budget:", "budget: soon", "budget:\n  - 1000"]) {
       const result = fromMarkdown(["---", "description: Review", declaration, "---", "Review."].join("\n"))
 
-      expect(Option.getOrThrow(result.descriptor).budget).toBeUndefined()
+      expect(Option.isNone(result.descriptor)).toBe(true)
       expect(result.warnings).toContainEqual(expect.objectContaining({ code: "invalid_budget" }))
     }
   })
 
-  it("drops a ceiling that is not a positive safe integer, and keeps the one that is", () => {
+  it("refuses an invalid ceiling even when another ceiling is valid", () => {
     const result = fromMarkdown(
       [
         "---",
@@ -827,17 +827,14 @@ body`)
       ].join("\n")
     )
 
-    // A budget has no conservative reading. Its conservative number is zero,
-    // which refuses the run's first call, so an unreadable ceiling is reported
-    // and dropped rather than enforced.
-    expect(Option.getOrThrow(result.descriptor).budget).toEqual({ milliseconds: 900000 })
+    expect(Option.isNone(result.descriptor)).toBe(true)
     expect(result.warnings).toContainEqual(expect.objectContaining({
       code: "invalid_budget",
       message: "Frontmatter budget.tokens must be a positive safe integer; ignoring it"
     }))
   })
 
-  it("reads what exceeding the budget does, and drops a choice it does not know", () => {
+  it("reads what exceeding the budget does, and refuses a choice it does not know", () => {
     const parked = fromMarkdown(
       ["---", "description: Review", "budget:", "  tokens: 500", "  onExceeded: park", "---", "Review."].join("\n")
     )
@@ -847,27 +844,26 @@ body`)
     const unknown = fromMarkdown(
       ["---", "description: Review", "budget:", "  tokens: 500", "  onExceeded: sulk", "---", "Review."].join("\n")
     )
-    // The ceiling still binds under the default, `fail`.
-    expect(Option.getOrThrow(unknown.descriptor).budget).toEqual({ tokens: 500 })
+    expect(Option.isNone(unknown.descriptor)).toBe(true)
     expect(unknown.warnings).toContainEqual(expect.objectContaining({
       code: "invalid_budget",
       message: "Frontmatter budget.onExceeded must be one of fail, warn, skip-remaining, park; ignoring it"
     }))
   })
 
-  it("names a budget key it does not know, so a misspelled ceiling is not silence", () => {
+  it("refuses and names a budget key it does not know", () => {
     const result = fromMarkdown(
       ["---", "description: Review", "budget:", "  token: 500", "---", "Review."].join("\n")
     )
 
-    expect(Option.getOrThrow(result.descriptor).budget).toBeUndefined()
+    expect(Option.isNone(result.descriptor)).toBe(true)
     expect(result.warnings).toContainEqual(expect.objectContaining({
       code: "invalid_budget",
       message: "Frontmatter budget has an unknown key: token"
     }))
   })
 
-  it("drops a budget whose every ceiling is unreadable", () => {
+  it("refuses a budget whose every ceiling is unreadable", () => {
     const result = fromMarkdown(
       [
         "---",
@@ -881,7 +877,7 @@ body`)
       ].join("\n")
     )
 
-    expect(Option.getOrThrow(result.descriptor).budget).toBeUndefined()
+    expect(Option.isNone(result.descriptor)).toBe(true)
     expect(result.warnings.filter((warning) => warning.code === "invalid_budget")).toHaveLength(2)
   })
 

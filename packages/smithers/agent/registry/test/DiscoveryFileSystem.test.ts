@@ -390,7 +390,7 @@ describe("Discovery traversal", () => {
 
   it.each([-1, 0, 1])("checks the reported size at the input ceiling %i", async (offset) => {
     const location = `${root}/bounded/SKILL.md`
-    const calls: FileSystemCalls = { readFile: [] }
+    const calls: FileSystemCalls = { readFile: [], stream: [] }
     const result = await scan(
       tree({
         [root]: { kind: "directory", entries: ["bounded"] },
@@ -404,7 +404,7 @@ describe("Discovery traversal", () => {
     if (offset <= 0) {
       expect(result.entries.map((entry) => entry.name)).toEqual(["bounded"])
       expect(result.warnings).toEqual([])
-      expect(calls.readFile).toEqual([location])
+      expect(calls.stream).toEqual([location])
     } else {
       expect(result.entries).toEqual([])
       expect(result.warnings).toEqual([expect.objectContaining({
@@ -412,7 +412,7 @@ describe("Discovery traversal", () => {
         path: location,
         message: expect.stringContaining(String(expectedEntrySizeLimit + offset))
       })])
-      expect(calls.readFile).toEqual([])
+      expect(calls.stream).toEqual([])
     }
   })
 
@@ -424,7 +424,7 @@ describe("Discovery traversal", () => {
     const contents = prefix + "é".repeat(Math.floor(padding / 2)) + "x".repeat(padding % 2)
     expect(new TextEncoder().encode(contents).length).toBe(size)
     expect(contents.length).toBeLessThan(expectedEntrySizeLimit)
-    const calls: FileSystemCalls = { readFile: [] }
+    const calls: FileSystemCalls = { readFile: [], stream: [] }
     const result = await scan(
       tree({
         [root]: { kind: "directory", entries: ["bounded"] },
@@ -435,7 +435,7 @@ describe("Discovery traversal", () => {
       calls
     )
 
-    expect(calls.readFile).toEqual([location])
+    expect(calls.stream).toEqual([location])
     if (offset <= 0) {
       expect(result.entries.map((entry) => entry.name)).toEqual(["bounded"])
       expect(result.warnings).toEqual([])
@@ -459,17 +459,17 @@ describe("Discovery traversal", () => {
     }
     nodes.set(directory, { kind: "directory", entries: ["SKILL.md"] })
     nodes.set(`${directory}/SKILL.md`, skill("At the traversal ceiling."))
-    const calls: FileSystemCalls = { readFile: [] }
+    const calls: FileSystemCalls = { readFile: [], stream: [] }
     const result = await scan(nodes, {}, calls)
 
     if (depth <= 32) {
       expect(result.entries.map((entry) => entry.name)).toEqual([segments.join("/")])
       expect(result.warnings).toEqual([])
-      expect(calls.readFile).toEqual([`${directory}/SKILL.md`])
+      expect(calls.stream).toEqual([`${directory}/SKILL.md`])
     } else {
       expect(result.entries).toEqual([])
       expect(result.warnings).toEqual([expect.objectContaining({ code: "max_depth_exceeded", path: directory })])
-      expect(calls.readFile).toEqual([])
+      expect(calls.stream).toEqual([])
     }
   })
 })
@@ -691,6 +691,7 @@ describe("Discovery concurrency", () => {
       exists: base.exists,
       readDirectory: base.readDirectory,
       readFile: base.readFile,
+      stream: base.stream,
       readFileString: base.readFileString,
       stat: (path: string) =>
         Effect.gen(function*() {

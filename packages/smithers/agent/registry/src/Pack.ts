@@ -12,8 +12,8 @@
  * The old smithers verbs (`pack add | remove | list | update | eject`) are the
  * CLI half and are not here. This module is the runtime contract underneath
  * them. It holds one filesystem policy: every contributed source must remain
- * inside its pack root. Discovery checks descended directories and selected
- * entry files against that root when the host can resolve real paths.
+ * inside its pack root. Discovery requires a resolved confinement root before
+ * reading descended directories or selected entry files.
  * Packs are third-party content, so callers cannot be trusted to have
  * validated manifest paths or symlink targets first.
  *

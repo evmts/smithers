@@ -139,7 +139,19 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
   // Selecting a sandbox is placing the flow in one.
   const placement = sandbox === undefined ? declaredPlacement : Option.some<Placement>("sandbox")
   const declaredBudget = deriveBudget(fields, options.path, warnings)
+  if (
+    fields.budget !== undefined && declaredBudget === undefined &&
+    !warnings.some((item) => item.code === "invalid_budget")
+  ) {
+    warnings.push({
+      code: "invalid_budget",
+      path: options.path,
+      message: "Frontmatter budget must declare at least one ceiling; flow refused"
+    })
+  }
+  if (warnings.some((item) => item.code === "invalid_budget")) return { descriptor: Option.none(), warnings }
   const deadline = deriveDeadline(fields, options.path, warnings)
+  if (fields.deadline !== undefined && deadline === undefined) return { descriptor: Option.none(), warnings }
   const budget = deadline === undefined ? declaredBudget : { ...declaredBudget, deadline }
   const selected: unknown = fields.model
   const validModels = Schema.is(ModelSelection)(selected) &&
@@ -694,8 +706,7 @@ export const deriveBudget = (
  * deadline: 30 minutes
  * ```
  *
- * Like a budget, an unreadable deadline is dropped with a warning rather than
- * tightened: the run stays unbounded, exactly as an undeclared one does.
+ * An unreadable explicit deadline produces a warning and refuses admission.
  */
 const deriveDeadline = (
   fields: Record<string, unknown>,
@@ -709,7 +720,7 @@ const deriveDeadline = (
   warnings.push({
     code: "invalid_deadline",
     path,
-    message: "Frontmatter deadline must be a positive duration such as 30 minutes, or whole milliseconds; ignoring it"
+    message: "Frontmatter deadline must be a positive duration such as 30 minutes, or whole milliseconds; flow refused"
   })
   return undefined
 }

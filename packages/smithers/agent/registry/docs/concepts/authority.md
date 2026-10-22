@@ -95,7 +95,7 @@ capabilities project a `sealed` tier, with a `hermetic` effect declaration and
 no globbed read set. See
 [Reuse a discovered flow's result](../guides/reuse-a-flow-result.md).
 
-## Budgets are read the other way round
+## Budgets and deadlines
 
 A markdown flow may declare the ceilings a control plane should approve for one
 of its runs:
@@ -117,13 +117,9 @@ number, and
 [`@smthrs/agent`](/api/agent)'s `Budget.layerFromEnvelope` turns that envelope
 into enforcement at the model boundary.
 
-A malformed budget is dropped rather than tightened. Effect fields have a
-conservative wildcard reading; a budget has none. Its conservative number is zero, and a zero ceiling
-refuses the run's first call, so a typo would be reported as a spending
-decision. Each ceiling is read on its own, so an unreadable
-`tokens` does not discard a valid `milliseconds`, and a key the budget does not
-know is reported too, because a misspelled `tokens` would otherwise read as an
-unbounded run in silence. All three cases are `invalid_budget` warnings.
+A markdown flow with a malformed budget is refused with `invalid_budget`.
+Invalid ceilings, unknown keys, and declarations with no ceiling never produce
+an unbounded descriptor. Correct the declaration before the flow can be listed.
 
 An absent `budget` is not a zero. It is the absence of a ceiling, which
 `Descriptor.budgetOf` answers with the named value
@@ -135,12 +131,12 @@ A top-level `deadline` joins the budget as `budget.deadline`, in whole
 milliseconds: the wall-clock time one run may take, counted from its first
 start, written as a duration (`deadline: 30 minutes`) or milliseconds. The
 control plane enforces it for the whole run, every trampoline round included,
-and expiry fails the run whatever `onExceeded` says. An unreadable deadline is
-dropped with an `invalid_deadline` warning, for the reason a malformed budget is.
+and expiry fails the run whatever `onExceeded` says. An unreadable explicit deadline refuses the markdown descriptor with
+`invalid_deadline`.
 
 A module flow declares the same keys as a `Flow.make` literal,
 `budget: { tokens: 200000, milliseconds: 600000 }`. Discovery reads the literal
-from the source text without evaluating the module and applies the rules above;
+from the source text without evaluating the module;
 its warnings name `Flow.make budget`. A budget that is not an object literal,
 or a member that is not a literal value, is dropped with a warning. A module's
 `deadline` is the flow's own `Flow.make` deadline, which the flow runtime

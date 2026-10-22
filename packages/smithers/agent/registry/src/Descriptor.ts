@@ -471,7 +471,7 @@ export interface Source {
   readonly lockfileRoot?: string | undefined
   /** A missing root produces an empty scan; other root failures still fail. */
   readonly optionalRoot?: boolean | undefined
-  /** Pack root whose real path bounds discovery when the host can resolve it. */
+  /** Pack root whose real path must resolve and bound discovery. */
   readonly confinementRoot?: string | undefined
   /**
    * A directory this source's flows moved out of. Entries there never load;
