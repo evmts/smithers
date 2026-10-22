@@ -12,6 +12,8 @@ import type { Role } from "../auth/contract"
 export interface Command extends SlashCommand {
   readonly flow: FlowName
   readonly minimum: Minimum
+  /** The payload a plugin's command fixes (decision 0017, `commands`): `/queue` runs `app/navigate` to its view. */
+  readonly args?: Readonly<Record<string, unknown>>
 }
 
 /** A description's first sentence: what a menu row shows. The rest is for the agent. */
@@ -38,6 +40,25 @@ export const commandsOf = (registered: ReadonlyArray<readonly [FlowName, Entry]>
         : slash.fields.flatMap((field) => fields.filter((candidate) => candidate.name === field)),
     }]
   })
+
+/**
+ * The slash commands plugins contribute (decision 0017, `commands`): each runs a flow of the one catalog with the
+ * payload its manifest fixes, and its row shows the command's title. The person types no arguments.
+ */
+export const pluginCommands = (
+  commands: ReadonlyArray<{
+    readonly flow: string
+    readonly title: string
+    readonly minimum: Minimum
+    readonly args?: Readonly<Record<string, unknown>> | undefined
+    readonly slash?: { readonly name: string } | undefined
+  }>,
+): ReadonlyArray<Command> =>
+  commands.flatMap(({ flow, title, minimum, args, slash }) =>
+    slash === undefined
+      ? []
+      : [{ name: slash.name, flow: flow as FlowName, minimum, description: title, fields: [], ...(args === undefined ? {} : { args }) }]
+  )
 
 /** Every slash command the registry declares. */
 export const COMMANDS: ReadonlyArray<Command> = commandsOf(names.map((name) => [name, entryOf(name)]))

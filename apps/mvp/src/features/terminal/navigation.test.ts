@@ -33,6 +33,7 @@ import { Views } from "../views/views"
 import { Terminal } from "./terminal"
 import { TerminalStore } from "./store"
 import { show } from "./actions"
+import { PluginsUi } from "../../plugins/ui"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -49,7 +50,7 @@ test.each(["empty", "mine", "watching"] as const)(
       return {
         repo: yield* Repo, home: yield* Home, views: yield* Views, branch: yield* Branch,
         terminal: yield* Terminal, issues: yield* Issues, pulls: yield* Pulls,
-        todos: yield* Todos, runs: yield* Runs, flows: yield* FlowsUi,
+        todos: yield* Todos, runs: yield* Runs, flows: yield* FlowsUi, plugins: yield* PluginsUi,
       }
     }))
     const theme = await runtime.runPromise(Effect.service(Theme))

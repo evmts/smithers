@@ -5,6 +5,7 @@ import type { DraftSelection } from "../chat/sharedPrompt"
 import type { ChatStore } from "../chat/store"
 import { choose, dismiss, highlight, submit, type } from "./actions"
 import { CommandsStore } from "./store"
+import type { Plugins } from "../../plugins/plugins"
 
 // Slash commands as a frontend sees them: the menu's live query to read and plain functions to act, with no Effect in
 // sight. React renders the query with `useLiveQuery` and hands the actions to the composer; it holds no state.
@@ -43,7 +44,7 @@ export class Commands extends Context.Service<
     Commands,
     Effect.gen(function* () {
       const store = yield* CommandsStore
-      const run = Effect.runSyncWith(yield* Effect.context<CommandsStore | ChatStore | AuthStore | FlowDispatch>())
+      const run = Effect.runSyncWith(yield* Effect.context<CommandsStore | ChatStore | AuthStore | FlowDispatch | Plugins>())
       return Commands.of({
         queries: { menu: store.menuState.tanstack },
         actions: {

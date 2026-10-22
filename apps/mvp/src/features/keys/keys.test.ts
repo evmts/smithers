@@ -7,11 +7,16 @@ import { buttonFor, buttonShortcuts, shortcutPresses } from "./keys"
 // (e2e/todos.spec.ts, Make TODO's `t`).
 
 /** A button as the listener reads it: what it declares, whether it is disabled, shown, and how often it was clicked. */
-const button = (keys: string, options: { readonly disabled?: boolean; readonly hidden?: boolean } = {}) => {
-  const state = { clicks: 0 }
+const button = (
+  keys: string,
+  options: { readonly disabled?: boolean; readonly hidden?: boolean; readonly tagName?: string } = {},
+) => {
+  const state = { clicks: 0, focuses: 0 }
   return {
     state,
     element: {
+      tagName: options.tagName ?? "BUTTON",
+      focus: () => void (state.focuses += 1),
       getAttribute: (name: string) => (name === "aria-keyshortcuts" ? keys : null),
       matches: () => options.disabled === true,
       getClientRects: () => (options.hidden === true ? [] : [{}]),
@@ -68,6 +73,14 @@ describe("buttonShortcuts", () => {
     const result = await press(page([make]), [keydown({ key: "t" })])
     expect(result).toEqual({ kept: [false], after: true, count: 1 })
     expect(make.state.clicks).toBe(1)
+  })
+
+  test("a key focuses the field that declares it, as the strip's note on i, instead of clicking it", async () => {
+    for (const tagName of ["TEXTAREA", "INPUT", "SELECT"]) {
+      const note = button("t", { tagName })
+      expect(await press(page([note]), [keydown({ key: "t" })])).toMatchObject({ kept: [false] })
+      expect(note.state, tagName).toEqual({ clicks: 0, focuses: 1 })
+    }
   })
 
   test("with ⌘, Ctrl or Alt held, a key that isn't one character, or none, nothing is pressed", async () => {

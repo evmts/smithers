@@ -443,9 +443,9 @@ class Devices {
     return this.openOn(false, names, { name: "smithers_dev_person", value: "teammate" })
   }
 
-  // As `open`, signed in as local development's person `person` (`teammate`, a Member, or `guest`, a Guest:
-  // worker/DevChatApi.ts), so a test has up to three people on one laptop.
-  openAs(person: "teammate" | "guest", ...names: Array<string>) {
+  // As `open`, signed in as local development's person `person` (`teammate`, a Member, `guest`, a Guest, or
+  // `maintainer`, a Maintainer: worker/DevChatApi.ts), so a test has up to four people on one laptop.
+  openAs(person: "teammate" | "guest" | "maintainer", ...names: Array<string>) {
     return this.openOn(false, names, { name: "smithers_dev_person", value: person })
   }
 

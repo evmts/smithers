@@ -52,6 +52,7 @@
     "@smthrs/plan": "workspace:*",
     "@smthrs/platform-browser": "workspace:*",
     "@smthrs/platform-cloudflare": "workspace:*",
+    "@smthrs/plugin": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/repo-view": "workspace:*",
     "@smthrs/rpc": "workspace:*",

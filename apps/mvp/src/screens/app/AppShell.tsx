@@ -8,6 +8,7 @@ import { Conversation } from "../../features/chat/components/Conversation"
 import { HeaderStatus } from "../../features/status/components/HeaderStatus"
 import { ThemeButton } from "../../features/theme/components/ThemeButton"
 import { Link } from "@tanstack/react-router"
+import { Slot } from "../../plugins/components/Slot"
 import { Toasts } from "./Toasts"
 import "./app-shell.css"
 
@@ -23,11 +24,12 @@ export function AppShell() {
         <div className="app-shell-connection" role="status" aria-label="Connection" aria-live="polite">
           <ConnectionPill />
         </div>
-        {/* Your own flows and this device's runs (decision 0014 §5), and an Admin's settings. */}
+        {/* Your own flows and this device's runs (decision 0014 §5), an Admin's settings, and the plugins' entries. */}
         <nav className="app-shell-nav" aria-label="Pages">
           <Link to="/app/flows">Flows</Link>
           <Link to="/app/runs">Runs</Link>
           <SettingsLink />
+          <Slot name="shell.nav" />
         </nav>
         {/* Your notifications (decision 0009): the unread count, and the panel it opens. */}
         <NotificationsBell />

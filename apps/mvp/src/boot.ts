@@ -70,6 +70,9 @@ import { Status, type StatusView } from "./features/status/status"
 import { Terminal, type TerminalView } from "./features/terminal/terminal"
 import { StatusStore, TabTitle } from "./features/status/store"
 import { Spend, type SpendView } from "./features/spend/spend"
+import { pluginKeys } from "./plugins/keymap"
+import { Plugins } from "./plugins/plugins"
+import { PluginsUi, type PluginsView } from "./plugins/ui"
 import { SpendStore } from "./features/spend/store"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
 import { Theme, type ThemeView } from "./features/theme/theme"
@@ -200,6 +203,9 @@ export const appLayer = <S = never>(
     // Pull requests (decision 0012 §6): the list and one pull request's tabs, over the issues' store, and a person's
     // merge and a comparison's files through ChatApi (`PullsClient`, below).
     Pulls.layer.pipe(Layer.provide(PullsStore.layer({ origin }))),
+    // The plugin host (decision 0017): the built-in plugins, loaded through the public loader, and the one contract,
+    // PluginHost, each plugin's tab reads and acts through (src/plugins/).
+    PluginsUi.layer,
     tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // TODOs and the stack (decision 0016): the stack pages, the drafts, and this tab's answers to the TODO steps it
     // started.
@@ -219,12 +225,17 @@ export const appLayer = <S = never>(
   ).pipe(
     // The feed reads the conversation chat shows and who sign-in says is signed in, and opens an entry's page through
     // the router (decision 0009). Agent status, beside it, reads chat's messages beside the runs, and answers through
-    // dispatch (decision 0015).
+    // dispatch (decision 0015). The plugin host sits above agent status, whose open waits it serves as `core/waits`, and
+    // below the composer's commands, which offer the plugins' slash commands (decision 0017).
     Layer.provideMerge(
-      AttentionStore.layer({ origin }).pipe(
-        Layer.provideMerge(Layer.succeed(AttentionNavigation, AttentionNavigation.of({ navigate: host.navigate }))),
+      Plugins.layer().pipe(
         Layer.provideMerge(
-          StatusStore.layer({ origin }).pipe(Layer.provideMerge(Layer.succeed(TabTitle, host.title ?? TabTitle.none))),
+          AttentionStore.layer({ origin }).pipe(
+            Layer.provideMerge(Layer.succeed(AttentionNavigation, AttentionNavigation.of({ navigate: host.navigate }))),
+            Layer.provideMerge(
+              StatusStore.layer({ origin }).pipe(Layer.provideMerge(Layer.succeed(TabTitle, host.title ?? TabTitle.none))),
+            ),
+          ),
         ),
       ),
     ),
@@ -359,6 +370,8 @@ export interface BootOptions {
   readonly target: EventTarget
   /** The page's start, in epoch milliseconds: `performance.timeOrigin`. */
   readonly startedAt: number
+  /** Whether keys' `mod` is ⌘ (a Mac) rather than Ctrl. */
+  readonly mac?: boolean
   readonly render: (
     chat: ChatView,
     auth: AuthView,
@@ -379,6 +392,7 @@ export interface BootOptions {
     todos: TodosView,
     codeIntel: CodeIntelView,
     pulls: PullsLayer,
+    plugins: PluginsView,
   ) => void
 }
 
@@ -409,6 +423,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const todos = yield* Todos
     const codeIntel = yield* CodeIntel
     const pulls = yield* Pulls
+    const plugins = yield* PluginsUi
     const store = yield* ChatStore
     yield* bindSessionConnectivity(options.target)
     yield* Effect.sync(() =>
@@ -432,10 +447,12 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         todos,
         codeIntel,
         pulls,
+        plugins,
       )
     )
     yield* chatShortcuts(options.target)
     yield* buttonShortcuts(options.target)
+    yield* pluginKeys(options.target, options.mac ?? false)
     yield* bindConnectivity(options.target)
     yield* requestPersistentStorage(options.storage).pipe(Effect.forkScoped)
     yield* store.messages.restored.pipe(
@@ -456,8 +473,8 @@ export const start = <S = never>(
   options: AppOptions & BootOptions,
   services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine>,
 ) => {
-  const { target, startedAt, render, ...app } = options
+  const { target, startedAt, render, mac, ...app } = options
   const runtime = ManagedRuntime.make(appLayer(app, services))
-  const program = runtime.runFork(boot({ target, startedAt, render, storage: app.host.storage }))
+  const program = runtime.runFork(boot({ target, startedAt, render, ...(mac === undefined ? {} : { mac }), storage: app.host.storage }))
   return { runtime, stop: () => runtime.runPromise(Fiber.interrupt(program)).then(() => runtime.dispose()) }
 }

@@ -10,7 +10,10 @@ import { Chat } from "../chat/chat"
 import { PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import { ThemeStore } from "../theme/store"
-import { type Command, COMMANDS, commandsFor, commandsOf, rankOf, summary, type Viewer, viewerOf } from "./catalog"
+import { Load } from "@smthrs/plugin"
+import { BUILTIN } from "../../plugins/builtin"
+import { hostFacts } from "../../plugins/facts"
+import { type Command, COMMANDS, commandsFor, commandsOf, pluginCommands, rankOf, summary, type Viewer, viewerOf } from "./catalog"
 import { Commands } from "./commands"
 import { choices, submits } from "./metrics"
 import { CommandsStore } from "./store"
@@ -86,7 +89,12 @@ const open = async (options: TabOptions = {}, actor: Actor | null = person("memb
 }
 
 /** What a slash lists for `viewer`: every command at or below their role, in the registry's order. */
-const listed = (viewer: Viewer) => commandsFor(viewer).map(({ name }) => `/${name}`)
+/** The built-in plugins' commands (src/plugins/builtin.ts), loaded as the app loads them: the menu offers them too. */
+const PLUGIN_COMMANDS = pluginCommands(
+  Effect.runSync(Load.load(hostFacts(), BUILTIN.map(({ manifest }) => ({ tier: "built-in" as const, manifest })))).contributions
+    .commands,
+)
+const listed = (viewer: Viewer) => commandsFor(viewer, [...COMMANDS, ...PLUGIN_COMMANDS]).map(({ name }) => `/${name}`)
 
 const MEMBER: Viewer = { signedIn: true, role: "member" }
 
@@ -128,6 +136,18 @@ describe("the catalog", () => {
     expect(commandsOf([["app/theme/set", { ...entryOf("app/theme/set"), flow: reference }]])).toEqual([
       { ...THEME, description: "" },
     ])
+  })
+
+  test("a plugin's commands with a slash join the menu, with their fixed payload; the rest don't", () => {
+    expect(pluginCommands([
+      { flow: "app/navigate", title: "Queue", minimum: "member", args: { to: "/app/queue" }, slash: { name: "queue" } },
+      { flow: "app/navigate", title: "Home", minimum: "anyone", slash: { name: "home" } },
+      { flow: "app/navigate", title: "Palette only", minimum: "anyone" },
+    ])).toEqual([
+      { name: "queue", flow: "app/navigate", minimum: "member", description: "Queue", fields: [], args: { to: "/app/queue" } },
+      { name: "home", flow: "app/navigate", minimum: "anyone", description: "Home", fields: [] },
+    ])
+    expect(PLUGIN_COMMANDS.map(({ name }) => name)).toEqual(["queue"])
   })
 
   test("names are command syntax, one per flow, and each slash door's flow carries a description", () => {
@@ -284,6 +304,18 @@ describe("submitting", () => {
     expect(tab.shown()).toEqual([])
   }, 60_000)
 
+  test("/queue, a plugin's command, runs app/navigate with the payload its manifest fixes, door slash", async () => {
+    const tab = await open({ answers: true })
+    await ready(tab)
+    tab.actions.submit("/queue")
+    expect(tab.draft()).toBe("")
+    expect(tab.count(Metric.withAttributes(submits, { outcome: "run", command: "queue" }))).toBe(1)
+    await until(() =>
+      expect(tab.count(Metric.withAttributes(dispatches, { flow: "app/navigate", door: "slash", outcome: "done" }))).toBe(1)
+    )
+    expect(tab.shown()).toEqual([])
+  }, 60_000)
+
   test("/web runs app/web/open through its own door, the person's gesture, door slash", async () => {
     const tab = await open()
     await ready(tab)
@@ -400,6 +432,6 @@ describe("submitting", () => {
   test("roles: an Admin lists every command", async () => {
     const tab = await open({}, person("admin"))
     await ready(tab, { signedIn: true, role: "admin" })
-    expect(tab.labels()).toEqual(COMMANDS.map(({ name }) => `/${name}`))
+    expect(tab.labels()).toEqual([...COMMANDS, ...PLUGIN_COMMANDS].map(({ name }) => `/${name}`))
   })
 })

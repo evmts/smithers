@@ -2,10 +2,24 @@
 title: Everything is a plugin (P2 public interface design)
 status: in-progress
 area: design
-owner: Opus public-plugin-interface builder running on mini; Codex tracker curates note
-updated: 2026-10-21 20:55 PDT
+owner: plugins builder (Claude Opus, headless)
+updated: 2026-10-22
 links: [../rulings.md, ../decisions/0017-everything-is-a-plugin.md, ../design/plugins/plugins.html, will-decision-queue.md, maintainer-site.md, flow-authoring.md, prompt-flows-are-code-flows.md, maintainer-app-plugins.md, plugin-design-extra-review.md]
 ---
+
+## Current specification — 2026-10-21
+
+**What:** Slice 1 built: the public plugin interface (`@smthrs/plugin` `Manifest`, `Load`, `PluginHost`), the app's plugin host (`apps/mvp/src/plugins/`), its trust boundaries, and the first plugin, `queue` (0017's `needs-you`, renamed by decision 0022), on the interface alone.
+
+**Why:** PLUGIN-1; decision 0017 slice 1; decision 0022 slice 1.
+
+**Current state:** Built with unit, integration and e2e tests ([plugins.md](../features/plugins.md)). Not in it yet: inline views, the deletion test in CI, the live boot-time budget, offline and two-device e2e cases, the strip's Sending state kept through a reload, and 0022's `confidence`/`priority` on asks and its queue metrics.
+
+**Next step:** Land on `main`; then slice 2 (durable asks, flows over flows) and the rest of 0022's slice 1.
+
+**Open questions for Will:** None.
+
+## Earlier tracker history (retained)
 
 ## Tracker reconciliation — 2026-10-21 20:55 PDT
 

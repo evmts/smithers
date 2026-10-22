@@ -23,6 +23,7 @@ import { ENGINE_NAME } from "./flows/contract"
 import { ThemeProvider } from "./features/theme/components/ThemeButton"
 import { StatusProvider } from "./features/status/components/StatusContext"
 import { SpendProvider } from "./features/spend/components/SpendContext"
+import { PluginsProvider } from "./plugins/components/PluginsContext"
 import { TerminalProvider } from "./features/terminal/components/TerminalContext"
 import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
@@ -244,6 +245,7 @@ const render: BootOptions["render"] = (
   todos,
   codeIntel,
   pulls,
+  plugins,
 ) =>
   root.render(
     <StrictMode>
@@ -270,10 +272,13 @@ const render: BootOptions["render"] = (
                                   <HomeProvider value={home}>
                                     {/* The one toast stack reads the feed (decision 0009). */}
                                     <AttentionProvider value={attention}>
-                                      <RouterProvider
-                                        router={router}
-                                        context={{ repo, home, views, branch, terminal, issues, pulls, todos, runs, flows }}
-                                      />
+                                      {/* The plugin host: its slots in the shell, its views' routes (src/plugins/). */}
+                                      <PluginsProvider value={plugins}>
+                                        <RouterProvider
+                                          router={router}
+                                          context={{ repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, plugins }}
+                                        />
+                                      </PluginsProvider>
                                     </AttentionProvider>
                                   </HomeProvider>
                                 </FlowsUiProvider>
@@ -312,6 +317,8 @@ const page = {
   host,
   target: window,
   startedAt: performance.timeOrigin,
+  // Keys' `mod` is ⌘ on a Mac, Ctrl elsewhere (src/plugins/keymap.ts).
+  mac: /Mac|iPhone|iPad/.test(navigator.platform),
   render,
 }
 

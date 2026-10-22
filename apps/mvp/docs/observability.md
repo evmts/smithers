@@ -491,6 +491,23 @@ What the agent's runs report, and what the person does about a question ([agent-
 | `timeline.summary`; `smithers_timeline_summary_calls` | log, span; counter | engine worker | `role`, `outcome` (`ready`), `replayed`; counter without labels |
 | `timeline.summary.unavailable`, `timeline.summary.unconfigured` | warning | tab | none; kept by `TIMELINE_TELEMETRY` |
 
+### Plugins
+
+What the plugin host loads and what the person does on its strip and keys ([plugins.md](features/plugins.md#observability)). No record carries a manifest's text, an item or a note.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `plugin.load` | span, log | tab | `plugin`, `version`, `tier`, `outcome` (`active`, `refused`), `reason` |
+| `plugin.refused` | log | tab | `plugin`, `outcome`, `reason`, `path` (the manifest field) |
+| `smithers_plugin_loads` | counter | tab | `outcome`, `tier`, `reason` |
+| `smithers_plugin_contributions` | counter | tab | `point` |
+| `plugin.press` | log | tab | `plugin`, `view`, `event`, `door` (`button`, `key`), `outcome` (`done`, `failed`, `invalid`, `stale`) |
+| `smithers_plugin_presses` | counter | tab | `plugin`, `event`, `door`, `outcome` |
+| `plugin.key` | log | tab | `plugin`, `key` |
+| `smithers_plugin_keys` | counter | tab | `plugin`, `key` |
+
+A key's flow is also `flow.dispatch` with door `key`.
+
 ### Notifications
 
 The personal feed: a run's state routed to its people, GitHub's `main` and release deliveries, and what each person does with their entries ([notifications.md](features/notifications.md#observability)). Records carry run ids, subjects and counts, never a title, a question, a commit message or who pushed.
@@ -645,7 +662,7 @@ Which flows run, and how (Will, 2026-10-20: "Everything is a flow so the most ob
 | `flows_waits`, `flows_wait_ms` | counter, histogram | `flow`, `kind` (`timer`, `signal`, `approval`, `quota`, `human`, `other`): each park, and its length at the resume |
 | `flow.model.call`, `flows_model_calls`, `flows_model_tokens` | log (Info), counters | `flow`, `model`, `outcome`; tokens by `direction` (`input`, `output`); the line carries `inputTokens` and `outputTokens` |
 
-- **Door and actor.** The app's dispatch (`src/flows/dispatch.ts`) names them: its door, and the actor kind behind it (`actorOf`: `person` for `button`, `slash`, `view` and `composer`; `agent` for `agent`; `app` for `sync`). `BrowserEngine.start` carries them to the leader. A run another run starts is door `flow` by its starter's actor kind, and a run an agent's tool call starts is door `agent` by `agent`. Remote flows carry their starter's through `ExecutionObject.intent`; one ChatApi starts without naming one is `unknown`.
+- **Door and actor.** The app's dispatch (`src/flows/dispatch.ts`) names them: its door, and the actor kind behind it (`actorOf`: `person` for `button`, `slash`, `view`, `composer` and `key`; `agent` for `agent`; `app` for `sync`). `BrowserEngine.start` carries them to the leader. A run another run starts is door `flow` by its starter's actor kind, and a run an agent's tool call starts is door `agent` by `agent`. Remote flows carry their starter's through `ExecutionObject.intent`; one ChatApi starts without naming one is `unknown`.
 - **Placement** is the engine's: `browser` in the engine worker, `cloudflare` in `FlowExecution`. Both hosts write the lines at Info (`RunMetrics.layerInfoLines`); elsewhere they are Debug.
 - **Model.** On the app a model step's model id is its role (`agent`), so `flows_model_tokens` joins ChatApi's `smithers_model_spend_tokens` and `model.spend` by role.
 - **Bounded, content-free.** Doors, actors, placements, outcomes and wait kinds are closed sets (`other` otherwise). Flow tags, model ids and codes are cleaned to identifiers and capped per engine at 200, 50 and 100 distinct values (`other` past the cap). No record carries a payload, a result, a failure's message or who started a run.

@@ -32,6 +32,7 @@ import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
 import { inProcessWorker } from "./test/languageServer"
 import { faultyServices } from "./test/faults"
 import { read } from "./test/otlp"
+import { PluginsUi } from "./plugins/ui"
 
 // The browser program and its boundary, on the app's own layer over a Node device, against ChatApi's real handler.
 // Records are read back from the OTLP exports the browser sent.
@@ -103,6 +104,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(Todos),
       Effect.service(CodeIntel),
       Effect.service(Pulls),
+      Effect.service(PluginsUi),
     ]),
   )
   expect(views[0]).toHaveLength(layers.length)
@@ -292,11 +294,12 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
   chat!.actions.loadEarlier()
   expect(chat!.queries.history.toArray[0]).toEqual(history)
   await stop()
-  // Three key bindings, chat connectivity and scoped auth refresh on reconnect are all removed.
+  // The key bindings (the plugins' keymap among them), chat connectivity and scoped auth refresh on reconnect are all removed.
   expect(unbound.sort()).toEqual([
     "error",
     "focus",
     "focusin",
+    "keydown",
     "keydown",
     "keydown",
     "keydown",

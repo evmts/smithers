@@ -33,6 +33,7 @@ import { openFaultyApp, TestChatApi } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
 import { dialing, roomHost } from "../../test/rooms"
 import { read } from "../../test/otlp"
+import { PluginsUi } from "../../plugins/ui"
 
 const disposables: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -67,7 +68,7 @@ const open = async (reopenRoute?: () => void) => {
     attention.queries.unread, attention.queries.needs, attention.queries.panel, auth.queries.session,
   ]) query.startSyncImmediate()
   return {
-    context: { repo, home, views, branch, terminal, issues, pulls, todos, runs, flows },
+    context: { repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, plugins: await runtime.runPromise(Effect.service(PluginsUi)) },
     current: () => branch.queries.current.toArray[0],
     release: () => runtime.runPromise(fault.releaseStarts),
     downShapes: () => runtime.runPromise(shapes.down()),

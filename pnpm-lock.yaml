@@ -455,6 +455,9 @@ importers:
       '@smthrs/platform-cloudflare':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/platform-cloudflare
+      '@smthrs/plugin':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/plugin
       '@smthrs/registry':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/registry

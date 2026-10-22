@@ -9,7 +9,8 @@ import { ChatStore } from "../chat/store"
 import { pinConversation } from "../sandbox/actions"
 import { openWebPage, refusedPage } from "../web/actions"
 import { CANT_OPEN } from "../web/contract"
-import { type Command, commandsFor, viewerOf } from "./catalog"
+import { Plugins } from "../../plugins/plugins"
+import { COMMANDS as COMMAND_LIST, type Command, commandsFor, pluginCommands, viewerOf } from "./catalog"
 import { COMMANDS, invalidArgument, missingArguments, unknownCommand } from "./contract"
 import { choices, submits } from "./metrics"
 import { MENU, type Menu } from "./schema"
@@ -23,8 +24,12 @@ import { CommandsStore } from "./store"
 /** The commands the person at the composer may run, as sign-in knows them now. */
 const offered = Effect.gen(function* () {
   const { session, confirmed } = yield* AuthStore
+  const { contributions } = yield* Plugins
   const now = Option.getOrThrow(yield* session.get(SESSION))
-  return commandsFor(viewerOf(now, Option.getOrUndefined(yield* confirmed.get(SESSION))))
+  return commandsFor(
+    viewerOf(now, Option.getOrUndefined(yield* confirmed.get(SESSION))),
+    [...COMMAND_LIST, ...pluginCommands(contributions.commands)],
+  )
 })
 
 const draftNow = Effect.gen(function* () {
@@ -92,7 +97,7 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>) =>
       // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts).
       const pinned = command.flow.startsWith("sandbox/") ? yield* pinConversation(payload) : payload
       // A dispatch that fails is already logged and counted with the flow.
-      yield* flows.dispatch(command.flow, pinned as never, { door: "slash" }).pipe(Effect.ignore, Effect.forkIn(scope))
+      yield* flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash" }).pipe(Effect.ignore, Effect.forkIn(scope))
     }
     yield* Metric.update(Metric.withAttributes(submits, { outcome: "run", command: command.name }), 1)
     yield* Effect.logInfo("slash.run").pipe(Effect.annotateLogs({ command: command.name, flow: command.flow }))

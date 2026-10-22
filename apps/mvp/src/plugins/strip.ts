@@ -1,0 +1,107 @@
+import { Bind, type Contribution, When } from "@smthrs/plugin"
+import { Result } from "effect"
+
+// The host's action strip (decision 0017, "The host owns person-only actions"): what it draws under a view for the
+// item the person is looking at. Every event of the view whose flow is person-only is one of its buttons, never plugin
+// code's: an event that picks one of the item's choices (`$item.options[$event.index]`) is a button per choice, keyed
+// 1 to 9; any other is one button, keyed as the manifest binds it. An event shows only while one of its keys' `when`
+// clauses holds for the item, or always if it has no key. The strip's one text box fills every text field of the event
+// pressed (a note), so a person can say more on any item. Nothing here names a plugin, a kind or an item.
+
+type View = Contribution.View
+type Keybinding = Contribution.Keybinding
+type ViewEvent = Contribution.FlowEvent
+
+/** One button of the strip: the event it sends, the fields it fills, its label and its key. */
+export interface Button {
+  readonly event: string
+  readonly fields: Readonly<Record<string, unknown>>
+  readonly label: string
+  /** The key that presses it, as the person reads it (`2`, `a`, `⌘↵`); absent when it has none. */
+  readonly key?: string
+}
+
+/** What the strip draws for one item: its buttons, and whether it has a text box. */
+export interface Strip {
+  readonly buttons: ReadonlyArray<Button>
+  readonly note: boolean
+}
+
+/** How the person reads a key: `mod+enter` as `⌘↵`. */
+export const keyLabel = (key: string): string =>
+  key
+    .split(" ")
+    .map((stroke) =>
+      stroke
+        .split("+")
+        .map((part) => ({ mod: "⌘", ctrl: "⌃", alt: "⌥", shift: "⇧", enter: "↵", escape: "Esc" })[part] ?? part)
+        .join("")
+    )
+    .join(" ")
+
+/** An event's name as a button reads: `changes` as `Changes`. */
+const titled = (name: string) => name.charAt(0).toUpperCase() + name.slice(1)
+
+/** Whether `event` dispatches a person-only flow, as the loader marked it from the catalog: only the strip sends it. */
+export const personOnly = (event: Contribution.Event): boolean => "flow" in event && event.personOnly
+
+/** The text fields of an event's payload: what the strip's text box fills. */
+export const textFields = (event: ViewEvent): ReadonlyArray<string> => {
+  const properties = (event.payload as { readonly properties?: Readonly<Record<string, { readonly type?: unknown }>> })
+    ?.properties ?? {}
+  return Object.entries(properties).filter(([, schema]) => schema.type === "string").map(([name]) => name)
+}
+
+/**
+ * The item array an event picks from and the payload field naming its index, when its args pick one element of the
+ * item (`$item.options[$event.index]`).
+ */
+const choiceOf = (event: ViewEvent): { readonly list: string; readonly field: string } | undefined => {
+  // The loader admitted these args, so they parse.
+  for (const reference of Result.getOrThrow(Bind.references(event.args))) {
+    const [list, pick] = reference.path
+    if (
+      reference.root === "item" && reference.path.length === 2 && typeof list === "string" &&
+      typeof pick === "object" && pick !== null && "event" in pick
+    ) {
+      return { list, field: pick.event }
+    }
+  }
+  return undefined
+}
+
+/** The strip for `item` under `view`, given the plugins' keybindings. */
+export const stripOf = (
+  view: View,
+  keybindings: ReadonlyArray<Keybinding>,
+  item: Readonly<Record<string, unknown>> | undefined,
+): Strip => {
+  if (item === undefined) return { buttons: [], note: false }
+  const scope = { view: view.id, item, focusInput: false }
+  const buttons: Array<Button> = []
+  let note = false
+  for (const event of view.events) {
+    if (!("flow" in event) || !event.personOnly) continue
+    // Only this view's own keys: another plugin's binding of an event with the same name is never this one's.
+    const keys = keybindings.filter((binding) => "event" in binding && binding.view === view.id && binding.event === event.name)
+    if (keys.length > 0 && !keys.some((binding) => When.evaluate(binding.when, scope))) continue
+    if (textFields(event).length > 0) note = true
+    const key = keys[0]?.key
+    const choice = choiceOf(event)
+    if (choice === undefined) {
+      buttons.push({ event: event.name, fields: {}, label: titled(event.name), ...(key === undefined ? {} : { key: keyLabel(key) }) })
+      continue
+    }
+    const list = item[choice.list]
+    if (!Array.isArray(list)) continue
+    list.slice(0, 9).forEach((value, index) =>
+      buttons.push({
+        event: event.name,
+        fields: { [choice.field]: index },
+        label: String(value),
+        ...(key === "digit" ? { key: String(index + 1) } : {}),
+      })
+    )
+  }
+  return { buttons, note }
+}

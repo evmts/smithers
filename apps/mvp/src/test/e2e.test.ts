@@ -42,6 +42,8 @@ const openOnWindow = async (search: string, name: string) => {
     search,
     window,
   )
+  // The boot program renders once its layers are up, on its own fiber: wait for it.
+  await vi.waitFor(() => expect(rendered).toHaveLength(1))
   return { host, api, chat: rendered[0]!, faults: window.faults!, stop }
 }
 
@@ -91,6 +93,7 @@ test.each([
     search,
     window,
   )
+  await vi.waitFor(() => expect(rendered).toHaveLength(1))
   const connection = rendered[0]!.queries.connection
   await connection.preload()
   await until(() => expect(connection.toArray[0]).toMatchObject(failed))

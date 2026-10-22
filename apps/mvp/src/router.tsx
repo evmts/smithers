@@ -1,5 +1,5 @@
 import { openBranchPage } from "./features/branch/navigation"
-import { createRootRouteWithContext, createRoute, createRouter, redirect } from "@tanstack/react-router"
+import { createRootRouteWithContext, createRoute, createRouter, notFound, redirect } from "@tanstack/react-router"
 import type { BranchView } from "./features/branch/branch"
 import type { FlowsUiView } from "./features/flows-ui/flowsUi"
 import type { HomeView } from "./features/home/home"
@@ -36,6 +36,8 @@ import { Root } from "./screens/root/Root"
 import { RunScreen } from "./screens/runs/RunScreen"
 import { RunsScreen } from "./screens/runs/RunsScreen"
 import { SettingsScreen } from "./screens/settings/SettingsScreen"
+import { PluginScreen } from "./screens/plugin/PluginScreen"
+import type { PluginsView } from "./plugins/ui"
 import { ViewScreen } from "./screens/view/ViewScreen"
 
 // The app's routes. A repository's are GitHub's paths (decision 0006 §2): swapping github.com for the app's domain
@@ -62,6 +64,7 @@ export interface RouterContext {
   readonly todos: TodosView
   readonly runs: RunsView
   readonly flows: FlowsUiView
+  readonly plugins: PluginsView
 }
 
 /**
@@ -173,6 +176,25 @@ const runsRoute = createRoute({
   component: RunsScreen,
   beforeLoad: (load) => enter(load, () => load.context.runs.actions.warmList(), () => load.context.runs.actions.openList()),
 })
+
+/**
+ * `/app/$plugin` and `/app/$plugin/<path>`: a plugin's view at its full size (decision 0017, `views`). The host shows it
+ * while the route is open, so its keys and its strip act on it; a path no plugin declares is not found.
+ */
+const pluginRoute = (path: "/app/$plugin" | "/app/$plugin/$") =>
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path,
+    component: PluginScreen,
+    beforeLoad: ({ context, params, ...load }) => {
+      const view = context.plugins.actions.viewAt(params.plugin, (params as { readonly _splat?: string })._splat ?? "")
+      if (view === undefined) throw notFound()
+      return enter(load, local, () => context.plugins.actions.show(view.id))
+    },
+    onLeave: ({ context }) => context.plugins.actions.show(null),
+  })
+const pluginIndexRoute = pluginRoute("/app/$plugin")
+const pluginPathRoute = pluginRoute("/app/$plugin/$")
 
 /** `/app/settings`: the deployment's settings, for an Admin; their rows sync to an Admin's devices. */
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/app/settings", component: SettingsScreen })
@@ -435,6 +457,8 @@ export const router = createRouter({
     runsRoute,
     runRoute,
     settingsRoute,
+    pluginIndexRoute,
+    pluginPathRoute,
     repoRoute,
     treeRoute,
     blobRoute,
@@ -461,6 +485,7 @@ export const router = createRouter({
     issues: undefined!,
     pulls: undefined!,
     todos: undefined!,
+    plugins: undefined!,
     runs: undefined!,
     flows: undefined!,
   },

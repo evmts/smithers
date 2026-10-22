@@ -11,6 +11,8 @@ export default defineConfig({
       "PACKAGE.test.ts",
       "tests/**/*.test.ts",
       "src/**/*.test.ts",
+      // The built-in plugins' tabs (decision 0017, plugins/<id>/src/tab.ts).
+      "plugins/**/*.test.ts",
       "worker/**/*.test.ts",
       "db/**/*.test.ts",
       "infra/**/*.test.ts",
@@ -32,6 +34,7 @@ export default defineConfig({
       reportsDirectory: join(tmpdir(), `mvp-coverage-${process.pid}`),
       include: [
         "src/**/*.ts",
+        "plugins/*/src/**/*.ts",
         // Production's hostname and the docs site's routes on it (docs/infrastructure.md#domain).
         "infra/Domain.ts",
         // Remote flows (docs/features/remote-flows.md). worker/Executions.ts, the Alchemy Durable Object declaration,
@@ -158,6 +161,7 @@ export default defineConfig({
       // src/features/code-intel/language.worker.ts is one too: src/test/languageServer.ts runs the same server in Node.
       exclude: [
         "src/**/*.test.ts",
+        "plugins/**/*.test.ts",
         "src/test/**",
         "worker/**/*.test.ts",
         "src/flows/engine.worker.ts",

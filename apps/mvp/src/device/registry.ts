@@ -26,6 +26,7 @@ import { Summary } from "../features/timeline/store"
 import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending, Todo, TodoRequest } from "../features/todos/schema"
 import { View } from "../features/views/schema"
 import { CuratedRowV1, HomeRowV2 } from "./home-history"
+import { Draft as PluginDraft } from "../plugins/schema"
 import { AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, RequestedV1 } from "./history"
 
 // Every store this device keeps, and its history (decision 0021): each persisted collection, synced or local, and
@@ -65,6 +66,9 @@ export const IssueDraftsStore = Migrations.local({ id: "issue-drafts", versions:
 
 /** Who this device last knew was signed in, and as what (src/features/auth/store.ts). */
 export const AuthConfirmedStore = Migrations.local({ id: "auth-confirmed", versions: [AuthConfirmedV1, Confirmed], migrations: [Migrations.step(AuthConfirmedV1, Confirmed, (row) => row)], getKey: (row) => row.id })
+
+/** The plugin host's strip notes, one per view and item (src/plugins/schema.ts `Draft`). */
+export const PluginDraftsStore = Migrations.local({ id: "plugin-drafts", versions: [PluginDraft], getKey: (row) => row.id })
 
 /** This device's theme. */
 export const PreferencesStore = Migrations.local({ id: "preferences", versions: [Preference], getKey: (row) => row.id })
@@ -191,6 +195,7 @@ export const deviceRegistry = Migrations.registry({
     IssueDraftsStore,
     AuthConfirmedStore,
     PreferencesStore,
+    PluginDraftsStore,
     HomesStore,
     CuratedHomesStore,
     AttentionPendingStore,
