@@ -2,10 +2,30 @@
 title: Migrate Smithers Effect code to VibeLang, one package at a time
 status: in-progress
 area: sdk
-owner: VibeLang migration session; lander excludes unpublished links
-updated: 2026-10-21 14:23 PDT
+owner: VibeLang migration lead (Claude session 7cd66504)
+updated: 2026-10-21 17:34 PDT
 links: [../rulings.md, vibelang-0-0-2-publish.md, second-build-machine.md]
 ---
+
+## Current specification — 2026-10-21 17:34 PDT
+
+**What:** Rewrite the Effect code of every package under `packages/` in idiomatic VibeLang (`.vibe`). Apps (`apps/**`) migrate later. Each package keeps its public API (its emitted declarations) identical and every test passing at 100% coverage (OTHER-1, OTHER-1a).
+
+**Why:** This is VibeLang's first real use. The point is to find and fix its bugs, and the places it can't yet express idiomatic Effect, before users do. VibeLang is ours, so every bug or gap is fixed upstream in VibeLang or recorded; nothing is worked around. Will decides any change that breaks how existing VibeLang code works.
+
+**Base:** the Smithers `main` commit that lands the VibeLang tooling stack: `@smthrs/fs` and `@smthrs/errors` in VibeLang 0.0.3, and every build, test, lint and scanner tool reading `.vibe`. The diff of `packages/**` outside `.vibe` files against this commit lists the library changes to upstream.
+
+**How:**
+- The work happens on an integration line on nyc-01 (`~/vibe/mig`). Its first commit is temporary and links VibeLang `main` from `../effectscript`, so compiler fixes apply at once.
+- Each worker migrates its packages in its own jj workspace, with its own VibeLang clone, and records pain points in `~/vibe/mig/painpoints/`.
+- VibeLang fixes land on smithersai/vibelang `main` and ship in VibeLang releases.
+- A batch lands on Smithers `main`, with the apps/mvp lead, once a published VibeLang release carries every fix it needs and the temporary link is gone.
+
+**Done when:** every package's Effect code is `.vibe`. Each package's API is unchanged, and `smthrs build`, `test` and `lint` pass everything that passes on the base. The pain points are fixed or listed with Will's decisions.
+
+**Current state:** 2 of about 60 packages migrated (`fs`, `errors`); tooling landed.
+
+## Earlier tracker history (retained)
 
 ## Tracker reconciliation — 2026-10-21 14:23 PDT
 
@@ -22,7 +42,6 @@ links: [../rulings.md, vibelang-0-0-2-publish.md, second-build-machine.md]
 Evidence: lead text replies at 14:20–14:23 PDT on 2026-10-21, extracted by script from session 6253ecf2 within its latest approximately two hours (12:23–14:23 PDT). Automated notifications, tool blocks and relayed agent messages excluded. Current rulings and Will’s queue answers take precedence over historical briefs and designs. Product results are lead-reported; this tracker verifies the site build. Engineering ownership is retained; Codex maintains these notes.
 
 ## Earlier tracker history (retained)
-
 
 ## Tracker reconciliation — 2026-10-21 03:14 PDT
 
