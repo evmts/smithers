@@ -593,3 +593,69 @@ it("redacts restricted watch persistence errors and preserves invalid cursor err
     }).pipe(Effect.provide(live({ journal, runtime: memoryRuntime({ flows }) })), Effect.scoped)
   )
 })
+
+it("a global watch emits a partition's history before its live tail", async () => {
+  const observed = await Effect.runPromise(
+    Effect.gen(function*() {
+      const snapshotBlocked = Deferred.makeUnsafe<void>()
+      const releaseSnapshot = Deferred.makeUnsafe<void>()
+      const liveSeen = Deferred.makeUnsafe<void>()
+      const complete = Deferred.makeUnsafe<void>()
+      let partition = ""
+      const journal = Layer.effect(
+        Journal.Journal,
+        Effect.map(Journal.Journal, (real) => ({
+          ...real,
+          entries: (options: Parameters<typeof real.entries>[0]) =>
+            options.runId === partition && options.limit === 1024
+              ? Deferred.succeed(snapshotBlocked, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseSnapshot)),
+                Effect.andThen(real.entries(options))
+              )
+              : real.entries(options)
+        }))
+      ).pipe(Layer.provide(TestJournal.layer()), Layer.orDie)
+      return yield* Effect.gen(function*() {
+        const control = yield* Control
+        const real = yield* Journal.Journal
+        const started = yield* start("ordered-handoff")
+        const before = yield* control.watch({ runId: started.runId, follow: false }).pipe(Stream.runCollect)
+        partition = started.runId
+        const received: Array<ControlEvent> = []
+        const watcher = yield* control.watch({}).pipe(
+          Stream.runForEach((event) =>
+            Effect.gen(function*() {
+              received.push(event)
+              if (event.kind === "test.live") yield* Deferred.succeed(liveSeen, undefined)
+              if (received.filter((row) => row.runId === partition).length === before.length + 1) {
+                yield* Deferred.succeed(complete, undefined)
+              }
+            })
+          ),
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Deferred.await(snapshotBlocked)
+        yield* real.emitDurableUnfenced(
+          new JournalEvent.Input({
+            runId: JournalEvent.RunId.make(partition),
+            sourceId: JournalEvent.SourceId.make("/test"),
+            eventType: "test.live",
+            payload: {}
+          })
+        )
+        // Give the concurrent tail a chance to overtake the deliberately held
+        // snapshot. Correct code waits; old code emits the live row immediately.
+        yield* Deferred.await(liveSeen).pipe(Effect.raceFirst(Effect.sleep("100 millis")))
+        yield* Deferred.succeed(releaseSnapshot, undefined)
+        yield* Deferred.await(complete).pipe(Effect.timeout("5 seconds"))
+        yield* Fiber.interrupt(watcher)
+        return { before, received: received.filter((event) => event.runId === partition) }
+      }).pipe(Effect.provide(live({ runtime: memoryRuntime({ flows }), journal })))
+    }).pipe(Effect.scoped, Effect.orDie)
+  )
+  expect(observed.received.map((event) => event.kind)).toEqual([
+    ...observed.before.map((event) => event.kind),
+    "test.live"
+  ])
+  expect(sequences(observed.received)).toEqual([...sequences(observed.received)].sort((a, b) => a - b))
+})

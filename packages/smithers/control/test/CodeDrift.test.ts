@@ -10,6 +10,7 @@
  * changed, unless the operator resumes it with `allowCodeDrift`, which then
  * records the code it resumed on. An exact run lookup reports the drift.
  */
+import { Migrations as EngineMigrations } from "@smthrs/engine-store"
 import { Effect, Exit } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { expect, it } from "vitest"
@@ -627,5 +628,52 @@ it.each([true, false, undefined])(
     })
     expect(Exit.isSuccess(observed.acted)).toBe(true)
     expect(scans).toBe(pinned === undefined ? 1 : 0)
+  }
+)
+
+it("spawned runs inherit recorded code through spawn edges and trampoline parents", async () => {
+  const observed = await scenario({
+    next: "digest-v2",
+    before: (runId) =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* EngineMigrations.run
+        yield* storeEngineRow("spawned", null)
+        yield* sql`INSERT INTO flows_run_parents (child_id, parent_id, seq) VALUES ('spawned', ${runId}, 0)`
+        yield* storeEngineRow("spawned-round", "spawned")
+      }),
+    act: () =>
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        return yield* Effect.forEach(["spawned", "spawned-round"], (id) =>
+          Effect.gen(function*() {
+            expect(yield* runtime.recordedCode(id)).toEqual({
+              executionDigest: "digest-v1",
+              engineVersion: "9.9.9-test"
+            })
+            expect(yield* runtime.codeDrift(id)).toEqual(
+              new CodeDrift({ runId: id, flowId: "drift", recorded: "digest-v1", current: "digest-v2" })
+            )
+          }))
+      })
+  })
+  if (!Exit.isSuccess(observed.acted)) throw new Error(String(observed.acted.cause))
+})
+
+it.each(["digest-v1", "digest-v2", undefined])(
+  "paged run listings agree with exact drift enrichment (%s)",
+  async (next) => {
+    const observed = await scenario({
+      next,
+      act: (runId) =>
+        withControl((control) =>
+          Effect.gen(function*() {
+            const exact = yield* control.list({ _tag: "runs", filters: { runId } })
+            const page = yield* control.list({ _tag: "runs", limit: 1 })
+            expect(page.items).toEqual(exact.items)
+          })
+        )
+    })
+    if (!Exit.isSuccess(observed.acted)) throw new Error(String(observed.acted.cause))
   }
 )

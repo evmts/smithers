@@ -1,7 +1,7 @@
 import { Deferred, Effect, Fiber, type Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
-import { PersistenceError, RunNotFound } from "../src/ControlError.ts"
+import { InvalidInput, PersistenceError, RunNotFound } from "../src/ControlError.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import { durable } from "./DurableStack.ts"
 import { memoryRuntime } from "./TestStack.ts"
@@ -30,7 +30,8 @@ for (const [name, layer] of backends) {
           const signal = { name: "ready", payload: { value: 1 } }
           yield* runtime.admitSignal("first", runId, signal)
           signal.payload.value = 2
-          yield* runtime.admitSignal("first", runId, { name: "other", payload: null })
+          expect(yield* Effect.flip(runtime.admitSignal("first", runId, { name: "other", payload: null })))
+            .toBeInstanceOf(InvalidInput)
           const original = yield* runtime.signalCommand("first")
           expect(original).toMatchObject({
             signal: { name: "ready", payload: { value: 1 } },
@@ -157,3 +158,40 @@ it("reports a failed durable claim rather than pretending another submitter won"
       expect(yield* Effect.flip(runtime.claimRunKey("claim", "fingerprint"))).toBeInstanceOf(PersistenceError)
     }).pipe(Effect.provide(durable()), Effect.scoped)
   ))
+
+for (const [name, layer] of backends) {
+  it(`rejects conflicting signal command ids without replacing their original request (${name})`, () =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        const runId = yield* start
+        const otherRunId = yield* start
+        const signal = { name: "ready", payload: { a: 1, b: 2 } }
+        const principal = { id: "alice", kind: "operator", stampedAt: 7 }
+        yield* runtime.admitSignal("identity", runId, signal, principal)
+        yield* runtime.admitSignal("identity", runId, { name: "ready", payload: { b: 2, a: 1 } }, {
+          ...principal,
+          stampedAt: 8
+        })
+        const original = yield* runtime.signalCommand("identity")
+        for (
+          const [id, payload, actor] of [
+            [otherRunId, signal, principal],
+            [runId, { name: "other", payload: signal.payload }, principal],
+            [runId, { name: "ready", payload: null }, principal],
+            [runId, signal, { ...principal, id: "bob" }],
+            [runId, signal, undefined]
+          ] as const
+        ) {
+          expect(yield* Effect.flip(runtime.admitSignal("identity", id, payload, actor))).toBeInstanceOf(InvalidInput)
+          expect(yield* runtime.signalCommand("identity")).toEqual(original)
+        }
+        yield* runtime.settleSignal("identity", "delivered")
+        yield* runtime.admitSignal("identity", runId, signal, principal)
+        expect(yield* Effect.flip(runtime.admitSignal("identity", otherRunId, signal, principal))).toBeInstanceOf(
+          InvalidInput
+        )
+        expect((yield* runtime.signalCommand("identity"))?.state).toBe("delivered")
+      }).pipe(Effect.provide(layer), Effect.scoped)
+    ))
+}

@@ -58,7 +58,8 @@ import {
   emptyEnvelope,
   planCard,
   planFingerprint,
-  sameEnvelope
+  sameEnvelope,
+  signalCommandFingerprint
 } from "./internal/planning.ts"
 import { plannable } from "./SystemFlows.ts"
 
@@ -561,12 +562,13 @@ export interface Service {
     PersistenceError
   >
   readonly deliverSignal: (runId: RunId, signal: SignalPayload) => Effect.Effect<void, RunNotFound | PersistenceError>
+  /** Matching command retries preserve admission; a different intent fails InvalidInput. */
   readonly admitSignal: (
     commandId: string,
     runId: RunId,
     signal: SignalPayload,
     principal?: Principal | undefined
-  ) => Effect.Effect<void, RunNotFound | PersistenceError>
+  ) => Effect.Effect<void, RunNotFound | InvalidInput | PersistenceError>
   readonly signalCommand: (commandId: string) => Effect.Effect<SignalCommand | undefined, PersistenceError>
   readonly pendingSignals: Effect.Effect<ReadonlyArray<SignalCommand>, PersistenceError>
   readonly bindSignal: (commandId: string, token: string) => Effect.Effect<string | null, PersistenceError>
@@ -1335,7 +1337,15 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         ),
         admitSignal: Effect.fn("ControlRuntime.admitSignal")(function*(commandId, runId, signal, principal) {
           yield* requireRun(runId)
-          if (!signalCommands.has(commandId)) {
+          const existing = signalCommands.get(commandId)
+          if (
+            existing !== undefined &&
+            signalCommandFingerprint(existing.runId, existing.signal, existing.principal) !==
+              signalCommandFingerprint(runId, signal, principal)
+          ) {
+            return yield* new InvalidInput({ issue: "commandId: already used for a different signal request" })
+          }
+          if (existing === undefined) {
             signalCommands.set(
               commandId,
               snapshot({

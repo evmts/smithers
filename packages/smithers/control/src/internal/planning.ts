@@ -26,7 +26,8 @@ import type {
   Principal,
   Receipt,
   RunId,
-  RunSummary
+  RunSummary,
+  SignalPayload
 } from "../ControlSchema.ts"
 
 /**
@@ -93,6 +94,15 @@ export const emptyEnvelope: Envelope = {
  * @private
  */
 export const canonical = (value: unknown): string => canonicalize(value)
+
+/**
+ * A signal admission's immutable intent, excluding the principal's retry clock.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const signalCommandFingerprint = (runId: RunId, signal: SignalPayload, principal?: Principal): string =>
+  canonical({ runId, signal, principal: principal === undefined ? null : { id: principal.id, kind: principal.kind } })
 
 /**
  * The durable key a caller's idempotency key is stored under.

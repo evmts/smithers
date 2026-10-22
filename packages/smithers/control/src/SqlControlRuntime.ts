@@ -114,7 +114,8 @@ import {
   emptyEnvelope,
   planCard,
   planFingerprint,
-  sameEnvelope
+  sameEnvelope,
+  signalCommandFingerprint
 } from "./internal/planning.ts"
 import { causeMessages, missingTable } from "./internal/sqlSchemaErrors.ts"
 import * as Lineage from "./Lineage.ts"
@@ -1236,12 +1237,11 @@ const makeRuntime = (
     const recordedCode = (row: RunStore.RunRow): Effect.Effect<RunSummary, PersistenceError> =>
       Effect.gen(function*() {
         const summary = yield* summaryOf(row)
+        if (summary.executionDigest !== undefined || summary.engineVersion !== undefined) return summary
         const seen = new Set<string>([row.runId])
-        let parentId = optional(row.parentRunId).value ?? summary.parentRunId
-        while (
-          summary.executionDigest === undefined && summary.engineVersion === undefined &&
-          parentId !== undefined && !seen.has(parentId)
-        ) {
+        let parentId = optional(row.parentRunId).value ?? summary.parentRunId ??
+          (yield* spawnedBy([row.runId])).get(row.runId)
+        while (parentId !== undefined && !seen.has(parentId)) {
           seen.add(parentId)
           const parentRow = yield* requireRow(parentId).pipe(
             Effect.catchTag("/control/RunNotFound", () => Effect.succeed(undefined))
@@ -1252,7 +1252,8 @@ const makeRuntime = (
           if (parent.executionDigest !== undefined || parent.engineVersion !== undefined) {
             return { ...summary, executionDigest: parent.executionDigest, engineVersion: parent.engineVersion }
           }
-          parentId = optional(parentRow.parentRunId).value ?? parent.parentRunId
+          parentId = optional(parentRow.parentRunId).value ?? parent.parentRunId ??
+            (yield* spawnedBy([parentRow.runId])).get(parentRow.runId)
         }
         return summary
       })
@@ -1422,6 +1423,7 @@ const makeRuntime = (
         ? sql`WITH RECURSIVE human_wait_ancestry(ancestorId, depth) AS (
           SELECT run_id, 0 FROM flows_runs
           WHERE waiting_reason = ${ControlExecutor.humanWaitReason}
+            AND waiting_token IS NOT NULL
             AND status NOT IN ('completed', 'failed', 'cancelled')
           UNION
           SELECT parent.run_id, human_wait_ancestry.depth + 1
@@ -1995,10 +1997,29 @@ const makeRuntime = (
         yield* requireRow(runId)
         const payloadJson = JSON.stringify(signal)
         const principalJson = principal === undefined ? null : JSON.stringify(principal)
+        const requested = signalCommandFingerprint(runId, signal, principal)
         yield* writer.write(sql`INSERT INTO control_signal_commands (command_id, run_id, payload_json, principal_json)
           VALUES (${commandId}, ${runId}, ${payloadJson}, ${principalJson}) ON CONFLICT(command_id) DO NOTHING`).pipe(
           Effect.mapError(persistence("admit signal command"))
         )
+        const [stored] = yield* sql<{ runId: string; payloadJson: string; principalJson: string | null }>`
+          SELECT run_id AS "runId", payload_json AS "payloadJson", principal_json AS "principalJson"
+          FROM control_signal_commands WHERE command_id = ${commandId}`.pipe(query("read admitted signal command"))
+        if (stored === undefined) {
+          return yield* new PersistenceError({
+            operation: "admit signal command",
+            message: "The admitted command could not be read back"
+          })
+        }
+        const original = yield* decodeStoredJson(
+          "control_signal_commands.payload_json",
+          SignalPayload,
+          stored.payloadJson
+        )
+        const actor = yield* signalPrincipal(stored.principalJson)
+        if (signalCommandFingerprint(stored.runId, original, actor.principal) !== requested) {
+          return yield* new InvalidInput({ issue: "commandId: already used for a different signal request" })
+        }
       }),
       signalCommand: Effect.fn("SqlControlRuntime.signalCommand")(function*(commandId) {
         const rows = yield* sql<

@@ -6,13 +6,16 @@
  * `accepted` under a dead owner, and the client's retry with the same key only
  * read the recorded receipt back, so nothing ever launched it (#2175).
  */
-import { Effect, Exit, type Layer } from "effect"
+import { Registry } from "@smthrs/registry"
+import { Effect, Exit, Layer } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
+import { PersistenceError } from "../src/ControlError.ts"
 import * as ControlExecutor from "../src/ControlExecutor.ts"
+import * as ControlLive from "../src/ControlLive.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import type { PlanCard } from "../src/ControlSchema.ts"
 import { durable, type DurableStack, fileBundle } from "./DurableStack.ts"
@@ -101,4 +104,54 @@ it("relaunches a run whose admitting process died before the launch when the cli
   expect(launched).toEqual([retried.value.runId])
   expect(retried.value.status).toBe("running")
   expect(retried.value.runId).toBe("dispatch:stranded-caller-reservation")
+})
+
+it("retries stranded recovery in the same process after the plan read fails", async () => {
+  const filename = join(directory, "plan-read-failure.sqlite")
+  const planned = await run(stack(filename, 101, ControlExecutor.makeNoop()), admit)
+  if (!Exit.isSuccess(planned)) throw new Error("plan failed")
+  const card = planned.value
+  const crashed = await run(
+    stack(filename, 101, ControlExecutor.makeNoop({ launch: () => Effect.die("host died") })),
+    retry(card)
+  )
+  expect(Exit.isFailure(crashed)).toBe(true)
+
+  const launched: Array<string> = []
+  let failNextPlanRead = true
+  const base = stack(
+    filename,
+    202,
+    ControlExecutor.makeNoop({
+      launch: (input) => Effect.sync(() => launched.push(input.run.runId)).pipe(Effect.as("accepted" as const))
+    })
+  )
+  const faultyRuntime = Layer.effect(
+    ControlRuntime,
+    Effect.map(ControlRuntime, (runtime) => ({
+      ...runtime,
+      getPlan: (planId: string) =>
+        Effect.suspend(() => {
+          if (failNextPlanRead) {
+            failNextPlanRead = false
+            return Effect.fail(new PersistenceError({ operation: "read plan", message: "injected plan read failure" }))
+          }
+          return runtime.getPlan(planId)
+        })
+    }))
+  ).pipe(Layer.provideMerge(base))
+  const recovered = await run(
+    Layer.provideMerge(Layer.fresh(ControlLive.layer), Layer.merge(faultyRuntime, Registry.layerNoop())),
+    Effect.gen(function*() {
+      const first = yield* retry(card)
+      expect(launched).toEqual([])
+      const second = yield* retry(card)
+      expect(second).toEqual(first)
+      expect(launched).toEqual(["dispatch:stranded-caller-reservation"])
+      expect((yield* (yield* ControlRuntime).getRun("dispatch:stranded-caller-reservation")).status).toBe("running")
+      yield* retry(card)
+      expect(launched).toHaveLength(1)
+    })
+  )
+  if (!Exit.isSuccess(recovered)) throw new Error(String(recovered.cause))
 })

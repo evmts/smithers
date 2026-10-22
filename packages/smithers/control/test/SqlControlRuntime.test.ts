@@ -122,14 +122,14 @@ it("pages stored plans across scan batches by flow and decision", async () => {
 })
 
 it("reads only the selected durable run page", async () => {
-  let reads = 0
+  const reads: Array<string> = []
   const countedDatabase = Layer.effect(
     RunStore.RunStore,
     Effect.map(RunStore.RunStore, (store) => ({
       ...store,
       get: (runId: string) =>
         Effect.suspend(() => {
-          reads += 1
+          reads.push(runId)
           return store.get(runId)
         })
     }))
@@ -153,19 +153,25 @@ it("reads only the selected durable run page", async () => {
         { flowId: "page/test", status: "accepted", lineageId: "page-lineage", parentRunId: "page-00" }
       ]
       for (const filters of cases) {
-        reads = 0
+        reads.length = 0
         let cursor: string | undefined
         const seen: Array<string> = []
         do {
-          const before = reads
+          const before = reads.length
           const listed = yield* control.list({ _tag: "runs", filters, limit: 5, cursor })
           if (listed._tag !== "runs") return yield* Effect.die("expected runs")
           seen.push(...listed.items.map((run) => run.runId))
-          expect(reads - before).toBe(listed.items.length)
+          // Drift enrichment reads each selected row and may follow its
+          // same-flow parent. It must never scan unrelated run summaries.
+          const selected = new Set(listed.items.map((run) => run.runId))
+          const pageReads = reads.slice(before)
+          expect(pageReads.every((id) => selected.has(id) || id === "page-00")).toBe(true)
+          for (const id of selected) expect(pageReads).toContain(id)
+          expect(pageReads.length).toBeLessThanOrEqual(listed.items.length * 3)
           cursor = listed.nextCursor
         } while (cursor !== undefined && seen.length < 30)
         expect(new Set(seen).size).toBe(filters?.parentRunId === undefined ? 23 : 22)
-        expect(reads).toBe(seen.length)
+        expect(reads.length).toBeLessThanOrEqual(seen.length * 3)
       }
     }).pipe(Effect.provide(durable({ database: countedDatabase })), Effect.scoped, Effect.orDie)
   )

@@ -95,6 +95,16 @@ by `ControlRuntime.signalCommand`: `pending`, `delivered`, `rejected`, or
 that rejected disposition survives retries. Admission emits
 `control.signal.admitted`; queued commands are never announced as delivered.
 
+A runtime signal command ID binds to its run, canonical payload and the
+principal's stable `kind` and `id`. Matching retries preserve the original
+admission timestamp and disposition; a different request raises `InvalidInput`.
+
+Run listings enrich both exact lookups and pages with code drift. Engine-created
+runs inherit recorded identity from their nearest same-flow ancestor, including
+spawn edges. Approval filters require a wait token. Global watches deliver each
+partition's history before its newer live events. Stranded launch recovery reads
+the saved plan before claiming ownership, so a failed read remains retryable.
+
 Before its first wait, each mutation copies only bounded JSON own data fields
 and schema-decodes that detached value. Its durable fingerprint is a canonical
 SHA-256 digest, and an authenticated request namespaces its idempotency key by

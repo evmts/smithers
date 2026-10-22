@@ -643,18 +643,20 @@ export const layer: Layer.Layer<
     const relaunchStranded = (runId: RunId) =>
       Effect.gen(function*() {
         const current = yield* runtime.getRun(runId)
-        if (current.status !== "accepted" || current.ownerId === undefined) return
+        if (current.status !== "accepted" || current.ownerId === undefined || current.planId === undefined) return
         const ours = yield* runtime.claimFence(runId).pipe(
           Effect.as(true),
           Effect.catchTag("/control/ClaimLost", () => Effect.succeed(false))
         )
         if (ours) return
         yield* refuseCodeDrift(runId)
+        // A failed read must leave the dead owner's claim available to retry.
+        const plan = yield* runtime.getPlan(current.planId)
         const claimed = yield* runtime.resume(runId, { scope: "launched" }).pipe(
           Effect.catchTag("/control/ClaimLost", () => Effect.succeed(undefined))
         )
         if (claimed === undefined || claimed.status !== "accepted" || claimed.planId === undefined) return
-        yield* hand({ plan: yield* runtime.getPlan(claimed.planId), run: claimed })
+        yield* hand({ plan, run: claimed })
       }).pipe(
         // The recorded receipt is the retry's answer either way; a relaunch
         // that fails leaves the run where it was for the next retry.
@@ -1312,7 +1314,7 @@ export const layer: Layer.Layer<
           if (!postFiltered || sourceNext === undefined || collected.length >= bounds.size) break
           sourceCursor = { version: 1, filters: fingerprint, ...sourceNext }
         }
-        const items = yield* withSteering(collected)
+        const items = yield* withSteering(yield* Effect.forEach(collected, withCodeDrift))
         return sourceNext === undefined
           ? { _tag: "runs", items }
           : {
@@ -1492,14 +1494,25 @@ export const layer: Layer.Layer<
             // after the walk passed its key). That side reads the partition's
             // snapshot; the other reuses the cutoff. The map keeps one cutoff
             // per partition seen for the life of the stream.
-            const cutoffs = new Map<string, Deferred.Deferred<JournalEvent.Seq | undefined, ControlError>>()
+            const cutoffs = new Map<string, {
+              readonly cutoff: Deferred.Deferred<JournalEvent.Seq | undefined, ControlError>
+              readonly delivered: Deferred.Deferred<void>
+            }>()
             const pin = (partition: string): Effect.Effect<JournalEvent.Seq | undefined, ControlError> => {
               const pinned = Deferred.makeUnsafe<JournalEvent.Seq | undefined, ControlError>()
-              cutoffs.set(partition, pinned)
+              cutoffs.set(partition, { cutoff: pinned, delivered: Deferred.makeUnsafe<void>() })
               return snapshotHighWater(JournalEvent.RunId.make(partition)).pipe(
                 Effect.onExit((exit) => Deferred.done(pinned, exit))
               )
             }
+            // A completion marker travels through the same merge as history.
+            // Resolve it downstream, after history has crossed every concurrent
+            // snapshot buffer; pinning the cutoff alone does not mean delivery.
+            const historyFor = (partition: string, highWater: JournalEvent.Seq | undefined) =>
+              Stream.concat(
+                snapshotForRunAt(partition, filter, highWater),
+                Stream.succeed({ snapshotComplete: cutoffs.get(partition)!.delivered })
+              )
             const walk = journalPartitions.pipe(
               Stream.mapEffect(
                 (partition) =>
@@ -1512,7 +1525,7 @@ export const layer: Layer.Layer<
               ),
               Stream.filter(Option.isSome),
               Stream.map((pinned) => pinned.value),
-              Stream.flatMap(([partition, highWater]) => snapshotForRunAt(partition, filter, highWater), {
+              Stream.flatMap(([partition, highWater]) => historyFor(partition, highWater), {
                 concurrency: snapshotPartitionConcurrency
               })
             )
@@ -1522,7 +1535,7 @@ export const layer: Layer.Layer<
               Effect.suspend((): Effect.Effect<Cutoff, ControlError> => {
                 const known = cutoffs.get(partition)
                 if (known !== undefined) {
-                  return Effect.map(Deferred.await(known), (highWater) => ({ highWater, claimed: false }))
+                  return Effect.map(Deferred.await(known.cutoff), (highWater) => ({ highWater, claimed: false }))
                 }
                 return Effect.map(pin(partition), (highWater) => ({ highWater, claimed: true }))
               })
@@ -1595,8 +1608,9 @@ export const layer: Layer.Layer<
                 Stream.unwrap(Effect.gen(function*() {
                   const partition = String(entry.runId)
                   const { highWater, claimed } = yield* cutoffFor(partition)
-                  const history = claimed ? snapshotForRunAt(partition, filter, highWater) : Stream.empty
+                  const history = claimed ? historyFor(partition, highWater) : Stream.empty
                   if (highWater !== undefined && entry.seq <= highWater) return history
+                  if (!claimed) yield* Deferred.await(cutoffs.get(partition)!.delivered)
                   const tracked = yield* trackTail(entry, highWater)
                   return Option.isSome(tracked)
                     ? Stream.concat(history, Stream.succeed(eventFromEntry(tracked.value)))
@@ -1604,11 +1618,17 @@ export const layer: Layer.Layer<
                 }))
               )
             )
-            // The walk already bounds its own reads, and the tail is its own
-            // fiber, so snapshot work never starves the live tail. An unbounded
-            // merge read every partition of an unbounded database at once,
-            // which is the allocation a remote watcher could force.
-            return Stream.merge(walk, tail)
+            // The walk bounds snapshot reads; the tail waits for its partition's
+            // history to cross this merge before forwarding newer entries.
+            return Stream.merge(walk, tail).pipe(
+              Stream.mapEffect((item) =>
+                "snapshotComplete" in item
+                  ? Deferred.succeed(item.snapshotComplete, undefined).pipe(Effect.as(Option.none<ControlEvent>()))
+                  : Effect.succeed(Option.some(item))
+              ),
+              Stream.filter(Option.isSome),
+              Stream.map((item) => item.value)
+            )
           })
         )
 

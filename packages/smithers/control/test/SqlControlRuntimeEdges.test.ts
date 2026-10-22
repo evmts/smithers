@@ -101,6 +101,45 @@ const nodeTarget = (runId: string) => ({
 })
 
 describe("SqlControlRuntime against a rewritten row", () => {
+  it("fails admission when storage removes the signal command and permits a durable retry", async () => {
+    await withRuntime((runtime, sql) =>
+      Effect.gen(function*() {
+        const { runId } = yield* start(runtime, "missing-signal-command")
+        const signal = { name: "ready", payload: { value: 1 } }
+        const pg = sql.onDialectOrElse({ pg: () => true, orElse: () => false })
+        if (pg) {
+          yield* sql.unsafe(`CREATE FUNCTION remove_signal_command() RETURNS trigger AS $$
+            BEGIN
+              DELETE FROM control_signal_commands WHERE command_id = NEW.command_id;
+              RETURN NEW;
+            END;
+          $$ LANGUAGE plpgsql`)
+          yield* sql.unsafe(`CREATE TRIGGER remove_signal_command AFTER INSERT ON control_signal_commands
+            FOR EACH ROW EXECUTE FUNCTION remove_signal_command()`)
+        } else {
+          yield* sql.unsafe(`CREATE TRIGGER remove_signal_command AFTER INSERT ON control_signal_commands BEGIN
+            DELETE FROM control_signal_commands WHERE command_id = NEW.command_id;
+          END`)
+        }
+        const failure = yield* Effect.flip(runtime.admitSignal("missing-command", runId, signal, principal))
+        expect(failure).toBeInstanceOf(PersistenceError)
+        expect(failure).toMatchObject({
+          operation: "admit signal command",
+          message: "The admitted command could not be read back"
+        })
+        expect(yield* runtime.signalCommand("missing-command")).toBeUndefined()
+        expect(yield* runtime.pendingSignals).toEqual([])
+        yield* sql.unsafe(
+          pg ? "DROP TRIGGER remove_signal_command ON control_signal_commands" : "DROP TRIGGER remove_signal_command"
+        )
+        yield* runtime.admitSignal("missing-command", runId, signal, principal)
+        const stored = yield* runtime.signalCommand("missing-command")
+        expect(stored).toMatchObject({ commandId: "missing-command", runId, signal, principal, state: "pending" })
+        expect(yield* runtime.pendingSignals).toEqual([stored])
+      })
+    )
+  })
+
   it("round trips an explicit null plan input through non-null persisted JSON", async () => {
     const observed = await withRuntime((runtime, sql) =>
       Effect.gen(function*() {
@@ -1150,4 +1189,21 @@ describe("SqlControlRuntime when the tables are gone", () => {
 
     expect(error).toBeInstanceOf(PlanNotFound)
   })
+})
+
+it("waiting-approval pages exclude tokenless human waits and their ancestors", async () => {
+  await withRuntime((runtime, sql) =>
+    Effect.gen(function*() {
+      yield* EngineMigrations.run
+      const root = yield* start(runtime, "tokenless-parent")
+      const child = yield* start(runtime, "tokenless-child")
+      yield* sql`UPDATE flows_runs SET status = 'suspended', owner_host_id = NULL, owner_pid = NULL,
+      owner_nonce = NULL, heartbeat_at_ms = NULL, parent_run_id = ${root.runId},
+      waiting_reason = 'approval', waiting_token = NULL WHERE run_id = ${child.runId}`
+      const summaries = yield* Effect.forEach([root.runId, child.runId], (id) => runtime.getRun(id))
+      expect(summaries.every((run) => run.status !== "waiting-approval")).toBe(true)
+      const page = yield* runtime.queryRuns({ filters: { status: "waiting-approval" }, limit: 10 })
+      expect(page.items).toEqual([])
+    })
+  )
 })

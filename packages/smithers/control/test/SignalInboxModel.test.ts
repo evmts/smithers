@@ -12,7 +12,7 @@ import { join } from "node:path"
 import { isDeepStrictEqual } from "node:util"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
-import { PersistenceError, RunNotFound } from "../src/ControlError.ts"
+import { InvalidInput, PersistenceError, RunNotFound } from "../src/ControlError.ts"
 import * as ControlExecutor from "../src/ControlExecutor.ts"
 import { ControlRuntime, type Service, type SignalCommand } from "../src/ControlRuntime.ts"
 import type { SignalPayload } from "../src/ControlSchema.ts"
@@ -55,7 +55,7 @@ type Operation =
   | { readonly kind: "reopen" }
 type Outcome = { readonly ok: true; readonly value: string | null } | {
   readonly ok: false
-  readonly error: "missing-run" | "missing-command"
+  readonly error: "missing-run" | "missing-command" | "command-conflict"
 }
 type Model = ReadonlyMap<string, SignalCommand>
 const ok = (value: string | null = null): Outcome => ({ ok: true, value })
@@ -71,6 +71,9 @@ const transition = (
   if (command.kind === "admit") {
     const runId = runs[command.run]
     if (runId === undefined) return { model, outcome: { ok: false, error: "missing-run" } }
+    if (row !== undefined && (row.runId !== runId || !isDeepStrictEqual(row.signal, command.signal))) {
+      return { model, outcome: { ok: false, error: "command-conflict" } }
+    }
     if (row === undefined) {
       model.set(
         command.id,
@@ -169,7 +172,12 @@ const execute = (runtime: Service, operation: Mutation, runs: ReadonlyArray<stri
     const exit = yield* Effect.exit(action)
     if (Exit.isSuccess(exit)) return ok(typeof exit.value === "string" ? exit.value : null)
     const error = exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error
-    if (error instanceof RunNotFound) return { ok: false, error: "missing-run" } as const
+    if (error instanceof InvalidInput && operation.kind === "admit") {
+      return { ok: false, error: "command-conflict" } as const
+    }
+    if (error instanceof RunNotFound) {
+      return { ok: false, error: "missing-run" } as const
+    }
     if (error instanceof PersistenceError && operation.kind === "bind") {
       return { ok: false, error: "missing-command" } as const
     }
