@@ -87,3 +87,9 @@ recovery or coordination between processes.
 `flows/write-flow` validates the id again before it asks the store, so a noop
 store answers a bad id with "invalid id" rather than "nowhere to save" and sends the model to fix the right
 thing.
+
+A save returns `{ files, warning? }`. If the registry refresh fails after the
+files are saved, `warning` names its failure code; discovery needs another
+refresh. The save span identifies the validated flow id and records the failure
+code, and a warning log records the same code. Neither model descriptions nor
+raw registry error messages enter those telemetry records.

@@ -2263,6 +2263,11 @@ contributes. `Topic` is the guide's topic schema and `name` is `"smithers"`.
 
 ## PromoteFlows
 
+Saving a flow returns its written files even when registry refresh fails, with
+an optional `warning` naming the failure code. A failed refresh logs and annotates
+that code without including registry error text. Model descriptions are omitted
+from span attributes; validated flow ids identify the save.
+
 Turning the script the model just ran into a saved flow, as two ordinary flows.
 For the walkthrough, see [Save the script a run wrote as a flow](./guides/promote-flows.md).
 
@@ -2302,10 +2307,10 @@ host whose flows are laid out differently replaces both through `Options`.
 
 ### PromoteFlows flow declarations and schemas
 
-| Export                                                                        | Declaration                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `showScriptFlow`, `ShowScriptInput`, `ShowScriptOutput`                       | `flows/show-script`: return the source of every cell this turn has executed, plus the rules and the skeleton. Input `{ bestPractices? }` (extra guidance appended after the house rules). Output `{ cells, bestPractices, template }`.                                                                                                                                                                   |
-| `writeFlowFlow`, `writeFlowCapabilities`, `WriteFlowInput`, `WriteFlowOutput` | `flows/write-flow`: write `flow.ts`, `flow.e2e.ts`, and the fixture under `.smithers/flows/<id>/`. Input `{ id, description, flowSource, testSource, fixtureJson }`. Output `{ files }`, the root-relative paths written. Declares `writes: [".smithers/flows/**"]` and `capabilities: writeFlowCapabilities` (`["fs:write:/.smithers/flows/**"]`), so a run whose envelope lacks that write is refused. |
+| Export                                                                        | Declaration                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `showScriptFlow`, `ShowScriptInput`, `ShowScriptOutput`                       | `flows/show-script`: return the source of every cell this turn has executed, plus the rules and the skeleton. Input `{ bestPractices? }` (extra guidance appended after the house rules). Output `{ cells, bestPractices, template }`.                                                                                                                                                                                                                                       |
+| `writeFlowFlow`, `writeFlowCapabilities`, `WriteFlowInput`, `WriteFlowOutput` | `flows/write-flow`: write `flow.ts`, `flow.e2e.ts`, and the fixture under `.smithers/flows/<id>/`. Input `{ id, description, flowSource, testSource, fixtureJson }`. Output `{ files, warning? }`, the root-relative paths written and a warning if the registry refresh failed after saving. Declares `writes: [".smithers/flows/**"]` and `capabilities: writeFlowCapabilities` (`["fs:write:/.smithers/flows/**"]`), so a run whose envelope lacks that write is refused. |
 
 ## FlowStore
 
@@ -3005,6 +3010,12 @@ also uses.
 
 ## MemoryCalibration
 
+`Costs` requires finite, nonnegative values with a positive total. `Decided`
+requires `tau` and reliability values in [0, 1]; a non-null reliability table
+has exactly ten entries. `Current` is an Effect context reference defaulting to
+`initial`. Hosts provide `Memory.thresholds(root)` to it so transcript mining
+uses their fitted fact calibration.
+
 The threshold math behind every `memory` decision. `tau(costs)` is the
 cost-optimal threshold `extra / (miss + extra)`; `calibrated` maps a raw Jev
 probability through a ten-bucket reliability table; `include` compares it with
@@ -3016,6 +3027,11 @@ descend, 0.50 for commits and dependency pages, 0.70 to accept a mined fact.
 `digest` joins every `memory` step key.
 
 ## MemoryMine
+
+`judge` and `settle` read the fact setting from `MemoryCalibration.Current`.
+`accepts(p, decided?)` also accepts an explicit setting, including its reliability
+table; its default is the declared initial fact setting. Concurrent writes of
+the same normalized fact return the first stored note, preserving its provenance.
 
 A run's transcript, mined once at run end. `Agent.run` calls `settle` when
 `supervisor.remember` is on and a bank is writable; the `memory/mine` file flow

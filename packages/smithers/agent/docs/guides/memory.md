@@ -92,6 +92,15 @@ a missed file costs more than an extra one, so files are included at 0.35. A
 repository's own fit, `.smithers/memory-thresholds.json`, replaces the
 defaults: `select` reads it when `Options.thresholds` is absent, and
 `Memory.source` binds it, so its digest joins the step key. A file that does
-not decode fails as `thresholds_invalid`. See
+not decode, or resolves outside the repository through a symlink, fails as
+`thresholds_invalid`. Costs must be finite and nonnegative with a positive total;
+thresholds and reliability values are probabilities in [0, 1], and a reliability
+table has exactly ten buckets. See
 [`MemoryCalibration`](../api.md#memorycalibration). A fit never moves a
 threshold more than 0.05 at once and needs 200 labels.
+
+Transcript mining reads the host's `MemoryCalibration.Current` service. Provide
+`Memory.thresholds(root)` through that service to use the same fitted fact bar
+and reliability table for facts and issues; without a provided fit it uses the
+declared defaults. Concurrent runs learning the same normalized fact return the
+first stored note and keep its provenance.

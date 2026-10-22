@@ -127,7 +127,8 @@ export const WriteFlowInput = Schema.Struct({
  * @since 0.1.0
  */
 export const WriteFlowOutput = Schema.Struct({
-  files: Schema.Array(Schema.String).annotate({ description: "The paths that were written, root-relative" })
+  files: Schema.Array(Schema.String).annotate({ description: "The paths that were written, root-relative" }),
+  warning: Schema.optionalKey(Schema.String).annotate({ description: "A saved flow whose registry refresh failed" })
 })
 
 /**
@@ -233,22 +234,34 @@ export const source = (
         publicError: (error: FlowStore.FlowStoreError) => error.message,
         handler: (input) =>
           Effect.gen(function*() {
-            yield* Effect.annotateCurrentSpan({ flow: input.id, description: input.description })
             // Checked here as well as in the store, because a store that keeps
             // nothing would otherwise answer a bad id with "nowhere to save"
             // and send the model off to fix the wrong thing.
             yield* FlowStore.validateId(input.id)
+            yield* Effect.annotateCurrentSpan({ flow: input.id })
             const store = yield* FlowStore.FlowStore
             const written = yield* store.write(input.id, filesFor(input))
             // The registry is optional and its rescan is best effort: the files
             // are already saved, so a rescan that failed makes the flow appear
             // one refresh later rather than making the save a lie.
             const registry = yield* Effect.serviceOption(Registry.Registry)
-            yield* Option.match(registry, {
-              onNone: () => Effect.void,
-              onSome: (found) => Effect.ignore(found.refresh())
+            const warning = yield* Option.match(registry, {
+              onNone: () => Effect.succeed(undefined),
+              onSome: (found) =>
+                found.refresh().pipe(
+                  Effect.as(undefined),
+                  Effect.catch((error) =>
+                    Effect.gen(function*() {
+                      yield* Effect.annotateCurrentSpan({ discovery: "failed", "error.type": error.code })
+                      yield* Effect.logWarning("Saved flow registry refresh failed").pipe(
+                        Effect.annotateLogs({ code: error.code })
+                      )
+                      return `Flow saved; registry refresh failed (${error.code}).`
+                    })
+                  )
+                )
             })
-            return { files: written.files }
+            return warning === undefined ? { files: written.files } : { files: written.files, warning }
           })
       }),
       services

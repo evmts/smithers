@@ -18,6 +18,36 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   testSources: Smithers.glob("{test,examples}/**/*.ts")
 })
 
+/** Memory and promotion stay portable; their regression tests never wait on wall time. */
+const importRules = ImportRules({
+  cwd: "packages/smithers/agent",
+  rules: [
+    {
+      kind: "forbidHostModules",
+      files: ["src/Memory.ts", "src/MemoryCalibration.ts", "src/MemoryMine.ts", "src/PromoteFlows.ts"],
+      because: "sdk.platform-neutral: memory and promotion receive host services through Effect."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["src/Memory.ts", "src/MemoryCalibration.ts", "src/MemoryMine.ts", "src/PromoteFlows.ts"],
+      callees: ["*.runPromise", "*.runSync", "*.runFork", "*.runCallback"],
+      because: "effect.boundary-only: these library functions return Effects."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/ConfirmedMemoryBugs.test.ts"],
+      callees: ["setTimeout", "*.setTimeout", "sleep", "*.sleep"],
+      because: "test.behavioral: synchronize on conditions or Deferred, never fixed sleeps."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/AgentAction.test.ts", "test/Budget.test.ts", "test/BudgetDurability.test.ts"],
+      callees: ["setTimeout", "*.waitForTimeout"],
+      because: "test.behavioral: wait on a condition or TestClock, never a fixed sleep."
+    }
+  ]
+})
+
 /**
  * Changed public APIs against the package README, every docs page (concepts
  * and guides included), and the site API reference page.
@@ -53,17 +83,6 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/
  * `vitest.faults.config.ts`.
  */
 const faults = Smithers.FaultSuite({ cwd: "packages/smithers/agent" })
-
-/** Quota and accounting regressions wait on conditions or Effect TestClock. */
-const importRules = ImportRules({
-  cwd: "packages/smithers/agent",
-  rules: [{
-    kind: "forbidCalls",
-    files: ["test/AgentAction.test.ts", "test/Budget.test.ts", "test/BudgetDurability.test.ts"],
-    callees: ["setTimeout", "*.waitForTimeout"],
-    because: "test.behavioral: wait on a condition or TestClock, never a fixed sleep."
-  }]
-})
 
 /**
  * Security review: `security` reviews the diff against origin/main and

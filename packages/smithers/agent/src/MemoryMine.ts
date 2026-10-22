@@ -7,7 +7,7 @@
  * One Jev reading, `memory/mine`, asks two booleans per candidate: whether it
  * is a durable fact about the repository a later run needs, and whether it
  * names factory work a person should track. Both accept at the calibrated
- * fact bar, `MemoryCalibration.initial.decisions.fact`.
+ * fact bar supplied by `MemoryCalibration.Current`.
  *
  * {@link write} is the one writer of a mined fact: redacted, keyed by
  * {@link noteId}, accepted, with the run as provenance. `Agent.run` calls
@@ -291,12 +291,14 @@ export const reading = Judgement.perItem({
 })
 
 /**
- * Whether a probability clears the calibrated fact bar.
+ * Whether a probability clears `decided`'s calibrated fact bar (the declared
+ * initial fact setting when omitted).
  *
  * @category conversions
  * @since 1.0.0
  */
-export const accepts = (p: number): boolean => MemoryCalibration.include(MemoryCalibration.initial.decisions.fact, p)
+export const accepts = (p: number, decided = MemoryCalibration.initial.decisions.fact): boolean =>
+  MemoryCalibration.include(decided, p)
 
 /**
  * What one reading accepted.
@@ -311,7 +313,8 @@ export interface Judged {
 }
 
 /**
- * Asks Jev about every candidate, whole or failed. No candidates ask nothing.
+ * Asks Jev about every candidate, whole or failed, using the host's
+ * `MemoryCalibration.Current` fact setting. No candidates ask nothing.
  *
  * @category conversions
  * @since 1.0.0
@@ -320,11 +323,15 @@ export const judge = (
   task: string,
   candidates: ReadonlyArray<Cited>
 ): Effect.Effect<Judged, Judgement.Unjudged, Evaluator.Evaluator> =>
-  Effect.map(reading.read({ task }, candidates.map(({ text }) => ({ text }))), (read) => ({
-    facts: candidates.filter((_, index) => accepts(read.answers[index]!.durable.probability)),
-    issues: candidates.filter((_, index) => accepts(read.answers[index]!.issue.probability)),
-    asked: read.asked
-  }))
+  Effect.gen(function*() {
+    const decided = (yield* MemoryCalibration.Current).decisions.fact
+    const read = yield* reading.read({ task }, candidates.map(({ text }) => ({ text })))
+    return {
+      facts: candidates.filter((_, index) => accepts(read.answers[index]!.durable.probability, decided)),
+      issues: candidates.filter((_, index) => accepts(read.answers[index]!.issue.probability, decided)),
+      asked: read.asked
+    }
+  })
 
 /**
  * Writes one fact to `bank`: redacted, keyed by {@link noteId}, accepted,
@@ -353,7 +360,20 @@ export const write = (
       tags: ["source:transcript"],
       provenance: { runId: input.runId },
       status: "accepted"
-    })
+    }).pipe(Effect.catch((error) =>
+      Effect.gen(function*() {
+        if (error.code !== "supersede_conflict") return yield* Effect.fail(error)
+        // Another run may have inserted this normalized fact after our read.
+        // Keep the store's creation-data conflict contract for unrelated notes.
+        const existing = yield* store.getNote({ id })
+        if (
+          existing !== undefined && existing.namespace.kind === namespace.kind &&
+          existing.namespace.id === namespace.id && normalize(existing.text) === normalize(text) &&
+          existing.tags.length === 1 && existing.tags[0] === "source:transcript"
+        ) return existing
+        return yield* Effect.fail(error)
+      })
+    ))
   })
 
 /**

@@ -901,7 +901,8 @@ const publicItem = (item: Pack.Selected): Item => ({
 /**
  * `root`'s own thresholds: {@link MemoryCalibration.file} when present, else
  * `MemoryCalibration.initial`. A present file that does not decode fails as
- * `thresholds_invalid`, never silently replaced by the defaults.
+ * `thresholds_invalid`, never silently replaced by the defaults. A file
+ * resolving outside the repository root is refused before its contents are read.
  *
  * @category constructors
  * @since 1.0.0
@@ -911,8 +912,29 @@ export const thresholds = (
 ): Effect.Effect<MemoryCalibration.Thresholds, MemoryFailed, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    const file = (yield* Path.Path).join(root, MemoryCalibration.file)
-    const text = yield* fs.readFileString(file).pipe(
+    const path = yield* Path.Path
+    const file = path.join(root, MemoryCalibration.file)
+    const confined = yield* Effect.gen(function*() {
+      const real = yield* fs.realPath(file).pipe(Effect.catch(Repo.absent(undefined)))
+      if (real === undefined) return undefined
+      const rootReal = yield* fs.realPath(root)
+      const relative = path.relative(rootReal, real)
+      if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`)) {
+        return yield* Effect.fail(
+          new MemoryFailed({
+            code: "thresholds_invalid",
+            message: `${MemoryCalibration.file}: resolves outside the repository root`
+          })
+        )
+      }
+      return real
+    }).pipe(Effect.mapError((error) =>
+      error instanceof MemoryFailed ?
+        error :
+        new MemoryFailed({ code: "read_failed", message: `${error.reason._tag}: ${error.message}` })
+    ))
+    if (confined === undefined) return MemoryCalibration.initial
+    const text = yield* fs.readFileString(confined).pipe(
       Effect.catch(Repo.absent(undefined)),
       Effect.mapError((error) =>
         new MemoryFailed({ code: "read_failed", message: `${error.reason._tag}: ${error.message}` })

@@ -19,6 +19,7 @@
  */
 
 import * as Digest from "@smthrs/core/Digest"
+import * as Context from "effect/Context"
 import * as Schema from "effect/Schema"
 
 /**
@@ -37,6 +38,10 @@ export const Decision = Schema.Literals(["page", "skill", "dep", "descend", "fil
  */
 export type Decision = typeof Decision.Type
 
+const nonNegative = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
+const probability = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
+const buckets = 10
+
 /**
  * What a wrong answer costs, in any common unit: a missed needed item and an
  * included unneeded one.
@@ -44,7 +49,9 @@ export type Decision = typeof Decision.Type
  * @category schemas
  * @since 1.0.0
  */
-export const Costs = Schema.Struct({ miss: Schema.Number, extra: Schema.Number })
+export const Costs = Schema.Struct({ miss: nonNegative, extra: nonNegative }).check(
+  Schema.makeFilter((costs) => costs.miss > 0 || costs.extra > 0, { expected: "a positive total cost" })
+)
 
 /**
  * One decision's current setting: its declared costs, the threshold on the
@@ -56,8 +63,8 @@ export const Costs = Schema.Struct({ miss: Schema.Number, extra: Schema.Number }
  */
 export const Decided = Schema.Struct({
   costs: Costs,
-  tau: Schema.Number,
-  reliability: Schema.NullOr(Schema.Array(Schema.Number))
+  tau: probability,
+  reliability: Schema.NullOr(Schema.Array(probability).check(Schema.isBetweenLength(buckets, buckets)))
 })
 
 /**
@@ -119,8 +126,6 @@ export const minLabels = 200
  * @since 1.0.0
  */
 export const tau = (costs: typeof Costs.Type): number => costs.extra / (costs.miss + costs.extra)
-
-const buckets = 10
 
 /** The reliability bucket of a probability; 1 falls in the last bucket. */
 const bucketOf = (p: number): number => Math.min(buckets - 1, Math.max(0, Math.floor(p * buckets)))
@@ -330,3 +335,14 @@ export const initial: Thresholds = {
     fact: declared(3, 7)
   }
 }
+
+/**
+ * The host's fitted calibration for transcript mining. Provide the result of
+ * `Memory.thresholds(root)`; absent a fit, the declared defaults apply.
+ *
+ * @category services
+ * @since 1.0.0
+ */
+export const Current = Context.Reference<Thresholds>("@smthrs/agent/MemoryCalibration/Current", {
+  defaultValue: () => initial
+})
