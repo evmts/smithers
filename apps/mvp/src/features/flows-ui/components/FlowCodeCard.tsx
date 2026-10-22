@@ -1,4 +1,4 @@
-import { Button, Card, CardContent, CardFooter, CardHeader, CardTitle, EmptyState, Textarea } from "@smthrs/ui"
+import { Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Textarea } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { codeSaveable } from "../actions"
 import { COULDNT_READ_FLOW, NEEDS_SANDBOX, NO_SUCH_FLOW, SAVE, writeRefusalWords } from "../contract"
@@ -7,7 +7,8 @@ import { useFlowsUi } from "./FlowsUiContext"
 
 // A flow's code (decision 0014 §1, `/app/flows/code/$name`): its flow.ts to read and edit, and Save, which makes the
 // edit the flow's next revision. Code that is no longer the flow as drafted says it needs a sandbox, before and after
-// Save; a refused Save says why.
+// Save; a refused Save says why. Save sits in the card's header, by the file's name, so the toasts that stack at the
+// bottom of the screen never cover it below a long file.
 export function FlowCodeCard() {
   const { queries, actions } = useFlowsUi()
   const { data: code } = useLiveQuery(queries.code)
@@ -15,9 +16,10 @@ export function FlowCodeCard() {
   if (code.state !== "read") return <EmptyState title={code.state === "not_found" ? NO_SUCH_FLOW : COULDNT_READ_FLOW} />
   return (
     <Card aria-label={code.name} className="flows-code">
-      <CardHeader>
+      <CardHeader className="flows-code-header">
         <CardTitle>{code.name}</CardTitle>
         <span>{SOURCE_PATH}</span>
+        <Button disabled={!codeSaveable(code)} onClick={actions.saveCode}>{SAVE}</Button>
       </CardHeader>
       <CardContent>
         <Textarea
@@ -30,9 +32,6 @@ export function FlowCodeCard() {
         {placementOf(code.text) === "sandbox" ? <p role="status">{NEEDS_SANDBOX}</p> : null}
         {code.refusal === null ? null : <p role="alert">{writeRefusalWords(code.refusal)}</p>}
       </CardContent>
-      <CardFooter>
-        <Button disabled={!codeSaveable(code)} onClick={actions.saveCode}>{SAVE}</Button>
-      </CardFooter>
     </Card>
   )
 }

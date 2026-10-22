@@ -13,3 +13,5 @@
 .flows-page-actions { display: flex; justify-content: flex-end; }
 .flows-page td:last-child { white-space: nowrap; text-align: end; }
 .flows-code [data-slot="textarea"] { width: 100%; box-sizing: border-box; }
+.flows-code-header { display: flex; align-items: center; gap: 1rem; }
+.flows-code-header > span { margin-inline-start: auto; }
