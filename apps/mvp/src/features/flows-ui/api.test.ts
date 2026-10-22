@@ -56,6 +56,7 @@ describe("FlowsClient", () => {
       ["GET http://chat.test/api/flows", { flows: [] }],
       ["GET http://chat.test/api/flows/source?name=hello&revision=2", source],
       ["GET http://chat.test/api/flows/source?name=hello", source],
+      ["GET http://chat.test/api/flows/source?name=hello&revision=1&flowId=f", source],
       ["GET http://chat.test/api/flow-drafts/d", draft],
       ["POST http://chat.test/api/flow-drafts/d", { txid: 3 }],
       ["POST http://chat.test/api/flow-drafts/d/answers", { txid: null }],
@@ -68,6 +69,7 @@ describe("FlowsClient", () => {
     expect(await run((c) => c.list)).toEqual(Exit.succeed({ flows: [] }))
     expect(await run((c) => c.source("hello", 2))).toEqual(Exit.succeed(source))
     expect(await run((c) => c.source("hello"))).toEqual(Exit.succeed(source))
+    expect(await run((c) => c.source("hello", 1, "f"))).toEqual(Exit.succeed(source))
     expect(await run((c) => c.draft("d"))).toEqual(Exit.succeed(draft))
     expect(await run((c) => c.writeDraft("d", { ...draft, scope: "person", status: "ready", flowId: null } as never)))
       .toEqual(Exit.void)
@@ -80,7 +82,7 @@ describe("FlowsClient", () => {
     expect(await run((c) => c.remove("f"))).toEqual(Exit.succeed(true))
     expect(await run((c) => c.deleteDraft("d"))).toEqual(Exit.succeed(true))
     expect(seen.map((request) => request.method))
-      .toEqual(["GET", "GET", "GET", "GET", "POST", "POST", "POST", "POST", "POST", "POST"])
+      .toEqual(["GET", "GET", "GET", "GET", "GET", "POST", "POST", "POST", "POST", "POST", "POST"])
   })
 
   test("a 404 is a missing flow for a source or a write and nothing to delete; elsewhere a refusal", async () => {

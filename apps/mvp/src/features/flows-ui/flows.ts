@@ -41,7 +41,7 @@ import { Description } from "./schema"
 //   flow/save { draftId }               ─ a ready draft becomes your flow
 //   flow/read { name, revision? }       ─ a revision's code, and where it runs
 //   flow/write { name, revision, source } ─ code you wrote, checked, becomes the next revision
-//   flow/run { name, input?, revision? }
+//   flow/run { name, input?, revision?, flowId? }
 //     flow/run/load   ─ the revision's flow.ts, its digest and its checks; code not drafted as drafted needs a sandbox
 //     flow/run/prompt ─ a child execution, whose payload pins the revision and its list: the agent follows it
 //   flow/draft/delete { draftId }      ─ stops the draft's round here, then deletes the draft
@@ -307,8 +307,8 @@ export const FlowRun = Flow.make(FlowRunReference._tag, {
   error: FlowRunReference.errorSchema,
   body: Node.capture(
     { load: LoadFlow.name, prompt: FlowPromptReference._tag },
-    ({ name, input, revision }) =>
-      LoadFlow.call({ name, input, revision }).pipe(
+    ({ name, input, revision, flowId }) =>
+      LoadFlow.call({ name, input, revision, flowId }).pipe(
         Node.bindPlanned(Node.capture({ prompt: FlowPromptReference._tag }, (pinned) =>
           FlowPrompt.child({
             flowId: pinned.flowId,

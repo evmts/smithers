@@ -114,23 +114,41 @@ export const resume = ({ runId, seq }: { readonly runId: string; readonly seq: n
 /** A stored payload with what `version` asks: `current` drops the revision a person's flow pinned. */
 export const versioned = (flow: string, payload: unknown, version: "pinned" | "current"): unknown => {
   if (version === "pinned" || flow !== "flow/run" || typeof payload !== "object" || payload === null) return payload
-  const { revision: _revision, ...rest } = payload as Record<string, unknown>
+  // The latest: neither the revision nor the flow it ran.
+  const { revision: _revision, flowId: _flowId, ...rest } = payload as Record<string, unknown>
   return rest
 }
+
+/**
+ * What a run of your flow (`flow/run`) ran: the flow id and revision its load pinned, as its `flow/run/prompt` child's
+ * payload holds them, or none when it never got that far. A pinned Retry runs exactly those, even when the run named no
+ * revision or the flow's name went to another flow since.
+ */
+const ranRevision = (children: ReadonlyArray<{ readonly runId: string; readonly flowName: string }>) =>
+  Effect.gen(function* () {
+    const child = children.find((each) => each.flowName === "flow/run/prompt")
+    if (child === undefined) return undefined
+    const read = yield* (yield* EngineStore.RunInspection.RunInspection).payload(child.runId).pipe(Effect.option)
+    if (Option.isNone(read)) return undefined
+    const { flowId, revision } = read.value.payload as { readonly flowId?: unknown; readonly revision?: unknown }
+    return typeof flowId === "string" && typeof revision === "number" ? { flowId, revision } : undefined
+  })
 
 /** `run/retry/start`: Retry. A settled run of a retryable flow, again, as a new run of its own. */
 export const retry = ({ runId, version }: { readonly runId: string; readonly version: "pinned" | "current" }) =>
   Effect.gen(function* () {
-    const { run } = yield* summaryOf("retry", runId)
+    const { run, children } = yield* summaryOf("retry", runId)
     if (!settled(run.status)) return yield* refuse("retry", runId, "not_settled")
     if (!retryable(run.flowName)) return yield* refuse("retry", runId, "not_retryable")
     // A retryable flow is a registered one, so this engine runs it.
     const flow = declared(run.flowName as FlowName)
     // The run was read a moment ago: a store that can't read it now is a defect, not an answer.
     const stored = yield* Effect.orDie((yield* EngineStore.RunInspection.RunInspection).payload(runId))
+    const ran = version === "pinned" && run.flowName === "flow/run" ? yield* ranRevision(children) : undefined
+    const original = ran === undefined ? stored.payload : { ...(stored.payload as object), ...ran }
     // The engine stored the payload encoded by the flow's own schema; a registered flow's schema needs no service.
     const codec = Schema.toCodecJson(flow.payloadSchema) as unknown as Schema.Codec<unknown, unknown>
-    const payload = yield* Schema.decodeUnknownEffect(codec)(versioned(run.flowName, stored.payload, version)).pipe(
+    const payload = yield* Schema.decodeUnknownEffect(codec)(versioned(run.flowName, original, version)).pipe(
       Effect.catch(() => refuse("retry", runId, "not_retryable")),
     )
     const instance = yield* FlowRuntime.FlowInstance

@@ -29,10 +29,14 @@ export class FlowsClient extends Context.Service<
   FlowsClient,
   {
     readonly list: Effect.Effect<FlowList, FlowsUnavailable | FlowsRefused>
-    /** One revision of the flow `name`, the latest unless `revision`; `FlowNotFound` when there is none. */
+    /**
+     * One revision of the flow `name`, the latest unless `revision`, of the flow `flowId` when set (deleted or not);
+     * `FlowNotFound` when there is none.
+     */
     readonly source: (
       name: string,
       revision?: number,
+      flowId?: string,
     ) => Effect.Effect<FlowSource, FlowsUnavailable | FlowsRefused | FlowNotFound>
     readonly draft: (draftId: string) => Effect.Effect<Draft, FlowsUnavailable | FlowsRefused>
     readonly writeDraft: (draftId: string, write: DraftWrite) => Effect.Effect<void, FlowsUnavailable | FlowsRefused>
@@ -88,12 +92,12 @@ export class FlowsClient extends Context.Service<
 
         return FlowsClient.of({
           list: exchange(get(FLOWS_ROUTE), FlowList).pipe(Effect.withSpan("flow.client.list")),
-          source: (name, revision) =>
+          source: (name, revision, flowId) =>
             exchange(
               get(
                 `${FLOWS_ROUTE}/source?name=${encodeURIComponent(name)}${
                   revision === undefined ? "" : `&revision=${revision}`
-                }`,
+                }${flowId === undefined ? "" : `&flowId=${flowId}`}`,
               ),
               FlowSource,
               new FlowNotFound(),

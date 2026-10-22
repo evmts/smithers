@@ -138,6 +138,9 @@ export const FlowRunReference = described(
         description: "What the flow works on",
       })),
       revision: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+      flowId: Schema.optional(Schema.String.check(Schema.isUUID()).annotate({
+        description: "The flow's id: with a revision, that flow's revision even after it was deleted; Retry sets it",
+      })),
     }),
     successSchema: Schema.String,
     errorSchema: Schema.Union([

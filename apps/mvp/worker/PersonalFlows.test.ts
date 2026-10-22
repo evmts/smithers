@@ -523,10 +523,23 @@ describe("reading flows", () => {
     const again = await saved(h, "notes")
     expect(await json(await send(h, "GET", "/api/flows/source?name=notes&revision=1"))).toEqual([200, { ...latest, flowId: again.flowId }])
     expect(await json(await send(await open(other), "GET", "/api/flows/source?name=notes"))).toEqual([404, { code: "not_found" }])
+    // By its id: the deleted flow's revision, though the name went to another flow; the live one's latest by id too.
+    expect(await json(await send(h, "GET", `/api/flows/source?name=notes&revision=1&flowId=${first.flowId.toUpperCase()}`)))
+      .toEqual([200, latest])
+    expect(await json(await send(h, "GET", `/api/flows/source?name=notes&flowId=${again.flowId}`)))
+      .toEqual([200, { ...latest, flowId: again.flowId }])
+    // Another person's flow by id, an id under another name, or a revision it never had: not found.
+    expect(await json(await send(await open(other), "GET", `/api/flows/source?name=notes&revision=1&flowId=${first.flowId}`)))
+      .toEqual([404, { code: "not_found" }])
+    expect(await json(await send(h, "GET", `/api/flows/source?name=other&revision=1&flowId=${first.flowId}`)))
+      .toEqual([404, { code: "not_found" }])
+    expect(await json(await send(h, "GET", `/api/flows/source?name=notes&revision=9&flowId=${first.flowId}`)))
+      .toEqual([404, { code: "not_found" }])
   })
 
   test("a name or revision that doesn't read is 400, and POST is 405", async () => {
     const h = await open()
+    expect(await json(await send(h, "GET", "/api/flows/source?name=notes&flowId=not-a-uuid"))).toEqual([400, { code: "invalid" }])
     for (const query of ["", "?name=Bad", "?name=notes&revision=0", "?name=notes&revision=x"]) {
       expect([query, (await send(h, "GET", `/api/flows/source${query}`)).status]).toEqual([query, 400])
     }

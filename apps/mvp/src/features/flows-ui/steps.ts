@@ -251,7 +251,7 @@ export const admit = ({ draftId }: { readonly draftId: string }) =>
  */
 export const load = (input: typeof LoadFlow.payloadSchema.Type) =>
   Effect.gen(function* () {
-    const found = yield* (yield* FlowsClient).source(input.name, input.revision)
+    const found = yield* (yield* FlowsClient).source(input.name, input.revision, input.flowId)
     const invalid = (check: string) => Effect.andThen(recordLoad(check), Effect.fail(new FlowInvalid({ check })))
     if (digestSync(found.source) !== found.digest) return yield* invalid("digest")
     const failed = checkSource(found.source, found.name, PROMPT_CALLABLE).find((check) => !check.ok)

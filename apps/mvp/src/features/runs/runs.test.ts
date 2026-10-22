@@ -125,6 +125,7 @@ describe("the pure rules", () => {
 
   test("versioned drops a person's flow's pinned revision for the current one, and keeps everything else", () => {
     expect(versioned("flow/run", { name: "hello", revision: 2 }, "current")).toEqual({ name: "hello" })
+    expect(versioned("flow/run", { name: "hello", revision: 2, flowId: "f" }, "current")).toEqual({ name: "hello" })
     expect(versioned("flow/run", { name: "hello", revision: 2 }, "pinned")).toEqual({ name: "hello", revision: 2 })
     expect(versioned("app/theme/set", { mode: "dark" }, "current")).toEqual({ mode: "dark" })
     expect(versioned("flow/run", null, "current")).toBe(null)
@@ -179,7 +180,12 @@ describe("run/retry", () => {
     expect(retried).toEqual(Exit.succeed({ runId: retriedRunId(act) }))
     // The same act again starts nothing new.
     expect(await d.run(d.engine.flows.execute(Retry, { executionId: act, payload: { runId, version: "pinned" } }))).toEqual(retried)
-    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: retriedRunId(act), payload: { name: "hello" } })))
+    // Pinned: the run named no revision, so the retry carries the revision and flow its load pinned.
+    const [stored] = await inEngine(d, (sql) =>
+      sql<{ readonly state: string }>`SELECT state_json AS state FROM flows_runs WHERE run_id = ${retriedRunId(act)}`)
+    const pinned = JSON.parse(stored!.state).payload as { name: string; revision: number; flowId: string }
+    expect(pinned).toMatchObject({ name: "hello", revision: 1, flowId: expect.stringMatching(/^[0-9a-f-]{36}$/) })
+    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: retriedRunId(act), payload: pinned })))
       .toEqual(Exit.succeed("Hello."))
     const list = await d.run(d.engine.flows.execute(List, { executionId: crypto.randomUUID(), payload: {} }))
     expect(JSON.stringify(list)).toContain(retriedRunId(act))

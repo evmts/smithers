@@ -31,8 +31,9 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 // Smithers (Member or above, decision 0007) has any, because running one asks the model.
 //
 // - `GET /api/flows`: the person's live flows, newest first.
-// - `GET /api/flows/source?name=<name>[&revision=<n>]`: one flow's source at a revision (the latest unless set), with
-//   its digest. A deleted flow's revisions stay readable by revision, so a run that pinned one can still be retried.
+// - `GET /api/flows/source?name=<name>[&revision=<n>][&flowId=<id>]`: one flow's source at a revision (the latest
+//   unless set), with its digest; with `flowId`, that flow's, deleted or not. A deleted flow's revisions stay readable
+//   by revision, so a run that pinned one can still be retried.
 // - `POST /api/flows/save {draftId, name, description, source, digest}`: a ready draft becomes a flow, or the next
 //   revision of the flow it edits, in one transaction that also marks the draft saved. ChatApi admits only the draft's
 //   own file, unchanged, whose checks all passed, under a name that is free; saving a saved draft answers what it saved.
@@ -363,9 +364,17 @@ const listFlows = (actorId: string) =>
   })
 
 /** One revision of the person's flow `name`: the latest live one, or `revision` of any of their flows by that name. */
-const sourceOf = (actorId: string, name: string, revision: number | undefined) =>
+const sourceOf = (actorId: string, name: string, revision: number | undefined, flowId?: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    // A revision of the flow `flowId`, deleted or not: what a pinned run retries, even after its name was reused.
+    if (flowId !== undefined) {
+      const [row] = yield* sql<{ readonly flowId: string; readonly name: string; readonly revision: number; readonly digest: string; readonly source: string }>`
+        SELECT f.id AS "flowId", f.name, r.revision, r.digest, r.source FROM flows f
+        JOIN flow_revisions r ON r.flow_id = f.id AND r.revision = ${revision ?? sql`f.revision`}
+        WHERE f.id = ${flowId} AND f.owner_id = ${actorId} AND f.name = ${name}`
+      return row
+    }
     const rows = revision === undefined
       ? yield* sql<{ readonly flowId: string; readonly name: string; readonly revision: number; readonly digest: string; readonly source: string }>`
           SELECT f.id AS "flowId", f.name, r.revision, r.digest, r.source FROM flows f
@@ -496,11 +505,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const name = query.get("name") ?? ""
         const revisionText = query.get("revision")
         const revision = revisionText === null ? undefined : Number(revisionText)
-        if (!isName(name) || (revision !== undefined && !(Number.isSafeInteger(revision) && revision >= 1))) {
+        const flowId = query.get("flowId") ?? undefined
+        if (
+          !isName(name) || (revision !== undefined && !(Number.isSafeInteger(revision) && revision >= 1)) ||
+          (flowId !== undefined && !isUuid(flowId))
+        ) {
           return refusal(400, "invalid")
         }
         if (revision !== undefined) fields.revision = revision
-        const found = yield* sourceOf(actor.subject.id, name, revision)
+        const found = yield* sourceOf(actor.subject.id, name, revision, flowId?.toLowerCase())
         if (found === undefined) return refusal(404, "not_found")
         fields.flowId = found.flowId
         return ok(found)

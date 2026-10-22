@@ -22,6 +22,7 @@ import { FlowAnswer, FlowDelete, FlowDraftDelete, FlowList, FlowNew, FlowRead, F
 import { DRAFT_ID_NAMESPACE } from "./contract"
 import { roundExecutionId, roundOf } from "./round"
 import { renderSource, SOURCE_PATH } from "./source"
+import { Retry } from "../runs/flows"
 import { FlowsClient } from "./api"
 import { FlowsRefused } from "./reference"
 import { removeDraft, writeOutcome } from "./steps"
@@ -525,6 +526,42 @@ describe("flow/draft/delete", () => {
       payload: { draftId: crypto.randomUUID() },
     }))).toEqual(Exit.succeed({ deleted: false }))
   }, SLOW)
+})
+
+describe("run/retry of your flow", () => {
+  test("pinned reruns the revision and flow that ran, even after a newer revision and the name went to another flow; current runs the latest", async () => {
+    // Each draft carries its own instructions, so each revision's run says which it is.
+    let version = 0
+    const model = scripted(() => drafted({ instructions: `Version ${++version}: set the theme to dark.` }))
+    const d = await device(model.script)
+    const first = await saveFlow(d, "dark-mode")
+    const runId = crypto.randomUUID()
+    // A run that names no revision: it loads the latest, revision 1.
+    expect(await d.run(d.engine.flows.execute(FlowRun, { executionId: runId, payload: { name: "dark-mode", input: "please" } })))
+      .toMatchObject({ _tag: "Success" })
+    expect(said(model.requests.filter(running).at(-1)!)).toContain("Version 1:")
+    // A newer revision of the same flow.
+    expect(await saveFlow(d, "dark-mode")).toMatchObject({ flowId: first.flowId, revision: 2 })
+
+    /** Retries the first run with `version` and waits for the retried run's model call: what it was told. */
+    const retried = async (version: "pinned" | "current") => {
+      const before = model.requests.filter(running).length
+      const act = await d.run(d.engine.flows.execute(Retry, { executionId: crypto.randomUUID(), payload: { runId, version } }))
+      expect(act).toMatchObject({ _tag: "Success" })
+      await eventually(() => model.requests.filter(running).length > before, 30_000)
+      return said(model.requests.filter(running).at(-1)!)
+    }
+    expect(await retried("pinned")).toContain("Version 1:")
+    expect(await retried("current")).toContain("Version 2:")
+
+    // The flow is deleted and another takes its name: pinned still reruns what ran, from the deleted flow.
+    expect(await d.run(d.engine.flows.execute(FlowDelete, { executionId: crypto.randomUUID(), payload: { flowId: first.flowId } })))
+      .toEqual(Exit.succeed({ deleted: true }))
+    const other = await saveFlow(d, "dark-mode")
+    expect(other.flowId).not.toBe(first.flowId)
+    expect(await retried("pinned")).toContain("Version 1:")
+    expect(await retried("current")).toContain("Version 3:")
+  }, SLOW * 2)
 })
 
 describe("removeDraft", () => {
