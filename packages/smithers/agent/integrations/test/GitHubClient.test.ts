@@ -75,7 +75,9 @@ describe("nextPageUrl", () => {
 describe("lastPageNumber", () => {
   it("reads the rel=last target's page", () => {
     expect(
-      lastPageNumber("<https://api.github.com/x?per_page=1&page=2>; rel=\"next\", <https://api.github.com/x?per_page=1&page=37>; rel=\"last\"")
+      lastPageNumber(
+        "<https://api.github.com/x?per_page=1&page=2>; rel=\"next\", <https://api.github.com/x?per_page=1&page=37>; rel=\"last\""
+      )
     ).toBe(37)
     expect(lastPageNumber("</x?page=5>; rel=\"last\"")).toBe(5)
   })
@@ -259,6 +261,21 @@ describe("GitHubClient over a real HTTP server", () => {
     const url = new URL(`http://x${fixture.requests[0]?.url}`)
     expect(url.searchParams.get("per_page")).toBe("1")
     expect(url.searchParams.get("protected")).toBe("false")
+  })
+
+  it.each([undefined, { page: 3 }])("counts from page one despite a final caller page and query %j", async (query) => {
+    fixture = await startFixture((request, response) => {
+      const page = new URL(request.url, "http://x").searchParams.get("page")
+      json(
+        response,
+        200,
+        [{ id: page === "1" ? 1 : 3 }],
+        page === "1"
+          ? { link: `<${fixture!.origin}/items?page=3>; rel="last"` }
+          : {}
+      )
+    })
+    expect(await Effect.runPromise(client().count("/items?page=3", { query }))).toEqual({ total: 3, first: { id: 1 } })
   })
 
   it("counts a list with no last page as what its one page holds", async () => {

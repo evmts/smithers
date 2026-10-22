@@ -476,7 +476,8 @@ export const createComment = (
  * Pull requests are skipped.
  *
  * With more than one match, the earliest created wins. A search that runs out
- * of pages without a match fails `poll-failed` with `incomplete: true`.
+ * of pages fails `poll-failed` with `incomplete: true`, even with a match:
+ * an older original may lie beyond the page budget.
  *
  * @category getters
  * @since 1.0.0
@@ -499,7 +500,7 @@ export const findIssueByWrite = (
     // Newest first, so the last match is the earliest created.
     let found: unknown
     for (const item of page.items) if (markedWith(item, writeId) && !isPullRequest(item)) found = item
-    if (found === undefined && page.truncated) return yield* Effect.fail(incomplete("findIssueByWrite"))
+    if (page.truncated) return yield* Effect.fail(incomplete("findIssueByWrite"))
     return found === undefined ? Option.none() : Option.some(yield* decodeOne(Issue, found, path))
   }).pipe(Effect.withSpan("GitHub.Issues.findIssueByWrite", { attributes: spanAttributes(owner, repo) }))
 

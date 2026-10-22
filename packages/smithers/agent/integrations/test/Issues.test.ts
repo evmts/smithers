@@ -498,6 +498,18 @@ describe("findIssueByWrite", () => {
     expect(github.fixture.requests).toHaveLength(RECONCILE_PAGES)
   })
 
+  it("refuses a copied marker when the original lies beyond the reconciliation budget", async () => {
+    github = await startGitHub()
+    github.issues.push(rawIssue(1, Issues.withWriteMarker("original", "w-1")))
+    for (let number = 2; number <= RECONCILE_PAGES + 1; number++) github.issues.push(rawIssue(number, "newer"))
+    github.issues.push(rawIssue(RECONCILE_PAGES + 2, Issues.withWriteMarker("copy", "w-1")))
+    github.pageSize = 1
+    expect(await failure(Issues.findIssueByWrite("o", "r", { writeId: "w-1", since: SINCE }))).toMatchObject({
+      reason: "poll-failed",
+      details: { incomplete: true, retryable: false }
+    })
+  })
+
   it("fails decode-failed when the marked issue does not fit, rather than writing a second", async () => {
     github = await startGitHub()
     github.issues.push(rawIssue(1, Issues.withWriteMarker("mine", "w-1"), { state: 3 }))

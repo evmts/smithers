@@ -37,6 +37,13 @@ limit's `Retry-After`; the clients never retry. Ambiguous writes report
 `outcomeUnknown` and are not blindly repeated. GitHub webhooks enter through
 the backend at `POST /webhooks/github`.
 
+Request spans record method, status and failure classification without caller
+URLs, paths or query values; the transport's URL-bearing spans are disabled.
+Pagination spans record page count and truncation, and count spans record the
+total. Counts always start at page one, overriding caller pagination. Issue
+write reconciliation rejects every truncated scan, including scans with a
+matching marker, because the original may be older than the visible copy.
+
 ## Shared webhook ingress
 
 `Core.Channel.make` binds verify, decode, map, and dispatch in that order.

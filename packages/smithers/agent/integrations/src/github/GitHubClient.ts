@@ -220,7 +220,8 @@ export interface GitHubClient {
   /**
    * How many items a list resource holds, and its first item, in one request.
    *
-   * It asks for pages of one item (`per_page=1`), so the `rel="last"` link's
+   * It starts at page one with one item (`page=1`, `per_page=1`), overriding
+   * caller pagination, so the `rel="last"` link's
    * `page` is the count: a repository's branches, tags, commits or
    * contributors without walking them. A list with no `last` link holds what
    * its one page holds, zero or one item. `first` is that page's item, as
@@ -521,6 +522,10 @@ const build = (
     const exchange: Effect.Effect<Answer, IntegrationError> = http.execute(
       body === undefined ? request : HttpClientRequest.bodyText(request, body, "application/json")
     ).pipe(
+      // The transport's default span includes the full URL and query. The
+      // enclosing GitHub span records only method, status and classification.
+      Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
+      Effect.tap((response) => Effect.annotateCurrentSpan("http.response.status_code", response.status)),
       Effect.flatMap((response) =>
         Effect.map(response.text, (text) => ({
           status: response.status,
@@ -631,7 +636,7 @@ const build = (
     requestOnce(method, url, body, retryUnsafeWrites).pipe(
       Effect.tapError((error) => failureAttributes(error)),
       Effect.withSpan("GitHubClient.request", {
-        attributes: { "http.request.method": method, "url.path": new URL(url).pathname }
+        attributes: { "http.request.method": method }
       })
     )
 
@@ -702,17 +707,17 @@ const build = (
       }
       yield* Effect.annotateCurrentSpan({ "github.pages": pages, "github.truncated": url !== null })
       return { items, truncated: url !== null }
-    }).pipe(Effect.withSpan("GitHubClient.paginate", { attributes: { "github.path": path } }))
+    }).pipe(Effect.withSpan("GitHubClient.paginate"))
 
   const count: GitHubClient["count"] = (path, options) =>
     Effect.gen(function*() {
-      const url = yield* urlFor(path, { ...options?.query, per_page: 1 })
+      const url = yield* urlFor(path, { ...options?.query, per_page: 1, page: 1 })
       const page = yield* requestUrl("GET", url)
       const items = Array.isArray(page.json) ? page.json : page.json === null ? [] : [page.json]
       const total = lastPageNumber(page.headers.get("link")) ?? items.length
       yield* Effect.annotateCurrentSpan({ "github.count": total })
       return { total, first: items[0] }
-    }).pipe(Effect.withSpan("GitHubClient.count", { attributes: { "github.path": path } }))
+    }).pipe(Effect.withSpan("GitHubClient.count"))
 
   return GitHubClient.of({ request, paginate, count })
 }
