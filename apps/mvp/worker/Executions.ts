@@ -264,7 +264,9 @@ const object = <E, R>(
         const withGitHub = <ROut, FE, FR>(flows: ExecutionHost.Flows<ROut, FE, FR>) =>
           Option.isSome(github)
             ? hostFor(
-              ExecutionHost.withTodos(
+              // A repository's own flows (docs/features/ci.md#repository-flows) read their flow.ts and report their
+              // status as the App, and plan in the QuickJS build the agent's cells run on.
+              ExecutionHost.withRepoFlows(ExecutionHost.withTodos(
                 ExecutionHost.withGitHub(flows, githubServices(github.value)),
                 todoServices(github.value),
                 machines,
@@ -279,7 +281,7 @@ const object = <E, R>(
                   ))),
                 commandSeconds,
                 stepWaitSeconds,
-              ),
+              ), githubServices(github.value), AgentSandbox.variant),
             )
             : hostFor(flows)
         const host = Option.isSome(repoClone)

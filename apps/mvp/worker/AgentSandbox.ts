@@ -25,19 +25,22 @@ import { newVariant, type QuickJSSyncVariant } from "quickjs-emscripten-core"
  */
 const base = wasmfile as unknown as QuickJSSyncVariant
 
-/** The agent's sandbox over the build whose module `load` gives, failing as the sandbox fails when it can't load. */
-export const layerFrom = (load: () => Promise<{ readonly default: WebAssembly.Module }>) =>
+/** The QuickJS build whose module `load` gives, failing as the sandbox fails when it can't load. */
+export const variantFrom = (load: () => Promise<{ readonly default: WebAssembly.Module }>) =>
   Layer.unwrap(
     Effect.tryPromise({
       try: load,
       catch: (cause) =>
         new Sandbox.SandboxError({ code: "runtime_failed", message: "QuickJS WebAssembly module could not be loaded", cause }),
-    }).pipe(
-      Effect.map(({ default: wasmModule }) =>
-        Agent.layerSandboxWithVariant.pipe(Layer.provide(QuickJSVariant.layerVariant(newVariant(base, { wasmModule }))))
-      ),
-    ),
+    }).pipe(Effect.map(({ default: wasmModule }) => QuickJSVariant.layerVariant(newVariant(base, { wasmModule })))),
   )
+
+/** The QuickJS build on Cloudflare: the module the bundle compiled. A repository flow's realm plans on it too. */
+export const variant = variantFrom(() => import("#quickjs.wasm"))
+
+/** The agent's sandbox over the build whose module `load` gives, failing as the sandbox fails when it can't load. */
+export const layerFrom = (load: () => Promise<{ readonly default: WebAssembly.Module }>) =>
+  Agent.layerSandboxWithVariant.pipe(Layer.provide(variantFrom(load)))
 
 /** The agent's sandbox on Cloudflare: the module the bundle compiled. */
 export const layer = layerFrom(() => import("#quickjs.wasm"))

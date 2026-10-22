@@ -1,0 +1,15 @@
+{
+  "apiVersion": 1,
+  "id": "repository",
+  "version": "1.0.0",
+  "title": "Smithers CI e2e",
+  "description": "The test repository's CI, which e2e/ci.spec.ts runs on Smithers.",
+  "requires": { "api": "^1" },
+  "capabilities": ["sandbox:job"],
+  "owns": ["ci"],
+  "contributes": {
+    "triggers": [
+      { "on": "github.push", "flow": "ci", "title": "Every push to an e2e branch", "branches": ["smithers-ci-e2e-*"] }
+    ]
+  }
+}

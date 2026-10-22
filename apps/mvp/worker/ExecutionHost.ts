@@ -1,11 +1,13 @@
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
-import { Action, DurableDeferred, type Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { DurableDeferred, type Flow, FlowRuntime } from "@smthrs/flow"
 import type { Channels } from "@smthrs/notifications"
 import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare"
 import { CiJob } from "@smthrs/sandbox"
+import type { QuickJSVariant } from "@smthrs/harness"
 import { Effect, Exit, Layer, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
+import * as RepoFlow from "./ci/RepoFlow.ts"
 import * as Checks from "./flows/Checks.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as CiJobMachine from "./flows/CiJobMachine.ts"
@@ -183,11 +185,24 @@ export const withCiJobs = <ROut, E, R, ME, MR>(
   flows: [...flows.flows, CiJob.CiJob],
   registration: Layer.mergeAll(
     flows.registration,
-    Interpreter.layerWithImplementations(CiJob.CiJob, CiJob.layer).pipe(
-      Layer.provideMerge(Action.layerImplementations),
-      Layer.provide(CiJobMachine.layer),
-      Layer.provide(machines),
-    ),
+    CiJobMachine.registration(machines),
+  ),
+})
+
+/**
+ * `flows`, plus a repository's own flows, `repo/Run` and its `repo/Jobs` child, over `services` (Postgres and GitHub as
+ * the App) and the realm's QuickJS build (`variant`), docs/features/ci.md#repository-flows. Their jobs are `ci/job`s
+ * (`withCiJobs`).
+ */
+export const withRepoFlows = <ROut, E, R, SE, SR, DE, DR, VE, VR>(
+  flows: Flows<ROut, E, R>,
+  services: Effect.Effect<RepoFlow.Services<DE, DR>, SE, SR>,
+  variant: Layer.Layer<QuickJSVariant.Variant, VE, VR>,
+) => ({
+  flows: [...flows.flows, RepoFlow.Run, RepoFlow.Jobs],
+  registration: Layer.mergeAll(
+    flows.registration,
+    Layer.unwrap(Effect.map(services, (built) => RepoFlow.registration(built, variant))),
   ),
 })
 

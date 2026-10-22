@@ -137,7 +137,10 @@ export interface ScriptedGitHub {
   contentsGranted: boolean
   /** The repository's labels, by name without case. */
   readonly labels: Map<string, { readonly name: string; readonly color: string }>
-  /** The repository's files on its default branch, by path, as the contents API reads them. */
+  /**
+   * The repository's files on its default branch, by path, as the contents API reads them without a `ref`; with one,
+   * it reads that branch's or commit's files.
+   */
   readonly files: Map<string, string>
   /**
    * Each collaborator's role on the repository, by login: `admin`, `maintain`, `write`, `triage` or `read`, or an
@@ -373,8 +376,18 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     if (contentsMatch !== null && method === "GET") {
       if (token !== "installation-contents") return { response: json({ message: "Resource not accessible by integration" }, 403) }
       const path = decodeURIComponent(contentsMatch[1]!)
-      const text = github.files.get(path)
-      if (text === undefined) return { response: json({ message: "Not Found" }, 404) }
+      // At `ref`, a branch or a commit, when the request names one; else the default branch's files.
+      const ref = url.searchParams.get("ref")
+      const text = ref === null
+        ? github.files.get(path)
+        : (github.commits.get(github.refs.get(ref) ?? ref)?.files ?? new Map<string, string>()).get(path)
+      if (text === undefined) {
+        // A directory: GitHub lists it as an array, which is no file.
+        const files = ref === null ? github.files : github.commits.get(github.refs.get(ref) ?? ref)?.files ?? new Map()
+        const inside = [...files.keys()].filter((name) => name.startsWith(`${path}/`))
+        if (inside.length > 0) return { response: json(inside.map((name) => ({ type: "file", path: name, name }))) }
+        return { response: json({ message: "Not Found" }, 404) }
+      }
       const bytes = new TextEncoder().encode(text)
       const base64 = btoa(String.fromCharCode(...bytes)).replace(/(.{60})/g, "$1\n")
       return { response: json({ type: "file", encoding: "base64", path, sha: `sha-${text.length}`, size: bytes.length, content: base64 }) }

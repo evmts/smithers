@@ -521,6 +521,9 @@ importers:
       react-dom:
         specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
+      sucrase:
+        specifier: 3.35.1
+        version: 3.35.1
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: 1.64.0
