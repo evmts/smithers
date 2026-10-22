@@ -141,7 +141,8 @@ export interface Ran<A, E> {
  * Runs `flow` with `payload` to its end on the Node host: builds the runtime with `registration` (`build`), executes
  * the flow as `executionId` (a fresh UUID unless set), then closes the runtime and drops its schema. Resolves with the
  * flow's `Exit` (its success, or its typed failure), never rejects for a flow failure; rejects only when the host
- * itself can't be built, for example `TestDatabase.Unusable` when the compose Postgres is down.
+ * itself can't be built, for example `TestDatabase.Unusable` when the compose Postgres is down, or when `signal` aborts
+ * it, after the run is interrupted and the runtime closed.
  */
 export const runFlow = <
   Name extends string,
@@ -156,7 +157,7 @@ export const runFlow = <
   flow: Flow.Flow<Name, Payload, Success, Error, Requires>,
   payload: Payload["Type"],
   registration: Layer.Layer<ROut, RE, RR>,
-  options: HostOptions & { readonly executionId?: string } = {},
+  options: HostOptions & { readonly executionId?: string; readonly signal?: AbortSignal } = {},
 ): Promise<Ran<Success["Type"], Error["Type"]>> =>
   Effect.runPromise(
     Effect.scoped(
@@ -175,4 +176,5 @@ export const runFlow = <
       // What `registration` requires beyond the engine's own services (`FlowRuntime` and the rest) can't be named
       // generically here; a registration that needs anything else fails to build, loudly.
     ) as Effect.Effect<Ran<Success["Type"], Error["Type"]>, unknown>,
+    options.signal === undefined ? undefined : { signal: options.signal },
   )

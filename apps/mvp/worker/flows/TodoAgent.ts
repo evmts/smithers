@@ -60,16 +60,30 @@ export const ImplementPayload = {
 /** What the agent answers: one paragraph on what it changed and how it tested it. */
 export const Implemented = Schema.Struct({ summary: Schema.String })
 
-/** The agent's instructions: what it works on, how it may act, and when it is done. */
+/** The agent's instructions: what it works on, how it may act, how it checks its change, and when it is done. */
 export const SYSTEM = [
   "You implement one TODO in a git repository checked out on a machine. Every capability is a ctx.call to a sandbox " +
   "tool on that checkout: sandbox/list, sandbox/read, sandbox/write, sandbox/run, sandbox/status and sandbox/diff. " +
   "Paths are relative to the checkout.",
-  "Read before you write. Make the smallest change that does the TODO, and keep the repository's style. Never commit, " +
-  "push or create branches: Smithers commits what you leave in the working copy and opens the pull request.",
-  `Run the repository's checks before you finish: each executable file in ${CHECKS_DIRECTORY}/ (run it with sh), and ` +
-  "the tests its README or package files name. Fix what they find.",
-  "Finish with a one-paragraph summary of what you changed and how you tested it.",
+  "Work in three steps: read the files the TODO names, write the change, then check it. Make the smallest change that " +
+  "does the TODO, and keep the repository's style. Never commit, push or create branches: Smithers commits every file " +
+  "you leave in the working copy and opens the pull request, so leave nothing else there.",
+  "To check it, run two commands for each package you changed: its lint script, then its typecheck script (its " +
+  "package.json names them, such as `pnpm --filter <package> run lint` and `... run check`). The change is checked " +
+  "only when both pass, so fix what they find and run them again. A change to what code does also runs the tests " +
+  "that cover it: the package's test script, given only those test files when it takes them. Never run a check " +
+  "before the change. Never install dependencies, check the whole repository, or write a script or log to run " +
+  "checks, and never pipe a check into tail or head: the pipe's exit code hides the check's.",
+  "The machine has no internet, so an install hangs until it times out. When a check can't start because its " +
+  "command isn't installed (the shell's `<command>: not found`), none of the package's checks can run here: run no " +
+  "other check, say so in your summary, and finish. The pull request's checks (each script in " +
+  `${CHECKS_DIRECTORY}/) run them on a machine that installs them.`,
+  `You have ${IMPLEMENT_TIMEOUT}, and each turn says how much is left. A sandbox/run command takes one to two ` +
+  "minutes and the other tools take seconds, so run the fewest commands: a fix that changes no behavior needs two, " +
+  "its package's lint and typecheck. Use sandbox/status and sandbox/diff rather than git commands. Finish as soon as " +
+  "the change is made and its checks pass, or can't start because their command isn't installed: a run that runs " +
+  "out of time publishes nothing.",
+  "Finish with a one-paragraph summary of what you changed and how you checked it.",
 ]
 
 /** The step's task, from the TODO. */
@@ -127,7 +141,7 @@ const toolsOf = (commandSeconds: number) => [
     output: SandboxTools.RunResult,
     description: "Run a shell command in the checkout. Answers { exitCode, timedOut, stdout, stderr, stdoutBytes, " +
       "stderrBytes, truncated }: the first 64 KiB of each stream. It stops after timeoutSeconds (60 unless set, " +
-      `${commandSeconds} at most).`,
+      `${commandSeconds} at most). The machine has no internet.`,
   },
   {
     tool: "read",

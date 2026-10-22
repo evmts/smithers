@@ -1,0 +1,651 @@
+{
+  "eval": "todo-lint",
+  "model": "qwen-3.8-27b",
+  "budgetMs": 600000,
+  "trials": [
+    {
+      "installed": true,
+      "exit": "merged",
+      "ms": 21145,
+      "modelMs": 4498,
+      "modelCalls": 3,
+      "tokens": {
+        "input": 11179,
+        "output": 4599
+      },
+      "projectedMs": 594498,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "run",
+          "command": "sh .smithers/checks/check.sh",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "sh .smithers/checks/lint.sh",
+          "exitCode": 0
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [
+        "sh .smithers/checks/check.sh: declared check script (installs first)",
+        "sh .smithers/checks/lint.sh: declared check script (installs first)"
+      ],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": true,
+        "check": false
+      }
+    },
+    {
+      "installed": false,
+      "exit": "merged",
+      "ms": 493365,
+      "modelMs": 27597,
+      "modelCalls": 18,
+      "tokens": {
+        "input": 208610,
+        "output": 13651
+      },
+      "projectedMs": 2287597,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "run",
+          "command": "test -f node_modules/.bin/tsc && echo tsc-present || echo tsc-missing; test -d node_modules/.pnpm && echo pnpm-store || echo no-pnpm",
+          "exitCode": 0
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true; pnpm install --frozen-lockfile --filter \"...\"",
+          "exitCode": 1
+        },
+        {
+          "tool": "run",
+          "command": "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true; pnpm install --frozen-lockfile",
+          "exitCode": 1
+        },
+        {
+          "tool": "run",
+          "command": "cat pnpm-workspace.yaml; echo ---; grep -n -m5 'typescript' pnpm-lock.yaml | head -20; echo ---; pnpm store path 2>/dev/null; echo ---; which -a node npm pnpm tsc; echo ---; npm root -g; ls $(npm root -g) 2>/dev/null; echo ---; curl -sI -m 5 http://127.0.0.1:60805/ | head -5; echo curl-exit=$?",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "ls /var/folders/4s/d0wlfs9d00v4349cdqgd13f00000gn/T/todo-lint-store-ZGhgrO/v11 2>/dev/null | head; echo ---; ls /opt/homebrew/lib/node_modules 2>/dev/null; echo ---; curl -s -m 120 -o /tmp/ts.tgz -w 'http=%{http_code} size=%{size_download} time=%{time_total}\\n' http://127.0.0.1:60805/typescript/-/typescript-5.9.3.tgz; echo curl-exit=$?; ls -la /tmp/ts.tgz 2>/dev/null",
+          "exitCode": 1
+        },
+        {
+          "tool": "run",
+          "command": "find /var/folders/4s/d0wlfs9d00v4349cdqgd13f00000gn/T/todo-lint-store-ZGhgrO/v11/files -type f 2>/dev/null | wc -l; echo ---; find /var/folders/4s/d0wlfs9d00v4349cdqgd13f00000gn/T/todo-lint-store-ZGhgrO/v11/files -type f -name '*.tgz' 2>/dev/null | head; echo ---; sed -n '1,40p' pnpm-lock.yaml; echo ---; cat ~/.npmrc 2>/dev/null; npm config get registry; cat .npmrc 2>/dev/null; echo ---; ls /opt/homebrew/lib/node_modules/microsandbox 2>/dev/null | head",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "find /Users/williamcory/.nvm/versions/node/v26.10.0/lib/node_modules /opt/homebrew/lib/node_modules /usr/local/lib/node_modules -name 'tsc.js' -not -path '*/.git/*' 2>/dev/null | head -5; echo ---; curl -s -m 15 -o /dev/null -w 'http=%{http_code} time=%{time_total}\\n' https://registry.npmjs.org/typescript; echo npmjs-exit=$?",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true; pnpm install --frozen-lockfile --registry=https://registry.npmjs.org --no-optional",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "test -f node_modules/.bin/tsc && echo tsc-present || echo tsc-missing",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "ls node_modules 2>/dev/null; echo ---; ls node_modules/.pnpm 2>/dev/null; echo ---; find node_modules -maxdepth 4 -name 'tsc' 2>/dev/null | head; echo ---; ls packages/widgets/node_modules 2>/dev/null; echo ---; cat node_modules/.modules.yaml 2>/dev/null | head -20",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run check",
+          "exitCode": 0
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "run",
+          "command": "mkdir -p /tmp/probe-t1/src\ncat > /tmp/probe-t1/src/Widget.ts <<'EOF'\nimport { label } from \"./label.ts\"\n\nexport const render = (store: import(\"./Store.ts\").Service, key: string): string => label(store.get(key) ?? \"none\")\n\nexport type Render = (store: import(\"./Store.ts\").Service, key: string) => string\nEOF\nnode tools/lint.mjs /tmp/probe-t1/src",
+          "exitCode": 1
+        },
+        {
+          "tool": "run",
+          "command": "sh .smithers/checks/lint.sh",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "sh .smithers/checks/check.sh",
+          "exitCode": 0
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [
+        "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true; pnpm install --frozen-lockfile --filter \"...\": install",
+        "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true; pnpm install --frozen-lockfile: install",
+        "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true; pnpm install --frozen-lockfile --registry=https://registry.npmjs.org --no-optional: install",
+        "sh .smithers/checks/lint.sh: declared check script (installs first)",
+        "sh .smithers/checks/check.sh: declared check script (installs first)"
+      ],
+      "stray": [
+        "wrote /tmp/probe-t1/src/Widget.ts"
+      ],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": false,
+        "check": false
+      }
+    },
+    {
+      "installed": true,
+      "exit": "merged",
+      "ms": 12565,
+      "modelMs": 2105,
+      "modelCalls": 4,
+      "tokens": {
+        "input": 15132,
+        "output": 1208
+      },
+      "projectedMs": 322105,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": true,
+        "check": false
+      }
+    },
+    {
+      "installed": false,
+      "exit": "merged",
+      "ms": 67349,
+      "modelMs": 24138,
+      "modelCalls": 8,
+      "tokens": {
+        "input": 66139,
+        "output": 20049
+      },
+      "projectedMs": 2644138,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "run",
+          "command": "if [ -d .smithers/checks ]; then for f in .smithers/checks/*; do if [ -f \"$f\" ] && [ -x \"$f\" ]; then echo \"RUN $f\"; sh \"$f\" || echo \"CHECK-FAIL $f\"; fi; done; else echo NO-CHECKS-DIR; fi",
+          "exitCode": 0
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "ls -la; echo ---ROOTNM---; ls node_modules 2>/dev/null | head; echo ---WIDGETNM---; ls packages/widgets/node_modules 2>/dev/null | head; echo ---WHICH---; which node pnpm tsc 2>&1; echo ---LOCK---; ls pnpm-lock.yaml package-lock.json 2>&1",
+          "exitCode": 1
+        },
+        {
+          "tool": "run",
+          "command": "mkdir -p /tmp/widget-baseline && git show HEAD:packages/widgets/src/Widget.ts > /tmp/widget-baseline/Widget.ts && node tools/lint.mjs /tmp/widget-baseline 2>&1; echo LINT_EXIT=$?",
+          "exitCode": 0
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "ls -la .smithers .smithers/checks 2>&1; echo ---; cat .gitignore",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "ls /Users/williamcory/.nvm/versions/node/v26.10.0/lib/node_modules 2>&1",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "cat .smithers/checks/lint.sh; echo ===CHECK===; cat .smithers/checks/check.sh",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "ls packages packages/gadgets packages/widgets packages/widgets/src; echo ===; cat packages/widgets/tsconfig.* 2>/dev/null; echo ===STORE===; cat packages/widgets/src/Store.ts; echo ===LABEL===; cat packages/widgets/src/label.ts; echo ===CHECKMJS===; cat tools/check.mjs 2>/dev/null | head -40",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm install --offline 2>&1 | tail -15; echo OFFLINE_EXIT=$?",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "ls node_modules/.bin 2>/dev/null | head -20; command -v tsc; ls node_modules/typescript/bin 2>/dev/null",
+          "exitCode": 1
+        },
+        {
+          "tool": "run",
+          "command": "pnpm install --frozen-lockfile --offline",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "rm -rf /tmp/w0 && mkdir -p /tmp/w0/packages/widgets/src && for f in package.json tsconfig.json src/label.ts src/Store.ts src/Widget.ts; do mkdir -p \"/tmp/w0/packages/widgets/$(dirname \"$f\")\"; git show \"HEAD:packages/widgets/$f\" > \"/tmp/w0/packages/widgets/$f\"; done && find /tmp/w0 -type f | sort",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run check",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "node tools/lint.mjs /tmp/w0/packages/widgets/src; echo w0_exit=$?",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets exec tsc --noEmit -p /tmp/w0/packages/widgets; echo w0tsc_exit=$?",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm -r run --if-present lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm -r run --if-present check",
+          "exitCode": 0
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [
+        "if [ -d .smithers/checks ]; then for f in .smithers/checks/*; do if [ -f \"$f\" ] && [ -x \"$f\" ]; then echo \"RUN $f\"; sh \"$f\" || echo \"CHECK-FAIL $f\"; fi; done; else echo NO-CHECKS-DIR; fi: declared check script (installs first)",
+        "pnpm install --offline 2>&1 | tail -15; echo OFFLINE_EXIT=$?: install",
+        "pnpm install --frozen-lockfile --offline: install",
+        "pnpm -r run --if-present lint: every package",
+        "pnpm -r run --if-present check: every package"
+      ],
+      "stray": [
+        "wrote /tmp/widget-baseline/Widget.ts",
+        "wrote /tmp/w0/packages/widgets/$f"
+      ],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": true,
+        "check": true
+      }
+    },
+    {
+      "installed": true,
+      "exit": "merged",
+      "ms": 41924,
+      "modelMs": 22656,
+      "modelCalls": 8,
+      "tokens": {
+        "input": 37081,
+        "output": 6761
+      },
+      "projectedMs": 742656,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "sh .smithers/checks/lint.sh",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "sh .smithers/checks/check.sh",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "git status --porcelain",
+          "exitCode": 0
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [
+        "sh .smithers/checks/lint.sh: declared check script (installs first)",
+        "sh .smithers/checks/check.sh: declared check script (installs first)"
+      ],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": true,
+        "check": false
+      }
+    },
+    {
+      "installed": false,
+      "exit": "merged",
+      "ms": 33848,
+      "modelMs": 8840,
+      "modelCalls": 7,
+      "tokens": {
+        "input": 41001,
+        "output": 3461
+      },
+      "projectedMs": 888840,
+      "calls": [
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "list"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm install",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "run",
+          "command": "sh .smithers/checks/lint.sh",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "sh .smithers/checks/check.sh",
+          "exitCode": 0
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [
+        "pnpm install: install",
+        "sh .smithers/checks/lint.sh: declared check script (installs first)",
+        "sh .smithers/checks/check.sh: declared check script (installs first)"
+      ],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": true,
+        "check": false
+      }
+    }
+  ]
+}

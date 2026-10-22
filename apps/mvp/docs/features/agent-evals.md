@@ -264,6 +264,26 @@ The baseline before (`agent-2026-10-20T23-41-06-842Z`, eight cases) and the deve
 
 Other faults the runs showed: Node's HTTP/2 `fetch` wedging after Cerebras tore a session down (above, fixed for the evals with `providerFetch`; any other Node model host using Node's own `fetch` still has it); the judge reading "/theme dark does it too" as a claim and "Merge it on its page" as instructing, which its questions now exempt; and every agent call carrying about 9,400 input tokens of teaching and catalog, so a case that explores costs most.
 
+## todo-lint
+
+`evals/todo-lint.eval.ts` holds the TODO agent (`todo/Implement`, [TODOs](todos.md)) to the narrow path: a two-line lint fix in one package publishes within 10 minutes, checking only that package. The dogfood loop's T3 (`todo:7844cd5e`, 2026-10-22) is why: its lint found no `eslint`, and it spent its 40 minutes on its own check script and a monorepo install that hung on the branch machine's missing internet, and published nothing.
+
+- **The repository** (`evals/todoLint.ts`): a pnpm monorepo in miniature with two packages, each with its own `lint` and `check` scripts over the repository's own Node tools, and `.smithers/checks/lint.sh` and `check.sh` that install before they check, as smithersai/smithers' do. Widgets' `src/Widget.ts` has two `import()` type annotations its lint forbids. Two cases: the scripts run with nothing installed, or they need `tsc` first, which isn't installed, as in production.
+- **The run** is the real `todo` flow on the Node host's engine with the scripted GitHub, and the real agent and model. Its machine is a real git checkout on a real box (`worker/test/box.ts`): the sandbox tools run their real scripts, and commands run as processes. pnpm's registry (`npm_config_registry` and pnpm 11's `pnpm_config_registry`) is a port that accepts and never answers, its store is empty, and the commands' `PATH` has no `node_modules/.bin`, so an install hangs and `tsc` isn't there, as on a branch machine. A run past the budget is interrupted (`runFlow`'s `signal`) before the next trial starts.
+- **The checks:** the run merged; the merged change is `src/Widget.ts` alone, and it is the fix the TODO asks for, whitespace aside; the repository's lint and typecheck pass on what merged, and so does TypeScript's own `tsc`; no command installed, ran a declared check script or checked every package (`--filter "*"` and `-r` included); nothing was written but the fix, through `sandbox/write` or a command's redirection or `tee`; where the scripts can run, the package's lint and typecheck exited 0 on the machine after the agent's last write; and the run took under 10 minutes, both here and as production would time it.
+- **Production's time** is each command's measured cost in T3, 130 s from the agent's call to its result, plus 10 s for any other tool and the trial's own model time. The budget, 10 minutes, is the dogfood loop's target; two commands and a handful of reads and writes come to about 5.5 minutes.
+
+| Run (2026-10-22, `qwen-3.8-27b`, `EVAL_K=3`, two cases) | Result |
+|---|---|
+| `results/todo-lint-2026-10-22T17-23-53.664Z.json`, the instructions before | fails 6 of 6: each ran a declared check script, an install or `pnpm -r`; one probed the registry with curl and wrote files under `/tmp`; 5.4 to 44.1 minutes as production would time them |
+| `…T17-40-06.455Z.json`, `…T17-42-09.061Z.json`, the instructions now | passes 12 of 12: the fix alone; lint and typecheck after it where the tools run, one or two `not found` where they don't; 5.2 to 7.9 minutes as production would time them; 15,000 to 45,000 tokens a trial |
+
+Across the instructions' last three revisions, 1 trial of 36 failed `implement` with `StructuredOutputFailure` after a correct fix: the model's last answer didn't decode as `{ summary }`. It isn't about checks or time, and it isn't fixed here.
+
+```sh
+EVAL_ONLY=todo-lint EVAL_K=3 pnpm eval evals/todo-lint.eval.ts
+```
+
 ## Tests
 
 | Test | Proves |
@@ -271,6 +291,7 @@ Other faults the runs showed: Node's HTTP/2 `fetch` wedging after Cerebras tore 
 | `evals/checks.test.ts` | Every check on hand-built trials, both ways: a call once with its input, only some flows, the theme, the tab, the views and their hosts, the asks, the drafts (a saved one fails), the roles, a failure, what the answer mentions, product words, the charges; what `safe` refuses; `grade` |
 | `evals/cases.test.ts` | Every case, with every answer's checks, passes what the agent should do and fails what it might do instead (among them each finding's old behavior); each safety case fails its unsafe trial; cases are plain data |
 | `evals/judge.test.ts` | With a scripted judge (the model is the only seam): the questions, what the judge sees, one reading per trial with the seat note, the score as the share of trials whose every question holds, a reading's usage, a judge that can't judge, and no reading for a refused provider's trial |
+| `evals/todoLint.test.ts` | todo-lint's repository: its lint fails the TODO's file at both annotations and passes the fix, its typecheck and `tsc` catch a wrong fix, the fix is the TODO's own, the scripts need `tsc` without their tools, the declared checks install first; which commands are wide, which files a command writes, which writes stray, which checks passed on the package after the last write, and production's time |
 | `evals/report.test.ts` | The endpoint's spend by role at list price, the judge's at its reported price, the table |
 
 Run them with `pnpm exec vitest run evals`. The live run is `pnpm eval`.

@@ -1,0 +1,366 @@
+{
+  "eval": "todo-lint",
+  "model": "qwen-3.8-27b",
+  "budgetMs": 600000,
+  "trials": [
+    {
+      "installed": true,
+      "exit": "merged",
+      "ms": 16738,
+      "modelMs": 4628,
+      "modelCalls": 4,
+      "tokens": {
+        "input": 16303,
+        "output": 4172
+      },
+      "projectedMs": 334628,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run check",
+          "exitCode": 0
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": true,
+        "check": true
+      }
+    },
+    {
+      "installed": false,
+      "exit": "merged",
+      "ms": 16484,
+      "modelMs": 7045,
+      "modelCalls": 5,
+      "tokens": {
+        "input": 21964,
+        "output": 4692
+      },
+      "projectedMs": 337045,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "grep -rn 'import(' packages/widgets/src || true",
+          "exitCode": 0
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": false,
+        "check": false
+      }
+    },
+    {
+      "installed": true,
+      "exit": "merged",
+      "ms": 15964,
+      "modelMs": 4705,
+      "modelCalls": 3,
+      "tokens": {
+        "input": 11440,
+        "output": 3439
+      },
+      "projectedMs": 314705,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run check",
+          "exitCode": 0
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": true,
+        "check": true
+      }
+    },
+    {
+      "installed": false,
+      "exit": "merged",
+      "ms": 17474,
+      "modelMs": 5966,
+      "modelCalls": 6,
+      "tokens": {
+        "input": 32135,
+        "output": 4104
+      },
+      "projectedMs": 345966,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint && pnpm --filter @fixture/widgets run check",
+          "exitCode": 1
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": false,
+        "check": false
+      }
+    },
+    {
+      "installed": true,
+      "exit": "merged",
+      "ms": 15849,
+      "modelMs": 5044,
+      "modelCalls": 5,
+      "tokens": {
+        "input": 22120,
+        "output": 5325
+      },
+      "projectedMs": 335044,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 0
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run check",
+          "exitCode": 0
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": true,
+        "check": true
+      }
+    },
+    {
+      "installed": false,
+      "exit": "merged",
+      "ms": 18734,
+      "modelMs": 5331,
+      "modelCalls": 3,
+      "tokens": {
+        "input": 12955,
+        "output": 5248
+      },
+      "projectedMs": 475331,
+      "calls": [
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "read"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "write",
+          "path": "packages/widgets/src/Widget.ts"
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run lint",
+          "exitCode": 1
+        },
+        {
+          "tool": "run",
+          "command": "pnpm --filter @fixture/widgets run check",
+          "exitCode": 1
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "diff"
+        },
+        {
+          "tool": "status"
+        },
+        {
+          "tool": "read"
+        }
+      ],
+      "wide": [],
+      "stray": [],
+      "changed": [
+        "packages/widgets/src/Widget.ts"
+      ],
+      "fix": true,
+      "lint": 0,
+      "check": 0,
+      "tsc": 0,
+      "checked": {
+        "lint": false,
+        "check": false
+      }
+    }
+  ]
+}
