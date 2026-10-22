@@ -28,7 +28,9 @@ Fixes, by subject:
 
 `e2e/flows.spec.ts` against https://smithers.sh on main 6ea8caeea2fa (01:05 to 01:12 PDT): draft, save, run, the run graph, Stop and Retry passed in 1.7 min, and deleting a draft while it drafts passed in 45 s. The code test failed: a toast the test account's other runs left in the toast stack covered the code page's Save button, below a 28-row file, for the rest of the test's 5 minutes. Save now sits in the code card's header, by the file's name (`components/FlowCodeCard.tsx`). GIFs: `flows-flows-draft-a-flow-save-it-run-it-watch-its-run-page-then-st.gif` and `flows-flows-delete-a-draft-while-it-drafts-and-it-leaves-your-draf.gif`.
 
-**Remaining:** Production proof after deployment, then the QuickJS realm flow host for hand-edited code ([decision 0017](../decisions/0017-everything-is-a-plugin.md), slice 5; [sandbox work](personal-code-flow-sandbox.md)). The [FLOW-2 addendum](../rulings.md#10-flows) records Will's answer to 0017 question 2, "quickjs is a sandbox". Until that host lands, hand-edited code keeps the `FlowNeedsSandbox` refusal (`src/features/flows-ui/steps.ts`).
+Rerun on main 4de8f49ecfb9, which carries that fix (03:12 PDT): all three flows tests passed in production in 3.5 min, the code test in 58 s.
+
+**Remaining:** the QuickJS realm flow host for hand-edited code ([decision 0017](../decisions/0017-everything-is-a-plugin.md), slice 5; [sandbox work](personal-code-flow-sandbox.md)). The [FLOW-2 addendum](../rulings.md#10-flows) records Will's answer to 0017 question 2, "quickjs is a sandbox". Until that host lands, hand-edited code keeps the `FlowNeedsSandbox` refusal (`src/features/flows-ui/steps.ts`).
 
 ## Earlier tracker history (retained)
 
