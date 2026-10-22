@@ -124,6 +124,44 @@ describe("AgentStatusPill", () => {
     expect(pressed).toBe(1);
   });
 
+  test("clickable pills forward host attributes, styles, refs and keyboard handlers", async () => {
+    let focused = 0;
+    let keyed = 0;
+    let pressed = 0;
+    let host: HTMLSpanElement | null = null;
+    await render(
+      <AgentStatusPill
+        state="needs_you"
+        onClick={() => pressed++}
+        id="answer-status"
+        title="Open pending answers"
+        aria-describedby="answer-help"
+        data-tracking="answer-status"
+        tabIndex={-1}
+        style={{ marginLeft: 7 }}
+        ref={(element) => { host = element; }}
+        onFocus={() => focused++}
+        onKeyDown={() => keyed++}
+      />,
+    );
+    const button = $<HTMLButtonElement>("button[data-slot=agent-status]")!;
+    expect(button.id).toBe("answer-status");
+    expect(button.title).toBe("Open pending answers");
+    expect(button.getAttribute("aria-describedby")).toBe("answer-help");
+    expect(button.dataset.tracking).toBe("answer-status");
+    expect(button.tabIndex).toBe(-1);
+    expect(button.style.marginLeft).toBe("7px");
+    expect(host).toBe(button);
+    await act(async () => {
+      button.focus();
+      button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(focused).toBe(1);
+    expect(keyed).toBe(1);
+    await click(button);
+    expect(pressed).toBe(1);
+  });
+
   test("passes span props through when it is not a button", async () => {
     await render(<AgentStatusPill state="waiting" className="mine" title="queued behind an answer" />);
     const pill = $("[data-slot=agent-status]")!;

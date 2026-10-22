@@ -53,7 +53,7 @@ export function AgentStatusPill({ state, count, onClick, label, className, ...pr
     );
   }
   return (
-    <Badge variant={VARIANT[state]} asChild {...shared}>
+    <Badge variant={VARIANT[state]} asChild {...shared} {...props}>
       <button type="button" onClick={onClick} aria-label={label}>
         {content}
       </button>
