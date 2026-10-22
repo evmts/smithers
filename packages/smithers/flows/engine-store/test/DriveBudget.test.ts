@@ -181,6 +181,27 @@ describe("EngineStore.drive with a budget", () => {
       expect(judged).toEqual([])
     })))
 
+  it("tells each step when the drive stops starting steps, and a drive with no budget tells none", () =>
+    run(Effect.gen(function*() {
+      const seen: Array<number | undefined> = []
+      /** A step that records the deadline it reads. */
+      const reading = (name: string) =>
+        Action.make({
+          name: `DriveBudget/deadline-${name}`,
+          success: Schema.Number,
+          execute: Effect.map(FlowRuntime.DriveDeadline, (deadline) => seen.push(deadline))
+        })
+      const body: Body = Effect.gen(function*() {
+        yield* reading("one")
+        yield* reading("two")
+        return 2
+      })
+      expect(yield* drive(1, body, [], 2.5 * minute)).toEqual({ _tag: "Settled", status: "completed" })
+      // Measured from the drive's start, as the budget is.
+      expect(seen).toEqual([2.5 * minute, 2.5 * minute])
+      expect(yield* FlowRuntime.DriveDeadline).toBeUndefined()
+    })))
+
   it("holds back a step whose turn comes exactly when the budget is spent", () =>
     run(Effect.gen(function*() {
       const ran: Array<string> = []

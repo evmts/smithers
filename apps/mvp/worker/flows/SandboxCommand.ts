@@ -14,8 +14,9 @@ import { SandboxBranch } from "../branch/Sandboxes.ts"
 //     ─▶ probe ─▶ park ─▶ probe ... (each probe waits for the exit until the next is due; no step holds the command)
 //     ─▶ collect (its RunResult; the working copy is saved)        └ lost or past the deadline: cancel, then fail
 //
-// A step that asks (`run`) does the start, one waiting probe and the collect itself when the command ends within
-// `STEP_WAIT`: no job execution, no park, so the run that asked goes on at once. A longer command goes on as the job.
+// A step that asks (`run`) does the start, waiting reads and the collect itself when the command ends within its own
+// timeout and the drive's budget: no job execution, no park, so the run that asked goes on at once. A command still
+// running when the drive's budget ends goes on as the job, and the run parks.
 //
 // A command that runs for up to an hour (`COMMAND_LIMIT_SECONDS`; a deployment may lower it with
 // `SANDBOX_COMMAND_MAX_SECONDS`) holds no step of the run that asked for it, so neither Cloudflare's 15-minute alarm limit
@@ -82,10 +83,18 @@ export const registration = Layer.unwrap(
 ).pipe(Layer.provideMerge(Action.layerImplementations))
 
 /**
- * How long a step that asks for a command waits on it in the step itself (`Command.run`): a command that ends within it
- * answers then, with no job execution and no park, and a longer one goes on as its job.
+ * How long past a command's own timeout the step that asks for it waits on it (`Command.run`): the command's stop (TERM,
+ * then KILL five seconds later) and the read that sees it end.
  */
-export const STEP_WAIT: Duration.Input = "1 minute"
+export const STOP_MARGIN_MS = 15_000
+
+/**
+ * How long the step that asks for `call` waits on it in the step itself: as long as the command may run and stop. The
+ * drive's budget bounds it too (`FlowRuntime.DriveDeadline`): a command still running then goes on as its job, and the
+ * run parks.
+ */
+export const stepWait = (call: typeof SandboxTools.Run.Type): Duration.Input =>
+  (call.timeoutSeconds ?? SandboxTools.limits.defaultTimeoutSeconds) * 1000 + STOP_MARGIN_MS
 
 /** The execution id of call `callId`'s command: from the call's own id, so the call asked again joins the same job. */
 export const commandExecutionId = (callId: string): string => `sandbox-command:${callId}`
@@ -95,7 +104,7 @@ export class NoRun extends Schema.TaggedError<NoRun>()("@smthrs/mvp/sandbox/NoRu
 
 /**
  * Runs `call` on `target`'s machine, through `machines`, as call `callId`'s `sandbox/Command` (`Command.run`): a command
- * that ends within `wait` (`STEP_WAIT` unless given) is started, waited on and collected in the step that asks, and a longer one goes on as the
+ * that ends within `wait` (`stepWait(call)` unless given, and the drive's budget) is started, waited on and collected in the step that asks, and a longer one goes on as the
  * job, a child of the run that asks, which parks while it runs. Asked again (a resumed run replaying the call) it starts
  * the same key, or joins the same job, so the command runs once and its result is collected once. Needs the asking
  * run's `FlowRuntime`, else fails `NoRun`.
@@ -105,7 +114,7 @@ export const run = (
   target: Omit<Target, "callId">,
   callId: string,
   call: typeof SandboxTools.Run.Type,
-  wait: Duration.Input = STEP_WAIT,
+  wait: Duration.Input = stepWait(call),
 ) =>
   Effect.gen(function* () {
     const runtime = yield* Effect.serviceOption(FlowRuntime.FlowRuntime)

@@ -82,8 +82,10 @@ success as `.execute` does. Pass the same operations `toLayer` was given.
 const result = yield * Build.run({ source }, { executionId: `build:${callId}`, operations: adapter, wait: "1 minute" })
 ```
 
-Work that ends within `wait` (`probe.max` unless set, at most `timeout`) is
-started, read and collected in the step itself, under the key the first
+Work that ends within `wait` (`probe.max` unless set, at most `timeout`), and
+before the drive's budget ends (`FlowRuntime.DriveDeadline`, which a hosted
+engine's `budgetMs` sets for each step), is started, read and collected in
+the step itself, under the key the first
 generation uses (`<execution id>#g1`): the step's run never parks for it, and
 no execution of the job is made. Anything else, a failure, a lost generation or
 work still running when the wait is over, goes to the job's own execution under

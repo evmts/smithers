@@ -36,6 +36,8 @@ const measure = (options: {
   readonly exitAfterMs: number
   readonly rttMs: number
   readonly call: "run" | "execute"
+  /** Each alarm's drive budget: `ExecutionObject.defaultDriveBudgetMs` unless set. */
+  readonly driveBudgetMs?: number
 }) =>
   Effect.gen(function*() {
     const { call, rttMs } = options
@@ -49,6 +51,7 @@ const measure = (options: {
       : yield* Scope.provide(StatementTrace.proxy(url), scope)
     const timeline = CommandFlows.timeline()
     const objects = Objects.make({
+      ...(options.driveBudgetMs === undefined ? {} : { driveBudgetMs: options.driveBudgetMs }),
       flows: CommandFlows.flows,
       runtime: CommandFlows.runtime({
         timeline,
@@ -130,6 +133,7 @@ const measure = (options: {
         rttMs,
         warm: options.warm,
         exitAfterMs: options.exitAfterMs,
+        driveBudgetMs: options.driveBudgetMs,
         overheadMs: answered - called - options.exitAfterMs,
         settledMs: settled,
         callRuns: timeline.runs.get(callId),
@@ -219,5 +223,12 @@ describe.runIf(Postgres.direct.available && process.env.COMMAND_LATENCY_BENCH !=
         )
       }
     }
+    // Past the step's wait: the drive's budget ends while the command runs, so it goes on as its job and the run parks.
+    it.live(
+      "run, a command that outlives its drive's budget",
+      () =>
+        Effect.asVoid(measure({ warm: 20, exitAfterMs: 30_000, rttMs: benchRttMs, call: "run", driveBudgetMs: 10_000 })),
+      { timeout: 600_000 }
+    )
   }
 )

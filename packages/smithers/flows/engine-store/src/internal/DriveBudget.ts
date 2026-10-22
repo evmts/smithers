@@ -19,10 +19,13 @@
  *   settles or parks first never yields.
  * - The first step of a drive is never held, so a budget shorter than the
  *   run's replay, or than one step, still moves the run one step per drive.
+ * - A step reads the deadline as `FlowRuntime.DriveDeadline`, so a wait
+ *   inside it (`ExternalJob`'s `run`) ends before the drive's budget does.
  *
  * @since 1.0.0
  */
 
+import { FlowRuntime } from "@smthrs/flow"
 import * as Clock from "effect/Clock"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -68,8 +71,9 @@ export const make = (deadlineMs: number): DriveBudget => {
         }
         started++
         running++
+        // The step knows when the drive stops starting steps, so a wait inside it can end before then.
         return Effect.ensuring(
-          step,
+          Effect.provideService(step, FlowRuntime.DriveDeadline, deadlineMs),
           Effect.sync(() => {
             running--
             yieldIfIdle()

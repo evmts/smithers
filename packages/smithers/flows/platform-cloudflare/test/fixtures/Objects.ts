@@ -42,6 +42,8 @@ export const make = <E>(options: {
   readonly runtime: (intent: ExecutionObject.Intent) => Layer.Layer<ExecutionObject.Services, E>
   /** Wraps the namespace's router, to interpose on what an alarm routes. */
   readonly router?: (objects: Objects) => ExecutionObject.Router<unknown>
+  /** Each alarm's drive budget, `ExecutionObject.defaultDriveBudgetMs` unless set. */
+  readonly driveBudgetMs?: number
 }): Objects => {
   const objects = new Map<string, MemoryStorage.MemoryStorage>()
   const outcomes = new Map<string, Array<ExecutionObject.Outcome>>()
@@ -64,7 +66,8 @@ export const make = <E>(options: {
       ExecutionObject.alarm(object(executionId).storage, {
         flows: options.flows,
         runtime: options.runtime,
-        router: options.router === undefined ? self.router : options.router(self)
+        router: options.router === undefined ? self.router : options.router(self),
+        driveBudgetMs: options.driveBudgetMs
       }).pipe(
         Effect.tap((outcome) =>
           Effect.sync(() => {

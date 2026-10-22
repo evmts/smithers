@@ -126,7 +126,12 @@ export const registration = (
         // `execute` always makes the job's execution: how a call ran before `run` (`options.call`).
         const job = options.call === "execute"
           ? Job.execute(payload, { executionId })
-          : Job.run(payload, { executionId, operations: SandboxCommand.operations(() => Effect.succeed(commands)) })
+          : Job.run(payload, {
+            executionId,
+            operations: SandboxCommand.operations(() => Effect.succeed(commands)),
+            // As long as the command may run, as the TODO agent's tool waits: only the drive's budget bounds it.
+            wait: "1 hour"
+          })
         const result =
           yield* (job as Effect.Effect<typeof SandboxTools.RunResult.Type, unknown, FlowRuntime.FlowRuntime>).pipe(
             Effect.provideService(FlowRuntime.FlowRuntime, runtime.value),

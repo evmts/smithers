@@ -30,6 +30,8 @@ type Answer = ExternalJob.Status | "hold"
 const provider = (options: {
   readonly answers?: Array<Answer>
   readonly exitAt?: number
+  /** The longest one read waits, as a box's observe waits at most a minute. */
+  readonly waitCap?: number
   readonly startFails?: number
   readonly holdStart?: boolean
   readonly abandon?: boolean
@@ -50,7 +52,7 @@ const provider = (options: {
         calls.push(`status ${key} ${read?.waitMs}`)
         if (options.exitAt !== undefined) {
           const left = options.exitAt - (yield* Clock.currentTimeMillis)
-          if (left > 0) yield* Effect.sleep(Math.min(left, read?.waitMs ?? 0))
+          if (left > 0) yield* Effect.sleep(Math.min(left, read?.waitMs ?? 0, options.waitCap ?? Infinity))
           return (yield* Clock.currentTimeMillis) >= options.exitAt
             ? { _tag: "Exited" as const, exitCode: 0 }
             : { _tag: "Running" as const }
@@ -133,6 +135,72 @@ describe("ExternalJob run", () => {
         expect(yield* Fiber.join(running)).toBe("collected handle:b")
         expect(p.calls).toEqual(["start b#g1", "status b#g1 400", "collect b#g1"])
         expect(yield* Clock.currentTimeMillis).toBe(250)
+      })
+    )
+  })
+
+  it.effect("asks a read that waited as long as it could again at once", () => {
+    // Each read waits at most `probe.max`, as a box's observe waits at most a minute.
+    const p = provider({ exitAt: 900, waitCap: 400 })
+    return on(
+      p,
+      Effect.gen(function*() {
+        const running = yield* Effect.forkChild(
+          Job.run({ value: "w" }, { executionId: "w", operations: p.operations, wait: "1 second" })
+        )
+        for (const ms of [400, 400, 100]) {
+          yield* turns
+          yield* TestClock.adjust(ms)
+        }
+        expect(yield* Fiber.join(running)).toBe("collected handle:w")
+        // Reads at 0, 400 and 800, each the moment the one before it ended: no schedule's sleep between them.
+        expect(p.calls).toEqual(["start w#g1", "status w#g1 1000", "status w#g1 600", "status w#g1 200", "collect w#g1"])
+        expect(yield* Clock.currentTimeMillis).toBe(900)
+      })
+    )
+  })
+
+  it.effect("waits no later than its drive's deadline, and hands work still running then to the job", () => {
+    const p = provider({
+      answers: [{ _tag: "Running" }, { _tag: "Running" }, { _tag: "Running" }, { _tag: "Exited", exitCode: 0 }]
+    })
+    return on(
+      p,
+      Effect.gen(function*() {
+        const running = yield* Effect.forkChild(
+          Job.run({ value: "y" }, { executionId: "y", operations: p.operations }).pipe(
+            Effect.provideService(FlowRuntime.DriveDeadline, 150)
+          )
+        )
+        for (let step = 0; step < 8; step++) {
+          yield* turns
+          yield* TestClock.adjust(100)
+        }
+        expect(yield* Fiber.join(running)).toBe("collected handle:y")
+        // The step's reads end with a last look at the deadline, 150 ms in; then the job starts the same key and reads on.
+        expect(p.calls.slice(0, 5)).toEqual([
+          "start y#g1",
+          "status y#g1 150",
+          "status y#g1 50",
+          "status y#g1 0",
+          "start y#g1"
+        ])
+        expect(yield* made("y")).toBe(true)
+      })
+    )
+  })
+
+  it.effect("leaves work to the job at once when its drive's deadline has passed", () => {
+    const p = provider({ answers: [{ _tag: "Exited", exitCode: 0 }] })
+    return on(
+      p,
+      Effect.gen(function*() {
+        const result = yield* Job.run({ value: "z" }, { executionId: "z", operations: p.operations }).pipe(
+          Effect.provideService(FlowRuntime.DriveDeadline, 0)
+        )
+        expect(result).toBe("collected handle:z")
+        // The job's own start and probe: the step made no read of its own.
+        expect(p.calls).toEqual(["start z#g1", "status z#g1 100", "collect z#g1"])
       })
     )
   })

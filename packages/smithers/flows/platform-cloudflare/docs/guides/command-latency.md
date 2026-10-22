@@ -40,16 +40,19 @@ between consecutive marks.
 
 25 ms round trips, 20 steps before the call, on a Latitude host, 2026-10-22.
 "Before" is the engine at the queue tip 272f7bdb (the call made the job's
-execution with `execute`); "after" is with the step path (`run`), the hosted
-engine's one-read wake recovery, routing in one read transaction, and the
-drive's hold for a wake due soon.
+execution with `execute`); "after" is with the step path (`run`, waiting as
+long as the command may run and the drive's budget allows), the hosted
+engine's recovery of its own flow's wakes alone (main's 30a86a48), routing in
+one read transaction, and the drive's hold for a wake due soon.
 
-| Call                                        | Before | After     |
-| ------------------------------------------- | ------ | --------- |
-| A command that exits at once (`git status`) | 47.2 s | **0.1 s** |
-| A command that runs 30 s (past the wait)    | 46.9 s | 36.0 s    |
+| Call                                                       | Before | After     |
+| ---------------------------------------------------------- | ------ | --------- |
+| A command that exits at once (`git status`)                | 47.2 s | **0.1 s** |
+| A command that runs 30 s                                   | 46.9 s | **0.1 s** |
+| A command that outlives its drive's budget (a 10 s budget) | 46.9 s | 41.4 s    |
 
-Where the 47 s went before, and after for the command that outlives the wait:
+The last row is the only one that makes the job's execution and parks the run.
+Where its time goes, before and after:
 
 | Stretch                                                | Before          | After           |
 | ------------------------------------------------------ | --------------- | --------------- |
@@ -60,8 +63,8 @@ Where the 47 s went before, and after for the command that outlives the wait:
 | The round probes and collects                          | 254 statements  | 254 statements  |
 | The run's object wakes, replays 20 steps, and answers  | 1170 statements | 1026 statements |
 
-A command that exits within the step's wait makes none of these: the step
-starts it, reads it once with a waiting `observe`, and collects it, in four
+A command that ends while the step waits makes none of these: the step starts
+it, reads it with observes that wait for its exit, and collects it, in a few
 statements (whether the job already has an execution). The run never parks,
 so it never replays.
 
@@ -75,5 +78,6 @@ so it never replays.
   with this suite's few flows. A Worker that registers more flows builds
   slower: production's took 3 to 9 s before a hosted engine recovered its own
   flow's wakes alone.
-- A command that outlives the step's wait still costs a resumed run's replay,
-  which grows with its journal: about 50 statements for each step replayed.
+- A command that outlives its drive's budget still costs a resumed run's
+  replay, which grows with its journal: about 50 statements for each step
+  replayed.

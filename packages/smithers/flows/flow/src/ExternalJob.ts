@@ -16,6 +16,7 @@ import * as Schema from "effect/Schema"
 import * as Action from "./Action/index.ts"
 import * as Fault from "./Fault.ts"
 import * as Flow from "./Flow/index.ts"
+import { DriveDeadline } from "./FlowRuntime/DriveDeadline.ts"
 import { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
 import { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
 import { ExecutionMiddleware } from "./internal/ExecutionMiddleware.ts"
@@ -549,14 +550,16 @@ export const make = <
         const started = yield* operations.start(payload, key)
         handle = Option.some(started)
         for (let probe = 1;; probe++) {
-          const status = yield* operations.status(started, key, {
-            waitMs: Math.max(0, until - Math.floor(yield* Clock.currentTimeMillis))
-          })
+          const begunAt = Math.floor(yield* Clock.currentTimeMillis)
+          const status = yield* operations.status(started, key, { waitMs: Math.max(0, until - begunAt) })
           if (status._tag === "Exited") return Option.some(yield* operations.collect(started, key, status))
           if (status._tag === "Lost") return Option.none<A["Type"]>()
           const now = Math.floor(yield* Clock.currentTimeMillis)
           if (now >= until) return Option.none<A["Type"]>()
-          yield* Effect.sleep(Math.min(until - now, maximum, every * 2 ** Math.min(probe - 1, 1023)))
+          // The next read is due on the job's schedule from this one's start: at once after a read that waited that
+          // long, as one that can wait does, and after the rest of the delay otherwise.
+          const dueAt = Math.min(until, begunAt + Math.min(maximum, every * 2 ** Math.min(probe - 1, 1023)))
+          yield* Effect.sleep(Math.max(0, dueAt - now))
         }
       })
       const stop = (): Effect.Effect<void, E["Type"], R> =>
@@ -584,7 +587,8 @@ export const make = <
    * Runs the job from inside a step (an action's body) as execution
    * `executionId` over `operations` (the ones its `toLayer` was given), and
    * answers its success as `execute` does. Work that ends within `wait`
-   * (`probe.max` unless set, at most `timeout`) is started, waited on and
+   * (`probe.max` unless set, at most `timeout`, and never past the drive's
+   * budget, `FlowRuntime.DriveDeadline`) is started, waited on and
    * collected in the step itself, under the key its first generation would
    * use, so the step's run never parks for it and no execution of the job is
    * made. Anything else, or work still running then, goes to the job's own
@@ -616,7 +620,11 @@ export const make = <
         Effect.catchTag("@smthrs/flow/FlowExecutionNotFound", () => Effect.succeed(false))
       )
       if (handedOff) return yield* execute
-      const done = yield* inline(options.operations, payload, options.executionId, waitMs)
+      // A drive with a budget is waited on no later than its end: work still going then goes on as the job.
+      const deadline = yield* DriveDeadline
+      const left = deadline === undefined ? waitMs : Math.min(waitMs, deadline - Math.floor(yield* Clock.currentTimeMillis))
+      if (left <= 0) return yield* execute
+      const done = yield* inline(options.operations, payload, options.executionId, left)
       return Option.isSome(done) ? done.value : yield* execute
     })
   }

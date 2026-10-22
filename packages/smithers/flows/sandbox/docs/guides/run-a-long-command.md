@@ -102,8 +102,10 @@ and `lost` as soon as the runner is gone.
 A step that needs the command's result, such as an agent's `run` tool, calls
 `Install.run(payload, { executionId, operations, wait })` with the same
 operations as `toLayer`. A command that ends within `wait` (20 seconds unless
-set) is started, read once with a waiting `observe`, and collected in the step
-itself: no job execution, and the run that asked never parks. A longer one goes
+set; pass the command's own timeout to wait as long as it may run) and before
+its drive's budget ends (`FlowRuntime.DriveDeadline`) is started, read with
+waiting `observe`s, and collected in the step itself: no job execution, and the
+run that asked never parks. A longer one goes
 on as the job under the same key, which the step waits on as `execute` does.
 See `@smthrs/flow`'s "Run an external job".
 

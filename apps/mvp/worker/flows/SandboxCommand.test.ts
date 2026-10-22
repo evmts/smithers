@@ -311,8 +311,9 @@ describe("a command a run's own step runs, on a host that dies mid-command", { t
   }
 
   test("a command that ends within the step's wait runs once in the step, which reads its output", async () => {
+    expect(SandboxCommand.stepWait({ tool: "run", command: "true", timeoutSeconds: 600 })).toBe(615_000)
     const { outcome, runs } = await killedMidCommand(
-      SandboxCommand.STEP_WAIT,
+      SandboxCommand.stepWait({ tool: "run", command: "sleep 2" }),
       "echo ran >> runs.log; touch started; sleep 2; touch finished; echo done-$((2+3))",
     )
     // The step completed only if it read `done-5`: anything else died. No job execution was made.
