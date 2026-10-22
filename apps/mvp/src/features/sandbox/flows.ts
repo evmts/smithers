@@ -1,8 +1,8 @@
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
-import { SandboxTools } from "@smthrs/sandbox"
+import { SandboxCommand, SandboxTools } from "@smthrs/sandbox"
 import { Schema } from "effect"
-import { CALL_FAILURES } from "./contract"
+import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "./contract"
 
 // The sandbox tools (decision 0005 §5, docs/features/sandbox-tools.md): one flow per tool, run on this device's engine
 // by a person's slash command, the agent's `ctx.call` and the API alike. Each is two steps:
@@ -57,14 +57,15 @@ export const START_RETRY = RetryPolicy.make({
 })
 
 /**
- * Waiting for the machine: 250 ms doubling to 2 s, for at most 20 minutes, enough to wake and check out a cold machine
- * and run a command to its longest timeout.
+ * Waiting for the machine: 250 ms doubling to 2 s, for at most the longest command (`COMMAND_LIMIT_SECONDS`, an hour)
+ * and 30 minutes more: the command job's own 20 minutes to wake and check out a cold machine, probe and collect, and 10
+ * for the call to launch its job and settle.
  */
 export const RESULT_RETRY = RetryPolicy.make({
   initialMs: 250,
   factor: 2,
   maxMs: 2_000,
-  expirationMs: 20 * 60_000,
+  expirationMs: (COMMAND_LIMIT_SECONDS + 30 * 60) * 1000,
   nonRetryable: NON_RETRYABLE,
 })
 
@@ -112,12 +113,13 @@ export const Run = tool("run", {
   fields: {
     command: SandboxTools.Run.fields.command,
     cwd: SandboxTools.Run.fields.cwd,
-    timeoutSeconds: SandboxTools.Run.fields.timeoutSeconds,
+    timeoutSeconds: SandboxCommand.Run(COMMAND_LIMIT_SECONDS).fields.timeoutSeconds,
   },
   success: SandboxTools.RunResult,
   description: "Run a shell command on the branch's machine, in its checkout. Answers { exitCode, timedOut, stdout, " +
     "stderr, stdoutBytes, stderrBytes, truncated }: the first 64 KiB of each stream. cwd is relative to the checkout; " +
-    "the command stops after timeoutSeconds (60 unless set, 600 at most). It runs once, even if the run resumes.",
+    `the command stops after timeoutSeconds (60 unless set, ${COMMAND_LIMIT_SECONDS} at most). It runs once, even if ` +
+    "the run resumes.",
 })
 
 /** `sandbox/read { path }`. */

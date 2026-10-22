@@ -5,10 +5,11 @@ import { FlowBinding, Notifications, type Sandbox } from "@smthrs/harness"
 import { Evaluator } from "@smthrs/model"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
-import { SandboxTools } from "@smthrs/sandbox"
+import { SandboxCommand as CommandJob, SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Option, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import { CHECKS_DIRECTORY } from "../../src/features/pulls/contract.ts"
+import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import type { Seat as EndpointSeat } from "../ModelEndpoint.ts"
 import * as SandboxCommand from "./SandboxCommand.ts"
@@ -35,8 +36,11 @@ export const MAX_CALLS_PER_CELL = 8
 /** The most frames (model turns) one attempt's agent takes before it must answer. */
 export const MAX_FRAMES = 40
 
-/** The longest the agent works on one attempt. */
-export const IMPLEMENT_TIMEOUT = "40 minutes"
+/**
+ * The longest the agent works on one attempt: 40 minutes of its own, and room for one command at the longest a command
+ * runs (`COMMAND_LIMIT_SECONDS`). The bound is the attempt's: a command started late in it ends with it.
+ */
+export const IMPLEMENT_TIMEOUT = `${40 * 60 + COMMAND_LIMIT_SECONDS} seconds`
 
 /** The namespace a tool call's id is a version 5 UUID of its replay-stable identity in. */
 export const TOOL_CALL_NAMESPACE = "8d2f6c41-9a3e-4b57-b1c0-7e5a2d9f3c68"
@@ -108,19 +112,22 @@ export const failedAs = (error: { readonly _tag: string }): ToolFailed =>
 
 const empty = Schema.Struct({})
 
-/** The tools the agent calls, as flow declarations: each one sandbox tool's input and result. */
-const TOOLS = [
+/**
+ * The tools the agent calls, as flow declarations: each one sandbox tool's input and result. A command runs as its own
+ * job, for up to `commandSeconds`, which its description says.
+ */
+const toolsOf = (commandSeconds: number) => [
   {
     tool: "run",
     input: Schema.Struct({
       command: SandboxTools.Run.fields.command,
       cwd: SandboxTools.Run.fields.cwd,
-      timeoutSeconds: SandboxTools.Run.fields.timeoutSeconds,
+      timeoutSeconds: CommandJob.Run(commandSeconds).fields.timeoutSeconds,
     }),
     output: SandboxTools.RunResult,
     description: "Run a shell command in the checkout. Answers { exitCode, timedOut, stdout, stderr, stdoutBytes, " +
-      "stderrBytes, truncated }: the first 64 KiB of each stream. It stops after timeoutSeconds (60 unless set, 600 " +
-      "at most).",
+      "stderrBytes, truncated }: the first 64 KiB of each stream. It stops after timeoutSeconds (60 unless set, " +
+      `${commandSeconds} at most).`,
   },
   {
     tool: "read",
@@ -165,13 +172,15 @@ export const callIdOf = (identity: { readonly session: string; readonly frame: n
 
 /**
  * The sandbox tools, bound to the machine of the attempt whose run calls them: the current execution's attempt
- * (`todo:<attemptId>`), whose branch and committer `TodoMachine.ofExecution` reads.
+ * (`todo:<attemptId>`), whose branch and committer `TodoMachine.ofExecution` reads. A command runs for up to
+ * `commandSeconds` (`SANDBOX_COMMAND_MAX_SECONDS`).
  */
 export const machineBindings = <E, R>(
   machines: Machines["Service"],
   resolve: (executionId: string) => Effect.Effect<Option.Option<Machine.TodoMachine>, E, R>,
+  commandSeconds: number,
 ) =>
-  TOOLS.map((entry) =>
+  toolsOf(commandSeconds).map((entry) =>
     FlowBinding.make({
       flow: {
         name: `sandbox/${entry.tool}`,
@@ -204,14 +213,22 @@ export const machineBindings = <E, R>(
   )
 
 /** The TODO agent resolves its attempt through Postgres; other agents reuse the same public tools. */
-export const bindings = <E>(machines: Machines["Service"], database: Layer.Layer<SqlClient.SqlClient, E>) =>
-  machineBindings(machines, (executionId) => Machine.ofExecution(executionId).pipe(Effect.provide(database)))
+export const bindings = <E>(
+  machines: Machines["Service"],
+  database: Layer.Layer<SqlClient.SqlClient, E>,
+  commandSeconds: number,
+) =>
+  machineBindings(
+    machines,
+    (executionId) => Machine.ofExecution(executionId).pipe(Effect.provide(database)),
+    commandSeconds,
+  )
 
 /**
- * The step's host: no registry and no other flows, the sandbox tools on the attempt's machine, and the cell limits.
- * Needs the host's `Machines`, and what `database` needs.
+ * The step's host: no registry and no other flows, the sandbox tools on the attempt's machine, their commands running up
+ * to `commandSeconds`, and the cell limits. Needs the host's `Machines`, and what `database` needs.
  */
-export const host = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+export const host = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, commandSeconds: number) =>
   Layer.effect(
     AgentAction.Host,
     Effect.gen(function* () {
@@ -220,7 +237,12 @@ export const host = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       const context = yield* Effect.context<R>()
       return AgentAction.makeHost({
         registry: Registry.makeNoop(),
-        flows: [FlowBinding.source("machine", bindings(machines, Layer.provide(database, Layer.succeedContext(context))))],
+        flows: [
+          FlowBinding.source(
+            "machine",
+            bindings(machines, Layer.provide(database, Layer.succeedContext(context)), commandSeconds),
+          ),
+        ],
         limits: { calls: MAX_CALLS_PER_CELL },
         capabilityEnvelope: [],
         maxFrames: MAX_FRAMES,
@@ -254,16 +276,19 @@ export const steering = Notifications.layerForExecution().pipe(Layer.provide(Not
 /**
  * `todo/Implement`'s implementation over `seat`, `database` and the host's `Machines`, with `sandbox`, the agent's cell
  * sandbox (`Agent.layerSandbox` in Node; the QuickJS build a Worker bundles, `Agent.layerSandboxWithVariant`, on
- * Cloudflare), and `steering` over the engine's `Journal`. Quota refusals park the step; the endpoint holds the budget.
+ * Cloudflare), and `steering` over the engine's `Journal`. A command runs for up to `commandSeconds`
+ * (`SANDBOX_COMMAND_MAX_SECONDS`, `COMMAND_LIMIT_SECONDS` unless set). Quota refusals park the step; the endpoint holds
+ * the budget.
  */
 export const registration = <E, R, SE, SR>(
   seat: EndpointSeat,
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   sandbox: Layer.Layer<Sandbox.Sandbox, SE, SR>,
+  commandSeconds: number = COMMAND_LIMIT_SECONDS,
 ) =>
   Implement.layer.pipe(
     // Steering first: the first layer that provides the agent's `Steering.Source` is the one it drains.
-    Layer.provide(Layer.mergeAll(host(database), seats(seat), Agent.layer, steering)),
+    Layer.provide(Layer.mergeAll(host(database, commandSeconds), seats(seat), Agent.layer, steering)),
     Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provide(Layer.mergeAll(sandbox, Evaluator.layerUnavailable())),
   )

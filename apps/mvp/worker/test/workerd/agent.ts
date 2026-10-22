@@ -9,6 +9,7 @@ import { Cell, Sandbox } from "@smthrs/harness"
 import { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Option } from "effect"
 import * as AgentSandbox from "../../AgentSandbox.ts"
+import { COMMAND_LIMIT_SECONDS } from "../../../src/features/sandbox/contract.ts"
 import { Machines } from "../../branch/Machines.ts"
 import { noCommands } from "../commands.ts"
 import * as TodoAgent from "../../flows/TodoAgent.ts"
@@ -66,7 +67,7 @@ const checkout = () => {
 /** Runs `CELL` in the agent's sandbox: its outcome, the machine's calls and the checkout's files after. */
 const runCell = Effect.gen(function* () {
   const { files, calls, machines } = checkout()
-  const bindings = TodoAgent.machineBindings(machines, () => Effect.succeed(Option.some(MACHINE)))
+  const bindings = TodoAgent.machineBindings(machines, () => Effect.succeed(Option.some(MACHINE)), COMMAND_LIMIT_SECONDS)
   const flows = Object.fromEntries(bindings.map((binding) => [binding.descriptor.name, Cell.project(binding.descriptor)]))
   const run = { executionId: `todo:${ATTEMPT}` } as unknown as FlowRuntime.FlowInstance["Service"]
   // The harness's boundary in miniature: each call of the cell runs its tool's binding inside the attempt's run.

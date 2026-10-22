@@ -1,4 +1,3 @@
-import { SandboxTools } from "@smthrs/sandbox"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -9,6 +8,7 @@ import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as Flows from "../Flows.ts"
 import { SandboxCall } from "../flows/SandboxCall.ts"
+import { ToolCall } from "../flows/SandboxCommand.ts"
 import { branchAccess, canEdit } from "./Access.ts"
 
 // The sandbox tools' routes (decision 0005 §5, docs/features/sandbox-tools.md#the-routes):
@@ -17,7 +17,8 @@ import { branchAccess, canEdit } from "./Access.ts"
 //   flow, whoever runs it: a person's slash command names the conversation their tab showed, and the agent's call
 //   names the answer it works on, whose conversation it stays in. It admits the call for the person signed in (they
 //   asked the answer, may edit the conversation's branch, and the branch isn't locked), records the `running` row,
-//   and starts the remote `sandbox/Call`, one execution per call. The same call again is answered as it stands.
+//   and starts the remote `sandbox/Call`, one execution per call. The same call again is answered as it stands. A
+//   command runs up to the deployment's `SANDBOX_COMMAND_MAX_SECONDS` (an hour unless set); one past it is `invalid`.
 // - `GET /api/sandbox/calls/<id>`: how the call stands: `running`, `done` with the tool's result, or `failed` with why.
 //   Only the person who asked reads it.
 //
@@ -31,13 +32,14 @@ export const requests = Metric.counter("smithers_sandbox_call_requests", {
 })
 
 const Uuid = Schema.String.check(Schema.isUUID())
-const CallRequest = Schema.Struct({
-  callId: Uuid,
-  call: SandboxTools.Call,
-  conversationId: Schema.optional(Uuid),
-  answerId: Schema.optional(Uuid),
-})
-const decodeCall = Schema.decodeUnknownEffect(Schema.fromJsonString(CallRequest))
+/** A call's request, its command running up to `commandSeconds`. */
+const callRequest = (commandSeconds: number) =>
+  Schema.Struct({
+    callId: Uuid,
+    call: ToolCall(commandSeconds),
+    conversationId: Schema.optional(Uuid),
+    answerId: Schema.optional(Uuid),
+  })
 const isUuid = Schema.is(Uuid)
 
 const noStore = { "cache-control": "no-store" }
@@ -91,10 +93,12 @@ const answerConversation = (answerId: string, actor: Actor) =>
   })
 
 /**
- * Reads the routes over `database`, which opens a Postgres client for each request's scope. They read who is asking
- * from `Sessions` and start `sandbox/Call` through `Flows.FlowStarter`.
+ * Reads the routes over `database`, which opens a Postgres client for each request's scope, admitting commands of up to
+ * `commandSeconds` (`SANDBOX_COMMAND_MAX_SECONDS`). They read who is asking from `Sessions` and start `sandbox/Call`
+ * through `Flows.FlowStarter`.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
+export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, commandSeconds: number) => {
+  const decodeCall = Schema.decodeUnknownEffect(Schema.fromJsonString(callRequest(commandSeconds)))
   /** One request's records: a log line `sandbox.<route>`, its span's status, and a count. */
   const recorded = <RR>(
     route: "call" | "result",

@@ -6,7 +6,12 @@ import { Effect, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
-import { callExecutionId, MAX_CALL_BODY_BYTES, SANDBOX_CALLS_ROUTE } from "../../src/features/sandbox/contract.ts"
+import {
+  callExecutionId,
+  COMMAND_LIMIT_SECONDS,
+  MAX_CALL_BODY_BYTES,
+  SANDBOX_CALLS_ROUTE,
+} from "../../src/features/sandbox/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import * as Flows from "../Flows.ts"
 import { settle } from "../flows/SandboxCall.ts"
@@ -105,6 +110,39 @@ describe("POST /api/sandbox/calls", () => {
     expect(recorded(h)).not.toContain(SENTINEL)
     expect(recorded(h)).not.toContain("feature/x")
     expect(recorded(h)).not.toContain("mona")
+  })
+
+  test("a command runs up to the deployment's SANDBOX_COMMAND_MAX_SECONDS, an hour unless set; one past it is invalid", async () => {
+    const branch = await tracked(runtime, REPO, "feature/x")
+    const target = { conversationId: branch.conversationId }
+    const long = (timeoutSeconds: number) => ({ ...run, timeoutSeconds })
+    const hour = await open()
+    for (const timeoutSeconds of [1200, COMMAND_LIMIT_SECONDS]) {
+      const callId = crypto.randomUUID()
+      expect(await json(await post(hour, { callId, call: long(timeoutSeconds), ...target }))).toEqual([
+        202,
+        { callId, status: "running" },
+      ])
+      expect(hour.starts.at(-1)!.payload).toMatchObject({ call: long(timeoutSeconds) })
+    }
+    expect(await json(await post(hour, { callId: crypto.randomUUID(), call: long(COMMAND_LIMIT_SECONDS + 1), ...target })))
+      .toEqual([400, { code: "invalid" }])
+
+    const quarter = await open(member, { config: { SANDBOX_COMMAND_MAX_SECONDS: "900" } })
+    const callId = crypto.randomUUID()
+    expect(await json(await post(quarter, { callId, call: long(900), ...target }))).toEqual([202, { callId, status: "running" }])
+    expect(await json(await post(quarter, { callId: crypto.randomUUID(), call: long(901), ...target }))).toEqual([
+      400,
+      { code: "invalid" },
+    ])
+    expect(quarter.starts).toHaveLength(1)
+    expect(await calls()).toHaveLength(3)
+  })
+
+  test("a deployment whose SANDBOX_COMMAND_MAX_SECONDS isn't whole seconds from 60 to an hour doesn't start", async () => {
+    for (const invalid of ["59", "3601", "an hour"]) {
+      await expect(open(member, { config: { SANDBOX_COMMAND_MAX_SECONDS: invalid } }), invalid).rejects.toThrow()
+    }
   })
 
   test("a resend is 200 as the call stands: running starts the same execution again; settled starts nothing", async () => {

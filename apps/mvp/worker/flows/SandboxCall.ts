@@ -3,11 +3,11 @@ import { Node, type Planned } from "@smthrs/plan"
 import { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { CALL_FAILURES } from "../../src/features/sandbox/contract.ts"
+import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
-import { Command } from "./SandboxCommand.ts"
+import { Command, ToolCall } from "./SandboxCommand.ts"
 
 // `sandbox/Call { callId, ownerId, branch, call }` (decision 0005 §3 and §5, docs/features/sandbox-tools.md#the-remote-flow):
 // runs one sandbox tool on a branch's machine, as the person who asked. `POST /api/sandbox/calls` admits it (signed
@@ -21,8 +21,9 @@ import { Command } from "./SandboxCommand.ts"
 // It runs remotely because it needs a machine (decision 0011 §2). The host injects the machine (`Machines`: on
 // Cloudflare, the branch's `SandboxObject` and its container) and Postgres. The tool's result is the step's journaled
 // success, so a replay reads it and never runs the tool again. A command holds no step while it runs: it is the child
-// `sandbox/Command` job, which starts it detached once and parks between probes, so a long one (a 10-minute install)
-// outlives any one host's drive and settles once.
+// `sandbox/Command` job, which starts it detached once and parks between probes, so a long one (an install of up to an
+// hour, `COMMAND_LIMIT_SECONDS`) outlives any one host's drive and settles once. Every other tool holds its step, and a
+// command a step held would stop at 600 s (`SandboxTools.limits.maxTimeoutSeconds`).
 
 /** Postgres couldn't record the outcome. Retried. */
 export class SettleUnavailable extends Schema.TaggedError<SettleUnavailable>()(
@@ -58,8 +59,11 @@ export const SETTLE_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxM
 
 const CallId = Schema.String.check(Schema.isUUID())
 
-/** What a run is for: the call, the person it runs as, the branch whose machine runs it, and the tool's input. */
-const payload = { callId: CallId, ownerId: Schema.String, branch: SandboxBranch, call: SandboxTools.Call }
+/**
+ * What a run is for: the call, the person it runs as, the branch whose machine runs it, and the tool's input, a command
+ * of up to the job's limit.
+ */
+const payload = { callId: CallId, ownerId: Schema.String, branch: SandboxBranch, call: ToolCall(COMMAND_LIMIT_SECONDS) }
 
 /** How a call ended: done with the tool's result on a generation of the machine, or failed and why. */
 export const Outcome = Schema.Union([

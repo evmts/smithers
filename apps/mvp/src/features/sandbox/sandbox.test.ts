@@ -7,7 +7,7 @@
 // src/features/commands/commands.test.ts.
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Context, type Crypto, Effect, Exit, Layer, Logger, Metric, Scope } from "effect"
+import { Context, type Crypto, Effect, Exit, Layer, Logger, Metric, Schema, Scope } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
@@ -20,8 +20,9 @@ import { testFile } from "../../../worker/test/harness.ts"
 import { BROWSER_TELEMETRY } from "../../telemetry"
 import { pinConversation } from "./actions"
 import { CallRefused, SandboxClient } from "./api"
-import { CALL_ID_NAMESPACE, SANDBOX_TELEMETRY } from "./contract"
+import { CALL_ID_NAMESPACE, COMMAND_LIMIT_SECONDS, SANDBOX_TELEMETRY } from "./contract"
 import {
+  RESULT_RETRY,
   SandboxCallFailed,
   SandboxCallRefused,
   SandboxCallRunning,
@@ -174,6 +175,16 @@ describe("the flows", () => {
     expect(await reading).toEqual(Exit.fail(new SandboxCallFailed({ failure: "not_found" })))
     expect(engine.count({ tool: "read", outcome: "not_found" })).toBe(1)
   }, WITHIN)
+
+  test("a run takes a command up to an hour, says so, and its result is waited for past the job's deadline", () => {
+    const run = (timeoutSeconds: number) => ({ command: "pnpm install", timeoutSeconds })
+    expect(Schema.is(SandboxRun.payloadSchema)(run(1200))).toBe(true)
+    expect(Schema.is(SandboxRun.payloadSchema)(run(COMMAND_LIMIT_SECONDS))).toBe(true)
+    expect(Schema.is(SandboxRun.payloadSchema)(run(COMMAND_LIMIT_SECONDS + 1))).toBe(false)
+    expect(SandboxRun.description).toContain(`60 unless set, ${COMMAND_LIMIT_SECONDS} at most`)
+    // An hour's command and its job's 20 minutes to wake, probe and collect, then 10 to launch the job and settle.
+    expect(RESULT_RETRY.expirationMs).toBe(90 * 60_000)
+  })
 
   test("records carry the tool and outcome, fields the browser relays", () => {
     expect(BROWSER_TELEMETRY.records).toEqual(expect.arrayContaining([...SANDBOX_TELEMETRY.records]))

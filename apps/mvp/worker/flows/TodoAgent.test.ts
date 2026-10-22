@@ -6,8 +6,9 @@ import { FlowRuntime } from "@smthrs/flow"
 import { Cell } from "@smthrs/harness"
 import { Model } from "@smthrs/model"
 import type { SandboxTools } from "@smthrs/sandbox"
-import { Effect, Option, Stream } from "effect"
+import { Duration, Effect, Option, Stream } from "effect"
 import { describe, expect, test } from "vitest"
+import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { noCommands } from "../test/commands.ts"
 import type { Seat } from "../ModelEndpoint.ts"
@@ -47,15 +48,27 @@ const callOf = (name: string, input: unknown) =>
 /** The run a tool call belongs to: only its execution id is read. */
 const run = (executionId: string) => ({ executionId }) as unknown as FlowRuntime.FlowInstance["Service"]
 
-/** Calls tool `name` bound over `service` and `resolve`, inside execution `executionId`, or outside any run (`null`). */
+/** The tool `name` bound over `service` and `resolve`, its commands running up to `commandSeconds`. */
+const bound = <E>(
+  service: Machines["Service"],
+  resolve: (executionId: string) => Effect.Effect<Option.Option<TodoMachine.TodoMachine>, E>,
+  name: string,
+  commandSeconds = COMMAND_LIMIT_SECONDS,
+) => TodoAgent.machineBindings(service, resolve, commandSeconds).find((found) => found.descriptor.name === name)!
+
+/**
+ * Calls tool `name` bound over `service` and `resolve`, its commands running up to `commandSeconds`, inside execution
+ * `executionId`, or outside any run (`null`).
+ */
 const call = <E>(
   service: Machines["Service"],
   resolve: (executionId: string) => Effect.Effect<Option.Option<TodoMachine.TodoMachine>, E>,
   name: string,
   input: unknown,
   executionId: string | null = `todo:${ATTEMPT}`,
+  commandSeconds = COMMAND_LIMIT_SECONDS,
 ) => {
-  const binding = TodoAgent.machineBindings(service, resolve).find((found) => found.descriptor.name === name)!
+  const binding = bound(service, resolve, name, commandSeconds)
   const ran = binding.run(callOf(name, input))
   return Effect.runPromise(
     executionId === null ? ran : ran.pipe(Effect.provideService(FlowRuntime.FlowInstance, run(executionId))),
@@ -165,6 +178,28 @@ describe("the sandbox tools on the attempt's machine", () => {
     expect(TodoAgent.failedAs({ _tag: "@smthrs/flow/ExternalJobTimedOut" })).toEqual(
       new TodoAgent.ToolFailed({ reason: "@smthrs/flow/ExternalJobTimedOut" }),
     )
+  })
+
+  test("the run tool takes a command up to the deployment's limit, past SandboxTools' 600 s, and says the limit", async () => {
+    const box = machine(() => Effect.die("a command never runs as a tool call"))
+    const asked = (timeoutSeconds: number, commandSeconds?: number) =>
+      call(box.service, found, "sandbox/run", { command: "pnpm install", timeoutSeconds }, undefined, commandSeconds)
+    // A command the tool takes runs as its job, which needs a run: here there is none, so it gets that far and stops.
+    const taken = { outcome: "failure", message: "Flow sandbox/run failed: @smthrs/mvp/sandbox/NoRun" }
+    expect(await asked(1200)).toMatchObject(taken)
+    expect(await asked(COMMAND_LIMIT_SECONDS)).toMatchObject(taken)
+    expect(await asked(COMMAND_LIMIT_SECONDS + 1)).toMatchObject({ outcome: "failure", code: "invalid_input" })
+    expect(await asked(900, 900)).toMatchObject(taken)
+    expect(await asked(901, 900)).toMatchObject({ outcome: "failure", code: "invalid_input" })
+    expect(bound(box.service, found, "sandbox/run").descriptor.description).toContain(
+      `60 unless set, ${COMMAND_LIMIT_SECONDS} at most`,
+    )
+    expect(bound(box.service, found, "sandbox/run", 900).descriptor.description).toContain("60 unless set, 900 at most")
+    expect(box.calls).toEqual([])
+  })
+
+  test("the agent's attempt has room for an hour's command beside its own 40 minutes: 100 minutes", () => {
+    expect(Duration.toMinutes(TodoAgent.IMPLEMENT_TIMEOUT)).toBe(100)
   })
 
   test("a command runs as its own job of the run that asks: with no flow runtime to run it in, nothing runs", async () => {

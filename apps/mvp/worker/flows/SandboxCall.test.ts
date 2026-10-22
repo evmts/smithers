@@ -5,10 +5,11 @@
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { ExternalJob, Sleep } from "@smthrs/flow"
 import { type SandboxCommand, SandboxTools } from "@smthrs/sandbox"
-import { Cause, Effect, Exit, Layer, Logger, Metric } from "effect"
+import { Cause, Effect, Exit, Layer, Logger, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { type MachineFailure, Machines } from "../branch/Machines.ts"
 import { CheckoutFailed, type SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { resetBranches, tracked } from "../test/branch.ts"
@@ -91,7 +92,7 @@ const readResult = { tool: "read", path: "README.md", content: SENTINEL, bytes: 
 const run = async (
   started: Awaited<ReturnType<typeof running>>,
   machines: ReturnType<typeof machine>,
-  call: SandboxTools.Call = read,
+  call: typeof SandboxCall.SandboxCall.payloadSchema.Type["call"] = read,
 ) =>
   runFlow(
     SandboxCall.SandboxCall,
@@ -138,6 +139,29 @@ describe("sandbox/Call on the Node host", () => {
       generation: null,
       settled: true,
     })
+  })
+
+  test("a command past SandboxTools' 600 s, up to an hour, runs as its job; a tool step never takes one", async () => {
+    const started = await running()
+    const timeouts: Array<number | undefined> = []
+    const machines = machine([], instantCommands(() => 0, (_key, call) => void timeouts.push(call.timeoutSeconds)))
+    const exit = await run(started, machines, { tool: "run", command: "pnpm install", timeoutSeconds: 1200 })
+
+    expect(exit.exit).toEqual(Exit.succeed({ settled: true }))
+    expect(timeouts).toEqual([1200])
+    expect(machines.calls).toEqual([])
+    expect((await row(started.callId)).status).toBe("done")
+    const call = (timeoutSeconds: number) => ({
+      callId: started.callId,
+      ownerId: OWNER,
+      branch: started.branch,
+      call: { tool: "run" as const, command: "pnpm install", timeoutSeconds },
+    })
+    expect(Schema.is(SandboxCall.SandboxCall.payloadSchema)(call(COMMAND_LIMIT_SECONDS))).toBe(true)
+    expect(Schema.is(SandboxCall.SandboxCall.payloadSchema)(call(COMMAND_LIMIT_SECONDS + 1))).toBe(false)
+    // The tool step, which holds the run while it runs, still stops at 600 s.
+    expect(Schema.is(SandboxCall.Tool.payloadSchema)(call(600))).toBe(true)
+    expect(Schema.is(SandboxCall.Tool.payloadSchema)(call(601))).toBe(false)
   })
 
   test("a command its machine lost settles lost; one the machine refused settles with why", async () => {

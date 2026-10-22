@@ -15,6 +15,7 @@ import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as Todo from "./flows/Todo.ts"
+import * as SandboxCommand from "./flows/SandboxCommand.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
@@ -123,6 +124,8 @@ const object = <E, R>(
       // How long one alarm's drive keeps starting steps, under Cloudflare's 15-minute alarm limit
       // (docs/features/remote-flows.md#how-an-execution-runs).
       const driveBudgetMs = yield* ExecutionHost.driveBudget.pipe(Effect.orDie)
+      // The longest command the TODO agent's run tool takes (docs/features/sandbox-tools.md#configuration).
+      const commandSeconds = yield* SandboxCommand.maxSeconds.pipe(Effect.orDie)
       // `repo/Clone` runs here when this deployment has a Code Storage organization (docs/features/repo.md#the-clone).
       // Its Index reads the file list into the same immutable cache RepoApi reads from.
       const repoClone = yield* RepoConfig.cloneServices(appDatabase, EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)).pipe(
@@ -246,7 +249,7 @@ const object = <E, R>(
                 machines,
                 // The `todo` run's agent writes with the `coding` role, admitted and metered as the endpoint's calls are.
                 Layer.unwrap(Effect.map(flowStarter, (started) =>
-                  TodoAgent.registration(seats("coding", started), appDatabase, AgentSandbox.layer))),
+                  TodoAgent.registration(seats("coding", started), appDatabase, AgentSandbox.layer, commandSeconds))),
               ),
             )
             : hostFor(flows)

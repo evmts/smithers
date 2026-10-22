@@ -35,6 +35,13 @@ export const CALL_FAILURES = [
 ] as const
 export type CallFailure = (typeof CALL_FAILURES)[number]
 
+/**
+ * The longest a command runs, in seconds: an hour. A `run` is its own `sandbox/Command` job, which holds no step while
+ * it runs, so it may outlast the 600 s a tool call that holds one stops at (`SandboxTools.limits.maxTimeoutSeconds`).
+ * A deployment may lower it (`SANDBOX_COMMAND_MAX_SECONDS`, worker/flows/SandboxCommand.ts).
+ */
+export const COMMAND_LIMIT_SECONDS = 3600
+
 /** The largest `POST /api/sandbox/calls` body: a whole file's write and its JSON escaping. */
 export const MAX_CALL_BODY_BYTES = 3 * 1024 * 1024
 

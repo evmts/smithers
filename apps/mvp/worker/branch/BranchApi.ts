@@ -3,6 +3,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { BRANCHES_ROUTE, SHARES_SHAPE_ROUTE } from "../../src/features/branch/contract.ts"
 import { TERMINALS_ROUTE, TERMINALS_SHAPE_ROUTE } from "../../src/features/terminal/contract.ts"
+import * as SandboxCommand from "../flows/SandboxCommand.ts"
 import * as Branches from "./Branches.ts"
 import * as Presence from "./Presence.ts"
 import * as SandboxCalls from "./SandboxCalls.ts"
@@ -26,13 +27,16 @@ const branchPath = (path: string) => {
   return match === null ? undefined : { branchId: match[1]!, what: match[2] as "shares" | "room" }
 }
 
-/** The routes over `database`, which opens a Postgres client for each request's scope. */
+/**
+ * The routes over `database`, which opens a Postgres client for each request's scope. Reads `SANDBOX_COMMAND_MAX_SECONDS`
+ * once, for the sandbox calls' commands.
+ */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Effect.gen(function* () {
     const terminals = yield* Terminals.make(database)
     const shares = yield* Shares.make(database)
     const room = Presence.make(database)
-    const sandboxCalls = SandboxCalls.make(database)
+    const sandboxCalls = SandboxCalls.make(database, yield* SandboxCommand.maxSeconds)
     const texts = yield* Texts.make(database)
     const fetch = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
