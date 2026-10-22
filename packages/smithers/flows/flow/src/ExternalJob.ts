@@ -91,6 +91,11 @@ const millis = (value: Duration.Input, field: string): number => {
  * must let `abandon` of a key it has not admitted yet win over a later `start`
  * of that key. Without it, such a generation is left to the provider.
  *
+ * `cancel` and `abandon` may fail with the adapter's error: inside a step the
+ * engine retries them as it retries `start`, so a stop the provider could not
+ * record is never journaled as done. Only the rollback of an interrupted run,
+ * which has no step to retry, runs them once and logs a failure.
+ *
  * @category models
  * @since 1.0.0
  */
@@ -98,8 +103,8 @@ export interface Operations<P, H, A, E, R> {
   readonly start: (payload: P, key: string) => Effect.Effect<H, E, R>
   readonly status: (handle: H, key: string) => Effect.Effect<Status, E, R>
   readonly collect: (handle: H, key: string, exited: Exited) => Effect.Effect<A, E | Again, R>
-  readonly cancel: (handle: H, key: string) => Effect.Effect<void, never, R>
-  readonly abandon?: ((payload: P, key: string) => Effect.Effect<void, never, R>) | undefined
+  readonly cancel: (handle: H, key: string) => Effect.Effect<void, E, R>
+  readonly abandon?: ((payload: P, key: string) => Effect.Effect<void, E, R>) | undefined
 }
 
 /**
@@ -109,6 +114,12 @@ export interface Operations<P, H, A, E, R> {
  * journaled deadline bounds every provider call: a start or collect still
  * running at the deadline, or reached after it, cancels or abandons its
  * generation and fails `ExternalJobTimedOut`, and no start runs after it.
+ *
+ * `flows` lists the job's declarations: the job itself and its two private
+ * continuations. A host that resolves an execution's flow by its tag, such
+ * as a Durable Object per execution, must list all three, because `call`
+ * runs the job as its own child execution and a round hands off to the
+ * continuations.
  * @category constructors
  * @since 1.0.0
  */
@@ -240,6 +251,7 @@ export const make = <
   const Cancel = Action.make(`${tag}/cancel`, {
     payload: observed,
     success: Schema.Void,
+    error: providerError,
     tier: "irreversible",
     idempotencyKey: (job) => `${keyOf(job)}/cancel`
   })
@@ -364,14 +376,25 @@ export const make = <
         Effect.raceFirst(Effect.asSome(effect), Effect.as(Effect.sleep(remaining), Option.none<B>()))
     })
   const toLayer = <R>(operations: Operations<typeof input.Type, H["Type"], A["Type"], E["Type"], R>) => {
-    const abandon = (payload: typeof input.Type, key: string): Effect.Effect<void, never, R> =>
+    const abandon = (payload: typeof input.Type, key: string): Effect.Effect<void, E["Type"], R> =>
       operations.abandon === undefined ? Effect.void : operations.abandon(payload, key)
+    // The rollback of an interrupted run has no step to retry a failed stop in: it runs once, and a failure is logged
+    // by its operation and key, never its cause, which can carry the provider's text.
+    const once = (operation: "cancel" | "abandon", key: string) => <X>(effect: Effect.Effect<void, X, R>) =>
+      effect.pipe(
+        Effect.catch(() =>
+          Effect.logWarning("ExternalJob rollback could not stop its job").pipe(
+            Effect.annotateLogs({ job: tag, operation, key })
+          )
+        )
+      )
     const bindCancellation = Layer.effectDiscard(Effect.gen(function*() {
       const table = yield* Action.Implementations
       const context = yield* Effect.context<R>()
       const lifecycle: Lifecycle = {
-        cancel: (handle, key) => operations.cancel(handle, key).pipe(Effect.provideContext(context)),
-        abandon: (payload, key) => abandon(payload, key).pipe(Effect.provideContext(context))
+        cancel: (handle, key) =>
+          operations.cancel(handle, key).pipe(once("cancel", key), Effect.provideContext(context)),
+        abandon: (payload, key) => abandon(payload, key).pipe(once("abandon", key), Effect.provideContext(context))
       }
       lifecycles.set(table.add, lifecycle)
       yield* Effect.addFinalizer(() =>
@@ -487,8 +510,10 @@ export const make = <
   // A job requires its own execution scope and identity even when composed
   // through call; reuse the existing child boundary rather than inline it.
   const call: typeof flow.child = (payload) => flow.child(payload)
-  return Object.assign(flow, { call, toLayer }) as {
+  const flows: ReadonlyArray<Flow.Any> = [flow, launch, observe]
+  return Object.assign(flow, { call, toLayer, flows }) as {
     readonly call: typeof call
     readonly toLayer: typeof toLayer
+    readonly flows: ReadonlyArray<Flow.Any>
   } & typeof flow
 }

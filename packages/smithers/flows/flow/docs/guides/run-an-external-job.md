@@ -86,10 +86,30 @@ fails with `ExternalJobTimedOut` (`dependency`). `restarts: 0`, the default,
 permits only the first generation. Adapter infrastructure errors retain their
 declared type and use the runtime's repeat-safe retry policy.
 
+`cancel` and `abandon` may fail with the adapter's declared error. Inside a
+step the engine retries them as it retries `start`, so a stop the provider
+could not record is never journaled as done and a replacement waits for it.
+
+The deadline bounds each provider call, not the engine's retry waits: a
+`start` that failed transiently and is retried after the deadline is abandoned
+at that next attempt, so its abandonment can lag the deadline by one retry
+backoff.
+
 The actual flow scope retains `Flow.withRollback` cancellation. Timer parking,
 replay and host release preserve the external worker. Explicit cancellation
-cancels it, including a retained parked scope. The rollback is process-local;
-providers still need their retained-machine lease or reaper after a host dies.
+cancels it, including a retained parked scope. The rollback is process-local
+and has no step to retry in: it asks `cancel` or `abandon` once and logs a
+failure by operation and key. Providers still need their retained-machine lease
+or reaper after a host dies.
+
+## Hosts that route by tag
+
+`call` runs the job as its own child execution, and each round hands off to
+one of two private continuations, `<tag>/launch` and `<tag>/observe`. A host
+that finds an execution's flow by its tag, such as a Durable Object per
+execution, must list all three: `[...otherFlows, ...Build.flows]`. Otherwise
+the child's object refuses the job as an unknown flow and the job never
+starts.
 
 ## Abandon a key that never returned a handle
 

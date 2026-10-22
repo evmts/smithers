@@ -35,6 +35,8 @@ const harness = (
     readonly hold?: "start" | "collect"
     /** Whether the adapter implements `abandon`. */
     readonly abandon?: boolean
+    /** Whether the provider refuses every `cancel` and `abandon`. */
+    readonly stopFails?: boolean
     /** The durable record a restarted host reads. */
     readonly state?: MemoryState
   } = {}
@@ -68,14 +70,16 @@ const harness = (
         return Effect.succeed("done")
       }),
     cancel: (_handle, key) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         calls.push(`cancel:${key}`)
+        return options.stopFails === true ? Effect.fail("cancel refused") : Effect.void
       }),
     ...(options.abandon === true
       ? {
         abandon: (_payload: { readonly value: string }, key: string) =>
-          Effect.sync(() => {
+          Effect.suspend(() => {
             calls.push(`abandon:${key}`)
+            return options.stopFails === true ? Effect.fail("abandon refused") : Effect.void
           })
       }
       : {})
@@ -469,6 +473,49 @@ describe("ExternalJob", () => {
       expect(h.calls).toContain("cancel:cancel#g1")
     }).pipe(Effect.provide(h.layer))
   })
+  effect("an interrupted run whose provider refuses the stop still ends: the rollback asks once", () => {
+    const h = harness([{ _tag: "Running" }], false, true, false, 0, { stopFails: true })
+    return Effect.gen(function*() {
+      const initial = yield* h.round(Job, { value: "x" }, "refused")
+      if (initial._tag !== "Handoff") return yield* Effect.die("missing initial handoff")
+      yield* h.declarations.get(initial.flow)!.execute(initial.payload as never, {
+        executionId: "refused-observe",
+        discard: true
+      })
+      yield* turns
+      const observe = h.declarations.get("test/external-job/observe")!
+      yield* observe.interrupt("refused-observe")
+      yield* turns
+      expect(h.calls.filter((call) => call.startsWith("cancel:"))).toEqual(["cancel:refused#g1"])
+      // The run ended anyway: the refused stop never kept it open.
+      const ended = yield* observe.poll("refused-observe")
+      expect(Option.isSome(ended) && ended.value._tag).not.toBe("Suspended")
+      expect(Option.isSome(ended)).toBe(true)
+    }).pipe(Effect.provide(h.layer))
+  })
+
+  effect("an interrupted admission whose provider refuses the abandon still ends: the rollback asks once", () => {
+    const h = harness([], false, false, false, 0, { hold: "start", abandon: true, stopFails: true })
+    return Effect.gen(function*() {
+      yield* stored.execute({ value: "x" }, { executionId: "refused-admission", discard: true })
+      yield* turns
+      yield* stored.interrupt("refused-admission")
+      yield* turns
+      expect(h.calls).toEqual(["start:refused-admission#g1", "abandon:refused-admission#g1"])
+      const ended = yield* stored.poll("refused-admission")
+      expect(Option.isSome(ended) && ended.value._tag).not.toBe("Suspended")
+      expect(Option.isSome(ended)).toBe(true)
+    }).pipe(Effect.provide(h.layer))
+  })
+
+  it("lists its own declaration and its two continuations for a host that routes by tag", () => {
+    expect(Job.flows.map((flow) => flow._tag)).toEqual([
+      "test/external-job",
+      "test/external-job/launch",
+      "test/external-job/observe"
+    ])
+  })
+
   effect("timeout keeps the initial deadline across generations", () => {
     const h = harness([{ _tag: "Lost" }, { _tag: "Running" }])
     return Effect.gen(function*() {

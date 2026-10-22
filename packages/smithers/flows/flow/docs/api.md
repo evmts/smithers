@@ -324,8 +324,12 @@ Start runs after it, a Start still running at it is abandoned, and a Collect
 still running at it is cancelled, each failing `ExternalJobTimedOut`. A run
 cancelled or a Start failed before Start returned a handle abandons the key; a
 provider's `abandon` of a key it has not admitted yet must win over a later
-Start of it. Lost or `Again` completes Cancel
-before replacement; `restarts` defaults to zero. Exhaustion fails
+Start of it. Cancel and abandon may fail with the provider's error, and inside
+a step the engine retries them as it retries Start; the rollback of an
+interrupted run asks once and logs a failure. Lost or `Again` completes Cancel
+before replacement; `restarts` defaults to zero. `flows` lists the job's three
+declarations (the job, `<tag>/launch` and `<tag>/observe`) for a host that
+resolves an execution's flow by its tag. Exhaustion fails
 `ExternalJobLost` (`infra`), while timeout fails `ExternalJobTimedOut`
 (`dependency`). See [Run an external job](./guides/run-an-external-job.md).
 
