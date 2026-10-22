@@ -1,0 +1,46 @@
+{
+  "title": "copy: Copy permalink, Copy path, Copy and the clone URL put what they say on the clipboard",
+  "feature": "Repo extras",
+  "name": "Copy",
+  "line": "Copy permalink, Copy path, Copy and the clone URL copy what they say.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Copy"
+    },
+    {
+      "t": 2,
+      "label": "Open octocat/Spoon-Knife"
+    },
+    {
+      "t": 3.5,
+      "label": "Open test.md on test-branch"
+    },
+    {
+      "t": 4.5,
+      "label": "Click Copy permalink"
+    },
+    {
+      "t": 5.5,
+      "label": "Click Copy path"
+    },
+    {
+      "t": 6.5,
+      "label": "Click Copy"
+    },
+    {
+      "t": 7.5,
+      "label": "Click Code"
+    },
+    {
+      "t": 8.5,
+      "label": "Click Copy clone URL"
+    },
+    {
+      "t": 9.5,
+      "label": "Open test.md on 58060701b538587e8b4ab127253e6ed6fbdc53d1"
+    }
+  ]
+}

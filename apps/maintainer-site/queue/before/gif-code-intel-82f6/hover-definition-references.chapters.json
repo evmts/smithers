@@ -1,0 +1,34 @@
+{
+  "title": "hover, definition, references: a symbol's card, a jump to the file that defines it, and every place it is used",
+  "feature": "Code intel",
+  "name": "Hover, definition, references",
+  "line": "TypeScript answers in the tab: hover, go to definition, find references.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Hover, definition, references"
+    },
+    {
+      "t": 2,
+      "label": "Open src/format.test.ts at the commit, cloning vercel/ms if Smithers hasn't got it"
+    },
+    {
+      "t": 5.5,
+      "label": "Hover format: its signature"
+    },
+    {
+      "t": 7.2,
+      "label": "Enter on format: go to its definition in src/index.ts"
+    },
+    {
+      "t": 8.3,
+      "label": "Click format: the Symbols pane lists its definition and every reference"
+    },
+    {
+      "t": 9.3,
+      "label": "A reference opens its line"
+    }
+  ]
+}

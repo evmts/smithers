@@ -1,0 +1,30 @@
+{
+  "title": "long outage: a device offline catches up on everything asked meanwhile",
+  "feature": "Local first",
+  "name": "Long outage",
+  "line": "A device that was offline catches up on everything asked meanwhile.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Long outage"
+    },
+    {
+      "t": 2,
+      "label": "Open A, B"
+    },
+    {
+      "t": 3.9,
+      "label": "B: ask \"Reply with exactly the word: away1-lfmvhqy8aqktz2\""
+    },
+    {
+      "t": 7.1,
+      "label": "B: ask \"Reply with exactly the word: away2-lfmvhqy8aqktz2\""
+    },
+    {
+      "t": 11.7,
+      "label": "A comes back online"
+    }
+  ]
+}

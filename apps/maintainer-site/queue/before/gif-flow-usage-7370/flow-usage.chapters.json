@@ -1,0 +1,26 @@
+{
+  "title": "flow usage: a button's run is counted by flow, door, actor and placement, and the Runs page sums it",
+  "feature": "Flow usage",
+  "name": "Flow usage",
+  "line": "Each run records how it started and ended; Runs shows runs, success and p95 per flow.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Flow usage"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.7,
+      "label": "A: Click Switch to dark mode"
+    },
+    {
+      "t": 5.8,
+      "label": "A: Open runs"
+    }
+  ]
+}

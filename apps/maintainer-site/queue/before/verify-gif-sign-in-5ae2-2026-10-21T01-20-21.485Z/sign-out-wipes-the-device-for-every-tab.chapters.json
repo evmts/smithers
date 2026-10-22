@@ -1,0 +1,38 @@
+{
+  "title": "sign out wipes the device for every tab: a tab still holding the data holds the wipe off, and no tab opens on the session's data",
+  "feature": "Sign in",
+  "name": "Sign out wipes the device for every tab",
+  "line": "Signing out wipes the device only once no tab holds its data, and no tab reopens on it.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Sign out wipes the device for every tab"
+    },
+    {
+      "t": 2,
+      "label": "Open Tab 1 on faulty services"
+    },
+    {
+      "t": 3.5,
+      "label": "Open tab Tab 2"
+    },
+    {
+      "t": 5.6,
+      "label": "Tab 1: ask \"Never sent in two tabs lfmvhme71ngud4\""
+    },
+    {
+      "t": 8,
+      "label": "Tab 1: Click Sign out"
+    },
+    {
+      "t": 9,
+      "label": "Tab 2: Open the home conversation"
+    },
+    {
+      "t": 11.3,
+      "label": "Reload Tab 1"
+    }
+  ]
+}

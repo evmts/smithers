@@ -1,0 +1,26 @@
+{
+  "title": "escape: Escape closes the list and keeps the draft, and a second Escape hides the composer",
+  "feature": "Slash commands",
+  "name": "Escape",
+  "line": "Escape closes the command list and keeps the draft; a second Escape hides the composer.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Escape"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.7,
+      "label": "A: Type a message"
+    },
+    {
+      "t": 5.7,
+      "label": "A: open the composer"
+    }
+  ]
+}

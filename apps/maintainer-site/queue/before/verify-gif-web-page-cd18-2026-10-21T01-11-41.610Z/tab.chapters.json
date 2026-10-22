@@ -1,0 +1,26 @@
+{
+  "title": "tab: the agent's card shows the page's origin, and its Open opens the page in a new tab",
+  "feature": "Web page",
+  "name": "Tab",
+  "line": "The agent's card shows the page's origin, and its Open opens the page in a new tab.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Tab"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.5,
+      "label": "A: ask \"Open http://localhost:57280/ in a new browser tab, then reply with the word tab-lfmvhhaoete070.\""
+    },
+    {
+      "t": 7.5,
+      "label": "A: Click Open http://localhost:57280"
+    }
+  ]
+}

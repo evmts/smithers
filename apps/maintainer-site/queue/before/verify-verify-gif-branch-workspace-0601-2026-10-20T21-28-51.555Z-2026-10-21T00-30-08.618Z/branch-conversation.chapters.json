@@ -1,0 +1,42 @@
+{
+  "title": "branch conversation: a question asked on a branch is stored in that branch's conversation only",
+  "feature": "Branch workspace",
+  "name": "Branch conversation",
+  "line": "Each branch has its own conversation: a question asked on one never shows on another, or at home.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Branch conversation"
+    },
+    {
+      "t": 2,
+      "label": "See branch test-branch's workspace"
+    },
+    {
+      "t": 3,
+      "label": "Ask \"Reply with exactly the word: branch-1792566827809\""
+    },
+    {
+      "t": 4,
+      "label": "Open branch test-branch"
+    },
+    {
+      "t": 5.5,
+      "label": "Open branch change-the-title"
+    },
+    {
+      "t": 6.5,
+      "label": "Ask \"Second branch branch-1792566827809\""
+    },
+    {
+      "t": 7.8,
+      "label": "Open branch test-branch"
+    },
+    {
+      "t": 9.3,
+      "label": "Open the home conversation"
+    }
+  ]
+}

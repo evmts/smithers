@@ -1,0 +1,30 @@
+{
+  "title": "theme by button: the theme button switches the mode, and the device keeps it across a reload",
+  "feature": "Agent",
+  "name": "Theme by button",
+  "line": "The theme button switches light and dark, and the device keeps the choice after a reload.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Theme by button"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.7,
+      "label": "A: Click Switch to dark mode"
+    },
+    {
+      "t": 4.7,
+      "label": "Reload A"
+    },
+    {
+      "t": 5.8,
+      "label": "A: Click Switch to light mode"
+    }
+  ]
+}

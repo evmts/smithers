@@ -1,0 +1,30 @@
+{
+  "title": "needs you, live: the real model asks with app/agent/ask, and the person's answer reaches it",
+  "feature": "Status",
+  "name": "Needs you, live",
+  "line": "The real model asks with app/agent/ask, and the person's answer reaches it.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Needs you, live"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.9,
+      "label": "A: ask \"Use app/agent/ask to ask me which colour I want, as a question. Then reply with the colour I chose and the word lfmvhhi5lfj0dc.\""
+    },
+    {
+      "t": 7.7,
+      "label": "A: Type in Your answer"
+    },
+    {
+      "t": 8.7,
+      "label": "A: Click Answer"
+    }
+  ]
+}

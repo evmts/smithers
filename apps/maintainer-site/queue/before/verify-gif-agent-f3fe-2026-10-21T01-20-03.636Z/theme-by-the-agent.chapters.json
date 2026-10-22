@@ -1,0 +1,22 @@
+{
+  "title": "theme by the agent: asking Smithers to switch to dark mode runs app/theme/set, the same flow as the button",
+  "feature": "Agent",
+  "name": "Theme by the agent",
+  "line": "Asking Smithers for dark mode runs the same theme flow as the button.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Theme by the agent"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 6.9,
+      "label": "A: ask \"Switch to dark mode, then reply with the word theme-lfmvhlefyoqirf.\""
+    }
+  ]
+}

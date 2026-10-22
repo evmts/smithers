@@ -1,0 +1,18 @@
+{
+  "title": "the header's bell: its own slot after Clone, never over it, at 1280 px and on a phone",
+  "feature": "Repo browse",
+  "name": "The header's bell",
+  "line": "The bell sits in the header's last slot and never covers Clone.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "The header's bell"
+    },
+    {
+      "t": 2,
+      "label": "Open octocat/linguist"
+    }
+  ]
+}

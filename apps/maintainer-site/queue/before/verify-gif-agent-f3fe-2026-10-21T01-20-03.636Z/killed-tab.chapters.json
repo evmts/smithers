@@ -1,0 +1,30 @@
+{
+  "title": "killed tab: the answer resumes when the app opens again, replaying sealed model calls from the journal, never calling them again",
+  "feature": "killed tab",
+  "name": "Killed tab",
+  "line": "An answer cut off by a closed tab finishes when the app opens again, without paying for finished model calls twice.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Killed tab"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.9,
+      "label": "A: ask \"First switch to dark mode and wait for it to finish. Then answer: write kill-lfmvhrec4h6l84 on the first line, count from 1 to 300 in words, one number per line, and write end-lfmvhrec4h6l84 on the last line.\""
+    },
+    {
+      "t": 8,
+      "label": "Close A"
+    },
+    {
+      "t": 9,
+      "label": "Open tab A again"
+    }
+  ]
+}

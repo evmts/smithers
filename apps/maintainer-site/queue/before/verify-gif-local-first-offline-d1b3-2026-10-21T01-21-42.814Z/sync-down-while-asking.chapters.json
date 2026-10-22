@@ -1,0 +1,26 @@
+{
+  "title": "sync down while asking: a question ChatApi took stays queued until the device sees it, then shows once, answered",
+  "feature": "Local first",
+  "name": "Sync down while asking",
+  "line": "A question the server took stays queued on the device until sync shows it, then shows once, answered.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Sync down while asking"
+    },
+    {
+      "t": 2,
+      "label": "Open A on faulty services"
+    },
+    {
+      "t": 3.6,
+      "label": "A: ask \"Reply with exactly the word: unsynced-lfmvhqytz2byx2\""
+    },
+    {
+      "t": 8.7,
+      "label": "A: Click Retry"
+    }
+  ]
+}

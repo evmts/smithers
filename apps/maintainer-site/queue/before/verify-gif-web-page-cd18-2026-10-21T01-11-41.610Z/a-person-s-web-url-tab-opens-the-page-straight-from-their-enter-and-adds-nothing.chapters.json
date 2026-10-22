@@ -1,0 +1,26 @@
+{
+  "title": "a person's /web <url> tab opens the page straight from their Enter, and adds nothing to the chat",
+  "feature": "Web page",
+  "name": "A person's /web <url> tab opens the page straight from their Enter, and adds nothing to the chat",
+  "line": "",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "A person's /web <url> tab opens the page straight from their Enter, and adds nothing to the chat"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.6,
+      "label": "A: Type a message"
+    },
+    {
+      "t": 5.1,
+      "label": "A: Send"
+    }
+  ]
+}

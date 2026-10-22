@@ -1,0 +1,30 @@
+{
+  "title": "restart offline: a question asked offline survives closing the app, and a page opened again sends it once",
+  "feature": "Local first",
+  "name": "Restart offline",
+  "line": "A question asked offline survives closing the app and is sent once when it opens again.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Restart offline"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 6.6,
+      "label": "A: ask \"Reply with exactly the word: restart-lfmvhlqdulb70b\""
+    },
+    {
+      "t": 8.9,
+      "label": "Open tab A again"
+    },
+    {
+      "t": 13.9,
+      "label": "A comes back online"
+    }
+  ]
+}

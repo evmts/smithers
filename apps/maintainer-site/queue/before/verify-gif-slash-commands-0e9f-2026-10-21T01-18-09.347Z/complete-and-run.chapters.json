@@ -1,0 +1,58 @@
+{
+  "title": "complete and run: / lists the commands, typing filters, the keyboard completes, and /theme dark sets the theme",
+  "feature": "Slash commands",
+  "name": "Complete and run",
+  "line": "Typing / lists the commands, the keyboard completes one, and /theme dark runs it.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Complete and run"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3,
+      "label": "A: open the composer"
+    },
+    {
+      "t": 4,
+      "label": "A: Type a message"
+    },
+    {
+      "t": 5,
+      "label": "A: Press Tab in the composer"
+    },
+    {
+      "t": 6,
+      "label": "A: Press ArrowDown in the composer"
+    },
+    {
+      "t": 7,
+      "label": "A: Press ArrowUp in the composer"
+    },
+    {
+      "t": 8,
+      "label": "A: Send"
+    },
+    {
+      "t": 9,
+      "label": "A: Type a message"
+    },
+    {
+      "t": 10,
+      "label": "A: Send"
+    },
+    {
+      "t": 11,
+      "label": "A: Type a message"
+    },
+    {
+      "t": 12,
+      "label": "A: Send"
+    }
+  ]
+}

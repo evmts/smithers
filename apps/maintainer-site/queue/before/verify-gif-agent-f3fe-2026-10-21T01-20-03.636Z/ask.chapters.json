@@ -1,0 +1,22 @@
+{
+  "title": "ask: the browser's agent answers through the model endpoint, and the answer streams into the conversation",
+  "feature": "Agent",
+  "name": "Ask",
+  "line": "The browser's agent answers through the model endpoint, and the answer streams into the conversation.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Ask"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 5,
+      "label": "A: ask \"Reply with exactly the word: agent-lfmvhggsepk1ik\""
+    }
+  ]
+}

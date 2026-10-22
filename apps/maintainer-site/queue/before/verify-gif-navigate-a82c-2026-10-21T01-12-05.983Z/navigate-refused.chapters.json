@@ -1,0 +1,22 @@
+{
+  "title": "navigate refused: asking the agent to open an outside site is refused, and the page stays put",
+  "feature": "Navigate",
+  "name": "Navigate refused",
+  "line": "Asking the agent to open an outside site is refused, and the page stays put.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Navigate refused"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.5,
+      "label": "A: ask \"Call app/navigate with to set to https://example.com/login, then reply with the word refused-lfmvhmn2mdaz53.\""
+    }
+  ]
+}

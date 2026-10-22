@@ -1,0 +1,30 @@
+{
+  "title": "refusals: a javascript: page, and the app's own origin, stay in the composer saying why; nothing runs",
+  "feature": "Web page",
+  "name": "Refusals",
+  "line": "A javascript: page, and the app's own origin, stay in the composer saying why; nothing runs.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Refusals"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.7,
+      "label": "A: open the composer"
+    },
+    {
+      "t": 4.7,
+      "label": "A: Type a message"
+    },
+    {
+      "t": 8.1,
+      "label": "A: Send"
+    }
+  ]
+}

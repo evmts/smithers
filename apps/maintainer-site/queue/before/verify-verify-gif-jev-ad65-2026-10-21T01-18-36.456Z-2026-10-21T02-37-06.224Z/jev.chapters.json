@@ -1,0 +1,42 @@
+{
+  "title": "jev: asked to sort issue titles, the agent uses Jev unasked, and debug info shows its step",
+  "feature": "Jev",
+  "name": "Jev",
+  "line": "The agent picks Jev on its own; debug info shows the Jev step, its output and its input.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Jev"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.7,
+      "label": "Ask to sort the titles, without naming Jev"
+    },
+    {
+      "t": 4.7,
+      "label": "See the answer"
+    },
+    {
+      "t": 10.3,
+      "label": "Open debug info"
+    },
+    {
+      "t": 11.3,
+      "label": "See the Jev step in the flow view"
+    },
+    {
+      "t": 12.3,
+      "label": "Open the Jev step's output"
+    },
+    {
+      "t": 13.3,
+      "label": "Open the Jev step's input"
+    }
+  ]
+}

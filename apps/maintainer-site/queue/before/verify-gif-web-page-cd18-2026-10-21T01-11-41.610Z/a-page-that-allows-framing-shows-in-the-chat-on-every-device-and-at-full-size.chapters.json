@@ -1,0 +1,34 @@
+{
+  "title": "a page that allows framing shows in the chat, on every device and at full size",
+  "feature": "Web page",
+  "name": "A page that allows framing shows in the chat, on every device and at full size",
+  "line": "ChatApi checks the page first; it allows frames, so it shows in the chat",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "A page that allows framing shows in the chat, on every device and at full size"
+    },
+    {
+      "t": 2,
+      "label": "Open A, B"
+    },
+    {
+      "t": 4.1,
+      "label": "A: Type a message"
+    },
+    {
+      "t": 5.3,
+      "label": "A: Send"
+    },
+    {
+      "t": 6.3,
+      "label": "A: Open a view full screen"
+    },
+    {
+      "t": 7.3,
+      "label": "A: Open the home conversation"
+    }
+  ]
+}

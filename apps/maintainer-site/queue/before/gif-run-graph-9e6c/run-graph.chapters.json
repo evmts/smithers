@@ -1,0 +1,46 @@
+{
+  "title": "run graph: follow a multi-step run, replay its journal and inspect a step",
+  "feature": "Run graph",
+  "name": "Run graph",
+  "line": "Live graph, journal replay and step detail share one recorded run.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Run graph"
+    },
+    {
+      "t": 2,
+      "label": "Open Graph"
+    },
+    {
+      "t": 3,
+      "label": "Graph: Open the home conversation"
+    },
+    {
+      "t": 4.1,
+      "label": "Graph: ask \"Deploy the docs preview, lfmvhi68rpkai2\""
+    },
+    {
+      "t": 5.6,
+      "label": "Graph: Open the home conversation"
+    },
+    {
+      "t": 6.6,
+      "label": "Graph: Click Journal"
+    },
+    {
+      "t": 7.6,
+      "label": "Graph: Click \"Run\" main"
+    },
+    {
+      "t": 8.6,
+      "label": "Graph: Press ArrowLeft in \"Run graph\" group"
+    },
+    {
+      "t": 9.6,
+      "label": "Graph: Click Attempts"
+    }
+  ]
+}

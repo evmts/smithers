@@ -1,0 +1,22 @@
+{
+  "title": "second branch terminal: another branch has its own machine, checkout and shell",
+  "feature": "Branch workspace",
+  "name": "Second branch terminal",
+  "line": "Another branch has its own machine: its shell is checked out at that branch and shares nothing with the first.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Second branch terminal"
+    },
+    {
+      "t": 2,
+      "label": "Open the terminal"
+    },
+    {
+      "t": 3.6,
+      "label": "Type \"git rev-parse --abbrev-ref HEAD; echo kept-$KEPT.\""
+    }
+  ]
+}

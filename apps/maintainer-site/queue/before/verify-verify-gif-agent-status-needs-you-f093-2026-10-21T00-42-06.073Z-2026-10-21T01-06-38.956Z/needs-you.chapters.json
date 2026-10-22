@@ -1,0 +1,30 @@
+{
+  "title": "needs you: the agent asks, every surface on every device shows it, and an answer from another device resumes the run",
+  "feature": "Status",
+  "name": "Needs you",
+  "line": "The agent asks, every surface on every device shows it, and an answer from another device resumes the run.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Needs you"
+    },
+    {
+      "t": 2,
+      "label": "Open A, B"
+    },
+    {
+      "t": 4.5,
+      "label": "A: Open the home conversation"
+    },
+    {
+      "t": 7.1,
+      "label": "A: ask \"Deploy the docs preview, lfmvhj20hkoj58\""
+    },
+    {
+      "t": 9.2,
+      "label": "B: Click Answer"
+    }
+  ]
+}

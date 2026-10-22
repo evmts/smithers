@@ -1,0 +1,26 @@
+{
+  "title": "navigate by hover: Runs, hovered first, opens at the click with no loading frame",
+  "feature": "Navigate",
+  "name": "Navigate by hover",
+  "line": "Runs, hovered first, opens at the click with no loading frame.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Navigate by hover"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.7,
+      "label": "A: hover Runs"
+    },
+    {
+      "t": 4.7,
+      "label": "A: open Runs"
+    }
+  ]
+}

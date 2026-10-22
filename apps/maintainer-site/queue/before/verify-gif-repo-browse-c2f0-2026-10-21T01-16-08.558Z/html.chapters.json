@@ -1,0 +1,30 @@
+{
+  "title": "HTML: Code, Preview and Split, the page live in a frame that can't reach the app or the network",
+  "feature": "cloned repositories",
+  "name": "HTML",
+  "line": "An HTML file shows live beside its source, sandboxed.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "HTML"
+    },
+    {
+      "t": 2,
+      "label": "Open octocat/Spoon-Knife"
+    },
+    {
+      "t": 4.3,
+      "label": "Open index.html on main"
+    },
+    {
+      "t": 5.3,
+      "label": "Click Preview"
+    },
+    {
+      "t": 6.3,
+      "label": "Click Code"
+    }
+  ]
+}

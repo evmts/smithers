@@ -1,0 +1,26 @@
+{
+  "title": "offline mid-answer: the text so far stays, and the whole answer arrives once back online",
+  "feature": "Local first",
+  "name": "Offline mid-answer",
+  "line": "The text so far stays, and the whole answer arrives once back online.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Offline mid-answer"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 5.1,
+      "label": "A: ask \"Write mid-lfmvhiuzxtnw66 on the first line, then count from 1 to 120 in words, one number per line, then write end-lfmvhiuzxtnw66 on the last line.\""
+    },
+    {
+      "t": 9.3,
+      "label": "A comes back online"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "title": "the app's own pages refuse to be framed, and frame nothing but https pages",
+  "feature": "Web page",
+  "name": "The app's own pages refuse to be framed, and frame nothing but https pages",
+  "line": "",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "The app's own pages refuse to be framed, and frame nothing but https pages"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    }
+  ]
+}

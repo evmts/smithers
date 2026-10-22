@@ -1,0 +1,42 @@
+{
+  "title": "branch terminal: Open terminal runs git log on the branch's machine in a frame, and a reload keeps the shell",
+  "feature": "Branch workspace",
+  "name": "Branch terminal",
+  "line": "A branch's terminal runs on its own machine, checked out at the branch, and a reload keeps the same shell.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Branch terminal"
+    },
+    {
+      "t": 2,
+      "label": "Open branch test-branch"
+    },
+    {
+      "t": 3,
+      "label": "Switch to the Terminal view"
+    },
+    {
+      "t": 5,
+      "label": "Open the terminal"
+    },
+    {
+      "t": 8.8,
+      "label": "Type \"git log --oneline -3\""
+    },
+    {
+      "t": 9.8,
+      "label": "Type \"export KEPT=shell-1792566864517; echo set-$KEPT\""
+    },
+    {
+      "t": 10.8,
+      "label": "Open the terminal on test-branch"
+    },
+    {
+      "t": 11.8,
+      "label": "Type \"echo kept-$KEPT\""
+    }
+  ]
+}

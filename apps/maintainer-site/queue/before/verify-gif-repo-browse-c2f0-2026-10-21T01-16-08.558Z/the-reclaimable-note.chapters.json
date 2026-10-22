@@ -1,0 +1,18 @@
+{
+  "title": "the reclaimable note: a copy without the Smithers app may be reclaimed, and Install opens the App's installation",
+  "feature": "cloned repositories",
+  "name": "The reclaimable note",
+  "line": "A cloned copy without the app says it may be reclaimed, with Install.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "The reclaimable note"
+    },
+    {
+      "t": 2,
+      "label": "Open octocat/Spoon-Knife"
+    }
+  ]
+}

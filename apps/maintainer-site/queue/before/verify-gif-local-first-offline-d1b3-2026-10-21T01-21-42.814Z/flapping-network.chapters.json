@@ -1,0 +1,54 @@
+{
+  "title": "flapping network: a question asked during each drop queues, and every one reaches Postgres once, in order",
+  "feature": "Local first",
+  "name": "Flapping network",
+  "line": "Questions asked while the network drops and returns each reach the server once, in order.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Flapping network"
+    },
+    {
+      "t": 2,
+      "label": "Open A, B"
+    },
+    {
+      "t": 11.1,
+      "label": "A goes offline"
+    },
+    {
+      "t": 12.1,
+      "label": "A: ask \"Reply with exactly the word: flap1-lfmvhnl7i831my\""
+    },
+    {
+      "t": 13.1,
+      "label": "A comes back online"
+    },
+    {
+      "t": 14.1,
+      "label": "A goes offline"
+    },
+    {
+      "t": 15.1,
+      "label": "A: ask \"Reply with exactly the word: flap2-lfmvhnl7i831my\""
+    },
+    {
+      "t": 16.1,
+      "label": "A comes back online"
+    },
+    {
+      "t": 17.1,
+      "label": "A goes offline"
+    },
+    {
+      "t": 18.1,
+      "label": "A: ask \"Reply with exactly the word: flap3-lfmvhnl7i831my\""
+    },
+    {
+      "t": 19.1,
+      "label": "A comes back online"
+    }
+  ]
+}

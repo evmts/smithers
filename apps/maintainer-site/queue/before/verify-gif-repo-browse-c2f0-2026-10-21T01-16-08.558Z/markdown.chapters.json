@@ -1,0 +1,26 @@
+{
+  "title": "Markdown: a file opens as a document, read-only here, and Code shows its source",
+  "feature": "cloned repositories",
+  "name": "Markdown",
+  "line": "Markdown renders as a document; its source is one press away.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Markdown"
+    },
+    {
+      "t": 2,
+      "label": "Open octocat/Spoon-Knife"
+    },
+    {
+      "t": 3.5,
+      "label": "Open README.md on main"
+    },
+    {
+      "t": 5.4,
+      "label": "Click Code"
+    }
+  ]
+}

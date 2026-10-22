@@ -1,0 +1,34 @@
+{
+  "title": "switch branch: the picker lists the branches, filters, and opens one, keeping the path's kind",
+  "feature": "Repo extras",
+  "name": "Switch branch",
+  "line": "The branch picker lists and filters branches, and opens one at the same kind of path.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Switch branch"
+    },
+    {
+      "t": 2,
+      "label": "Open octocat/Spoon-Knife"
+    },
+    {
+      "t": 3.5,
+      "label": "Type in Find a branch, tag or SHA"
+    },
+    {
+      "t": 4.5,
+      "label": "Click test-branch"
+    },
+    {
+      "t": 5.5,
+      "label": "Open branch test-branch"
+    },
+    {
+      "t": 6.5,
+      "label": "Open test.md on test-branch"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "title": "deploy: synced messages, a question queued offline and a draft from the deployed build are all there in this build",
+  "feature": "Device upgrade",
+  "name": "Deploy",
+  "line": "A device's messages, a question it queued offline and its draft survive a deploy.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Deploy"
+    },
+    {
+      "t": 2,
+      "label": "Open the deployed build"
+    },
+    {
+      "t": 3,
+      "label": "Ask a question online"
+    },
+    {
+      "t": 4,
+      "label": "Go offline and ask again"
+    },
+    {
+      "t": 5,
+      "label": "Leave a draft"
+    },
+    {
+      "t": 6.7,
+      "label": "Open this build on the same device"
+    },
+    {
+      "t": 7.7,
+      "label": "The question queued offline is sent"
+    },
+    {
+      "t": 8.7,
+      "label": "The draft is in the composer, and stays"
+    },
+    {
+      "t": 10.3,
+      "label": "Reload: the draft is still there"
+    }
+  ]
+}

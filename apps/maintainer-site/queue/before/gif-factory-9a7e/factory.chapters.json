@@ -1,0 +1,50 @@
+{
+  "title": "factory: a TODO runs to a mergeable pull request",
+  "feature": "Factory",
+  "name": "Factory",
+  "line": "Commit a TODO; it blinks while Smithers works, you watch the agent, and its pull request is mergeable, with checks and a deploy warning.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Factory"
+    },
+    {
+      "t": 2,
+      "label": "Ask Smithers for a TODO"
+    },
+    {
+      "t": 3,
+      "label": "Edit the draft and commit it"
+    },
+    {
+      "t": 6.8,
+      "label": "Smithers starts working on it: the TODO blinks"
+    },
+    {
+      "t": 9.4,
+      "label": "Watch the agent work on Cloudflare"
+    },
+    {
+      "t": 11.1,
+      "label": "The agent writes the change and opens a pull request"
+    },
+    {
+      "t": 12.8,
+      "label": "The pull request is open and mergeable on GitHub"
+    },
+    {
+      "t": 13.8,
+      "label": "Open the pull request: Merge warns that merging deploys"
+    },
+    {
+      "t": 15.4,
+      "label": "Its checks are Smithers runs"
+    },
+    {
+      "t": 16.7,
+      "label": "Its files: the README line the agent wrote"
+    }
+  ]
+}

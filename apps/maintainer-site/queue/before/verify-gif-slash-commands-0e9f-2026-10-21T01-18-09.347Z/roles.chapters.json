@@ -1,0 +1,38 @@
+{
+  "title": "roles: a member-only command is offered to an Admin, never to a signed-out person, and typing one does nothing",
+  "feature": "Slash commands",
+  "name": "Roles",
+  "line": "A member-only command is offered to an Admin, never to a signed-out person.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Roles"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3.9,
+      "label": "A: Type a message"
+    },
+    {
+      "t": 4.9,
+      "label": "A: Press Escape in the composer"
+    },
+    {
+      "t": 5.9,
+      "label": "A: Click Sign out"
+    },
+    {
+      "t": 6.9,
+      "label": "A: Press Meta+k"
+    },
+    {
+      "t": 10.2,
+      "label": "A: Press Enter"
+    }
+  ]
+}

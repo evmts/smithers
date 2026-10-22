@@ -1,0 +1,50 @@
+{
+  "title": "branch views: a page opened on a branch lands in that branch's conversation, and opens full screen from there and from its URL",
+  "feature": "Branch workspace",
+  "name": "Branch views",
+  "line": "A web page opened on a branch lands in that branch's conversation and opens full screen, from there and from its link.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Branch views"
+    },
+    {
+      "t": 2,
+      "label": "Open branch change-the-title"
+    },
+    {
+      "t": 3,
+      "label": "Click Chat"
+    },
+    {
+      "t": 4,
+      "label": "Send"
+    },
+    {
+      "t": 5,
+      "label": "Open branch test-branch"
+    },
+    {
+      "t": 6.6,
+      "label": "Type a message"
+    },
+    {
+      "t": 7.6,
+      "label": "Send"
+    },
+    {
+      "t": 8.6,
+      "label": "Open branch change-the-title"
+    },
+    {
+      "t": 11.8,
+      "label": "Open a view full screen"
+    },
+    {
+      "t": 15.6,
+      "label": "Open branch test-branch"
+    }
+  ]
+}

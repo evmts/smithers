@@ -1,0 +1,26 @@
+{
+  "title": "Electric down at boot: after one visit, the conversation shows from the device, and the pill says so",
+  "feature": "Local first",
+  "name": "Electric down at boot",
+  "line": "After one visit, the conversation shows from the device, and the pill says so.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Electric down at boot"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 8.1,
+      "label": "A: ask \"Reply with exactly the word: stored-lfmvhiwgcj3fk5\""
+    },
+    {
+      "t": 10.8,
+      "label": "A: Open the home conversation"
+    }
+  ]
+}

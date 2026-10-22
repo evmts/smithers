@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code intelligence</title>
+<meta name="description" content="The code view with a language server: hover cards, go to definition, references and the outline in the Symbols pane, problems in the gutter. Mock for apps/mvp/docs/design/code-intelligence/DESIGN.md.">
+<style>
+/* The Paper palette, as @smthrs/ui-styleguide's standaloneThemeCss defines it (light, then dark). */
+:root { color-scheme:light; --font-sans:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; --font-mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  --bg:#f7f4ee; --text:#211d18; --text-muted:#665f54; --surface:#fffefa; --surface-2:#efeae0; --border:rgba(33,29,24,.08); --border-strong:rgba(33,29,24,.14); --code-bg:#f3efe6;
+  --brand:#0f766e; --danger:#a4442a; --warning:#8c5a08; --info:#3c6879; --kw:#8a3ffc; --fn:#0f5fa6; --str:#7a5a00; --ty:#0b6b5f; --cm:#6c655a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme:dark; --bg:#0d1514; --text:#ece7db; --text-muted:#a8a193; --surface:#131b1a; --surface-2:#1a2422; --border:rgba(236,231,219,.1); --border-strong:rgba(236,231,219,.18); --code-bg:#101917; --brand:#45c4b2; --danger:#d97757; --warning:#f0c169; --info:#82a8b8; --kw:#c49bff; --fn:#82aaff; --str:#e3c07a; --ty:#7fdbca; --cm:#8a8476; } }
+:root[data-theme="dark"] { color-scheme:dark; --bg:#0d1514; --text:#ece7db; --text-muted:#a8a193; --surface:#131b1a; --surface-2:#1a2422; --border:rgba(236,231,219,.1); --border-strong:rgba(236,231,219,.18); --code-bg:#101917; --brand:#45c4b2; --danger:#d97757; --warning:#f0c169; --info:#82a8b8; --kw:#c49bff; --fn:#82aaff; --str:#e3c07a; --ty:#7fdbca; --cm:#8a8476; }
+:root { --brand-soft:color-mix(in srgb, var(--brand) 12%, var(--surface)); --mark:color-mix(in srgb, var(--brand) 22%, transparent); --danger-soft:color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+* { box-sizing:border-box; }
+body { margin:0; font:14px/1.5 var(--font-sans); background:var(--bg); color:var(--text); }
+code, pre, .mono { font-family:var(--font-mono); }
+a { color:inherit; }
+button { font:inherit; color:inherit; }
+
+.doc { max-width:1320px; margin:0 auto; padding:24px 16px 64px; }
+.doc h1 { margin:0 0 4px; font-size:22px; }
+.doc > p { margin:0 0 16px; color:var(--text-muted); max-width:72ch; }
+.states { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 16px; }
+.states button { padding:4px 12px; border:1px solid var(--border-strong); border-radius:6px; background:var(--surface); cursor:pointer; }
+.states button[aria-pressed="true"] { background:var(--text); color:var(--bg); border-color:var(--text); }
+
+/* The app's repository page */
+.repo { border:1px solid var(--border-strong); border-radius:10px; background:var(--bg); padding:14px; }
+.repo-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:12px; }
+.repo-head h2 { margin:0 auto 0 0; font-size:18px; }
+.btn { padding:4px 10px; border:1px solid var(--border-strong); border-radius:6px; background:var(--surface); font-size:13px; }
+.btn.ghost { border-color:transparent; background:transparent; }
+.layout { display:grid; grid-template-columns:200px minmax(0,1fr) 300px; gap:16px; align-items:start; }
+.layout.no-pane { grid-template-columns:200px minmax(0,1fr); }
+.layout.no-pane .pane { display:none; }
+.tree { border-right:1px solid var(--border); padding-right:12px; font-size:13px; }
+.tree div { padding:3px 6px; border-radius:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tree .dir { color:var(--text-muted); }
+.tree .on { background:var(--brand-soft); font-weight:600; }
+.main { min-width:0; display:grid; gap:10px; }
+.trail { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.trail .ref { padding:3px 10px; border:1px solid var(--border-strong); border-radius:6px; background:var(--surface); font-size:13px; }
+.trail .path { font-weight:600; }
+.trail .path span { color:var(--text-muted); font-weight:400; }
+.box { border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); overflow:hidden; }
+.toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:8px 12px; border-bottom:1px solid var(--border); color:var(--text-muted); font-size:12.5px; }
+.toolbar .grow { margin-right:auto; }
+.problems { display:inline-flex; align-items:center; gap:6px; color:var(--danger); }
+.problems::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--danger); }
+.toggle[aria-pressed="true"] { background:var(--brand-soft); border-color:var(--brand); }
+
+/* The code */
+.code { position:relative; background:var(--code-bg); font:12.5px/1.6 var(--font-mono); padding:8px 0; outline:none; }
+.code:focus-visible { box-shadow:inset 0 0 0 2px var(--brand); }
+.ln { display:grid; grid-template-columns:52px minmax(0,1fr); }
+.ln > .n { text-align:right; padding-right:14px; color:var(--text-muted); user-select:none; position:relative; }
+.ln.err > .n::before { content:""; position:absolute; left:2px; top:2px; bottom:2px; width:3px; border-radius:2px; background:var(--danger); }
+.ln.anchor { background:color-mix(in srgb, var(--brand) 10%, transparent); }
+.ln > .c { white-space:pre; overflow:hidden; text-overflow:ellipsis; padding-right:12px; }
+.kw { color:var(--kw); } .fn { color:var(--fn); } .str { color:var(--str); } .ty { color:var(--ty); } .cm { color:var(--cm); }
+.sym { border-radius:3px; background:var(--mark); }
+.cur { outline:2px solid var(--brand); outline-offset:1px; border-radius:3px; }
+.squig { text-decoration:underline wavy var(--danger); text-underline-offset:3px; }
+
+.hover { position:absolute; z-index:2; width:min(440px, calc(100% - 80px)); border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); box-shadow:0 8px 24px rgba(0,0,0,.14); font-family:var(--font-sans); font-size:13px; }
+.hover pre { margin:0; padding:10px 12px; border-bottom:1px solid var(--border); background:var(--code-bg); font-size:12.5px; white-space:pre-wrap; border-radius:8px 8px 0 0; }
+.hover p { margin:0; padding:8px 12px; color:var(--text-muted); }
+.hover .prob { color:var(--danger); border-top:1px solid var(--border); }
+
+/* The Symbols pane */
+.pane { position:sticky; top:0; border:1px solid var(--border-strong); border-radius:8px; background:var(--surface); font-size:13px; overflow:hidden; }
+.pane header { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--border); }
+.pane header strong { font-family:var(--font-mono); margin-right:auto; }
+.pane h3 { margin:0; padding:8px 12px 4px; font-size:12px; color:var(--text-muted); font-weight:600; display:flex; justify-content:space-between; }
+.pane .file { padding:6px 12px 2px; font-weight:600; display:flex; justify-content:space-between; }
+.pane .file span { color:var(--text-muted); font-weight:400; }
+.row { display:grid; grid-template-columns:36px minmax(0,1fr); gap:6px; padding:2px 12px; font:12px/1.6 var(--font-mono); cursor:pointer; }
+.row .n { color:var(--text-muted); text-align:right; }
+.row .t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.row.on { background:var(--brand-soft); box-shadow:inset 3px 0 var(--brand); }
+.filter { margin:8px 12px; width:calc(100% - 24px); padding:5px 8px; border:1px solid var(--border-strong); border-radius:6px; background:var(--bg); }
+.outline .row { grid-template-columns:22px minmax(0,1fr); font-family:var(--font-sans); }
+.kind { font:600 10px/16px var(--font-mono); text-align:center; border-radius:4px; background:var(--surface-2); color:var(--text-muted); }
+
+.keys { margin-top:20px; display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:6px 18px; font-size:13px; }
+kbd { display:inline-block; min-width:22px; padding:0 5px; border:1px solid var(--border-strong); border-bottom-width:2px; border-radius:4px; background:var(--surface); font:11.5px/18px var(--font-mono); text-align:center; }
+.note { margin-top:18px; color:var(--text-muted); font-size:13px; max-width:80ch; }
+@media (max-width: 960px) { .layout, .layout.no-pane { grid-template-columns:minmax(0,1fr); } .tree { display:none; } }
+</style>
+</head>
+<body>
+<div class="doc">
+  <h1>Code intelligence</h1>
+  <p>vercel/ms at a commit, in the app. TypeScript answers in a worker in the tab. Pick a state, or focus the code and use the keys.</p>
+  <div class="states" role="group" aria-label="State">
+    <button type="button" data-state="hover" aria-pressed="true">Hover</button>
+    <button type="button" data-state="refs" aria-pressed="false">Selected symbol</button>
+    <button type="button" data-state="outline" aria-pressed="false">Outline</button>
+    <button type="button" data-state="problem" aria-pressed="false">Problem</button>
+    <button type="button" data-state="plain" aria-pressed="false">No pane</button>
+  </div>
+
+  <section class="repo" aria-label="Repository">
+    <div class="repo-head">
+      <h2>vercel / ms</h2>
+      <span class="btn">Code ▾</span>
+      <span class="btn">Copy permalink</span>
+    </div>
+    <div class="layout" id="layout">
+      <nav class="tree" aria-label="Files">
+        <div class="dir">▸ .github</div>
+        <div class="dir">▾ src</div>
+        <div style="padding-left:18px" class="on">format.test.ts</div>
+        <div style="padding-left:18px">index.test.ts</div>
+        <div style="padding-left:18px">index.ts</div>
+        <div style="padding-left:18px">parse.test.ts</div>
+        <div>package.json</div>
+        <div>README.md</div>
+        <div>tsconfig.json</div>
+      </nav>
+
+      <div class="main">
+        <div class="trail"><span class="ref">4ff48ce ▾</span><span class="path"><span>ms / src /</span> format.test.ts</span></div>
+        <article class="box">
+          <div class="toolbar">
+            <span class="grow">180 lines · 8 KB</span>
+            <span class="problems" id="problems">1 problem</span>
+            <button type="button" class="btn toggle" id="symbols" aria-pressed="true">Symbols</button>
+            <span class="btn ghost">Raw</span><span class="btn ghost">Copy</span>
+          </div>
+          <div class="code" id="code" tabindex="0" aria-label="src/format.test.ts">
+            <div class="ln"><span class="n">1</span><span class="c"><span class="kw">import</span> { describe, expect, it } <span class="kw">from</span> <span class="str">'@jest/globals'</span>;</span></div>
+            <div class="ln"><span class="n">2</span><span class="c"><span class="kw">import</span> { <span class="fn" data-tok="2">format</span> } <span class="kw">from</span> <span class="str">'./index'</span>;</span></div>
+            <div class="ln"><span class="n">3</span><span class="c"> </span></div>
+            <div class="ln"><span class="n">4</span><span class="c"><span class="cm">// numbers</span></span></div>
+            <div class="ln"><span class="n">5</span><span class="c"> </span></div>
+            <div class="ln"><span class="n">6</span><span class="c"><span class="fn">describe</span>(<span class="str">'format(number, { long: true })'</span>, () =&gt; {</span></div>
+            <div class="ln"><span class="n">7</span><span class="c">  <span class="fn">it</span>(<span class="str">'should not throw an error'</span>, () =&gt; {</span></div>
+            <div class="ln"><span class="n">8</span><span class="c">    <span class="fn">expect</span>(() =&gt; {</span></div>
+            <div class="ln"><span class="n">9</span><span class="c">      <span class="fn" data-tok="9">format</span>(<span class="ty">500</span>, { long: <span class="kw">true</span> });</span></div>
+            <div class="ln"><span class="n">10</span><span class="c">    }).not.<span class="fn">toThrow</span>();</span></div>
+            <div class="ln"><span class="n">11</span><span class="c">  });</span></div>
+            <div class="ln" id="l12"><span class="n">12</span><span class="c">  <span class="fn">it</span>(<span class="str">'should support milliseconds'</span>, () =&gt; {</span></div>
+            <div class="ln"><span class="n">13</span><span class="c">    <span class="fn">expect</span>(<span class="fn" data-tok="13">format</span>(<span class="ty">500</span>, { long: <span class="kw">true</span> })).<span class="fn">toBe</span>(<span class="str">'500 ms'</span>);</span></div>
+            <div class="ln" id="l14"><span class="n">14</span><span class="c">    <span class="fn">expect</span>(<span class="fn" data-tok="14">format</span>(<span class="ty">-500</span>, { <span id="squig">lng</span>: <span class="kw">true</span> })).<span class="fn">toBe</span>(<span class="str">'-500 ms'</span>);</span></div>
+            <div class="ln"><span class="n">15</span><span class="c">  });</span></div>
+            <div class="hover" id="hover" style="top:62px; left:120px">
+              <pre><span class="kw">function</span> <span class="fn">format</span>(ms: <span class="ty">number</span>, options?: <span class="ty">Options</span>): <span class="ty">string</span></pre>
+              <p>Format the given integer as a string.</p>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <aside class="pane" id="pane" aria-label="Symbols">
+        <div id="pane-refs">
+          <header><strong>format</strong><button type="button" class="btn ghost" aria-label="Close">✕</button></header>
+          <h3>Definition</h3>
+          <div class="file">src/index.ts</div>
+          <div class="row"><span class="n">171</span><span class="t"><span class="kw">export function</span> format(ms: number, opt…</span></div>
+          <h3>References <span>24</span></h3>
+          <div class="file">src/format.test.ts <span>21</span></div>
+          <div class="row on"><span class="n">2</span><span class="t">import { format } from './index';</span></div>
+          <div class="row"><span class="n">9</span><span class="t">format(500, { long: true });</span></div>
+          <div class="row"><span class="n">13</span><span class="t">expect(format(500, { long: true })).toBe(…</span></div>
+          <div class="row"><span class="n">14</span><span class="t">expect(format(-500, { lng: true })).toBe(…</span></div>
+          <div class="file">src/index.ts <span>3</span></div>
+          <div class="row"><span class="n">63</span><span class="t">return format(value, options);</span></div>
+          <div class="row"><span class="n">171</span><span class="t">export function format(ms: number, opt…</span></div>
+        </div>
+        <div id="pane-outline" class="outline" hidden>
+          <header><strong>Symbols</strong></header>
+          <input class="filter" placeholder="Filter" aria-label="Filter symbols">
+          <div class="row"><span class="kind">fn</span><span class="t">describe('format(number, { long: true })')</span></div>
+          <div class="row"><span class="kind">fn</span><span class="t">describe('format(number)')</span></div>
+          <div class="row"><span class="kind">fn</span><span class="t">describe('format(invalid inputs)')</span></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <div class="keys" aria-label="Keys">
+    <div><kbd>Tab</kbd> focus the code</div>
+    <div><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> move between symbols</div>
+    <div><kbd>Enter</kbd> <kbd>F12</kbd> go to definition</div>
+    <div><kbd>r</kbd> <kbd>⇧F12</kbd> references</div>
+    <div><kbd>F8</kbd> <kbd>⇧F8</kbd> next, previous problem</div>
+    <div><kbd>o</kbd> Symbols pane</div>
+    <div><kbd>Esc</kbd> close the card, then the pane</div>
+    <div>pointer rest: hover · click: select · <kbd>⌘</kbd>-click: definition</div>
+  </div>
+  <p class="note">Hybrid, browser first: TypeScript and JavaScript answer in a Web Worker in the tab over the commit's files (no machine, offline once cached). Other languages and installed dependencies answer in the branch's sandbox through the same LSP seam, and only when a box is already running.</p>
+</div>
+<script>
+const layout = document.getElementById("layout")
+const hover = document.getElementById("hover")
+const refs = document.getElementById("pane-refs")
+const outline = document.getElementById("pane-outline")
+const symbols = document.getElementById("symbols")
+const toks = [...document.querySelectorAll("[data-tok]")]
+const squig = document.getElementById("squig")
+const show = (state) => {
+  document.querySelectorAll(".states button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.state === state)))
+  toks.forEach((t) => t.classList.toggle("sym", state === "refs"))
+  toks.forEach((t) => t.classList.remove("cur"))
+  squig.classList.add("squig")
+  document.getElementById("l14").classList.add("err")
+  document.getElementById("l12").classList.toggle("anchor", false)
+  hover.hidden = state === "outline" || state === "plain" || state === "refs"
+  layout.classList.toggle("no-pane", state === "plain" || state === "hover" || state === "problem")
+  symbols.setAttribute("aria-pressed", String(!layout.classList.contains("no-pane")))
+  refs.hidden = state !== "refs"
+  outline.hidden = state !== "outline"
+  if (state === "hover") { toks[0].classList.add("cur"); hover.style.top = "62px"; hover.style.left = "120px"; hover.innerHTML = '<pre><span class="kw">function</span> <span class="fn">format</span>(ms: <span class="ty">number</span>, options?: <span class="ty">Options</span>): <span class="ty">string</span></pre><p>Format the given integer as a string.</p>' }
+  if (state === "refs") toks[0].classList.add("cur")
+  if (state === "problem") { hover.hidden = false; squig.classList.add("cur"); hover.style.top = "246px"; hover.style.left = "240px"; hover.innerHTML = '<pre>(property) lng: boolean</pre><p class="prob">Object literal may only specify known properties, and \'lng\' does not exist in type \'Options\'. Did you mean to write \'long\'? (2561)</p>' }
+}
+document.querySelectorAll(".states button").forEach((b) => b.addEventListener("click", () => show(b.dataset.state)))
+symbols.addEventListener("click", () => show(layout.classList.contains("no-pane") ? "outline" : "plain"))
+let at = 0
+document.getElementById("code").addEventListener("keydown", (event) => {
+  const keys = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }
+  if (event.key in keys) { event.preventDefault(); at = (at + keys[event.key] + toks.length) % toks.length; show("hover"); toks.forEach((t) => t.classList.remove("cur")); toks[at].classList.add("cur"); hover.style.top = `${toks[at].offsetTop + 22}px` }
+  else if (event.key === "r" || event.key === "Enter") show("refs")
+  else if (event.key === "o") show(layout.classList.contains("no-pane") ? "outline" : "plain")
+  else if (event.key === "F8") { event.preventDefault(); show("problem") }
+  else if (event.key === "Escape") show("plain")
+})
+show("hover")
+</script>
+</body>
+</html>

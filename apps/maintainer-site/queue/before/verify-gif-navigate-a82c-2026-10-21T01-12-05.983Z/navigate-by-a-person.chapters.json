@@ -1,0 +1,34 @@
+{
+  "title": "navigate by a person: /navigate /octocat/Spoon-Knife in the composer takes the tab there",
+  "feature": "Navigate",
+  "name": "Navigate by a person",
+  "line": "/navigate /octocat/Spoon-Knife in the composer takes the tab there.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Navigate by a person"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3,
+      "label": "Open tab B"
+    },
+    {
+      "t": 4.5,
+      "label": "A: send \"/navigate /octocat/Spoon-Knife\""
+    },
+    {
+      "t": 5.8,
+      "label": "A: Open octocat/Spoon-Knife"
+    },
+    {
+      "t": 7.2,
+      "label": "A: the repository's page"
+    }
+  ]
+}

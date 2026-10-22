@@ -1,0 +1,30 @@
+{
+  "title": "sign out wipes the device: its unsent questions go, and the conversation syncs again from scratch",
+  "feature": "Sign in",
+  "name": "Sign out wipes the device",
+  "line": "Signing out deletes the device's unsent questions, and the conversation syncs again from scratch.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Sign out wipes the device"
+    },
+    {
+      "t": 2,
+      "label": "Open A on faulty services"
+    },
+    {
+      "t": 3.6,
+      "label": "A: ask \"Never sent lfmvi1fq207ri2\""
+    },
+    {
+      "t": 4.6,
+      "label": "A: Click Sign out"
+    },
+    {
+      "t": 5.9,
+      "label": "A: Open the home conversation"
+    }
+  ]
+}

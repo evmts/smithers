@@ -1,0 +1,26 @@
+{
+  "title": "signed out: the composer is gated, ChatApi refuses an ask, and signing in brings the composer back",
+  "feature": "Sign in",
+  "name": "Signed out",
+  "line": "Signed out, a person can't ask, the server refuses an ask, and signing in brings the composer back.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Signed out"
+    },
+    {
+      "t": 2,
+      "label": "A: Press Meta+k"
+    },
+    {
+      "t": 3,
+      "label": "A: Click Sign in with GitHub"
+    },
+    {
+      "t": 4,
+      "label": "A: Open the home conversation"
+    }
+  ]
+}

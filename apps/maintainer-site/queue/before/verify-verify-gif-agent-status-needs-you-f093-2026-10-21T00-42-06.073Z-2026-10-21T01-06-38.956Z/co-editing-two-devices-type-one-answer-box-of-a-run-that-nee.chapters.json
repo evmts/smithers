@@ -1,0 +1,34 @@
+{
+  "title": "co-editing: two devices type one answer box of a run that needs the person, with each other's carets",
+  "feature": "Coedit",
+  "name": "Co-editing",
+  "line": "The agent asks; two of the person's devices type the answer together, see each other's caret, and either sends it.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Co-editing"
+    },
+    {
+      "t": 2,
+      "label": "Open A, B"
+    },
+    {
+      "t": 3.9,
+      "label": "A: Open the home conversation"
+    },
+    {
+      "t": 5.3,
+      "label": "A: ask \"Deploy the docs preview, lfmvhn4xtfdjl1\""
+    },
+    {
+      "t": 6.3,
+      "label": "Both devices type the answer at once"
+    },
+    {
+      "t": 13.8,
+      "label": "B answers; the run in A's browser goes on"
+    }
+  ]
+}

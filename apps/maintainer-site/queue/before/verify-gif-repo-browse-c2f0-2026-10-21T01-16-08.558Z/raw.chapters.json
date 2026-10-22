@@ -1,0 +1,34 @@
+{
+  "title": "raw: Raw opens the file as plain text in a new tab, and GitHub's raw path loads the same",
+  "feature": "Repo extras",
+  "name": "Raw",
+  "line": "Raw opens a file as plain text, and GitHub's raw path opens the same.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Raw"
+    },
+    {
+      "t": 2,
+      "label": "Open octocat/Spoon-Knife"
+    },
+    {
+      "t": 3.6,
+      "label": "Open index.html on test-branch"
+    },
+    {
+      "t": 4.6,
+      "label": "Click Raw"
+    },
+    {
+      "t": 5.6,
+      "label": "Open index.html on test-branch"
+    },
+    {
+      "t": 6.7,
+      "label": "Open api/repos octocat/Spoon-Knife/raw/58060701b538587e8b4ab127253e6ed6fbdc53d1/index.html"
+    }
+  ]
+}

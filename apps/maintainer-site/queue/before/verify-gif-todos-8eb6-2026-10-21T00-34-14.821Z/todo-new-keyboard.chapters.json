@@ -1,0 +1,42 @@
+{
+  "title": "todo-new-keyboard: New TODO on the stack page, typed and committed with the keyboard, then dropped",
+  "feature": "Todos",
+  "name": "Todo-new-keyboard",
+  "line": "New TODO on the stack page, typed and committed with the keyboard, then dropped.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Todo-new-keyboard"
+    },
+    {
+      "t": 2,
+      "label": "Open Ann"
+    },
+    {
+      "t": 3.6,
+      "label": "Ann: Open octocat/Spoon-Knife's stack"
+    },
+    {
+      "t": 5.1,
+      "label": "Ann: Type in field"
+    },
+    {
+      "t": 7.1,
+      "label": "Ann: Press Meta+Enter in field"
+    },
+    {
+      "t": 9.3,
+      "label": "Ann: Press Enter in \"T6 actions\" button"
+    },
+    {
+      "t": 10.3,
+      "label": "Ann: Click Drop"
+    },
+    {
+      "t": 12.3,
+      "label": "Ann: Open octocat/Spoon-Knife's stack"
+    }
+  ]
+}

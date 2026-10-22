@@ -1,0 +1,22 @@
+{
+  "title": "sync down at boot: the app opens at once, the pill says Offline with Retry, and Retry syncs once sync is back",
+  "feature": "Start app",
+  "name": "Sync down at boot",
+  "line": "With sync down, the app still opens at once, says Offline, and Retry syncs once sync is back.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Sync down at boot"
+    },
+    {
+      "t": 2,
+      "label": "Open the home conversation"
+    },
+    {
+      "t": 5.4,
+      "label": "Click Retry"
+    }
+  ]
+}

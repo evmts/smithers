@@ -1,0 +1,18 @@
+{
+  "title": "first visit: a repository nobody cloned shows its folder, README and about panel at once",
+  "feature": "Repo browse",
+  "name": "First visit",
+  "line": "The first visit fills the page from GitHub, before any clone.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "First visit"
+    },
+    {
+      "t": 2,
+      "label": "Open octocat/linguist"
+    }
+  ]
+}

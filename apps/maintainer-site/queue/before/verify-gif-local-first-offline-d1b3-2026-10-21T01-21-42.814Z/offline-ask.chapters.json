@@ -1,0 +1,38 @@
+{
+  "title": "offline ask: two questions asked offline queue, survive a reload offline, and are answered in order once online",
+  "feature": "Local first",
+  "name": "Offline ask",
+  "line": "Questions asked offline wait on the device, survive a reload, and are answered in order once online.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Offline ask"
+    },
+    {
+      "t": 2,
+      "label": "Open A, B"
+    },
+    {
+      "t": 12.7,
+      "label": "A goes offline"
+    },
+    {
+      "t": 13.7,
+      "label": "A: ask \"Reply with exactly the word: first-lfmvhln4hzmf48\""
+    },
+    {
+      "t": 14.7,
+      "label": "A: ask \"Reply with exactly the word: second-lfmvhln4hzmf48\""
+    },
+    {
+      "t": 15.7,
+      "label": "Reload A"
+    },
+    {
+      "t": 21.5,
+      "label": "A comes back online"
+    }
+  ]
+}

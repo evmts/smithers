@@ -1,0 +1,30 @@
+{
+  "title": "a page that refuses framing shows as a card: title, description, domain, icon and Open in new tab, with Enter",
+  "feature": "Web page",
+  "name": "A page that refuses framing shows as a card",
+  "line": "The page sends X-Frame-Options: DENY, so a card shows instead of a broken frame",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "A page that refuses framing shows as a card"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 3,
+      "label": "A: Type a message"
+    },
+    {
+      "t": 4.3,
+      "label": "A: Send"
+    },
+    {
+      "t": 5.5,
+      "label": "A: Click Open in new tab: Frames refused"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "title": "the clone in the feed: a toast says how far it came, then why it stopped, with Try again",
+  "feature": "cloned repositories",
+  "name": "The clone in the feed",
+  "line": "A clone reports in the toasts, and a failed one offers Try again.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "The clone in the feed"
+    },
+    {
+      "t": 2,
+      "label": "Open octocat/no-such-repo-mvhtcorg"
+    },
+    {
+      "t": 3,
+      "label": "Click Clone"
+    },
+    {
+      "t": 4.2,
+      "label": "Click +76"
+    },
+    {
+      "t": 5.2,
+      "label": "Click Unread"
+    },
+    {
+      "t": 6.2,
+      "label": "Click Retry"
+    }
+  ]
+}

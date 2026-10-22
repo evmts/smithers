@@ -1,0 +1,34 @@
+{
+  "title": "embed: the agent shows https://example.com in the chat with its origin above it, on every device, at full size too",
+  "feature": "Web page",
+  "name": "Embed",
+  "line": "The agent shows https://example.com in the chat with its origin above it, on every device, at full size too.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Embed"
+    },
+    {
+      "t": 2,
+      "label": "Open A, B"
+    },
+    {
+      "t": 7,
+      "label": "A: ask \"Show me https://example.com in the chat, then reply with the word web-lfmvhh9nlpkyw2.\""
+    },
+    {
+      "t": 10.1,
+      "label": "A: Open a view full screen"
+    },
+    {
+      "t": 11.1,
+      "label": "A: Click Back to chat"
+    },
+    {
+      "t": 12.1,
+      "label": "A: Open the home conversation"
+    }
+  ]
+}

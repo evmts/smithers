@@ -1,0 +1,34 @@
+{
+  "title": "navigate by the agent: asking to open octocat/Spoon-Knife takes the tab that asked there, and the other tab stays",
+  "feature": "Navigate",
+  "name": "Navigate by the agent",
+  "line": "Asking to open octocat/Spoon-Knife takes the tab that asked there, and the other tab stays.",
+  "status": "passed",
+  "theme": "light",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Navigate by the agent"
+    },
+    {
+      "t": 2,
+      "label": "Open A"
+    },
+    {
+      "t": 6.5,
+      "label": "Open tab B"
+    },
+    {
+      "t": 10.5,
+      "label": "A: ask \"Open octocat/Spoon-Knife, then reply with the word nav-lfmvhnedognzo5.\""
+    },
+    {
+      "t": 14.2,
+      "label": "A: Open octocat/Spoon-Knife"
+    },
+    {
+      "t": 15.2,
+      "label": "A: the repository's page"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "title": "todo-commit-drop: Ann asks Smithers for a TODO, edits the draft and commits; Ben sees it; Ann drops it",
+  "feature": "Todos",
+  "name": "Todo-commit-drop",
+  "line": "Ann asks Smithers for a TODO, edits the draft and commits; Ben sees it; Ann drops it.",
+  "status": "passed",
+  "theme": "dark",
+  "chapters": [
+    {
+      "t": 0,
+      "label": "Todo-commit-drop"
+    },
+    {
+      "t": 2,
+      "label": "Open Ann"
+    },
+    {
+      "t": 4.8,
+      "label": "Open Ben as the teammate"
+    },
+    {
+      "t": 12.9,
+      "label": "Ann: Open the home conversation"
+    },
+    {
+      "t": 19.9,
+      "label": "Ann: ask \"todo-draft octocat/Spoon-Knife lfmvhmqam7oioj\""
+    },
+    {
+      "t": 24.7,
+      "label": "Ann: Type in field"
+    },
+    {
+      "t": 25.7,
+      "label": "Ann: Open octocat/Spoon-Knife's stack"
+    },
+    {
+      "t": 30.6,
+      "label": "Ben: Open octocat/Spoon-Knife's stack"
+    },
+    {
+      "t": 35.1,
+      "label": "Ann: Open octocat/Spoon-Knife's stack"
+    },
+    {
+      "t": 37,
+      "label": "Ben: Open octocat/Spoon-Knife's stack"
+    },
+    {
+      "t": 39.8,
+      "label": "Ann: Open octocat/Spoon-Knife's stack"
+    },
+    {
+      "t": 40.8,
+      "label": "Ann: Click Drop"
+    },
+    {
+      "t": 41.9,
+      "label": "Ann: Open octocat/Spoon-Knife's stack"
+    }
+  ]
+}
