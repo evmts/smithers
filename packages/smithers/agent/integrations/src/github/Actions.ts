@@ -15,7 +15,7 @@
  * {@link CheckRun}, {@link LinkPullRequest}) read before they write. Each looks
  * for what an earlier attempt may already have done — a label already on the
  * issue, a comment carrying its key, a check run under its external id, a
- * closing reference already in the pull request — and only writes what is
+ * closing reference already linked to the pull request — and only writes what is
  * missing. That makes a repeat safe, so they declare an `idempotencyKey` and a
  * bounded {@link retryPolicy}: a rate limit, a write whose answer was lost, or
  * a process that died mid-step, is resumed by repeating the step, and the
@@ -159,15 +159,21 @@ export const RECONCILE_PAGES = 10
 const refused = (operation: string, message: string): IntegrationError =>
   new IntegrationError("delivery-failed", message, { operation, retryable: false, outcomeUnknown: false })
 
-const decodeItems = <A>(schema: Schema.Codec<A>, items: ReadonlyArray<unknown>): ReadonlyArray<A> => {
-  const decode = Schema.decodeUnknownOption(schema)
-  const decoded: Array<A> = []
-  for (const item of items) {
-    const value = decode(item)
-    if (value._tag === "Some") decoded.push(value.value)
-  }
-  return decoded
-}
+const decodeItems = <A>(
+  schema: Schema.Codec<A>,
+  items: ReadonlyArray<unknown>,
+  operation: string
+): Effect.Effect<ReadonlyArray<A>, IntegrationError> =>
+  Schema.decodeUnknownEffect(Schema.Array(schema))(items).pipe(
+    // Do not attach the schema error: it can quote private provider content.
+    Effect.mapError(() =>
+      new IntegrationError("decode-failed", "GitHub reconciliation records failed schema validation.", {
+        operation,
+        retryable: false,
+        outcomeUnknown: false
+      })
+    )
+  )
 
 /**
  * A GitHub label name.
@@ -247,7 +253,7 @@ export const layerAddLabels: Layer.Layer<
       const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
       const path = `/repos/${repository}/issues/${payload.issueNumber}/labels`
       const page = yield* client.paginate(path, { maxPages: RECONCILE_PAGES })
-      const current = decodeItems(Label, page.items).map((label) => label.name)
+      const current = (yield* decodeItems(Label, page.items, "add-labels")).map((label) => label.name)
       const present = new Set(current.map((name) => name.toLowerCase()))
       const missing = [...new Set(payload.labels)].filter((name) => !present.has(name.toLowerCase()))
       if (missing.length === 0) return { added: [], labels: current }
@@ -408,7 +414,7 @@ export const layerUpsertComment: Layer.Layer<
       })
       // github.com's editor saves CRLF line ends, so a comment a person edited
       // still starts with the marker, followed by `\r\n`.
-      const existing = decodeItems(ListedComment, page.items).find((comment) =>
+      const existing = (yield* decodeItems(ListedComment, page.items, "upsert-comment")).find((comment) =>
         comment.body?.split("\n", 1)[0]?.replace(/\r$/, "") === marker &&
         ("login" in payload.author
           ? comment.user?.login.toLowerCase() === payload.author.login.toLowerCase()
@@ -471,7 +477,8 @@ export const CheckRunOutput = Schema.Struct({
  * execution updates the same run ({@link runKey}). Name one only for a domain
  * key chosen and recorded before the write, never derived from what is
  * written. A flow reports progress by calling again with a new `status`;
- * `conclusion` is required once `status` is `completed`.
+ * `conclusion` is required once `status` is `completed`. `appId` is the
+ * authenticated App's numeric id; a run from another App is never adopted.
  *
  * @category schemas
  * @since 1.0.0
@@ -479,6 +486,7 @@ export const CheckRunOutput = Schema.Struct({
 export const CheckRunPayload = Schema.Struct({
   owner: Owner,
   repo: Repo,
+  appId: Schema.Int.check(Schema.isGreaterThan(0)),
   headSha: CommitSha,
   name: Schema.String.check(Schema.isMinLength(1)),
   key: Schema.optionalKey(StickyKey),
@@ -519,7 +527,7 @@ export const CheckRun = Action.make("integrations/github/check-run", {
   success: CheckRunReceipt,
   error: Failure,
   tier: "irreversible",
-  implementationVersion: "github/check-run/v2",
+  implementationVersion: "github/check-run/v3",
   idempotencyKey: (payload) => ({
     action: "integrations/github/check-run",
     ...(payload as unknown as Record<string, Schema.Json>)
@@ -529,6 +537,7 @@ export const CheckRun = Action.make("integrations/github/check-run", {
 
 const ListedCheckRun = Schema.Struct({
   id: Schema.Number,
+  app: Schema.Struct({ id: Schema.Int.check(Schema.isGreaterThan(0)) }),
   external_id: Schema.NullOr(Schema.String),
   html_url: Schema.NullOr(Schema.String),
   status: Schema.String,
@@ -562,8 +571,8 @@ export const layerCheckRun: Layer.Layer<
           schema: CheckRuns
         }
       )
-      const runs = decodeItems(ListedCheckRun, listed.check_runs)
-      const existing = runs.find((run) => run.external_id === key)
+      const runs = yield* decodeItems(ListedCheckRun, listed.check_runs, "check-run")
+      const existing = runs.find((run) => run.external_id === key && run.app.id === payload.appId)
       if (existing === undefined && listed.total_count > listed.check_runs.length) {
         return yield* Effect.fail(
           refused("check-run", `Commit ${payload.headSha} has more than 100 "${payload.name}" check runs.`)
@@ -592,7 +601,7 @@ export const layerCheckRun: Layer.Layer<
         created: existing === undefined
       }
     }).pipe(Effect.mapError(reconciled)),
-  { implementationVersion: "github/check-run/v2" }
+  { implementationVersion: "github/check-run/v3" }
 )
 
 /**
@@ -629,10 +638,9 @@ export const PullRequestLinked = Schema.Struct({
 /**
  * Links a pull request to the issue it resolves.
  *
- * The link is GitHub's own: a `Closes <issue>` line in the pull request's
- * description, which shows the pull request under the issue's Development
- * section and closes the issue when it merges. A description that already
- * closes the issue, in any of GitHub's closing keywords, is left alone.
+ * Uses GitHub's closing-reference mutation, leaving the description intact.
+ * Existing closing keywords and manually linked references are left alone.
+ * A server without the mutation fails without rewriting the description.
  *
  * @category actions
  * @since 1.0.0
@@ -642,7 +650,7 @@ export const LinkPullRequest = Action.make("integrations/github/link-pr", {
   success: PullRequestLinked,
   error: Failure,
   tier: "irreversible",
-  implementationVersion: "github/link-pr/v1",
+  implementationVersion: "github/link-pr/v2",
   idempotencyKey: (payload) => ({
     action: "integrations/github/link-pr",
     owner: payload.owner,
@@ -656,6 +664,27 @@ export const LinkPullRequest = Action.make("integrations/github/link-pr", {
 })
 
 const PullRequest = Schema.Struct({ html_url: Schema.String, body: Schema.NullOr(Schema.String) })
+
+const NodeId = Schema.Struct({ id: Schema.NonEmptyString })
+const LinkTargets = Schema.Struct({
+  data: Schema.Struct({
+    pullRepository: Schema.Struct({
+      pullRequest: Schema.Struct({
+        id: Schema.NonEmptyString,
+        closingIssuesReferences: Schema.Struct({
+          nodes: Schema.Array(NodeId),
+          pageInfo: Schema.Struct({ hasNextPage: Schema.Boolean })
+        })
+      })
+    }),
+    issueRepository: Schema.Struct({ issue: NodeId })
+  }),
+  errors: Schema.optionalKey(Schema.Array(Schema.Unknown))
+})
+const decodeLinked = Schema.decodeUnknownOption(Schema.Struct({
+  data: Schema.Struct({ addCloseIssueReferences: Schema.Struct({ issue: NodeId }) }),
+  errors: Schema.optionalKey(Schema.Array(Schema.Unknown))
+}))
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
@@ -710,13 +739,55 @@ export const layerLinkPullRequest: Layer.Layer<
       if (closesIssue(body, { owner: issueOwner, repo: issueRepo, issueNumber: payload.issueNumber }, sameRepository)) {
         return { ...linked, updated: false }
       }
-      const line = `Closes ${reference}`
-      yield* client.request("PATCH", path, { body: body.length === 0 ? line : `${body}\n\n${line}` }, {
-        schema: PullRequest
+      // GitHub does not support conditional PATCH here. A second body read
+      // would still race with a person's edit; link the objects instead.
+      const targets = yield* client.request("POST", "/graphql", {
+        query:
+          "query($owner: String!, $repo: String!, $pull: Int!, $issueOwner: String!, $issueRepo: String!, $issue: Int!) { " +
+          "pullRepository: repository(owner: $owner, name: $repo) { pullRequest(number: $pull) { id " +
+          "closingIssuesReferences(first: 100) { nodes { id } pageInfo { hasNextPage } } } } " +
+          "issueRepository: repository(owner: $issueOwner, name: $issueRepo) { issue(number: $issue) { id } } }",
+        variables: {
+          owner: payload.owner,
+          repo: payload.repo,
+          pull: payload.pullNumber,
+          issueOwner,
+          issueRepo,
+          issue: payload.issueNumber
+        }
+      }, { schema: LinkTargets, retryUnsafeWrites: true })
+      if (targets.errors !== undefined && targets.errors.length > 0) {
+        return yield* Effect.fail(refused("link-pr", "GitHub refused to read the closing references."))
+      }
+      const targetPull = targets.data.pullRepository.pullRequest
+      const issueId = targets.data.issueRepository.issue.id
+      if (targetPull.closingIssuesReferences.nodes.some((issue) => issue.id === issueId)) {
+        return { ...linked, updated: false }
+      }
+      if (targetPull.closingIssuesReferences.pageInfo.hasNextPage) {
+        return yield* Effect.fail(refused("link-pr", "The pull request has more than 100 closing references."))
+      }
+      const answer = yield* client.request("POST", "/graphql", {
+        query:
+          "mutation($input: AddCloseIssueReferencesInput!) { addCloseIssueReferences(input: $input) { issue { id } } }",
+        variables: { input: { issueId, pullRequestIds: [targetPull.id] } }
       })
+      const decoded = decodeLinked(answer)
+      if (
+        Option.isNone(decoded) || (decoded.value.errors?.length ?? 0) > 0 ||
+        decoded.value.data.addCloseIssueReferences.issue.id !== issueId
+      ) {
+        return yield* Effect.fail(
+          new IntegrationError("decode-failed", "GitHub did not confirm the closing reference.", {
+            operation: "link-pr",
+            retryable: false,
+            outcomeUnknown: true
+          })
+        )
+      }
       return { ...linked, updated: true }
     }).pipe(Effect.mapError(reconciled)),
-  { implementationVersion: "github/link-pr/v1" }
+  { implementationVersion: "github/link-pr/v2" }
 )
 
 /**

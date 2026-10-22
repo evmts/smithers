@@ -58,6 +58,22 @@ const failure = <A>(effect: Effect.Effect<A, IntegrationError, GitHubClient>): P
 const TEXT = "# Triage\n\nAccept bugs with steps — reject “support” questions. ✓\n".repeat(4)
 
 describe("getText", () => {
+  it.each(["docs/\uD800.md", "docs/\uDC00.md", "docs/\uD800x.md"])(
+    "reports an unpaired surrogate as IntegrationError before any request (%j)",
+    async (path) => {
+      await startGitHub({})
+      const error = await failure(Contents.getText("o", "r", path))
+      expect(error.reason).toBe("invalid-config")
+      expect(error.details).toMatchObject({ field: "path", retryable: false })
+      expect(fixture!.requests).toHaveLength(0)
+    }
+  )
+
+  it("accepts a valid surrogate pair in a file path", async () => {
+    await startGitHub({ "": { "docs/\uD83D\uDE80.md": file("rocket") } })
+    expect(Option.getOrThrow(await run(Contents.getText("o", "r", "docs/\uD83D\uDE80.md"))).text).toBe("rocket")
+  })
+
   it("decodes a file's wrapped base64 as UTF-8 text, on the default branch", async () => {
     await startGitHub({ "": { ".smithers/triage.md": file(TEXT, "f00d") } })
     expect(TEXT.length).toBeGreaterThan(60)

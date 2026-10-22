@@ -58,7 +58,10 @@ const requireFilePath = (path: string): Effect.Effect<string, IntegrationError> 
   const valid = segments.length > 0 &&
     segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..")
   return valid
-    ? Effect.succeed(segments.map(encodeURIComponent).join("/"))
+    ? Effect.try({
+      try: () => segments.map(encodeURIComponent).join("/"),
+      catch: () => invalid("path", "A GitHub file path must contain well-formed Unicode.")
+    })
     : Effect.fail(invalid(
       "path",
       "A GitHub file path must be relative, with non-empty segments, no `.` or `..` segment, no backslash and no control character."

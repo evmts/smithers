@@ -159,7 +159,15 @@ it("check-run resumes to one check run", async () => {
     GitHubActions.CheckRun,
     GitHubActions.layerCheckRun,
     client,
-    { owner: "o", repo: "r", headSha: "b".repeat(40), name: "smithers", key: "run-1", status: "in_progress" },
+    {
+      owner: "o",
+      repo: "r",
+      appId: 42,
+      headSha: "b".repeat(40),
+      name: "smithers",
+      key: "run-1",
+      status: "in_progress"
+    },
     () => github.held
   )
   expect(result).toMatchObject({ created: false, status: "in_progress" })
@@ -178,8 +186,9 @@ it("link-pr resumes to one closing reference", async () => {
     () => github.held
   )
   expect(result.updated).toBe(false)
-  expect(github.pullBody).toBe("Parser fix.\n\nCloses #7")
-  expect(github.writes()).toEqual(["PATCH /repos/o/r/pulls/9"])
+  expect(github.pullBody).toBe("Parser fix.")
+  expect([...github.linkedIssues]).toEqual(["o/r#7"])
+  expect(github.writes()).toEqual(["POST /graphql"])
 })
 
 /** Resolves once the run's database records a failed attempt. */

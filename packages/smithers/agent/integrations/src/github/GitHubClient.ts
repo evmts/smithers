@@ -309,11 +309,19 @@ const rateLimitReset = (headers: Headers): { readonly rateLimitResetAt?: number 
  * @category getters
  * @since 1.0.0
  */
-export const nextPageUrl = (linkHeader: string | null): string | null => {
-  if (linkHeader === null || linkHeader.length === 0) return null
-  for (const part of linkHeader.split(",")) {
-    const match = /^<([^>]+)>;\s*rel="next"$/.exec(part.trim())
-    if (match !== null) return match[1]!
+export const nextPageUrl = (linkHeader: string | null): string | null => linkTarget(linkHeader, "next")
+
+// Commas can occur inside a URI or a quoted parameter. Parse link values and
+// their parameters before looking for one token in the first `rel` value.
+const linkTarget = (header: string | null, relation: string): string | null => {
+  if (header === null) return null
+  for (const link of header.matchAll(/<([^>]+)>((?:[^,<"]|"(?:\\.|[^"\\])*")*)/g)) {
+    for (const parameter of link[2]!.matchAll(/;\s*([^=;\s]+)\s*=\s*(?:"((?:\\.|[^"\\])*)"|([^;\s]+))/g)) {
+      if (parameter[1]!.toLowerCase() !== "rel") continue
+      const relations = (parameter[2] ?? parameter[3]!).replace(/\\(.)/g, "$1").toLowerCase().split(/\s+/)
+      if (relations.includes(relation)) return link[1]!
+      break
+    }
   }
   return null
 }
@@ -326,14 +334,10 @@ export const nextPageUrl = (linkHeader: string | null): string | null => {
  * @since 1.0.0
  */
 export const lastPageNumber = (linkHeader: string | null): number | null => {
-  if (linkHeader === null || linkHeader.length === 0) return null
-  for (const part of linkHeader.split(",")) {
-    const match = /^<([^>]+)>;\s*rel="last"$/.exec(part.trim())
-    if (match === null || !URL.canParse(match[1]!, "https://api.github.com")) continue
-    const page = new URL(match[1]!, "https://api.github.com").searchParams.get("page")
-    return page !== null && /^[1-9]\d{0,9}$/.test(page) ? Number(page) : null
-  }
-  return null
+  const target = linkTarget(linkHeader, "last")
+  if (target === null || !URL.canParse(target, "https://api.github.com")) return null
+  const page = new URL(target, "https://api.github.com").searchParams.get("page")
+  return page !== null && /^[1-9]\d{0,9}$/.test(page) ? Number(page) : null
 }
 
 /**
@@ -454,7 +458,9 @@ const build = (
   // is not a URL (`httpx`, say). That throw runs before the request effect, so
   // it would escape the declared IntegrationError channel as a defect.
   const buildUrl = (path: string, query?: RequestOptions["query"]): string => {
-    const absolute = path.startsWith("http") ? path : `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`
+    // Enterprise serves REST at /api/v3 and GraphQL at /api/graphql.
+    const requestBase = path === "/graphql" ? baseUrl.replace(/\/api\/v3$/, "/api") : baseUrl
+    const absolute = path.startsWith("http") ? path : `${requestBase}${path.startsWith("/") ? "" : "/"}${path}`
     if (!URL.canParse(absolute)) {
       throw integrationError("invalid-config", `GitHub request path is not a URL: ${path}`, {
         path,
@@ -570,10 +576,20 @@ const build = (
     return onApiOrigin(url).pipe(
       Effect.andThen(exchange),
       Effect.flatMap((answer) => {
-        if (answer.status >= 200 && answer.status < 300) {
+        const { status, headers, json } = answer
+        // GraphQL can refuse a whole request with HTTP 200. Classify before
+        // decoding so the step retains the server's wait. Partial data may
+        // contain applied mutations, so it is not a known-safe refusal.
+        const rateLimited = isRateLimitResponse(status, headers, json) ||
+          ((status === 200 || status === 403) && /\/graphql$/.test(new URL(url).pathname) &&
+            typeof json === "object" && json !== null && (!("data" in json) || json.data === null) &&
+            "errors" in json && Array.isArray(json.errors) && json.errors.some((error: unknown) =>
+              isRateLimitResponse(403, headers, error) ||
+              (typeof error === "object" && error !== null && "type" in error && error.type === "RATE_LIMITED")
+            ))
+        if (status >= 200 && status < 300 && !rateLimited) {
           return Effect.succeed({ json: answer.json, headers: answer.headers })
         }
-        const { status, headers, json } = answer
         // The GitHub proxy refused to wait that long: nothing was sent to
         // GitHub, and a retry before the instant it names only waits again.
         const proxyRetryAt = status === 429 ? Date.parse(headers.get(PROXY_RETRY_AT) ?? "") : Number.NaN
@@ -595,7 +611,6 @@ const build = (
             }
           ))
         }
-        const rateLimited = isRateLimitResponse(status, headers, json)
         const serverError = status >= 500
         const outcomeUnknown = serverError && !mayRepeatAmbiguously
         const retryable = rateLimited || (serverError && mayRepeatAmbiguously)

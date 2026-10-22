@@ -51,7 +51,8 @@ export interface ClientCredentials {
 export interface GitHubConfig {
   /**
    * Personal access or installation token for REST calls. Falls back to
-   * `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN`. Never logged.
+   * `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN` when omitted. An explicitly
+   * blank token suppresses the environment fallback. Never logged.
    */
   readonly token?: string | undefined
   /**
@@ -110,7 +111,9 @@ export const resolve = (
   config: GitHubConfig = {},
   env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
 ): ResolvedGitHubConfig => ({
-  token: firstNonEmpty([config.token, env["SMITHERS_GITHUB_TOKEN"], env["GITHUB_TOKEN"]]),
+  token: config.token === undefined
+    ? firstNonEmpty([env["SMITHERS_GITHUB_TOKEN"], env["GITHUB_TOKEN"]])
+    : firstNonEmpty([config.token]),
   apiBaseUrl: firstNonEmpty([config.apiBaseUrl, env["SMITHERS_GITHUB_API_BASE_URL"]]) ?? DEFAULT_API_BASE_URL,
   requestTimeout: config.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT
 })

@@ -332,7 +332,8 @@ Credential and endpoint resolution. Explicit configuration wins; what it
 omits falls back to `env`, which defaults to the ambient environment.
 
 `GitHubConfig` fields: `token` (falls back to `SMITHERS_GITHUB_TOKEN`, then
-`GITHUB_TOKEN`), `apiBaseUrl` (falls back to `SMITHERS_GITHUB_API_BASE_URL`,
+`GITHUB_TOKEN` only when omitted; an explicitly blank token suppresses
+token authentication), `apiBaseUrl` (falls back to `SMITHERS_GITHUB_API_BASE_URL`,
 default `https://api.github.com`), and `requestTimeout` (defaults to 30
 seconds). There is no retry budget: the client never repeats a request, and the
 retry policy of the durable step that calls it is the only retry.
@@ -344,7 +345,7 @@ call open. It must be a finite, positive `Duration.Input`.
 
 | Export                    | Signature                                               | Notes                                |
 | ------------------------- | ------------------------------------------------------- | ------------------------------------ |
-| `resolve`                 | `(config?: GitHubConfig, env?) => ResolvedGitHubConfig` | First non-empty value wins, trimmed. |
+| `resolve`                 | `(config?: GitHubConfig, env?) => ResolvedGitHubConfig` | Explicit token wins, including blank; fallbacks are trimmed. |
 | `DEFAULT_API_BASE_URL`    | `"https://api.github.com"`                              | The public REST endpoint.            |
 | `DEFAULT_REQUEST_TIMEOUT` | `Duration.seconds(30)`                                  | The default per-request deadline.    |
 
@@ -392,6 +393,11 @@ that instant only waits again.
 request's result type: a caller cannot name a response type the client never
 decoded. `Page` fields: `items` and `truncated`. `RequestMethod` is
 `"GET" | "POST" | "PATCH" | "PUT" | "DELETE"`.
+
+GraphQL rate-limit errors returned with HTTP 200 or 403 are classified before
+schema decoding, retaining `Retry-After` and reset timing. A response carrying
+partial mutation data is left to the action to reconcile. `/graphql` uses
+`/api/graphql` for Enterprise REST bases ending in `/api/v3`.
 
 ### GitHub.AppAuth
 
@@ -502,11 +508,14 @@ explains the pattern.
 | `UpsertComment`                                                                 | `Action`, tag `integrations/github/upsert-comment`            | Requires `author: { login }` for user tokens or `author: { appId }` for installation tokens. Adopts only that author’s comment whose first line is `stickyMarker(key)` (Apps also require `user.type: Bot`). Without `key`, the comment is the running execution’s (`runKey`): one per run, never another run’s. Pass `key` only for a domain key recorded before the write. Keyed. Fails without writing on a thread longer than `RECONCILE_PAGES` pages. Success: `id`, `url`, `outcome`. |
 | `stickyMarker`                                                                  | `(key: string) => string`                                     | `<!-- smithers:key=KEY -->`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `runKey`                                                                        | `(action: string) => Effect<string>`                          | `run:` and 32 hex of SHA-256 over the running execution’s id: the key `UpsertComment` and `CheckRun` use when the payload names none. Dies with `Action.EffectKeyUnavailable` outside a flow execution.                                                                                                                                                                                                                                                                                     |
-| `CheckRun`                                                                      | `Action`, tag `integrations/github/check-run`                 | Creates or updates the check run whose `external_id` is `key` on `headSha`; without `key`, the running execution’s (`runKey`), one per run and name. Keyed. Needs a GitHub App installation token. Success: `id`, `url`, `status`, `conclusion`, `created`.                                                                                                                                                                                                                                 |
-| `LinkPullRequest`                                                               | `Action`, tag `integrations/github/link-pr`                   | Appends `Closes <issue>` to the pull request's description unless `closesIssue` already finds one. Keyed. Success: `pullNumber`, `url`, `reference`, `updated`.                                                                                                                                                                                                                                                                                                                             |
+| `CheckRun`                                                                      | `Action`, tag `integrations/github/check-run`                 | Requires the authenticated App’s numeric `appId`. Creates or updates that App’s check run whose `external_id` is `key` on `headSha`; without `key`, the running execution’s (`runKey`), one per run and name. Keyed. Needs a GitHub App installation token. Success: `id`, `url`, `status`, `conclusion`, `created`.                                                                                                                                                                                                                                 |
+| `LinkPullRequest`                                                               | `Action`, tag `integrations/github/link-pr`                   | Adds a closing link through `addCloseIssueReferences`, preserving the description. Existing keywords or manual links are unchanged; unsupported servers fail without editing the body. Keyed. Success: `pullNumber`, `url`, `reference`, `updated`.                                                                                                                                                                                                                                                                                                                             |
 | `closesIssue`                                                                   | `(body, issue, sameRepository) => boolean`                    | Whether a description closes the issue with any GitHub closing keyword.                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `layerAddLabels`, `layerUpsertComment`, `layerCheckRun`, `layerLinkPullRequest` | same as `layerCommentOnIssue`                                 | Implement each action over the client in context.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `layer`                                                                         | same                                                          | Every GitHub action's implementation in one layer.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+
+Reconciliation of labels, sticky comments and check runs fails `decode-failed`
+before writing when any listed record cannot be decoded.
 
 ### GitHub.Issues
 

@@ -44,8 +44,15 @@ describe("GitHub config", () => {
     expect(resolve({}, {})).not.toHaveProperty("maxRetries")
   })
 
-  it("ignores a blank value and trims what it keeps", () => {
-    expect(resolve({ token: "   " }, { GITHUB_TOKEN: " padded " }).token).toBe("padded")
+  it("an explicitly blank token suppresses environment credentials", () => {
+    for (const token of ["", "   ", "\t\n"]) {
+      expect(resolve({ token }, { SMITHERS_GITHUB_TOKEN: "smithers", GITHUB_TOKEN: "github" }).token).toBeUndefined()
+    }
+  })
+
+  it("trims tokens and skips blank environment values when the token is omitted", () => {
+    expect(resolve({ token: " explicit " }, {}).token).toBe("explicit")
+    expect(resolve({}, { SMITHERS_GITHUB_TOKEN: " ", GITHUB_TOKEN: " padded " }).token).toBe("padded")
   })
 
   it("rejects an unparseable or non-HTTP API base URL as invalid-config", () => {
@@ -58,6 +65,18 @@ describe("GitHub config", () => {
 })
 
 describe("nextPageUrl", () => {
+  it.each([
+    "; rel=\"next\"; type=\"application/json\"",
+    "; type=\"application/json\"; rel=\"next\"",
+    "; rel=\"prev next\"",
+    "; rel=next",
+    "; title=\"a, b; rel=prev\"; rel=\"next last\"",
+    "; REL = \"next\""
+  ])("reads a next target with valid link parameters: %s", (parameters) => {
+    expect(nextPageUrl(`<https://api.github.com/x?cursor=a,b&page=2>${parameters}`))
+      .toBe("https://api.github.com/x?cursor=a,b&page=2")
+  })
+
   it("reads the rel=next target", () => {
     expect(
       nextPageUrl("<https://api.github.com/x?page=2>; rel=\"next\", <https://api.github.com/x?page=9>; rel=\"last\"")
@@ -69,10 +88,17 @@ describe("nextPageUrl", () => {
     expect(nextPageUrl(null)).toBeNull()
     expect(nextPageUrl("")).toBeNull()
     expect(nextPageUrl("<https://api.github.com/x?page=1>; rel=\"prev\"")).toBeNull()
+    expect(nextPageUrl("<https://api.github.com/x>; title=\"a; rel=next\"; rel=\"prev\"")).toBeNull()
+    expect(nextPageUrl("<https://api.github.com/x>; rel=\"nextish\"")).toBeNull()
+    expect(nextPageUrl("<https://api.github.com/x>; rel=\"prev\"; rel=\"next\"")).toBeNull()
   })
 })
 
 describe("lastPageNumber", () => {
+  it("reads last links with extra parameters and multiple relation tokens", () => {
+    expect(lastPageNumber("</x?page=37>; title=\"last, page\"; rel=\"next last\"; type=\"application/json\"")).toBe(37)
+  })
+
   it("reads the rel=last target's page", () => {
     expect(
       lastPageNumber(
@@ -155,6 +181,117 @@ describe("GitHubClient request typing", () => {
 })
 
 describe("GitHubClient over a real HTTP server", () => {
+  it.each([
+    null,
+    "text",
+    {},
+    { errors: null },
+    { errors: [] },
+    { errors: [null, 7, {}, { type: "FORBIDDEN" }] },
+    { data: { applied: true }, errors: [{ type: "RATE_LIMITED" }] }
+  ])("does not mistake ordinary or partial GraphQL responses for a safe rate-limit refusal (%j)", async (body) => {
+    fixture = await startFixture((_request, response) => json(response, 200, body))
+    expect(await Effect.runPromise(client().request("POST", "/graphql", { query: "query { example }" }))).toEqual(body)
+  })
+
+  it("does not mistake a REST response containing GraphQL-shaped data for a rate limit", async () => {
+    const body = { errors: [{ type: "RATE_LIMITED" }] }
+    fixture = await startFixture((_request, response) => json(response, 200, body))
+    expect(await Effect.runPromise(client().request("GET", "/x"))).toEqual(body)
+  })
+
+  it("preserves the reset time of a GraphQL primary limit without Retry-After", async () => {
+    const resetAt = Math.floor(Date.now() / 1_000) + 30
+    fixture = await startFixture((_request, response) =>
+      json(response, 200, { data: null, errors: [{}] }, {
+        "x-ratelimit-remaining": "0",
+        "x-ratelimit-reset": String(resetAt)
+      })
+    )
+    const error = await Effect.runPromise(
+      Effect.flip(client().request("POST", "/graphql", { query: "query { example }" }))
+    )
+    expect(error.details).toMatchObject({
+      rateLimited: true,
+      retryable: true,
+      outcomeUnknown: false,
+      rateLimitResetAt: resetAt * 1_000
+    })
+    expect(error.details?.["retryAfterMillis"]).toBeGreaterThan(0)
+    expect(error.details?.["retryAfterMillis"]).toBeLessThanOrEqual(30_000)
+  })
+
+  it.each([
+    { type: "RATE_LIMITED", message: "API rate limit exceeded" },
+    { message: "You have exceeded a secondary rate limit" }
+  ])("classifies HTTP 200 GraphQL rate limits before schema decoding (%j)", async (error) => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 200, { errors: [error] }, { "retry-after": "7" })
+    )
+    const failure = await Effect.runPromise(Effect.flip(
+      client().request("POST", "/graphql", {
+        query: "mutation { example }"
+      }, { schema: Schema.Struct({ data: Schema.String }) })
+    ))
+    expect(failure.reason).toBe("delivery-failed")
+    expect(failure.details).toMatchObject({
+      status: 200,
+      rateLimited: true,
+      retryable: true,
+      outcomeUnknown: false,
+      retryAfterMillis: 7_000
+    })
+    expect(fixture.requests).toHaveLength(1)
+  })
+
+  it("classifies a GraphQL secondary limit returned with HTTP 403", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 403, { errors: [{ message: "You have exceeded a secondary rate limit" }] }, { "retry-after": "7" })
+    )
+    const error = await Effect.runPromise(
+      Effect.flip(client().request("POST", "/graphql", { query: "mutation { example }" }))
+    )
+    expect(error.details).toMatchObject({
+      status: 403,
+      rateLimited: true,
+      retryable: true,
+      outcomeUnknown: false,
+      retryAfterMillis: 7_000
+    })
+  })
+
+  it("sends GraphQL calls to the Enterprise GraphQL endpoint", async () => {
+    fixture = await startFixture((_request, response) => json(response, 200, { data: {} }))
+    await Effect.runPromise(
+      gitHubClient({ token: TOKEN, apiBaseUrl: `${fixture.origin}/api/v3` }, {})
+        .request("POST", "/graphql", { query: "query { viewer { login } }" })
+    )
+    expect(fixture.requests.map((request) => request.url)).toEqual(["/api/graphql"])
+  })
+
+  it("does not authenticate an explicitly blank token using environment credentials", async () => {
+    fixture = await startFixture((_request, response) => json(response, 200, {}))
+    await Effect.runPromise(
+      gitHubClient(
+        { token: " ", apiBaseUrl: fixture.origin },
+        { SMITHERS_GITHUB_TOKEN: "smithers", GITHUB_TOKEN: "github" }
+      ).request("GET", "/user")
+    )
+    expect(fixture.requests[0]?.headers["authorization"]).toBeUndefined()
+  })
+
+  it("follows next links with extra parameters and relation tokens, and reports the page cap", async () => {
+    fixture = await startFixture((request, response) => {
+      const page = Number(new URL(request.url, "http://x").searchParams.get("page") ?? 1)
+      json(response, 200, [{ id: page }], {
+        link: `<${fixture!.origin}/x?page=${page + 1}>; type="application/json"; rel="next last"; title="a, b"`
+      })
+    })
+    const page = await Effect.runPromise(client().paginate("/x", { maxPages: 2 }))
+    expect(page).toEqual({ items: [{ id: 1 }, { id: 2 }], truncated: true })
+    expect(fixture.requests).toHaveLength(2)
+  })
+
   it("sends the bearer token, the API version, and a JSON body", async () => {
     fixture = await startFixture((_request, response) => json(response, 201, { id: 7, url: "https://x" }))
     const created = await Effect.runPromise(

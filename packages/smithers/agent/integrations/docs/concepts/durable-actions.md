@@ -84,11 +84,16 @@ write reaches GitHub at most three times:
   first line and edits it. Without a `key` the comment is the running
   execution's, so each run keeps one progress comment and never takes over
   another run's; a `key` is for a domain key recorded before the write.
-- `CheckRun` finds its run by `external_id` and updates it; without a `key`,
+- `CheckRun` requires the authenticated App’s numeric `appId`, finds its run
+  by that App and `external_id`, and updates it; without a `key`,
   the running execution's run of that name. Writing check runs needs a GitHub
   App installation token.
-- `LinkPullRequest` adds `Closes #N` to the pull request's description unless
-  it already closes the issue.
+- `LinkPullRequest` uses GitHub’s `addCloseIssueReferences` mutation, preserving
+  the description. Existing closing keywords and manual links are left alone.
+  Servers without this mutation fail without a description edit.
+
+A listed record that cannot be decoded fails reconciliation before any write;
+it is never silently discarded as evidence that a previous write is absent.
 
 GitHub does not enforce the comment marker or `external_id` as unique, so a
 write still in flight when the repeat reads can land after it and leave two.

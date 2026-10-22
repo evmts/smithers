@@ -20,6 +20,7 @@ export interface FakeComment {
 
 export interface FakeCheckRun {
   readonly id: number
+  readonly app: { readonly id: number }
   readonly name: string
   readonly head_sha: string
   readonly external_id: string | null
@@ -36,6 +37,7 @@ export interface FakeGitHub {
   labels: Array<string>
   readonly checkRuns: Array<FakeCheckRun>
   pullBody: string | null
+  readonly linkedIssues: Set<string>
   /** The next write applies, then answers 502. */
   lose: boolean
   /** The next write applies, then never answers; `held` resolves when it has. */
@@ -59,6 +61,7 @@ export const startGitHub = async (): Promise<FakeGitHub> => {
     labels: [],
     checkRuns: [],
     pullBody: null,
+    linkedIssues: new Set(),
     lose: false,
     hold: false,
     endlessComments: false,
@@ -92,7 +95,7 @@ export const startGitHub = async (): Promise<FakeGitHub> => {
         const headers: Record<string, string> = state.endlessComments
           ? { link: `<${fixture.origin}${path}?page=${Number(url.searchParams.get("page") ?? 1) + 1}>; rel="next"` }
           : {}
-        return json(response, 200, [{ id: 1, url: "u1", body: "unrelated" }, { bad: true }, ...state.comments], headers)
+        return json(response, 200, [{ id: 1, url: "u1", body: "unrelated" }, ...state.comments], headers)
       }
       const comment = {
         id: nextId++,
@@ -116,13 +119,14 @@ export const startGitHub = async (): Promise<FakeGitHub> => {
         run.head_sha === listed[1] && run.name === url.searchParams.get("check_name")
       )
       return json(response, 200, {
-        total_count: runs.length + 1 + (state.truncatedCheckRuns ? 1 : 0),
-        check_runs: [{ id: "not-a-run" }, ...runs]
+        total_count: runs.length + (state.truncatedCheckRuns ? 1 : 0),
+        check_runs: runs
       })
     }
     if (path === "/repos/o/r/check-runs" && request.method === "POST") {
       const run: FakeCheckRun = {
         id: nextId++,
+        app: { id: 42 },
         name: body.name,
         head_sha: body.head_sha,
         external_id: body.external_id ?? null,
@@ -148,14 +152,40 @@ export const startGitHub = async (): Promise<FakeGitHub> => {
       if (request.method === "PATCH") state.pullBody = body.body
       return answer(request, response, 200, { html_url: "https://github.test/o/r/pull/9", body: state.pullBody })
     }
+    if (path === "/graphql" && request.method === "POST") {
+      if (body.query.startsWith("query")) {
+        const issueId = `${body.variables.issueOwner}/${body.variables.issueRepo}#${body.variables.issue}`
+        return json(response, 200, {
+          data: {
+            pullRepository: {
+              pullRequest: {
+                id: "pull-9",
+                closingIssuesReferences: {
+                  nodes: [...state.linkedIssues].map((id) => ({ id })),
+                  pageInfo: { hasNextPage: false }
+                }
+              }
+            },
+            issueRepository: { issue: { id: issueId } }
+          }
+        })
+      }
+      const { issueId, pullRequestIds } = body.variables.input
+      if (pullRequestIds.length !== 1 || pullRequestIds[0] !== "pull-9") {
+        return json(response, 200, { errors: [{ message: "Unknown pull request" }] })
+      }
+      state.linkedIssues.add(issueId)
+      return answer(request, response, 200, { data: { addCloseIssueReferences: { issue: { id: issueId } } } })
+    }
     json(response, 404, { message: "Not Found" })
   })
   return Object.assign(state, {
     fixture,
     held,
     writes: () =>
-      fixture.requests.filter((request) => request.method !== "GET").map((request) =>
-        `${request.method} ${new URL(request.url, "http://github.test").pathname}`
-      )
+      fixture.requests.filter((request) =>
+        request.method !== "GET" &&
+        !(request.url === "/graphql" && JSON.parse(request.body).query.startsWith("query"))
+      ).map((request) => `${request.method} ${new URL(request.url, "http://github.test").pathname}`)
   }) as FakeGitHub
 }

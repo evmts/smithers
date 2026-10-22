@@ -12,7 +12,8 @@ recipe; the [API reference](../api.md) has the full signatures.
 
 The client reads its token from explicit configuration first, then
 `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN`. The REST endpoint reads
-`SMITHERS_GITHUB_API_BASE_URL` for GitHub Enterprise.
+`SMITHERS_GITHUB_API_BASE_URL` for GitHub Enterprise. An explicitly blank
+`token` suppresses the environment token fallback.
 
 ```bash
 export SMITHERS_GITHUB_TOKEN=TOKEN

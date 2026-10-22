@@ -24,6 +24,7 @@ await Effect.runPromise(comment.pipe(Effect.provide(FetchHttpClient.layer)))
 
 The client reads `SMITHERS_GITHUB_TOKEN`, then `GITHUB_TOKEN`. Explicit
 configuration wins; a supplied environment replaces the ambient environment.
+An explicitly blank `token` disables the environment token fallback.
 `SMITHERS_GITHUB_API_BASE_URL` selects GitHub Enterprise or a fixture server.
 HTTP goes through the Effect `HttpClient` you provide, usually
 `FetchHttpClient.layer`, and the client never follows a redirect.

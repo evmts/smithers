@@ -13,13 +13,14 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, type Schema } from "effect"
+import * as HttpClient from "effect/http/HttpClient"
 import { afterEach, describe, expect, it } from "vitest"
 import { IntegrationFailure, RetryableIntegrationFailure } from "../src/core/ActionFailure.ts"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
 import * as Actions from "../src/github/Actions.ts"
 import type * as GitHubClient from "../src/github/GitHubClient.ts"
 import { type FakeGitHub, startGitHub } from "./GitHubFake.ts"
-import { type Fault, faultingTransport, gitHubLayer, gitHubLayerOver } from "./Http.ts"
+import { type Fault, faultingTransport, fetchLayer, gitHubLayer, gitHubLayerOver } from "./Http.ts"
 
 let github: FakeGitHub | undefined
 
@@ -110,6 +111,54 @@ const rejected = async (promise: Promise<unknown>): Promise<any> => {
 }
 
 const SHA = "a".repeat(40)
+
+describe("reconciliation decoding", () => {
+  it.each(["labels", "comments", "check-runs"] as const)("refuses undecodable %s before writing", async (kind) => {
+    github = await startGitHub()
+    const { transport } = faultingTransport(({ method }) =>
+      method === "GET"
+        ? {
+          status: 200,
+          body: kind === "check-runs"
+            ? { total_count: 1, check_runs: [{ id: "bad", external_id: "run-1", app: { id: 42 } }] }
+            : kind === "comments"
+            ? [{
+              id: "bad",
+              url: "u",
+              body: "<!-- smithers:key=run-1 -->\nWorking",
+              user: { login: "smithers", type: "Bot" }
+            }]
+            : [{ name: 7 }]
+        }
+        : undefined
+    )
+    const client = gitHubLayerOver(transport, { token: "t", apiBaseUrl: github.fixture.origin })
+    const failure = await rejected(
+      kind === "labels"
+        ? runAction(Actions.AddLabels, { owner: "o", repo: "r", issueNumber: 7, labels: ["triage"] }, client)
+        : kind === "comments"
+        ? runAction(Actions.UpsertComment, {
+          owner: "o",
+          repo: "r",
+          issueNumber: 7,
+          key: "run-1",
+          body: "Working",
+          author: { login: "smithers" }
+        }, client)
+        : runAction(Actions.CheckRun, {
+          owner: "o",
+          repo: "r",
+          appId: 42,
+          headSha: SHA,
+          name: "smithers",
+          key: "run-1"
+        }, client)
+    )
+    expect(github.writes()).toEqual([])
+    expect(failure).toBeInstanceOf(IntegrationFailure)
+    expect(failure).toMatchObject({ reason: "decode-failed", retryable: false })
+  })
+})
 
 describe("AddLabels", () => {
   it("adds only the labels the issue lacks, comparing names without case", async () => {
@@ -349,7 +398,7 @@ describe("UpsertComment", () => {
 
 describe("UpsertComment and CheckRun without a key", () => {
   const comment = { owner: "o", repo: "r", issueNumber: 7, body: "Working", author: { login: "smithers" } }
-  const check = { owner: "o", repo: "r", headSha: SHA, name: "smithers", status: "in_progress" as const }
+  const check = { owner: "o", repo: "r", appId: 42, headSha: SHA, name: "smithers", status: "in_progress" as const }
 
   /** One run that upserts its comment twice and reports its check run twice, from two steps each. */
   const Progress = Flow.make("integrations/github/test-progress", {
@@ -410,11 +459,30 @@ describe("CheckRun", () => {
   const payload = {
     owner: "o",
     repo: "r",
+    appId: 42,
     headSha: SHA,
     name: "smithers",
     key: "run-1",
     status: "in_progress" as const
   }
+
+  it("does not adopt another App's check run with the same external id", async () => {
+    github = await startGitHub()
+    github.checkRuns.push({
+      id: 5,
+      name: "smithers",
+      head_sha: SHA,
+      external_id: "run-1",
+      html_url: "u5",
+      status: "queued",
+      conclusion: null,
+      app: { id: 43 }
+    })
+    const receipt = await runAction(Actions.CheckRun, payload)
+    expect(receipt.created).toBe(true)
+    expect(github.checkRuns[0]?.status).toBe("queued")
+    expect(github.writes()).toEqual(["POST /repos/o/r/check-runs"])
+  })
 
   it("creates the check run under its external id", async () => {
     github = await startGitHub()
@@ -469,6 +537,7 @@ describe("CheckRun", () => {
     const receipt = await runAction(Actions.CheckRun, {
       owner: "o",
       repo: "r",
+      appId: 42,
       headSha: SHA,
       name: "smithers",
       key: "k"
@@ -493,14 +562,136 @@ describe("CheckRun", () => {
 })
 
 describe("LinkPullRequest", () => {
-  it("adds a closing reference to an empty description", async () => {
+  const payload = { owner: "o", repo: "r", pullNumber: 9, issueNumber: 7 }
+  it.each([1, 2])("honors an HTTP 200 GraphQL rate limit on POST %i before retrying the step", async (limitedPost) => {
+    github = await startGitHub()
+    let posts = 0
+    const { transport, handled } = faultingTransport(({ path }) =>
+      path === "/graphql" && ++posts === limitedPost
+        ? { status: 200, headers: { "retry-after": "1" }, body: { errors: [{ type: "RATE_LIMITED" }] } }
+        : undefined
+    )
+    const result = await runAction(
+      Actions.LinkPullRequest,
+      payload,
+      gitHubLayerOver(transport, { token: "t", apiBaseUrl: github.fixture.origin })
+    )
+    expect(result.updated).toBe(true)
+    const fault = handled.findIndex((request) => request.faulted === 200)
+    expect(handled[fault + 1]!.at - handled[fault]!.at).toBeGreaterThanOrEqual(1_000)
+    expect([...github.linkedIssues]).toEqual(["o/r#7"])
+    expect(github.writes()).toEqual(["POST /graphql"])
+  })
+
+  const targets = {
+    data: {
+      pullRepository: {
+        pullRequest: {
+          id: "pull-9",
+          closingIssuesReferences: { nodes: [], pageInfo: { hasNextPage: false } }
+        }
+      },
+      issueRepository: { issue: { id: "o/r#7" } }
+    }
+  }
+
+  it.each([
+    ["query errors", { ...targets, errors: [{ message: "private provider content" }] }],
+    ["an incomplete reference list", {
+      data: {
+        ...targets.data,
+        pullRepository: {
+          pullRequest: {
+            id: "pull-9",
+            closingIssuesReferences: {
+              nodes: [],
+              pageInfo: { hasNextPage: true }
+            }
+          }
+        }
+      }
+    }],
+    ["an inaccessible repository", { data: { ...targets.data, pullRepository: null } }]
+  ])("refuses %s without a mutation or a body edit", async (_name, body) => {
+    github = await startGitHub()
+    github.pullBody = "Keep this description"
+    const { transport } = faultingTransport(({ path }) => path === "/graphql" ? { status: 200, body } : undefined)
+    const error = await rejected(
+      runAction(
+        Actions.LinkPullRequest,
+        payload,
+        gitHubLayerOver(transport, { token: "t", apiBaseUrl: github.fixture.origin })
+      )
+    )
+    expect(error).toBeInstanceOf(IntegrationFailure)
+    expect(error.retryable).toBe(false)
+    expect(error.message).not.toContain("private provider content")
+    expect(github.writes()).toEqual([])
+    expect(github.pullBody).toBe("Keep this description")
+  })
+
+  it.each([
+    ["a missing receipt", { data: null }],
+    ["mutation errors", { data: { addCloseIssueReferences: { issue: { id: "o/r#7" } } }, errors: [{}] }],
+    ["the wrong issue", { data: { addCloseIssueReferences: { issue: { id: "o/r#8" } } }, errors: [] }]
+  ])("reports an unknown outcome for %s", async (_name, body) => {
+    github = await startGitHub()
+    let posts = 0
+    const { transport, handled } = faultingTransport(({ path }) =>
+      path === "/graphql" && ++posts % 2 === 0 ? { status: 200, body } : undefined
+    )
+    const error = await rejected(
+      runAction(
+        Actions.LinkPullRequest,
+        payload,
+        gitHubLayerOver(transport, { token: "t", apiBaseUrl: github.fixture.origin })
+      )
+    )
+    expect(error).toBeInstanceOf(RetryableIntegrationFailure)
+    expect(error).toMatchObject({ reason: "decode-failed", outcomeUnknown: true })
+    expect(handled.filter((request) => request.faulted !== undefined)).toHaveLength(Actions.retryPolicy.maxAttempts!)
+    expect(github.writes()).toEqual([])
+  })
+
+  it("leaves an existing manual closing reference alone", async () => {
+    github = await startGitHub()
+    github.linkedIssues.add("o/r#7")
+    const result = await runAction(Actions.LinkPullRequest, payload)
+    expect(result.updated).toBe(false)
+    expect(github.writes()).toEqual([])
+    expect(github.pullBody).toBeNull()
+  })
+
+  it("preserves description edits made after the initial read", async () => {
+    github = await startGitHub()
+    github.pullBody = "Initial description"
+    const real = Effect.runSync(Effect.provide(Effect.service(HttpClient.HttpClient), fetchLayer))
+    const transport = HttpClient.make((request) =>
+      real.execute(request).pipe(Effect.tap(() =>
+        Effect.sync(() => {
+          if (request.method === "GET" && new URL(request.url).pathname === "/repos/o/r/pulls/9") {
+            github!.pullBody = "Edited while linking"
+          }
+        })
+      ))
+    )
+    await runAction(
+      Actions.LinkPullRequest,
+      { owner: "o", repo: "r", pullNumber: 9, issueNumber: 7 },
+      gitHubLayerOver(transport, { token: "t", apiBaseUrl: github.fixture.origin })
+    )
+    expect(github.pullBody).toBe("Edited while linking")
+  })
+
+  it("adds a closing reference without changing an empty description", async () => {
     github = await startGitHub()
     const linked = await runAction(Actions.LinkPullRequest, { owner: "o", repo: "r", pullNumber: 9, issueNumber: 7 })
     expect(linked).toEqual({ pullNumber: 9, url: "https://github.test/o/r/pull/9", reference: "#7", updated: true })
-    expect(github.pullBody).toBe("Closes #7")
+    expect(github.pullBody).toBeNull()
+    expect([...github.linkedIssues]).toEqual(["o/r#7"])
   })
 
-  it("appends a cross-repository reference below an existing description", async () => {
+  it("links a cross-repository issue without changing the description", async () => {
     github = await startGitHub()
     github.pullBody = "Fixes the parser."
     const linked = await runAction(Actions.LinkPullRequest, {
@@ -512,7 +703,8 @@ describe("LinkPullRequest", () => {
       issueRepo: "tracker.js"
     })
     expect(linked.reference).toBe("other/tracker.js#7")
-    expect(github.pullBody).toBe("Fixes the parser.\n\nCloses other/tracker.js#7")
+    expect(github.pullBody).toBe("Fixes the parser.")
+    expect([...github.linkedIssues]).toEqual(["other/tracker.js#7"])
   })
 
   it("leaves a description that already closes the issue", async () => {
@@ -535,8 +727,9 @@ describe("LinkPullRequest", () => {
     github.lose = true
     const linked = await runAction(Actions.LinkPullRequest, { owner: "o", repo: "r", pullNumber: 9, issueNumber: 7 })
     expect(linked.updated).toBe(false)
-    expect(github.pullBody).toBe("Closes #7")
-    expect(github.writes()).toEqual(["PATCH /repos/o/r/pulls/9"])
+    expect(github.pullBody).toBeNull()
+    expect([...github.linkedIssues]).toEqual(["o/r#7"])
+    expect(github.writes()).toEqual(["POST /graphql"])
   })
 
   it("refuses an issue repository that is not a name", async () => {
