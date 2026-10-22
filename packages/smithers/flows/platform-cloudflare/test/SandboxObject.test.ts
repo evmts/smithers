@@ -1,13 +1,14 @@
 /**
- * `SandboxObject.wake` against a container client that records each call,
- * for order and faults. `ContainerTerminal.workerd.test.ts` wakes a real
- * container and reaches an intercepted host from inside it.
+ * `SandboxObject.wake`, `rearm` and `run` against container clients that
+ * record each call, for order and faults. `ContainerTerminal.workerd.test.ts`
+ * wakes a real container, reaches an intercepted host from inside it, and
+ * runs a command that writes for its exit code.
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import { TestClock } from "effect/testing"
-import { SandboxObject } from "../src/index.ts"
+import { type ContainerTerminal, SandboxObject } from "../src/index.ts"
 import * as MemoryContainer from "./fixtures/MemoryContainer.ts"
 import * as Telemetry from "./fixtures/Telemetry.ts"
 
@@ -229,4 +230,49 @@ describe("SandboxObject.rearm", () => {
       }))
     )
   })
+})
+
+describe("SandboxObject.run", () => {
+  /**
+   * A container whose exec pipes hold no bytes, as workerd's: a command that writes to a piped stream nobody reads
+   * never exits; one whose streams are ignored exits with `code`.
+   */
+  const unbuffered = (code: number) => {
+    const execs: Array<{ readonly argv: ReadonlyArray<string>; readonly options: unknown }> = []
+    let released = 0
+    const container: ContainerTerminal.Container = {
+      exec: (argv, options = {}) =>
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            execs.push({ argv, options })
+            const blocked = options.stdout !== "ignore" || options.stderr !== "ignore"
+            return {
+              stdin: undefined,
+              stdout: undefined,
+              exitCode: blocked ? Effect.never : Effect.succeed(code),
+              kill: () => Effect.void,
+              resize: () => Effect.void
+            }
+          }),
+          () => Effect.sync(() => void released++)
+        )
+    }
+    return { container, execs, released: () => released }
+  }
+
+  it.live("answers the exit code of a command that writes, its output ignored, and releases the process", () =>
+    Effect.gen(function*() {
+      const box = unbuffered(3)
+      const code = yield* SandboxObject.run(box.container, ["useradd", "p1"], { user: "0:0", env: { HOME: "/root" } })
+        .pipe(Effect.timeout("2 seconds"))
+      expect(code).toBe(3)
+      expect(box.execs).toEqual([{
+        argv: ["useradd", "p1"],
+        options: { user: "0:0", env: { HOME: "/root" }, stdout: "ignore", stderr: "ignore" }
+      }])
+      expect(box.released()).toBe(1)
+      // With no user or variables, the image's own apply.
+      yield* SandboxObject.run(box.container, ["true"])
+      expect(box.execs[1]!.options).toEqual({ stdout: "ignore", stderr: "ignore" })
+    }))
 })

@@ -24,7 +24,7 @@ import {
   type ToolOutcome,
 } from "./branch/Machines.ts"
 import { userOf } from "./branch/Users.ts"
-import { asUser, configuredSessionOn, failureFields, runOn } from "./branch/Session.ts"
+import { asUser, configuredSessionOn, failureFields, runOn, type UserOptions } from "./branch/Session.ts"
 import { Forge, forgeOf } from "./branch/Forge.ts"
 import {
   type Attachment,
@@ -183,6 +183,11 @@ const isBranch = Schema.is(SandboxBranch)
 export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>) => SandboxObject.make(
   Effect.gen(function* () {
     const box = yield* BranchSandbox
+    // Session provisioning and machine commands share the SDK runner that discards unread output.
+    const runBox = {
+      exec: (argv: Array<string>, options: UserOptions) =>
+        Effect.succeed({ exitCode: SandboxHost.run(box, argv, options) }),
+    }
     const state = yield* Cloudflare.DurableObjectState
     const forge = yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer))
     const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
@@ -246,7 +251,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
 
       /** Runs `argv` as the machine's user `name`, answering its exit code. */
       const run = (argv: Array<string>, name: string) =>
-        runOn(box, argv, name)
+        runOn(runBox, argv, name)
 
       // A wake's failure is logged with the step it failed in: the container's start, the checkout, the restore or
       // the placeholders, so a failure only production shows says where it happened. A wake that works logs how long
@@ -427,7 +432,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
       // Each person's shell runs as their own user, made on first use (worker/branch/Users.ts). Opening one is use.
       const session = (terminalId: string, ownerId: string) =>
         sessionOn({
-          box, start, touch: Machine.touch(machine),
+          box: runBox, start, touch: Machine.touch(machine),
           ensureSession: (options) => ContainerTerminal.ensureSession(box, options),
         })(terminalId, ownerId)
 

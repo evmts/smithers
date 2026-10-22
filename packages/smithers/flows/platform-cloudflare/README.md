@@ -155,7 +155,7 @@ each guarantee and what proves it.
 | `CloudflareRuntime` | `layer({ hostId, executionId }, registerFlows)`: the durable engine for one execution over an injected `SqlClient`.                                                                       |
 | `ExecutionObject`   | `start`, `wake`, `alarm` and `intent`: the per-execution Durable Object, as functions over a structural slice of Durable Object storage.                                                  |
 | `EdgeCache`         | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API, `caches.default` or a named cache.                                                  |
-| `SandboxObject`     | `wake` and `rearm`: start a container Durable Object's container offline on its instance type, register its outbound HTTP intercepts, and re-arm its inactivity timeout.                  |
+| `SandboxObject`     | `wake`, `rearm` and `run`: start a container Durable Object's container offline with its outbound HTTP intercepts, re-arm its inactivity timeout, and run a command for its exit code.    |
 | `ContainerTerminal` | `ensureSession` and `attach`: a browser terminal over `@smthrs/sandbox`'s `TerminalProtocol`, one tmux session per terminal and one tmux client per WebSocket; readers' input is dropped. |
 | `ContainerSession`  | `make(container, { id, workdir, user?, env? })`: the container as `@smthrs/sandbox`'s `Sandbox.Session`, so `SandboxTools` and `Sandbox.layerHost` run on it.                             |
 

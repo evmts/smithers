@@ -43,7 +43,9 @@ export const panelViewOf = (
   if (panel === undefined || panel.branchId === null) return undefined
   if (panel.phase === "loading") return { badge: undefined, open: undefined, screen: { kind: "empty", text: undefined } }
   const badge = BADGES[panel.phase]
-  const offered = canOpen && (panel.phase === "opening" || panel.phase === "failed" || !tabs.some((tab) => tab.mine))
+  // A failed terminal can be retried unless another owned terminal is already available.
+  const another = tabs.some((tab) => tab.mine && tab.id !== panel.terminalId)
+  const offered = canOpen && (panel.phase === "opening" || (panel.phase === "failed" && !another) || !tabs.some((tab) => tab.mine))
   const open = !offered ? undefined : panel.phase === "opening" ? "opening" : "button"
   const attached = panel.terminalId !== null &&
     (panel.phase === "connecting" || panel.phase === "open" || panel.phase === "offline")

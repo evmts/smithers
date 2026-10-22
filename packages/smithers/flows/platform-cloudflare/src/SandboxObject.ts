@@ -15,6 +15,11 @@
  * object goes idle; an object calls it once per incarnation and on each use
  * that doesn't wake the container.
  *
+ * {@link run} runs a command in the container for its exit code alone, and
+ * never pipes its output: workerd's exec pipes hold no bytes, so a command
+ * whose output nobody reads blocks on its first write and its exit code
+ * never comes.
+ *
  * The function takes the container as a structural slice of an Effect
  * container client, so an Alchemy Durable Object's container handle passes in
  * as is (`R` is its `RuntimeContext`, `F` its `Fetcher`), and a test passes an
@@ -27,6 +32,7 @@
 import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
+import type * as ContainerTerminal from "./ContainerTerminal.ts"
 import * as Observed from "./internal/Observed.ts"
 
 /**
@@ -263,4 +269,46 @@ export const rearm = <F, E, R>(
       counter: rearms,
       log: "cloudflare.sandbox.rearm"
     })
+  )
+
+/**
+ * Options for {@link run}: the `uid:gid` the command runs as (the image's
+ * user when absent) and the variables it gets beyond the image's `PATH`.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export interface RunOptions {
+  readonly user?: string | undefined
+  readonly env?: Record<string, string> | undefined
+}
+
+/**
+ * Runs `argv` in the running container to completion and answers its exit
+ * code; a nonzero one is an answer, not a failure. Its standard output and
+ * error are `ignore`d, never piped: workerd's exec pipes hold no bytes, so a
+ * pipe nobody reads blocks the command on its first write, and its exit code
+ * never comes. A command whose output matters runs through
+ * `ContainerSession` instead. The process belongs to this call: it is killed
+ * if the call is interrupted. A failed `exec` or wait fails with the
+ * container client's own error.
+ *
+ * @category operations
+ * @since 1.0.0-rc.17
+ */
+export const run = <E, R>(
+  container: ContainerTerminal.Container<E, R>,
+  argv: Array<string>,
+  options: RunOptions = {}
+): Effect.Effect<number, E, R> =>
+  Effect.scoped(
+    Effect.flatMap(
+      container.exec(argv, {
+        ...(options.user === undefined ? {} : { user: options.user }),
+        ...(options.env === undefined ? {} : { env: options.env }),
+        stdout: "ignore",
+        stderr: "ignore"
+      }),
+      (process) => process.exitCode
+    )
   )

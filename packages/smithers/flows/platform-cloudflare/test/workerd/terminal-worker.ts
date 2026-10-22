@@ -13,6 +13,7 @@
  * - `POST /session?name=&user=&cwd=`: `ContainerTerminal.ensureSession`.
  * - `GET /attach?name=&user=&access=&cols=&rows=`: accepts a WebSocket with
  *   `accept()` and runs `ContainerTerminal.attach` for its lifetime.
+ * - `POST /run` with `{ argv, user }`: `SandboxObject.run`, the exit code.
  * - `POST /exec` with `{ argv, user }`: runs a command to completion and
  *   answers its exit code and output, for the suite's own checks.
  * - `GET /reports?count=`: every attach's report once `count` have ended.
@@ -208,6 +209,13 @@ export class Sandbox {
           for (const waiter of this.waiters) waiter()
         })
         return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit)
+      }
+      case "/run": {
+        const { argv, user } = (await request.json()) as { readonly argv: Array<string>; readonly user: string }
+        const exit = await Effect.runPromiseExit(SandboxObject.run(container, argv, { user }))
+        return Exit.isSuccess(exit)
+          ? Response.json({ exitCode: exit.value })
+          : Response.json({ error: String(exit.cause) }, { status: 500 })
       }
       case "/exec": {
         const { argv, user } = (await request.json()) as { readonly argv: Array<string>; readonly user: string }

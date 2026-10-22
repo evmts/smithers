@@ -1,11 +1,12 @@
 /**
- * `SandboxObject.wake` and `ContainerTerminal` in local workerd with a real
+ * `SandboxObject.wake`, `SandboxObject.run` and `ContainerTerminal` in local workerd with a real
  * container: Miniflare runs the Durable Object's container image through
  * Docker, as `alchemy dev` does. The image is the branch sandbox's
  * (`apps/mvp/infra/sandbox`), built before the suite.
  *
  * It proves what the in-memory suite cannot: the box reaches the
- * intercepted forge and nothing else, and holds no secret; the owner's
+ * intercepted forge and nothing else, and holds no secret; a command run
+ * for its exit code settles whatever it writes; the owner's
  * keystrokes reach a real shell while a reader's bytes, automatic replies
  * and sizes never do; `stty size` follows the owner; a reload attaches to
  * the same shell; malformed and oversized frames close the socket with
@@ -277,6 +278,25 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
     },
     180_000
   )
+
+  // workerd's exec pipes hold no bytes: over the default pipes, a command whose output nobody reads blocks on its first
+  // write and its exit code never comes (this case timed out so). A branch's box provisioning a person's user hung so:
+  // useradd warns on stderr about a uid above UID_MAX.
+  it("a command run for its exit code settles however much it writes", async () => {
+    const run = async (script: string) => {
+      const response = await call("/run", {
+        method: "POST",
+        body: JSON.stringify({ argv: ["sh", "-c", script], user: "0:0" })
+      })
+      return (await response.json()) as { readonly exitCode: number }
+    }
+    // One line on stderr, as useradd's warning is.
+    expect(await run("echo 'useradd warning: uid outside of the UID_MIN 1000 and UID_MAX 60000 range.' >&2")).toEqual({
+      exitCode: 0
+    })
+    expect(await run("head -c 200000 /dev/zero | tr '\\0' x; head -c 200000 /dev/zero | tr '\\0' y >&2; exit 3"))
+      .toEqual({ exitCode: 3 })
+  }, 60_000)
 
   const terminal = randomUUID()
 

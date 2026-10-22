@@ -56,6 +56,21 @@ describe("panelViewOf", () => {
     })
   })
 
+  // A run that died left the person's row `opening` for good: the panel gave up on it (`failed` after the deadline),
+  // and its tab, still theirs, hid Open terminal, so the view showed neither a frame nor the button. ChatApi fails such
+  // a row on the next open (worker/branch/Terminals.ts `admit`), so the button comes back.
+  test("Open terminal comes back for a terminal the panel gave up on while its row still says opening", () => {
+    const stuck = tab({ id: "t-1", mine: true, status: "opening" })
+    expect(panelViewOf(panel({ phase: "failed", terminalId: "t-1" }), [stuck], true)).toEqual({
+      badge: undefined,
+      open: "button",
+      screen: { kind: "open" },
+    })
+    // Another live terminal of theirs still hides it: they have one.
+    expect(panelViewOf(panel({ phase: "failed", terminalId: "t-1" }), [tab({ id: "t-2", mine: true })], true)!.open)
+      .toBeUndefined()
+  })
+
   test("an attached terminal fills the screen, read-only for a viewer; Open terminal moves above it", () => {
     expect(panelViewOf(panel({ phase: "open", terminalId: "t-1", access: "write" }), [tab({ mine: true })], true)).toEqual({
       badge: undefined,
