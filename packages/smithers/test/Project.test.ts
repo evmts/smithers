@@ -236,24 +236,27 @@ const trackedUnderDotSmithers = (): ReadonlyArray<string> => {
   return result.stdout.split("\n").filter((path) => path.startsWith(".smithers/"))
 }
 
-describe("a fresh clone of this repository", () => {
-  it("has tracked source under .smithers/, so the check below has files to cover", () => {
-    expect(trackedUnderDotSmithers()).toContain(".smithers/WORKSPACE.ts")
-  })
+describe.skipIf(!existsSync(join(repositoryRoot, ".jj")) && !existsSync(join(repositoryRoot, ".git")))(
+  "a fresh clone of this repository (needs .jj or .git metadata; source mirrors omit both)",
+  () => {
+    it("has tracked source under .smithers/, so the check below has files to cover", () => {
+      expect(trackedUnderDotSmithers()).toContain(".smithers/WORKSPACE.ts")
+    })
 
-  it("prints no Smithers 0.x notice for the .smithers/ files it tracks", () => {
-    // The clone holds exactly the tracked entries. Directories inside them
-    // (a workflows/ tree) are created too, because a subdirectory reads as 0.x.
-    const clone = project()
-    for (const tracked of trackedUnderDotSmithers()) {
-      const target = join(clone, tracked)
-      mkdirSync(dirname(target), { recursive: true })
-      writeFileSync(target, "")
-    }
+    it("prints no Smithers 0.x notice for the .smithers/ files it tracks", () => {
+      // The clone holds exactly the tracked entries. Directories inside them
+      // (a workflows/ tree) are created too, because a subdirectory reads as 0.x.
+      const clone = project()
+      for (const tracked of trackedUnderDotSmithers()) {
+        const target = join(clone, tracked)
+        mkdirSync(dirname(target), { recursive: true })
+        writeFileSync(target, "")
+      }
 
-    expect(Project.legacyState(clone)).toEqual([])
-  })
-})
+      expect(Project.legacyState(clone)).toEqual([])
+    })
+  }
+)
 
 describe("Smithers 0.x detection", () => {
   it("reports every 0.x marker beside a project", () => {
