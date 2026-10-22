@@ -134,6 +134,8 @@ export default defineConfig({
         "db/migrations/0026_text_updates.ts",
         // What the Electric gateway lets through (docs/infrastructure.md).
         "infra/ElectricAccess.ts",
+        // Electric's container kept running between visits (docs/infrastructure.md#electric).
+        "infra/ElectricAwake.ts",
         // A shape request the server can't decide is refused, never narrowed (docs/features/chat.md).
         "worker/ShapeAccess.ts",
         // The agent evals' cases, checks, judge and report (docs/features/agent-evals.md). evals/session.ts and

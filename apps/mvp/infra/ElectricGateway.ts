@@ -2,6 +2,7 @@
 // without the token, to the one Durable Object that runs Electric's container, and refuses everything else before the
 // container starts (infra/ElectricAccess.ts). alchemy.run.ts declares it in production only; ChatApi reaches it at its
 // workers.dev URL (infra/Electric.ts).
+import type { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Config, Context, Effect, Option, Redacted } from "effect"
@@ -9,6 +10,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ELECTRIC_POOL_SIZE } from "./Connections.ts"
 import { ElectricSecret } from "./Electric.ts"
 import { admit } from "./ElectricAccess.ts"
+import { awake, type Host } from "./ElectricAwake.ts"
 
 /** The Electric release the app is built against; docker-compose.yml runs the same one. */
 const IMAGE = "electricsql/electric:1.8.1"
@@ -52,7 +54,8 @@ class Electric extends Cloudflare.Container<Electric>()("Electric", {
 
 /**
  * Starts Electric's container when a request needs it, with Postgres' direct URL from the Worker's secret binding as
- * its `DATABASE_URL`, and forwards the request to its port.
+ * its `DATABASE_URL`, holds it running for 6 hours after the request (infra/ElectricAwake.ts), and forwards the
+ * request to its port.
  */
 class ElectricObject extends Cloudflare.DurableObject<ElectricObject>()(
   "ElectricObject",
@@ -61,10 +64,14 @@ class ElectricObject extends Cloudflare.DurableObject<ElectricObject>()(
     return Effect.gen(function* () {
       const port = yield* electric.getTcpPort(PORT)
       const databaseUrl = yield* Config.Redacted(DATABASE_URL_BINDING).pipe(Effect.orDie)
+      const host = {
+        // Electric reaches Postgres over the internet.
+        start: electric.start({ enableInternet: true, env: { DATABASE_URL: Redacted.value(databaseUrl) } }),
+        setInactivityTimeout: (ms) => electric.setInactivityTimeout(ms),
+      } satisfies Host<unknown, RuntimeContext>
       return {
         fetch: Effect.gen(function* () {
-          // Electric reaches Postgres over the internet.
-          yield* electric.start({ enableInternet: true, env: { DATABASE_URL: Redacted.value(databaseUrl) } })
+          yield* awake(host)
           return yield* port.fetch(yield* HttpServerRequest.HttpServerRequest)
         }),
       }
