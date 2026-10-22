@@ -53,6 +53,18 @@ const fromReadable = (readable: Readable) =>
     (cause) => new ProviderError({ code: "unknown", message: String(cause) }),
   ).pipe(Stream.map((chunk) => new Uint8Array(chunk)))
 
+// Only guest users' homes are virtual. The host TMPDIR may itself be under /home/lane;
+// rewriting that checkout path makes real git report not_a_repository.
+const guestCommand = (command: string, homes: string) =>
+  command.replaceAll(/'\/home\/(?=p[0-9a-f]{16}\/|smithers\/)/g, `'${homes}/`)
+
+test("guest home mapping preserves host checkout paths under /home", () => {
+  const command = "'/home/lane/tmp/checkout' '/home/smithers/.smithers/calls' '/home/p0123456789abcdef/.smithers/calls'"
+  expect(guestCommand(command, "/home/lane/tmp/homes")).toBe(
+    "'/home/lane/tmp/checkout' '/home/lane/tmp/homes/smithers/.smithers/calls' '/home/lane/tmp/homes/p0123456789abcdef/.smithers/calls'",
+  )
+})
+
 /** A session on the machine: `sh -c` in its checkout, with the container's `/home` at `homes`. */
 const sessionAt = (workdir: string, homes: string): Sandbox.Session => ({
   id: "machine",
@@ -61,7 +73,7 @@ const sessionAt = (workdir: string, homes: string): Sandbox.Session => ({
   spawn: (command, options) =>
     Effect.acquireRelease(
       Effect.sync(() =>
-        spawn("sh", ["-c", command.replaceAll("'/home/", `'${homes}/`)], {
+        spawn("sh", ["-c", guestCommand(command, homes)], {
           cwd: options.cwd ?? workdir,
           stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
         })
