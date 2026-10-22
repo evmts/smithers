@@ -318,11 +318,12 @@ describe("BrowserRuntime.serve", () => {
         const leader = yield* Engines.leader(name, Engines.engine(name, database, run))
         const engine = yield* Engines.tab(name)
         yield* engine.start(Sleeper, { executionId: "later", payload: { prefix: "t", pauseMs: 600_000 } })
-        while (!run.ran.includes("t:before")) yield* Effect.sleep("10 millis")
-        yield* Effect.sleep("50 millis")
+        // Parked on its timer: the leader's store says so, rather than a wait that a loaded machine outlasts.
+        while ((yield* engine.inspect("later")).run.status !== "suspended") yield* Effect.sleep("10 millis")
         yield* Engines.close(leader)
         yield* Engines.leader(name, Engines.engine(name, database, run))
-        yield* Effect.sleep("200 millis")
+        // The next leader has driven it once, and left it parked.
+        while (telemetry.count(BrowserRuntime.wakes, { outcome: "parked" }) === 0) yield* Effect.sleep("10 millis")
         expect(run.ran).toEqual(["t:before"])
       }).pipe(Effect.scoped)
     ).pipe(Effect.andThen(Effect.sync(() => {
