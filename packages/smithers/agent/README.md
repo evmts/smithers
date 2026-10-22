@@ -412,7 +412,8 @@ model: [openai:gpt-6-sol, anthropic:claude-opus-5-5]
 Capacity dispatch refreshes and resolves seats only as they are considered; an
 unused fallback cannot fail a primary call. Pre-dispatch request records skip
 spent and cooling routes. Factory seats have no pre-dispatch route record,
-because their route is known only after the keyed refresh.
+because their route is known only after the keyed refresh. A failed refresh or
+resolution tries the next seat and emits the ordinary seat-failover event.
 
 A capacity park has a default ceiling of `QuotaPolicy.maxWaitMillis` (one hour).
 `Options.capacity.maxParkMillis` explicitly overrides that ceiling.
@@ -430,6 +431,10 @@ their cooldown, including when the remaining backup must park. Durable replay
 reconstructs the skips; a new run can try replenished credit. Hosts retain
 session-wide credit decisions and
 enforce a pinned model by passing `fallbackSeats: []`.
+
+`AgentAction`'s whole-action `timeout` starts with a durable timestamp before
+seat resolution. A park or host restart retains that deadline and refuses an
+expired action before resolving seats or contacting a provider again.
 
 ## Quota-aware waits
 
@@ -546,6 +551,12 @@ forecast, including the first call. Concurrent admission requires one shared
 `Budget` instance per run. `check(stepKey)` is an advisory preview; custom
 model boundaries must use scoped `reserve` through the provider call and its
 `record`.
+
+Recovery rejects an incomplete empty page and enforces its entry bound on the
+final page too. Duplicate charges must agree on both tokens and dollars,
+including whether a price is known. A spend ledger alone cannot restore latency
+or skip state, so accounts without a journal remain pinned in the bounded cache;
+a full cache refuses a new run rather than resetting an existing allowance.
 
 A `skip-remaining` refusal durably records the original decision as
 `flows.agent.budget-latched.v1` before returning. Recovery restores that latch

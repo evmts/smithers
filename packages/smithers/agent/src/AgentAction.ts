@@ -1182,12 +1182,25 @@ export const implement = <
   return Layer.unwrap(Effect.map(SeatResolver, (seats) =>
     declared.toLayer((payload) => {
       const run = execute(payload).pipe(Effect.provideService(SeatResolver, seats))
-      return options.timeout === undefined ? run : run.pipe(
-        Effect.interruptible,
-        Effect.timeoutOrElse({
-          duration: typeof options.timeout === "function" ? options.timeout(payload) : options.timeout,
-          orElse: () => Effect.fail(new HarnessError({ code: "model_failed", message: `${tag} timed out.` }))
+      if (options.timeout === undefined) return run
+      const timeout = options.timeout
+      return Effect.gen(function*() {
+        // This run-scoped receipt survives a park or host restart. Replaying
+        // the implementation consumes the original allowance, not a new one.
+        const startedAt = yield* Action.make({
+          name: `${tag}/timeout-started`,
+          success: Schema.Number,
+          tier: "sealed",
+          execute: Clock.currentTimeMillis
         })
-      )
+        const duration = Duration.toMillis(typeof timeout === "function" ? timeout(payload) : timeout)
+        const remaining = duration - Math.max(0, (yield* Clock.currentTimeMillis) - startedAt)
+        const expired = () => Effect.fail(new HarnessError({ code: "model_failed", message: `${tag} timed out.` }))
+        if (remaining <= 0) return yield* expired()
+        return yield* run.pipe(
+          Effect.interruptible,
+          Effect.timeoutOrElse({ duration: remaining, orElse: expired })
+        )
+      })
     })))
 }

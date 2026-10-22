@@ -1941,7 +1941,7 @@ describe("AgentAction seat auto", () => {
   })
   const routedStep = Layer.mergeAll(Routed.layer, Interpreter.layer(RoutedFlow))
 
-  it.each(["memory", "durable", "restart"])("keeps its recorded route after a quota park (%s)", async (mode) => {
+  it.each(["memory", "durable", "restart", "deadline"])("retains route and deadline (%s)", async (mode) => {
     const routed: Array<Evaluator.Request> = []
     const calls: Array<string> = []
     const requests: Array<string> = []
@@ -1984,8 +1984,18 @@ describe("AgentAction seat auto", () => {
           journalSource: hostId,
           isAlive: () => Effect.succeed(false)
         })
+        const step = mode === "deadline"
+          ? Layer.mergeAll(
+            AgentAction.implement(Routed, {
+              seat: Seat.auto,
+              prompt: ({ diff }) => `Review this diff: ${diff}`,
+              timeout: 2_000
+            }),
+            Interpreter.layer(RoutedFlow)
+          )
+          : routedStep
         return routedStack(
-          routedStep,
+          step,
           models,
           [],
           judge([toSonnet, toOpus], routed),
@@ -2027,7 +2037,7 @@ describe("AgentAction seat auto", () => {
           expect(parked).toBe(true)
           expect(calls).toEqual(["sonnet"])
           expect(routed).toHaveLength(1)
-          if (mode === "restart") {
+          if (mode === "restart" || mode === "deadline") {
             yield* Fiber.interrupt(running)
             return undefined
           }
@@ -2038,6 +2048,7 @@ describe("AgentAction seat auto", () => {
           return { value, replayed }
         }))
         if (first !== undefined) return first
+        if (mode === "deadline") yield* TestClock.adjust("2500 millis")
         return yield* Effect.scoped(Effect.gen(function*() {
           const wiring = yield* incarnation("auto-quota-after")
           const context = yield* Layer.build(wiring)
@@ -2045,6 +2056,10 @@ describe("AgentAction seat auto", () => {
             Effect.provideContext(context),
             Effect.forkChild({ startImmediately: true })
           )
+          if (mode === "deadline") {
+            const value = yield* settle(running).pipe(Effect.exit)
+            return { value, replayed: value }
+          }
           const value = yield* settle(running)
           const replayed = yield* RoutedFlow.execute({ diff: "diff" }, { executionId }).pipe(
             Effect.provideContext(context)
@@ -2056,6 +2071,12 @@ describe("AgentAction seat auto", () => {
         Effect.provide(mode === "memory" ? NodeCrypto.layer : Layer.merge(NodeCrypto.layer, TestClock.layer()))
       )
     ))
+    if (mode === "deadline") {
+      expect(observed.value).toMatchObject({ _tag: "Failure" })
+      expect(JSON.stringify(observed.value)).toContain("timed out")
+      expect(calls).toEqual(["sonnet"])
+      return
+    }
     expect(observed.value).toEqual({ approved: true, issues: [] })
     expect(observed.replayed).toEqual(observed.value)
     expect(routed).toHaveLength(1)

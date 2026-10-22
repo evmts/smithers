@@ -381,6 +381,31 @@ const collect = (options: {
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
 
 describe("capacity seat chain", () => {
+  it("tries a fallback when the primary seat refresh fails", async () => {
+    const model = recordedCells([], ["ctx.done('done')"])
+    const primary = Seat.make({
+      id: "primary",
+      modelId: "primary",
+      model,
+      route,
+      contextWindowTokens: 0,
+      refresh: () => Effect.fail(new Seat.SeatUnresolved({ seat: "primary", message: "refresh failed" }))
+    })
+    const backup = Seat.make({ id: "backup", modelId: "backup", model, route, contextWindowTokens: 0 })
+    const events: AgentEvent.AgentEvent[] = []
+    const outcome = await drive(
+      collect({ model, seat: primary, fallbackSeats: [backup], registry: registryOf([]), sink: events })
+    )
+    expect(outcome._tag).toBe("completed")
+    expect(events).toContainEqual(expect.objectContaining({ _tag: "model-selected", seat: "backup" }))
+    expect(events).toContainEqual(expect.objectContaining({
+      _tag: "seat-failed-over",
+      from: "primary",
+      to: "backup",
+      code: "unknown"
+    }))
+  })
+
   it("keeps cooldown records separate across model frames", async () => {
     let calls = 0
     const replies = recordedCells([], ["console.log('next frame')", "ctx.done('done')"])

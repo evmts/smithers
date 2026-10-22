@@ -711,9 +711,15 @@ const withCapacity = (
                   key: JSON.stringify([...identity, seat.modelId])
                 }
               }))
-            })
-            entries.set(index, resolvedEntry)
-            if (!isSpent(resolvedEntry) && (coolingFor(resolvedEntry)?.wakeAt ?? 0) <= now) {
+            }).pipe(Effect.result)
+            if (resolvedEntry._tag === "Failure") {
+              lastError = resolvedEntry.failure
+              previous = index
+              tried.add(index)
+              continue
+            }
+            entries.set(index, resolvedEntry.success)
+            if (!isSpent(resolvedEntry.success) && (coolingFor(resolvedEntry.success)?.wakeAt ?? 0) <= now) {
               selected = index
               break
             }
@@ -736,7 +742,7 @@ const withCapacity = (
               return Stream.fail(lastError!)
             }
             const source = earliest.park.source === "text" ? "default" : earliest.park.source
-            const code = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))!.code
+            const code = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))?.code ?? "unknown"
             const parkName = `agent/capacity/${seats[0]!.seat.id}/${earliest.park.wakeAt}/${parkCount++}`
             yield* Action.make({
               name: `${parkName}/parked`,
@@ -774,17 +780,17 @@ const withCapacity = (
           }
           const entry = entries.get(selected)!
           if (previous >= 0 && previous !== selected && lastError !== undefined) {
-            const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))!
+            const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))
             yield* emit(
               new AgentEvent.SeatFailedOver({
                 eventType: AgentEvent.eventType.seatFailedOver,
-                from: entries.get(previous)!.seat.id,
+                from: seats[previous]!.seat.id,
                 to: entry.seat.id,
-                code: model.code,
-                resetAtEpochMillis: model.resetAtEpochMillis,
-                retryAfterMillis: model.retryAfterMillis,
-                httpStatus: model.httpStatus,
-                quotaScope: model.quotaScope
+                code: model?.code ?? "unknown",
+                resetAtEpochMillis: model?.resetAtEpochMillis,
+                retryAfterMillis: model?.retryAfterMillis,
+                httpStatus: model?.httpStatus,
+                quotaScope: model?.quotaScope
               })
             )
           }

@@ -884,7 +884,7 @@ interface State {
   readonly largestUsd: number
   /** The first counted step with no price, which leaves a USD ceiling's spend unknown. */
   readonly unpriced: string | undefined
-  readonly counted: ReadonlyMap<string, number>
+  readonly counted: ReadonlyMap<string, Charge>
   readonly latched: BudgetExceeded | undefined
 }
 
@@ -1178,7 +1178,15 @@ const recoverUsage = (
       }
       scanned += read.entries.length
       const last = read.entries.at(-1)
-      if (!read.hasMore || last === undefined) {
+      if (read.hasMore && last === undefined) {
+        return yield* Effect.fail(unavailable("recover", runId, "its journal returned an empty page with more entries"))
+      }
+      if (scanned > entryLimit || (scanned === entryLimit && read.hasMore)) {
+        return yield* Effect.fail(
+          unavailable("recover", runId, `its journal holds more than the ${entryLimit} entries one recovery reads`)
+        )
+      }
+      if (!read.hasMore) {
         return {
           usage: recovered,
           startedAt: startedAt === Number.POSITIVE_INFINITY ? undefined : startedAt,
@@ -1187,16 +1195,7 @@ const recoverUsage = (
           suspendedSince
         }
       }
-      if (scanned >= entryLimit) {
-        return yield* Effect.fail(
-          unavailable(
-            "recover",
-            runId,
-            `its journal holds more than the ${entryLimit} entries one recovery reads`
-          )
-        )
-      }
-      after = last.seq
+      after = last!.seq
     }
   })
 
@@ -1360,7 +1359,7 @@ export const make = (
         usd: 0,
         largestUsd: 0,
         unpriced: undefined,
-        counted: new Map<string, number>(),
+        counted: new Map<string, Charge>(),
         latched: undefined
       })
       const recovery = yield* Semaphore.make(1)
@@ -1446,7 +1445,7 @@ export const make = (
         const { spent, costUsd } = charge
         const previous = current.counted.get(stepKey)
         if (previous !== undefined) {
-          const conflict = previous === spent
+          const conflict = previous.spent === spent && previous.costUsd === costUsd
             ? undefined
             : unavailable("record", runId, "a model step was recorded with conflicting usage")
           if (pending !== undefined && conflict !== undefined) run.pending.set(stepKey, conflict)
@@ -1458,7 +1457,7 @@ export const make = (
           ]
         }
         const counted = new Map(current.counted)
-        counted.set(stepKey, spent)
+        counted.set(stepKey, charge)
         // Publish the actual cost and its pending durability in the same
         // synchronous transition. A concurrent check cannot see only one.
         if (pending !== undefined) run.pending.set(stepKey, pending)

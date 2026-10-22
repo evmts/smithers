@@ -80,6 +80,68 @@ describe("budget usage cost", () => {
 })
 
 describe("budget usage durability", () => {
+  it("refuses an empty recovery page that promises more entries", async () => {
+    await run(inRun(
+      "empty-page",
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        const budget = yield* Budget.make({})
+        const result = yield* budget.usage.pipe(
+          Effect.provideService(Journal.Journal, {
+            ...journal,
+            entries: () => Effect.succeed({ entries: [], hasMore: true })
+          }),
+          Effect.exit
+        )
+        expect(result._tag).toBe("Failure")
+        expect(JSON.stringify(result)).toContain("recover")
+      })
+    ))
+  })
+
+  it("rejects an oversized final recovery page", async () => {
+    await run(inRun(
+      "final-page",
+      Effect.gen(function*() {
+        const writer = yield* Budget.make({})
+        yield* writer.record("a", { totalTokens: 1 })
+        yield* writer.record("b", { totalTokens: 1 })
+        const budget = yield* Budget.make({}, { recoveryEntries: 1 })
+        const result = yield* budget.usage.pipe(Effect.exit)
+        expect(result._tag).toBe("Failure")
+        expect(JSON.stringify(result)).toContain("more than the 1 entries")
+      })
+    ))
+  })
+
+  it.each([0.2, undefined])("rejects duplicate token charges with conflicting dollars %s", async (costUsd) => {
+    await run(inRun(
+      "dollar-conflict",
+      Effect.gen(function*() {
+        const budget = yield* Budget.make({})
+        yield* budget.record("paid", { totalTokens: 10, costUsd: 0.1 })
+        const result = yield* budget.record("paid", { totalTokens: 10, ...(costUsd === undefined ? {} : { costUsd }) })
+          .pipe(Effect.exit)
+        expect(result._tag).toBe("Failure")
+        expect(JSON.stringify(result)).toContain("conflicting usage")
+      })
+    ))
+  })
+
+  it("retains ledger-only skip state when the account cache fills", async () => {
+    await Effect.runPromise(Effect.gen(function*() {
+      const budget = yield* Budget.make({ tokens: { max: 0, onExceeded: "skip-remaining" } }, {
+        ledger: Budget.memoryLedger(),
+        maxRuns: 1
+      })
+      const first = yield* inRun("latched", budget.check("a"))
+      expect(first._tag).toBe("refuse")
+      // A spend ledger cannot restore the clock or latch. Refuse eviction.
+      expect((yield* inRun("other", budget.check("b")).pipe(Effect.exit))._tag).toBe("Failure")
+      expect(yield* inRun("latched", budget.check("c"))).toEqual(first)
+    }))
+  })
+
   it("records weighted usage once and recovers the charge without repricing", async () => {
     await run(inRun(
       "weighted",
