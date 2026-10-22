@@ -1,6 +1,6 @@
-import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
+import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { renewed, withBearer, withoutCookie } from "../../flows/bearer"
+import { renewalOf, renewed, withBearer, withoutCookie } from "../../flows/bearer"
 import { type TriageDecision, type WriteOp, writesRoute } from "./contract"
 import { WriteTaken } from "./schema"
 
@@ -48,6 +48,9 @@ export const postWrite = (
   credential?: string,
 ) =>
   Effect.gen(function* () {
+    if (credential !== undefined && Option.isNone(renewalOf(credential))) {
+      return yield* new WriteNotTaken({ status: 400 })
+    }
     const client = yield* HttpClient.HttpClient
     const request = HttpClientRequest.post(`${origin}${writesRoute(repository.owner, repository.name)}`).pipe(
       HttpClientRequest.bodyJsonUnsafe(write),

@@ -115,3 +115,36 @@ test("a run's write whose credential can't be renewed is never sent: the renewal
   expect(result._tag === "Failure" && result.failure.status).toBe(undefined)
   expect(garbled.asked).toHaveLength(1)
 })
+
+test.each([
+  "!invalid.signature",
+  Buffer.from(JSON.stringify({ run: "run", chain: ["issue/create"] })).toString("base64url") + "x",
+  Buffer.from(JSON.stringify({ run: "run", chain: ["issue/create"] })).toString("base64url") + ".",
+  ".signature",
+])("malformed credentials report a local bad request: %s", async (credential) => {
+  const gateway = await serve(json(403, {}))
+  expect(await sendAsRun(gateway.origin, credential)).toMatchObject({ _tag: "Failure", failure: { status: 400 } })
+  expect(gateway.asked).toEqual([])
+})
+
+test("renews before posting and forwards the renewed bearer without cookies", async () => {
+  const credential = Buffer.from(JSON.stringify({ run: "queued-run", chain: ["issue/create"] })).toString("base64url") + ".signature"
+  const headers: Array<{ authorization: string | undefined; cookie: string | undefined }> = []
+  const gateway = await serve((request, response) => {
+    headers.push({ authorization: request.headers.authorization, cookie: request.headers.cookie })
+    if (request.url!.endsWith("/credential")) json(200, { token: "renewed-proof" })(request, response)
+    else json(202, { txid: 1, writeId: write.writeId })(request, response)
+  })
+  expect(await sendAsRun(gateway.origin, credential)).toMatchObject({ _tag: "Success" })
+  expect(gateway.asked.map((r) => r.url)).toEqual(["/api/runs/queued-run/credential", "/api/repos/octo/hello/writes"])
+  expect(JSON.parse(gateway.asked[0]!.body)).toEqual({ flow: "issue/create", renew: credential })
+  expect(headers).toEqual([{ authorization: undefined, cookie: undefined }, { authorization: "Bearer renewed-proof", cookie: undefined }])
+})
+
+
+test("a renewal refused by the server preserves its status and never posts a write", async () => {
+  const credential = Buffer.from(JSON.stringify({ run: "queued-run", chain: ["issue/create"] })).toString("base64url") + ".signature"
+  const gateway = await serve(json(403, {}))
+  expect(await sendAsRun(gateway.origin, credential)).toMatchObject({ _tag: "Failure", failure: { status: 403 } })
+  expect(gateway.asked.map((r) => r.url)).toEqual(["/api/runs/queued-run/credential"])
+})

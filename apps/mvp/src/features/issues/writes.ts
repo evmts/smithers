@@ -1,7 +1,8 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric, Option, Schema } from "effect"
+import { renewalOf } from "../../flows/bearer"
 import { OutboxWrites } from "../../outbox"
-import { IssuesClient, type WriteRequest } from "./api"
+import { IssuesClient, WriteNotTaken, type WriteRequest } from "./api"
 import { type NotSentReason, refusalOf, type WriteOp } from "./contract"
 import { sends } from "./metrics"
 import { Requested, Sending } from "./schema"
@@ -56,8 +57,7 @@ export class IssueWrites extends Context.Service<
 
 /**
  * Keeps `row` on the device as `status`, with `reason` when Not sent: inserted, or, when a send replayed after a crash
- * finds it there, its status replaced. Waits until the device stored it; a store that fails leaves it in memory, and
- * the send still settles.
+ * finds it there, its status replaced. Waits until the device stored it; a failed store keeps the outbox retryable.
  */
 export const keep = (
   requested: Collection.Collection<Requested, string>,
@@ -86,8 +86,8 @@ export const keep = (
         draft.status = status
         draft.reason = reason
       })
-    yield* Effect.ignore(kept.persisted)
-  }).pipe(Effect.orDie)
+    yield* kept.persisted
+  }).pipe(Effect.mapError(() => new Outbox.Retry({})))
 
 /** What a parked write's row must still say to show as Not sent: its id, repository, operation and text. */
 const ParkedWrite = Schema.Struct({
@@ -110,7 +110,8 @@ export const keepParked = (requested: Collection.Collection<Requested, string>, 
   Effect.gen(function* () {
     const row = Schema.decodeUnknownOption(ParkedWrite)(write.rows[0])
     if (Option.isNone(row)) return false
-    yield* keep(requested, { ...row.value, v: 3 }, "not_sent", "not_allowed")
+    const kept = yield* Effect.result(keep(requested, { ...row.value, v: 3 }, "not_sent", "not_allowed"))
+    if (kept._tag === "Failure") return false
     yield* Effect.logWarning("issue write parked").pipe(
       Effect.annotateLogs({ feature: "issues", reason: write.reason, writeId: row.value.id, op: row.value.op }),
     )
@@ -159,11 +160,25 @@ export const requestOf = (row: Queued): WriteRequest => {
  * never the text.
  */
 const send = (requested: Collection.Collection<Requested, string>, { rows }: { readonly rows: ReadonlyArray<unknown> }) => {
-  const row = rows[0] as Queued
+  const decoded = Schema.decodeUnknownOption(Sending)(rows[0])
+  if (Option.isNone(decoded) || decoded.value.op === "pr/merge" ||
+    !/^[^/]+\/[^/]+$/.test(decoded.value.repo) ||
+    (decoded.value.op === "issue/triage" && decoded.value.decision === undefined) ||
+    (decoded.value.op === "issue/commitment" && decoded.value.commitment === undefined)) {
+    return Effect.gen(function* () {
+      yield* Metric.update(Metric.withAttributes(sends, { op: "invalid", outcome: "refused" }), 1)
+      yield* Effect.logWarning("issues.write.invalid").pipe(Effect.annotateLogs({ feature: "issues", outcome: "refused" }))
+      return yield* new Outbox.Refused({ status: 400 })
+    }).pipe(Effect.withSpan("issues.write.send", { attributes: { outcome: "refused" } }))
+  }
+  const row = decoded.value as Queued
   return Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
     const [owner, name] = row.repo.split("/") as [string, string]
-    const answer = yield* Effect.result((yield* IssuesClient).write(owner, name, requestOf(row), row.credential))
+    // Restored opaque credentials cannot recover their authority: retain the shared forbidden refusal.
+    const answer = yield* Effect.result(row.credential !== undefined && Option.isNone(renewalOf(row.credential))
+      ? Effect.fail(new WriteNotTaken({ status: 403 }))
+      : (yield* IssuesClient).write(owner, name, requestOf(row), row.credential))
     const status = answer._tag === "Success" ? undefined : answer.failure.status
     const reason = answer._tag === "Success" ? undefined : refusalOf(status)
     const outcome = answer._tag === "Success"

@@ -23,7 +23,9 @@ export const withoutCookie = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
 /** Routing hints only. Renewal verifies the signed token, never these client-decoded fields. */
 export const renewalOf = (token: string): Option.Option<{ readonly run: string; readonly flow: string }> => {
-  const payload = token.slice(0, token.lastIndexOf("."))
+  const separator = token.lastIndexOf(".")
+  if (separator <= 0 || separator === token.length - 1) return Option.none()
+  const payload = token.slice(0, separator)
   const decoded = Base64Url.decodeString(payload)
   if (Result.isFailure(decoded)) return Option.none()
   const claims = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({ run: Schema.String, chain: Schema.Array(Schema.String).check(Schema.isMinLength(1)) })))(decoded.success)
