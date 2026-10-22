@@ -919,6 +919,8 @@ export {
   isAssumed,
   questionValue,
 } from "./flow-draft-view";
+// An editor's strip of open files.
+export { type FileTab, FileTabs, type FileTabsProps } from "./file-tabs";
 // A repository's home: the blocks its `.smithers/home.json` declares (`Home` in `@smthrs/views`).
 export { LinkTabs, type LinkTabsProps } from "./link-tabs";
 export {

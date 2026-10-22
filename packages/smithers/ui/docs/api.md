@@ -1295,6 +1295,24 @@ and Code: a `<nav>` (`data-slot="link-tabs"`) whose child links, the host's
 router's own, draw as tabs, the one with `aria-current="page"` underlined.
 Name it with `aria-label`.
 
+```ts
+type FileTab = { key: string; label: string; title?: string; href: string; active: boolean }
+function FileTabs(props: Omit<ComponentProps<"div">, "children" | "role"> & {
+  tabs: ReadonlyArray<FileTab>
+  onOpen: (tab: FileTab) => void
+  onClose: (tab: FileTab) => void
+}): JSX.Element | null
+```
+
+`FileTabs` is a strip of open files above a code view, as an editor's tabs. Each
+tab is a link (`role="tab"`, `aria-selected` on the active file) with a close
+button. A plain click, Enter or Space calls `onOpen`; a modified or middle click
+is the browser's. ←, →, Home and End move focus between tabs; Delete or
+Backspace calls `onClose` and focuses the tab that takes its place. Only the
+active tab, else the first, is in the Tab order. It holds no state, and renders
+nothing without tabs. The tablist is named "Open files" unless `aria-label` says
+otherwise.
+
 ## TODOs and the stack
 
 A TODO's private draft, which a person edits and commits (apps/mvp decision

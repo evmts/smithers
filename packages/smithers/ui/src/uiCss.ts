@@ -329,6 +329,14 @@ export const tabsCss = `
 .sui-tabs-trigger:disabled { cursor:not-allowed; opacity:.45; }
 .sui-tab-count { font-family:${t.fontMono}; font-size:10px; color:${t.mutedForeground}; border:1px solid ${t.border}; border-radius:${t.radiusFull}; padding:0 6px; min-width:18px; text-align:center; }
 .sui-tabs-trigger[data-state='active'] .sui-tab-count { color:${t.primary}; border-color:color-mix(in srgb, ${t.primary} 33%, transparent); }
+.sui-file-tabs { display:flex; align-items:stretch; min-width:0; overflow-x:auto; border-bottom:1px solid ${t.border}; }
+.sui-file-tab { display:inline-flex; align-items:center; gap:2px; padding:0 4px 0 12px; margin-bottom:-1px; border-bottom:2px solid transparent; border-right:1px solid ${t.border}; color:${t.mutedForeground}; white-space:nowrap; ${interaction} }
+.sui-file-tab:hover { color:${t.foreground}; background:${t.surface2}; }
+.sui-file-tab[data-active='true'] { color:${t.foreground}; border-bottom-color:${t.primary}; }
+.sui-file-tab > a { padding:8px 4px; color:inherit; font-family:${t.fontMono}; font-size:${t.fontSizeCompact}; text-decoration:none; }
+.sui-file-tab > a:focus-visible { ${focusRing} border-radius:${t.radiusControl}; }
+.sui-file-tab > button { display:inline-grid; place-items:center; width:20px; height:20px; padding:0; border:none; border-radius:${t.radiusControl}; background:transparent; color:inherit; cursor:pointer; opacity:.6; }
+.sui-file-tab > button:hover { opacity:1; background:${t.border}; }
 .sui-tabs-content { min-width:0; }
 .sui-tabs-content:focus-visible { outline:none; }
 `;
