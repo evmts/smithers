@@ -47,7 +47,7 @@ that parks it again.
 
 1. **Counts the attempt and arms the watchdog.** The count of alarms without
    progress goes up by one, and the alarm is armed one backoff away
-   (`retryPolicy`: one second, doubling, at most five minutes, never giving
+   (`retryPolicy`: one second, doubling, at most five seconds, never giving
    up). An alarm that dies from here on leaves both behind.
 2. **Builds the runtime in the alarm's scope.** `runtime(intent)` is usually a
    `CloudflareRuntime.layer` over a `PostgresDatabase.layer`. Its connections
@@ -278,3 +278,8 @@ and `flow.run.claimed` with `claimedAtMs` after activation. Alarm failures
 include their cause tag, attempt, `delayMs`, and `retryAtMs`. These fields
 contain no payload or provider message. Outcome counters retain bounded labels;
 execution ids belong only to logs and spans.
+
+Repeated starts arm the alarm immediately, even if the caller write fails.
+A repeated failed caller can no longer keep moving admission five seconds
+into the future. Host recovery waits at most five seconds after a failure;
+flow actions retain their own durable retry policies.

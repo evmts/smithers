@@ -274,13 +274,13 @@ export const driveBudget: Config.Config<number> = Config.schema(
 
 /**
  * The backoff between consecutive alarms that make no progress, whether they
- * failed or died: one second, doubling, at most five minutes, and never
+ * failed or died: one second, doubling, at most five seconds, and never
  * giving up.
  *
  * @category constants
  * @since 1.0.0
  */
-export const retryPolicy: RetryPolicy.RetryPolicy = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })
+export const retryPolicy: RetryPolicy.RetryPolicy = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 5_000 })
 
 /**
  * {@link start} calls, by `outcome`: `accepted`, `duplicate`, `conflict` or
@@ -449,7 +449,7 @@ export const start = <A, E, R, RS>(
       })
     }
     if (previous === undefined) yield* storage.put(intentKey, next)
-    yield* storage.setAlarm((yield* Clock.currentTimeMillis) + startGraceMs)
+    yield* storage.setAlarm((yield* Clock.currentTimeMillis) + (previous === undefined ? startGraceMs : 0))
     const exit = yield* Effect.exit(effect)
     if (Exit.isSuccess(exit)) yield* storage.setAlarm(yield* Clock.currentTimeMillis)
     const outcome = Exit.isFailure(exit) ? "failed" : previous === undefined ? "accepted" : "duplicate"
