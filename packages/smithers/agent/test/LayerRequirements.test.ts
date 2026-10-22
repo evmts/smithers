@@ -1,4 +1,5 @@
 import type * as Evaluator from "@smthrs/model/Evaluator"
+import { Cause, Context, Effect, Exit } from "effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import type * as Stream from "effect/Stream"
@@ -19,6 +20,17 @@ const Checked = AgentAction.make("agent/test/LayerRequirements", {
 })
 
 describe("agent layer requirements", () => {
+  it("consumes its declared policy dependencies during construction", async () => {
+    const exit = await Effect.runPromiseExit(
+      Layer.build(Agent.layer).pipe(
+        Effect.provideContext(Context.empty() as Context.Context<Budget.Budget | QuotaPolicy.QuotaClassifier>),
+        Effect.scoped
+      )
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain("Service not found")
+  })
+
   it("requires budget accounting and quota classification at both composition seams", () => {
     type ActionRequirements = Requirements<typeof Checked.layer>
     type AgentRequirements = Requirements<typeof Agent.layer>

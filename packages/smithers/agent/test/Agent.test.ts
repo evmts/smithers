@@ -381,6 +381,76 @@ const collect = (options: {
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
 
 describe("capacity seat chain", () => {
+  it("keeps cooldown records separate across model frames", async () => {
+    let calls = 0
+    const replies = recordedCells([], ["console.log('next frame')", "ctx.done('done')"])
+    const model = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          calls++
+          return calls === 1 || calls === 3
+            ? Stream.fail(
+              new ModelError({ code: "rate_limited", message: "wait", resetAtEpochMillis: calls === 1 ? 0 : 1_000 })
+            )
+            : replies.stream(request)
+        })
+    })
+    const events: AgentEvent.AgentEvent[] = []
+    const outcome = await drive(
+      collect({ model, registry: registryOf([]), sink: events }).pipe(
+        Effect.provide(TestClock.layer())
+      )
+    )
+    expect(outcome._tag).toBe("suspended")
+    expect(calls).toBe(3)
+    expect(events.filter((event) => event._tag === "model-parked").map((event) => event.wakeAt)).toEqual([0, 1_000])
+  })
+
+  it.each([false, true])("does not refresh or resolve an unused fallback (failing=%s)", async (failing) => {
+    let refreshes = 0
+    let resolutions = 0
+    const model = recordedCells([], ["console.log('frame')", "ctx.done('done')"])
+    const backup = Seat.make({
+      id: "unused",
+      modelId: "unused",
+      model,
+      contextWindowTokens: 0,
+      route: {
+        prepare: () => {
+          resolutions++
+          return Effect.succeed(prepared)
+        }
+      },
+      refresh: () => {
+        refreshes++
+        return failing
+          ? Effect.fail(new Seat.SeatUnresolved({ seat: "unused", message: "unused refresh failed" }))
+          : Effect.succeed(backup)
+      }
+    })
+    const outcome = await drive(collect({ model, registry: registryOf([]), fallbackSeats: [backup] }))
+    expect(outcome._tag).toBe("completed")
+    expect(refreshes).toBe(0)
+    expect(resolutions).toBe(0)
+  })
+
+  it("bounds a distant reset when no capacity ceiling is configured", async () => {
+    const model = Model.make({
+      stream: () =>
+        Stream.fail(
+          new ModelError({
+            code: "rate_limited",
+            message: "distant reset",
+            retryAfterMillis: 86_400_000
+          })
+        )
+    })
+    const events: AgentEvent.AgentEvent[] = []
+    const outcome = await drive(collect({ model, registry: registryOf([]), sink: events }))
+    expect(outcome._tag).toBe("failed")
+    expect(events.some((event) => event._tag === "model-parked")).toBe(false)
+  })
+
   it("keeps the seat identity when a route cannot resolve", async () => {
     let prepared = 0
     let contacted = 0
@@ -747,6 +817,9 @@ describe("capacity seat chain", () => {
       }))
       expect(outcome._tag).toBe("completed")
       expect(contacted).toEqual(["first", "second", "second"])
+      const requested = events.filter((event) => event._tag === "model-requested")
+      expect(requested.at(-1)?.request.modelId).toBe("second")
+      expect(requested.at(-1)?.binding?.routeId).toBe("route-b")
       expect(events.filter((event) => event._tag === "seat-failed-over")).toHaveLength(1)
       expect(events.filter((event) => event._tag === "model-selected").map((event) => event.seat))
         .toEqual(["first", "second", "second"])
@@ -1762,6 +1835,11 @@ describe("supervisor memory through Agent.run", () => {
       { mode: "absent", options: { banks: ["agent-repository"], remember: true } },
       { mode: "failed", options: { banks: ["agent-repository"], remember: true } },
       { mode: "typed-failed", options: { banks: ["agent-repository"], remember: true } },
+      {
+        mode: "write-only",
+        options: { banks: ["agent-repository"], remember: true },
+        envelope: [new Capability.CapabilityPattern({ action: "memory:write", resource: "agent-repository" })]
+      },
       // No namespace: no bank is read or written, never one global bank.
       { mode: "unnamed", options: { remember: true } },
       // A namespace but no opt-in: recalled, never written.
@@ -1786,6 +1864,7 @@ describe("supervisor memory through Agent.run", () => {
     const snapshots: Array<Supervisor.Snapshot> = []
     const judged: Array<ReadonlyArray<Relevance.Item>> = []
     const warnings: Array<string> = []
+    const warningCauses: Array<string> = []
     const failures: Array<AgentEvent.SupervisorMemoryFailed> = []
     const namespace = "repository"
     const sentence = "The repository runs its checks with tox and the key sk-live-abcdefghijklmnop."
@@ -1887,7 +1966,10 @@ describe("supervisor memory through Agent.run", () => {
         Effect.provideService(MemoryStore.MemoryStore, store),
         mode === "absent" ? (effect) => effect : Effect.provideService(Recall.Recall, recall),
         Effect.provide(
-          Logger.layer([Logger.make((entry) => warnings.push(String(entry.message)))], { mergeWithExisting: false })
+          Logger.layer([Logger.make((entry) => {
+            warnings.push(String(entry.message))
+            warningCauses.push(String(entry.cause))
+          })], { mergeWithExisting: false })
         )
       )
     )
@@ -1920,7 +2002,7 @@ describe("supervisor memory through Agent.run", () => {
         : []
     )
     expect(recalls).toEqual(
-      mode === "absent" || mode === "unnamed" ? [] : [{
+      mode === "absent" || mode === "unnamed" || mode === "write-only" ? [] : [{
         banks: [`agent-${namespace}`],
         query: `The task for this run:\n\nwrite the first file\n${sentence}`,
         maxTokens: Supervisor.recalledLimit * 256
@@ -1933,11 +2015,12 @@ describe("supervisor memory through Agent.run", () => {
     )
     expect(failures.map((event) => event.detail)).toEqual(
       mode === "typed-failed" ?
-        ["store: recall locked", "store: notes locked"] :
+        ["store: The memory store failed", "store: The memory store failed"] :
         mode === "failed"
         ? ["The memory store failed unexpectedly", "The memory store failed unexpectedly"]
         : []
     )
+    expect(warningCauses.join("\n")).not.toMatch(/locked|recorded memory/)
     expect(warnings.filter((message) => message.includes("could not"))).toEqual(
       failed
         ? ["The supervisor could not recall memory", "The transcript miner could not write memory"] :
@@ -2250,7 +2333,7 @@ describe("Agent.run", () => {
   })
 
   it.each([
-    [{ message: "disk full" }, Cell.defaultCallFailureCode, "disk full"],
+    [{ message: "disk full" }, Cell.defaultCallFailureCode, Cell.defaultCallFailureCode],
     [{ code: "timeout" as const }, "timeout", "timeout"]
   ])("ends a failed flow call's execute_tool span as a failure and hands the envelope back (%j)", async (
     failure,
@@ -2291,6 +2374,11 @@ describe("Agent.run", () => {
       refused.status._tag === "Ended" && Cause.pretty((refused.status.exit as Exit.Failure<unknown, unknown>).cause)
     )
       .toContain(reported)
+    if ("message" in failure) {
+      expect(Cause.pretty((refused.status as { exit: Exit.Failure<unknown, unknown> }).exit.cause)).not.toContain(
+        failure.message
+      )
+    }
     // The cell still received the envelope as a resolved failure.
     const events = outcome._tag === "completed" ? outcome.value as ReadonlyArray<AgentEvent.AgentEvent> : []
     const settledCall = events.find((event) => event._tag === "cell-call-settled" && event.result.outcome === "failure")

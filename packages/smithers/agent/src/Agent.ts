@@ -85,7 +85,7 @@ import * as Option from "effect/Option"
 import type * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import type * as Budget from "./Budget.ts"
+import * as Budget from "./Budget.ts"
 import * as CellPlugin from "./CellPlugin.ts"
 import * as Checkpointed from "./Checkpointed.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
@@ -333,13 +333,12 @@ export interface Options {
 }
 
 /**
- * What a memory fault says on the journal: the store's code and message for a
- * typed `MemoryError`, a fixed sentence for anything else.
+ * Memory fault diagnostics carry a bounded code, never store content.
  */
 const memoryDetail = (cause: Cause.Cause<unknown>): string => {
   const error = Cause.squash(cause)
   return error instanceof MemoryError.MemoryError
-    ? `${error.code}: ${error.message}`
+    ? `${error.code}: The memory store failed`
     : "The memory store failed unexpectedly"
 }
 
@@ -376,7 +375,7 @@ const supervisorMemory = (
     const memory: Supervisor.Memory = {
       bound: true,
       recall: (query, limit) =>
-        Option.isNone(recall) ? Effect.succeed([]) : recall.value.recall({
+        banks.length === 0 || Option.isNone(recall) ? Effect.succeed([]) : recall.value.recall({
           banks,
           query,
           maxTokens: limit * 256
@@ -384,7 +383,7 @@ const supervisorMemory = (
           Effect.map((rows) => rows.slice(0, limit).map((row) => ({ key: row.key, text: row.text }))),
           Effect.catchCause((cause) =>
             Effect.andThen(
-              Effect.logWarning("The supervisor could not recall memory", cause),
+              Effect.logWarning("The supervisor could not recall memory"),
               Effect.fail({ detail: memoryDetail(cause) })
             )
           )
@@ -396,7 +395,7 @@ const supervisorMemory = (
             Effect.asVoid,
             Effect.catchCause((cause) =>
               Effect.andThen(
-                Effect.logWarning("The transcript miner could not write memory", cause),
+                Effect.logWarning("The transcript miner could not write memory"),
                 Effect.fail({ detail: memoryDetail(cause) })
               )
             )
@@ -633,7 +632,10 @@ const withCapacity = (
     const account = cooling.get(entry.accountKey)
     return (model?.wakeAt ?? 0) > (account?.wakeAt ?? 0) ? model : account ?? model
   }
-  const policy = QuotaPolicy.makeDefault({ defaultWaitMillis: 15 * 60_000, maxWaitMillis: Infinity })
+  const policy = QuotaPolicy.makeDefault({
+    defaultWaitMillis: 15 * 60_000,
+    maxWaitMillis: capacity?.maxParkMillis ?? QuotaPolicy.maxWaitMillis
+  })
   const maxParks = capacity?.maxParks ?? QuotaPolicy.defaultMaxParks
   let parkCount = 0
   // Terminal credit refusals are skipped within this invocation. Durable replay
@@ -649,12 +651,22 @@ const withCapacity = (
     let previous = -1
     let cycle = 0
     const tried = new Set<number>()
+    const entries = new Map<number, {
+      seat: Seat.Seat
+      engine: EngineLike.EngineLike
+      request: ModelRequest.ModelRequest
+      accountKey: string
+      key: string
+    }>()
     const attempt = (): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError> =>
       Stream.unwrap(
         Effect.gen(function*() {
           const now = yield* Clock.currentTimeMillis
-          const entries = yield* Effect.forEach(seats, (entry, index) =>
-            Effect.gen(function*() {
+          let selected = -1
+          for (let index = 0; index < seats.length; index++) {
+            if (tried.has(index)) continue
+            const entry = seats[index]!
+            const resolvedEntry = yield* Effect.gen(function*() {
               let callKey: string | undefined
               if (entry.seat.refresh !== undefined) {
                 const instance = yield* FlowRuntime.FlowInstance
@@ -699,13 +711,15 @@ const withCapacity = (
                   key: JSON.stringify([...identity, seat.modelId])
                 }
               }))
-            }))
-          const selected = entries.findIndex((entry, index) =>
-            !tried.has(index) && !isSpent(entry) &&
-            (coolingFor(entry)?.wakeAt ?? 0) <= now
-          )
+            })
+            entries.set(index, resolvedEntry)
+            if (!isSpent(resolvedEntry) && (coolingFor(resolvedEntry)?.wakeAt ?? 0) <= now) {
+              selected = index
+              break
+            }
+          }
           if (selected < 0) {
-            const recoverable = entries.filter((entry) => !isSpent(entry))
+            const recoverable = [...entries.values()].filter((entry) => !isSpent(entry))
             const availableParks = recoverable.flatMap((entry) => {
               const park = coolingFor(entry)
               return park === undefined ? [] : [{ entry, park }]
@@ -758,13 +772,13 @@ const withCapacity = (
             previous = -1
             return attempt()
           }
-          const entry = entries[selected]!
+          const entry = entries.get(selected)!
           if (previous >= 0 && previous !== selected && lastError !== undefined) {
             const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))!
             yield* emit(
               new AgentEvent.SeatFailedOver({
                 eventType: AgentEvent.eventType.seatFailedOver,
-                from: entries[previous]!.seat.id,
+                from: entries.get(previous)!.seat.id,
                 to: entry.seat.id,
                 code: model.code,
                 resetAtEpochMillis: model.resetAtEpochMillis,
@@ -873,6 +887,25 @@ const withCapacity = (
   }
   return EngineLike.make({
     ...primary,
+    // The controller records a request before sealing it. Skip seats already
+    // refused for this invocation, just as dispatch does. A factory seat can
+    // only be resolved after its keyed refresh inside the sealed call; it has
+    // no honest pre-dispatch route to report.
+    resolve: (request) =>
+      Effect.gen(function*() {
+        const now = yield* Clock.currentTimeMillis
+        for (const entry of seats) {
+          if (entry.seat.refresh !== undefined) return Option.none<EngineLike.Resolved>()
+          const next = ModelRequest.ModelRequest.make({ ...request, modelId: entry.seat.modelId })
+          const resolved = yield* EngineLike.resolve(entry.engine, next)
+          const identity = Option.isSome(resolved) && Option.isSome(resolved.value.binding)
+            ? ["route", resolved.value.binding.value.routeId]
+            : ["seat", entry.seat.id]
+          const key = { accountKey: JSON.stringify(identity), key: JSON.stringify([...identity, entry.seat.modelId]) }
+          if (!isSpent(key) && (coolingFor(key)?.wakeAt ?? 0) <= now) return resolved
+        }
+        return Option.none<EngineLike.Resolved>()
+      }),
     sealStepWithEvents
   })
 }
@@ -1102,7 +1135,7 @@ const runProductionUnmeasured: Service["run"] = (options) =>
 class ToolCallFailed extends Error {
   readonly result: Cell.CallResult
   constructor(result: Cell.CallResult, code: Cell.CallFailureCode) {
-    super(result.message ?? code)
+    super(code)
     this.name = "ToolCallFailed"
     this.result = result
   }
@@ -1193,7 +1226,23 @@ export const layer: Layer.Layer<
   Agent,
   never,
   QuotaPolicy.QuotaClassifier | Budget.Budget
-> = Layer.succeed(Agent)(make({ run: runProduction }))
+> = Layer.effect(Agent)(Effect.gen(function*() {
+  const budget = yield* Budget.Budget
+  const quota = yield* QuotaPolicy.QuotaClassifier
+  return make({
+    run: (options) =>
+      Stream.unwrap(Effect.gen(function*() {
+        // AgentSession binds the approved envelope's policy per execution. It
+        // takes precedence over the host's construction-time defaults.
+        const runBudget = yield* Effect.serviceOption(Budget.Budget)
+        const runQuota = yield* Effect.serviceOption(QuotaPolicy.QuotaClassifier)
+        return runProduction(options).pipe(
+          Stream.provideService(Budget.Budget, Option.getOrElse(runBudget, () => budget)),
+          Stream.provideService(QuotaPolicy.QuotaClassifier, Option.getOrElse(runQuota, () => quota))
+        )
+      }))
+  })
+}))
 
 /**
  * Provides {@link makeNoop}.

@@ -56,7 +56,9 @@ composition guide: what each piece is, and what a host has to provide.
 ## `Agent`
 
 `Agent.layer` provides the production implementation and requires both a quota
-classifier and a budget. It composes the whole cell path, the controller in
+classifier and a budget, captures both during layer construction, and uses those
+policies as defaults for its runs. An explicit per-run policy, including an
+approved envelope budget, takes precedence. It composes the whole cell path, the controller in
 `@smthrs/harness/CellTurn`, registry-backed call
 resolution in `@smthrs/harness/CellCalls`, the QuickJS sandbox, the durable
 engine port `FlowEngineLike`, and the plugin kernel, then returns the
@@ -407,6 +409,14 @@ payload callback returning that list. Markdown flows use the same ordering:
 model: [openai:gpt-6-sol, anthropic:claude-opus-5-5]
 ```
 
+Capacity dispatch refreshes and resolves seats only as they are considered; an
+unused fallback cannot fail a primary call. Pre-dispatch request records skip
+spent and cooling routes. Factory seats have no pre-dispatch route record,
+because their route is known only after the keyed refresh.
+
+A capacity park has a default ceiling of `QuotaPolicy.maxWaitMillis` (one hour).
+`Options.capacity.maxParkMillis` explicitly overrides that ceiling.
+
 The first model is primary. Remaining models are tried after a capacity refusal,
 context overflow, or HTTP 5xx failure. Transport retries finish before fallback;
 overflow and 5xx failures do not create a quota park. Exhausting those fallbacks
@@ -644,6 +654,11 @@ const program = Effect.gen(function*() {
 `@smthrs/memory`'s `SnapshotRecorder` port by translating a snapshot identity
 into an `EngineLike.record` boundary, so a memory snapshot a run takes is
 journaled and replays with it.
+
+Supervisor memory recalls only readable banks; a write-only grant never invokes
+recall. Store failures leave fixed warning logs and journal diagnostics with bounded
+error codes, without store messages or causes. Failed tool spans likewise
+carry only the failure code; the cell still receives the original failure envelope.
 
 ## Saving the script a run just wrote
 
