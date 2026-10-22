@@ -1,16 +1,20 @@
 /**
  * Standard metric definitions for the journal write path.
  *
- * This module only defines the metric handles, following the shape of Effect's
+ * This module defines the metric handles, following the shape of Effect's
  * `ClusterMetrics`. `SqlJournal` updates them as emission receipts are
  * produced, so the counters measure admissions on the hot path rather than
  * rows read back. No exporter ships in this package; provide one, for
- * example `@smthrs/observability`, and these counters appear in it.
+ * example `@smthrs/observability`, and these counters appear in it. The
+ * counters sum over the whole process; {@link tally} counts the entries one
+ * effect, such as one request or alarm, committed.
  *
  * @since 0.1.0
  */
 
+import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
+import * as EventTally from "./internal/EventTally.ts"
 
 /**
  * Counter over journal emissions, dimensioned by `channel` (`durable` or
@@ -87,3 +91,46 @@ export const lostEntries = Metric.counter("flows_journal_lost", {
  */
 export const lost = (code: string): Metric.Metric<number, Metric.CounterState<number>> =>
   Metric.withAttributes(lostEntries, { channel: "lossy", code })
+
+/**
+ * What one {@link tally} wrote to the journal.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface JournalTally {
+  /** New entries committed, counted after their transaction commits; a duplicate is not new. */
+  readonly events: number
+}
+
+/**
+ * Runs `effect` and answers how many new journal entries it committed. An
+ * entry counts once its transaction commits, when the journal publishes it,
+ * so one rolled back with an enclosing transaction never counts. It counts
+ * the entries committed by `effect`'s fiber or by fibers it forks, in
+ * tallies nested to any depth. Lossy entries commit on the journal's own
+ * writer fiber and are not counted. When `effect` fails, so does `tally`.
+ *
+ * @example
+ * ```ts
+ * import { Effect } from "effect"
+ * import { JournalMetrics } from "@smthrs/journal"
+ *
+ * declare const drive: Effect.Effect<void>
+ *
+ * const logged = Effect.flatMap(JournalMetrics.tally(drive), ([written]) =>
+ *   Effect.logInfo("drive").pipe(Effect.annotateLogs({ events: written.events })))
+ * ```
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const tally = <A, E, R>(
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<[tally: JournalTally, result: A], E, R> =>
+  Effect.gen(function*() {
+    const accumulator: EventTally.Accumulator = { events: 0 }
+    const open = yield* EventTally.Current
+    const result = yield* Effect.provideService(effect, EventTally.Current, [...open, accumulator])
+    return [{ events: accumulator.events }, result]
+  })

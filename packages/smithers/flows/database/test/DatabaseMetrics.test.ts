@@ -4,7 +4,7 @@
  * global registry.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Metric } from "effect"
+import { Duration, Effect, Fiber, Metric } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
@@ -73,5 +73,13 @@ describe("DatabaseMetrics", () => {
 
       const retries = yield* program
       expect(retries).toBe(0)
+    }))
+
+  it.effect("tallies nothing for a client that takes no PostgreSQL writer lock", () =>
+    Effect.gen(function*() {
+      const writer = DurableWriter.make(retrySql)
+      const [tally, value] = yield* DatabaseMetrics.tally(writer.write(Effect.succeed("written")))
+      expect(value).toBe("written")
+      expect(tally).toEqual({ transactions: 0, lockWait: Duration.zero })
     }))
 })

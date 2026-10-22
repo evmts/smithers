@@ -299,6 +299,15 @@ Each `alarm` span carries `smithers.execution.started` and
 and log line carry `smithers.execution.drive_ms`; each `wake` runs in a
 `cloudflare.execution.wake` span with `smithers.execution.wake`.
 
+Each `cloudflare.execution.alarm` line and span also says what the alarm cost:
+
+| Field          | Value                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `durationMs`   | How long the alarm took, in whole milliseconds.                                                                               |
+| `events`       | The journal entries it committed (`@smthrs/journal` `JournalMetrics.tally`).                                                  |
+| `transactions` | Its write transactions that took the database's writer lock, each retry counted (`@smthrs/database` `DatabaseMetrics.tally`). |
+| `lockWaitMs`   | How long those transactions waited for the lock in total, in whole milliseconds.                                              |
+
 ## EdgeCache
 
 `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API. Use it for

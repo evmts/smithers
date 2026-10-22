@@ -101,9 +101,10 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
       expect(yield* ExecutionObject.alarm(memory.storage, healthy)).toMatchObject({ _tag: "Settled" })
       // The window passes: the final alarm forgets the execution, and says which.
       yield* ExecutionObject.alarm(memory.storage, { ...healthy, settledRetentionMs: 0 })
+      return yield* Effect.promise(() => Postgres.entries(schema))
     })).pipe(
       Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))),
-      Effect.andThen(Effect.sync(() => {
+      Effect.map((written) => {
         // Counted by outcome.
         expect(t.count(ExecutionObject.starts, { outcome: "accepted" })).toBe(1)
         expect(t.count(ExecutionObject.starts, { outcome: "failed" })).toBe(2)
@@ -176,6 +177,8 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
           ...ids,
           readyAtMs: expect.any(Number)
         })
+        const idle = { durationMs: expect.any(Number), events: 0, transactions: 0, lockWaitMs: 0 }
+        const drove = { durationMs: expect.any(Number), events: written, transactions: expect.any(Number), lockWaitMs: expect.any(Number) }
         expect(t.lines("cloudflare.execution.alarm").map((line) => line.annotations)).toEqual([
           expect.objectContaining({
             trace_id: alarms[0]!.traceId,
@@ -183,21 +186,30 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
             outcome: "retrying",
             "error.type": "Leaky",
             "smithers.execution.attempt": 1,
-            ...ids
+            ...ids,
+            ...idle
           }),
           expect.objectContaining({
             trace_id: alarms[1]!.traceId,
             span_id: alarms[1]!.spanId,
             outcome: "settled",
-            ...ids
+            ...ids,
+            ...drove
           }),
           expect.objectContaining({
             trace_id: alarms[2]!.traceId,
             span_id: alarms[2]!.spanId,
             outcome: "forgotten",
-            ...ids
+            ...ids,
+            ...idle
           })
         ])
+        const settled = t.lines("cloudflare.execution.alarm")[1]!.annotations as Record<string, number>
+        expect(written).toBeGreaterThan(0)
+        expect(settled.transactions).toBeGreaterThan(0)
+        expect(settled.durationMs).toBeGreaterThan(0)
+        // The span carries the same cost.
+        expect(alarms.map((span) => span.attributes.get("events"))).toEqual([0, written, 0])
 
         // No content anywhere: not in a line, an attribute, an event, a failed
         // span's cause or a metric's attributes, the engine's own included.
@@ -212,7 +224,7 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
           }
         }
         expect(json(t.snapshot().map((metric) => metric.attributes))).not.toContain(sentinel)
-      }))
+      })
     )
   })
 

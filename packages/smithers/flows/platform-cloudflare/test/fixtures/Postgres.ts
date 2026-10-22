@@ -78,6 +78,16 @@ export const admin = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>): P
     effect.pipe(Effect.provide(Pg.PgClient.layer({ url: Redacted.make(url), maxConnections: 1 })), Effect.scoped)
   )
 
+/** How many journal entries `schema` holds: its runs' own and their ownership records. */
+export const entries = (schema: string): Promise<number> =>
+  admin(Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly entries: number }>`
+      SELECT COUNT(*)::int AS entries FROM ${sql(schema)}.flows_journal_events
+    `
+    return row!.entries
+  }))
+
 /** Drops a case's schema. */
 export const dropSchema = (schema: string): Promise<void> =>
   admin(Effect.gen(function*() {

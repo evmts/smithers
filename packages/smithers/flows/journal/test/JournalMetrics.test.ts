@@ -5,7 +5,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { DatabaseError, DurableWriter, type Service as WriterService } from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Deferred, Effect, Layer, Logger, Metric } from "effect"
+import { Deferred, Effect, Fiber, Layer, Logger, Metric } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { Journal } from "../src/Journal.ts"
@@ -168,4 +168,35 @@ describe("JournalMetrics", () => {
       ).pipe(Effect.provide(logs.layer))
       expect(logs.lines.some((line) => line.includes("final flush"))).toBe(true)
     }))
+
+  it.effect("tallies the entries one effect committed, counted at commit", () =>
+    withJournal(Effect.gen(function*() {
+      const journal = yield* Journal
+      // Outside any tally: counted by nobody.
+      yield* journal.emitDurableUnfenced(input(0))
+      const [outer, inner] = yield* JournalMetrics.tally(Effect.gen(function*() {
+        yield* journal.emitDurableUnfenced(input(1))
+        // A duplicate is not new.
+        yield* journal.emitDurableUnfenced(input(1))
+        // An entry rolled back with its enclosing transaction never commits.
+        yield* Effect.exit(
+          journal.transact(Effect.andThen(journal.emitDurableUnfenced(input(2)), Effect.fail("abort")))
+        )
+        // A lossy entry commits on the journal's writer fiber.
+        yield* journal.emitLossy(input(3))
+        yield* journal.flush
+        const [inner] = yield* JournalMetrics.tally(Effect.gen(function*() {
+          // Two entries in one transaction count once it commits, and a
+          // forked fiber's entry counts too.
+          yield* journal.transact(Effect.andThen(
+            journal.emitDurableUnfenced(input(4)),
+            journal.emitDurableUnfenced(input(5))
+          ))
+          yield* Effect.forkChild(journal.emitDurableUnfenced(input(6))).pipe(Effect.flatMap(Fiber.join))
+        }))
+        return inner
+      }))
+      expect(inner).toEqual({ events: 3 })
+      expect(outer).toEqual({ events: 4 })
+    })))
 })

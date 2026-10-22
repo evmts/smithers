@@ -114,3 +114,12 @@ with a `name` reads only its named cache, never `caches.default`. Count
 The runtime has no `caches` global, or the layer was given no `name` and the
 runtime's `caches` has no `default`, as in a browser. In Node, inject a
 `CacheStorage` through `options.caches`, or use `ImmutableCache.layerMemory`.
+
+## An execution runs slowly
+
+Read the `cloudflare.execution.alarm` lines of its execution id. Each says how
+long the alarm took (`durationMs`), how many journal entries it committed
+(`events`), how many write transactions it ran (`transactions`) and how long
+they waited, in total, for the database's writer lock (`lockWaitMs`). A
+`lockWaitMs` near `durationMs` means the alarm spent its time queued behind
+other writers, not running steps.

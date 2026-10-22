@@ -408,6 +408,7 @@ without completing. See
 | `lossy`       | `writes` views keyed by `"Accepted" \| "Duplicate" \| "Dropped"`            |
 | `lostEntries` | the `flows_journal_lost` counter, dimensioned by `channel` and error `code` |
 | `lost(code)`  | the `lostEntries` view for one `JournalError` code                          |
+| `tally`       | runs an effect and answers `[{ events }, result]`                           |
 
 `SqlJournal` updates these once per emission receipt, so they measure
 admissions on the hot path rather than rows read back. A durable emission
@@ -422,6 +423,14 @@ final flush that fails while the journal closes logs a warning too.
 
 No exporter ships in this package. Provide one, for example
 [`@smthrs/observability`](/api/observability), and these counters appear in it.
+
+The counters sum over the whole process. `tally(effect)` counts what one
+effect, such as one request or one alarm, wrote: `events`, the new entries it
+committed. An entry counts once its transaction commits, when the journal
+publishes it, so one rolled back with an enclosing transaction never counts,
+and a duplicate is not new. It counts entries committed by the effect's fiber or
+fibers it forks, and tallies nest. Lossy entries commit on the journal's own
+writer fiber and are not counted.
 
 ## Migrations
 

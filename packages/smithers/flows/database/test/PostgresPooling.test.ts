@@ -325,6 +325,44 @@ for (const endpoint of endpoints) {
         }
       }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
 
+    it.live("tallies one effect's write transactions and their summed wait for the writer lock", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const holder = yield* client(name)
+        const waiter = yield* client(name)
+        const reader = yield* client(name, { readOnly: true })
+        const writer = DurableWriter.make(waiter)
+        const waiting = holder<{ readonly waiting: boolean }>`SELECT EXISTS (SELECT 1 FROM pg_locks
+          WHERE locktype = 'advisory' AND NOT granted
+            AND ((classid::bigint << 32) | objid::bigint) = hashtextextended(${name}, 2099)) AS waiting`
+        // Outside any tally: counted by nobody.
+        yield* writer.write(waiter`SELECT 1`)
+        const [outer, [inner, held]] = yield* DatabaseMetrics.tally(Effect.gen(function*() {
+          // One transaction: the nested write is its savepoint.
+          yield* writer.write(writer.write(waiter`SELECT 1`))
+          // Neither a lone statement nor a read-only transaction takes the lock.
+          yield* waiter`SELECT 1`
+          yield* reader.withTransaction(reader`SELECT 1`)
+          return yield* DatabaseMetrics.tally(Effect.gen(function*() {
+            // The holder's transaction counts, and so does the write a forked
+            // fiber sends while the holder keeps it waiting.
+            const { blocked, held } = yield* holder.withTransaction(Effect.gen(function*() {
+              const blocked = yield* writer.write(waiter`SELECT 1`).pipe(Effect.forkScoped)
+              yield* TestDatabase.until(Effect.map(waiting, ([row]) => row!.waiting))
+              const observed = yield* Clock.currentTimeMillis
+              yield* Effect.sleep("50 millis")
+              return { blocked, held: (yield* Clock.currentTimeMillis) - observed }
+            }))
+            yield* Fiber.join(blocked)
+            return held
+          }))
+        }))
+        expect(inner.transactions).toBe(2)
+        expect(Duration.toMillis(inner.lockWait)).toBeGreaterThanOrEqual(held)
+        expect(outer.transactions).toBe(3)
+        expect(Duration.toMillis(outer.lockWait)).toBeGreaterThanOrEqual(Duration.toMillis(inner.lockWait))
+      }))
+
     it.live("runs a read-only client's statements in READ ONLY transactions on its schema", () =>
       Effect.gen(function*() {
         const name = schema()

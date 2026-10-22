@@ -4680,6 +4680,9 @@ importers:
       '@smthrs/crypto':
         specifier: 1.0.0-rc.16
         version: link:../crypto
+      '@smthrs/database':
+        specifier: 1.0.0-rc.16
+        version: link:../database
       '@smthrs/engine-store':
         specifier: 1.0.0-rc.16
         version: link:../engine-store
@@ -4692,6 +4695,9 @@ importers:
       '@smthrs/jj':
         specifier: 1.0.0-rc.16
         version: link:../jj
+      '@smthrs/journal':
+        specifier: 1.0.0-rc.16
+        version: link:../journal
       '@smthrs/run-store':
         specifier: 1.0.0-rc.16
         version: link:../run-store
@@ -4711,9 +4717,6 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
-      '@smthrs/database':
-        specifier: 1.0.0-rc.16
-        version: link:../database
       '@smthrs/observability':
         specifier: 1.0.0-rc.16
         version: link:../observability

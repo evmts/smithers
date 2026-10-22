@@ -21,6 +21,9 @@
  * @since 1.0.0
  */
 
+import { DatabaseMetrics } from "@smthrs/database"
+import { JournalMetrics } from "@smthrs/journal"
+import * as Duration from "effect/Duration"
 import { canonicalize } from "@smthrs/canonical"
 import { type DurableEngineState, EngineStore } from "@smthrs/engine-store"
 import { type Flow, FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
@@ -691,6 +694,11 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  * limit never drops an execution. The failure is logged by its tag, and a
  * failed schema migration by its cause as well (`Outcome`'s `detail`).
  *
+ * Every alarm logs `cloudflare.execution.alarm` with its outcome and what it
+ * cost: `durationMs`, the journal entries it committed (`events`), its write
+ * transactions (`transactions`) and their summed wait for the database's
+ * writer lock (`lockWaitMs`), the same on the alarm's span.
+ *
  * `flows` lists the declarations this object may run; an intent naming
  * another flow is a failure like any other. Every object routes executions
  * to objects of the same class, so `flows` lists every flow an execution may
@@ -719,7 +727,9 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     const ids = yield* idsOf(raw)
     yield* Effect.annotateCurrentSpan(ids)
     const timing: { driveMs?: number } = {}
-    const outcome = yield* settleOrDrive(storage, raw, options, timing)
+    const [elapsed, [writes, [written, outcome]]] = yield* Effect.timed(
+      DatabaseMetrics.tally(JournalMetrics.tally(settleOrDrive(storage, raw, options, timing)))
+    )
     const tag = outcome._tag.toLowerCase()
     const failure = outcome._tag === "Retrying"
       ? {
@@ -730,12 +740,17 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
         ...outcome.detail
       }
       : {}
-    // How long the drive ran, when the alarm drove: what shows a drive nearing the 900-second limit.
     const drove = timing.driveMs === undefined ? {} : { "smithers.execution.drive_ms": timing.driveMs }
-    yield* Effect.annotateCurrentSpan({ "smithers.execution.alarm": tag, ...failure, ...drove })
+    const cost = {
+      durationMs: Math.round(Duration.toMillis(elapsed)),
+      events: written.events,
+      transactions: writes.transactions,
+      lockWaitMs: Math.round(Duration.toMillis(writes.lockWait))
+    }
+    yield* Effect.annotateCurrentSpan({ "smithers.execution.alarm": tag, ...failure, ...drove, ...cost })
     yield* Metric.update(Metric.withAttributes(alarms, { outcome: tag }), 1)
     yield* (outcome._tag === "Retrying" ? Effect.logWarning : Effect.logInfo)("cloudflare.execution.alarm").pipe(
-      Effect.annotateLogs({ outcome: tag, ...ids, ...failure, ...drove })
+      Effect.annotateLogs({ outcome: tag, ...ids, ...failure, ...drove, ...cost })
     )
     return outcome
   }).pipe(Effect.withSpan("cloudflare.execution.alarm"))

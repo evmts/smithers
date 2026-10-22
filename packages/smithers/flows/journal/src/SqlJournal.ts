@@ -38,6 +38,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
 import * as Stream from "effect/Stream"
 import { Consensus } from "./Consensus.ts"
+import * as EventTally from "./internal/EventTally.ts"
 import { JournalInternalFault } from "./internal/JournalInternalFault.ts"
 import {
   Checkpoint,
@@ -1799,7 +1800,7 @@ export const make = (
           )
         },
         { discard: true }
-      )
+      ).pipe(Effect.andThen(EventTally.record(commits.filter((commit) => commit.inserted).length)))
 
     const rememberCommitted = (queued: QueuedEntry, seq: Seq): void => {
       retain(sourceEventKey(queued.runId, queued.sourceId, queued.sourceSeq), {

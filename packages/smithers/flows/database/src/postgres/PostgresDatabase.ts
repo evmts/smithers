@@ -57,6 +57,7 @@ import * as DatabaseMetrics from "../DatabaseMetrics.ts"
 import * as ReadOnly from "../internal/ReadOnly.ts"
 import * as ReadTransaction from "../internal/ReadTransaction.ts"
 import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.ts"
+import * as WriteTally from "../internal/WriteTally.ts"
 
 export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.ts"
 
@@ -217,10 +218,9 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
           open(conn, conn.execute(lockStatement, [schema, String(lockTimeoutMs)], undefined))
         )
         if (Exit.isSuccess(exit)) {
-          return yield* Metric.update(
-            DatabaseMetrics.writerLockWait,
-            Duration.millis((yield* Clock.currentTimeMillis) - started)
-          )
+          const waited = Duration.millis((yield* Clock.currentTimeMillis) - started)
+          yield* Metric.update(DatabaseMetrics.writerLockWait, waited)
+          return yield* WriteTally.record(waited)
         }
         if (!isLockTimeout(exit.cause)) return yield* exit
         // `open` rolled the transaction back, so the server connection is free
