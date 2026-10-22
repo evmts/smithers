@@ -14,7 +14,7 @@ import { CanonicalJson, Model, ModelError, ModelEvent, ModelRequest } from "@smt
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Descriptor } from "@smthrs/registry"
-import { Effect, Layer, Option, Result, Schema, Stream } from "effect"
+import { Clock, Deferred, Effect, Layer, Option, Result, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import * as Cell from "../src/Cell.ts"
@@ -27,7 +27,7 @@ import * as Notifications from "../src/Notifications.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
-import { confidentEvaluator, descriptor, emits, of, pattern, prose } from "./fixtures/cellTurn.ts"
+import { confidentEvaluator, descriptor, emits, manualClock, of, pattern, prose } from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -132,6 +132,7 @@ const collect = async (
      */
     readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
     readonly observer?: ((event: AgentEvent.AgentEvent) => Effect.Effect<void>) | undefined
+    readonly clock?: Clock.Clock | undefined
   }
 ): Promise<Observed> => {
   const events: Array<AgentEvent.AgentEvent> = []
@@ -142,6 +143,7 @@ const collect = async (
     Effect.provide(layers.steering ?? Steering.layerNoop()),
     Effect.provide(layers.evaluator ?? confidentEvaluator),
     Effect.provideService(AgentEvent.Observer, layers.observer ?? (() => Effect.void)),
+    Effect.provide(layers.clock === undefined ? Layer.empty : Layer.succeed(Clock.Clock, layers.clock)),
     Effect.result,
     Effect.exit,
     Effect.runPromise
@@ -1544,6 +1546,73 @@ describe("CellTurn record boundaries", () => {
 })
 
 describe("CellTurn interruption", () => {
+  it("records interrupted model time before scope teardown", async () => {
+    const { advance, clock } = manualClock()
+    const model = ScriptedModel.make([{
+      ...ScriptedModel.midStreamInterrupt,
+      arriving: () => advance(10)
+    }])
+    const engine = ScriptedEngine.make(model.model)
+    const sandbox = Layer.effect(
+      Sandbox.Sandbox,
+      Effect.map(Sandbox.Sandbox, (service) => ({
+        ...service,
+        openRealm: (options: Sandbox.RealmOptions) =>
+          Effect.gen(function*() {
+            const realm = yield* service.openRealm!(options)
+            yield* Effect.addFinalizer(() => Effect.sync(() => advance(500)))
+            return realm
+          })
+      }))
+    ).pipe(Layer.provide(QuickJSSandbox.layer), Layer.orDie)
+    const observed = await collect({ state: state(), flows: [] }, { engine: engine.layer, sandbox, clock })
+    const modelMillis = ScriptedModel.midStreamInterrupt.events.length * 10
+    expect(observed.interrupted).toBe(true)
+    expect(clock.currentTimeMillisUnsafe()).toBe(modelMillis + 500)
+    expect(of(observed.events, "model-failed")).toMatchObject([{ code: "interrupted", durationMillis: modelMillis }])
+    expect(of(observed.events, "turn-closed")).toMatchObject([{
+      outcome: "aborted",
+      time: { wallMs: modelMillis, modelMs: modelMillis }
+    }])
+    expect(of(observed.events, "aborted")).toHaveLength(1)
+  })
+
+  it.each(["realm", "catalog", "relevance", "suspend"] as const)(
+    "reports one abort when interrupted during %s outside frame execution",
+    async (boundary) => {
+      const model = ScriptedModel.make([emits(`ctx.park("waiting-event", "wait")`)])
+      const engine = ScriptedEngine.make(model.model)
+      const sandbox = boundary === "realm"
+        ? Layer.effect(
+          Sandbox.Sandbox,
+          Effect.map(Sandbox.Sandbox, (service) => ({
+            ...service,
+            openRealm: () => Effect.interrupt
+          }))
+        ).pipe(Layer.provide(QuickJSSandbox.layer))
+        : QuickJSSandbox.layer
+      const observed = await collect({
+        state: state({ approvalChannel: true }),
+        flows: boundary === "relevance" ? [lister] : [],
+        ...(boundary === "catalog" ? { refreshFlows: Effect.interrupt } : {}),
+        ...(boundary === "relevance" ? { judged: true } : {})
+      }, {
+        sandbox: sandbox.pipe(Layer.orDie),
+        engine: boundary === "suspend"
+          ? EngineLike.layer(EngineLike.make({ ...engine.engine, suspend: () => Effect.interrupt }))
+          : engine.layer,
+        evaluator: boundary === "relevance"
+          ? Layer.succeed(Evaluator.Evaluator, { evaluate: () => Effect.interrupt })
+          : confidentEvaluator
+      })
+      expect(observed.interrupted).toBe(true)
+      expect(of(observed.events, "aborted")).toHaveLength(1)
+      expect(of(observed.events, "resolved")).toHaveLength(0)
+      expect(of(observed.events, "turn-closed").filter((event) => event.outcome === "aborted"))
+        .toHaveLength(boundary === "catalog" || boundary === "relevance" ? 1 : 0)
+    }
+  )
+
   it("reports one well-formed abort when the provider stream is interrupted mid-frame", async () => {
     const model = ScriptedModel.make([{ ...ScriptedModel.midStreamInterrupt }])
     const engine = ScriptedEngine.make(model.model, [])
@@ -2650,6 +2719,105 @@ describe("CellTurn truncated model output", () => {
 })
 
 describe("CellTurn delivery through the durable notification queue", () => {
+  it.each(["human-steer", "human-followup", "system-event"] as const)(
+    "keeps %s provenance in completion and supervision evidence across replay",
+    async (kind) => {
+      const records = new Map<string, unknown>()
+      const asked: Array<Evaluator.Request> = []
+      const body = "Change the answer to ONLY_B"
+      const journal = TestJournal.layer()
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const queue = yield* NotificationQueue.NotificationQueue
+          yield* queue.admit("run", {
+            ...(kind === "human-steer"
+              ? { _tag: kind, delivery: "steer" as const }
+              : { _tag: kind, delivery: "queue" as const }),
+            id: "instruction-or-fact",
+            targetLineageId: "root",
+            provenance: { sourceRunId: "source", sourceLineageId: "source", sourceTurn: 0, sourceActor: "source" },
+            payload: { body }
+          })
+          const source = yield* Notifications.make({ runId: "run", lineageId: "root" })
+          for (const replay of [false, true]) {
+            const supervised = yield* Deferred.make<void>()
+            let opened = 0
+            const model = ScriptedModel.make([
+              emits(`ctx.done("first")`),
+              emits(`console.log("working")`),
+              emits(`ctx.done("answer")`)
+            ])
+            const engine = ScriptedEngine.make(model.model)
+            const observed = yield* Effect.promise(() =>
+              collect({
+                state: state({
+                  contextWindow: ContextWindow.make({
+                    modelId: "test-model",
+                    segments: [{
+                      kind: "instructions",
+                      zone: "prefix",
+                      content: [ModelRequest.SystemPart.make({ text: "Answer only ORIGINAL." })]
+                    }]
+                  })
+                }),
+                flows: []
+              }, {
+                engine: journaled(
+                  engine,
+                  replay
+                    ? new Map([...records].filter(([key]) =>
+                      !key.startsWith("completion-judgement\u0000") &&
+                      !key.startsWith("supervisor\u0000")
+                    ))
+                    : records
+                ),
+                steering: Steering.layer(source),
+                observer: (event) => {
+                  if (
+                    (event._tag === "supervisor-settled" || event._tag === "supervisor-unjudged") && event.frame === 1
+                  ) {
+                    return Effect.asVoid(Deferred.succeed(supervised, undefined))
+                  }
+                  if (event._tag === "turn-opened" && ++opened === 3 && !replay) {
+                    return Deferred.await(supervised)
+                  }
+                  return Effect.void
+                },
+                evaluator: Evaluator.layerScripted((request) => {
+                  asked.push(request)
+                  return Object.fromEntries(
+                    Object.entries(request.questions).map(([id, question]) => [
+                      id,
+                      question.type === "boolean"
+                        ? { probability: id === "complete" || id === "on_target" ? 0.99 : 0.01 }
+                        : question.type === "score"
+                        ? { score: 0 }
+                        : { choice: "none" }
+                    ])
+                  )
+                })
+              })
+            )
+            expect(observed.failure).toBeUndefined()
+            expect(resolvedText(observed.events)).toBe("answer")
+            expect(JSON.stringify(model.recorder.requests.at(-1)?.messages)).toContain(body)
+          }
+        }).pipe(Effect.provide(NotificationQueue.layer.pipe(Layer.provide(journal))), Effect.scoped)
+      )
+      const completion = asked.filter((request) => Object.hasOwn(request.questions, "complete"))
+      const supervision = asked.filter((request) => Object.hasOwn(request.questions, "on_target"))
+      expect(completion.length).toBeGreaterThanOrEqual(2)
+      expect(supervision.length).toBeGreaterThanOrEqual(1)
+      const includesInstruction = (request: Evaluator.Request) =>
+        (request.state as { task: string }).task.includes(body)
+      expect({ completion: completion.map(includesInstruction), supervision: supervision.map(includesInstruction) })
+        .toEqual({
+          completion: completion.map(() => kind !== "system-event"),
+          supervision: supervision.map(() => kind !== "system-event")
+        })
+    }
+  )
+
   const cases = [
     ["raised", emits("throw new Error(\"repair me\")"), false],
     ["rejected", prose("No program this time"), false],

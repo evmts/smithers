@@ -201,6 +201,15 @@ the proposed cell can execute.
 
 Enforced by `Notifications` and `Steering`.
 
+Drains record personal instructions separately from delivered messages. System
+events and outside-change facts reach the transcript without changing the task
+used by completion and supervision. Replayed drains preserve that distinction;
+legacy drains without an instruction list retain their original interpretation.
+
+Interruption emits one `Aborted` event throughout the run, including realm setup,
+catalog refresh, relevance readings and engine suspension. An active frame also
+closes as aborted and retains its interrupted model-call receipt.
+
 An outside-change note names changed files as untrusted data. Re-read those files
 before editing or writing; after a `stale_read` refusal, read again before retrying.
 Outside-change delivery stays disabled until authenticated watcher ingestion,

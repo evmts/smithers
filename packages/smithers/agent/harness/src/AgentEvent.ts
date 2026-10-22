@@ -1817,8 +1817,10 @@ export class SteeringDrained extends Schema.TaggedClass<SteeringDrained>(
   "flows/harness/AgentEvent/SteeringDrained"
 )("steering-drained", {
   eventType: Schema.Literal("flows.harness.steering-drained.v1"),
-  /** What the person sent, in admission order. */
+  /** Notifications and personal messages delivered, in admission order. */
   messages: Schema.Array(ModelRequest.Message),
+  /** Personal instructions among messages; absent means all messages in legacy records. */
+  instructions: Schema.optional(Schema.Array(ModelRequest.Message)),
   /**
    * What the run's supervisor delivered at the same boundary: a nudge or a
    * recalled row. The model reads these above the person's messages; they

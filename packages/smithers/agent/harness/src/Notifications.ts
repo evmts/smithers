@@ -57,6 +57,9 @@ const render = (notification: Notification): ModelRequest.Message => {
  * How a person's message reads to the model: what they said while the run worked is newer than the task the run was
  * given, so where the two conflict the model follows the message. Without it a model weighs a steer like any earlier
  * line and keeps to the task's "change nothing else". A system event is a fact, not an instruction, and gets none.
+ *
+ * @category constants
+ * @since 0.1.0
  */
 export const precedence =
   "A newer instruction from this person, sent while you work: do what it asks before you finish. Where it conflicts " +
@@ -120,6 +123,7 @@ const steerItem = (notification: Notification): Steering.Item => {
 const drainOf = (receipt: NotificationQueue.DrainReceipt, options: Options): Steering.Drain => {
   const notifications = receipt.notifications
   const inserts: Array<ModelRequest.Message> = []
+  const instructions: Array<ModelRequest.Message> = []
   const seatChanges: Array<Steering.SeatChange | Steering.ThinkingChange> = []
   const bursts = new Map<string, string>()
   const actors = new Map<string, { actor: unknown; files: Set<string> }>()
@@ -171,6 +175,7 @@ const drainOf = (receipt: NotificationQueue.DrainReceipt, options: Options): Ste
     switch (item._tag) {
       case "Insert":
         inserts.push(item.message)
+        if (notification._tag !== "system-event") instructions.push(item.message)
         break
       case "SeatChange":
       case "ThinkingChange":
@@ -187,6 +192,7 @@ const drainOf = (receipt: NotificationQueue.DrainReceipt, options: Options): Ste
   }
   return {
     inserts,
+    instructions,
     seatChanges,
     remaining: Steering.empty(),
     queued: notifications.some((notification) => notification.delivery === "queue"),

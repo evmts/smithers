@@ -54551,6 +54551,44 @@
     }
   },
   {
+    "label": "//packages/smithers/agent/harness:importRules",
+    "package": "packages/smithers/agent/harness",
+    "name": "importRules",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs}",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportAnalysis.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/agent/harness:lib",
     "package": "packages/smithers/agent/harness",
     "name": "lib",

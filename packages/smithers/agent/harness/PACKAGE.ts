@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ImportRules,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode
+} from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
@@ -11,6 +16,29 @@ const standard = BuildAndCheckTypeScriptPackage({
 })
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
+
+const importRules = ImportRules({
+  cwd,
+  rules: [
+    {
+      kind: "forbidHostModules",
+      files: ["src/**"],
+      because: "sdk.platform-neutral: the harness receives host capabilities through Effect services."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["src/**"],
+      callees: ["Effect.runPromise", "Effect.runSync", "Effect.runFork", "Effect.runCallback"],
+      because: "effect.boundary-only: the harness returns Effects for its host to run."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/**"],
+      callees: ["setTimeout", "setInterval"],
+      because: "test.behavioral: synchronize tests on conditions or Effect TestClock instead of timer waits."
+    }
+  ]
+})
 
 /**
  * Changed public APIs against the package prose. The default context reads
@@ -168,6 +196,7 @@ export const Package = Smithers.Package({
     docs,
     docsFiles,
     fmt,
+    importRules,
     lib,
     lint,
     reviewDocsAgainstCode,

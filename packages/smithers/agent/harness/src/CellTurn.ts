@@ -3529,9 +3529,9 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
           // boundary that would idle is a completion or the last frame, and a
           // nudge there would turn a finished answer into a follow-up. Inside
           // the record, so a replayed boundary delivers what it delivered the
-          // first time. Apart from `inserts`, because those are the person's
-          // words and the completion brake reads them as the task; a nudge is
-          // not. See `internal/supervision`.
+          // first time. Apart from `inserts` and their personal-instruction
+          // provenance: a nudge never changes the completion brake's task.
+          // See `internal/supervision`.
           Effect.flatMap((record) =>
             wouldIdle
               ? Effect.succeed(record)
@@ -3562,6 +3562,7 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
       new AgentEvent.SteeringDrained({
         eventType: eventType.steeringDrained,
         messages: drained.inserts,
+        ...(drained.instructions === undefined ? {} : { instructions: drained.instructions }),
         ...(drained.supervisor === undefined || drained.supervisor.length === 0
           ? {}
           : { supervisor: drained.supervisor }),
@@ -4135,7 +4136,8 @@ const frame = (
         yield* emit(
           new AgentEvent.SteeringDrained({
             eventType: eventType.steeringDrained,
-            messages: answered.inserts
+            messages: answered.inserts,
+            ...(answered.instructions === undefined ? {} : { instructions: answered.instructions })
           })
         )
         // The park was answered, so the run carries on rather than waiting for
@@ -4560,7 +4562,9 @@ export const run = (
       Effect.flatMap(AgentEvent.Observer, (observe) => observe(event)).pipe(
         Effect.andThen(Effect.sync(() => {
           if (event._tag !== "steering-drained") return
-          const text = event.messages.flatMap<ModelRequest.ContentPart>((message) => message.content)
+          const text = (event.instructions ?? event.messages).flatMap<ModelRequest.ContentPart>((message) =>
+            message.content
+          )
             .filter((part): part is ModelRequest.TextPart => part.type === "text")
             .map((part) => part.text)
             .join("\n\n")
@@ -4577,6 +4581,7 @@ export const run = (
     const monitors = input.monitors ?? Monitor.defaults()
     const judged = input.judged ?? false
     const pinned = input.pinned ?? []
+    let active: { readonly frame: number; readonly spent: FrameClock } | undefined
     const loop = Effect.gen(function*() {
       const engine = yield* EngineLike.EngineLike
       const sandbox = yield* Sandbox.Sandbox
@@ -4698,6 +4703,7 @@ export const run = (
           judgeMs: 0,
           compactionMs: 0
         }
+        active = { frame: current.frame, spent }
         const catalog = input.refreshFlows === undefined ? input.flows : yield* engine.record({
           name: "flow-catalog",
           identity: { session: current.session, frame: current.frame, boundary: "flow-catalog" },
@@ -4788,23 +4794,9 @@ export const run = (
                 })
               } satisfies Step
             })
-          }),
-          Effect.onInterrupt(() =>
-            Effect.gen(function*() {
-              // A model call the frame was still waiting on never settled.
-              if (spent.interrupted !== undefined) yield* spent.interrupted()
-              yield* emit(new AgentEvent.Aborted({ eventType: eventType.aborted, reason: "Cell frame interrupted" }))
-              yield* emit(
-                new AgentEvent.TurnClosed({
-                  eventType: eventType.turnClosed,
-                  stopReason: "aborted",
-                  outcome: "aborted",
-                  ...(yield* frameTime(current.frame, spent))
-                })
-              )
-            })
-          )
+          })
         )
+        active = undefined
         if (step._tag === "Done") return
         if (step._tag === "Suspend") {
           yield* emit(new AgentEvent.Suspended({ eventType: eventType.suspended, reason: step.reason }))
@@ -4829,8 +4821,34 @@ export const run = (
     // run. An interruption is forwarded rather than swallowed: a durable park
     // arrives as one, and turning it into a clean end would report a suspended
     // run as a finished one.
-    return Effect.onExit(Effect.scoped(loop), (exit) =>
-      Effect.asVoid(
-        exit._tag === "Success" ? Queue.end(queue) : Queue.failCause(queue, exit.cause)
-      ))
+    return Effect.onExit(
+      Effect.scoped(loop.pipe(
+        Effect.onInterrupt(() =>
+          Effect.gen(function*() {
+            // Cover setup, catalog/relevance reads and post-frame work as well as the frame.
+            if (active?.spent.interrupted !== undefined) yield* active.spent.interrupted()
+            yield* emit(
+              new AgentEvent.Aborted({
+                eventType: eventType.aborted,
+                reason: active === undefined ? "Cell run interrupted" : "Cell frame interrupted"
+              })
+            )
+            if (active !== undefined) {
+              yield* emit(
+                new AgentEvent.TurnClosed({
+                  eventType: eventType.turnClosed,
+                  stopReason: "aborted",
+                  outcome: "aborted",
+                  ...(yield* frameTime(active.frame, active.spent))
+                })
+              )
+            }
+          })
+        )
+      )),
+      (exit) =>
+        Effect.asVoid(
+          exit._tag === "Success" ? Queue.end(queue) : Queue.failCause(queue, exit.cause)
+        )
+    )
   })

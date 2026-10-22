@@ -115,6 +115,8 @@ export interface Queue {
  * @slop
  */
 export interface Drain {
+  /** Personal instructions among the inserts; absent means all inserts for legacy sources. */
+  readonly instructions?: ReadonlyArray<ModelRequest.Message>
   readonly inserts: ReadonlyArray<ModelRequest.Message>
   readonly seatChanges: ReadonlyArray<SeatChange | ThinkingChange>
   readonly remaining: Queue
@@ -196,12 +198,14 @@ const ThinkingChangeRecord = Schema.Struct({
  * @slop
  */
 export const DrainRecord = Schema.Struct({
+  /** Personal instructions; absent in legacy records whose inserts are personal messages. */
+  instructions: Schema.optional(Schema.Array(ModelRequest.Message)),
   inserts: Schema.Array(ModelRequest.Message),
   seatChanges: Schema.Array(Schema.Union([SeatChangeRecord, ThinkingChangeRecord])),
   queued: Schema.Boolean,
   /**
    * Messages the run's supervisor delivers at this boundary, kept apart from
-   * `inserts` because they are not the person's words: the model reads them,
+   * `inserts` and their personal-instruction list: the model reads them,
    * and the completion brake's task never does. Absent from records written
    * before the supervisor had a field of its own, and from boundaries it
    * delivered nothing at.
@@ -255,6 +259,7 @@ export type DrainRecord = typeof DrainRecord.Type
  */
 export const drainRecord = (drain: Drain): DrainRecord => ({
   inserts: drain.inserts,
+  ...(drain.instructions === undefined ? {} : { instructions: drain.instructions }),
   seatChanges: drain.seatChanges,
   queued: drain.queued
 })
