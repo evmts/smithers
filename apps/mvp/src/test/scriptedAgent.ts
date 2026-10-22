@@ -1,5 +1,6 @@
 import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { Effect, Stream } from "effect"
+import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "../features/views/renderer"
 
 // The scripted agents the end-to-end tests run on the browser's engine under the dev server (src/flows/engine.worker.ts,
 // `?agent=<script>`), so a needs-you path and a sandbox tool's resume run the same every time: the model is the only
@@ -15,6 +16,7 @@ interface Heard {
   readonly approved?: boolean
   readonly note?: string
 }
+// `form` asks with a form; `board` shows a board written by scriptedRenderer.
 
 /** A script: what its agent asks, and how it finishes once it heard the answer. */
 interface Script {
@@ -207,6 +209,61 @@ const queue = Model.make({
   },
 })
 
+/** The form `form` asks with: which repository to clone. */
+const CLONE_FORM = {
+  title: "Which repository?",
+  schema: {
+    type: "object",
+    properties: { url: { type: "string", title: "Repository URL" } },
+    required: ["url"],
+  },
+  submitLabel: "Clone",
+}
+
+/**
+ * `form` (e2e/forms.spec.ts): asked anything, the agent asks which repository with `ui/form` and ends its answer; asked
+ * the form's submission, it answers with the URL the person sent. The submission is the question's text then its
+ * values (worker/Messages.ts `SENT_VALUES`).
+ */
+const formAsk = Model.make({
+  stream: (request) => {
+    // The question may end the system prompt or a message, after the conversation before it (src/features/agent/flows.ts
+    // `prompt`), which may hold earlier submissions: this run's question is the last one asked.
+    const all = [...request.system.map((part) => part.text), textOf(request)].join("\n")
+    const text = all.lastIndexOf("now asks: ") < 0 ? all : all.slice(all.lastIndexOf("now asks: "))
+    const sent = text.match(/Clone\nThe values the person sent with it: (\{[^\n]*\})/)
+    if (sent === null) {
+      return turn(`await ctx.call("ui/form", ${JSON.stringify(CLONE_FORM)})\nctx.done("Which repository should I clone?")`)
+    }
+    const { url } = JSON.parse(sent[1]!) as { readonly url: string }
+    return turn(`ctx.done(${JSON.stringify(`Got it. I'll clone ${url}.`)})`)
+  },
+})
+
+/** `board` (e2e/generated-view.spec.ts): asked anything, the agent shows a tic-tac-toe board with `ui/render`. */
+const board = Model.make({
+  stream: () =>
+    turn(
+      `await ctx.call("ui/render", { description: "A tic-tac-toe board for two players", size: "inline" })\n` +
+        `ctx.done("Here's a board. Click a square to move, or open it full screen.")`,
+    ),
+})
+
+/** The renderer the scripted agents' `ui/render` calls: it writes the tic-tac-toe module (src/features/views/renderer.ts). */
+export const scriptedRenderer = Model.make({
+  stream: () =>
+    Stream.fromIterable<ModelEvent.ModelEvent>([
+      {
+        type: "text-delta",
+        id: "t",
+        text: "```json\n" + JSON.stringify({ title: "Tic-tac-toe", state: TIC_TAC_TOE_STATE }) + "\n```\n```tsx\n" +
+          TIC_TAC_TOE + "```",
+      },
+      { type: "usage", inputTokens: 1, outputTokens: 1 },
+      { type: "settle", stopReason: "stop" },
+    ]),
+})
+
 /** The scripted model named `name`, or `undefined` for a name no script has. */
 export const scriptedModel = (name: string): Model.Model | undefined => {
   if (name === "sandbox-once") return sandboxOnce
@@ -215,6 +272,8 @@ export const scriptedModel = (name: string): Model.Model | undefined => {
   if (name === "show-code") return showCode
   if (name === "reasoning-order") return reasoningOrder
   if (name === "queue") return queue
+  if (name === "form") return formAsk
+  if (name === "board") return board
   const script = scripts[name]
   if (script === undefined) return undefined
   return Model.make({

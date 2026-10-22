@@ -71,7 +71,7 @@ const identityRequests = Layer.effectDiscard(
 )
 self.fetch = boundFetch(unbound, { origin: self.location.origin, principal: () => receipt?.owner ?? NO_DEVICE_DATA })
 
-const run = (model?: Model.Model, summaryModel?: Model.Model) =>
+const run = (model?: Model.Model, summaryModel?: Model.Model, rendererModel?: Model.Model) =>
   BrowserRuntime.run({
     name: ENGINE_NAME,
     // The SQLite build loads only once this worker leads, and only in this worker's bundle.
@@ -100,6 +100,7 @@ const run = (model?: Model.Model, summaryModel?: Model.Model) =>
       localHttp: import.meta.env.DEV,
       ...(model === undefined ? {} : { model }),
       ...(summaryModel === undefined ? {} : { summaryModel }),
+      ...(rendererModel === undefined ? {} : { rendererModel }),
     }),
     telemetry: identityRequests.pipe(Layer.provideMerge(engineTelemetry(self.location.origin))),
   })
@@ -115,6 +116,6 @@ else {
     faulted ? import("../test/authFaults").then((faults) => void (session = faults.faultySession(session, true))) : undefined,
     scripted === undefined ? undefined : Promise.all([import("../test/scriptedAgent"), import("../test/scriptedSummary")]),
   ]).then(([, models]) =>
-    models === undefined ? run() : run(models[0].scriptedModel(scripted!), models[1].scriptedSummary)
+    models === undefined ? run() : run(models[0].scriptedModel(scripted!), models[1].scriptedSummary, models[0].scriptedRenderer)
   )
 }
