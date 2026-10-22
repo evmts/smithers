@@ -27,6 +27,16 @@ Evidence: script-filtered user-typed text and lead text replies in session 6253e
 ## Earlier tracker history (retained)
 
 
+## Journeys — 2026-10-22 04:05 PDT (vibelang-factory builder)
+
+**What:** VibeLang's visitor, contributor and maintainer journeys on smithersai/vibelang, built and proven locally: its own home before any clone, View as (SCOPE-14), its docs in the app (AGENT-6: the Docs tab, `app/docs/search`, the docs view), and e2e specs `e2e/vibelang-{visitor,contributor,maintainer}.spec.ts` and `e2e/docs.spec.ts`, runnable against production.
+
+**Current state:** commits on builder/vibelang-factory, not yet on main or deployed. Locally passing: visitor, contributor, docs tab, `/docs`. Not run: the agent's docs search (no model on the mini), New branch (no Code Storage on the mini).
+
+**Gaps:** roles and issues follow one `GITHUB_REPOSITORY` (decision 0007 phase 1), so on smithers.sh a VibeLang-only contributor is a visitor and VibeLang's issues aren't synced unless that is smithersai/vibelang; a visitor's about read is anonymous, and while GitHub rate-limits it the page stays empty and says nothing (GH-4).
+
+**Open questions for Will:** which repository smithers.sh's `GITHUB_REPOSITORY` names, or per-repository roles now; whether the deployment's token may serve visitors' about reads for repositories it has cloned.
+
 ## Tracker reconciliation — 2026-10-21 04:44 PDT
 
 **What:** Prove the VibeLang repository and coding factory in production Smithers.

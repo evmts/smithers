@@ -1,11 +1,19 @@
 ---
 title: Repository home defaults to the highest role, with switching down
-status: todo
+status: in-review
 area: app
-owner: unassigned; lead schedules after deployment
-updated: 2026-10-21 00:44 PDT
+owner: vibelang-factory builder (Claude Opus)
+updated: 2026-10-22 04:05 PDT
 links: [../rulings.md, repository-declared-home.md, effect-repository-home.md, prelaunch-vibelang-on-smithers.md, roles-and-labels.md]
 ---
+
+## Built — 2026-10-22 04:05 PDT
+
+**What:** `View as` on a repository's home: a person opens on their own view and switches down to each lower one that shows something; a visitor, or anyone with one view, sees no switcher, even on a home open to anyone (`src/features/home/view.ts` `viewsOf`, `actions.view`).
+
+**Proof:** `src/features/home/{view,home}.test.ts` (each role, never up, a visitor on an "anyone" home); e2e `home-effect.spec.ts` (Effect, three roles) and `vibelang-{contributor,maintainer}.spec.ts` (VibeLang). Commit "a repository's own home before a clone, and View as" on builder/vibelang-factory, not yet on main.
+
+**Next step:** land, deploy, run the VibeLang journeys against smithers.sh.
 
 ## What
 
