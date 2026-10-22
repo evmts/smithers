@@ -12,6 +12,7 @@
  */
 
 import * as Digest from "@smthrs/core/Digest"
+import * as CoreMarkdown from "@smthrs/core/Markdown"
 import { Duration, Option, Schema } from "effect"
 
 /**
@@ -54,18 +55,7 @@ export type Placement = typeof Placement.Type
  * @category models
  * @since 1.0.0
  */
-export const SandboxProvider = Schema.Literals([
-  "aws",
-  "cloudflare",
-  "command",
-  "container",
-  "daytona",
-  "directory",
-  "just-bash",
-  "kubernetes",
-  "microsandbox",
-  "vercel"
-])
+export const SandboxProvider = CoreMarkdown.SandboxProvider
 
 /**
  * The sandbox providers a flow may name.
@@ -78,21 +68,16 @@ export type SandboxProvider = typeof SandboxProvider.Type
 /**
  * The sandbox a flow selects: the provider, plus the neutral network policy
  * and resource limits every `@smthrs/sandbox` provider accepts
- * (`Sandbox.NetworkPolicy`, `Sandbox.ResourceLimits`).
+ * (`Sandbox.NetworkPolicy`, `Sandbox.ResourceLimits`). `cpus` may be
+ * fractional; `memoryMib` and `timeoutSecs` are positive safe integers.
+ *
+ * It is `@smthrs/core`'s `Markdown.SandboxSelection`, so the descriptor and
+ * the lowered Markdown flow read one schema.
  *
  * @category models
  * @since 1.0.0
  */
-export const SandboxSelection = Schema.Struct({
-  provider: SandboxProvider,
-  network: Schema.optionalKey(Schema.Union([
-    Schema.Literals(["none", "open"]),
-    Schema.Struct({ allow: Schema.Array(Schema.String) })
-  ])),
-  cpus: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
-  memoryMib: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
-  timeoutSecs: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0)))
-})
+export const SandboxSelection = CoreMarkdown.SandboxSelection
 
 /**
  * The sandbox a flow selects.
@@ -556,10 +541,7 @@ export class DiscoveryWarning extends Schema.Class<DiscoveryWarning>("flows/regi
  * @category schemas
  * @since 0.1.0
  */
-export const BudgetCeiling = Schema.Int.check(
-  Schema.isGreaterThan(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-)
+export const BudgetCeiling = CoreMarkdown.BudgetCeiling
 
 /**
  * A positive safe-integer control-plane budget ceiling.
@@ -578,7 +560,7 @@ export type BudgetCeiling = typeof BudgetCeiling.Type
  * @category schemas
  * @since 1.0.0
  */
-export const UsdCeiling = Schema.Finite.check(Schema.isGreaterThan(0))
+export const UsdCeiling = CoreMarkdown.UsdCeiling
 
 /**
  * A positive, finite control-plane dollar ceiling.
@@ -598,7 +580,7 @@ export type UsdCeiling = typeof UsdCeiling.Type
  * @category models
  * @since 1.0.0-rc.1
  */
-export const BudgetOnExceeded = Schema.Literals(["fail", "warn", "skip-remaining", "park"])
+export const BudgetOnExceeded = CoreMarkdown.BudgetOnExceeded
 
 /**
  * What a run does when a model call would exceed one of its ceilings.
@@ -630,10 +612,7 @@ export type BudgetOnExceeded = typeof BudgetOnExceeded.Type
  * @since 1.0.0-rc.0
  */
 export const FlowBudget = Schema.Struct({
-  tokens: Schema.optional(BudgetCeiling),
-  milliseconds: Schema.optional(BudgetCeiling),
-  usd: Schema.optional(UsdCeiling),
-  onExceeded: Schema.optional(BudgetOnExceeded),
+  ...CoreMarkdown.Budget.fields,
   deadline: Schema.optional(BudgetCeiling)
 })
 

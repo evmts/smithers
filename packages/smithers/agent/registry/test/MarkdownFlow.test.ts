@@ -1,4 +1,6 @@
-import { Option, Schema } from "effect"
+import * as CoreMarkdown from "@smthrs/core/Markdown"
+import { Flow as Durable } from "@smthrs/flow"
+import { Context, Duration, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as MarkdownFlow from "../src/MarkdownFlow.ts"
@@ -610,15 +612,105 @@ body`)
       capabilities: ["Read"],
       effects: placed.effects,
       model: "opus",
-      placement: "sandbox"
+      placement: "sandbox",
+      modelInvocable: true
     })
     expect(MarkdownFlow.toCoreFrontmatter(unplaced)).toEqual({
       name: "review",
       description: "Review",
       flows: [],
       capabilities: [],
-      effects: unplaced.effects
+      effects: unplaced.effects,
+      modelInvocable: true
     })
+  })
+
+  it("keeps the declared limits when a descriptor converts to the core authoring value", () => {
+    const descriptor = Option.getOrThrow(
+      fromMarkdown([
+        "---",
+        "description: Review",
+        "capabilities: []",
+        "disable-model-invocation: true",
+        "budget:",
+        "  tokens: 120000",
+        "  milliseconds: 900000",
+        "  usd: 2.5",
+        "  onExceeded: park",
+        "deadline: 30 minutes",
+        "sandbox:",
+        "  provider: container",
+        "  network:",
+        "    allow: [api.github.com]",
+        "  cpus: 2",
+        "  memoryMib: 2048",
+        "  timeoutSecs: 900",
+        "---",
+        "body"
+      ].join("\n")).descriptor
+    )
+
+    expect(MarkdownFlow.toCoreFrontmatter(descriptor)).toEqual({
+      name: "review",
+      description: "Review",
+      flows: [],
+      capabilities: [],
+      effects: descriptor.effects,
+      placement: "sandbox",
+      modelInvocable: false,
+      budget: { tokens: 120000, milliseconds: 900000, usd: 2.5, onExceeded: "park" },
+      deadline: 1_800_000,
+      sandbox: {
+        provider: "container",
+        network: { allow: ["api.github.com"] },
+        cpus: 2,
+        memoryMib: 2048,
+        timeoutSecs: 900
+      }
+    })
+  })
+
+  it("round trips each declared limit from Markdown to the lowered flow", () => {
+    const lowered = (frontmatter: string) =>
+      CoreMarkdown.lowerMarkdown(
+        MarkdownFlow.toCoreFrontmatter(
+          Option.getOrThrow(
+            fromMarkdown(`---\ndescription: Review\ncapabilities: []\n${frontmatter}\n---\nbody`).descriptor
+          )
+        ),
+        "body"
+      )
+
+    expect(Context.get(lowered("disable-model-invocation: true").annotations, Durable.ModelInvocable)).toBe(false)
+    expect(lowered("budget:\n  usd: 0.5").budget).toEqual({ usd: 0.5 })
+    expect(Duration.toMillis(lowered("deadline: 2 hours").flow.deadline!)).toBe(7_200_000)
+    expect(lowered("deadline: 2 hours").budget).toBeUndefined()
+    expect(lowered("sandbox:\n  provider: vercel\n  network: none").sandbox).toEqual({
+      provider: "vercel",
+      network: "none"
+    })
+  })
+
+  it("leaves an undeclared descriptor's limits out of the core authoring value", () => {
+    const frontmatter = MarkdownFlow.toCoreFrontmatter(
+      Option.getOrThrow(fromMarkdown("---\ndescription: Review\ncapabilities: []\n---\nbody").descriptor)
+    )
+
+    expect(frontmatter.modelInvocable).toBe(true)
+    expect(frontmatter).not.toHaveProperty("budget")
+    expect(frontmatter).not.toHaveProperty("deadline")
+    expect(frontmatter).not.toHaveProperty("sandbox")
+  })
+
+  it.each([
+    ["budget:\n  tokens: 0", "invalid_budget"],
+    ["deadline: never", "invalid_deadline"],
+    ["sandbox:\n  provider: docker", "invalid_sandbox"]
+  ])("refuses an invalid %s before it can convert", (frontmatter, code) => {
+    const result = fromMarkdown(`---\ndescription: Review\ncapabilities: []\n${frontmatter}\n---\nbody`)
+
+    expect(Option.isNone(result.descriptor)).toBe(true)
+    expect(result.warnings).toContainEqual(expect.objectContaining({ code }))
   })
 
   it("warns with field-specific codes for malformed known frontmatter", () => {

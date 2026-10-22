@@ -6,6 +6,7 @@
 
 import { Action, Flow as Durable } from "@smthrs/flow"
 import type * as Context from "effect/Context"
+import type * as Duration from "effect/Duration"
 import { dual, identity } from "effect/Function"
 import * as Option from "effect/Option"
 import { type Pipeable, pipeArguments } from "effect/Pipeable"
@@ -16,6 +17,7 @@ import * as Annotations from "../Annotations.ts"
 import type * as Effects from "../Effects.ts"
 import * as Node from "../Node.ts"
 import type * as Placement from "../Placement.ts"
+import type * as Limits from "./Limits.ts"
 
 /**
  * Runtime type identifier carried by flow values.
@@ -120,6 +122,19 @@ export interface Flow<
    */
   readonly prompt: string | undefined
   /**
+   * The ceilings declared for one run, or `undefined`. The deadline is the
+   * native flow's `flow.deadline`.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly budget: Limits.Budget | undefined
+  /**
+   * The sandbox the flow selects, or `undefined`.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly sandbox: Limits.SandboxSelection | undefined
+  /**
    * The annotation bag the lowered flow and action carry, with the declared
    * `capabilities` and `effects` already in it.
    */
@@ -216,6 +231,10 @@ interface Options<
   readonly model: Seat | readonly [Seat, ...Array<Seat>] | undefined
   readonly flows: ReadonlyArray<Reference> | undefined
   readonly prompt: string | undefined
+  readonly modelInvocable?: boolean | undefined
+  readonly budget?: Limits.Budget | undefined
+  readonly deadline?: Duration.Input | undefined
+  readonly sandbox?: Limits.SandboxSelection | undefined
   /**
    * The annotations the AUTHOR supplied, before the declared `capabilities`
    * and `effects` are lowered onto them.
@@ -328,6 +347,9 @@ export const build = <
   }
   const flow = Durable.make(options.name, {
     ...declared,
+    ...(options.modelInvocable === undefined ? {} : { modelInvocable: options.modelInvocable }),
+    ...(options.budget === undefined ? {} : { budget: options.budget }),
+    ...(options.deadline === undefined ? {} : { deadline: options.deadline }),
     declaredFrom: options.original?.flow,
     body: nativeBody
   }) as unknown as Durable.Flow<string, Payload<I>, O, Err, Requires>
@@ -347,6 +369,8 @@ export const build = <
     model: options.model,
     flows: options.flows,
     prompt: options.prompt,
+    budget: options.budget,
+    sandbox: options.sandbox,
     annotations: flow.annotations,
     flow,
     action,

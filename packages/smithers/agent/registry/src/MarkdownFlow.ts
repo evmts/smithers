@@ -243,22 +243,33 @@ export const renderPrompt = (body: FlowBodyPrompt, input: { readonly args: strin
  * `/core/Markdown`. This is the deliberate registry-to-core adapter
  * boundary; metadata is not independently reinterpreted downstream.
  *
+ * Every limit the author declared crosses it: `modelInvocable`, the budget's
+ * ceilings, its `deadline` (the descriptor folds it into `budget`; core takes
+ * it as the flow's own deadline), and the sandbox selection.
+ *
  * @category conversions
  * @since 0.1.0
  */
-export const toCoreFrontmatter = (descriptor: FlowDescriptorType): CoreMarkdown.MarkdownFrontmatter => ({
-  name: descriptor.name,
-  description: descriptor.description,
-  flows: descriptor.flows,
-  capabilities: descriptor.capabilities,
-  effects: descriptor.effects,
-  ...(Option.getOrUndefined(descriptor.model) === undefined
-    ? {}
-    : { model: Option.getOrThrow(descriptor.model) }),
-  ...(Option.getOrUndefined(descriptor.placement) === undefined
-    ? {}
-    : { placement: Option.getOrThrow(descriptor.placement) })
-})
+export const toCoreFrontmatter = (descriptor: FlowDescriptorType): CoreMarkdown.MarkdownFrontmatter => {
+  const { deadline, ...ceilings } = descriptor.budget ?? {}
+  return {
+    name: descriptor.name,
+    description: descriptor.description,
+    flows: descriptor.flows,
+    capabilities: descriptor.capabilities,
+    effects: descriptor.effects,
+    ...(Option.getOrUndefined(descriptor.model) === undefined
+      ? {}
+      : { model: Option.getOrThrow(descriptor.model) }),
+    ...(Option.getOrUndefined(descriptor.placement) === undefined
+      ? {}
+      : { placement: Option.getOrThrow(descriptor.placement) }),
+    modelInvocable: descriptor.modelInvocable,
+    ...(Object.keys(ceilings).length === 0 ? {} : { budget: ceilings }),
+    ...(deadline === undefined ? {} : { deadline }),
+    ...(descriptor.sandbox === undefined ? {} : { sandbox: descriptor.sandbox })
+  }
+}
 
 const deriveName = (
   options: FromMarkdownOptions,

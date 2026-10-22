@@ -16,11 +16,13 @@
  * @since 0.0.0
  */
 
+import type * as Duration from "effect/Duration"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Annotations from "./Annotations.ts"
 import * as Effects from "./Effects.ts"
 import * as Flow from "./Flow.ts"
+import { Budget, SandboxSelection } from "./internal/Limits.ts"
 import { build } from "./internal/Signature.ts"
 import * as skillFrontmatter from "./internal/skillFrontmatter.ts"
 import * as Placement from "./Placement.ts"
@@ -63,7 +65,93 @@ export interface MarkdownFrontmatter {
     readonly tier?: Effects.Declaration["tier"]
   } | undefined
   readonly placement?: "sandbox" | "remote" | "client" | "local" | undefined
+  /**
+   * Whether a catalog may offer this flow to a model; `@smthrs/flow`'s
+   * `Flow.ModelInvocable`. Defaults to `true`.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly modelInvocable?: boolean | undefined
+  /**
+   * The tokens, milliseconds and dollars one run asks a control plane to
+   * approve, and what exceeding them does.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly budget?: Budget | undefined
+  /**
+   * How long one run may take, counted from its first start; `@smthrs/flow`'s
+   * `Flow.make` `deadline`. A number is milliseconds.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly deadline?: Duration.Input | undefined
+  /**
+   * The sandbox the flow runs in. Selecting one places the flow in a sandbox.
+   *
+   * @since 1.0.0-rc.17
+   */
+  readonly sandbox?: SandboxSelection | undefined
 }
+
+/**
+ * A positive safe-integer budget ceiling. Tokens are indivisible, and
+ * milliseconds use the same lossless representation.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export { BudgetCeiling } from "./internal/Limits.ts"
+
+/**
+ * A positive, finite dollar ceiling. Dollars are divisible, so `0.5` is fifty
+ * cents.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export { UsdCeiling } from "./internal/Limits.ts"
+
+/**
+ * What a run does when a model call would exceed one of its ceilings: `fail`
+ * fails the call, `warn` journals a warning and makes it, `skip-remaining`
+ * refuses it and every later call in the run, and `park` suspends the run
+ * until an operator approves a raised ceiling.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export { BudgetOnExceeded } from "./internal/Limits.ts"
+
+/**
+ * The tokens, milliseconds and dollars one run asks a control plane to
+ * approve, and what exceeding them does. An absent ceiling is not a zero: it
+ * is the absence of that ceiling. `@smthrs/registry`'s `Descriptor.FlowBudget`
+ * extends these fields with the run deadline.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export { Budget } from "./internal/Limits.ts"
+
+/**
+ * The sandbox providers a flow may name, one per `@smthrs/sandbox` provider
+ * module.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export { SandboxProvider } from "./internal/Limits.ts"
+
+/**
+ * The sandbox a flow selects: the provider, plus the neutral network policy
+ * and resource limits every `@smthrs/sandbox` provider accepts. `cpus` may be
+ * fractional; `memoryMib` and `timeoutSecs` are positive safe integers.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export { SandboxSelection } from "./internal/Limits.ts"
 
 /**
  * Agent Skills frontmatter that passed {@link validateSkillFrontmatter}.
@@ -147,6 +235,14 @@ export class MarkdownError extends Schema.TaggedError<MarkdownError>()("flows/co
  * Model-seat and collaborator arrays are copied, so later changes to the
  * supplied frontmatter arrays do not change the lowered flow or its decorators.
  *
+ * The declared limits are part of the flow, not metadata beside it.
+ * `modelInvocable` and `deadline` go to `@smthrs/flow`'s `Flow.make`, so the
+ * native flow carries `Flow.ModelInvocable` and enforces the deadline;
+ * `budget` and `sandbox` are copied onto the signature. A `sandbox` selection
+ * places the flow in a sandbox. An invalid limit, or a sandbox selection
+ * beside another placement, throws a `RangeError` naming the flow and the
+ * field, like `Flow.make`'s own construction errors.
+ *
  * @category constructors
  * @since 0.0.0
  * @slop
@@ -155,6 +251,19 @@ export const lowerMarkdown = (
   frontmatter: MarkdownFrontmatter,
   body: string
 ): Flow.Flow<typeof input, typeof output> => {
+  const budget = decodeLimit(frontmatter.name, "budget", Budget, frontmatter.budget)
+  if (
+    budget !== undefined && budget.tokens === undefined && budget.milliseconds === undefined &&
+    budget.usd === undefined
+  ) {
+    throw new RangeError(`lowerMarkdown: "${frontmatter.name}" budget must declare at least one ceiling`)
+  }
+  const sandbox = decodeLimit(frontmatter.name, "sandbox", SandboxSelection, frontmatter.sandbox)
+  if (sandbox !== undefined && frontmatter.placement !== undefined && frontmatter.placement !== "sandbox") {
+    throw new RangeError(
+      `lowerMarkdown: "${frontmatter.name}" selects a sandbox but is placed ${frontmatter.placement}`
+    )
+  }
   const flow = build({
     error: Schema.Never,
     annotations: Annotations.empty,
@@ -178,10 +287,14 @@ export const lowerMarkdown = (
       }),
     model: typeof frontmatter.model === "object" ? [...frontmatter.model] : frontmatter.model ?? "smart",
     flows: [...frontmatter.flows ?? []],
-    prompt: body
+    prompt: body,
+    modelInvocable: frontmatter.modelInvocable,
+    budget,
+    deadline: frontmatter.deadline,
+    sandbox
   })
 
-  switch (frontmatter.placement) {
+  switch (sandbox === undefined ? frontmatter.placement : "sandbox") {
     case "sandbox":
       return Flow.within(flow, Placement.sandbox())
     case "remote":
@@ -193,6 +306,22 @@ export const lowerMarkdown = (
     default:
       return flow
   }
+}
+
+// Decoding copies the value, so a later edit to the supplied frontmatter does
+// not reach the lowered flow.
+const decodeLimit = <A>(
+  name: string,
+  field: string,
+  schema: Schema.Decoder<A>,
+  value: unknown
+): A | undefined => {
+  if (value === undefined) return undefined
+  const decoded = Schema.decodeUnknownResult(schema)(value)
+  if (Result.isFailure(decoded)) {
+    throw new RangeError(`lowerMarkdown: "${name}" ${field} is invalid: ${decoded.failure.message}`)
+  }
+  return decoded.success
 }
 
 const fail = (code: MarkdownErrorCode, message: string): Result.Result<never, MarkdownError> =>
