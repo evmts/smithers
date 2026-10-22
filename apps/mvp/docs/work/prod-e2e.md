@@ -3,7 +3,7 @@ title: E2e tests against production
 status: in-progress
 area: test
 owner: prod-e2e builder (Claude Opus)
-updated: 2026-10-21 16:50 PDT
+updated: 2026-10-22 00:45 PDT
 links: [../rulings.md, ../rules.md, ../infrastructure.md, e2e-suite-and-gifs.md, major-feature-e2e-derisk.md, sign-in.md]
 ---
 
@@ -35,6 +35,16 @@ links: [../rulings.md, ../rules.md, ../infrastructure.md, e2e-suite-and-gifs.md,
 - agent "ask": `timeline/summarize` calls the `summary` role on its own (docs/features/timeline.md). The test leaves those out and still requires the answer's calls to be `agent` only.
 - Runs: hovering Runs now warms the engine's run list (src/router.tsx, `warmList` in src/features/runs/store.ts), so the click no longer waits for the list. The regression test fails on the old route.
 - message edit's draft: not found. Branch drafts use the persisted `chat-drafts` collection, and a real SQLite save and reload passes. `src/features/chat/draftWrite.ts` adds stage records, counters and a span, without draft text, to find the production write that stays unsaved.
+
+**smithers.sh, 2026-10-22:**
+- 23:05 PDT on 10-21: the prod-e2e builder deployed main e90cc1cf there and became the standing production deployer.
+- 23:12 to 00:05: the full run gave 141 tests: 58 passed, 16 failed, 2 broken, 65 declared skips. The 16 are listed in the lead's triage.
+- todo-steer failed twice: the run page shows no "Cloud" within 60 s.
+  - Postgres: the TODO's engine run starts 2 to 6.5 minutes after its TODO (todos.created_at against smithers_flows.flows_runs.created_at_ms). A dropped TODO's run keeps running.
+  - The live tail at 07:24 UTC: the browser resent the TODO's commit every 10 s for a minute. Each send was "taken", and none got an answer that settled it (`smithers_todo_sends` op=commit, then `smithers_todo_queued` kept).
+  - `cloudflare.execution.start` logs no flow or execution id.
+  - A remote-flow alarm retried on `DatabaseError: ConnectionError` (chat/Expire, attempt 11).
+  - The run-start delay goes to the todo-run-start job. The ConnectionError is the deployer's.
 
 **Found on the branch page:** asking tests now run on the account's own branch, and that page differs from `/app`:
 - the connection pill doesn't read Offline when the device is offline (local-first);
