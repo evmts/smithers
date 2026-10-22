@@ -681,6 +681,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/run-store/quickstart/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/quickstart.md"],
     ["/run-store/reference/api/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/api.md"],
     ["/run-store/troubleshooting/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/docs/troubleshooting.md"],
+    ["/runtime-construction/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/runtime-construction.md"],
     ["/sandbox/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/docs"],
     ["/sandbox/concepts/isolation/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/concepts/isolation.md"],
     ["/sandbox/concepts/remote-commands/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/concepts/remote-commands.md"],
