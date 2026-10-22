@@ -33,13 +33,13 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
-import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type * as AgentEvent from "../../src/AgentEvent.ts"
 import * as CompletionClaim from "../../src/CompletionClaim.ts"
 import { HarnessError } from "../../src/HarnessError.ts"
+import { sourceIdentity } from "./sourceIdentity.ts"
 
 /** The corpus this package retains. */
 export const corpusPath = fileURLToPath(new URL("./completionClaimCorpus.json", import.meta.url))
@@ -258,19 +258,12 @@ const flag = (argv: ReadonlyArray<string>, name: string): string | undefined => 
   return at === -1 ? undefined : argv[at + 1]
 }
 
-const git = (args: ReadonlyArray<string>): string => execFileSync("git", args, { encoding: "utf8" }).trim()
-
 /** The sources a reading depends on: the brake, the transport, and the corpus. */
 const sources = [
   fileURLToPath(new URL("../../src", import.meta.url)),
   fileURLToPath(new URL("../../../model/src", import.meta.url)),
   corpusPath
 ]
-
-const commitOf = (env: Readonly<Record<string, string | undefined>>): string => {
-  const given = env["GITHUB_SHA"]?.trim()
-  return given !== undefined && given !== "" ? given : git(["rev-parse", "HEAD"])
-}
 
 /** The streams {@link main} writes to. */
 export interface Io {
@@ -315,8 +308,7 @@ export const main = async (
   )
   const report = await Effect.runPromise(
     calibrate(corpus, {
-      commit: commitOf(env),
-      dirty: git(["status", "--porcelain", "--", ...sources]) !== "",
+      ...sourceIdentity(env, fileURLToPath(new URL("../../../../../../", import.meta.url)), sources),
       sha256: createHash("sha256").update(text).digest("hex"),
       model: Evaluator.defaultModel,
       baseUrl

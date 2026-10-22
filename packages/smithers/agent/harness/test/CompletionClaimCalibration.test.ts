@@ -15,9 +15,9 @@
  */
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Schema from "effect/Schema"
-import { spawnSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type IncomingHttpHeaders } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import * as CompletionClaim from "../src/CompletionClaim.ts"
 import * as Calibration from "./calibration/completionClaim.ts"
+import { sourceIdentity } from "./calibration/sourceIdentity.ts"
 
 const program = fileURLToPath(new URL("./calibration/completionClaim.ts", import.meta.url))
 const reportPath = fileURLToPath(new URL("./calibration/completionClaimReport.json", import.meta.url))
@@ -142,6 +143,83 @@ const oneSentence = corpus.cases.find((entry) => entry.id === "command-output-re
 const flatLie = corpus.cases.find((entry) => entry.id === "flat-lie")!
 const undecidable = corpus.cases.find((entry) => entry.id === "wrong-answer")!
 const fabricated = corpus.cases.find((entry) => entry.id === "fabricated-last-sentence")!
+
+describe("calibration source provenance", () => {
+  it("records one base revision and source differences for a jj merge working copy", () => {
+    const dir = scratch()
+    const jj = (...args: Array<string>) =>
+      execFileSync("jj", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
+    try {
+      jj("git", "init", "--no-colocate")
+      const source = join(dir, "brake.ts")
+      const leftSource = join(dir, "left.ts")
+      const rightSource = join(dir, "right.ts")
+      const paths = [source, leftSource, rightSource]
+      writeFileSync(source, "original\n")
+      jj("commit", "-m", "base fixture")
+      const base = jj("log", "--no-graph", "-r", "@-", "-T", "commit_id")
+      writeFileSync(leftSource, "left source\n")
+      jj("commit", "-m", "left fixture")
+      const left = jj("log", "--no-graph", "-r", "@-", "-T", "commit_id")
+      jj("new", base, "-m", "right fixture")
+      writeFileSync(rightSource, "right source\n")
+      jj("commit", "-m", "right fixture")
+      const right = jj("log", "--no-graph", "-r", "@-", "-T", "commit_id")
+      jj("new", left, right, "-m", "merge fixture")
+
+      const identity = sourceIdentity({}, dir, paths)
+      expect([left, right]).toContain(identity.commit)
+      expect(identity.dirty).toBe(true)
+      jj("commit", "-m", "merged fixture")
+      expect(sourceIdentity({}, dir, paths)).toEqual({
+        commit: jj("log", "--no-graph", "-r", "@-", "-T", "commit_id"),
+        dirty: false
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it.each(["--no-colocate", "--colocate"])("records source edits in a real %s repository", (mode) => {
+    const dir = scratch()
+    const jj = (...args: Array<string>) =>
+      execFileSync("jj", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
+    try {
+      jj("git", "init", mode)
+      const source = join(dir, "brake.ts")
+      writeFileSync(source, "original\n")
+      jj("commit", "-m", "calibration fixture")
+      const commit = jj("log", "--no-graph", "-r", "@-", "-T", "commit_id")
+      expect(existsSync(join(dir, ".git"))).toBe(mode === "--colocate")
+
+      expect(sourceIdentity({}, dir, [source])).toEqual({ commit, dirty: false })
+      writeFileSync(join(dir, "unrelated.txt"), "not a calibration source\n")
+      expect(sourceIdentity({}, dir, [source])).toEqual({ commit, dirty: false })
+      writeFileSync(source, "changed\n")
+      expect(sourceIdentity({}, dir, [source])).toEqual({ commit, dirty: true })
+      expect(sourceIdentity({ GITHUB_SHA: " ci-revision " }, dir, [source]))
+        .toEqual({ commit: "ci-revision", dirty: true })
+      expect(sourceIdentity({ GITHUB_SHA: " " }, dir, [source])).toEqual({ commit, dirty: true })
+      jj("commit", "-m", "changed brake")
+      expect(sourceIdentity({}, dir, [source])).toEqual({
+        commit: jj("log", "--no-graph", "-r", "@-", "-T", "commit_id"),
+        dirty: false
+      })
+      writeFileSync(join(dir, "new-source.ts"), "new source\n")
+      expect(sourceIdentity({}, dir, [source, join(dir, "new-source.ts")]).dirty).toBe(true)
+
+      // A Git-only checkout still works, without requiring jj metadata.
+      if (mode === "--colocate") {
+        rmSync(join(dir, ".jj"), { recursive: true })
+        expect(sourceIdentity({}, dir, [source]).dirty).toBe(false)
+        writeFileSync(source, "git edit\n")
+        expect(sourceIdentity({}, dir, [source]).dirty).toBe(true)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
 
 describe("the completion-claim calibration", () => {
   it("grades the retained corpus and records who judged what", async () => {
