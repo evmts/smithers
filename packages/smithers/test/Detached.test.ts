@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 /**
  * `smthrs up -d`, driven against real child processes.
  *
@@ -623,7 +624,7 @@ describe("terminating a child the host gave no process group", () => {
 
     // A short grace: the two reap windows are the whole cost of this case, and
     // nothing about the answer changes with a longer one.
-    expect(await Detached.terminate(spawned, 20)).toBe(false)
+    expect(await Effect.runPromise(Detached.terminate(spawned, 20))).toBe(false)
   }, 30_000)
 })
 
@@ -641,7 +642,7 @@ describe("terminating on a host that has no process groups", () => {
     const pid = alive.pid
     if (pid === undefined) throw new Error("the fixture child did not start")
 
-    expect(await Detached.terminate(alive, 2_000, "win32")).toBe(true)
+    expect(await Effect.runPromise(Detached.terminate(alive, 2_000, "win32"))).toBe(true)
     expect(await until(() => processGone(pid), 2_000)).toBe(true)
   }, 30_000)
 
@@ -652,6 +653,6 @@ describe("terminating on a host that has no process groups", () => {
     // Nothing to contain, so nothing is claimed beyond what the handle already
     // shows. The POSIX arm answers the same way through the group probe, which
     // is why the two arms can share one caller.
-    expect(await Detached.terminate(finished, 20, "win32")).toBe(true)
+    expect(await Effect.runPromise(Detached.terminate(finished, 20, "win32"))).toBe(true)
   }, 30_000)
 })

@@ -724,9 +724,11 @@ export const checks: ReadonlyArray<Rule> = [
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export async function* scan(repository: Repository): AsyncGenerator<Suggestion, void, undefined> {
+export async function* scan(repository: Repository, signal?: AbortSignal): AsyncGenerator<Suggestion, void, undefined> {
+  if (signal?.aborted) return
   const facts = evidence(repository)
   for (const check of checks) {
+    if (signal?.aborted) return
     const suggestion = check.match(facts, repository)
     if (suggestion !== undefined) yield suggestion
     // Yield to the event loop between checks, so a renderer's frame and an

@@ -276,9 +276,10 @@ const collect = (
   onFound: (suggestion: Checklist.Suggestion, position: number) => void
 ): Effect.Effect<ReadonlyArray<Checklist.Suggestion>, CliError.Refused> =>
   Effect.tryPromise({
-    try: async () => {
+    try: async (signal) => {
       const found: Array<Checklist.Suggestion> = []
-      for await (const suggestion of Checklist.scan(repository)) {
+      for await (const suggestion of Checklist.scan(repository, signal)) {
+        signal.throwIfAborted()
         found.push(suggestion)
         onFound(suggestion, found.length)
       }
@@ -403,6 +404,10 @@ const humanRendering = (
     const implement = options.implement ??
       nodeImplement({ ...options, environment: { ...options.environment, ...chosen.environment } }, chosen.seat)
     const implemented: Array<Implementation> = []
+    let cancelled = false
+    const onCancel = () => {
+      cancelled = true
+    }
     const first = yield* carryOut(ui, implement, chosenSuggestion.title, Brief.suggestion(context, chosenSuggestion))
     implemented.push({ kind: "suggestion", suggestion: chosenSuggestion.id, ...first })
     // The follow-ups of the suggestion that just landed, then the suggestions
@@ -410,7 +415,13 @@ const humanRendering = (
     // point of holding them back: a large change is a reasonable question
     // once a small one has proved the seat and the layout.
     for (const followUp of chosenSuggestion.followUps) {
-      const accepted = yield* ui.confirm({ message: followUp.question, initialValue: false, nonInteractive: false })
+      const accepted = yield* ui.confirm({
+        message: followUp.question,
+        initialValue: false,
+        nonInteractive: false,
+        onCancel
+      })
+      if (cancelled) return outcome("cancelled", implemented)
       if (!accepted) continue
       const done = yield* carryOut(
         ui,
@@ -423,9 +434,11 @@ const humanRendering = (
     for (const held of found.filter((suggestion) => suggestion.followUp)) {
       const accepted = yield* ui.confirm({
         message: `Also implement: ${held.title}?`,
+        onCancel,
         initialValue: false,
         nonInteractive: false
       })
+      if (cancelled) return outcome("cancelled", implemented)
       if (!accepted) continue
       const done = yield* carryOut(ui, implement, held.title, Brief.suggestion(context, held))
       implemented.push({ kind: "held-back", suggestion: held.id, ...done })

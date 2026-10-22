@@ -114,3 +114,20 @@ terminals, `CI` to be anything but `"true"`, and `TERM` to be anything but
 call the terminal renderer at all. See
 [Embed the command tree](../guides/embed-the-command-tree.md) for driving the
 terminal renderer from your own program.
+
+Plain terminal output strips supplied VT control sequences, including streamed
+suggestion labels. Interrupting a scan stops subsequent repository checks and
+output. Cancelling a follow-up confirmation ends the command with status 130;
+its outcome retains changes already written.
+
+Interactive prompts receive the Effect cancellation signal so interruption
+releases their input listeners and terminal state. Stream consumers close their
+source after label or output failure, with the same bounded cleanup window as
+an aborted scan.
+
+Detached admission scanning reads at most 64 KiB at a time, retains at most
+4 KiB of an incomplete line, and refuses more than 1024 distinct admission
+candidates. Refusal is a failed launch, never an admission receipt. Process
+cleanup returns an Effect; its polling and escalation use Effect's clock and
+deadlines. It records `cli.detached.terminate`, a content-free debug settlement
+with `contained`, and `smithers.cli.detached.terminations`.

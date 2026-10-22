@@ -25,6 +25,7 @@ import * as Audience from "@smthrs/build-cli/Audience"
 import { Context, Effect, Layer, Option } from "effect"
 import type { Readable, Writable } from "node:stream"
 import { Writable as WritableStream } from "node:stream"
+import { stripVTControlCharacters } from "node:util"
 import type * as Environment from "./Environment.ts"
 import * as Failure from "./internal/Failure.ts"
 import { packageVersion } from "./Version.ts"
@@ -131,6 +132,8 @@ export interface ConfirmOptions {
    * answer differs per question and a default here would decide it silently.
    */
   readonly nonInteractive: boolean
+  /** Called when the operator cancels rather than answering no. */
+  readonly onCancel?: (() => void) | undefined
 }
 
 /**
@@ -225,7 +228,7 @@ export const isInteractive = (
 export const levelWord = (level: Check["level"]): string => level === "ok" ? "ok  " : level === "warn" ? "warn" : "fail"
 
 const write = (output: Writable, line: string): void => {
-  output.write(`${line}\n`)
+  output.write(`${stripVTControlCharacters(line)}\n`)
 }
 
 /**
@@ -278,6 +281,8 @@ export const make = (options: Options): Service => {
           : AbortSignal.any([effectSignal, streamOptions.signal])
         const collected: Array<A> = []
         const iterator = items[Symbol.asyncIterator]()
+        let finished = false
+        let cleanupStarted = false
         let onAbort: (() => void) | undefined
         const aborted = new Promise<"aborted">((resolve) => {
           if (signal.aborted) resolve("aborted")
@@ -290,8 +295,8 @@ export const make = (options: Options): Service => {
         // line only: no frames, no "Scanning..." that a log reader has to
         // skip past.
         const live = interactive ? clack.spinner(common) : undefined
-        live?.start(scanning)
         try {
+          live?.start(scanning)
           while (true) {
             const next = await Promise.race([iterator.next(), aborted])
             if (next === "aborted") {
@@ -302,6 +307,7 @@ export const make = (options: Options): Service => {
               // finishes. Stop animation immediately, then give cleanup a
               // bounded wait: a source whose next() never settles must not
               // hold the caller forever.
+              cleanupStarted = true
               const cleanup = Promise.resolve(iterator.return?.())
               // A rejection after the wait has nobody left to report to.
               cleanup.catch(() => {})
@@ -315,7 +321,10 @@ export const make = (options: Options): Service => {
               clearTimeout(timer)
               return { items: collected, stopped: true }
             }
-            if (next.done) break
+            if (next.done) {
+              finished = true
+              break
+            }
             collected.push(next.value)
             const line = streamOptions.label(next.value, collected.length)
             if (live === undefined) {
@@ -334,6 +343,19 @@ export const make = (options: Options): Service => {
           throw cause
         } finally {
           if (onAbort !== undefined) signal.removeEventListener("abort", onAbort)
+          if (!finished && !cleanupStarted) {
+            let timer: ReturnType<typeof setTimeout> | undefined
+            try {
+              await Promise.race([
+                Promise.resolve(iterator.return?.()).catch(() => {}),
+                new Promise<void>((resolve) => {
+                  timer = setTimeout(resolve, cleanupTimeoutMillis)
+                })
+              ])
+            } finally {
+              clearTimeout(timer)
+            }
+          }
         }
         const message = settled(collected.length)
         if (live === undefined) write(output, message)
@@ -344,7 +366,7 @@ export const make = (options: Options): Service => {
     })
 
   const pickSuggestion = <A>(items: ReadonlyArray<A>, pickOptions: PickOptions<A>) =>
-    Effect.promise(async (): Promise<Option.Option<A>> => {
+    Effect.promise(async (signal): Promise<Option.Option<A>> => {
       if (items.length === 0) return Option.none()
       if (!interactive) {
         write(output, pickOptions.message)
@@ -352,6 +374,7 @@ export const make = (options: Options): Service => {
         return Option.none()
       }
       const picked = await clack.select<number>({
+        signal,
         ...common,
         message: pickOptions.message,
         options: items.map((item, index) => {
@@ -367,25 +390,31 @@ export const make = (options: Options): Service => {
     })
 
   const confirm = (confirmOptions: ConfirmOptions) =>
-    Effect.promise(async (): Promise<boolean> => {
+    Effect.promise(async (signal): Promise<boolean> => {
       if (!interactive) {
         write(output, `${confirmOptions.message} ${confirmOptions.nonInteractive ? "yes" : "no"} (non-interactive)`)
         return confirmOptions.nonInteractive
       }
       const answer = await clack.confirm({
+        signal,
         ...common,
         message: confirmOptions.message,
         initialValue: confirmOptions.initialValue ?? true
       })
-      return clack.isCancel(answer) ? false : answer
+      if (clack.isCancel(answer)) {
+        confirmOptions.onCancel?.()
+        return false
+      }
+      return answer
     })
 
   return {
     interactive,
     text: (message) =>
-      Effect.promise(async () => {
+      Effect.promise(async (signal) => {
         if (!interactive) return Option.none()
         const value = await clack.text({
+          signal,
           ...common,
           message,
           validate: (value) => value === undefined || value.trim() === "" ? "Enter a value" : undefined

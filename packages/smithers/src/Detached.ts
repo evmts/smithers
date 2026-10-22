@@ -23,7 +23,7 @@
  */
 
 import type { ControlSchema } from "@smthrs/control"
-import { Effect } from "effect"
+import { Effect, Metric, Option, Schedule } from "effect"
 import { spawn } from "node:child_process"
 import type { ChildProcess } from "node:child_process"
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, renameSync, unlinkSync } from "node:fs"
@@ -158,21 +158,24 @@ export const logTail = (file: string, maxBytes: number = tailBytes): string => {
 }
 
 /**
- * Reads a log from `offset` to its current end. The bytes are decoded as
+ * Reads at most 64 KiB of a log from `offset`. The bytes are decoded as
  * latin1 so a read that splits a multi-byte character cannot corrupt the
  * ASCII admission line around it.
  */
-const readFrom = (file: string, offset: number): { readonly text: string; readonly next: number } => {
+const readFrom = (
+  file: string,
+  offset: number
+): { readonly text: string; readonly next: number; readonly more: boolean } => {
   let descriptor: number | undefined
   try {
     descriptor = openSync(file, "r")
     const size = fstatSync(descriptor).size
-    if (size <= offset) return { text: "", next: offset }
-    const buffer = Buffer.alloc(size - offset)
+    if (size <= offset) return { text: "", next: offset, more: false }
+    const buffer = Buffer.alloc(Math.min(size - offset, 64 * 1024))
     const read = readSync(descriptor, buffer, 0, buffer.length, offset)
-    return { text: buffer.toString("latin1", 0, read), next: offset + read }
+    return { text: buffer.toString("latin1", 0, read), next: offset + read, more: offset + read < size }
   } catch {
-    return { text: "", next: offset }
+    return { text: "", next: offset, more: false }
   } finally {
     if (descriptor !== undefined) closeSync(descriptor)
   }
@@ -193,15 +196,12 @@ const processGroupAlive = (pid: number): boolean => {
 
 const childAlive = (child: ChildProcess): boolean => child.exitCode === null && child.signalCode === null
 
-const waitUntil = async (predicate: () => boolean, timeoutMs: number): Promise<boolean> => {
-  const deadline = Date.now() + timeoutMs
-  while (predicate()) {
-    const remaining = deadline - Date.now()
-    if (remaining <= 0) return false
-    await sleep(Math.min(pollIntervalMs, remaining))
-  }
-  return true
-}
+const waitUntil = (predicate: () => boolean, timeoutMs: number): Effect.Effect<boolean> =>
+  Effect.sync(predicate).pipe(
+    Effect.repeat({ while: (alive) => alive, schedule: Schedule.spaced(pollIntervalMs) }),
+    Effect.timeoutOption(timeoutMs),
+    Effect.map(Option.isSome)
+  )
 
 const signalGroup = (pid: number, signal: NodeJS.Signals): void => {
   try {
@@ -212,21 +212,22 @@ const signalGroup = (pid: number, signal: NodeJS.Signals): void => {
 }
 
 /** SIGTERM, then SIGKILL, aimed at the child's process group. */
-const terminateGroup = async (pid: number, grace: number): Promise<boolean> => {
-  if (!processGroupAlive(pid)) return true
-  try {
-    signalGroup(pid, "SIGTERM")
-  } catch {
-    return false
-  }
-  if (await waitUntil(() => processGroupAlive(pid), grace)) return true
-  try {
-    signalGroup(pid, "SIGKILL")
-  } catch {
-    return false
-  }
-  return waitUntil(() => processGroupAlive(pid), grace)
-}
+const terminateGroup = (pid: number, grace: number): Effect.Effect<boolean> =>
+  Effect.gen(function*() {
+    if (!processGroupAlive(pid)) return true
+    try {
+      signalGroup(pid, "SIGTERM")
+    } catch {
+      return false
+    }
+    if (yield* waitUntil(() => processGroupAlive(pid), grace)) return true
+    try {
+      signalGroup(pid, "SIGKILL")
+    } catch {
+      return false
+    }
+    return yield* waitUntil(() => processGroupAlive(pid), grace)
+  })
 
 /**
  * SIGTERM, then SIGKILL, aimed at the child handle alone.
@@ -234,26 +235,29 @@ const terminateGroup = async (pid: number, grace: number): Promise<boolean> => {
  * The whole containment claim is then about the leader rather than the group,
  * which is exactly what a host without process groups can promise.
  */
-const terminateHandle = async (child: ChildProcess, grace: number): Promise<boolean> => {
-  if (!childAlive(child)) return true
-  try {
-    child.kill("SIGTERM")
-  } catch {
-    return !childAlive(child)
-  }
-  if (await waitUntil(() => childAlive(child), grace)) return true
-  try {
-    child.kill("SIGKILL")
-  } catch {
-    return !childAlive(child)
-  }
-  return waitUntil(() => childAlive(child), grace)
-}
+const terminateHandle = (child: ChildProcess, grace: number): Effect.Effect<boolean> =>
+  Effect.gen(function*() {
+    if (!childAlive(child)) return true
+    try {
+      child.kill("SIGTERM")
+    } catch {
+      return !childAlive(child)
+    }
+    if (yield* waitUntil(() => childAlive(child), grace)) return true
+    try {
+      child.kill("SIGKILL")
+    } catch {
+      return !childAlive(child)
+    }
+    return yield* waitUntil(() => childAlive(child), grace)
+  })
+
+const terminations = Metric.counter("smithers.cli.detached.terminations")
 
 /**
  * Terminates and reaps a child that never reached admission.
  *
- * On POSIX the group, not just its leader, must disappear before this resolves.
+ * On POSIX the group, not just its leader, must disappear before this Effect succeeds.
  * A cooperative group gets SIGTERM; a group still present after the grace
  * window gets SIGKILL and another bounded reap window. The boolean is false
  * when the host could not confirm containment, so a caller never reports an
@@ -268,23 +272,28 @@ const terminateHandle = async (child: ChildProcess, grace: number): Promise<bool
  * @category destructors
  * @since 1.0.0
  */
-export const terminate = async (
+export const terminate = (
   child: ChildProcess,
   graceMs: number = defaultTerminationGraceMs,
   platform: NodeJS.Platform = process.platform
-): Promise<boolean> => {
-  const grace = Number.isFinite(graceMs) ? Math.max(1, Math.trunc(graceMs)) : defaultTerminationGraceMs
-  const pid = child.pid
-  // A spawn that never became a process. Node reports the failure
-  // asynchronously and leaves the handle with no pid, and it sets `exitCode`
-  // to -2, so `terminateHandle`'s liveness check reads the handle as already
-  // ended and this function used to answer `true`. That is a containment claim
-  // for a child the host never reached: the caller renders "was terminated" for
-  // something it never had. There is no group to signal and no exit to
-  // observe, so the honest answer is that containment was not confirmed.
-  if (pid === undefined) return false
-  return platform === "win32" ? terminateHandle(child, grace) : terminateGroup(pid, grace)
-}
+): Effect.Effect<boolean> =>
+  Effect.suspend(() => {
+    const grace = Number.isFinite(graceMs) ? Math.max(1, Math.trunc(graceMs)) : defaultTerminationGraceMs
+    const pid = child.pid
+    // A spawn that never became a process. Node reports the failure
+    // asynchronously and leaves the handle with no pid, and it sets `exitCode`
+    // to -2, so `terminateHandle`'s liveness check reads the handle as already
+    // ended and this function used to answer `true`. That is a containment claim
+    // for a child the host never reached: the caller renders "was terminated" for
+    // something it never had. There is no group to signal and no exit to
+    // observe, so the honest answer is that containment was not confirmed.
+    if (pid === undefined) return Effect.succeed(false)
+    return platform === "win32" ? terminateHandle(child, grace) : terminateGroup(pid, grace)
+  }).pipe(
+    Effect.tap((contained) => Effect.logDebug("Detached cleanup settled", { contained })),
+    Effect.tap(() => Metric.update(terminations, 1)),
+    Effect.withSpan("cli.detached.terminate")
+  )
 
 /**
  * A successful detached launch.
@@ -346,8 +355,6 @@ export interface Options {
   readonly onSlowBoot?: ((message: string) => void) | undefined
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
 /**
  * Launches an approved plan in a detached process and waits until an id it
  * announces is confirmed by {@link Options.admission}.
@@ -389,7 +396,7 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
   // interrupted CLI must remain alive long enough to escalate and reap it.
   let handedOff = false
   let termination: Promise<boolean> | undefined
-  const cleanup = () => termination ??= terminate(child, options.terminationGraceMs)
+  const cleanup = () => termination ??= Effect.runPromise(terminate(child, options.terminationGraceMs))
   let wake = () => {}
   const onAbort = () => wake()
   let spawnError: Error | undefined
@@ -433,23 +440,33 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
     const text = carry + read.text
     // Only whole lines are parsed until the child is gone, so an id split
     // across two reads is never nominated by its prefix.
-    const cut = final ? text.length : text.lastIndexOf("\n") + 1
+    const cut = final && !read.more ? text.length : text.lastIndexOf("\n") + 1
     carry = text.slice(cut).slice(-carryBytes)
     for (const runId of announcedRunIds(text.slice(0, cut), nonce)) {
-      if (!candidates.includes(runId)) candidates.push(runId)
-    }
-  }
-  const confirmed = async (final: boolean): Promise<string | undefined> => {
-    nominate(final)
-    for (const runId of candidates) {
-      if (refused.has(runId)) continue
-      try {
-        if (await options.admission(runId)) return runId
-        refused.add(runId)
-      } catch (error) {
-        lastVerifyError = error
+      if (!candidates.includes(runId)) {
+        if (candidates.length >= 1024) throw new Error("Detached admission candidate limit exceeded (1024).")
+        candidates.push(runId)
       }
     }
+    return read.more
+  }
+  const confirmed = async (final: boolean): Promise<string | undefined> => {
+    let more: boolean
+    do {
+      options.signal?.throwIfAborted()
+      more = nominate(final)
+      for (const runId of candidates) {
+        if (refused.has(runId)) continue
+        try {
+          if (await options.admission(runId)) return runId
+          refused.add(runId)
+        } catch (error) {
+          lastVerifyError = error
+        }
+      }
+      // Let cancellation and child exit notifications run between bounded reads.
+      if (more) await new Promise<void>((resolve) => setImmediate(resolve))
+    } while (more && Date.now() - startedAt < maxWaitMs)
     return undefined
   }
   try {

@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 /**
  * The escalation inside `Detached.terminate`'s handle arm: SIGTERM first,
  * SIGKILL when the child ignored it.
@@ -68,7 +69,7 @@ describe("terminating a SIGTERM-trapping child on a host that has no process gro
       // signal is the one that ends it. A `false` here is the failure this
       // case exists for: the caller would report an orphan-prone launch as
       // contained.
-      expect(await Detached.terminate(child, 500, "win32")).toBe(true)
+      expect(await Effect.runPromise(Detached.terminate(child, 500, "win32"))).toBe(true)
       expect(await until(() => processGone(pid), 5_000)).toBe(true)
     } finally {
       // The fixture traps SIGTERM and holds an interval open, so the operation
