@@ -121,6 +121,27 @@ export const make = (input: MakeOptions): Result.Result<Endpoint, ModelError> =>
   })
 
 /**
+ * Constructs an endpoint that may receive signed provider credentials.
+ * Remote providers require HTTPS; HTTP is reserved for localhost and loopback
+ * IPs. Public proxy identity uses {@link make} without imposing a transport.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const makeSecure = (input: MakeOptions): Result.Result<Endpoint, ModelError> =>
+  Result.flatMap(make(input), (endpoint) => {
+    const url = new URL(endpoint.url)
+    if (
+      url.protocol === "http:" &&
+      url.hostname !== "localhost" && url.hostname !== "[::1]" &&
+      !/^127\.\d+\.\d+\.\d+$/.test(url.hostname)
+    ) {
+      return Result.fail(invalid("Remote endpoint URLs must use https"))
+    }
+    return Result.succeed(endpoint)
+  })
+
+/**
  * Renders an endpoint to the exact deterministic HTTP URL.
  *
  * @since 0.1.0

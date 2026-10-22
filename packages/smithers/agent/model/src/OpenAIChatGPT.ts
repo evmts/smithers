@@ -63,7 +63,7 @@ export const make = (input: {
   readonly headers?: Readonly<Record<string, string>> | undefined
 }) =>
   Result.map(
-    Endpoint.make({ url: input.baseUrl ?? defaultBaseUrl, path: "/codex/responses" }),
+    Endpoint.makeSecure({ url: input.baseUrl ?? defaultBaseUrl, path: "/codex/responses" }),
     (endpoint) =>
       Route.make({
         id: "openai-chatgpt",

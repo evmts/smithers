@@ -11,6 +11,34 @@ const failureMessage = (options: Endpoint.MakeOptions): string => {
 }
 
 describe("Endpoint", () => {
+  it("validates and canonicalizes secure endpoints without changing public HTTP identities", () => {
+    expect(Result.isFailure(Endpoint.makeSecure({ url: "not a url" }))).toBe(true)
+    expect(Result.getOrThrow(Endpoint.makeSecure({ url: "https://provider.test/v1", query: { b: "2", a: "1" } })))
+      .toEqual(make({ url: "https://provider.test/v1", query: { a: "1", b: "2" } }))
+    expect(make({ url: "http://chat.test/api/model" }).url).toBe("http://chat.test/api/model")
+  })
+
+  it.each([
+    "http://provider.test/v1",
+    "http://192.168.1.2/v1",
+    "http://localhost.evil.test/v1",
+    "http://[::ffff:c000:201]/v1"
+  ])(
+    "rejects remote plaintext targets: %s",
+    (url) => {
+      const result = Endpoint.makeSecure({ url })
+      expect(Result.isFailure(result)).toBe(true)
+      if (Result.isFailure(result)) expect(result.failure.message).toMatch(/https/i)
+    }
+  )
+
+  it.each(["http://localhost:8080/v1", "http://127.0.0.1:8080/v1", "http://127.1.2.3/v1", "http://[::1]:8080/v1"])(
+    "allows loopback development targets: %s",
+    (url) => {
+      expect(Result.getOrThrow(Endpoint.makeSecure({ url })).url).toBe(url)
+    }
+  )
+
   it("joins paths and renders sorted query pairs deterministically", () => {
     const endpoint = make({
       url: "https://example.test/v1/",

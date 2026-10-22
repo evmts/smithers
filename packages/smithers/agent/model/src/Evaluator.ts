@@ -505,10 +505,7 @@ export const defaultBaseUrl = `${Endpoint.providerOrigins.vercel}/v4/ai/evaluati
 export const defaultModel = "typesafe-ai/jev"
 
 /**
- * The deadline over one whole evaluation when an option names none: every
- * attempt, headers and body, and the pauses between them. Three attempts
- * that each take the median ~350 ms, plus the two pauses, fit inside it with
- * room for a slow answer.
+ * The deadline over one gateway request, including headers and body.
  *
  * @category constants
  * @since 1.0.0-rc.0
@@ -516,19 +513,17 @@ export const defaultModel = "typesafe-ai/jev"
 export const defaultTimeoutMs = 3000
 
 /**
- * How many requests one evaluation may send when an option names none. Only
- * a 429, 502, 503 or 504, or a connection that failed before any status, is
- * asked again; see {@link layerVercelGateway}.
+ * One evaluation makes one request. The durable caller schedules retries.
  *
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const defaultAttempts = 3
+export const defaultAttempts = 1
 
 /**
- * The pause before the second attempt, in milliseconds. Each later pause
- * doubles it.
+ * Legacy backoff value retained for source compatibility.
  *
+ * @deprecated The durable caller schedules retries; the evaluator never sleeps.
  * @category constants
  * @since 1.0.0-rc.0
  */
@@ -567,8 +562,8 @@ export const maxResponseBytes = 1_048_576
  *
  * `apiKey` is the Vercel AI Gateway key, either in hand or as a `Config` read
  * when the layer is built. Every other option has a default: `model` is
- * {@link defaultModel}, `timeoutMs` is {@link defaultTimeoutMs}, `attempts`
- * is {@link defaultAttempts}, `zeroDataRetention` is on, and `baseUrl` is
+ * {@link defaultModel}, `timeoutMs` is {@link defaultTimeoutMs},
+ * `zeroDataRetention` is on, and `baseUrl` is
  * {@link defaultBaseUrl}.
  *
  * @category models
@@ -578,6 +573,7 @@ export interface VercelGatewayOptions {
   readonly apiKey: Redacted.Redacted<string> | Effect.Effect<Redacted.Redacted<string>, Config.ConfigError>
   readonly model?: string
   readonly timeoutMs?: number
+  /** @deprecated Retries belong to the durable caller; each evaluation sends one request. */
   readonly attempts?: number
   readonly zeroDataRetention?: boolean
   readonly baseUrl?: string
@@ -672,26 +668,11 @@ const streamedUsage = (usage: ModelEvent.Usage, modelId: string): Usage | undefi
 const invalidQuestionStatuses = new Set([400, 422])
 
 /**
- * The statuses that say "not now" rather than "not this": the provider shed
- * the request, the caller is over its rate, or a proxy lost the upstream. The
- * same request may be answered a moment later, so these, and a connection
- * that failed before any status, alone are asked again.
- */
-const retryStatuses = new Set([429, 502, 503, 504])
-
-/**
  * Jev through the Vercel AI Gateway, over the kernel `HttpClient`.
  *
- * One POST per attempt and one deadline over the whole evaluation. A 429, 502,
- * 503 or 504, or a connection that failed before any status, is asked again,
- * up to `attempts` requests in all, after a pause of {@link retryBackoffMs}
- * that doubles each time; the answer is still Jev's, and a request shed on
- * every attempt fails `refused` with the last status (or `unreachable`).
- * On 2026-09-23 `typesafe-ai/jev` shed about one request in seven with a 503
- * in ~125 ms, with no `retry-after` and no fallback behind the gateway; the
- * same body sent again was answered. The deadline bounds the retries too: no
- * attempt starts, and no pause runs, past it. Every other status fails at
- * once. Every request
+ * One POST per evaluation, bounded by a deadline. Transient refusals and
+ * connection failures return to the durable caller, which owns retry
+ * scheduling and recovery. Every request
  * runs as a `model:call` on the gateway host for the configured model, so a
  * grant for the gateway is a grant for this model and not for the rest. The
  * wire protocol is the AI SDK gateway provider's own, as recorded on
@@ -737,12 +718,11 @@ export function layerVercelGateway(
       const apiKey = Redacted.isRedacted(options.apiKey) ? options.apiKey : yield* options.apiKey
       const model = options.model ?? defaultModel
       const timeoutMs = options.timeoutMs ?? defaultTimeoutMs
-      const attempts = Math.max(1, Math.floor(options.attempts ?? defaultAttempts))
       const zeroDataRetention = options.zeroDataRetention ?? true
       // The key is signed onto this URL, so it passes the same validation as
       // every model route's: no embedded credentials, fragments or
       // credential-looking query parameters.
-      const endpoint = Endpoint.make({ url: options.baseUrl ?? defaultBaseUrl })
+      const endpoint = Endpoint.makeSecure({ url: options.baseUrl ?? defaultBaseUrl })
 
       const evaluate = (request: Request): Effect.Effect<Response, EvaluatorError> =>
         Effect.gen(function*() {
@@ -804,8 +784,7 @@ export function layerVercelGateway(
             body: payload
           })
           timing.signed()
-          // Each try is timed as it leaves and as it answers, so a reading
-          // that was shed and asked again says so rather than reading slow.
+          // Record the request's send, response headers and any refusal.
           const send = Effect.suspend(() => {
             const sentAt = clock.currentTimeMillisUnsafe()
             timing.onTry({ type: "sent", at: sentAt })
@@ -827,32 +806,13 @@ export function layerVercelGateway(
               )
             )
           })
-          // An evaluation is a pure question, so asking it again is safe.
-          const retryable = (outcome: Result.Result<HttpClientResponse.HttpClientResponse, EvaluatorError>) =>
-            Result.isFailure(outcome) || retryStatuses.has(outcome.success.status)
-          let outcome = yield* Effect.result(send)
-          for (let attempt = 1; attempt < attempts && retryable(outcome); attempt++) {
-            yield* Effect.sleep(retryBackoffMs * 2 ** (attempt - 1))
-            outcome = yield* Effect.result(send)
-          }
-          if (Result.isFailure(outcome)) {
-            const error = outcome.failure
-            return yield* Effect.fail(
-              attempts > 1
-                ? new EvaluatorError({ code: error.code, message: `${error.message} on all ${attempts} attempts` })
-                : error
-            )
-          }
-          const response = outcome.success
+          const response = yield* send
           if (response.status !== 200) {
-            const retried = attempts > 1 && retryStatuses.has(response.status)
             return yield* Effect.fail(
               new EvaluatorError({
                 code: invalidQuestionStatuses.has(response.status) ? "invalid_question" : "refused",
                 status: response.status,
-                message: retried
-                  ? `The gateway answered ${response.status} on all ${attempts} attempts`
-                  : `The gateway answered ${response.status}`
+                message: `The gateway answered ${response.status}`
               })
             )
           }
@@ -972,118 +932,121 @@ export const layerFromSeat = (
   options: { readonly timeoutMs?: number } = {}
 ): Layer.Layer<Evaluator> =>
   Layer.succeed(Evaluator)({
-    evaluate: (request) => {
-      // What the seat has metered so far, folded the way `settledMessage`
-      // folds it. A reading that fails after the provider metered it, at the
-      // deadline included, carries it, so the run's budget charges it (#3010).
-      let metered: ModelEvent.Usage = {}
-      const paid = (): { readonly usage?: Usage } => {
-        const usage = streamedUsage(metered, seat.modelId)
-        return usage === undefined ? {} : { usage }
-      }
-      return Effect.gen(function*() {
-        const started = yield* Clock.currentTimeMillis
-        const prompt = yield* Effect.try({
-          try: () => CanonicalJson.stringify({ state: request.state, questions: encodeQuestions(request.questions) }),
-          catch: () =>
-            new EvaluatorError({
-              code: "invalid_question",
-              message: "The judgment needs JSON evidence and valid questions."
-            })
-        })
-        const events = yield* seat.model.stream(
-          new ModelRequest({
-            modelId: seat.modelId,
-            system: [{
-              type: "text",
-              text: request.seatNote === undefined ? seatInstructions : `${seatInstructions}\n\n${request.seatNote}`
-            }],
-            messages: [{ role: "user", content: [{ type: "text", text: prompt }] }],
-            tools: [],
-            params: {}
+    evaluate: (request) =>
+      Effect.suspend(() => {
+        // What the seat has metered so far, folded the way `settledMessage`
+        // folds it. A reading that fails after the provider metered it, at the
+        // deadline included, carries it, so the run's budget charges it (#3010).
+        let metered: ModelEvent.Usage = {}
+        const paid = (): { readonly usage?: Usage } => {
+          const usage = streamedUsage(metered, seat.modelId)
+          return usage === undefined ? {} : { usage }
+        }
+        return Effect.gen(function*() {
+          const started = yield* Clock.currentTimeMillis
+          const prompt = yield* Effect.try({
+            try: () => CanonicalJson.stringify({ state: request.state, questions: encodeQuestions(request.questions) }),
+            catch: () =>
+              new EvaluatorError({
+                code: "invalid_question",
+                message: "The judgment needs JSON evidence and valid questions."
+              })
           })
-        ).pipe(
-          Stream.tap((event) =>
-            Effect.sync(() => {
-              metered = ModelEvent.settledMessage([{ type: "usage", ...metered }, event]).usage
+          const events = yield* seat.model.stream(
+            new ModelRequest({
+              modelId: seat.modelId,
+              system: [{
+                type: "text",
+                text: request.seatNote === undefined ? seatInstructions : `${seatInstructions}\n\n${request.seatNote}`
+              }],
+              messages: [{ role: "user", content: [{ type: "text", text: prompt }] }],
+              tools: [],
+              params: {}
             })
-          ),
-          Stream.runCollect,
-          Effect.catch((error) =>
-            Effect.gen(function*() {
-              if (error instanceof ModelError && (error.code === "rate_limited" || error.code === "quota_exceeded")) {
-                const reset = error.resetAtEpochMillis ??
-                  (error.retryAfterMillis === undefined
-                    ? undefined
-                    : (yield* Clock.currentTimeMillis) + error.retryAfterMillis)
-                const resetAtEpochMillis = reset !== undefined && Number.isFinite(new Date(reset).getTime())
-                  ? reset
-                  : undefined
-                return yield* new EvaluatorError({
-                  code: "refused",
-                  status: 429,
-                  ...(resetAtEpochMillis === undefined ? {} : { resetAtEpochMillis }),
-                  message: usageLimitMessage(resetAtEpochMillis),
-                  ...paid()
-                })
-              }
-              return yield* new EvaluatorError({ code: "unreachable", message: unreachableMessage, ...paid() })
-            })
+          ).pipe(
+            Stream.tap((event) =>
+              Effect.sync(() => {
+                metered = ModelEvent.settledMessage([{ type: "usage", ...metered }, event]).usage
+              })
+            ),
+            Stream.runCollect,
+            Effect.catch((error) =>
+              Effect.gen(function*() {
+                if (error instanceof ModelError && (error.code === "rate_limited" || error.code === "quota_exceeded")) {
+                  const reset = error.resetAtEpochMillis ??
+                    (error.retryAfterMillis === undefined
+                      ? undefined
+                      : (yield* Clock.currentTimeMillis) + error.retryAfterMillis)
+                  const resetAtEpochMillis = reset !== undefined && Number.isFinite(new Date(reset).getTime())
+                    ? reset
+                    : undefined
+                  return yield* new EvaluatorError({
+                    code: "refused",
+                    status: 429,
+                    ...(resetAtEpochMillis === undefined ? {} : { resetAtEpochMillis }),
+                    message: usageLimitMessage(resetAtEpochMillis),
+                    ...paid()
+                  })
+                }
+                return yield* new EvaluatorError({ code: "unreachable", message: unreachableMessage, ...paid() })
+              })
+            )
           )
-        )
-        const { message } = ModelEvent.settledMessage(events)
-        // The seat's call says what it took on its own settle event.
-        const settle = events.find((event) => event.type === "settle")
-        const invalid = () =>
-          new EvaluatorError({ code: "invalid_answer", message: "The seat returned an invalid judgment.", ...paid() })
-        if (message.stopReason !== "stop" || message.content.some((part) => part.type === "tool-call")) {
-          return yield* Effect.fail(invalid())
-        }
-        const text = message.content.filter((part) => part.type === "text").map((part) => part.text).join("")
-        const parsed = yield* Effect.try({
-          try: () => JSON.parse(unfenced(text)) as { answers?: unknown },
-          catch: invalid
-        })
-        const answers = yield* decodeRawAnswers(parsed?.answers).pipe(Effect.mapError(invalid))
-        const unit = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1
-        if (Object.keys(answers).length !== Object.keys(request.questions).length) return yield* Effect.fail(invalid())
-        for (const [id, question] of Object.entries(request.questions)) {
-          const answer = answers[id]
-          if (answer === undefined || answer.type !== question.type) return yield* Effect.fail(invalid())
-          if (answer.type === "boolean" && !unit(answer.probability)) return yield* Effect.fail(invalid())
-          if (
-            answer.type === "choice" && question.type === "choice" && !Object.hasOwn(question.criteria, answer.choice)
-          ) return yield* Effect.fail(invalid())
-          if (
-            answer.type === "score" && question.type === "score" &&
-            (!Number.isFinite(answer.score) || answer.score < 0 || answer.score > question.criteria.length - 1)
-          ) return yield* Effect.fail(invalid())
-          if (
-            answer.type !== "boolean" && answer.probabilities !== undefined &&
-            !Object.values(answer.probabilities).every(unit)
-          ) return yield* Effect.fail(invalid())
-        }
-        return {
-          answers,
-          latencyMs: (yield* Clock.currentTimeMillis) - started,
-          decidedBy: "seat" as const,
-          ...paid(),
-          ...(settle?.timing === undefined ? {} : { timing: settle.timing }),
-          ...(settle?.responseId === undefined ? {} : { responseId: settle.responseId }),
-          ...(settle?.servedTier === undefined ? {} : { servedTier: settle.servedTier })
-        }
-      }).pipe(Effect.timeoutOrElse({
-        duration: options.timeoutMs ?? 120_000,
-        orElse: () =>
-          Effect.fail(
-            new EvaluatorError({
-              code: "timeout",
-              message: "The seat did not answer the judgment in time.",
-              ...paid()
-            })
-          )
-      }))
-    }
+          const { message } = ModelEvent.settledMessage(events)
+          // The seat's call says what it took on its own settle event.
+          const settle = events.find((event) => event.type === "settle")
+          const invalid = () =>
+            new EvaluatorError({ code: "invalid_answer", message: "The seat returned an invalid judgment.", ...paid() })
+          if (message.stopReason !== "stop" || message.content.some((part) => part.type === "tool-call")) {
+            return yield* Effect.fail(invalid())
+          }
+          const text = message.content.filter((part) => part.type === "text").map((part) => part.text).join("")
+          const parsed = yield* Effect.try({
+            try: () => JSON.parse(unfenced(text)) as { answers?: unknown },
+            catch: invalid
+          })
+          const answers = yield* decodeRawAnswers(parsed?.answers).pipe(Effect.mapError(invalid))
+          const unit = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1
+          if (Object.keys(answers).length !== Object.keys(request.questions).length) {
+            return yield* Effect.fail(invalid())
+          }
+          for (const [id, question] of Object.entries(request.questions)) {
+            const answer = answers[id]
+            if (answer === undefined || answer.type !== question.type) return yield* Effect.fail(invalid())
+            if (answer.type === "boolean" && !unit(answer.probability)) return yield* Effect.fail(invalid())
+            if (
+              answer.type === "choice" && question.type === "choice" && !Object.hasOwn(question.criteria, answer.choice)
+            ) return yield* Effect.fail(invalid())
+            if (
+              answer.type === "score" && question.type === "score" &&
+              (!Number.isFinite(answer.score) || answer.score < 0 || answer.score > question.criteria.length - 1)
+            ) return yield* Effect.fail(invalid())
+            if (
+              answer.type !== "boolean" && answer.probabilities !== undefined &&
+              !Object.values(answer.probabilities).every(unit)
+            ) return yield* Effect.fail(invalid())
+          }
+          return {
+            answers,
+            latencyMs: (yield* Clock.currentTimeMillis) - started,
+            decidedBy: "seat" as const,
+            ...paid(),
+            ...(settle?.timing === undefined ? {} : { timing: settle.timing }),
+            ...(settle?.responseId === undefined ? {} : { responseId: settle.responseId }),
+            ...(settle?.servedTier === undefined ? {} : { servedTier: settle.servedTier })
+          }
+        }).pipe(Effect.timeoutOrElse({
+          duration: options.timeoutMs ?? 120_000,
+          orElse: () =>
+            Effect.fail(
+              new EvaluatorError({
+                code: "timeout",
+                message: "The seat did not answer the judgment in time.",
+                ...paid()
+              })
+            )
+        }))
+      })
   })
 
 /**

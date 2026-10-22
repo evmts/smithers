@@ -7,7 +7,6 @@
 import { Effect, Stream } from "effect"
 import * as Evaluator from "./Evaluator.ts"
 import type * as Model from "./Model.ts"
-import * as ModelEvent from "./ModelEvent.ts"
 import { ModelRequest } from "./ModelRequest.ts"
 
 /**
@@ -18,48 +17,46 @@ import { ModelRequest } from "./ModelRequest.ts"
  */
 export const fromModel = (model: Model.Model, modelId: string): Evaluator.Evaluator =>
   Evaluator.Evaluator.of({
-    evaluate: (request) => {
-      let emptyText = false
-      const scriptedRequest: Model.Model = {
-        stream: (judgeRequest) =>
-          Stream.unwrap(
+    evaluate: (request) =>
+      Effect.suspend(() => {
+        let emptyText = true
+        const scriptedRequest: Model.Model = {
+          stream: (judgeRequest) =>
             model.stream(
               new ModelRequest({
                 ...judgeRequest,
                 tools: [],
                 toolChoice: "none",
-                // Not `low`: GPT-6 Luna spends no reasoning tokens there, and on 2026-10-13 it read a
-                // correct one-line completion as not done in 10 of 12 readings. At `medium`, 0 of 9.
+                // GPT-6 Luna needs medium effort to read a completed judgment reliably.
                 params: { reasoningEffort: "medium" }
               })
             ).pipe(
-              Stream.runCollect,
-              Effect.map((events) => {
-                const { message } = ModelEvent.settledMessage(events)
-                emptyText = !message.content.some((part) => part.type === "text" && part.text.trim() !== "")
-                return Stream.fromIterable(events)
-              })
+              Stream.tap((event) =>
+                Effect.sync(() => {
+                  if (event.type === "retry") emptyText = true
+                  if (event.type === "text-delta" && event.text.trim() !== "") emptyText = false
+                })
+              )
             )
+        }
+        return Effect.flatMap(Evaluator.Evaluator, (judge) => judge.evaluate(request)).pipe(
+          Effect.provide(Evaluator.layerFromSeat({ model: scriptedRequest, modelId })),
+          Effect.mapError((error) =>
+            emptyText && error.code === "invalid_answer"
+              ? new Evaluator.EvaluatorError({
+                code: "empty",
+                message: "The model returned no judgment text.",
+                ...(error.usage === undefined ? {} : { usage: error.usage })
+              })
+              : error
           )
-      }
-      return Effect.flatMap(Evaluator.Evaluator, (judge) => judge.evaluate(request)).pipe(
-        Effect.provide(Evaluator.layerFromSeat({ model: scriptedRequest, modelId })),
-        Effect.mapError((error) =>
-          emptyText && error.code === "invalid_answer"
-            ? new Evaluator.EvaluatorError({
-              code: "empty",
-              message: "The model returned no judgment text.",
-              ...(error.usage === undefined ? {} : { usage: error.usage })
-            })
-            : error
         )
-      )
-    }
+      })
   })
 
 /**
  * Use the backup only when the primary is unavailable: unreachable, timed out,
- * or refusing with a server error or 429 after its own retries. An
+ * or refusing with a server error or 429. An
  * unconfigured primary is a setup fault, not an outage: it fails with its own
  * typed `unconfigured` error and setup message and never falls back, so a
  * missing credential is reported instead of being answered by another model.

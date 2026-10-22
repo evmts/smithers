@@ -182,6 +182,9 @@ const compile = <Body, Frame, Event, State>(
 ): Effect.Effect<Compiled, ModelError> =>
   SpanFailure.effect(
     Effect.fn("flows/model/Route.prepare")(function*() {
+      // Custom routes can supply a public endpoint directly. Validate before
+      // preparing or signing, just as the provider constructors do.
+      yield* Effect.fromResult(Endpoint.makeSecure({ url: route.endpoint.url, query: route.endpoint.query }))
       const validatedRequest = yield* Schema.decodeUnknownEffect(ModelRequestSchema)(request).pipe(
         Effect.mapError((error) =>
           withPath("invalid_request", "Model request failed Schema validation", schemaPath(error))
@@ -554,7 +557,7 @@ export const anthropic = (
   ModelError
 > =>
   Result.map(
-    Endpoint.make({ url: input.baseUrl ?? Endpoint.providerOrigins.anthropic, path: "/v1/messages" }),
+    Endpoint.makeSecure({ url: input.baseUrl ?? Endpoint.providerOrigins.anthropic, path: "/v1/messages" }),
     (endpoint) =>
       make({
         id: "anthropic",
@@ -590,7 +593,7 @@ export const openai = (
   ModelError
 > =>
   Result.map(
-    Endpoint.make({ url: input.baseUrl ?? Endpoint.providerOrigins.openai, path: "/v1/responses" }),
+    Endpoint.makeSecure({ url: input.baseUrl ?? Endpoint.providerOrigins.openai, path: "/v1/responses" }),
     (endpoint) =>
       make({
         id: "openai",
@@ -637,7 +640,7 @@ export const openaiResponsesCompatible = (
   >,
   ModelError
 > =>
-  Result.map(Endpoint.make({ url: input.baseUrl, path: "/v1/responses" }), (endpoint) =>
+  Result.map(Endpoint.makeSecure({ url: input.baseUrl, path: "/v1/responses" }), (endpoint) =>
     make({
       id: input.id,
       providerName: input.providerName,
@@ -683,14 +686,17 @@ export const openaiChatCompatible = (
   >,
   ModelError
 > =>
-  Result.map(Endpoint.make({ url: input.baseUrl, path: input.path ?? "/v1/chat/completions" }), (endpoint) =>
-    make({
-      id: input.id,
-      providerName: input.providerName,
-      protocol: OpenAIChatCompletions.protocolWith(
-        input.structuredOutput === undefined ? {} : { structuredOutput: input.structuredOutput }
-      ),
-      endpoint,
-      auth: Auth.bearer(input.apiKey),
-      framing: Framing.sse
-    }))
+  Result.map(
+    Endpoint.makeSecure({ url: input.baseUrl, path: input.path ?? "/v1/chat/completions" }),
+    (endpoint) =>
+      make({
+        id: input.id,
+        providerName: input.providerName,
+        protocol: OpenAIChatCompletions.protocolWith(
+          input.structuredOutput === undefined ? {} : { structuredOutput: input.structuredOutput }
+        ),
+        endpoint,
+        auth: Auth.bearer(input.apiKey),
+        framing: Framing.sse
+      })
+  )

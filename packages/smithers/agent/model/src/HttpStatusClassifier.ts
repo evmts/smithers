@@ -14,17 +14,10 @@ import { isContextOverflow, isQuotaExhausted, type ModelErrorCode } from "./Mode
  * behind — a gateway's page, a proxy's sentence, a body that quotes the
  * request or an agent's own report.
  *
- * The distinction governs the limit classes alone. A quota or rate limit
- * decides whether a run parks, moves to another seat, or stops as unfundable,
- * so reading one out of text nobody meant as a verdict loses the run: on
- * 2026-10-15 two agent attempts failed `quota_exceeded` within the same second
- * on their own source and report prose, while the account was at a quarter of
- * its session budget. For those classes an opaque body establishes nothing and
- * the HTTP status governs. The other classes still read opaque text: a gateway
- * that names a content filter, an overflowing request or a rejected key is
- * reporting a verdict about this call, and no failure has shown one of those
- * read out of quoted prose. Each of them is terminal too, so narrowing one
- * waits for a failing case of its own rather than a guess.
+ * Only provider fields establish named quota/rate limits; opaque bodies
+ * follow the HTTP status for those classes. Likewise, content-policy words
+ * in an opaque 5xx page do not override its transient server status. Other
+ * classifications retain their vocabulary checks for gateway verdicts.
  *
  * @category models
  * @since 1.0.0-rc.7
@@ -62,7 +55,10 @@ export const classifyHttpStatus = (
   if (status === 429 || (named && /rate[-_\s]?limit|usage[-_\s]?limit|too many requests/.test(normalized))) {
     return "rate_limited"
   }
-  if (/content[-_\s]?policy|content[-_\s]?filter|safety/.test(normalized)) return "content_policy"
+  if (
+    (named || status === undefined || status < 500) &&
+    /content[-_\s]?policy|content[-_\s]?filter|safety/.test(normalized)
+  ) return "content_policy"
   // Quota and overflow must precede their generic invalid-request envelopes.
   if (isContextOverflow(code, message)) return "context_overflow"
   if (

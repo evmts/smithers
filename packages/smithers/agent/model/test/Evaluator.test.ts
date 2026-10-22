@@ -546,165 +546,82 @@ describe("Evaluator.layerVercelGateway", () => {
     }
   }
 
-  it.each([503, 429, 502, 504])("asks again after a %s and answers what the next attempt answers", async (status) => {
+  it("returns transient refusal to the durable caller without retrying or sleeping", async () => {
     const sent: Array<Sent> = []
     const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
-      Layer.provide(httpLayer(sent, () => sent.length === 1 ? json(shed, status) : json(recorded)))
+      Layer.provide(httpLayer(sent, () => json(shed, 503)))
     )
-
-    const response = success(await evaluate(layer))
-
-    expect(response.answers).toEqual(recorded.answers)
-    expect(sent).toHaveLength(2)
-    expect(sent[1]!.body).toBe(sent[0]!.body)
+    const result = await evaluate(layer)
+    expect(failure(result)).toMatchObject({ code: "refused", status: 503 })
+    expect(sent).toHaveLength(1)
   })
 
-  it("times the reading: its bytes, the try that was shed, the answered try, the headers and the end of the body", async () => {
+  it("does not claim a final status occurred on every attempt", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(httpLayer(sent, () => json(shed, sent.length === 1 ? 502 : 503)))
+    )
+    const error = failure(await evaluate(layer))
+    expect(error.message).not.toContain("on all")
+  })
+
+  it.each([503, 429, 502, 504])("returns a %s refusal after one request", async (status) => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(httpLayer(sent, () => json(shed, status)))
+    )
+    expect(failure(await evaluate(layer))).toMatchObject({ code: "refused", status })
+    expect(sent).toHaveLength(1)
+  })
+
+  it("times one reading: its bytes, send, headers and body", async () => {
     const NOW = 1_760_000_000_000
-    // Each try answers after its own wait on the test clock.
-    const waits = [40, 300]
     const bodies: Array<string> = []
     const http = Layer.succeed(KernelHttpClient.HttpClient)(
       HttpClient.make((request) =>
-        Effect.suspend(() => {
+        Effect.sync(() => {
           bodies.push(request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "")
-          const first = bodies.length === 1
-          return Effect.as(
-            Effect.sleep(waits[bodies.length - 1]!),
-            HttpClientResponse.fromWeb(
-              request,
-              first ? json(shed, 503) : json({ ...recorded, usage: { inputTokens: 120, outputTokens: 3 } })
-            )
+          return HttpClientResponse.fromWeb(
+            request,
+            json({ ...recorded, usage: { inputTokens: 120, outputTokens: 3 } })
           )
         })
       )
     )
-    // Lets the reading run to its next wait before the clock moves again.
-    const parked = Effect.gen(function*() {
-      for (let round = 0; round < 8; round += 1) yield* Effect.yieldNow
-    })
-
     const response = await Effect.runPromise(
       Effect.gen(function*() {
         yield* TestClock.setTime(NOW)
-        const evaluator = yield* Evaluator.Evaluator
-        const fiber = yield* evaluator.evaluate({ state, questions }).pipe(Effect.forkChild)
-        yield* parked
-        yield* TestClock.adjust(40)
-        yield* parked
-        yield* TestClock.adjust(Evaluator.retryBackoffMs)
-        yield* parked
-        yield* TestClock.adjust(300)
-        return yield* Fiber.join(fiber)
+        return yield* (yield* Evaluator.Evaluator).evaluate({ state, questions })
       }).pipe(
         Effect.provide(Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(Layer.provide(http))),
         Effect.provide(TestClock.layer()),
         Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
       )
     )
-
-    expect(bodies).toHaveLength(2)
-    expect(response.latencyMs).toBe(440)
+    expect(bodies).toHaveLength(1)
+    expect(response.latencyMs).toBe(0)
     expect(response.usage).toEqual({ inputTokens: 120, outputTokens: 3, modelId: "typesafe-ai/jev" })
     expect(response.timing).toEqual({
       startedAt: NOW,
-      attempts: 2,
+      attempts: 1,
       requestBytes: new TextEncoder().encode(bodies[0]!).byteLength,
       preparedMs: 0,
       signedMs: 0,
-      // The answered try left after the shed one and the pause.
-      sentMs: 140,
-      headersMs: 440,
-      closedMs: 440,
-      failedTries: [{ sentMs: 0, failedMs: 40, code: "refused", httpStatus: 503 }]
+      sentMs: 0,
+      headersMs: 0,
+      closedMs: 0
     })
-    // A gateway answer is one JSON body, not a stream: it has no stream stages.
     expect(response.timing).not.toHaveProperty("firstEventMs")
     expect(response.timing).not.toHaveProperty("completedMs")
   })
 
-  it("counts a try the connection failed, with its code and no status", async () => {
-    let tries = 0
-    const http = Layer.succeed(KernelHttpClient.HttpClient)(
-      HttpClient.make((request) =>
-        Effect.suspend(() => {
-          tries += 1
-          return tries === 1
-            ? Effect.fail(
-              new HttpClientError.HttpClientError({
-                reason: new HttpClientError.TransportError({ request, description: "socket hang up" })
-              })
-            )
-            : Effect.succeed(HttpClientResponse.fromWeb(request, json(recorded)))
-        })
-      )
-    )
-
-    const response = success(
-      await evaluate(Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(Layer.provide(http)))
-    )
-
-    expect(response.timing).toMatchObject({ attempts: 2 })
-    expect(response.timing?.failedTries).toHaveLength(1)
-    expect(response.timing?.failedTries?.[0]).toMatchObject({ code: "unreachable" })
-    expect(response.timing?.failedTries?.[0]).not.toHaveProperty("httpStatus")
-  })
-
-  it("fails a gateway that sheds every attempt as refused, after the last attempt and before the deadline", async () => {
+  it("returns a refused response even when a legacy attempts option requests retries", async () => {
     const sent: Array<Sent> = []
-    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k"), timeoutMs: 3000 }).pipe(
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k"), attempts: 5 }).pipe(
       Layer.provide(httpLayer(sent, () => json(shed, 503)))
     )
-
-    const result = await Effect.runPromise(
-      Effect.gen(function*() {
-        const evaluator = yield* Evaluator.Evaluator
-        const fiber = yield* evaluator.evaluate({ state, questions }).pipe(Effect.result, Effect.forkChild)
-        yield* Effect.yieldNow
-        expect(sent).toHaveLength(1)
-        yield* TestClock.adjust(Evaluator.retryBackoffMs - 1)
-        expect(sent).toHaveLength(1)
-        yield* TestClock.adjust(1)
-        expect(sent).toHaveLength(2)
-        yield* TestClock.adjust(2 * Evaluator.retryBackoffMs)
-        return yield* Fiber.join(fiber)
-      }).pipe(
-        Effect.provide(layer),
-        Effect.provide(TestClock.layer()),
-        Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
-      )
-    )
-
-    expect(sent).toHaveLength(Evaluator.defaultAttempts)
-    expect(failure(result)).toMatchObject({
-      code: "refused",
-      status: 503,
-      message: `The gateway answered 503 on all ${Evaluator.defaultAttempts} attempts`
-    })
-  })
-
-  it("never waits past its deadline for another attempt", async () => {
-    const sent: Array<Sent> = []
-    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k"), timeoutMs: 150, attempts: 5 }).pipe(
-      Layer.provide(httpLayer(sent, () => json(shed, 503)))
-    )
-
-    const result = await Effect.runPromise(
-      Effect.gen(function*() {
-        const evaluator = yield* Evaluator.Evaluator
-        const fiber = yield* evaluator.evaluate({ state, questions }).pipe(Effect.result, Effect.forkChild)
-        yield* Effect.yieldNow
-        yield* TestClock.adjust(150)
-        return yield* Fiber.join(fiber)
-      }).pipe(
-        Effect.provide(layer),
-        Effect.provide(TestClock.layer()),
-        Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
-      )
-    )
-
-    expect(failure(result)).toMatchObject({ code: "timeout" })
-    expect(sent).toHaveLength(2)
+    expect(failure(await evaluate(layer))).toMatchObject({ code: "refused", status: 503 })
+    expect(sent).toHaveLength(1)
   })
 
   it("asks exactly once when told to make one attempt", async () => {
@@ -770,6 +687,7 @@ describe("Evaluator.layerVercelGateway", () => {
   })
 
   it.each([
+    ["remote plaintext HTTP", "http://gateway.example.test/evaluate"],
     ["embedded credentials", "https://user:pass@gateway.example.test/evaluate"],
     ["a credential query parameter", "https://gateway.example.test/evaluate?api_key=x"],
     ["a non-http scheme", "file:///etc/passwd"]
@@ -797,7 +715,7 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(error.message).toContain("Expected number")
   })
 
-  it("asks again after a connection failure and answers what the next attempt answers", async () => {
+  it("returns a connection failure before a second request can succeed", async () => {
     const sent: Array<Sent> = []
     const recordedLayer = httpLayer(sent, () => json(recorded))
     const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
@@ -818,10 +736,8 @@ describe("Evaluator.layerVercelGateway", () => {
       )
     )
 
-    const response = success(await evaluate(layer))
-
-    expect(response.answers).toEqual(recorded.answers)
-    expect(sent).toHaveLength(1)
+    expect(failure(await evaluate(layer))).toMatchObject({ code: "unreachable" })
+    expect(sent).toHaveLength(0)
   })
 
   it("fails a transport that answers nothing as unreachable", async () => {
@@ -845,7 +761,7 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(error).toMatchObject({ code: "unreachable" })
     expect((error as Evaluator.EvaluatorError).status).toBeUndefined()
     expect(error.message).toContain("socket hung up")
-    expect(error.message).toContain(`on all ${Evaluator.defaultAttempts} attempts`)
+    expect(error.message).not.toContain("on all")
   })
 
   it("fails a single-attempt transport that answers nothing as unreachable, without retry wording", async () => {

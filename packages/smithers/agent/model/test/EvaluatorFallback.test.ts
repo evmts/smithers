@@ -136,6 +136,32 @@ describe("EvaluatorBackup.fromModel judgment boundaries", () => {
     }
   })
 
+  it("reports whitespace-only completed text as empty", async () => {
+    const result = await run(seat(Model.make({ stream: () => textEvents(" \n\t") })))
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) expect(result.failure.code).toBe("empty")
+  })
+
+  it("discards text and usage from the abandoned attempt when a retry ends empty", async () => {
+    const result = await run(seat(Model.make({
+      stream: () =>
+        Stream.make(
+          { type: "text-delta", id: "old", text: "abandoned judgment" },
+          { type: "usage", inputTokens: 20, outputTokens: 5 },
+          { type: "retry", attempt: 1, code: "transport", delayMillis: 0 },
+          { type: "usage", inputTokens: 8, outputTokens: 0 },
+          { type: "settle", stopReason: "stop" }
+        )
+    })))
+    expect(Result.isFailure(result)).toBe(true)
+    if (Result.isFailure(result)) {
+      expect(result.failure).toMatchObject({
+        code: "empty",
+        usage: { inputTokens: 8, outputTokens: 0, modelId: "fixture/judge" }
+      })
+    }
+  })
+
   it("hides stream failure details", async () => {
     const model = Model.make({
       stream: () => Stream.fail(new ModelError({ code: "transport", message: "private endpoint and token" }))

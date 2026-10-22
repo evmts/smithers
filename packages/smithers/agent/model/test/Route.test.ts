@@ -1750,10 +1750,10 @@ describe("Endpoint.providerOrigin", () => {
 
   it("routes Route.anthropic and Route.openai to a supplied origin", () => {
     const key = Redacted.make("k")
-    expect(Result.getOrThrow(Route.anthropic({ apiKey: key, baseUrl: "http://p.test/m/anthropic" })).endpoint.url)
-      .toBe("http://p.test/m/anthropic/v1/messages")
-    expect(Result.getOrThrow(Route.openai({ apiKey: key, baseUrl: "http://p.test/m/openai" })).endpoint.url)
-      .toBe("http://p.test/m/openai/v1/responses")
+    expect(Result.getOrThrow(Route.anthropic({ apiKey: key, baseUrl: "https://p.test/m/anthropic" })).endpoint.url)
+      .toBe("https://p.test/m/anthropic/v1/messages")
+    expect(Result.getOrThrow(Route.openai({ apiKey: key, baseUrl: "https://p.test/m/openai" })).endpoint.url)
+      .toBe("https://p.test/m/openai/v1/responses")
     expect(Result.getOrThrow(Route.anthropic({ apiKey: key })).endpoint.url).toBe(
       "https://api.anthropic.com/v1/messages"
     )

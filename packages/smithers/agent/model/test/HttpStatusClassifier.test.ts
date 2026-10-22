@@ -68,6 +68,11 @@ for (const [name, toModel] of routes) {
       return { error, attempts }
     }
 
+    it("keeps an opaque safety-maintenance 503 retryable through the route", async () => {
+      const { error } = await errorFor(503, "Service unavailable during safety maintenance")
+      expect(error).toMatchObject({ code: "provider_internal", httpStatus: 503, retryable: true })
+    })
+
     it.each(["", "{}", JSON.stringify({ error: { message: "Insufficient credits" } })])(
       "classifies bare HTTP 402 as terminal quota: %s",
       async (body) => {
@@ -230,5 +235,14 @@ describe("limits in opaque text", () => {
       .toBe("context_overflow")
     expect(classifyHttpStatus(500, undefined, "Service unavailable", "opaque")).toBe("provider_internal")
     expect(classifyHttpStatus(418, undefined, "Incorrect API key provided", "opaque")).toBe("authentication")
+  })
+})
+
+describe("opaque safety prose", () => {
+  it("keeps an opaque 503 retryable when its page mentions safety", () => {
+    expect(classifyHttpStatus(503, undefined, "Service unavailable during safety maintenance", "opaque"))
+      .toBe("provider_internal")
+    expect(classifyHttpStatus(503, "content_filter", "Blocked for safety", "provider"))
+      .toBe("content_policy")
   })
 })

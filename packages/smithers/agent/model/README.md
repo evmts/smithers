@@ -160,3 +160,9 @@ For required Cerebras and Codex subscription evidence, run
 `bash packages/smithers/agent/model/scripts/provider-live.sh` from the repository root with
 `CEREBRAS_API_KEY` and the selected home's Codex ChatGPT login available.
 The runner fails on missing credentials; it never treats skipped tests as evidence.
+
+Gateway evaluations send one request; transient errors return to the durable
+caller for retry scheduling. Signed provider endpoints require HTTPS; HTTP is reserved
+for localhost and loopback IPs. Public proxy request identities retain their
+HTTP, HTTPS or relative URL. Seat and backup evaluators preserve reported
+usage on failures and deadlines, with fresh accounting for each Effect run.
