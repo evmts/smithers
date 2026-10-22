@@ -7,6 +7,7 @@ import { AUTHOR_TOOLS } from "../features/flows-ui/contract"
 import { FlowPromptReference, FlowNewReference } from "../features/flows-ui/reference"
 import { Ask } from "../features/status/flows"
 import { declarationOf, modelInvocable } from "./declarations"
+import { asksApproval, deniedHere } from "./approvals"
 import { entryOf, FlowRegistry, type FlowName, names } from "./registry"
 
 // The agent's catalog (decision 0003 §1, docs/features/flows.md#the-agents-catalog): the registry's model-invocable
@@ -116,16 +117,23 @@ export const source = Effect.gen(function* () {
           executionId: childExecutionId(call.identity),
           payload: input as never,
         }) as Effect.Effect<unknown, unknown>
+        // Once the person said no in this answer, they aren't asked again: the agent's own approval ask reads their
+        // no, and so does a call of the flow they denied (src/flows/approvals.ts).
+        const refused = deniedHere(inspection)
+        if (asksApproval(name, input)) {
+          return Effect.flatMap(refused, (no) => (no.any ? Effect.succeed({ answered: true, approved: false }) : run))
+        }
         // A flow the person must approve (the registry's `confirm`) runs only once they Approve; the question is a
         // child of the answer's run, as `app/agent/ask` is when the agent asks it.
         const { confirm } = registry.entryOf(name)
-        return confirm === undefined ? run : Effect.flatMap(
-          runtime.execute(Ask, {
-            executionId: confirmExecutionId(call.identity),
-            payload: { kind: "approval", prompt: confirm },
-          }),
-          (outcome): Effect.Effect<unknown, unknown> => (outcome.approved === true ? run : Effect.fail(new NotApproved())),
-        )
+        return confirm === undefined ? run : Effect.flatMap(refused, (no) =>
+          no.flows.has(name) ? Effect.fail(new NotApproved()) : Effect.flatMap(
+            runtime.execute(Ask, {
+              executionId: confirmExecutionId(call.identity),
+              payload: { kind: "approval", prompt: confirm },
+            }),
+            (outcome): Effect.Effect<unknown, unknown> => (outcome.approved === true ? run : Effect.fail(new NotApproved())),
+          ))
       },
       publicError,
     })

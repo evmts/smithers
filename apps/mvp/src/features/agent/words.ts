@@ -45,9 +45,16 @@ const FAILURE_TAG = /\b(?:[A-Z][a-z]+)+(?:Refused|Forbidden|Unavailable|NotFound
 /** An execution's, a view's or a draft's id. */
 const ID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
 
-/** The internal names `text` shows a person, each once, in the order they first appear. */
+/**
+ * A fenced code block, closed: what a person asked to see, such as their own flow's code, which may name the flows it
+ * calls. An unclosed fence hides nothing.
+ */
+const FENCED = /^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[ \t]*$/gm
+
+/** The internal names `text` shows a person, each once, in the order they first appear, past its fenced code. */
 export const internalNames = (text: string): ReadonlyArray<string> => {
-  const found = [...text.matchAll(NAMED), ...text.matchAll(FAILURE_TAG), ...text.matchAll(ID)]
+  const prose = text.replace(FENCED, (block) => " ".repeat(block.length))
+  const found = [...prose.matchAll(NAMED), ...prose.matchAll(FAILURE_TAG), ...prose.matchAll(ID)]
     .sort((a, b) => a.index - b.index)
     .map((match) => match[0])
   return [...new Set(found)]

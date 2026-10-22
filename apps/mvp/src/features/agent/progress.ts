@@ -18,6 +18,11 @@ export interface Progress {
   readonly reply: string
   /** The answer's text so far: the last projection of a reply's `ctx.done(` literal. */
   readonly text: string | undefined
+  /**
+   * The projection of a reply whose cell calls a flow, held until the cell settles: until then a call may fail, or wait
+   * for the person's approval, and the text would say done what isn't.
+   */
+  readonly held?: string | undefined
   readonly parts: ReadonlyArray<Part>
   readonly inputTokens: number
   readonly outputTokens: number
@@ -34,6 +39,9 @@ export const empty: Progress = {
   outputTokens: 0,
   modelFailure: undefined,
 }
+
+/** Whether a reply's cell calls a flow, so its `ctx.done(` text holds only once the cell settles. */
+const CALLS = /\bctx\.call\s*\(/
 
 /** A rate-limit code or status on a failed model call. */
 const rateLimited = (code: string, httpStatus: number | undefined) =>
@@ -64,12 +72,19 @@ export const fold = (progress: Progress, event: AgentEvent.AgentEvent): Progress
     }
     case "model-requested":
     case "model-retried":
-      return { ...progress, reply: "" }
+      return { ...progress, reply: "", held: undefined }
     case "model-delta": {
       if (event.delta.type !== "text-delta") return progress
       const reply = progress.reply + event.delta.text
       const text = Option.getOrUndefined(DoneText.project(reply))
+      if (text !== undefined && CALLS.test(reply)) return { ...progress, reply, held: text }
       return text === undefined || text === progress.text ? { ...progress, reply } : { ...progress, reply, text }
+    }
+    case "cell-settled": {
+      if (progress.held === undefined) return progress
+      return event.outcome._tag === "settled"
+        ? { ...progress, text: progress.held, held: undefined }
+        : { ...progress, held: undefined }
     }
     case "model-settled":
       return {

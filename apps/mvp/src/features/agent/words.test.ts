@@ -9,6 +9,14 @@ import { internalNames, plainly, ProductWords } from "./words"
 const decode = Schema.decodeUnknownResult(ProductWords)
 
 describe("internalNames", () => {
+  test("reads past a fenced code block the person asked to see: their own code may name a flow", () => {
+    const fence = "`".repeat(3)
+    expect(internalNames(`Here it is:\n${fence}ts\nflows: ["app/web/open"]\n${fence}\nIt opens the docs.`)).toEqual([])
+    expect(internalNames(`${fence}ts\nconst a = 1\n${fence}\nI ran app/web/open.`)).toEqual(["app/web/open"])
+    // A fence never closed hides nothing.
+    expect(internalNames(`${fence}ts\nI ran app/web/open.`)).toEqual(["app/web/open"])
+  })
+
   test("finds the machinery the evals caught, each once, in order", () => {
     expect(
       internalNames(

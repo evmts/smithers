@@ -443,6 +443,40 @@ describe("chat/Answer", () => {
       expect(model.seen[1]).toContain(`"message":"Flow flow/save failed: NotApproved"`)
     })
 
+    // The flows eval `flow-delete-denied` saw the agent ask again, in other words, after the person said no.
+    test("denied once, the same call again and the agent's own approval ask read no, and the person isn't asked again", async () => {
+      const seen: Array<string> = []
+      const script = (request: Parameters<Parameters<typeof openAgent>[1]>[0]) => {
+        seen.push(contents(request).join("\n"))
+        const source = seen.length === 1
+          ? `await ctx.call("flow/save", { draftId: "${draftId}" })`
+          : seen.length === 2
+          ? [
+            `let again = "ran"`,
+            `try { await ctx.call("flow/save", { draftId: "${draftId}" }) } catch (error) { again = String(error) }`,
+            `const asked = await ctx.call("app/agent/ask", { kind: "approval", prompt: "Really save it?" })`,
+            `console.log(JSON.stringify({ again, asked }))`,
+          ].join("\n")
+          : `ctx.done("Left it.")`
+        return Stream.make({ type: "text-delta" as const, id: "t", text: cell(source) }, usage, stop)
+      }
+      const agent = await openAgent(runtime, script)
+      const engine = await agent.engine()
+      engines.push(engine)
+      const answerId = await agent.ask("Save my draft")
+      const running = agent.start(engine, answerId)
+
+      await decide(engine, answerId, false)
+
+      expect(await running.done).toEqual(Exit.succeed({ status: "done" }))
+      expect(seen[2]).toContain("flow/save failed: NotApproved")
+      expect(seen[2]).toContain(`"asked":{"answered":true,"approved":false}`)
+      // One question, the first: its version never moved on.
+      expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly version: number }>`SELECT version FROM runs WHERE id = ${answerId}`)).then(([row]) => row?.version))
+        .toBe(1)
+    })
+
     test("approved, the flow runs", async () => {
       const model = saving()
       const agent = await openAgent(runtime, model.script)

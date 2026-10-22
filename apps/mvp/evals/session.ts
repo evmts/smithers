@@ -149,7 +149,9 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
         const [row] = await query<RunRow>((sql) => sql`SELECT status, version, wait FROM runs WHERE id = ${answerId}`)
         if (row?.status === "needs_you" && row.wait !== null && asked.length < row.version) {
           const value = row.wait.kind === "approval" ? person.approve : person.words
-          asked.push({ kind: row.wait.kind, prompt: row.wait.prompt, value })
+          // What the person saw while the question waited, as their answer's row holds it before they answer.
+          const shown = (await answerRow(runtime, answerId)).text
+          asked.push({ kind: row.wait.kind, prompt: row.wait.prompt, value, shown: shown === "" ? null : shown })
           const answered = await Effect.runPromise(
             device.dispatch.dispatch(
               "run/answer",
@@ -204,6 +206,8 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
       }),
     })
     if (written.status !== 200) throw new Error(`the seed's draft wasn't written: ${written.status}`)
+    // A draft seed stays a ready draft, not saved.
+    if (seed === "draft") return
     const saved = await press("flow/save", { draftId })
     if (saved._tag !== "Success") throw new Error("the seed's flow wasn't saved")
   }

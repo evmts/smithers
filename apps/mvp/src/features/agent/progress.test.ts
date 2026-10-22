@@ -53,6 +53,18 @@ describe("fold", () => {
     expect(fold(first, event({ _tag: "model-delta", delta: { type: "usage" } }))).toBe(first)
   })
 
+  test("a cell that calls a flow shows its done text once the cell settled, never while a call may fail", () => {
+    const cell = "```cell\nawait ctx.call(\"flow/delete\", { name: \"docs\" })\nctx.done(\"Deleted your flow.\")\n```"
+    const waiting = replay(delta("```cell\nctx.done(\"Looking.\")\n```"), event({ _tag: "model-requested" }), delta(cell))
+    const cellSettled = (tag: "settled" | "raised") => event({ _tag: "cell-settled", cell: "c", outcome: { _tag: tag } })
+
+    // Asking the person to approve, the delete hasn't run: the answer still shows what it showed before.
+    expect(waiting.text).toBe("Looking.")
+    expect(fold(waiting, cellSettled("settled")).text).toBe("Deleted your flow.")
+    expect(fold(waiting, cellSettled("raised")).text).toBe("Looking.")
+    expect(fold(fold(waiting, cellSettled("raised")), cellSettled("settled")).text).toBe("Looking.")
+  })
+
   test("sums each call's tokens, and remembers how a model call failed", () => {
     const spent = replay(
       event({ _tag: "model-settled", usage: { inputTokens: 10, outputTokens: 2 } }),

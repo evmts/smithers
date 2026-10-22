@@ -16,14 +16,39 @@ export const SLASH_COMMANDS: string = names.flatMap((name) => {
   return [`/${slash.command} ${name}${userOnlyReason === undefined ? "" : " (the person's only)"}`]
 }).join(", ")
 
+/**
+ * The person's own acts, from the registry (src/flows/registry.ts): every flow a person runs that the agent may not
+ * (`userOnlyReason`, and not a run only a device or another flow starts), by the first sentence of its description:
+ * `Accept an issue, or mark it not accepted (issue/triage)`. The agent's catalog doesn't carry them, so without this a
+ * request for one reads as a request for the nearest flow it has (the agent evals' `own-triage`, 2026-10-22).
+ */
+export const PERSONS_OWN: string = names.flatMap((name) => {
+  const { flow, userOnlyReason, acts } = entryOf(name)
+  if (userOnlyReason === undefined || acts !== undefined) return []
+  // Every registered flow describes itself (src/flows/registry.test.ts), though `Flow.make` leaves it optional.
+  const first = flow.description!.split(/(?<=\.)\s/)[0]!.replace(/\.$/, "")
+  return [`${first} (${name})`]
+}).join("; ")
+
 /** The agent's system teaching for `chat/Respond`, line by line. */
 export const CHAT_SYSTEM: ReadonlyArray<string> = [
   AgentInstructions.AGENT_NAME_LINE,
-  "Answer in a few short sentences, in the person's words: never a flow's name, a code, an id or JSON. Say what you " +
-  "did; offer nothing more.",
+  "Answer in a few short sentences, in the person's words: never a flow's name, an error code, an id or JSON, but in " +
+  "a fenced block of code the person asked to see. Say what you did; offer nothing more.",
   "When the person asks you to change something, call the flow that changes it, and say it changed only after the " +
   "flow answered. If the flow fails, say you couldn't.",
   "Call only the flows the request needs. A flow with a side effect runs only when the person asked for that effect.",
+  "When a flow fails or is refused, say so and stop there: never reach for another flow in its place, such as " +
+  "cloning a repository to read it, tracking a branch you couldn't make, or running a command for what a read " +
+  "answers.",
+  "A flow that needs the person's approval asks them itself: call it, and never ask for that approval yourself. Once " +
+  "they say no, leave it as it is, and don't ask again.",
+  `Only the person does these, by their own press in the app: ${PERSONS_OWN}. Asked for one, call no flow with a ` +
+  "side effect toward it, and say in a sentence that they do it there.",
+  "The person sees only your answer, never what a flow returned: when they ask to see something, put it in your " +
+  "answer, code in a fenced block.",
+  "Never promise to do something later: say what you did, or that you couldn't.",
+  "Say only what a flow answered or the person told you: never make up their files, branches, runs or results.",
   "People merge, approve and move main; you never do, and never look for a way round it. Asked to, say in a " +
   "sentence that the person does it.",
   "Asked how to do something a flow does, with the result named (\"How do I open the React docs with /web?\"), do " +

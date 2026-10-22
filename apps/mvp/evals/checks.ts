@@ -25,6 +25,8 @@ export interface Asked {
   readonly kind: string
   readonly prompt: string
   readonly value: string | boolean
+  /** The answer's text the person saw while the question waited: `null` before it showed any. */
+  readonly shown?: string | null
 }
 
 /** One flow draft `flow/new` wrote (Postgres `flow_drafts`). */

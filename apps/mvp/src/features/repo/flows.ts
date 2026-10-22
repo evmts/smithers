@@ -164,7 +164,8 @@ export const RepoRead = Flow.make("repo/read", {
 export const RepoRefs = Flow.make("repo/refs", {
   description: "List a cloned repository's (owner/name) branches and tags. Answers { defaultBranch, head, branches, " +
     "tags, truncated }: head is the default branch's commit SHA, and each branch and tag is { name, sha }. Read at a " +
-    "branch with its sha in repo/tree and repo/read; open one with app/navigate at /<owner>/<repo>/tree/<name>.",
+    "branch with its sha in repo/tree and repo/read; open one with app/navigate at /<owner>/<repo>/tree/<name>. A " +
+    "repository not cloned here fails: say so, and clone it only when the person asks for that.",
   modelInvocable: true,
   payload: refsPayload,
   success: Refs,

@@ -48,10 +48,11 @@ export type Provider = "model" | "refuses"
 /**
  * What the device holds before the person asks, made the way a person's own presses make it (evals/session.ts):
  * - `flow`: a saved flow of theirs, `effect-docs`, which opens the Effect docs
+ * - `draft`: the same flow as a ready draft, not saved yet
  * - `theme-run`: a run that set the theme to dark, settled
  * - `failed-run`: a run that looked up octocat/Spoon-Knife's branches and failed
  */
-export type Seed = "flow" | "theme-run" | "failed-run"
+export type Seed = "flow" | "draft" | "theme-run" | "failed-run"
 
 /** One eval case. */
 export interface AgentCase {
