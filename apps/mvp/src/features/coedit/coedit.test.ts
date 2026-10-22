@@ -56,7 +56,12 @@ const tab = async (
   runtime: ManagedRuntime.ManagedRuntime<Branch | Chat | ChatStore | Commands | AuthStore | TextWrites, unknown>,
   login: string,
 ) => {
-  closers.push(() => runtime.dispose())
+  const close = async () => {
+    const index = closers.indexOf(close)
+    if (index !== -1) closers.splice(index, 1)
+    await runtime.dispose()
+  }
+  closers.push(close)
   const branch = await runtime.runPromise(Effect.service(Branch))
   const chat = await runtime.runPromise(Effect.service(Chat))
   const commands = await runtime.runPromise(Effect.service(Commands))
@@ -71,6 +76,7 @@ const tab = async (
   chat.queries.composer.startSyncImmediate()
   const texts = () => branch.coedit.queries.texts.toArray
   return {
+    close,
     branch,
     coedit: branch.coedit.actions,
     type: commands.actions.type,
@@ -573,6 +579,100 @@ describe("a shared file", () => {
     await retry
     expect(fileOf(owner.texts(), conversation, "ok.txt")).toMatchObject({ saving: false, saveFailed: false, saved: true })
     expect(saveLabelOf(fileOf(owner.texts(), conversation, "ok.txt")!)).toBe("Saved")
+  }, WITHIN)
+
+  test.fails("a Save's mark follows when each tab heard its write was done, not the machine's write order (broken)", async () => {
+    // Overlapping Saves mark completion order instead of write order: docs/features/coedit.md#saved.
+    const opened = await open()
+    const { owner, benTab } = opened
+    const branchId = (await owner.branch.actions.open("octo", "hello", "feature/one"))!
+    await shareWith(opened, branchId, "edit")
+    const conversation = owner.branch.queries.current.toArray[0]!.conversationId!
+    const fileId = (await owner.coedit.showFile(branchId, "styles.css"))!
+    const read = await call(opened, "read")
+    const content = "body {}\n"
+    await opened.run(settle(read.callId, {
+      status: "done",
+      result: { tool: "read", path: "styles.css", content, bytes: content.length, truncated: false },
+      generation: 1,
+    }))
+    await until(() => expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ status: "ready", text: content }))
+    const benTabOpen = await benTab()
+    await benTabOpen.branch.actions.open("octo", "hello", "feature/one")
+    expect(await benTabOpen.coedit.showFile(branchId, "styles.css")).toBe(fileId)
+    await until(() => expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.text).toBe(content))
+
+    const y = "body { color: red; }\n"
+    benTabOpen.coedit.type(fileId, y, { base: content, selection: { anchor: 19, head: 19 } })
+    await until(() => {
+      expect(fileOf(owner.texts(), conversation, "styles.css")?.text).toBe(y)
+      expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.text).toBe(y)
+    })
+    const benSaving = benTabOpen.coedit.save(fileId)
+    const benWrite = await call(opened, "write")
+    expect(benWrite.call).toEqual({ tool: "write", path: "styles.css", content: y })
+
+    const x = "body { color: blue; }\n"
+    owner.coedit.type(fileId, x, { base: y, selection: { anchor: 20, head: 20 } })
+    await until(() => {
+      expect(fileOf(owner.texts(), conversation, "styles.css")?.text).toBe(x)
+      expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.text).toBe(x)
+    })
+    const ownerSaving = owner.coedit.save(fileId)
+    const ownerWrite = await call(opened, "write", 2)
+    expect(ownerWrite.call).toEqual({ tool: "write", path: "styles.css", content: x })
+
+    // The machine wrote X then Y, leaving Y on disk; X's slow checkpoint settles last.
+    await opened.run(settle(benWrite.callId, {
+      status: "done",
+      result: { tool: "write", path: "styles.css", bytes: y.length },
+      generation: 1,
+    }))
+    await benSaving
+    await opened.run(settle(ownerWrite.callId, {
+      status: "done",
+      result: { tool: "write", path: "styles.css", bytes: x.length },
+      generation: 1,
+    }))
+    await ownerSaving
+    await until(() => {
+      expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ text: x, saved: false })
+      expect(fileOf(benTabOpen.texts(), conversation, "styles.css")).toMatchObject({ text: x, saved: false })
+    }, 10_000)
+  }, WITHIN)
+
+  test.fails("a reload during a Save leaves no mark: the write finishes, but nobody's screen says Saved (broken)", async () => {
+    // A reload loses the saving tab's mark after a durable write: docs/features/coedit.md#saved.
+    const opened = await open()
+    // Keep ChatApi alive when the saving tab closes.
+    const owner = await opened.ownTab()
+    const branchId = (await owner.branch.actions.open("octo", "hello", "feature/one"))!
+    await shareWith(opened, branchId, "edit")
+    const conversation = owner.branch.queries.current.toArray[0]!.conversationId!
+    const fileId = (await owner.coedit.showFile(branchId, "styles.css"))!
+    const read = await call(opened, "read")
+    const content = "body {}\n"
+    await opened.run(settle(read.callId, {
+      status: "done",
+      result: { tool: "read", path: "styles.css", content, bytes: content.length, truncated: false },
+      generation: 1,
+    }))
+    await until(() => expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ status: "ready", text: content }))
+    const benTabOpen = await opened.benTab()
+    await benTabOpen.branch.actions.open("octo", "hello", "feature/one")
+    expect(await benTabOpen.coedit.showFile(branchId, "styles.css")).toBe(fileId)
+    await until(() => expect(fileOf(benTabOpen.texts(), conversation, "styles.css")?.text).toBe(content))
+
+    void owner.coedit.save(fileId).catch(() => {})
+    const write = await call(opened, "write")
+    expect(write.call).toEqual({ tool: "write", path: "styles.css", content })
+    await owner.close()
+    await opened.run(settle(write.callId, {
+      status: "done",
+      result: { tool: "write", path: "styles.css", bytes: content.length },
+      generation: 1,
+    }))
+    await until(() => expect(fileOf(benTabOpen.texts(), conversation, "styles.css")).toMatchObject({ saved: true }), 10_000)
   }, WITHIN)
 })
 
