@@ -13,9 +13,7 @@ import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
-import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
-import { TestClock } from "effect/testing"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
@@ -123,15 +121,10 @@ const run = (options: {
     yield* Effect.scoped(Effect.gen(function*() {
       const engine = yield* makeEngine
       yield* engine.register(RestartFlow, () => action)
-      const fiber = yield* executeUntilParked(engine, RestartFlow, {
+      yield* engine.execute(RestartFlow, {
         executionId: options.executionId,
-        payload: {},
-        discard: true
-      }, ["completed", "failed"]).pipe(Effect.forkChild({ startImmediately: true }))
-      yield* TestDatabase.until(
-        TestClock.adjust("1 second").pipe(Effect.map(() => fiber.pollUnsafe() !== undefined))
-      )
-      yield* Fiber.join(fiber)
+        payload: {}
+      })
     })).pipe(Effect.provideService(FlowEngine.SnapshotBoundary, recordingBoundary(second, handleFor)))
 
     const store = yield* RunStore.RunStore
@@ -141,12 +134,11 @@ const run = (options: {
     Effect.provideService(Jj.Jj, jj),
     Effect.provide(StepBoundary.layerTest()),
     Effect.provide(TestStores.layer()),
-    Effect.provide(TestClock.layer()),
     withCrypto
   )
 
 describe("durable compensable snapshot handle", () => {
-  it.effect("restores the original compensable handle after a restart before attempt 2", () =>
+  it.live("restores the original compensable handle after a restart before attempt 2", () =>
     Effect.gen(function*() {
       const result = yield* run({ executionId: "compensable-restart" })
 
@@ -158,7 +150,7 @@ describe("durable compensable snapshot handle", () => {
       expect(result.row.status).toBe("completed")
     }))
 
-  it.effect("keeps the dead incarnation's handle when an unfinished attempt is adopted", () =>
+  it.live("keeps the dead incarnation's handle when an unfinished attempt is adopted", () =>
     Effect.gen(function*() {
       const result = yield* run({ executionId: "compensable-adopted", script: ["hang", "fail", "succeed"] })
 
@@ -177,7 +169,7 @@ describe("durable compensable snapshot handle", () => {
       expect(result.row.status).toBe("completed")
     }))
 
-  it.effect("carries a null handle across the restart as a handle, not as no handle", () =>
+  it.live("carries a null handle across the restart as a handle, not as no handle", () =>
     Effect.gen(function*() {
       const result = yield* run({
         executionId: "compensable-restart-null",
@@ -189,7 +181,7 @@ describe("durable compensable snapshot handle", () => {
       expect(result.row.status).toBe("completed")
     }))
 
-  it.effect("carries an undefined handle across the restart", () =>
+  it.live("carries an undefined handle across the restart", () =>
     Effect.gen(function*() {
       const result = yield* run({
         executionId: "compensable-restart-undefined",

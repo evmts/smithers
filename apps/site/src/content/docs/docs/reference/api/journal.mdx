@@ -54,7 +54,8 @@ Fallible journal operations use `JournalError` with a stable `code`.
 | `emitLossy`           | `(input: Input) => Effect<EmitReceipt, JournalError>`                                              | bounded non-blocking queue; may return `Dropped`                                                                                                                            |
 | `emitDurable`         | `(input: Input, owner: OwnerId) => Effect<DurableReceipt, JournalError>`                           | allocates and commits inside the write transaction, fenced on `owner`                                                                                                       |
 | `emitDurableUnfenced` | `(input: Input) => Effect<DurableReceipt, JournalError>`                                           | the same commit with no fence, for a genuinely ownerless admission                                                                                                          |
-| `transact`            | `<A, E, R>(effect: Effect<A, E, R>) => Effect<A, E \| JournalError, R>`                            | runs a state projection and its `emitDurable` calls in one transaction                                                                                                      |
+| `emitDeferred?`       | `(input: Input, owner: OwnerId) => Effect<void, JournalError>`                                     | queues a fenced entry to commit with its run's next durable write                                                                                                           |
+| `transact`            | `<A, E, R>(effect: Effect<A, E, R>, options?: WriteOptions) => Effect<A, E \| JournalError, R>`    | runs a state projection and its `emitDurable` calls in one transaction; `options.partition` names the run it writes                                                         |
 | `whenCommitted`       | `(update: Effect<void>) => Effect<boolean>`                                                        | accepts a short, non-failing update after managed commit, or runs it immediately outside a transaction; returns `false` without publishing when commit ownership is unknown |
 | `stream`              | `(options: StreamOptions) => Stream<Entry, JournalError>`                                          | durable history, then committed changes; never completes                                                                                                                    |
 | `entries`             | `(options: EntriesOptions) => Effect<EntriesPage, JournalError>`                                   | paged read                                                                                                                                                                  |
@@ -69,6 +70,23 @@ Fallible journal operations use `JournalError` with a stable `code`.
 `whenCommitted` returning `true` means accepted, possibly deferred. Failed
 savepoints and transaction retries discard their registrations. See
 [commit state and its entry together](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/guides/commit-state-and-entry.md).
+
+`emitDeferred` queues a fenced lifecycle entry instead of writing it, and the
+run's next durable write through the journal commits it first: the next
+`emitDurable`, `emitDurableUnfenced` or `checkpoint` of the run, a `transact`
+that names the run's partition, or `flush`. Inside an open transaction it writes
+at once. The entry's sequence is allocated when it commits, so the run reads in
+emission order and nothing commits behind a reader's cursor. An owner that lost
+the run meanwhile loses what it queued and learns so from its own next fenced
+write. The flow engine queues its node records this way, so a drive writes a
+handful of transactions instead of one per record. Optional on the service: a
+journal without it is used through `emitDurable`.
+
+Every append, checkpoint and compaction writes its run's partition
+(`DurableWriter.WriteOptions`), so on PostgreSQL it waits only for that run's
+other writers; a companion stream is a partition of its own. `transact` names
+the partition its caller passes, or none, which serializes it with every
+writer.
 
 `owner` is mandatory on `emitDurable`, `checkpoint`, and `compact`. The insert,
 the checkpoint replacement, and the truncation join the `Consensus` strategy's
@@ -415,6 +433,7 @@ without completing. See
 | `lossy`       | `writes` views keyed by `"Accepted" \| "Duplicate" \| "Dropped"`            |
 | `lostEntries` | the `flows_journal_lost` counter, dimensioned by `channel` and error `code` |
 | `lost(code)`  | the `lostEntries` view for one `JournalError` code                          |
+| `tally`       | runs an effect and answers `[{ events }, result]`                           |
 
 `SqlJournal` updates these once per emission receipt, so they measure
 admissions on the hot path rather than rows read back. A durable emission
@@ -429,6 +448,14 @@ final flush that fails while the journal closes logs a warning too.
 
 No exporter ships in this package. Provide one, for example
 [`@smthrs/observability`](/docs/reference/api/observability/), and these counters appear in it.
+
+The counters sum over the whole process. `tally(effect)` counts what one
+effect, such as one request or one alarm, wrote: `events`, the new entries it
+committed. An entry counts once its transaction commits, when the journal
+publishes it, so one rolled back with an enclosing transaction never counts,
+and a duplicate is not new. It counts entries committed by the effect's fiber or
+fibers it forks, and tallies nest. Lossy entries commit on the journal's own
+writer fiber and are not counted.
 
 ## Migrations
 
@@ -655,3 +682,7 @@ reconstruct an opaque resolver token. The gateway joins a verified question to
 a currently observed wait with the same execution identity and digest, then
 uses that current wait's existing submission envelope. A historical question
 alone cannot make a gate answerable after the live wait has ended.
+
+Deferred-batch cleanup is idempotent across sibling savepoints of one outer
+transaction. Their commit callbacks remove only their captured entries, so
+resuming a parked run cannot discard a later batch or fail after commit.

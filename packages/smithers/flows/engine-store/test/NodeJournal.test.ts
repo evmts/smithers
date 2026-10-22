@@ -253,7 +253,13 @@ const scheduled: FlowRuntimeTypes.NodeRecord = {
  * `InterpreterNodeJournal.test.ts` are the evidence for it. What this harness
  * isolates is the answer to a refusal, which a real run cannot stage.
  */
-const recordAgainst = (failure: Journal.JournalError) =>
+/**
+ * Records `scheduled` against a journal that refuses node records with
+ * `failure`, on whichever channel the engine writes them: queued with the
+ * run's next write, or, from a journal without that channel (`deferred`
+ * false), at once.
+ */
+const recordAgainst = (failure: Journal.JournalError, deferred = true) =>
   runPromise(
     Effect.scoped(Effect.gen(function*() {
       const real = yield* Journal.Journal
@@ -262,7 +268,8 @@ const recordAgainst = (failure: Journal.JournalError) =>
         emitDurable: (record, owner) =>
           record.eventType.startsWith("flows.engine.node-")
             ? Effect.fail(failure)
-            : real.emitDurable(record, owner)
+            : real.emitDurable(record, owner),
+        emitDeferred: deferred ? () => Effect.fail(failure) : undefined
       }
       const engine = yield* EngineStore.make({
         owner: { hostId: "node-journal-refusal" },
@@ -359,6 +366,13 @@ describe("a node record the journal refuses", () => {
   it("dies on any other journal failure, rather than dropping the record", async () => {
     const exit = await recordAgainst(new Journal.JournalError({ code: "read_failed", message: "journal unavailable" }))
     expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+  })
+
+  it("writes at once to a journal that cannot queue, and treats its refusal the same", async () => {
+    const lost = await recordAgainst(new Journal.JournalError({ code: "fence_lost", message: "fence lost" }), false)
+    expect(Exit.isFailure(lost) && Cause.hasInterruptsOnly(lost.cause)).toBe(true)
+    const failed = await recordAgainst(new Journal.JournalError({ code: "read_failed", message: "unavailable" }), false)
+    expect(Exit.isFailure(failed) && Cause.hasDies(failed.cause)).toBe(true)
   })
 })
 

@@ -909,7 +909,19 @@ const emitNode = (store: Store, parent: Instance, record: FlowRuntime.NodeRecord
   }, record)
   // Every node record is built as an object, so its payload is one.
   const payload = entry.payload as Readonly<Record<string, unknown>>
-  return store.journal.emitDurable(entry, store.owner).pipe(
+  // A node's scheduling and settlement commit with the run's next write
+  // (`Journal.emitDeferred`): every attempt opens in a write of its run and
+  // every drive ends in one, so they are durable before anything acts on
+  // them, and a drive writes a handful of transactions, not one per record.
+  // A plan's pages commit at once: `findRecordedPlan` reads them back, and
+  // a conflicting plan is rebuilt below.
+  const deferred = record._tag === "NodeScheduled" || record._tag === "NodeSettled"
+    ? store.journal.emitDeferred
+    : undefined
+  const write = deferred === undefined
+    ? Effect.asVoid(store.journal.emitDurable(entry, store.owner))
+    : deferred(entry, store.owner)
+  return write.pipe(
     Effect.tap(() =>
       Effect.sync(() => {
         if (record._tag === "PlanRecorded") {

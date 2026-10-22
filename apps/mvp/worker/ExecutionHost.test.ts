@@ -347,20 +347,31 @@ describe("ExecutionHost over the compose Postgres", () => {
       Effect.gen(function* () {
         const object = memory()
         let after = 0
+        let admitted = 0
         const executionId = crypto.randomUUID()
         const host = ExecutionHost.make(object.storage, {
           hostId: `object-${executionId}`,
           database: ExecutionHost.database(url, name),
           flows: { flows: [Pause.Pause], registration: Pause.registration((label) => Effect.succeed(label)) },
           router: recording().router,
+          driveBudgetMs: 0,
+          canStart: () => Effect.sync(() => { admitted++; return true }),
           afterAlarm: Effect.sync(() => void after++),
         })
         expect((yield* host.alarm())._tag).toBe("Idle")
         expect(after).toBe(1)
         const payload = { label: "a", pauseMs: 0 }
         yield* host.start(yield* ExecutionHost.intent(Pause.Pause, { executionId, payload }))
+        for (let i = 0; i < 2; i++) {
+          const before = Date.now()
+          expect((yield* host.alarm())._tag).toBe("Yielded")
+          expect(object.alarm()).toBeGreaterThanOrEqual(before)
+          expect(object.alarm()).toBeLessThanOrEqual(Date.now())
+          expect(after).toBe(i + 2)
+        }
         expect((yield* host.alarm())._tag).toBe("Settled")
-        expect(after).toBe(2)
+        expect(after).toBe(4)
+        expect(admitted).toBe(1)
       })
     ))
 

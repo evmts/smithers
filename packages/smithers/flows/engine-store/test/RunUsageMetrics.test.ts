@@ -188,6 +188,11 @@ describe("usage metrics", () => {
           // An unlabelled start parks on a gate nobody opens, and is cancelled.
           yield* engine.execute(Waits, { executionId: "usage-waits", payload: {}, discard: true })
           yield* untilStatus("usage-waits", ["suspended"])
+          // The row is visible before the driver's park receipt finishes.
+          // Cancel only after the wait this test measures was recorded.
+          yield* until(Metric.snapshot.pipe(Effect.map((snapshot) =>
+            counts(snapshot, "flows_waits").some((series) => series.flow === "Usage/Waits")
+          )))
           yield* engine.interrupt(Waits, "usage-waits")
           yield* untilStatus("usage-waits", ["cancelled"])
 

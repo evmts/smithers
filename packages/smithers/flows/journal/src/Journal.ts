@@ -489,6 +489,26 @@ export interface Service {
    */
   readonly emitDurableUnfenced: (input: Input) => Effect.Effect<DurableReceipt, JournalError>
   /**
+   * Queues a fenced lifecycle entry to commit with its run's next durable
+   * write through this journal, instead of in a transaction of its own: the
+   * next `emitDurable`, `emitDurableUnfenced`, `checkpoint`, `compact` or
+   * `transact` that names the run's partition, or `flush`. Called inside an
+   * open transaction it writes at once, as `emitDurable` does.
+   *
+   * Its sequence is allocated when it commits, ahead of whatever that write
+   * appends, so the run's journal reads in the order its entries were
+   * emitted and never commits one behind a reader's cursor. It is fenced on
+   * `owner` when it commits: an owner that lost the run meanwhile loses what
+   * it queued, and learns so from its own next fenced write. Until it
+   * commits no reader sees it, and a process that dies first loses it, as it
+   * would lose an entry it had not emitted yet. Use it for records a later write of the same run always
+   * follows before anything outside the run depends on them, such as a
+   * scheduler's records before the attempt that acts on them.
+   *
+   * Optional: a journal without it is used through `emitDurable`.
+   */
+  readonly emitDeferred?: ((input: Input, owner: OwnerId) => Effect.Effect<void, JournalError>) | undefined
+  /**
    * Runs `effect`, a state projection plus the `emitDurable` calls describing
    * it, inside ONE write transaction.
    *

@@ -161,6 +161,54 @@ the successor's all follow it, in one gap-free sequence:
   so it does not bind across runs there.
 - SQLite ignores partitions: its file lock serializes every write.
 
+## Fewer transactions per drive
+
+Locks per run stop runs waiting for each other; they do not shorten one run.
+A not-found clone's alarm still ran 38 write transactions, one per journal
+entry the engine's node bookkeeping wrote, each `BEGIN`, a lock, two to four
+statements and `COMMIT` through Hyperdrive. Three ways to write a drive's
+records in fewer:
+
+1. **The lossy queue, flushed once per step.** It already batches entries
+   into one transaction. But it is unfenced, drops entries when full, and
+   allocates a sequence at admission, so an entry can land behind a
+   reader's cursor; a node record that binds a plan's progress must not.
+2. **One transaction per drive tick.** Every write between two action
+   effects joins one ambient transaction. It needs a connection shared by
+   the drive's concurrent fibers, a commit point the engine must call
+   before every effect, and replay of a whole tick on a transient failure;
+   that changes the engine's failure model, and the gain over 3 is the
+   handful of transactions 3 leaves.
+3. **Deferred durable entries** (chosen). `Journal.emitDeferred` queues a
+   fenced entry, and the run's next durable write through the journal commits
+   it first: one fence check and one floor read for the batch, then an insert
+   each. Every attempt opens in a write of its run and every drive ends in
+   one, so a node's records are durable before anything acts on them. A
+   process that dies first loses them as it would lose records it had not
+   emitted yet: no later entry or attempt of the run committed either,
+   because those commit through the journal, which writes queued entries
+   first.
+
+The engine queues every node record but the plan record, which it reads back
+and repairs on conflict. The not-found clone's alarm now writes its 38
+entries in 14 transactions: admission, claim, activation, the resume, the
+plan record, then per step its heartbeat, its start, its pre-image anchor
+and its finish, and the settlement. Each of those orders a durable fact
+before an effect or a peer depends on it (the two-phase claim, the fence
+before a step reads its cache, the attempt row before the step's side
+effect, the anchor time travel needs before the body runs), so fusing them
+is a change to the engine's contract, not to its storage.
+
+## Resume recovery
+
+Sibling savepoints can each flush the same deferred batch before the outer
+transaction commits. Each entry retains its allocated producer sequence across
+those flushes and retries, so an entry without an explicit sequence still has
+one identity. Commit cleanup removes only the captured batch and is idempotent:
+a second callback succeeds even when the first already removed it. The journal's
+sibling-savepoint regression and the agent's answered-module resume cases cover
+this boundary.
+
 ## Evidence
 
 `test/WriterLock.bench.ts` (`pnpm --filter @smthrs/database bench`) on the

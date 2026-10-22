@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-cloudflare/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-cloudflare/docs)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
 
 ```ts
 import {
@@ -305,6 +305,16 @@ Each `alarm` span carries `smithers.execution.started` and
 `smithers.execution.woken`, the counts it routed, and, when it drove, its span
 and log line carry `smithers.execution.drive_ms`; each `wake` runs in a
 `cloudflare.execution.wake` span with `smithers.execution.wake`.
+
+Each `cloudflare.execution.alarm` line and span also says what the alarm cost:
+
+| Field          | Value                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `durationMs`   | How long the alarm took, in whole milliseconds.                                                                               |
+| `events`       | The journal entries it committed (`@smthrs/journal` `JournalMetrics.tally`).                                                  |
+| `transactions` | Its write transactions that took the database's writer lock, each retry counted (`@smthrs/database` `DatabaseMetrics.tally`). |
+| `schemaWide`   | How many of those held the whole schema's lock, so committed alone.                                                           |
+| `lockWaitMs`   | How long those transactions waited for the lock in total, in whole milliseconds.                                              |
 
 ## EdgeCache
 

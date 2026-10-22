@@ -350,6 +350,25 @@ describe("EngineStore.drive", () => {
         }))
     })).pipe(Layer.provideMerge(engine(filename, first, { host: executionId })))
 
+  it("persists duplicate host admissions without starting a body until driven", () =>
+    run(Effect.gen(function*() {
+      const starts = { sleeper: 0, waiter: 0 }
+      yield* Effect.gen(function*() {
+        const driver = yield* EngineStore.Driver
+        const input = { executionId: "admitted-nap", payload: {} }
+        yield* driver.admit(Sleeper, input)
+        yield* driver.admit(Sleeper, input)
+        expect(yield* statusOf(input.executionId)).toBe("pending")
+        expect(starts.sleeper).toBe(0)
+        expect(yield* driver.drive(Sleeper, input)).toEqual({
+          _tag: "Parked",
+          wakeAtMs: Duration.toMillis(Duration.minutes(10))
+        })
+        expect(starts.sleeper).toBe(1)
+        expect(yield* statusOf(input.executionId)).toBe("suspended")
+      }).pipe(Effect.provide(hosted("admitted-nap", starts)))
+    })))
+
   it("admits, parks until the clock is due, and settles once it is", () =>
     run(Effect.gen(function*() {
       const starts = { sleeper: 0, waiter: 0 }

@@ -68,7 +68,7 @@ const alarm = (object: Effect.Success<ReturnType<typeof started>>) =>
   )
 
 describe.skipIf(!Postgres.direct.available)(`one alarm's writes over ${Postgres.direct.label}`, () => {
-  it.live("one alarm of a not-found clone, on an installed schema, takes no schema-wide lock", () => {
+  it.live("one alarm of a not-found clone, on an installed schema, writes in 14 transactions, none schema-wide", () => {
     const schema = Postgres.freshSchema()
     const counter = { transactions: 0 }
     return Effect.gen(function*() {
@@ -84,6 +84,10 @@ describe.skipIf(!Postgres.direct.available)(`one alarm's writes over ${Postgres.
       // Every write transaction took a lock, and none the whole schema's.
       expect(writes.transactions).toBe(counter.transactions)
       expect(writes.schemaWide).toBe(0)
+      // One per entry wrote 38. The node records ride with the run's next
+      // write: what is left is admission, claim, activation, the resume, each
+      // step's heartbeat, start, pre-image and finish, and the settlement.
+      expect(counter.transactions).toBe(14)
     }).pipe(Effect.ensuring(Effect.promise(() => Postgres.dropSchema(schema))))
   })
 

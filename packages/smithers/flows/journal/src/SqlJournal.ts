@@ -22,6 +22,7 @@ import * as Dialect from "@smthrs/database/Dialect"
 import { afterCommit, DatabaseError, DurableWriter, type WriteOptions } from "@smthrs/database/DurableWriter"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -37,7 +38,7 @@ import * as Semaphore from "effect/Semaphore"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
 import * as Stream from "effect/Stream"
-import { Consensus } from "./Consensus.ts"
+import { Consensus, sameOwner } from "./Consensus.ts"
 import * as EventTally from "./internal/EventTally.ts"
 import { JournalInternalFault } from "./internal/JournalInternalFault.ts"
 import {
@@ -411,12 +412,43 @@ const encodeFingerprint = (value: unknown, field: string): Result.Result<string,
  * the choice explicit: only `emitDurableUnfenced` and the internal
  * auto-compaction path construct `unfenced`, and they say so at the call site.
  */
+interface OwnedFence {
+  readonly _tag: "Owned"
+  readonly owner: OwnerId
+}
+
 type Fence =
-  | { readonly _tag: "Owned"; readonly owner: OwnerId }
+  | OwnedFence
   | { readonly _tag: "Unfenced" }
+  | { readonly _tag: "Guarded" }
 
 /** The one unfenced write posture, named so a call site cannot mean it by accident. */
 const unfenced: Fence = { _tag: "Unfenced" }
+
+/**
+ * A write whose owner the caller already guarded in the same transaction: a
+ * flush of queued entries checks each owner once, not once per entry.
+ */
+const guarded: Fence = { _tag: "Guarded" }
+
+/** A lifecycle entry `emitDeferred` queued, waiting for its run's next write. */
+interface DeferredEntry {
+  sourceSeq?: SourceSeq
+  readonly prepared: Prepared
+  readonly emittedAtMs: number
+  readonly owner: OwnerId
+}
+
+/**
+ * The runs whose queued entries the current transaction already wrote, each
+ * keyed by its journal, so a write nested inside one that flushed does not
+ * write them again.
+ */
+const FlushedRuns = Context.Reference<ReadonlySet<string>>("@smthrs/journal/SqlJournal/FlushedRuns", {
+  defaultValue: () => new Set()
+})
+
+let journals = 0
 
 const decodeOwner = Schema.decodeUnknownResult(OwnerId)
 
@@ -583,7 +615,7 @@ export const make = (
     // (`packages/smithers/flows/database/docs/decisions/0001-run-writer-locks.md`).
     // A companion stream is a partition of its own.
     const writeRun = <A, E, R>(runId: RunId, effect: Effect.Effect<A, E, R>) =>
-      writer.write(effect, { partition: runId })
+      writer.write(flushing([runId], effect), { partition: runId })
     const consensus = yield* Consensus
     yield* JournalGeneration.initialize.pipe(
       Effect.mapError((cause) => error("read_failed", "could not initialize journal generations", cause))
@@ -890,8 +922,9 @@ export const make = (
           const nested = Option.isSome(enclosing)
           const attempt: Effect.Effect<A, Exclude<E, SqlError.SqlError> | DatabaseError, R> =
             (nested ? Effect.void : awaitRunDrained(runId)).pipe(
-              Effect.andThen(writeRun(
-                runId,
+              // Compaction writes no new entry, so it leaves queued ones to
+              // the run's next write: they take sequences above its floor.
+              Effect.andThen(writer.write(
                 barrier.compactionLock.withPermit(Effect.uninterruptibleMask((restore) =>
                   barrier.semaphore.withPermit(Effect.sync(() => {
                     if (
@@ -920,7 +953,8 @@ export const make = (
                         Deferred.doneUnsafe(gate, Effect.void)
                       })))
                   ))
-                ))
+                )),
+                { partition: runId }
               )),
               Effect.flatMap((result) =>
                 Option.isSome(result) ? Effect.succeed(result.value) : attempt
@@ -1651,7 +1685,7 @@ export const make = (
       Effect.gen(function*() {
         if (fence._tag === "Owned") {
           yield* fenceGuard(queued.runId, fence.owner)
-        } else if (!enforceCompactionFloor) {
+        } else if (fence._tag === "Unfenced" && !enforceCompactionFloor) {
           const duplicate = yield* selectExisting(queued)
           if (duplicate !== undefined) {
             return duplicate
@@ -1971,12 +2005,79 @@ export const make = (
       effect: Effect.Effect<A, E, R>,
       options?: WriteOptions | undefined
     ): Effect.Effect<A, E | JournalError, R> =>
-      writer.write(effect, options).pipe(
+      writer.write(options?.partition === undefined ? effect : flushing([options.partition], effect), options).pipe(
         Effect.catchIf(
           (cause): cause is DatabaseError => cause instanceof DatabaseError,
           (cause) => Effect.fail(error("sink_failed", "journal transaction failed", cause))
         )
       )
+
+    /**
+     * Reserves an entry's sequence and, unless it supplies one, its producer
+     * sequence, above both the durable floors read in this transaction and
+     * the in-process ones.
+     */
+    const reserve = (
+      validated: Input,
+      durableSeq: number,
+      durableSourceSeq: number
+    ): Effect.Effect<{ readonly seq: Seq; readonly sourceSeq: SourceSeq }, JournalError> =>
+      allocation.withPermit(Effect.fromResult(Result.gen(function*() {
+        const key = sourceKey(validated.runId, validated.sourceId)
+        const sourceSeq: SourceSeq = validated.sourceSeq ??
+          (Math.max(
+            durableSourceSeq,
+            state.sourceSequences.get(key) ?? 0
+          ) as SourceSeq)
+        if (
+          !Number.isSafeInteger(sourceSeq) ||
+          sourceSeq < 0 ||
+          sourceSeq === Number.MAX_SAFE_INTEGER
+        ) {
+          return yield* Result.fail(
+            error("invalid_event", "journal sequence is outside the allocatable safe integer range")
+          )
+        }
+        const seq = Math.max(
+          durableSeq,
+          state.sequences.get(validated.runId) ?? 0
+        ) as Seq
+        if (!Number.isSafeInteger(seq) || seq === Number.MAX_SAFE_INTEGER) {
+          return yield* Result.fail(
+            error("invalid_event", "journal sequence is outside the allocatable safe integer range")
+          )
+        }
+        // Claim the seq NOW, not at commit: a concurrent `emitLossy`
+        // allocates from this floor alone, and `settleCommit` parks
+        // the commit-time raise until the outermost COMMIT.
+        // Re-entering the transaction body is idempotent because the
+        // floor only rises. An abandoned attempt leaves the number
+        // unused, which is a gap: allocation is `MAX(seq) + 1` and
+        // replay is `ORDER BY seq`, so neither reads a gap as anything.
+        raiseSequenceFloor(validated.runId, seq)
+        // Claim the producer sequence at the same allocation seam.
+        // Without this, a lossy emit from the same producer can read
+        // the pre-transaction source floor and reuse this identity
+        // while an enclosing `transact` is still open.
+        raiseSourceSequenceFloor(validated.runId, validated.sourceId, sourceSeq)
+        return { seq, sourceSeq }
+      })))
+
+    const queuedOf = (prepared: Prepared, emittedAtMs: number, seq: Seq, sourceSeq: SourceSeq): QueuedEntry => {
+      const { metaJson, payloadJson, validated } = prepared
+      return {
+        runId: validated.runId,
+        seq,
+        eventId: makeEventId(validated.runId, validated.sourceId, sourceSeq),
+        sourceId: validated.sourceId,
+        sourceSeq,
+        emittedAtMs,
+        eventType: validated.eventType,
+        payloadJson,
+        metaJson,
+        dedupe: validated.dedupe ?? "content"
+      }
+    }
 
     const writeDurable = (
       input: Input,
@@ -1992,7 +2093,7 @@ export const make = (
           const emittedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
           const prepared = yield* Effect.fromResult(prepare(input, emittedAtMs))
           const committed = yield* Effect.gen(function*() {
-            const { metaJson, payloadJson, validated } = prepared
+            const { validated } = prepared
             return yield* Effect.uninterruptibleMask((restore) =>
               restore(writeRun(
                 prepared.validated.runId,
@@ -2006,59 +2107,8 @@ export const make = (
                       ? yield* nextDurable("source_seq", validated.runId, validated.sourceId)
                       : 0
                     const durableSeq = yield* nextDurable("seq", validated.runId, undefined)
-                    const reserved = yield* allocation.withPermit(Effect.fromResult(Result.gen(function*() {
-                      const key = sourceKey(validated.runId, validated.sourceId)
-                      const sourceSeq: SourceSeq = validated.sourceSeq ??
-                        (Math.max(
-                          durableSourceSeq,
-                          state.sourceSequences.get(key) ?? 0
-                        ) as SourceSeq)
-                      if (
-                        !Number.isSafeInteger(sourceSeq) ||
-                        sourceSeq < 0 ||
-                        sourceSeq === Number.MAX_SAFE_INTEGER
-                      ) {
-                        return yield* Result.fail(
-                          error("invalid_event", "journal sequence is outside the allocatable safe integer range")
-                        )
-                      }
-                      const seq = Math.max(
-                        durableSeq,
-                        state.sequences.get(validated.runId) ?? 0
-                      ) as Seq
-                      if (!Number.isSafeInteger(seq) || seq === Number.MAX_SAFE_INTEGER) {
-                        return yield* Result.fail(
-                          error("invalid_event", "journal sequence is outside the allocatable safe integer range")
-                        )
-                      }
-                      // Claim the seq NOW, not at commit: a concurrent `emitLossy`
-                      // allocates from this floor alone, and `settleCommit` parks
-                      // the commit-time raise until the outermost COMMIT.
-                      // Re-entering the transaction body is idempotent because the
-                      // floor only rises. An abandoned attempt leaves the number
-                      // unused, which is a gap: allocation is `MAX(seq) + 1` and
-                      // replay is `ORDER BY seq`, so neither reads a gap as anything.
-                      raiseSequenceFloor(validated.runId, seq)
-                      // Claim the producer sequence at the same allocation seam.
-                      // Without this, a lossy emit from the same producer can read
-                      // the pre-transaction source floor and reuse this identity
-                      // while an enclosing `transact` is still open.
-                      raiseSourceSequenceFloor(validated.runId, validated.sourceId, sourceSeq)
-                      return { seq, sourceSeq }
-                    })))
-                    const { seq, sourceSeq } = reserved
-                    const queued: QueuedEntry = {
-                      runId: validated.runId,
-                      seq,
-                      eventId: makeEventId(validated.runId, validated.sourceId, sourceSeq),
-                      sourceId: validated.sourceId,
-                      sourceSeq,
-                      emittedAtMs,
-                      eventType: validated.eventType,
-                      payloadJson,
-                      metaJson,
-                      dedupe: validated.dedupe ?? "content"
-                    }
+                    const { seq, sourceSeq } = yield* reserve(validated, durableSeq, durableSourceSeq)
+                    const queued = queuedOf(prepared, emittedAtMs, seq, sourceSeq)
                     const commit = yield* insertOne(queued, fence)
                     return { commit, queued, sourceSeq }
                   })
@@ -2125,6 +2175,124 @@ export const make = (
     ) => writeDurable(input, unfenced))
 
     const emitLossy: Service["emitLossy"] = queuedEmit
+
+    /** Tells this journal's runs apart from another journal's in `FlushedRuns`. */
+    const journalKey = `${++journals}:`
+    /**
+     * The entries `emitDeferred` queued, per run, in the order they were
+     * emitted. They leave the queue when the transaction that wrote them
+     * commits, so a rolled-back write leaves them to the run's next one.
+     */
+    const deferred = new Map<string, Array<DeferredEntry>>()
+
+    const discard = (runId: string, drop: (entry: DeferredEntry) => boolean): void => {
+      // Sibling savepoints can flush the same batch before their outer
+      // transaction commits. Each registers cleanup, so a later callback
+      // may find that an earlier one already removed the batch.
+      const kept = (deferred.get(runId) ?? []).filter((entry) => !drop(entry))
+      if (kept.length === 0) deferred.delete(runId)
+      else deferred.set(runId, kept)
+    }
+
+    /**
+     * Writes `runId`'s queued entries inside the caller's open transaction,
+     * in the order they were emitted and ahead of anything the transaction
+     * writes after: each owner's fence once, the run's sequence floor once,
+     * then one insert per entry, each allocated as `emitDurable` allocates.
+     *
+     * An owner that lost the run loses what it queued: those entries can
+     * never commit, so they are dropped and the write goes on without them.
+     * The owner learns of the loss from its own next fenced write, as it
+     * would have.
+     */
+    const flushRun = (runId: string): Effect.Effect<void, JournalError | SqlError.SqlError> =>
+      Effect.gen(function*() {
+        const owners: Array<OwnerId> = []
+        for (const { owner } of deferred.get(runId)!) {
+          if (!owners.some((other) => sameOwner(other, owner))) owners.push(owner)
+        }
+        for (const owner of owners) {
+          yield* fenceGuard(runId as RunId, owner).pipe(
+            Effect.catchIf(
+              (cause) => cause.code === "fence_lost",
+              () => Effect.sync(() => discard(runId, (entry) => sameOwner(entry.owner, owner)))
+            )
+          )
+        }
+        const batch = [...deferred.get(runId) ?? []]
+        if (batch.length === 0) return
+        const durableSeq = yield* nextDurable("seq", runId as RunId, undefined)
+        for (const entry of batch) {
+          const validated = entry.sourceSeq === undefined
+            ? entry.prepared.validated
+            : { ...entry.prepared.validated, sourceSeq: entry.sourceSeq }
+          const durableSourceSeq = validated.sourceSeq === undefined
+            ? yield* nextDurable("source_seq", validated.runId, validated.sourceId)
+            : 0
+          const { seq, sourceSeq } = yield* reserve(validated, durableSeq, durableSourceSeq)
+          // Keep one producer identity even if sibling savepoints flush this
+          // batch again before COMMIT, or a rollback leaves it queued.
+          entry.sourceSeq = sourceSeq
+          const queued = queuedOf(entry.prepared, entry.emittedAtMs, seq, sourceSeq)
+          const commit = yield* insertOne(queued, guarded)
+          yield* settleCommit(queued, commit, (effect) => effect)
+          yield* Metric.update(JournalMetrics.durable[commit.inserted ? "Accepted" : "Duplicate"], 1)
+        }
+        yield* afterCommit(Effect.sync(() => discard(runId, (entry) => batch.includes(entry))), sql)
+      })
+
+    /**
+     * Runs `effect`, inside an open write transaction, after writing the
+     * queued entries of `runIds` the transaction has not written yet.
+     */
+    const flushing = <A, E, R>(
+      runIds: ReadonlyArray<string>,
+      effect: Effect.Effect<A, E, R>
+    ): Effect.Effect<A, E | JournalError | SqlError.SqlError, R> =>
+      Effect.gen(function*() {
+        const flushed = yield* FlushedRuns
+        const due = runIds.filter((runId) => deferred.has(runId) && !flushed.has(journalKey + runId))
+        if (due.length === 0) return yield* effect
+        for (const runId of due) yield* flushRun(runId)
+        return yield* Effect.provideService(
+          effect,
+          FlushedRuns,
+          new Set([...flushed, ...due.map((runId) => journalKey + runId)])
+        )
+      })
+
+    /** Commits every queued entry, one transaction per run. */
+    const flushDeferred: Effect.Effect<void, JournalError> = Effect.suspend(() =>
+      Effect.forEach([...deferred.keys()], (runId) => writeRun(runId as RunId, Effect.void), { discard: true })
+    ).pipe(
+      Effect.mapError((cause) =>
+        isJournalError(cause) ? cause : error("sink_failed", "could not write queued journal entries", cause)
+      )
+    )
+
+    const emitDeferred: NonNullable<Service["emitDeferred"]> = Effect.fn("Journal.emitDeferred")((
+      input: Input,
+      owner: OwnerId
+    ) =>
+      Effect.gen(function*() {
+        const fence = yield* Effect.fromResult(requireFence(owner, "emitDeferred"))
+        // Inside an open transaction the entry joins it now.
+        if (Option.isSome(yield* Effect.serviceOption(sql.transactionService))) {
+          return yield* Effect.asVoid(writeDurable(input, fence))
+        }
+        if (state.status !== "open") {
+          return yield* Effect.fail(error("journal_closed", "journal is closed"))
+        }
+        const emittedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+        const prepared = yield* Effect.fromResult(prepare(input, emittedAtMs))
+        const runId = prepared.validated.runId
+        deferred.set(runId, [...deferred.get(runId) ?? [], {
+          prepared,
+          emittedAtMs,
+          owner: (fence as OwnedFence).owner
+        }])
+      })
+    )
 
     const checkpointInternal = (
       checkpointOptions: CheckpointOptions,
@@ -2630,6 +2798,7 @@ export const make = (
         // The last flush is the last chance to say that queued entries were
         // lost; nothing is left to report the failure to once this returns.
         yield* flushInternal.pipe(
+          Effect.andThen(flushDeferred),
           Effect.catch((cause) => Effect.logWarning("journal final flush failed while closing", cause))
         )
         yield* Effect.sync(() => {
@@ -2700,6 +2869,7 @@ export const make = (
       emitLossy,
       emitDurable,
       emitDurableUnfenced,
+      emitDeferred,
       transact,
       whenCommitted: (update) =>
         Effect.flatMap(
@@ -2711,8 +2881,9 @@ export const make = (
       changes: PubSub.subscribe(changes),
       project,
       flush: Effect.fn("Journal.flush")(() =>
-        Effect.suspend(() => Effect.annotateCurrentSpan({ pending: state.pending })).pipe(
-          Effect.andThen(flushInternal)
+        Effect.suspend(() => Effect.annotateCurrentSpan({ pending: state.pending, deferred: deferred.size })).pipe(
+          Effect.andThen(flushInternal),
+          Effect.andThen(flushDeferred)
         )
       )(),
       checkpoint,

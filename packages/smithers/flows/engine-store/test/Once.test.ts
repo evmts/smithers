@@ -173,11 +173,17 @@ const stores = (crash: Crash, owner: Ownership.OwnerId, reached: Deferred.Deferr
     Journal.Journal,
     Effect.map(Journal.Journal, (store) => ({
       ...store,
-      transact: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      emitDeferred: (input, by) =>
+        Effect.suspend(() =>
+          crossed
+            ? Effect.interrupt
+            : store.emitDeferred!(input, by)
+        ),
+      transact: <A, E, R>(effect: Effect.Effect<A, E, R>, options?: { readonly partition?: string | undefined }) =>
         Effect.suspend(() =>
           crossed
             ? Effect.andThen(Deferred.succeed(reached, undefined), Effect.die("the process died after the crossing"))
-            : store.transact(effect)
+            : store.transact(effect, options)
         )
     }))
   )

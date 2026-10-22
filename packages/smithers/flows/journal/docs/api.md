@@ -47,6 +47,7 @@ Fallible journal operations use `JournalError` with a stable `code`.
 | `emitLossy`           | `(input: Input) => Effect<EmitReceipt, JournalError>`                                              | bounded non-blocking queue; may return `Dropped`                                                                                                                            |
 | `emitDurable`         | `(input: Input, owner: OwnerId) => Effect<DurableReceipt, JournalError>`                           | allocates and commits inside the write transaction, fenced on `owner`                                                                                                       |
 | `emitDurableUnfenced` | `(input: Input) => Effect<DurableReceipt, JournalError>`                                           | the same commit with no fence, for a genuinely ownerless admission                                                                                                          |
+| `emitDeferred?`       | `(input: Input, owner: OwnerId) => Effect<void, JournalError>`                                     | queues a fenced entry to commit with its run's next durable write                                                                                                           |
 | `transact`            | `<A, E, R>(effect: Effect<A, E, R>, options?: WriteOptions) => Effect<A, E \| JournalError, R>`    | runs a state projection and its `emitDurable` calls in one transaction; `options.partition` names the run it writes                                                         |
 | `whenCommitted`       | `(update: Effect<void>) => Effect<boolean>`                                                        | accepts a short, non-failing update after managed commit, or runs it immediately outside a transaction; returns `false` without publishing when commit ownership is unknown |
 | `stream`              | `(options: StreamOptions) => Stream<Entry, JournalError>`                                          | durable history, then committed changes; never completes                                                                                                                    |
@@ -62,6 +63,17 @@ Fallible journal operations use `JournalError` with a stable `code`.
 `whenCommitted` returning `true` means accepted, possibly deferred. Failed
 savepoints and transaction retries discard their registrations. See
 [commit state and its entry together](./guides/commit-state-and-entry.md).
+
+`emitDeferred` queues a fenced lifecycle entry instead of writing it, and the
+run's next durable write through the journal commits it first: the next
+`emitDurable`, `emitDurableUnfenced` or `checkpoint` of the run, a `transact`
+that names the run's partition, or `flush`. Inside an open transaction it writes
+at once. The entry's sequence is allocated when it commits, so the run reads in
+emission order and nothing commits behind a reader's cursor. An owner that lost
+the run meanwhile loses what it queued and learns so from its own next fenced
+write. The flow engine queues its node records this way, so a drive writes a
+handful of transactions instead of one per record. Optional on the service: a
+journal without it is used through `emitDurable`.
 
 Every append, checkpoint and compaction writes its run's partition
 (`DurableWriter.WriteOptions`), so on PostgreSQL it waits only for that run's
@@ -663,3 +675,7 @@ reconstruct an opaque resolver token. The gateway joins a verified question to
 a currently observed wait with the same execution identity and digest, then
 uses that current wait's existing submission envelope. A historical question
 alone cannot make a gate answerable after the live wait has ended.
+
+Deferred-batch cleanup is idempotent across sibling savepoints of one outer
+transaction. Their commit callbacks remove only their captured entries, so
+resuming a parked run cannot discard a later batch or fail after commit.

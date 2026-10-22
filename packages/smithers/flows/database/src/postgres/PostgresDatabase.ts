@@ -257,16 +257,22 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
       const started = yield* Clock.currentTimeMillis
       for (let attempt = 1;; attempt++) {
         const exit = yield* Effect.exit(
-          open(conn, partition === undefined
-            ? conn.execute(lockStatement, [schema, String(lockTimeoutMs)], undefined)
-            : conn.execute(partitionStatement, [schema, partition, String(lockTimeoutMs)], undefined))
+          open(
+            conn,
+            partition === undefined
+              ? conn.execute(lockStatement, [schema, String(lockTimeoutMs)], undefined)
+              : conn.execute(partitionStatement, [schema, partition, String(lockTimeoutMs)], undefined)
+          )
         )
         if (Exit.isSuccess(exit)) {
           const waited = Duration.millis((yield* Clock.currentTimeMillis) - started)
           yield* Metric.update(DatabaseMetrics.writerLockWait, waited)
-          held.set(conn, partition === undefined
-            ? { schema: 0, partitions: new Map(), wide: true }
-            : { schema: undefined, partitions: new Map([[partition, 0]]), wide: false })
+          held.set(
+            conn,
+            partition === undefined
+              ? { schema: 0, partitions: new Map(), wide: true }
+              : { schema: undefined, partitions: new Map([[partition, 0]]), wide: false }
+          )
           return yield* WriteTally.record(waited, partition === undefined ? "schema" : "partition")
         }
         if (!isLockTimeout(exit.cause)) return yield* exit

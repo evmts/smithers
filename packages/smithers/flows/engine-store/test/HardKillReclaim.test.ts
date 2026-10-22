@@ -151,10 +151,11 @@ const firstJsonLine = (child: ChildProcessWithoutNullStreams): Promise<Record<st
     child.stderr.setEncoding("utf8")
     child.stdout.on("data", (chunk: string) => {
       stdout += chunk
-      const newline = stdout.indexOf("\n")
-      if (newline < 0) return
+      // Admission telemetry shares stdout with this child protocol.
+      const line = stdout.split("\n").slice(0, -1).find((line) => line.startsWith("{"))
+      if (line === undefined) return
       clearTimeout(timeout)
-      resolve(JSON.parse(stdout.slice(0, newline)) as Record<string, unknown>)
+      resolve(JSON.parse(line) as Record<string, unknown>)
     })
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk

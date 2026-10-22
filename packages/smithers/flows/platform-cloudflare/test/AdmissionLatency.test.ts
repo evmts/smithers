@@ -83,13 +83,12 @@ describe.skipIf(!Postgres.direct.available)("admission after capacity recovers o
       })
       const wakeAt = memory.alarm()!
       yield* TestClock.setTime(wakeAt)
-      expect(
-        yield* ExecutionObject.alarm(memory.storage, {
-          flows: [Answer],
-          runtime: runtime({ hostId: executionId, database: Postgres.database(schema), record: Effect.succeed }),
-          router: Objects.unrouted
-        })
-      ).toMatchObject({ _tag: "Settled" })
+      const recovered = yield* ExecutionObject.alarm(memory.storage, {
+        flows: [Answer],
+        runtime: runtime({ hostId: executionId, database: Postgres.database(schema), record: Effect.succeed }),
+        router: Objects.unrouted
+      })
+      expect(recovered._tag, JSON.stringify(recovered)).toBe("Settled")
       expect(t.lines("flow.run.created")[0]?.annotations).toMatchObject({
         "smithers.execution.id": executionId,
         createdAtMs: wakeAt

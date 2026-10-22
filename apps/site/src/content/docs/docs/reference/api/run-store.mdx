@@ -343,6 +343,12 @@ transaction, and the statement waits for theirs and then sees their result, so
 a fenced write lands before the takeover or not at all. SQLite serializes
 write transactions, which gives the same order without a row lock.
 
+Every `RunStore` write that changes one run, and every `AttemptStore` write,
+names that run's partition (`DurableWriter.WriteOptions`): on PostgreSQL it
+waits only for that run's writers, and two runs write side by side.
+`requestCancelLineage` changes every round of a lineage and names none
+([Run writer locks](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/decisions/0001-run-writer-locks.md)).
+
 ### RunStore models
 
 #### RunStatus

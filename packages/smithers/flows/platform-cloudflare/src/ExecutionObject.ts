@@ -21,12 +21,11 @@
  * @since 1.0.0
  */
 
-import { DatabaseMetrics } from "@smthrs/database"
-import { JournalMetrics } from "@smthrs/journal"
-import * as Duration from "effect/Duration"
 import { canonicalize } from "@smthrs/canonical"
+import { DatabaseMetrics } from "@smthrs/database"
 import { type DurableEngineState, EngineStore } from "@smthrs/engine-store"
 import { type Flow, FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
+import { JournalMetrics } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
 import * as Config from "effect/Config"
@@ -591,7 +590,13 @@ const drive = <RS>(storage: Storage<RS>, flow: Flow.Any, value: Intent, budgetMs
  * its outcome ({@link driveDuration}) and in `timing`, and reads what it left
  * the execution as: `Unfinished` is a failure, so the alarm backs off.
  */
-const timedDrive = <RS>(storage: Storage<RS>, flow: Flow.Any, value: Intent, budgetMs: number, timing: { driveMs?: number }) =>
+const timedDrive = <RS>(
+  storage: Storage<RS>,
+  flow: Flow.Any,
+  value: Intent,
+  budgetMs: number,
+  timing: { driveMs?: number }
+) =>
   Effect.gen(function*() {
     const startedMs = yield* Clock.currentTimeMillis
     const exit = yield* Effect.exit(drive(storage, flow, value, budgetMs))
