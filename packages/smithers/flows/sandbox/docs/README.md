@@ -149,6 +149,8 @@ next.
   implements, and why there are two of them.
 - [Return work from a sandbox](./guides/return-work-from-a-sandbox.md): capture
   what a session changed and land it on the host as one jj change.
+- [Run a long command](./guides/run-a-long-command.md): start a command detached,
+  park the run while it runs, and collect its result once.
 - [Choose a provider](./guides/choose-a-provider.md): the ten side by side, by
   boundary, byte exactness, and cost to run.
 - [Write a provider](./guides/write-a-provider.md) and

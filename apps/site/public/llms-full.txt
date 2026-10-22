@@ -38633,6 +38633,7 @@ Every namespace is also its own subpath, and `./internal/*` is null mapped.
 | `@smthrs/sandbox/SandboxSupervision`        | [src/SandboxSupervision/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxSupervision)               |
 | `@smthrs/sandbox/TerminalProtocol`          | [src/TerminalProtocol/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/TerminalProtocol)                   |
 | `@smthrs/sandbox/SandboxTools`              | [src/SandboxTools/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxTools)                           |
+| `@smthrs/sandbox/SandboxCommand`            | [src/SandboxCommand/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxCommand)                       |
 
 ## RemoteChildProcessSpawner
 
@@ -38893,6 +38894,21 @@ const ran = yield* SandboxTools.execute(session, { tool: "run", command: "npm te
 - **Telemetry:** a span `sandbox.tool` with the tool, its outcome and a command's exit code; never a path, a command,
   content or output.
 
+A command that can outlive one exec session or one host starts detached instead: `start(session, run, { key,
+callsDirectory })` makes the key's fence once, starts the command in a process session of its own with its streams in
+files, and answers its `Started { pid, startedAt }` at once; the same key again answers the same handle and starts
+nothing. `observe` answers `Observed`: `running` (its runner lives in the box that started it), `finished { exitCode,
+timedOut }`, or `lost` (the box restarted, or the runner died before it recorded the exit). It reads only. `collect`
+answers the `RunResult` `execute` answers, as often as asked, and fails `ToolLost` for a command that never recorded
+its exit. `cancel` marks the key cancelled, so a start not yet run never runs, then stops the runner's and the command's
+process groups (TERM, five seconds, KILL), each only while it is still the process the runner recorded; it leaves a
+finished command, one from a box that has since restarted, and a pid the box has reused alone. A TERM to the runner stops
+the command's group too. Fences are named so no two keys share one. Each is a span `sandbox.command` with the operation and its outcome. `SandboxCommand` runs them as a durable job.
+
+The failures are registered with `@smthrs/flow`'s `Fault`: `ToolRefused` is `user`, `ToolLost` `dependency`, and
+`ToolUnavailable` is classed by its code as `ProviderError` is (`unavailable` and `timeout` are `infra`, the rest
+`bug`), so a keyed step retries only a session that couldn't answer.
+
 `checkpoint(session)` captures the working copy without changing it: `HEAD`, a binary patch with every tracked and
 untracked change (ignored files are not carried), and a git `bundle` of the commits no remote has, such as one made in
 the box; the patch and bundle together are at most `limits.checkpointBytes` (8 MiB). `restore(session, saved)` moves
@@ -38900,6 +38916,23 @@ the box; the patch and bundle together are at most `limits.checkpointBytes` (8 M
 the working copy lacks comes from the bundle, whose base commits are fetched from `origin` first, else is fetched from
 `origin` by its id; `not_found` when neither has it, and `ToolUnavailable` with code `unavailable` when `origin` can't be
 reached. A checkpoint without a `bundle` restores as one with an empty bundle.
+
+## SandboxCommand
+
+A sandbox command as durable external work: `SandboxTools`' `start`, `observe`, `collect` and `cancel` behind
+`@smthrs/flow`'s `ExternalJob`, so a command that runs for minutes holds no step, host or exec session while it runs.
+See [Run a long command](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/guides/run-a-long-command.md).
+
+| Export                    | Behavior                                                                                                                                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make(tag, options)`      | Declares the job: payload `{ target, call }` (`target` is your schema for the box, `call` a `SandboxTools.Run`), handle `{ target, pid, startedAt }`, success `RunResult`, error the tools' failures, `options.error`, `ExternalJobLost` and `ExternalJobTimedOut`. `probe`, `timeout` and `restarts` default to `defaults` and zero. |
+| `operations(reach)`       | The job's operations: each reaches the box by the target the payload or handle carries. `status` maps `running`, `finished` and `lost` to `Running`, `Exited` and `Lost`; `abandon` cancels by key.                                                                                                                                   |
+| `onSession(session, dir)` | `Commands` over a session the host holds, fenced under `dir`.                                                                                                                                                                                                                                                                         |
+| `Commands<E, R>`          | One box's `start`, `observe`, `collect` and `cancel` by key, however the host reaches it; `E` is how reaching it fails.                                                                                                                                                                                                               |
+| `defaults`                | A probe a second after the start doubling to every 20 seconds; a deadline five minutes past `SandboxTools.limits.maxTimeoutSeconds`.                                                                                                                                                                                                  |
+
+A lost command is cancelled and the job fails `ExternalJobLost` once `restarts` are spent (zero unless set, so a
+command runs at most once). Past the deadline the job cancels the command and fails `ExternalJobTimedOut`.
 
 ## SandboxMerge
 

@@ -32,6 +32,9 @@ export * as Sandbox from "./Sandbox/index.ts"
 /** Typed tools on a sandbox's working copy: run a command, read, write and list files, git status and diff. */
 export * as SandboxTools from "./SandboxTools/index.ts"
 
+/** A sandbox command as durable external work: start once, park between probes, collect, cancel. */
+export * as SandboxCommand from "./SandboxCommand/index.ts"
+
 /** Lands a session's captured work in a host jj repository. */
 export * as SandboxMerge from "./SandboxMerge/index.ts"
 

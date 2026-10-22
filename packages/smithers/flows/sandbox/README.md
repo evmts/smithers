@@ -48,6 +48,7 @@ Every namespace below is also its own import subpath.
 | `SandboxHealth`             | `@smthrs/sandbox/SandboxHealth`             | Sandbox health-check contracts.                                               |
 | `SandboxSupervision`        | `@smthrs/sandbox/SandboxSupervision`        | Heartbeat supervision over a remote sandbox session.                          |
 | `SandboxTools`              | `@smthrs/sandbox/SandboxTools`              | Typed tools on a working copy: run, read, write, list, git status and diff.   |
+| `SandboxCommand`            | `@smthrs/sandbox/SandboxCommand`            | A command as durable external work: start once, probe, collect, cancel.       |
 
 `DirectorySandbox` requires `sh` on `PATH`, including on Windows.
 

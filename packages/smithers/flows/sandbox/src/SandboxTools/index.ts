@@ -32,6 +32,7 @@
  * @since 1.0.0-rc.17
  */
 
+import { Fault } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
@@ -358,6 +359,23 @@ export class ToolUnavailable extends Schema.TaggedError<ToolUnavailable>()(
   { code: ProviderErrorCode, exitCode: Schema.optional(Schema.Number) }
 ) {}
 
+// What each failure is to the flow engine, which retries a keyed step's infrastructure faults by default: a refusal is
+// the caller's, a lost command stays lost, and a session that couldn't answer is tried again, classed by its provider's
+// code as `ProviderError` is (@smthrs/flow's `Fault`).
+Fault.register("@smthrs/sandbox/SandboxTools/ToolRefused", "user")
+Fault.register("@smthrs/sandbox/SandboxTools/ToolLost", "dependency")
+Fault.register(
+  "@smthrs/sandbox/SandboxTools/ToolUnavailable",
+  {
+    unavailable: "infra",
+    timeout: "infra",
+    spawn_error: "bug",
+    not_found: "bug",
+    aborted: "bug",
+    unknown: "bug"
+  } satisfies Fault.Rows<ProviderErrorCode>
+)
+
 /**
  * What a tool can fail with.
  *
@@ -493,35 +511,94 @@ const failedWith = (code: number): ToolFailure => {
 
 const refused = (reason: ToolRefused["reason"]) => Effect.fail(new ToolRefused({ reason }))
 
-const RUN = `d=$1; t=$2; cwd=$3; max=$4; cmd=$5
-umask 002
-mkdir -p -- "\${d%/*}" 2>/dev/null || exit 125
-if mkdir -- "$d" 2>/dev/null; then
-  if [ ! -d "$cwd" ]; then printf '20 0\\n' >"$d/exit"; else
-  start=$(date +%s)
+/**
+ * The start identity of process `$1`: its start time in clock ticks since boot, read from `/proc` where the guest has
+ * one, else `-`. A pid the guest reuses, or one a restarted box hands out again, has another; a process that has exited
+ * and waits to be reaped has `-`. Always one word, so a record of several reads back field by field.
+ */
+const IDENT = `ident() {
+  i=
+  [ -r "/proc/$1/stat" ] && i=$(sed 's/^.*) //' "/proc/$1/stat" | { read -r state rest; [ "$state" != Z ] && printf '%s\\n' "$rest" | cut -d' ' -f19; })
+  printf '%s\\n' "\${i:--}"
+}`
+
+/**
+ * Runs command `$4` in `$3` for at most `$2` seconds under fence directory `$1`, which exists. Each file it writes is
+ * written whole: `pid` (its own pid, which leads its process group, its start in epoch seconds, the box's identity and
+ * its own), `child` (the command's process, which leads the command's group under `timeout`, and its identity), `out`
+ * and `err` (the command's streams), then `exit` (the exit code, and 1 when the timeout stopped it). A cwd that isn't a
+ * directory ends `20 0` with no output; a fence cancelled before the command began ends `143 0`. A TERM to the runner
+ * stops the command's group too, even before `child` is written, and the runner ends without an exit.
+ */
+const RUNNER = `d=$1; t=$2; cwd=$3; cmd=$4
+${IDENT}
+start=$(date +%s)
+printf '%s %s %s %s\\n' "$$" "$start" "$(ident 1)" "$(ident $$)" >"$d/pid.tmp" && mv -f -- "$d/pid.tmp" "$d/pid" || exit 125
+c=
+trap 'trap - TERM; if [ -n "$c" ]; then kill -TERM "-$c" 2>/dev/null || kill -TERM "$c" 2>/dev/null; fi; exit 143' TERM
+timed=0
+if [ -e "$d/cancelled" ]; then code=143; : >"$d/out"; : >"$d/err"
+elif [ ! -d "$cwd" ]; then code=20
+else
+  watchdog=
   if command -v timeout >/dev/null 2>&1; then
-    (cd -- "$cwd" && exec timeout -k 5 "$t" sh -c "$cmd") </dev/null >"$d/out" 2>"$d/err"
-    code=$?
+    (cd -- "$cwd" && exec timeout -k 5 "$t" sh -c "$cmd") </dev/null >"$d/out" 2>"$d/err" &
+    c=$!
   else
     (cd -- "$cwd" && exec sh -c "$cmd") </dev/null >"$d/out" 2>"$d/err" &
-    pid=$!
-    (sleep "$t"; kill -TERM "$pid"; sleep 5; kill -KILL "$pid") </dev/null >/dev/null 2>&1 &
+    c=$!
+    (sleep "$t"; kill -TERM "$c"; sleep 5; kill -KILL "$c") </dev/null >/dev/null 2>&1 &
     watchdog=$!
-    wait "$pid"
-    code=$?
-    kill "$watchdog" 2>/dev/null
   fi
-  timed=0
+  printf '%s %s\\n' "$c" "$(ident "$c")" >"$d/child"
+  wait "$c"
+  code=$?
+  [ -z "$watchdog" ] || kill "$watchdog" 2>/dev/null
   if [ $(($(date +%s) - start)) -ge "$t" ] && [ "$code" -gt 123 ]; then timed=1; fi
-  printf '%s %s\\n' "$code" "$timed" >"$d/exit.tmp" && mv -f -- "$d/exit.tmp" "$d/exit" || exit 125
-  fi
 fi
-[ -f "$d/exit" ] || exit 75
+printf '%s %s\\n' "$code" "$timed" >"$d/exit.tmp" && mv -f -- "$d/exit.tmp" "$d/exit" || exit 125`
+
+/**
+ * Answers how the command under fence `$d` ended: exit 75 when it never recorded it, 20 for a cwd that wasn't a
+ * directory, else its exit code, whether it timed out and each stream's size, then the first `$max` bytes of each.
+ */
+const ANSWER = `[ -f "$d/exit" ] || exit 75
 read -r code timed <"$d/exit"
 [ "$timed" = 0 ] && [ "$code" = 20 ] && [ ! -f "$d/out" ] && exit 20
 printf '%s %s %s %s\\n' "$code" "$timed" $(($(wc -c <"$d/out"))) $(($(wc -c <"$d/err")))
 head -c "$max" -- "$d/out"
 head -c "$max" -- "$d/err"`
+
+/** The runner `$1` with the rest of its arguments, in the foreground, the first time its fence `$2` is made. */
+const RUN = `d=$2; max=$6
+umask 002
+mkdir -p -- "\${d%/*}" 2>/dev/null || exit 125
+if mkdir -- "$d" 2>/dev/null; then sh -c "$1" sandbox-run "$2" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 || exit 125; fi
+${ANSWER}`
+
+/** The fence directory of `id` under `callsDirectory`, when that is an absolute guest path. */
+const fenceOf = (callsDirectory: string, id: string): string | undefined => {
+  const calls = resolve("/", callsDirectory)
+  return calls === undefined ? undefined : `${calls}/${id.replaceAll(/[^A-Za-z0-9._-]/g, "_")}`
+}
+
+/** A command's result from an `ANSWER`'s output: its exit code, whether it timed out, and its kept streams. */
+const answered = (stdout: Uint8Array): typeof RunResult.Type => {
+  const max = limits.outputBytes
+  const { body, header } = headed(stdout)
+  const [exitCode, timed, outBytes, errBytes] = header.map(Number) as [number, number, number, number]
+  const outKept = Math.min(outBytes, max)
+  return {
+    tool: "run",
+    exitCode,
+    timedOut: timed === 1,
+    stdout: text(body.subarray(0, outKept)),
+    stderr: text(body.subarray(outKept, outKept + Math.min(errBytes, max))),
+    stdoutBytes: outBytes,
+    stderrBytes: errBytes,
+    truncated: outBytes > max || errBytes > max
+  }
+}
 
 /**
  * Runs a command at most once under its call's fence. A cwd that isn't a
@@ -530,30 +607,17 @@ head -c "$max" -- "$d/err"`
 const run = (session: Session, call: typeof Run.Type, options: ExecuteOptions) =>
   Effect.gen(function*() {
     const cwd = resolve(session.workdir, call.cwd ?? ".")
-    const calls = resolve("/", options.callsDirectory)
-    if (cwd === undefined || calls === undefined) return yield* refused("path")
-    const fence = `${calls}/${options.callId.replaceAll(/[^A-Za-z0-9._-]/g, "_")}`
+    const fence = fenceOf(options.callsDirectory, options.callId)
+    if (cwd === undefined || fence === undefined) return yield* refused("path")
     const timeout = call.timeoutSeconds ?? limits.defaultTimeoutSeconds
     const max = limits.outputBytes
     const { code, stdout } = yield* gather(
       session,
-      script(RUN, [fence, String(timeout), cwd, String(max), call.command]),
+      script(RUN, [RUNNER, fence, String(timeout), cwd, call.command, String(max)]),
       2 * max + 128
     )
     if (code !== 0) return yield* Effect.fail(failedWith(code))
-    const { body, header } = headed(stdout)
-    const [exitCode, timed, outBytes, errBytes] = header.map(Number) as [number, number, number, number]
-    const outKept = Math.min(outBytes, max)
-    return {
-      tool: "run",
-      exitCode,
-      timedOut: timed === 1,
-      stdout: text(body.subarray(0, outKept)),
-      stderr: text(body.subarray(outKept, outKept + Math.min(errBytes, max))),
-      stdoutBytes: outBytes,
-      stderrBytes: errBytes,
-      truncated: outBytes > max || errBytes > max
-    } satisfies typeof RunResult.Type
+    return answered(stdout)
   })
 
 const READ = `p=$1; max=$2
@@ -740,6 +804,286 @@ export const execute = (session: Session, call: Call, options: ExecuteOptions): 
     Effect.withSpan("sandbox.tool", { attributes: { "smithers.sandbox.tool": call.tool } })
   )
 }
+
+/**
+ * Where a command started with {@link start} keeps what outlives the exec
+ * session that started it.
+ *
+ * - `key`: the command's own key. One key starts one command, ever.
+ * - `callsDirectory`: an absolute guest directory outside the workdir, which
+ *   the session's user may write, as for {@link execute}. The command's pid,
+ *   exit and output live there under its key.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export interface CommandOptions {
+  readonly key: string
+  readonly callsDirectory: string
+}
+
+/**
+ * A started command's handle: the pid of the process that runs it, which
+ * leads its process group, and when it started, in epoch seconds. Both are
+ * 0 when an earlier start of the same key never got as far as recording
+ * them, or the key was cancelled first; the command then observes `lost`.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export const Started = Schema.Struct({ pid: Schema.Int, startedAt: Schema.Int })
+
+/**
+ * A started command's handle.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export type Started = typeof Started.Type
+
+/**
+ * What a started command is doing: `running` while its process group lives
+ * (the heartbeat), `finished` once it recorded its exit code and whether
+ * its timeout stopped it, or `lost` when neither holds: the box restarted,
+ * or something killed the process before it recorded how it ended.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export const Observed = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("running"), pid: Schema.Int }),
+  Schema.Struct({ state: Schema.Literal("finished"), exitCode: Schema.Int, timedOut: Schema.Boolean }),
+  Schema.Struct({ state: Schema.Literal("lost") })
+])
+
+/**
+ * What a started command is doing.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export type Observed = typeof Observed.Type
+
+/**
+ * Starts the runner `$1` with the rest of its arguments in a session of its
+ * own (`setsid`), or else a process group of its own where the shell has job
+ * control, the first time its fence `$2` is made, then answers its pid and
+ * start once it recorded them, waiting at most about five seconds.
+ */
+const START = `d=$2
+umask 002
+mkdir -p -- "\${d%/*}" 2>/dev/null || exit 125
+if mkdir -- "$d" 2>/dev/null; then
+  if command -v setsid >/dev/null 2>&1; then
+    setsid sh -c "$1" sandbox-command "$2" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 &
+  else
+    (set -m 2>/dev/null; sh -c "$1" sandbox-command "$2" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 &)
+  fi
+fi
+i=0
+while [ ! -f "$d/pid" ] && [ ! -e "$d/cancelled" ] && [ "$i" -lt 500 ]; do
+  i=$((i + 1))
+  sleep 0.01 2>/dev/null || sleep 1
+done
+pid=0; at=0
+[ -f "$d/pid" ] && read -r pid at box id <"$d/pid"
+printf '%s %s\\n' "$pid" "$at"`
+
+/**
+ * Whether the command under fence `$1` runs: its runner, which waits for the
+ * command and then records how it ended, lives in the box that started it.
+ */
+const OBSERVE = `d=$1
+${IDENT}
+if [ ! -f "$d/exit" ] && [ -f "$d/pid" ]; then
+  read -r pid at box id <"$d/pid"
+  if [ "$pid" -gt 1 ] && [ "$(ident 1)" = "$box" ] && kill -0 "$pid" 2>/dev/null && [ "$(ident "$pid")" = "$id" ]; then
+    printf 'running %s\\n' "$pid"
+    exit 0
+  fi
+fi
+if [ -f "$d/exit" ]; then read -r code timed <"$d/exit"; printf 'finished %s %s\\n' "$code" "$timed"; else printf 'lost\\n'; fi`
+
+const COLLECT = `d=$1; max=$2
+${ANSWER}`
+
+/**
+ * Marks fence `$1` cancelled, so a runner that hasn't begun its command
+ * never does, then stops the runner and the command, each with its process
+ * group, while each is the very process the runner recorded in the box that
+ * started it: TERM, up to five seconds for them to go, then KILL. A command
+ * that finished, or whose pid now names another process, is left alone.
+ */
+const CANCEL = `d=$1
+${IDENT}
+umask 002
+mkdir -p -- "$d" 2>/dev/null || exit 125
+: >"$d/cancelled" || exit 125
+[ -f "$d/pid" ] && [ ! -f "$d/exit" ] || exit 0
+read -r pid at box id <"$d/pid"
+[ "$(ident 1)" = "$box" ] || exit 0
+targets=
+[ "$pid" -gt 1 ] && targets="$pid:$id"
+[ -f "$d/child" ] && read -r child cid <"$d/child" && [ "$child" -gt 1 ] && targets="$targets $child:$cid"
+live() {
+  for t in $targets; do
+    g=\${t%%:*}
+    [ "$(ident "$g")" = "\${t#*:}" ] && { kill -0 "-$g" || kill -0 "$g"; } 2>/dev/null && printf '%s\\n' "$g"
+  done
+}
+stop() { for g in $(live); do { kill "-$1" "-$g"; kill "-$1" "$g"; } 2>/dev/null; done; }
+stop TERM
+i=0
+while [ -n "$(live)" ] && [ "$i" -lt 50 ]; do i=$((i + 1)); sleep 0.1 2>/dev/null || sleep 1; done
+stop KILL
+exit 0`
+
+/** `effect` as span `sandbox.command`, with the operation and its outcome; never a command, a path or output. */
+const commandSpan = <A, E>(operation: string, effect: Effect.Effect<A, E>) =>
+  effect.pipe(
+    Effect.tap((value) =>
+      Effect.annotateCurrentSpan({
+        "smithers.sandbox.command.outcome": typeof value === "object" && value !== null && "state" in value
+          ? String(value.state)
+          : "done"
+      })
+    ),
+    Effect.tapError((error) =>
+      Effect.annotateCurrentSpan({
+        "smithers.sandbox.command.outcome": (error as { readonly _tag: string })._tag.split("/").at(-1)!
+      })
+    ),
+    Effect.withSpan("sandbox.command", { attributes: { "smithers.sandbox.command.op": operation } })
+  )
+
+/**
+ * The fence of `options.key`, named so no two keys share one: each byte outside `[A-Za-z0-9.-]` is `_` and its two hex
+ * digits. A calls directory that isn't an absolute guest path is refused `path`.
+ */
+const commandFence = (options: CommandOptions) => {
+  const name = Array.from(
+    encoder.encode(options.key),
+    (
+      byte
+    ) => (/[A-Za-z0-9.-]/.test(String.fromCharCode(byte))
+      ? String.fromCharCode(byte)
+      : `_${byte.toString(16).padStart(2, "0")}`)
+  ).join("")
+  const fence = fenceOf(options.callsDirectory, `command-${name}`)
+  return fence === undefined ? refused("path") : Effect.succeed(fence)
+}
+
+/**
+ * Starts `call`'s command in the session's working copy, detached from the
+ * exec session that starts it: in a process session and group of its own
+ * where the guest has `setsid`, with its streams in files, so it outlives
+ * that session, the host that asked and any number of hosts after it. It
+ * runs for at most its timeout, as {@link execute}'s do.
+ *
+ * It answers at once, with the command's {@link Started} handle. The same
+ * key again answers the same handle and never starts the command twice, so a
+ * caller that lost the answer asks again. Follow it with {@link observe},
+ * {@link collect} and {@link cancel}.
+ *
+ * A cwd that leaves the workdir is refused `path` before anything runs; one
+ * that isn't a directory finishes the command, which then collects as
+ * `not_a_directory`.
+ *
+ * @category operations
+ * @since 1.0.0-rc.17
+ */
+export const start = (
+  session: Session,
+  call: typeof Run.Type,
+  options: CommandOptions
+): Effect.Effect<Started, ToolRefused | ToolUnavailable> =>
+  commandSpan(
+    "start",
+    Effect.gen(function*() {
+      const cwd = resolve(session.workdir, call.cwd ?? ".")
+      if (cwd === undefined) return yield* refused("path")
+      const fence = yield* commandFence(options)
+      const timeout = call.timeoutSeconds ?? limits.defaultTimeoutSeconds
+      const { code, stdout } = yield* gather(
+        session,
+        script(START, [RUNNER, fence, String(timeout), cwd, call.command]),
+        128
+      )
+      if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolUnavailable)
+      const [pid, startedAt] = text(stdout).trim().split(" ").map(Number) as [number, number]
+      return { pid, startedAt }
+    })
+  )
+
+/**
+ * What the command started under `options.key` is doing ({@link Observed}).
+ * It reads only: asking changes nothing in the box.
+ *
+ * @category operations
+ * @since 1.0.0-rc.17
+ */
+export const observe = (
+  session: Session,
+  options: CommandOptions
+): Effect.Effect<Observed, ToolRefused | ToolUnavailable> =>
+  commandSpan(
+    "observe",
+    Effect.gen(function*() {
+      const fence = yield* commandFence(options)
+      const { code, stdout } = yield* gather(session, script(OBSERVE, [fence]), 128)
+      if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolUnavailable)
+      const [state, first, second] = text(stdout).trim().split(" ")
+      return state === "running"
+        ? { state: "running" as const, pid: Number(first) }
+        : state === "finished"
+        ? { state: "finished" as const, exitCode: Number(first), timedOut: second === "1" }
+        : { state: "lost" as const }
+    })
+  )
+
+/**
+ * The result of the command started under `options.key`, once it finished:
+ * the same {@link RunResult} {@link execute} answers, as often as it is
+ * asked. A command that never recorded how it ended fails {@link ToolLost};
+ * one whose cwd wasn't a directory, `not_a_directory`.
+ *
+ * @category operations
+ * @since 1.0.0-rc.17
+ */
+export const collect = (
+  session: Session,
+  options: CommandOptions
+): Effect.Effect<typeof RunResult.Type, ToolFailure> =>
+  commandSpan(
+    "collect",
+    Effect.gen(function*() {
+      const fence = yield* commandFence(options)
+      const max = limits.outputBytes
+      const { code, stdout } = yield* gather(session, script(COLLECT, [fence, String(max)]), 2 * max + 128)
+      if (code !== 0) return yield* Effect.fail(failedWith(code))
+      return answered(stdout)
+    })
+  )
+
+/**
+ * Stops the command started under `options.key`: its runner's and its own
+ * process groups, TERM and then KILL. A key not started yet is cancelled
+ * too, and a later {@link start} of it starts nothing. A command that
+ * finished, or ran in a box that has since restarted, is left as it is.
+ * Asking again changes nothing.
+ *
+ * @category operations
+ * @since 1.0.0-rc.17
+ */
+export const cancel = (session: Session, options: CommandOptions): Effect.Effect<void, ToolRefused | ToolUnavailable> =>
+  commandSpan(
+    "cancel",
+    Effect.gen(function*() {
+      const fence = yield* commandFence(options)
+      const { code } = yield* gather(session, script(CANCEL, [fence]), 0)
+      if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolUnavailable)
+    })
+  )
 
 /**
  * A working copy, carried to another machine: the commit it is based on, a

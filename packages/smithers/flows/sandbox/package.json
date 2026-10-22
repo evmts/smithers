@@ -59,6 +59,8 @@
     "./SandboxSupervision/*": null,
     "./SandboxTools": "./src/SandboxTools/index.ts",
     "./SandboxTools/*": null,
+    "./SandboxCommand": "./src/SandboxCommand/index.ts",
+    "./SandboxCommand/*": null,
     "./AwsSandbox": "./src/AwsSandbox/index.ts",
     "./AwsSandbox/*": null,
     "./CloudflareSandbox": "./src/CloudflareSandbox/index.ts",
@@ -237,6 +239,17 @@
         }
       },
       "./SandboxTools/*": null,
+      "./SandboxCommand": {
+        "import": {
+          "types": "./dist/esm/SandboxCommand/index.d.ts",
+          "default": "./dist/esm/SandboxCommand/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SandboxCommand/index.d.ts",
+          "default": "./dist/cjs/SandboxCommand/index.js"
+        }
+      },
+      "./SandboxCommand/*": null,
       "./AwsSandbox": {
         "import": {
           "types": "./dist/esm/AwsSandbox/index.d.ts",
