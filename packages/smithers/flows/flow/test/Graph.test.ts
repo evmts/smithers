@@ -250,8 +250,8 @@ describe("Graph.build planned values", () => {
       {
         _tag: "Literal",
         value: {
-          path: { _tag: "PlannedInput", path: ["files", "0"] },
-          value: { _tag: "PlannedInput", path: ["value"] }
+          path: { _tag: "PlannedInput", input: 0, path: ["files", "0"] },
+          value: { _tag: "PlannedInput", input: 1, path: ["value"] }
         }
       },
       { _tag: "Ref", from: upstream, path: ["files", "0"] },
@@ -261,7 +261,11 @@ describe("Graph.build planned values", () => {
       {
         _tag: "Literal",
         value: {
-          values: [{ _tag: "PlannedInput", path: ["value"] }, { _tag: "PlannedInput", path: ["value"] }]
+          values: [{ _tag: "PlannedInput", input: 0, path: ["value"] }, {
+            _tag: "PlannedInput",
+            input: 0,
+            path: ["value"]
+          }]
         }
       },
       { _tag: "Ref", from: upstream, path: ["value"] }
@@ -300,7 +304,7 @@ describe("Graph.build planned values", () => {
       algorithm: "sha256-source-ephemeral/v4"
     })
     expect(material(graph, "root.flow.then").inputs).toEqual([
-      { _tag: "Literal", value: { _tag: "Done", value: { _tag: "PlannedInput", path: [] } } },
+      { _tag: "Literal", value: { _tag: "Done", value: { _tag: "PlannedInput", input: 0, path: [] } } },
       { _tag: "Ref", from: "root.flow.branch", path: [] },
       { _tag: "Pending", from: "root.flow.branch" }
     ])
@@ -653,12 +657,7 @@ describe("Graph.build diagnostics", () => {
 
     expect(Graph.diagnostics(graph)).toHaveLength(1)
     expect(Graph.diagnostics(graph)[0]).toMatchObject({ code: "invalid_continuation", node: "root" })
-    expect(body(graph, "root.andThen")).toEqual({
-      _tag: "ActionCall",
-      action: "counter/read",
-      tier: "sealed",
-      declaration: undefined
-    })
+    expect(() => body(graph, "root.andThen")).toThrow(Graph.diagnostics(graph)[0])
 
     const call = Graph.build(detached(Child.call({ path: "counter.txt", seed: 1 })))
     expect(Graph.nodes(call).map((observed) => observed.id)).toEqual(["root"])
@@ -873,7 +872,7 @@ describe("Graph.build placement identity", () => {
     expect(exotic).toContain("flag:false")
     expect(exotic).toContain("tag:Symbol(tag)")
     expect(exotic).toContain(`list:[1,"two"]`)
-    expect(exotic).toContain("when:[object Date]")
+    expect(exotic).toContain("when:<non-plain>")
     expect(exotic).toContain("lazy:<accessor>")
     expect(exotic).toContain("self:<cycle>")
     expect(exotic).toContain("<elided>")

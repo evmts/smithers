@@ -201,14 +201,9 @@ export interface BuildOptions {
  * A built graph: the nodes in dependency order, the edges between them, and the
  * refusals that were recoverable enough to report rather than throw.
  *
- * DECIDED: the drafts are NOT a field here. They
- * are derived from `nodes`, and the derivation carries a refusal — a graph with
- * diagnostics is inspectable but not compilable — so {@link drafts} is the only
- * way to ask for them. A field beside the accessor was a second, silent answer
- * to the same question: reading `graph.drafts` handed back the truncated drafts
- * of an incomplete graph while `Graph.drafts(graph)` threw on it. Effect keeps
- * data interfaces plain and puts the policy in the accessor, so the field goes
- * rather than growing a getter that throws from inside a `readonly` record.
+ * Drafts are derived by {@link drafts}. Fatal diagnostics refuse both that
+ * collection and each public node's draft, while node metadata stays
+ * inspectable. Advisory diagnostics leave the drafts available.
  *
  * @since 0.1.0
  * @category models
@@ -689,22 +684,32 @@ const hydrate = (value: unknown, substitutions: ReadonlyMap<string, string>, at:
  * The hashed form of a payload: placeholders keep their property path and drop
  * the node they came from, because the node id is a lookup address and the
  * dependency itself is named by a separate `Ref`. The same walk collects every
- * upstream result the payload reads into `found`, in sorted-key order, so a
- * payload is canonicalized once rather than walked again for its references.
+ * distinct upstream result into `found`, in sorted-key order. Each placeholder
+ * records its slot in that list, preserving which input supplies each occurrence
+ * without hashing structural node addresses. The payload is canonicalized once
+ * rather than walked again for its references.
  *
  * @private
  */
-const literal = (value: unknown, found: Array<PlannedRecord>, at: string): unknown =>
-  walkPayload(value, {
+const literal = (value: unknown, found: Array<PlannedRecord>, at: string): unknown => {
+  const slots = new Map<string, number>()
+  return walkPayload(value, {
     at,
     keysOf: (keys) => [...keys].sort(),
     resolve: (member) => {
       const reference = Planned.reference(member)
       if (reference === undefined) return undefined
-      found.push(reference)
-      return { value: { _tag: "PlannedInput", path: [...reference.path] } }
+      const identity = JSON.stringify([reference.node, ...reference.path])
+      let input = slots.get(identity)
+      if (input === undefined) {
+        input = found.length
+        slots.set(identity, input)
+        found.push(reference)
+      }
+      return { value: { _tag: "PlannedInput", input, path: [...reference.path] } }
     }
   })
+}
 
 /**
  * Whether an inline call would place the callee somewhere the enclosing flow
@@ -878,7 +883,7 @@ const renderPlacement = (value: unknown): string => {
       if (length > shown) members.push("<more>")
       return `[${members.join(",")}]`
     }
-    if (!isPlainObject(object)) return Object.prototype.toString.call(object)
+    if (!isPlainObject(object)) return "<non-plain>"
     const keys = Reflect.ownKeys(object)
       .filter((key) => Object.prototype.propertyIsEnumerable.call(object, key))
       .sort((left, right) => String(left).localeCompare(String(right)))
@@ -916,11 +921,7 @@ const renderPlacement = (value: unknown): string => {
 const payloadInputs = (payload: unknown, at: string): ReadonlyArray<KeyMaterial.InputRef> => {
   const found: Array<PlannedRecord> = []
   const inputs: Array<KeyMaterial.InputRef> = [{ _tag: "Literal", value: literal(payload, found, at) }]
-  const seen = new Set<string>()
   for (const reference of found) {
-    const identity = JSON.stringify([reference.node, ...reference.path])
-    if (seen.has(identity)) continue
-    seen.add(identity)
     inputs.push({ _tag: "Ref", from: reference.node, path: [...reference.path] })
   }
   return inputs
@@ -1005,6 +1006,16 @@ export const build = (
   // The walk itself: pop until every stacked step has run. A refusal thrown
   // by any step propagates out of the build unchanged.
   while (builder.operations.length > 0) builder.operations.pop()!()
+  const refusal = builder.diagnostics.find(isFatalDiagnostic)
+  if (refusal !== undefined) {
+    for (const node of builder.nodes) {
+      Object.defineProperty(node, "draft", {
+        get: () => {
+          throw refusal
+        }
+      })
+    }
+  }
   return { nodes: builder.nodes, edges: builder.edges, diagnostics: builder.diagnostics }
 }
 
@@ -1892,8 +1903,8 @@ export const evaluatedFrom = (evaluated: string, entry: string): void => Declara
  * A graph with a FATAL diagnostic is inspectable but intentionally not
  * compilable: returning its partial drafts would turn missing topology into a
  * valid plan. This accessor therefore throws the first fatal build refusal, and
- * it is the ONLY way to reach the drafts. The built graph holds nodes, and a
- * draft is the node's own {@link GraphNode.draft}.
+ * each public node draft carries the same safeguard. The built graph holds
+ * nodes, and a draft is the node's own {@link GraphNode.draft}.
  *
  * An advisory refusal does not withhold the drafts. The one advisory code is
  * `capability_outside_grant`, where the callee runs with LESS authority than it

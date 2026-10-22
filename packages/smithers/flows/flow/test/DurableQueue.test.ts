@@ -2,7 +2,7 @@
 
 import { describe, expect } from "@effect/vitest"
 import { Action, DurableDeferred, DurableQueue, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
-import { Cause, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Schema, Tracer } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Schedule, Schema, Tracer } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { PersistedQueue } from "effect/persistence"
 import { TestClock } from "effect/testing"
@@ -583,6 +583,16 @@ describe("DurableQueue", () => {
   effect("a completion the store fails to record never runs the handler again", () => {
     let handled = 0
     let writes = 0
+    const logs: Array<string> = []
+    const spans: Array<Tracer.NativeSpan> = []
+    const capture = Logger.make((entry) => logs.push(Logger.formatJson.log(entry)))
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
     const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
       const base = yield* FlowRuntime.FlowRuntime
       return FlowRuntime.FlowRuntime.of({
@@ -591,7 +601,7 @@ describe("DurableQueue", () => {
           Effect.suspend(() => {
             if (options.deferredName.startsWith(Queue.deferred.name)) {
               writes++
-              return Effect.die("completion store unavailable")
+              return Effect.die({ privateCause: "private-handler-cause", result: options.exit })
             }
             return base.deferredDone(deferred, options)
           })
@@ -600,14 +610,19 @@ describe("DurableQueue", () => {
     const layer = Layer.mergeAll(
       Offer.toLayer((payload) => DurableQueue.process(Queue, payload)),
       Interpreter.layer(Flow_),
-      DurableQueue.worker(Queue, ({ value }) => Effect.sync(() => (handled++, value + 1)))
+      DurableQueue.worker(Queue, ({ id, value }) =>
+        Effect.suspend(() => {
+          expect({ id, value }).toEqual({ id: "private-payload", value: 41 })
+          handled++
+          return Effect.fail("private-handler-failure")
+        }))
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(runtime),
       Layer.provideMerge(PersistedQueueLayer)
     )
     return Effect.gen(function*() {
-      const id = yield* Flow_.execute({ id: "write", value: 41 }, { discard: true })
+      const id = yield* Flow_.execute({ id: "private-payload", value: 41 }, { discard: true })
       for (let turn = 0; turn < 500 && writes === 0; turn++) yield* Effect.yieldNow
       expect(writes).toBe(1)
       // The item is redelivered on the persisted queue's schedule; each delivery attaches to the same execution.
@@ -617,7 +632,26 @@ describe("DurableQueue", () => {
       }
       expect(handled).toBe(1)
       expect(Option.isSome(yield* Flow_.poll(id))).toBe(true)
-    }).pipe(Effect.provide(layer))
+      expect(logs.some((line) => line.includes("completion is retried"))).toBe(true)
+      const telemetry = JSON.stringify({
+        logs,
+        spans: spans.map((span) => ({
+          name: span.name,
+          attributes: [...span.attributes],
+          events: span.events,
+          status: span.status
+        })),
+        metrics: yield* Metric.snapshot
+      }, (_, value) => typeof value === "bigint" ? String(value) : value)
+      for (const secret of ["private-payload", "private-handler-cause", "private-handler-failure"]) {
+        expect(telemetry).not.toContain(secret)
+      }
+    }).pipe(
+      Effect.provide(layer),
+      Effect.provide(Logger.layer([capture])),
+      Effect.provideService(Tracer.Tracer, tracer),
+      Effect.provideService(Metric.MetricRegistry, new Map())
+    )
   })
 
   for (const mixed of [false, true]) {

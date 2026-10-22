@@ -348,6 +348,78 @@ describe("DurableDeferred", () => {
     }).pipe(Effect.provide(layer))
   })
 
+  for (const boundary of [false, true]) {
+    effect(`raceAll replay ${boundary ? "brackets lookup" : "marks recorded interruption"}`, () => {
+      const flow = Flow.make("DurableDeferred/replay-boundary", {
+        payload: {},
+        body: () => Node.succeed(undefined)
+      })
+      const instance = makeInstance(flow, "replay-boundary")
+      const runtime = Layer.effect(FlowRuntime.FlowRuntime)(Effect.gen(function*() {
+        const base = yield* FlowRuntime.FlowRuntime
+        return FlowRuntime.FlowRuntime.of({
+          ...base,
+          deferredResult: () =>
+            Effect.sync(() => {
+              if (boundary) expect(instance.actionState.count).toBe(1)
+              return Option.some(Exit.interrupt(123))
+            })
+        })
+      })).pipe(Layer.provide(layerWired(Layer.empty)))
+      return Effect.gen(function*() {
+        const exit = yield* Effect.exit(DurableDeferred.raceAll({
+          name: "recorded",
+          success: Schema.String,
+          error: Schema.String,
+          effects: [Effect.succeed("must not run") as Effect.Effect<string, string>]
+        }))
+        expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+        expect(instance.interrupted).toBe(true)
+        expect(instance.actionState.count).toBe(0)
+      }).pipe(Effect.provideService(FlowRuntime.FlowInstance, instance), Effect.provide(runtime))
+    })
+  }
+
+  effect("a fresh race starts contenders while a sibling action awaits their signal", () => {
+    const flow = Flow.make("DurableDeferred/race-sibling", {
+      payload: {},
+      body: () => Node.succeed(undefined)
+    })
+    const instance = makeInstance(flow, "race-sibling")
+    return Effect.gen(function*() {
+      const signal = yield* Latch.make()
+      const sibling = yield* Effect.forkChild(
+        Flow.wrapActionResult(signal.await, () => false),
+        { startImmediately: true }
+      )
+      expect(instance.actionState.count).toBe(1)
+      let finished = false
+      const race = yield* Effect.forkChild(
+        DurableDeferred.raceAll({
+          name: "fresh",
+          success: Schema.String,
+          error: Schema.Never,
+          effects: [signal.open.pipe(Effect.as("winner"))]
+        }).pipe(Effect.tap(() =>
+          Effect.sync(() => {
+            finished = true
+          })
+        ))
+      )
+      for (let turn = 0; turn < 50 && !finished; turn++) yield* Effect.yieldNow
+      const finishedBeforeExternalSignal = finished
+      // Release even a broken implementation, so the regression never hangs.
+      yield* signal.open
+      yield* Fiber.join(sibling)
+      expect(yield* Fiber.join(race)).toBe("winner")
+      expect(finishedBeforeExternalSignal).toBe(true)
+      expect(instance.actionState.count).toBe(0)
+    }).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, instance),
+      Effect.provide(layerWired(Layer.empty))
+    )
+  })
+
   effect("into drops interrupt reasons from a mixed cause and records the failure", () => {
     const Mixed = DurableDeferred.make("DurableDeferred/Mixed", {
       success: Schema.Number,

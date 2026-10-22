@@ -161,18 +161,22 @@ const await_: <Success extends Schema.Constraint, Error extends Schema.Constrain
     if (Option.isNone(exit)) {
       return yield* Flow.suspend(instance)
     }
-    const value = exit.value as Exit.Exit<any, any>
-    // A recorded interruption is a durable *outcome*, not a request to
-    // suspend: mark the instance interrupted before re-raising so
-    // `Flow.intoResult` classifies the interrupt-only cause as a `Complete`
-    // failure. Without this the driver mistakes the cause for an external
-    // suspension interrupt, aborts without a terminal transition, and the
-    // run spins in the suspended-retry loop forever.
-    if (Exit.isFailure(value) && Cause.hasInterruptsOnly(value.cause)) {
-      instance.interrupted = true
-    }
-    return yield* value
+    return yield* replayExit(instance, exit.value as Exit.Exit<any, any>)
   })
+
+/** Restores the terminal classification shared by every deferred replay. */
+const replayExit = <A, E>(instance: FlowInstance["Service"], value: Exit.Exit<A, E>): Exit.Exit<A, E> => {
+  // A recorded interruption is a durable *outcome*, not a request to
+  // suspend: mark the instance interrupted before re-raising so
+  // `Flow.intoResult` classifies the interrupt-only cause as a `Complete`
+  // failure. Without this the driver mistakes the cause for an external
+  // suspension interrupt, aborts without a terminal transition, and the
+  // run spins in the suspended-retry loop forever.
+  if (Exit.isFailure(value) && Cause.hasInterruptsOnly(value.cause)) {
+    instance.interrupted = true
+  }
+  return value
+}
 
 export {
   /**
@@ -311,9 +315,12 @@ export const raceAll = <
   })
   return Effect.gen(function*() {
     const engine = yield* FlowRuntime
-    const exit = yield* engine.deferredResult(deferred)
+    const instance = yield* FlowInstance
+    // A cache miss proceeds to the contenders; it is not a suspension and
+    // must not wait for sibling actions before those contenders can start.
+    const exit = yield* Flow.wrapActionResult(engine.deferredResult(deferred), () => false)
     if (Option.isSome(exit)) {
-      return yield* exit.value
+      return yield* replayExit(instance, exit.value)
     }
     return yield* into(
       Effect.raceAll(options.effects),

@@ -211,3 +211,13 @@ Full documentation is at [the package docs](https://github.com/smithersai/smithe
 MIT. See `LICENSE`.
 
 `Action.InfraInterrupt` is an explicit adapter marker for `interruptRetryPolicy`; ordinary fiber interruption is never converted to it.
+
+Payload identity preserves each planned reference's slot in the distinct input
+list, including repeated references, without hashing structural node addresses.
+Fatal graph diagnostics refuse public node drafts. Placement diagnostics do not
+invoke accessors on non-plain values. Durable race replay uses the same recorded
+interruption classification as deferred awaiting. Queue completion retry logs
+exclude persistence defects and handler exits; worker recovery logs only whether
+interruption occurred.
+Worker spans withhold successful result values and failure text, while durable
+storage and callers retain the original handler exit.

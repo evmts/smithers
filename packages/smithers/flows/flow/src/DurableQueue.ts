@@ -30,6 +30,7 @@ import * as DurableDeferred from "./DurableDeferred.ts"
 import * as Fault from "./Fault.ts"
 import * as Flow from "./Flow/index.ts"
 import { annotateWaiting, FlowInstance, FlowRuntime } from "./FlowRuntime/index.ts"
+import * as SpanFailure from "./internal/SpanFailure.ts"
 import * as Interpreter from "./Interpreter.ts"
 import * as RetryPolicy from "./RetryPolicy.ts"
 
@@ -384,9 +385,10 @@ const itemExecutionOf = <Payload extends Schema.Top, Success extends Schema.Top,
   const cached = itemExecutions.get(self)
   if (cached !== undefined) return cached
   const token = DurableDeferred.Token
+  const payload: Schema.Top = self.payloadSchema
   const recorded = Schema.Exit(self.deferred.successSchema, self.deferred.errorSchema, Schema.Defect())
   const handle = Action.make(`DurableQueue/${self.name}/handle`, {
-    payload: { token, payload: self.payloadSchema as Schema.Top },
+    payload: { token, payload },
     success: recorded,
     // The handler changes the world; until its exit is recorded a crash runs it again, as before, so its repeat
     // must be safe (the queue's documented at-least-once). Once recorded, it is never run again.
@@ -402,7 +404,7 @@ const itemExecutionOf = <Payload extends Schema.Top, Success extends Schema.Top,
     retryPolicy: completionRetryPolicy
   })
   const flow = Flow.make(`DurableQueue/${self.name}/item`, {
-    payload: { token, payload: self.payloadSchema as Schema.Top },
+    payload: { token, payload },
     // The completion is retried without a limit, so this error is never the execution's in practice.
     error: CompletionUnavailable,
     body: Node.capture(
@@ -420,132 +422,149 @@ const itemExecutionOf = <Payload extends Schema.Top, Success extends Schema.Top,
   return execution
 }
 
-const makeWorkerEffect = Effect.fnUntraced(function*<
-  Payload extends Schema.Top,
-  Success extends Schema.Top,
-  Error extends Schema.Top,
-  R
->(
-  self: DurableQueue<Payload, Success, Error>,
-  f: (payload: Payload["Type"]) => Effect.Effect<Success["Type"], Error["Type"], R>,
-  concurrency: number
-) {
-  const queue = yield* PersistedQueue.make({
-    name: `DurableQueue/${self.name}`,
-    schema: getQueueSchema(self.payloadSchema),
-    maxAttempts: neverDrop
-  })
-  const engine = yield* FlowRuntime
-  const execution = itemExecutionOf(self)
-  // The item flow and its two steps, registered for as long as this worker runs.
-  yield* Layer.build(
-    Interpreter.layerWithImplementations(
-      execution.flow,
-      Layer.mergeAll(
-        execution.handle.toLayer(({ payload }) =>
-          Effect.gen(function*() {
-            const exit = yield* Effect.exit(f(payload as Payload["Type"]))
-            if (Exit.isSuccess(exit)) return exit
-            const [interrupts, reasons] = Arr.partition(
-              exit.cause.reasons,
-              Filter.fromPredicate(Cause.isInterruptReason)
-            )
-            // Match DurableDeferred.into: interruption alone is not a durable outcome. The step stops unrecorded,
-            // and the item's next delivery runs the handler again.
-            if (interrupts.length === exit.cause.reasons.length) {
-              return yield* Effect.failCause(Cause.fromReasons<never>(interrupts))
-            }
-            return interrupts.length > 0 ? Exit.failCause(Cause.fromReasons(reasons)) : exit
-          })
-        ),
-        execution.complete.toLayer(({ exit, token }) =>
-          Effect.gen(function*() {
-            // The item's execution is named by the deferred it completes (see the take below).
-            const instance = yield* FlowInstance
-            const deferred = DurableDeferred.make(instance.executionId, {
-              success: self.deferred.successSchema,
-              error: self.deferred.errorSchema
+const makeWorkerEffect = Effect.fnUntraced(
+  function*<
+    Payload extends Schema.Top,
+    Success extends Schema.Top,
+    Error extends Schema.Top,
+    R
+  >(
+    self: DurableQueue<Payload, Success, Error>,
+    f: (payload: Payload["Type"]) => Effect.Effect<Success["Type"], Error["Type"], R>,
+    concurrency: number
+  ) {
+    const queue = yield* PersistedQueue.make({
+      name: `DurableQueue/${self.name}`,
+      schema: getQueueSchema(self.payloadSchema),
+      maxAttempts: neverDrop
+    })
+    const engine = yield* FlowRuntime
+    const execution = itemExecutionOf(self)
+    // The item flow and its two steps, registered for as long as this worker runs.
+    yield* Layer.build(
+      Interpreter.layerWithImplementations(
+        execution.flow,
+        Layer.mergeAll(
+          execution.handle.toLayer(({ payload }) =>
+            Effect.gen(function*() {
+              const exit = yield* Effect.exit(f(payload as Payload["Type"]))
+              if (Exit.isSuccess(exit)) return exit
+              const [interrupts, reasons] = Arr.partition(
+                exit.cause.reasons,
+                Filter.fromPredicate(Cause.isInterruptReason)
+              )
+              // Match DurableDeferred.into: interruption alone is not a durable outcome. The step stops unrecorded,
+              // and the item's next delivery runs the handler again.
+              if (interrupts.length === exit.cause.reasons.length) {
+                return yield* Effect.failCause(Cause.fromReasons<never>(interrupts))
+              }
+              return interrupts.length > 0 ? Exit.failCause(Cause.fromReasons(reasons)) : exit
             })
-            yield* DurableDeferred.done(deferred, { token, exit: exit as Exit.Exit<Success["Type"], Error["Type"]> })
-          }).pipe(
-            // Recorded through the runtime this worker serves, the one the caller's deferred lives in.
-            Effect.provideService(FlowRuntime, engine),
-            // The worker checked this token against the execution's name before it started it.
-            Effect.orDie,
-            Effect.catchDefect((defect) =>
-              Effect.logWarning("DurableQueue could not record a handler result; the completion is retried", defect)
-                .pipe(Effect.andThen(Effect.fail(new CompletionUnavailable({ queue: self.name }))))
+          ),
+          execution.complete.toLayer(({ exit, token }) =>
+            Effect.gen(function*() {
+              // The item's execution is named by the deferred it completes (see the take below).
+              const instance = yield* FlowInstance
+              const deferred = DurableDeferred.make(instance.executionId, {
+                success: self.deferred.successSchema,
+                error: self.deferred.errorSchema
+              })
+              yield* DurableDeferred.done(deferred, { token, exit: exit as Exit.Exit<Success["Type"], Error["Type"]> })
+            }).pipe(
+              // Recorded through the runtime this worker serves, the one the caller's deferred lives in.
+              Effect.provideService(FlowRuntime, engine),
+              // The worker checked this token against the execution's name before it started it.
+              Effect.orDie,
+              Effect.catchDefect(() =>
+                Effect.logWarning("DurableQueue could not record a handler result; the completion is retried")
+                  .pipe(Effect.andThen(Effect.fail(new CompletionUnavailable({ queue: self.name }))))
+              )
             )
           )
         )
       )
     )
-  )
 
-  const worker = queue.take((item_, metadata) => {
-    const item = item_ as {
-      readonly token: DurableDeferred.Token
-      readonly payload: Payload["Type"]
-      readonly traceId: string
-      readonly spanId: string
-      readonly sampled: boolean
-    }
-    return Effect.withSpan(
-      Effect.gen(function*() {
-        // Parse before running anything. A malformed completion address cannot strand a handler result.
-        const parsed = yield* DurableDeferred.TokenParsed.parse(item.token)
-        // `process` offers each item under its key and addresses the deferred `<queue deferred>/<key>`. Anything
-        // else in this queue names a wait point the queue does not own (another queue's item, a WaitFor gate, a
-        // human task), so completing it here would settle a foreign wait under this queue's success schema.
-        const expected = `${self.deferred.name}/${metadata.id}`
-        if (parsed.deferredName !== expected) {
-          return yield* new DurableDeferred.TokenInvalid({
-            code: "deferred_mismatch",
-            message: `The item "${metadata.id}" addresses the deferred "${
-              deferredNameExcerpt(parsed.deferredName)
-            }", not "${deferredNameExcerpt(expected)}".`
-          })
-        }
-        // The item runs as a durable execution named by its deferred: a redelivery attaches to the same
-        // execution, a recorded handler result is replayed rather than run again, and the completion is retried
-        // under the engine's policy until it is recorded.
-        yield* engine.execute(execution.flow, {
-          executionId: expected,
-          payload: { token: item.token, payload: item.payload }
-        })
-      }).pipe(
-        Effect.catchTag("@smthrs/flow/DurableDeferred/TokenInvalid", (error) =>
-          Effect.logError(
-            `DurableQueue "${self.name}" could not complete an item because its token was invalid. ${error.message}`
-          ))
-      ),
-      `DurableQueue/${self.name}/worker`,
-      {
-        captureStackTrace: false,
-        parent: externalParent(item)
+    const worker = queue.take((item_, metadata) => {
+      const item = item_ as {
+        readonly token: DurableDeferred.Token
+        readonly payload: Payload["Type"]
+        readonly traceId: string
+        readonly spanId: string
+        readonly sampled: boolean
       }
-    )
-  }).pipe(
-    // A take whose store is unavailable would otherwise consume a core in a tight loop. The item itself is
-    // redelivered by the persisted queue's own attempt-counted schedule.
-    Effect.catchCause((cause) =>
-      Effect.logWarning(cause).pipe(
-        Effect.andThen(Effect.sleep(500))
+      return Effect.withSpan(
+        Effect.gen(function*() {
+          // Parse before running anything. A malformed completion address cannot strand a handler result.
+          const parsed = yield* DurableDeferred.TokenParsed.parse(item.token)
+          // `process` offers each item under its key and addresses the deferred `<queue deferred>/<key>`. Anything
+          // else in this queue names a wait point the queue does not own (another queue's item, a WaitFor gate, a
+          // human task), so completing it here would settle a foreign wait under this queue's success schema.
+          const expected = `${self.deferred.name}/${metadata.id}`
+          if (parsed.deferredName !== expected) {
+            return yield* new DurableDeferred.TokenInvalid({
+              code: "deferred_mismatch",
+              message: `The item "${metadata.id}" addresses the deferred "${
+                deferredNameExcerpt(parsed.deferredName)
+              }", not "${deferredNameExcerpt(expected)}".`
+            })
+          }
+          // The item runs as a durable execution named by its deferred: a redelivery attaches to the same
+          // execution, a recorded handler result is replayed rather than run again, and the completion is retried
+          // under the engine's policy until it is recorded.
+          yield* engine.execute(execution.flow, {
+            executionId: expected,
+            payload: { token: item.token, payload: item.payload }
+          })
+        }).pipe(
+          Effect.catchTag("@smthrs/flow/DurableDeferred/TokenInvalid", (error) =>
+            Effect.logError(
+              `DurableQueue "${self.name}" could not complete an item because its token was invalid. ${error.message}`
+            ))
+        ),
+        `DurableQueue/${self.name}/worker`,
+        {
+          captureStackTrace: false,
+          parent: externalParent(item)
+        }
       )
-    ),
-    Effect.forever,
-    Effect.annotateLogs({
-      package: "@smthrs/flow",
-      module: "DurableQueue",
-      fiber: "worker",
-      queueName: self.name
-    })
-  )
+    }).pipe(
+      // A take whose store is unavailable would otherwise consume a core in a tight loop. The item itself is
+      // redelivered by the persisted queue's own attempt-counted schedule.
+      Effect.catchCause((cause) =>
+        Effect.logWarning("DurableQueue worker failed; retrying").pipe(
+          Effect.annotateLogs({ interrupted: Cause.hasInterrupts(cause) }),
+          Effect.andThen(Effect.sleep(500))
+        )
+      ),
+      Effect.forever,
+      Effect.annotateLogs({
+        package: "@smthrs/flow",
+        module: "DurableQueue",
+        fiber: "worker",
+        queueName: self.name
+      })
+    )
 
-  return yield* Effect.replicateEffect(worker, concurrency, { concurrency, discard: true }).pipe(
-    Effect.andThen(Effect.never)
-  )
-}, Effect.scoped)
+    return yield* Effect.replicateEffect(worker, concurrency, { concurrency, discard: true }).pipe(
+      Effect.andThen(Effect.never)
+    )
+  },
+  Effect.scoped,
+  (effect) =>
+    Effect.updateService(effect, Tracer.Tracer, (inner) =>
+      Tracer.make({
+        ...inner,
+        span(options) {
+          const span = inner.span(options)
+          const end = span.end.bind(span)
+          // A successful handle step contains the handler's Exit, including its private failure.
+          // Keep that value in durable storage, never in a span's status.
+          span.end = (time, result) => end(time, Exit.isSuccess(result) ? Exit.void : SpanFailure.exit(result))
+          return span
+        }
+      }))
+)
 
 /**
  * Create a worker effect that processes items from the durable queue.
@@ -610,7 +629,7 @@ export const makeWorker: <
         )
       )
     }
-    return makeWorkerEffect(self, f, concurrency) as any
+    return makeWorkerEffect(self, f, concurrency)
   })
 
 /**
