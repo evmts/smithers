@@ -1,6 +1,6 @@
 import { revisionOf } from "./identity"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Effect, Schema, Stream } from "effect"
+import { Deferred, Effect, Metric, Schema, Scope, Stream } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { Message } from "../chat/schema"
 
@@ -9,6 +9,7 @@ export { revisionOf } from "./identity"
 export const Summary = Schema.Struct({ id: Schema.String, revision: Schema.String, summary: Schema.String })
 export type Summary = typeof Summary.Type
 export const summaryQuery = (rows: Collection.Collection<Summary, string>) => LiveQuery.make(q => q.from({ summary: rows.tanstack }))
+export const summaryRemovals = Metric.counter("smithers_timeline_summary_removals")
 export const makeSummaries = Effect.gen(function* () {
   return yield* Collection.persisted({ id: "timeline-summaries", schema: Summary, getKey: row => row.id, schemaVersion: 1 })
 })
@@ -41,28 +42,52 @@ export const followSummaries = (
   dispatch: FlowDispatch["Service"],
 ) => Effect.gen(function* () {
   yield* summaries.restored.pipe(Effect.ignore)
-  yield* window.changes({ initial: true }).pipe(
+  // Window removals include eviction; only the source collection establishes deletion.
+  yield* messages.changes().pipe(
     Stream.flattenIterable,
-    Stream.filter(change => change.type !== "delete" && (change.value.role === "user" || change.value.role === "assistant") && change.value.status === "done" && change.value.text.trim() !== ""),
-    // Each entry answers whether to go on: not once the summary role says it has no model.
-    Stream.runForEachWhile(change => Effect.gen(function* () {
-      const row = change.value
-      const revision = revisionOf(row)
-      const cached = yield* summaries.get(row.id)
-      if (cached._tag === "Some" && cached.value.revision === revision) return true
-      const role = row.role as "user" | "assistant"
-      const result = yield* dispatch.dispatch("timeline/summarize", { id: row.id, revision, role, text: row.text.slice(0, 8000) }, { door: "sync", executionId: `timeline-${revision}` })
-      if (result._tag !== "Done") {
-        if (result.error.code !== "unconfigured") return true
-        yield* Effect.logWarning("timeline.summary.unconfigured")
-        return false
-      }
-      const current = yield* messages.get(row.id)
-      if (current._tag === "None" || revisionOf(current.value) !== revision) return true
-      const value = { id: row.id, revision, summary: result.value.summary }
-      if ((yield* summaries.get(row.id))._tag === "None") yield* summaries.insert(value)
-      else yield* summaries.update(row.id, draft => { Object.assign(draft, value) })
-      return true
-    }).pipe(Effect.catch(() => Effect.as(Effect.logWarning("timeline.summary.unavailable"), true)))),
+    Stream.filter(change => change.type === "delete"),
+    Stream.runForEach(change => Effect.gen(function* () {
+      if ((yield* summaries.get(change.value.id))._tag === "None") return
+      yield* (yield* summaries.delete(change.value.id)).persisted
+      yield* Metric.update(summaryRemovals, 1)
+      yield* Effect.logInfo("timeline.summary.deleted")
+    }).pipe(Effect.withSpan("timeline.summary.delete"))),
+    Effect.forkIn(yield* Scope.Scope, { startImmediately: true }),
   )
+  yield* Effect.scoped(Effect.gen(function* () {
+    const stopped = yield* Deferred.make<void>()
+    yield* window.changes({ initial: true }).pipe(
+      Stream.flattenIterable,
+      Stream.filter(change => change.type !== "delete" && (change.value.role === "user" || change.value.role === "assistant") && change.value.status === "done" && change.value.text.trim() !== ""),
+      Stream.interruptWhen(Deferred.await(stopped)),
+      Stream.runForEachWhile(change => Effect.gen(function* () {
+        if (yield* Deferred.isDone(stopped)) return false
+        yield* Effect.gen(function* () {
+          const row = change.value
+          const revision = revisionOf(row)
+          const cached = yield* summaries.get(row.id)
+          if (cached._tag === "Some" && cached.value.revision === revision) return
+          const role = row.role as "user" | "assistant"
+          const result = yield* dispatch.dispatch("timeline/summarize", { id: row.id, revision, role, text: row.text.slice(0, 8000) }, { door: "sync", executionId: `timeline-${revision}` })
+          if (result._tag !== "Done") {
+            if (result.error.code !== "unconfigured") return
+            yield* Effect.logWarning("timeline.summary.unconfigured")
+            yield* Deferred.succeed(stopped, undefined)
+            return
+          }
+          const current = yield* messages.get(row.id)
+          if (current._tag === "None" || revisionOf(current.value) !== revision) return
+          const value = { id: row.id, revision, summary: result.value.summary }
+          if ((yield* summaries.get(row.id))._tag === "None") yield* summaries.insert(value)
+          else yield* summaries.update(row.id, draft => { Object.assign(draft, value) })
+          return
+        }).pipe(
+          Effect.catch(() => Effect.logWarning("timeline.summary.unavailable")),
+          Effect.catchDefect(() => Effect.logWarning("timeline.summary.defect")),
+          Effect.forkScoped({ startImmediately: true }),
+        )
+        return !(yield* Deferred.isDone(stopped))
+      })),
+    )
+  }))
 })

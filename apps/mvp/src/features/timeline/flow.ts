@@ -9,13 +9,9 @@ export const SummaryPayload = {
   text: Schema.String.check(Schema.isMaxLength(8000)),
 }
 export type SummaryPayload = Schema.Struct<typeof SummaryPayload>["Type"]
-/**
- * Why no summary: the model couldn't give one (`unavailable`), gave one the rail can't show (`invalid`), or the
- * deployment has no summary model (`unconfigured`: the endpoint's `no_route`), so no entry can have one until an Admin
- * sets the role.
- */
+/** A safe reason: outage, rejected output, provider policy, or an unconfigured summary role. */
 export class SummaryFailed extends Schema.TaggedError<SummaryFailed>()("timeline/SummaryFailed", {
-  code: Schema.Literals(["unavailable", "invalid", "unconfigured"]),
+  code: Schema.Literals(["unavailable", "invalid", "unconfigured", "refused"]),
 }) {}
 export const SummaryValue = Schema.Struct({ summary: Schema.String })
 export const SummarizeEntry = Action.make("timeline/SummarizeEntry", {

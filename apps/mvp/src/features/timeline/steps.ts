@@ -19,11 +19,17 @@ export const cleanSummary = (value: string): string | undefined => {
   const words = clean.split(/\s+/)
   return clean.length <= 96 && words.length >= 3 && words.length <= 8 && !/[\n\r<>`]/.test(clean) ? clean : undefined
 }
-/** The failure a model error is: `unconfigured` when the summary role has no model (`no_route`), else `unavailable`. */
-const failure = (error: unknown) =>
-  new SummaryFailed({ code: error instanceof ModelError.ModelError && error.code === "no_route" ? "unconfigured" : "unavailable" })
+/** Preserve configuration and policy refusals without exposing provider messages. */
+const failure = (error: unknown) => {
+  if (error instanceof ModelError.ModelError) {
+    if (error.code === "no_route") return new SummaryFailed({ code: "unconfigured" })
+    if (error.code === "content_policy") return new SummaryFailed({ code: "refused" })
+  }
+  return new SummaryFailed({ code: "unavailable" })
+}
 export const summarize = (payload: SummaryPayload) => Effect.gen(function* () {
   const seat = yield* SummarySeat
+  yield* Metric.update(summaryCalls, 1)
   const result = yield* ModelStep.run({
     name: "timeline/summary/model", ...seat,
     request: ModelRequest.ModelRequest.make({
@@ -37,7 +43,6 @@ export const summarize = (payload: SummaryPayload) => Effect.gen(function* () {
   const text = message.content.filter(part => part.type === "text").map(part => part.text).join("")
   const summary = cleanSummary(text)
   if (summary === undefined) return yield* new SummaryFailed({ code: "invalid" })
-  yield* Metric.update(summaryCalls, 1)
   yield* Effect.logInfo("timeline.summary").pipe(Effect.annotateLogs({ outcome: "ready", replayed: result.replayed }))
   return { summary }
 }).pipe(Effect.withSpan("timeline.summary", { attributes: { role: "summary" } }))

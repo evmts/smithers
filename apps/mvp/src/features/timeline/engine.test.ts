@@ -1,11 +1,11 @@
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Model, ModelError, ModelEvent } from "@smthrs/model"
-import { Cause, Context, Effect, Exit, Layer, Logger, Scope, Stream } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { build } from "../../../worker/test/flowHost"
 import { Summarize, SummaryFailed } from "./flow"
-import { registration, SummarySeat } from "./steps"
+import { registration, summaryCalls, SummarySeat } from "./steps"
 
 const scopes: Scope.Closeable[] = []
 afterEach(async () => { for (const scope of scopes.splice(0)) await Effect.runPromise(Scope.close(scope, Exit.void)) })
@@ -41,24 +41,28 @@ test("sealed summary model step replays without a second provider call and logs 
 test.each(["two words", "one <two> three"])("invalid model output is a safe typed failure: %s", async text => {
   const model = Model.make({ stream: () => Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "text-delta", id: "s", text }, { type: "settle", stopReason: "stop" }]) })
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
+  const registry: Metric.MetricRegistry = new Map()
   const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
     Layer.provide(SummarySeat.layer("https://summary.test", model)), Layer.provideMerge(Action.layerImplementations),
-  ))))
+  ))).pipe(Effect.provideService(Metric.MetricRegistry, registry)))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
-  const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "invalid-summary", payload })).pipe(Effect.provide(context)))
+  const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "invalid-summary", payload })).pipe(Effect.provide(context), Effect.provideService(Metric.MetricRegistry, registry)))
+  expect(Effect.runSync(Metric.value(summaryCalls).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count).toBe(1)
   expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "invalid" }))
 })
 
 
-test("provider refusal stays content-safe and does not invent a summary", async () => {
-  const model = Model.make({ stream: () => Stream.fail(new ModelError.ModelError({ code: "content_policy", message: "private provider detail" })) })
+test.each([["content_policy", "refused"], ["authentication", "unavailable"]] as const)("provider %s stays content-safe as %s", async (code, expected) => {
+  const model = Model.make({ stream: () => Stream.fail(new ModelError.ModelError({ code, message: "private provider detail" })) })
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
+  const registry: Metric.MetricRegistry = new Map()
   const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
     Layer.provide(SummarySeat.layer("https://summary.test", model)), Layer.provideMerge(Action.layerImplementations),
-  ))))
+  ))).pipe(Effect.provideService(Metric.MetricRegistry, registry)))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
-  const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "refused-summary", payload })).pipe(Effect.provide(context)))
-  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
+  const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "refused-summary", payload })).pipe(Effect.provide(context), Effect.provideService(Metric.MetricRegistry, registry)))
+  expect(Effect.runSync(Metric.value(summaryCalls).pipe(Effect.provideService(Metric.MetricRegistry, registry))).count).toBe(1)
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toMatchObject({ _tag: "timeline/SummaryFailed", code: expected })
 })
 
 
@@ -73,7 +77,7 @@ test("summary seat constructs the real proxy and preparation failures become saf
   ))))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
   const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "route-refusal", payload })).pipe(Effect.provide(context)))
-  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toMatchObject({ _tag: "timeline/SummaryFailed", code: "refused" })
 })
 
 test.each([

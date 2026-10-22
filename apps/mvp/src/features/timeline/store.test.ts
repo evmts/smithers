@@ -2,14 +2,16 @@ import { FlowRegistry } from "../../flows/registry"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Action } from "@smthrs/flow"
 import { Model, type ModelEvent } from "@smthrs/model"
-import { Context, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Metric, Scope, Stream } from "effect"
 import { expect, test, vi } from "vitest"
 import { build } from "../../../worker/test/flowHost"
 import { ClientEngine, FlowDispatch } from "../../flows/dispatch"
 import { Message } from "../chat/schema"
+import { deviceRegistry } from "../../device/registry"
+import { deviceFrom, type Fixture, persistenceOn, prepare } from "../../test/deviceFixture"
 import { Summarize } from "./flow"
 import { registration, SummarySeat } from "./steps"
-import { followSummaries, makeSummaries, revisionOf, summaryQuery } from "./store"
+import { followSummaries, makeSummaries, revisionOf, summaryQuery, summaryRemovals } from "./store"
 
 const row = (id: string, text: string): Message => ({
   id, text, role: "user", status: "done", questionId: null, failure: null, modelId: null, stopReason: null,
@@ -52,6 +54,7 @@ test("real durable summary results project once, refresh changed content and ski
     expect((await run(summaries.get("stream")))._tag).toBe("None")
     expect((await run(summaries.get("empty")))._tag).toBe("None")
     await run(messages.delete("a"))
+    await vi.waitFor(async () => expect((await run(summaries.get("a")))._tag).toBe("None"))
   } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
 })
 
@@ -98,6 +101,9 @@ test("stops once the summary role answers it has no model: no later entry is dis
     await run(messages.insert([row("a", "Inspect retries"), row("b", "Inspect failures")]))
     const followed = await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch), scope, { startImmediately: true }))
     await run(Fiber.join(followed))
+    await run(summaries.insert({ id: "a", revision: revisionOf(row("a", "Inspect retries")), summary: "Inspect both retry attempts" }))
+    await run(messages.delete("a"))
+    await vi.waitFor(async () => expect((await run(summaries.get("a")))._tag).toBe("None"))
     await run(messages.insert(row("c", "Inspect deploys")))
     expect(dispatched).toEqual(["a"])
     expect((await run(summaries.get("a")))._tag).toBe("None")
@@ -122,4 +128,56 @@ test("summarizes the window's asks and answers, never a view the window shows am
     await run(followSummaries({ changes: () => Stream.make([shown("view", "view"), shown("ask", "user"), shown("answer", "assistant")]) }, messages, summaries, dispatch))
     expect(dispatched).toEqual(["ask", "answer"])
   } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+})
+
+// Faulty dispatch services exercise isolation without replacing collection persistence.
+test.each(["stall", "defect"] as const)("a dispatch %s cannot block later summaries", async fault => {
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Persistence.memory)))
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: `isolation-${fault}`, schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    const entered = Effect.runSync(Deferred.make<void>())
+    const dispatch = {
+      dispatch: (_name: string, payload: { readonly id: string }) => payload.id === "a"
+        ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(fault === "stall" ? Effect.never : Effect.die("private defect")))
+        : Effect.succeed({ _tag: "Done", value: { summary: "Inspect both retry attempts" } }),
+    } as unknown as FlowDispatch["Service"]
+    await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch), scope, { startImmediately: true }))
+    await run(messages.insert(row("a", "Inspect retries")))
+    await run(Deferred.await(entered))
+    await run(messages.insert(row("b", "Inspect failures")))
+    await vi.waitFor(async () => expect((await run(summaries.get("b")))._tag).toBe("Some"))
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+})
+
+test("deleting a message outside the shown window removes its persisted summary", async () => {
+  const { path } = await deviceFrom({ build: "empty", collections: {}, outbox: {} } as Fixture)
+  await prepare(path, deviceRegistry)
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(persistenceOn(path, deviceRegistry))))
+    const registry: Metric.MetricRegistry = new Map()
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context).pipe(Effect.provideService(Metric.MetricRegistry, registry))) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: "delete-messages", schema: Message, getKey: message => message.id }))
+    const window = await run(Collection.local<Message, Collection.Key>({ id: "delete-window", schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    await run(messages.insert(row("a", "Inspect retries")))
+    await run(Effect.flatMap(summaries.insert({ id: "a", revision: revisionOf(row("a", "Inspect retries")), summary: "Inspect both retry attempts" }), transaction => transaction.persisted))
+    const dispatch = { dispatch: () => Effect.die("No shown entries should dispatch") } as unknown as FlowDispatch["Service"]
+    await run(Effect.forkIn(followSummaries(window, messages, summaries, dispatch), scope, { startImmediately: true }))
+    await run(window.insert(row("a", "Inspect retries")))
+    await run(window.delete("a"))
+    expect((await run(summaries.get("a")))._tag).toBe("Some")
+    await run(messages.delete("a"))
+    await vi.waitFor(async () => expect((await run(summaries.get("a")))._tag).toBe("None"))
+    await vi.waitFor(async () => expect((await run(Metric.value(summaryRemovals))).count).toBe(1))
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+  const restored = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const summaries = yield* makeSummaries
+    yield* summaries.restored
+    return yield* summaries.get("a")
+  })).pipe(Effect.provide(persistenceOn(path, deviceRegistry))))
+  expect(restored._tag).toBe("None")
 })
