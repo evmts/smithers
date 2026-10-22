@@ -18,6 +18,7 @@ import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubHost from "./github/Host.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
+import * as Placement from "./Placement.ts"
 import * as RepoConfig from "./RepoConfig.ts"
 import * as SignIn from "./SignIn.ts"
 import { keepExecutionId } from "../src/features/sandbox/contract.ts"
@@ -88,8 +89,12 @@ export const live = <E, R>(
   FlowExecution.make(
     Effect.gen(function* () {
       const state = yield* Cloudflare.DurableObjectState
-      // This class's own namespace: the router reaches any other execution's object through it.
-      const executions = (yield* Cloudflare.DurableObject) as Cloudflare.DurableObject<FlowExecutionShape>
+      // This class's own namespace: the router reaches any other execution's object through it, creating each one where
+      // the deployment places them (`FLOW_EXECUTION_LOCATION`, worker/Placement.ts).
+      const executions = Placement.placed(
+        (yield* Cloudflare.DurableObject) as Cloudflare.DurableObject<FlowExecutionShape>,
+        yield* Placement.location.pipe(Effect.orDie),
+      )
       const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
       const database = Layer.unwrap(
         Effect.map(

@@ -25,6 +25,7 @@ import * as Chat from "./Chat.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Executions from "./Executions.ts"
+import * as Placement from "./Placement.ts"
 import * as Flows from "./Flows.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubApi from "./github/Api.ts"
@@ -160,8 +161,9 @@ export const program = (options: ProgramOptions = {}) =>
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
     const webCache = EdgeCache.layer({ name: "web" }).pipe(Layer.orDie)
     const logs = Logger.layerStructuredJson()
-    // ChatApi hosts the remote flow executions' Durable Object (worker/Executions.ts, docs/features/remote-flows.md).
-    const executions = yield* Executions.FlowExecution
+    // ChatApi hosts the remote flow executions' Durable Object (worker/Executions.ts, docs/features/remote-flows.md), and
+    // creates each one where the deployment places them (`FLOW_EXECUTION_LOCATION`, worker/Placement.ts).
+    const executions = Placement.placed(yield* Executions.FlowExecution, yield* Placement.location.pipe(Effect.orDie))
     // The edge throttle on the open routes (worker/Throttle.ts): requests per network per minute, counted per Cloudflare
     // location. Neither number comes from a load test: a busy tab sends about 70 shape requests and 150 telemetry
     // exports a minute, so each lets about 20 busy tabs share a network (docs/features/chat.md#throttling).
