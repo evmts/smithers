@@ -232,7 +232,8 @@ describe("a link's warm", () => {
   test("of a repository still cloning ends at once with no read: the page says Cloning", async () => {
     const h = await repoHarness(server)
     h.scripted.publish("octocat", "Spoon-Knife")
-    h.scripted.syncPolls = 3
+    // The clone stays Cloning until the tab has seen it: its first poll waits for the test.
+    const release = h.scripted.hold("listCommits")
     const tab = await open(h)
     // The page is open while the clone runs, so the tab syncs the repositories.
     tab.repo.actions.openRoute("tree", SPOON, {})
@@ -241,6 +242,7 @@ describe("a link's warm", () => {
     const before = reads(h)
     await tab.repo.actions.warmRoute("tree", SPOON, {})
     expect(reads(h)).toEqual(before)
+    release()
     await h.settled()
   })
 })

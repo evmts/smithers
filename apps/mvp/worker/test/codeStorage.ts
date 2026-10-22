@@ -90,7 +90,7 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
   const github = new Map<string, GitHubRepository>()
   const mirrors = new Map<string, Mirror>()
   const calls: Array<string> = []
-  const faults = new Map<string, Array<CodeStorage.CodeStorageError | "never">>()
+  const faults = new Map<string, Array<CodeStorage.CodeStorageError | "never" | Promise<void>>>()
   const githubFaults = new Map<string, Array<GitRemote.GitRemoteError | UpstreamUnavailable | Sized>>()
   const state = { syncPolls: options.syncPolls ?? 1 }
 
@@ -101,6 +101,8 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
       ? Effect.void
       : next === "never"
       ? Effect.never
+      : next instanceof Promise
+      ? Effect.promise(() => next)
       : Effect.fail(next)
   }
   const error = (operation: Operation, code: string, status: number, extra: { size?: number; retryAfterMillis?: number } = {}) =>
@@ -287,6 +289,16 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
     /** The next call of `operation` fails with `failure` (or never answers, for `"never"`), once per call queued. */
     fail: (operation: Operation, ...failures: ReadonlyArray<CodeStorage.CodeStorageError | "never">) =>
       void faults.set(operation, [...(faults.get(operation) ?? []), ...failures]),
+    /**
+     * The next call of `operation` waits until `release` is called, then answers as it would have: a state that
+     * otherwise lasts only a few milliseconds, such as a clone's Cloning, stays until the test has seen it.
+     */
+    hold: (operation: Operation) => {
+      let release = () => {}
+      const released = new Promise<void>((resolve) => (release = resolve))
+      faults.set(operation, [...(faults.get(operation) ?? []), released])
+      return release
+    },
     /** The next GitHub `head` or `size` call answers `answer` instead. */
     failGitHub: (operation: "head" | "size", ...answers: ReadonlyArray<GitRemote.GitRemoteError | UpstreamUnavailable | Sized>) =>
       void githubFaults.set(operation, [...(githubFaults.get(operation) ?? []), ...answers]),
