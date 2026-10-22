@@ -1,5 +1,5 @@
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, FiberHandle, Layer, Option, type Schema } from "effect"
+import { Context, Effect, FiberHandle, Layer, Option, Semaphore, type Schema } from "effect"
 import { IssuesStore } from "../issues/store"
 import { Item, SyncRow, syncKey } from "../issues/schema"
 import { Run } from "../status/schema"
@@ -90,6 +90,10 @@ const make = Effect.gen(function* () {
   )
   return {
     homes,
+    /** Serializes declaration readers until the cached row is available. */
+    homeReads: new Map<string, Semaphore.Semaphore>(),
+    /** Tokens keep action completions scoped to the page that started them. */
+    actions: new Map<string, symbol>(),
     curated,
     items,
     syncs,

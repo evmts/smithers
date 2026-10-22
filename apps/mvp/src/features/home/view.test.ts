@@ -259,7 +259,7 @@ describe("issuesOf", () => {
       },
       pulls: {
         total: 1,
-        entries: [{ key: "e", label: "#5", title: "A fix", href: "/maya/tinyhttp/issues/5", at: Date.parse("2026-10-20T10:00:00+00:00") }],
+        entries: [{ key: "e", label: "#5", title: "A fix", href: "/maya/tinyhttp/pull/5", at: Date.parse("2026-10-20T10:00:00+00:00") }],
       },
     })
   })

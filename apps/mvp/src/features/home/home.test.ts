@@ -3,9 +3,11 @@ import { fixture } from "../../../worker/test/codeStorage"
 import { testFile } from "../../../worker/test/harness"
 import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/repos"
 import { openTab, type Tab } from "../../test/repoDevice"
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { CuratedFile } from "../../../worker/home/Curated.ts"
+import { RepoClient } from "../repo/api"
+import { RepoStore } from "../repo/store"
 import { HomeClient, HomeRefused } from "./api"
 import { HOME_FILE, HOME_INVALID, HOME_UNREADABLE } from "./contract"
 import { answers, resolves } from "./metrics"
@@ -318,4 +320,55 @@ describe("Smithers' curated home", () => {
     // This tab has no TODOs store: the block's rows come from nowhere, and nothing is opened.
     expect(page(tab).current.stack).toBeNull()
   })
+})
+
+
+test("an interrupted Markdown read can be read on the next open", async () => {
+  const h = await repoHarness(server)
+  await seeded(h, { [HOME_FILE]: JSON.stringify({ blocks: [{ type: "markdown", path: "intro.md" }] }), "intro.md": "Intro" })
+  const entered = Deferred.makeUnsafe<void>()
+  let stalled = true
+  const faulty = Layer.effect(RepoClient, Effect.map(RepoClient, (real) => RepoClient.of({ ...real,
+    blob: (owner, name, sha, path) => path === "intro.md" && stalled
+      ? Effect.andThen(Deferred.succeed(entered, undefined), Effect.never)
+      : real.blob(owner, name, sha, path),
+  }))).pipe(Layer.provide(RepoClient.layer({ origin: h.origin, within: "10 seconds" })), Layer.provide(fetchLayer(h)))
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, client: faulty })
+  tabs.push(tab)
+  tab.home.actions.open("maya", "tinyhttp")
+  await Effect.runPromise(Deferred.await(entered).pipe(Effect.timeout("10 seconds")))
+  tab.home.actions.open("invalid", "x y")
+  stalled = false
+  tab.home.actions.open("maya", "tinyhttp")
+  await waitFor(() => expect(files(tab)["intro.md"]?.state).toBe("text"))
+  expect(tab.lines("home.file.load").map((line) => line.annotations.outcome)).toContain("interrupted")
+})
+
+test("concurrent warm and open share a declaration read", async () => {
+  const h = await repoHarness(server)
+  await seeded(h, { [HOME_FILE]: JSON.stringify({ blocks: [{ type: "text", text: "Hi" }] }) })
+  const entered = Deferred.makeUnsafe<void>()
+  const release = Deferred.makeUnsafe<void>()
+  let reads = 0
+  const faulty = Layer.effect(RepoClient, Effect.map(RepoClient, (real) => RepoClient.of({ ...real,
+    blob: (owner, name, sha, path) => Effect.gen(function* () {
+      if (path === HOME_FILE) {
+        reads++
+        yield* Deferred.succeed(entered, undefined)
+        yield* Deferred.await(release)
+      }
+      return yield* real.blob(owner, name, sha, path)
+    }),
+  }))).pipe(Layer.provide(RepoClient.layer({ origin: h.origin, within: "10 seconds" })), Layer.provide(fetchLayer(h)))
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, client: faulty })
+  tabs.push(tab)
+  // Preload the synced repository before racing its two readers.
+  await tab.runtime.runPromise(Effect.flatMap(RepoStore, (store) => store.repositories.preload))
+  const warming = tab.home.actions.warm("maya", "tinyhttp")
+  await Effect.runPromise(Deferred.await(entered).pipe(Effect.timeout("10 seconds")))
+  tab.home.actions.open("maya", "tinyhttp")
+  await Effect.runPromise(Deferred.succeed(release, undefined))
+  await warming
+  await waitFor(() => expect(page(tab).home?.state).toBe("declared"))
+  expect(reads).toBe(1)
 })

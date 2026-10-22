@@ -148,3 +148,6 @@ No record carries a section, a block, a title, a text, a path, a link, a branch'
 - Who is on which branch, which needs a branches shape; the issue lifecycle's chain (a minimal repro, accepted for discussion, a commitment, a POC, a TODO), which the mock shows and its decision is designing.
 - Per-repository roles (decision 0007 phase 2): a person's audience is their role on the deployment's repository.
 - A home benchmark (decision 0014 §8, "a home's first paint").
+
+
+Declaration reads are serialized per repository and commit, so concurrent warm and open calls share the cached result. Interrupting a Markdown read marks it failed and records `home.file.load` with outcome `interrupted`; opening the home again reads it again. Running actions and failures belong to the shown repository: navigation clears them, and a previous page's completion cannot update the new page or navigate it. Home pull-request entries link to the pull-request page.

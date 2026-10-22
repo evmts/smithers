@@ -1,4 +1,4 @@
-import { Clock, Effect, FiberHandle, Option, Random } from "effect"
+import { Clock, Effect, FiberHandle, Option, Random, Semaphore } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { isReady, put, ready, shownRepository } from "../repo/actions"
 import { RepoClient } from "../repo/api"
@@ -30,17 +30,24 @@ const statusOf = (result: ReadResult) => (result._tag === "Failure" ? result.fai
 const resolve = (repository: { readonly owner: string; readonly name: string }, key: string, sha: string) =>
   Effect.gen(function* () {
     const store = yield* HomeStore
-    const startedAt = yield* Clock.currentTimeMillis
-    const kept = yield* store.homes.get(key)
-    if (Option.isSome(kept) && kept.value.state !== "unreadable") {
-      yield* recordResolve(kept.value, "cached", 0, undefined)
-      return kept.value
+    let gate = store.homeReads.get(key)
+    if (gate === undefined) {
+      gate = Semaphore.makeUnsafe(1)
+      store.homeReads.set(key, gate)
     }
-    const result = yield* Effect.result((yield* RepoClient).blob(repository.owner, repository.name, sha, HOME_FILE))
-    const row = homeRowOf(key, result)
-    yield* put<HomeRow>(store.homes, key, row)
-    yield* recordResolve(row, row.state, (yield* Clock.currentTimeMillis) - startedAt, statusOf(result))
-    return row
+    return yield* gate.withPermits(1)(Effect.gen(function* () {
+      const startedAt = yield* Clock.currentTimeMillis
+      const kept = yield* store.homes.get(key)
+      if (Option.isSome(kept) && kept.value.state !== "unreadable") {
+        yield* recordResolve(kept.value, "cached", 0, undefined)
+        return kept.value
+      }
+      const result = yield* Effect.result((yield* RepoClient).blob(repository.owner, repository.name, sha, HOME_FILE))
+      const row = homeRowOf(key, result)
+      yield* put<HomeRow>(store.homes, key, row)
+      yield* recordResolve(row, row.state, (yield* Clock.currentTimeMillis) - startedAt, statusOf(result))
+      return row
+    }))
   }).pipe(Effect.withSpan("home.resolve"))
 
 /** Reads a Markdown block's file at the home's commit, unless this tab has it or is reading it. */
@@ -52,7 +59,12 @@ const ensureFile = (repository: { readonly owner: string; readonly name: string 
     if (Option.isSome(found) && found.value.state !== "failed") return
     yield* put(store.files, key, { key, home, path, state: "loading" as const, text: null })
     const startedAt = yield* Clock.currentTimeMillis
-    const result = yield* Effect.result((yield* RepoClient).blob(repository.owner, repository.name, sha, path))
+    const result = yield* Effect.result((yield* RepoClient).blob(repository.owner, repository.name, sha, path)).pipe(
+      Effect.onInterrupt(() => Effect.gen(function* () {
+        yield* put(store.files, key, { key, home, path, state: "failed" as const, text: null })
+        yield* recordFile("interrupted", (yield* Clock.currentTimeMillis) - startedAt, undefined)
+      })),
+    )
     const row = fileRowOf(key, home, path, result)
     yield* put(store.files, key, row)
     yield* recordFile(row.state, (yield* Clock.currentTimeMillis) - startedAt, statusOf(result))
@@ -167,6 +179,8 @@ export const open = (owner: string, name: string) =>
   Effect.gen(function* () {
     const store = yield* HomeStore
     if (!isRepository(owner, name)) {
+      store.actions.clear()
+      yield* FiberHandle.clear(store.loader)
       yield* setCurrent({
         owner,
         name,
@@ -177,13 +191,16 @@ export const open = (owner: string, name: string) =>
         answering: false,
         stack: null,
         failure: null,
+        running: [],
       })
-      return yield* FiberHandle.clear(store.loader)
+      return
     }
     const id = repoId(owner, name)
     // Another page of the same repository keeps the home it shows while its head is read again.
     const shown = Option.getOrThrow(yield* store.current.get(CURRENT))
     const same = shown.repoId === id
+    if (!same) store.actions.clear()
+    yield* FiberHandle.clear(store.loader)
     const row = yield* (yield* RepoStore).repositories.get(id)
     const head = isReady(row)
       ? { key: homeKey(id, row.value.headSha), defaultBranch: row.value.defaultBranch }
@@ -193,7 +210,7 @@ export const open = (owner: string, name: string) =>
       name,
       repoId: id,
       answering: true,
-      ...(same ? {} : { ...head, audience: null, stack: null, failure: null }),
+      ...(same ? {} : { ...head, audience: null, stack: null, failure: null, running: [] }),
     })
     const part = <R>(load: Effect.Effect<void, never, R>) => Effect.andThen(load, syncLive(id))
     yield* FiberHandle.run(
@@ -223,6 +240,8 @@ export const runAction = (flow: string, login: string | null) =>
     const current = Option.getOrThrow(yield* store.current.get(CURRENT))
     if (current.repoId === null || current.running.includes(flow)) return undefined
     const { owner, name } = current
+    const token = Symbol()
+    store.actions.set(flow, token)
     yield* setCurrent({ running: [...current.running, flow], failure: null })
     const startedAt = yield* Clock.currentTimeMillis
     const branch = yield* branchName(login)
@@ -237,7 +256,9 @@ export const runAction = (flow: string, login: string | null) =>
       ? error.reason
       : "unavailable"
     const now = Option.getOrThrow(yield* store.current.get(CURRENT))
-    yield* setCurrent({ running: now.running.filter((each) => each !== flow), failure: reason })
     yield* recordAction(flow, reason ?? "done", (yield* Clock.currentTimeMillis) - startedAt)
+    if (now.repoId !== current.repoId || store.actions.get(flow) !== token) return undefined
+    store.actions.delete(flow)
+    yield* setCurrent({ running: now.running.filter((each) => each !== flow), failure: reason })
     return done === undefined ? undefined : codeHref(owner, name, done.name)
   }).pipe(Effect.withSpan("home.action"), Effect.annotateLogs({ feature: "home" }))

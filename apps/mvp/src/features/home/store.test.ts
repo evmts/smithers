@@ -1,4 +1,4 @@
-import { Effect, Layer, ManagedRuntime } from "effect"
+import { Deferred, Effect, Layer, ManagedRuntime } from "effect"
 import { expect, test } from "vitest"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { FlowDispatch } from "../../flows/dispatch"
@@ -45,4 +45,33 @@ test.each([
   } finally {
     await runtime.dispose()
   }
+})
+
+
+test.each(["failed", "done"] as const)("an action finishing after navigation cannot change the new repository or navigate back (%s)", async (outcome) => {
+  const runtime = ManagedRuntime.make(HomeStore.layer.pipe(Layer.provide(Persistence.memory)))
+  try {
+    const store = await runtime.runPromise(Effect.service(HomeStore))
+    const started = Deferred.makeUnsafe<void>()
+    const finish = Deferred.makeUnsafe<void>()
+    await runtime.runPromise(store.current.update(CURRENT, (row) => {
+      row.owner = "acme"; row.name = "one"; row.repoId = "one"
+    }))
+    const pending = runtime.runPromise(runAction("branch.new", "maya").pipe(
+      Effect.provideService(FlowDispatch, { dispatch: () => Effect.gen(function* () {
+        yield* Deferred.succeed(started, undefined)
+        yield* Deferred.await(finish)
+        return outcome === "done"
+          ? { _tag: "Done", value: { name: "maya/new-branch" } }
+          : { _tag: "Failed", error: new BranchTrackRefused({ reason: "forbidden" }) }
+      }) as never }),
+    ))
+    await runtime.runPromise(Deferred.await(started))
+    await runtime.runPromise(store.current.update(CURRENT, (row) => {
+      row.repoId = "two"; row.running = ["branch.new"]; row.failure = null
+    }))
+    await runtime.runPromise(Deferred.succeed(finish, undefined))
+    expect(await pending).toBeUndefined()
+    expect(await runtime.runPromise(store.current.get(CURRENT))).toMatchObject({ value: { running: ["branch.new"], failure: null } })
+  } finally { await runtime.dispose() }
 })

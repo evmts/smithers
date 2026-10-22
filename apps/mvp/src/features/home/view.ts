@@ -11,6 +11,7 @@ import { COMMANDS } from "../commands/catalog"
 import type { FlowRow } from "../flows-ui/schema"
 import { issuePath, issuesPath } from "../issues/contract"
 import type { Item } from "../issues/schema"
+import { pullPath } from "../pulls/contract"
 import type { Run } from "../status/schema"
 import { stackPath, TODO_STATE_WORDS, type TodoState, todoPath } from "../todos/contract"
 import type { Access, Todo } from "../todos/schema"
@@ -152,7 +153,7 @@ export const issuesOf = (
     key: item.id,
     label: `#${item.number}`,
     title: item.title,
-    href: issuePath(owner, name, item.number),
+    href: item.kind === "pull" ? pullPath(owner, name, item.number) : issuePath(owner, name, item.number),
     at: msOf(item.updatedAt),
   })
   const proposed = issues.filter((item) => item.triage === "proposed" || item.triage === "conflict")
