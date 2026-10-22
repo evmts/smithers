@@ -67,6 +67,19 @@ attachments stay until a submit succeeds.
 an unhandled rejection. The composer is controlled and never changes `value`;
 the host decides whether to keep or clear the draft.
 
+### Input and dispatch
+
+`RefPicker` leaves IME confirmation Enter untouched, including key code 229.
+The picker keeps its filter and stays open until a later selection.
+
+`runSourceCommand` dispatches once. A synchronous dispatch exception propagates
+to its caller; only malformed JSON uses the text argument fallback.
+
+`formFieldsFor` marks fields named by `FormHints.requires(payload)` required,
+including revealed hidden fields and fields with a `required: false` hint.
+Without a conditional requirement, the hint overrides schema requiredness.
+`missingFields` and `fileSubmission` enforce the derived required fields.
+
 ### The vault autosave machine
 
 `src/vault/autosaveMachine.ts` carries the failure on the snapshot beside the

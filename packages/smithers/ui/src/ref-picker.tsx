@@ -97,6 +97,7 @@ export function RefPicker({
   };
   const first = commit ?? (tab === "branches" ? branches : tags)[0]?.name;
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
     if (event.key !== "Enter" || first === undefined) return;
     event.preventDefault();
     choose(first);

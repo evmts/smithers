@@ -229,7 +229,7 @@ export const formFieldsFor = (input: Schema.Top, hints: FormHints | undefined = 
       name,
       label: hint?.label ?? humanize(name),
       kind,
-      required: hint?.required ?? !optional,
+      required: required.includes(name) || (hint?.required ?? !optional),
       ...(hint?.placeholder === undefined ? {} : { placeholder: hint.placeholder }),
       ...(control.options === undefined || kind !== "select" ? {} : { options: control.options }),
       ...(hint?.optionsFrom === undefined ? {} : { optionsFrom: hint.optionsFrom })

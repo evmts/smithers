@@ -195,6 +195,32 @@ test("displayLine names the withheld fields after the line", () => {
 })
 
 describe("hidden variant routing inputs", () => {
+  test("conditional requirements mark visible and revealed fields required and prevent blank submission", () => {
+    const input = Schema.Struct({
+      title: Schema.String,
+      path: Schema.optional(Schema.String),
+      copy: Schema.optional(Schema.String),
+      note: Schema.optional(Schema.String)
+    })
+    const hints = {
+      fields: { copy: { hidden: true }, path: { required: false } },
+      requires: (payload: Readonly<Record<string, unknown>>) => payload.operation === "tree" ? ["path", "copy"] : undefined
+    }
+    const given = { operation: "tree", title: "Tree" }
+    const fields = formFieldsFor(input, hints, given)
+    expect(fields.map(({ name, required }) => [name, required])).toEqual([
+      ["title", true], ["path", true], ["copy", true], ["note", false]
+    ])
+    expect(missingFields(fields, { title: "Tree", path: "  " })).toEqual(["path", "copy"])
+    expect(fileSubmission(input, fields, given, { title: "Tree", path: "  " })).toEqual({ error: "Needs: Path, Copy" })
+    const draft = { title: "Tree", path: "src", copy: "dest" }
+    expect(missingFields(fields, draft)).toEqual([])
+    expect(fileSubmission(input, fields, given, draft)).toEqual({ payload: { ...given, path: "src", copy: "dest" } })
+    expect(formFieldsFor(input, hints).map(({ name, required }) => [name, required])).toEqual([
+      ["title", true], ["path", false], ["note", false]
+    ])
+  })
+
   test("a variant asks for its missing routing input without exposing it on the default form", () => {
     const input = Schema.Struct({ path: Schema.optional(Schema.String), copy: Schema.optional(Schema.String) })
     const hints = { fields: { copy: { hidden: true } }, requires: (payload: Readonly<Record<string, unknown>>) => payload.operation === "tree" ? ["copy"] : undefined }

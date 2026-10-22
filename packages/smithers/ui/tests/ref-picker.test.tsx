@@ -48,10 +48,10 @@ async function type(input: HTMLInputElement, value: string): Promise<void> {
   });
 }
 
-async function key(el: Element, name: string): Promise<boolean> {
+async function key(el: Element, name: string, init: KeyboardEventInit = {}): Promise<boolean> {
   let followed = true;
   await act(async () => {
-    followed = el.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+    followed = el.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true, ...init }));
   });
   return followed;
 }
@@ -89,6 +89,24 @@ async function picker(refs: RefPickerRefs = READY, selected = "main") {
 }
 
 describe("RefPicker", () => {
+  test.each([
+    { isComposing: true },
+    { keyCode: 229 },
+  ])("IME confirmation keeps the picker and filter until a later Enter: %j", async (init) => {
+    const chosen = await picker();
+    await click(trigger());
+    await type(filter(), "main");
+    const input = filter();
+    expect(await key(input, "Enter", init)).toBe(true);
+    expect(chosen).toEqual([]);
+    expect(panel()).not.toBeNull();
+    expect(filter()).toBe(input);
+    expect(filter().value).toBe("main");
+    expect(await key(input, "Enter")).toBe(false);
+    expect(chosen).toEqual(["main"]);
+    expect(panel()).toBeNull();
+  });
+
   test("a button showing the ref; opened, every branch links with its short SHA, counted on its tab", async () => {
     await picker();
     expect(trigger().textContent).toBe("main");
