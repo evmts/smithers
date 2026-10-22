@@ -451,14 +451,123 @@ describe("RunCoordinator", () => {
       const interrupting = yield* coordinator.interrupt("run").pipe(Effect.forkChild)
       yield* Deferred.await(cleanupStarted)
       const replacement = yield* coordinator.run("run").pipe(Effect.forkChild)
+      // Let the replacement join the stopping entry while cleanup is still held.
+      yield* Effect.yieldNow
       expect(replacement.pollUnsafe()).toBeUndefined()
       yield* Deferred.succeed(cleanupGate, undefined)
       yield* Fiber.join(interrupting)
-      yield* Deferred.await(replacementStarted)
-      yield* Fiber.join(replacement)
+      expect(Exit.isSuccess(yield* Fiber.await(replacement))).toBe(true)
+      expect(yield* Deferred.isDone(replacementStarted)).toBe(true)
       const exit = yield* Fiber.await(first)
       expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
       expect(runs).toBe(2)
+    })))
+
+  effect("cancelling a replacement waiter does not start another drain", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const cleaning = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      let runs = 0
+      const coordinator = yield* RunCoordinator.make({
+        drain: () =>
+          Effect.gen(function*() {
+            runs++
+            yield* Deferred.succeed(started, undefined)
+            yield* Effect.never
+          }).pipe(Effect.onInterrupt(() =>
+            Deferred.succeed(cleaning, undefined).pipe(
+              Effect.andThen(Deferred.await(release))
+            )
+          ))
+      })
+      yield* coordinator.schedule("run")
+      yield* Deferred.await(started)
+      yield* coordinator.requestInterrupt("run")
+      yield* Deferred.await(cleaning)
+      const replacement = yield* coordinator.run("run").pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      yield* Fiber.interrupt(replacement)
+      yield* Deferred.succeed(release, undefined)
+      yield* coordinator.join("run").pipe(Effect.exit)
+      expect(runs).toBe(1)
+      expect(Array.from(yield* coordinator.active)).toEqual([])
+    })))
+
+  effect(
+    "a hosted wake coalesces active work but starts neither idle nor stopping work",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const secondStarted = yield* Deferred.make<void>()
+        const cleaning = yield* Deferred.make<void>()
+        const cleaned = yield* Deferred.make<void>()
+        let runs = 0
+        const coordinator = yield* RunCoordinator.make({
+          drain: () =>
+            Effect.gen(function*() {
+              runs++
+              if (runs === 1) {
+                yield* Deferred.succeed(started, undefined)
+                yield* Deferred.await(release)
+              } else {
+                yield* Deferred.succeed(secondStarted, undefined)
+                yield* Effect.never
+              }
+            }).pipe(Effect.onInterrupt(() =>
+              Deferred.succeed(cleaning, undefined).pipe(
+                Effect.andThen(Deferred.await(cleaned))
+              )
+            ))
+        })
+        yield* coordinator.wakeIfActive("run")
+        expect(Array.from(yield* coordinator.active)).toEqual([])
+        yield* coordinator.schedule("run")
+        yield* Deferred.await(started)
+        yield* coordinator.wakeIfActive("run")
+        yield* Deferred.succeed(release, undefined)
+        yield* Deferred.await(secondStarted)
+        expect(runs).toBe(2)
+        yield* coordinator.requestInterrupt("run")
+        yield* Deferred.await(cleaning)
+        yield* coordinator.wakeIfActive("run")
+        yield* Deferred.succeed(cleaned, undefined)
+        yield* coordinator.join("run").pipe(Effect.exit)
+        expect(runs).toBe(2)
+        expect(Array.from(yield* coordinator.active)).toEqual([])
+      }))
+  )
+
+  effect("a replacement preserves a stopping owner's cleanup defect", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const cleaning = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      let runs = 0
+      const coordinator = yield* RunCoordinator.make({
+        drain: () =>
+          Effect.gen(function*() {
+            runs++
+            yield* Deferred.succeed(started, undefined)
+            yield* Effect.never
+          }).pipe(Effect.onInterrupt(() =>
+            Deferred.succeed(cleaning, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.andThen(Effect.die("cleanup failed"))
+            )
+          ))
+      })
+      yield* coordinator.schedule("run")
+      yield* Deferred.await(started)
+      yield* coordinator.requestInterrupt("run")
+      yield* Deferred.await(cleaning)
+      const replacement = yield* coordinator.run("run").pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      yield* Deferred.succeed(release, undefined)
+      const exit = yield* Fiber.await(replacement)
+      expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+      expect(runs).toBe(1)
     })))
 
   effect("ignores interruption for an idle key", () =>

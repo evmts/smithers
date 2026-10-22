@@ -174,3 +174,20 @@ cannot leave ghost edges.
   wake bus and following a workspace's runs.
 - [Ownership and fencing](./ownership-and-fencing.md): why parking and clock
   scheduling take an owner.
+
+### Clock wakes beside external waits
+
+Activation consumes a completed `DurableClock/` wake marker once, even if the action is parked on a separate external deferred. Its persisted completion remains readable for replay. Other event completions remain unconsumed until their waits observe them. This lets a host use an engine clock as a fallback for a missed webhook without repeatedly driving the same due marker.
+
+A hosted recovery can schedule a completed deferred before the host requests
+cancellation. If that request stops the recovering drain, the next explicit
+drive waits for its cleanup and starts a replacement; it does not inherit the
+old drain's interruption. The replacement observes the durable cancellation
+before starting a step, including under an exhausted drive budget. Duplicate
+deferred completions cannot revive the terminal run. Hosted callers pass the
+persisted flow tag for both alarm and signal runtime registration.
+
+Hosted wake publication records readiness and notifies the host, but never
+starts an idle or stopping drain. Only an active, non-stopping drive coalesces
+a wake. Registration recovery and signal delivery therefore cannot execute
+steps before the host applies admission, cancellation and its drive budget.

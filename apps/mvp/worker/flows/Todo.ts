@@ -19,6 +19,7 @@ import type { GitHubTokens } from "../github/Tokens.ts"
 import * as Stack from "../stack/Stack.ts"
 import { ChecksRun } from "./Checks.ts"
 import { Implement } from "./TodoAgent.ts"
+import { awaitPullClosed, readPullClosed } from "./TodoWait.ts"
 import { machineOf } from "./TodoMachine.ts"
 
 // The `todo` run (decision 0016, the factory simplified): one durable run per attempt, on Cloudflare, started by the
@@ -32,12 +33,12 @@ import { machineOf } from "./TodoMachine.ts"
 //   todo/Publish    one commit, `createCommitOnBranch` fenced by the base; the pull request into its base (a draft while
 //                   that is another TODO's branch), its body ending "Fixes #n" for a TODO from issue n ─▶ writer: in
 //                   review, which frees the lane for the next TODO; the head's checks start
-//   todo/Await      re-reads the pull request until a person merges or closes it (the engine's retries, a minute apart).
+//   todo/Await      parks until GitHub signals a merge or close; an hourly durable clock covers a lost delivery.
 //                   Stacked, once the TODO below merges, it merges that merge in, its new head's checks start, and the
 //                   pull request is marked ready and moves onto the default branch; once the TODO below closes unmerged,
 //                   it closes its own and fails `base_closed`
 //   todo/Settle     writer: merged, or dropped when it was closed; the next Queued TODO starts
-//   todo/Fail       any step that gave up ─▶ writer: failed with the step's code; the next TODO starts. A TODO a person
+//   todo/Fail       any step that gave up ─▶ writer: failed with the step's code; queued dependents hold. A TODO a person
 //                   dropped (`ended`) closes the pull request its run opened, and changes nothing else
 //
 // Every writer call is fenced by the TODO and the attempt (`Stack.report`), so a dropped TODO's run stops at its next
@@ -86,7 +87,7 @@ export class TodoUnavailable extends Schema.TaggedError<TodoUnavailable>()("@smt
   retryAfterMillis: Schema.optional(Schema.Number),
 }) {}
 
-/** The pull request is still open: `todo/Await` asks again. */
+/** An inspection found an open PR. The registered action catches it and parks on its terminal event. */
 export class StillOpen extends Schema.TaggedError<StillOpen>()("@smthrs/mvp/todo/StillOpen", {}) {}
 
 const StepError = Schema.Union([TodoFailed, TodoUnavailable])
@@ -100,7 +101,7 @@ export const STEP_RETRY = RetryPolicy.make({
   nonRetryable: ["@smthrs/mvp/todo/TodoFailed"],
 })
 
-/** Waiting for a person's merge: 5 s doubling to a minute, for as long as the pull request stays open. */
+/** Transport failures during merge inspection retain the existing retry policy for persisted plans. */
 export const AWAIT_RETRY = RetryPolicy.make({
   initialMs: 5_000,
   factor: 2,
@@ -673,7 +674,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
   const belowClosed = (below: Option.Option<Stack.BaseTodo>) =>
     Option.isSome(below) && (below.value.state === "dropped" || below.value.state === "failed")
 
-  const await_ = ({ request, begun, published }: typeof Await.payloadSchema.Type) =>
+  const await_ = ({ request, begun, published }: typeof Await.payloadSchema.Type, baseSignaled = false) =>
     Effect.gen(function* () {
       const repository = repositoryOfRequest(request)
       const found = yield* Stack.attemptTodo(attemptOf(request))
@@ -701,7 +702,18 @@ export const steps = <E, R>(services: Services<E, R>) => {
         // Stacked on another TODO's branch. That TODO closed unmerged, or failed: this branch holds a change that
         // won't merge, so close this pull request too, and fail `base_closed`, whichever came first: a close whose
         // answer was lost still ends here, never as closed on GitHub.
-        const below = yield* Stack.baseTodoOf(request.repoId, read.base.ref)
+        let below = yield* Stack.baseTodoOf(request.repoId, read.base.ref)
+        // The hourly fallback must also recover a missed base webhook, without waiting for its TODO run to settle.
+        if (Option.isSome(below) && below.value.state === "in_review" && below.value.prNumber !== null) {
+          const base = yield* fetchPull(repository, below.value.prNumber).pipe(withToken(token, services.apiBaseUrl))
+          yield* projectPull(repository, below.value.prNumber, base)
+          below = Option.some({
+            ...below.value,
+            state: base.kind === "gone" ? "dropped" : base.pull.merged ? "merged"
+              : base.pull.state === "closed" || baseSignaled ? "dropped" : below.value.state,
+            mergeSha: base.kind === "found" ? base.pull.merge_commit_sha : null,
+          })
+        }
         if (belowClosed(below)) {
           if (read.state === "open") {
             const closing = yield* tokenFor("await", request, "publish")
@@ -768,7 +780,34 @@ export const steps = <E, R>(services: Services<E, R>) => {
       Effect.withSpan("todo.fail", { attributes: { "smithers.todo.attempt": request.attemptId } }),
     )
 
-  return { begin, collect, publish, await: await_, settle, fail }
+  // Inspection stays independently testable. The registered action parks, rather than recording StillOpen as
+  // failed attempts. There are only two external facts to wait for: the base PR, then this PR.
+  const awaitMerge = (payload: typeof Await.payloadSchema.Type) => {
+    const own = () => awaitPullClosed(payload.published.prNumber).pipe(
+      Effect.andThen(await_(payload)),
+      // A verified close ends this attempt even if the PR was reopened before the host resumed.
+      // The hourly fallback never completes this terminal deferred.
+      Effect.catchTag("@smthrs/mvp/todo/StillOpen", () => Effect.succeed({ state: "closed", mergeSha: null } as Awaited)),
+    )
+    return await_(payload).pipe(Effect.catchTag("@smthrs/mvp/todo/StillOpen", () =>
+      Effect.gen(function* () {
+        const base = payload.begun?.baseRef
+        const below = base !== undefined && base !== payload.begun?.defaultBranch
+          ? yield* Stack.baseTodoOf(payload.request.repoId, base).pipe(
+            Effect.provide(services.database), Effect.mapError(() => new TodoUnavailable({ step: "await" })),
+          )
+          : Option.none()
+        if (Option.isSome(below)) {
+          if (below.value.prNumber !== null) yield* readPullClosed(below.value.prNumber)
+          const signaled = below.value.state === "in_review" && below.value.prNumber !== null
+          if (signaled) yield* awaitPullClosed(below.value.prNumber!)
+          return yield* await_(payload, signaled).pipe(Effect.catchTag("@smthrs/mvp/todo/StillOpen", own))
+        }
+        return yield* own()
+      })))
+  }
+
+  return { begin, collect, publish, await: await_, awaitMerge, settle, fail }
 }
 
 /**
@@ -786,7 +825,7 @@ export const registration = <E, R, IE, IR>(
       Begin.toLayer(implementation.begin, { implementationVersion: BEGIN_VERSION }),
       Collect.toLayer(implementation.collect),
       Publish.toLayer(implementation.publish, { implementationVersion: PUBLISH_VERSION }),
-      Await.toLayer(implementation.await),
+      Await.toLayer(implementation.awaitMerge),
       Settle.toLayer(implementation.settle),
       Fail.toLayer(implementation.fail),
       implement,

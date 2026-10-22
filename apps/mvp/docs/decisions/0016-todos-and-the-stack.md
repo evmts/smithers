@@ -348,3 +348,16 @@ Both designs were written independently, then Opus merged them. Adopted claims w
 ## Dogfood correction — 2026-10-22: failed dependencies
 
 Will's production reproduction (#4430, runs b590330a and a6dc894b) supersedes the earlier failure-table statement that the next item starts after failure. Admission stops at the first failed predecessor. A person's Drop explicitly releases the dependency; an unmerged PR close fails queued successors `base_closed`. A missing published base branch is also `base_closed`, never permission to begin on main. The existing restack and descendant-close behavior still applies to TODOs already published.
+
+## Dogfood correction — 2026-10-22: merge waits
+
+Will's instruction replaces the simplified factory's minute retry schedule for open PRs. A published TODO parks on the engine's durable deferred; the existing `pull_request` Apply flow re-reads GitHub, then signals the own and stacked-dependent executions through their object hosts. The host records completion before waking. An engine-owned hourly clock is the missed-delivery fallback; neither a timer nor an open PR fails the action. This uses the library catalog's @smthrs/flow durable wait, deferred and clock services, not an application polling loop.
+
+A verified close remains terminal for that TODO attempt if GitHub reopens the PR before the host resumes. The hourly fallback is only a wake to re-read; it never fabricates a close completion.
+
+Hosted webhook wakes persist readiness; only an explicit alarm drive starts idle
+work. Registration recovery and signal delivery must not bypass the object's
+admission/cancellation check or the engine's drive budget. A drive joining a
+stopping recovery drain waits for cleanup and starts a replacement without
+inheriting the old drain's interruption. Cancellation is settled from its durable
+request before any further action, including when that drive's budget is spent.

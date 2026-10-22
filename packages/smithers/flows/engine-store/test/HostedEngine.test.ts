@@ -110,7 +110,9 @@ const sleeper = (owner: Ownership.OwnerId, sweep: EngineStore.Sweep) =>
         yield* DurableClock.sleep({ name: "nap", duration: "10 minutes" })
         return "woke"
       }))
-  })).pipe(Layer.provideMerge(engine(filename, owner, typeof sweep === "object" ? { ...sweep, flow: Sleeper._tag } : sweep)))
+  })).pipe(
+    Layer.provideMerge(engine(filename, owner, typeof sweep === "object" ? { ...sweep, flow: Sleeper._tag } : sweep))
+  )
 
 describe("registration under a hosted sweep", () => {
   it("re-arms only the hosted execution's clocks", () =>
@@ -161,44 +163,126 @@ describe("registration under a hosted sweep", () => {
 
 // Kept catalog-scaling benchmark: real store, 32 registrations, one hosted flow.
 // Span counts are the deterministic gate; elapsed time is an observation only.
-it.each([false, true])("recovers only the hosted flow when registering a 32-flow catalog (hint=%s)", (hint) =>
-  run(Effect.gen(function*() {
-    const spans: Array<Tracer.NativeSpan> = []
-    const tracer = Tracer.make({
-      span(options) {
-        const span = new Tracer.NativeSpan(options)
-        spans.push(span)
-        return span
-      }
-    })
-    const catalog = Array.from({ length: 32 }, (_, i) => Flow.make(`catalog/${i}`, {
-      payload: {},
-      success: Schema.String,
-      body: opaqueHandlerBody
+it.each([false, true])(
+  "recovers only the hosted flow when registering a 32-flow catalog (hint=%s)",
+  (hint) =>
+    run(Effect.gen(function*() {
+      const spans: Array<Tracer.NativeSpan> = []
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.push(span)
+          return span
+        }
+      })
+      const catalog = Array.from({ length: 32 }, (_, i) =>
+        Flow.make(`catalog/${i}`, {
+          payload: {},
+          success: Schema.String,
+          body: opaqueHandlerBody
+        }))
+      const postgres = /^postgres(?:ql)?:/.test(filename)
+      const target = postgres ? yield* SlowNetwork.proxy(filename, { delayMs: 10 }) : filename
+      const elapsedMs = yield* Effect.scoped(
+        Effect.gen(function*() {
+          const runtime = yield* FlowRuntime.FlowRuntime
+          const started = performance.now()
+          for (const flow of catalog) yield* runtime.register(flow, () => Effect.succeed("done"))
+          return Math.round(performance.now() - started)
+        }).pipe(
+          Effect.provide(engine(target, first, { host: "catalog-run", ...(hint ? { flow: "catalog/17" } : {}) })),
+          Effect.provideService(Tracer.Tracer, tracer)
+        )
+      )
+      const recoveries = spans.filter((span) => span.name === "DeferredPersistence.sweepDue").length
+      console.info(JSON.stringify({
+        benchmark: "hosted-catalog-registration",
+        flows: 32,
+        hint,
+        recoveries,
+        elapsedMs,
+        backend: postgres ? "postgres" : "sqlite",
+        networkDelayEachWayMs: postgres ? 10 : 0
+      }))
+      expect(recoveries).toBe(hint ? 1 : 32)
     }))
-    const postgres = /^postgres(?:ql)?:/.test(filename)
-    const target = postgres ? yield* SlowNetwork.proxy(filename, { delayMs: 10 }) : filename
-    const elapsedMs = yield* Effect.scoped(Effect.gen(function*() {
-      const runtime = yield* FlowRuntime.FlowRuntime
-      const started = performance.now()
-      for (const flow of catalog) yield* runtime.register(flow, () => Effect.succeed("done"))
-      return Math.round(performance.now() - started)
-    }).pipe(
-      Effect.provide(engine(target, first, { host: "catalog-run", ...(hint ? { flow: "catalog/17" } : {}) })),
-      Effect.provideService(Tracer.Tracer, tracer)
-    ))
-    const recoveries = spans.filter((span) => span.name === "DeferredPersistence.sweepDue").length
-    console.info(JSON.stringify({
-      benchmark: "hosted-catalog-registration",
-      flows: 32,
-      hint,
-      recoveries,
-      elapsedMs,
-      backend: postgres ? "postgres" : "sqlite",
-      networkDelayEachWayMs: postgres ? 10 : 0
-    }))
-    expect(recoveries).toBe(hint ? 1 : 32)
-  })))
+)
+
+describe("cancellation during hosted deferred recovery", () => {
+  it.each([
+    { hint: false, budgetMs: undefined },
+    { hint: true, budgetMs: undefined },
+    { hint: false, budgetMs: 0 },
+    { hint: true, budgetMs: 0 },
+    { hint: true, budgetMs: 600_000 }
+  ])(
+    "settles cancellation before another step (hint=$hint, budget=$budgetMs)",
+    ({ hint, budgetMs }) =>
+      run(Effect.gen(function*() {
+        const executionId = "cancel-recovered"
+        const event = DurableDeferred.make("merge", { success: Schema.String })
+        const flow = Flow.make("HostedEngine/CancelRecovered", {
+          payload: {},
+          success: Schema.String,
+          body: opaqueHandlerBody
+        })
+        let starts = 0
+        const registration = (owner: Ownership.OwnerId) =>
+          Layer.effectDiscard(Effect.flatMap(FlowRuntime.FlowRuntime, (runtime) =>
+            runtime.register(flow, () =>
+              Effect.gen(function*() {
+                starts++
+                return yield* DurableDeferred.await(event)
+              })))).pipe(Layer.provideMerge(engine(filename, owner, {
+                host: executionId,
+                ...(hint ? { flow: flow._tag } : {})
+              })))
+        expect(
+          yield* Effect.scoped(
+            EngineStore.drive(flow, { executionId, payload: {} }).pipe(
+              Effect.provide(registration(first))
+            )
+          )
+        ).toEqual({ _tag: "Parked", wakeAtMs: undefined })
+        const signal = Effect.flatMap(DurableEngineState.DurableEngineState, (state) =>
+          state.completeDeferred({
+            flowName: flow._tag,
+            executionId,
+            deferredName: event.name,
+            exit: Exit.succeed("merged"),
+            completedAtMs: 0
+          })).pipe(Effect.provide(TestStores.layerAt(filename)))
+        yield* signal
+        yield* Effect.scoped(
+          Effect.gen(function*() {
+            const runtime = yield* FlowRuntime.FlowRuntime
+            // Registration and another signal must not drive the parked body.
+            yield* runtime.deferredDone(event, {
+              flowName: flow._tag,
+              executionId,
+              deferredName: event.name,
+              exit: Exit.succeed("merged")
+            })
+            expect(yield* statusOf(executionId)).toBe("suspended")
+            expect(starts).toBe(1)
+            yield* runtime.interrupt(flow, executionId)
+            expect(yield* EngineStore.drive(flow, { executionId, payload: {}, budgetMs }))
+              .toEqual({ _tag: "Settled", status: "cancelled" })
+            expect(yield* statusOf(executionId)).toBe("cancelled")
+          }).pipe(Effect.provide(registration(second)))
+        )
+        yield* signal
+        expect(
+          yield* Effect.scoped(
+            EngineStore.drive(flow, { executionId, payload: {}, budgetMs }).pipe(
+              Effect.provide(registration(second))
+            )
+          )
+        ).toEqual({ _tag: "Settled", status: "cancelled" })
+        expect(starts).toBe(1)
+      }))
+  )
+})
 
 const Blocker = Flow.make("HostedEngine/Blocker", {
   payload: {},

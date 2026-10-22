@@ -2635,7 +2635,7 @@ const enterRunning = (
   state: RunState
 ): Effect.Effect<RunState | undefined> =>
   Effect.gen(function*() {
-    yield* consumeParentWakes(driver, state.flowName, executionId)
+    yield* consumeActivationWakes(driver, state.flowName, executionId)
     const { parked, ...unparked } = withoutResult(state)
     const activeState: RunState = unparked
     // The activation transition carries the cancel guard: a run whose
@@ -2660,11 +2660,11 @@ const enterRunning = (
     return activeState
   })
 
-/** Consumes the wakes settling children recorded for this run: activating it is the resume they asked for. */
-const consumeParentWakes = (driver: Driver, flowName: string, executionId: string): Effect.Effect<void> =>
+/** Activation consumes child and clock wakes; their durable results remain readable by later awaits. */
+const consumeActivationWakes = (driver: Driver, flowName: string, executionId: string): Effect.Effect<void> =>
   Effect.gen(function*() {
     for (const wake of yield* driver.engineState.completedDeferreds(flowName, executionId)) {
-      if (wake.deferredName.startsWith(parentWakePrefix)) {
+      if (wake.deferredName.startsWith(parentWakePrefix) || wake.deferredName.startsWith("DurableClock/")) {
         yield* driver.engineState.consumeDeferred(wake, yield* Clock.currentTimeMillis)
       }
     }
@@ -4064,7 +4064,14 @@ const publishWake = (
   (reason === "operator" || reason === "delegated"
     ? Effect.void
     : recordResume(driver, executionId, parked, reason)).pipe(
-      Effect.andThen(driver.coordinator.wake(executionId)),
+      // A hosted wake is durable work for the next explicit drive. Starting
+      // an idle drain here would run during registration or signal delivery,
+      // before the host applies admission, cancellation and its drive budget.
+      Effect.andThen(
+        driver.hosted
+          ? driver.coordinator.wakeIfActive(executionId)
+          : driver.coordinator.wake(executionId)
+      ),
       Effect.andThen(driver.wakeBus.wake(executionId))
     )
 

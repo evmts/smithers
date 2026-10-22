@@ -667,3 +667,32 @@ test("a queued successor is admitted exactly when the retried TODO publishes", a
     kind: "published", headSha: "a".repeat(40), prNumber: 12, draft: false,
   }, { runs: true }))).toEqual({ outcome: "repeated", starts: published.starts })
 })
+
+
+test("repeated retry before admission cannot erase the old attempt's base identity", async () => {
+  const first = await applyOn(commit(), true)
+  if (first.kind !== "applied") throw new Error("commit refused")
+  const a = first.receipt.starts[0]!
+  await applyOn(commit(), true)
+  const published = await runtime.runPromise(Stack.report(a, {
+    kind: "published", headSha: "a".repeat(40), prNumber: 1, draft: false,
+  }, { runs: true }))
+  const b = published.starts[0]!
+  await runtime.runPromise(Stack.report(b, {
+    kind: "branch", branch: "smithers/old-base", baseSha: "a".repeat(40), baseRef: "smithers/first",
+  }, { runs: true }))
+  await runtime.runPromise(Stack.report(b, {
+    kind: "published", headSha: "b".repeat(40), prNumber: 2, draft: true,
+  }, { runs: true }))
+  const retry = () => ({ ...drop(2), op: { kind: "retry" as const, number: 2 } })
+  const queued = await runtime.runPromise(Stack.apply(retry(), { runs: false, stoppedAttemptId: b.attemptId }))
+  expect(queued).toMatchObject({ receipt: { outcome: "retried", starts: [] } })
+  await runtime.runPromise(Stack.report(a, {
+    kind: "finished", state: "dropped", note: "closed_on_github",
+  }, { runs: false }))
+  const again = await runtime.runPromise(Stack.apply(retry(), { runs: false }))
+  expect(again).toMatchObject({ receipt: { outcome: "retried", starts: [] } })
+  expect(await runtime.runPromise(Stack.baseTodoOf(REPO, "smithers/old-base"))).toMatchObject({
+    value: { number: 2, prNumber: 2, state: "failed" },
+  })
+})

@@ -16,6 +16,7 @@ import * as Expire from "./flows/Expire.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as Todo from "./flows/Todo.ts"
 import * as SandboxCommand from "./flows/SandboxCommand.ts"
+import { pullClosed } from "./flows/TodoWait.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
@@ -38,6 +39,7 @@ export interface FlowExecutionShape {
   readonly start: (
     intent: ExecutionObject.Intent,
   ) => Effect.Effect<void, ExecutionObject.IntentConflict, RuntimeContext>
+  readonly signal: (deferredName: string) => Effect.Effect<void, never, RuntimeContext>
   readonly wake: () => Effect.Effect<boolean, never, RuntimeContext>
   readonly cancel: () => Effect.Effect<void, import("@smthrs/flow").FlowRuntime.CancelRequestFailed, RuntimeContext>
   readonly alarm: () => Effect.Effect<void, never, RuntimeContext>
@@ -208,7 +210,7 @@ const object = <E, R>(
           Effect.gen(function* () {
             const runtime = yield* RuntimeContext
             const judge = seats("judge", yield* flowStarter)
-            return GitHubHost.services(ready, {
+            const services = GitHubHost.services(ready, {
               keys: Option.map(signIn, (configured) => configured.keys),
               refresh: (sessionId, generation) => {
                 const executionId = recheckExecutionId(sessionId, generation)
@@ -223,6 +225,13 @@ const object = <E, R>(
                 )
               },
             }, judge)
+            return {
+              ...services,
+              signalTodo: (executionId: string, number: number) =>
+                executions.getByName(executionId).signal(pullClosed(number).name).pipe(
+                  Effect.provideService(RuntimeContext, runtime),
+                ),
+            }
           })
         // The coding factory's `todo` run and a head's checks (docs/features/todos.md#the-run) need the App: they make
         // branches, commits and pull requests. They start what they start (the next TODO's run, a head's checks) on
@@ -268,6 +277,7 @@ const object = <E, R>(
           : withGitHub(base)
         return {
           start: (intent: ExecutionObject.Intent) => host.start(intent).pipe(Effect.provide(logs)),
+          signal: (deferredName: string) => host.signal(deferredName).pipe(Effect.provide(logs)),
           wake: () => host.wake().pipe(Effect.provide(logs)),
           cancel: () => host.cancel().pipe(Effect.provide(logs)),
           alarm: () => host.alarm().pipe(Effect.asVoid, Effect.provide(logs)),

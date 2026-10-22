@@ -2,7 +2,7 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Clock, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
-import type { SqlClient } from "effect/sql"
+import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.ts"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
@@ -82,6 +82,8 @@ export interface Services<E = unknown, R = never> {
   readonly http: HttpClient.HttpClient
   /** GitHub's REST API (`GITHUB_API_URL`). */
   readonly apiBaseUrl: string
+  /** Complete a TODO's durable wait and wake its host; delivery is retried by this step. */
+  readonly signalTodo?: (executionId: string, prNumber: number) => Effect.Effect<void, unknown>
 }
 
 /** What `github/Apply/read` does: one re-read with its records, never a title, a body or a login. */
@@ -115,6 +117,18 @@ export const read = <E, R>(services: Services<E, R>) => (request: typeof Read.pa
         )
       }),
     )
+    if (pull && services.signalTodo !== undefined) {
+      const sql = yield* SqlClient.SqlClient
+      // Only an authoritative terminal projection signals. Include stacked dependents: they must restack or
+      // fail even if the base run has not yet reported its own settlement.
+      const waiting = yield* sql<{ runId: string }>`
+        SELECT DISTINCT t.run_id AS "runId" FROM pulls p JOIN items i ON i.id = p.item_id
+        JOIN todos t ON t.repo_id = p.repo_id AND (t.pr_number = p.number OR t.base_ref = p.head_ref)
+        WHERE p.repo_id = ${repository.id} AND p.number = ${request.number}
+          AND (p.merged OR i.state = 'closed') AND t.state IN ('working', 'in_review') AND t.run_id IS NOT NULL`
+      yield* Effect.forEach(waiting, ({ runId }) => services.signalTodo!(runId, request.number), { discard: true })
+      yield* Effect.logInfo("todo.webhook").pipe(Effect.annotateLogs({ ...fields, woken: waiting.length }))
+    }
     // From the delivery's arrival, once the route recorded it.
     const received = yield* Store.receivedAt(request.deliveryId)
     const now = yield* Clock.currentTimeMillis

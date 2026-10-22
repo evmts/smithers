@@ -70,6 +70,8 @@ export interface RunCoordinator<Key, E> {
    * @category operations
    */
   readonly wake: (key: Key, ask?: Ask) => Effect.Effect<void>
+  /** Coalesces a wake only into an active, non-stopping drain; never starts an idle key. */
+  readonly wakeIfActive: (key: Key) => Effect.Effect<void>
   /**
    * Interrupts the active drain for the key and waits for its cleanup.
    *
@@ -232,8 +234,17 @@ export const make = <Key, E, R>(options: {
       Effect.uninterruptibleMask((restore) => {
         const entry = asked(key, ask)
         if (entry !== undefined) {
-          /* v8 ignore next -- stopping is a cooperative-scheduler handoff covered by the cleanup race test */
-          if (entry.stopping) return restore(Deferred.await(entry.done).pipe(Effect.andThen(run(key, ask))))
+          if (entry.stopping) {
+            // This caller asked for a fresh drain. Wait for the old owner's
+            // cleanup, but do not inherit the interruption that stopped it:
+            // the replacement must still deliver a persisted cancellation.
+            return restore(
+              Deferred.await(entry.done).pipe(
+                Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.failCause(cause)),
+                Effect.andThen(run(key, ask))
+              )
+            )
+          }
           return restore(Deferred.await(entry.done))
         }
 
@@ -265,6 +276,12 @@ export const make = <Key, E, R>(options: {
         }
 
         startIdle(key, undefined, ask)
+      })
+
+    const wakeIfActive = (key: Key): Effect.Effect<void> =>
+      Effect.sync(() => {
+        const entry = active.get(key)
+        if (entry !== undefined && !entry.stopping) entry.pendingWake = true
       })
 
     /**
@@ -307,6 +324,7 @@ export const make = <Key, E, R>(options: {
       schedule: Effect.fn("RunCoordinator.schedule")(schedule),
       scheduleIf: Effect.fn("RunCoordinator.scheduleIf")(scheduleIf),
       wake: Effect.fn("RunCoordinator.wake")(wake),
+      wakeIfActive: Effect.fn("RunCoordinator.wakeIfActive")(wakeIfActive),
       interrupt: Effect.fn("RunCoordinator.interrupt")(interrupt),
       requestInterrupt: Effect.fn("RunCoordinator.requestInterrupt")(requestInterrupt)
     }

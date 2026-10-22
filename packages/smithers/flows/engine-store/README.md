@@ -152,3 +152,11 @@ and [content addressing](https://github.com/smithersai/smithers/blob/main/packag
 on smithers.sh.
 
 List reads of durable wait state skip corrupt rows and log storage-integrity warnings; point reads still fail for an invalid row.
+
+Clock completions wake an execution once on activation, even when its action waits on a separate external event. Their persisted results remain readable by later durable awaits. This supports an engine-owned fallback deadline beside a webhook wait without repeated immediate drives.
+
+Hosted deferred and clock wakes coalesce only an active, non-stopping drive.
+An idle host must call `EngineStore.drive` after applying its admission and
+cancellation policy; registration recovery and signal delivery never start
+unbudgeted work. A replacement drive waits for a stopping owner's cleanup
+without inheriting its interruption.

@@ -2,8 +2,10 @@
 // (`pnpm db:up`), with an in-memory stand-in for the object's storage, the one Cloudflare binding they take. The real
 // object runs them in local workerd in worker/ExecutionHost.workerd.test.ts.
 import * as Pg from "@effect/sql-pg"
+import { Action, Flow, Interpreter, WaitFor } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Context, Duration, Effect, Layer, Logger, Metric, Redacted } from "effect"
+import { Context, Duration, Effect, Layer, Logger, Metric, Redacted, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
@@ -14,6 +16,7 @@ import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
+import { awaitPullClosed } from "./flows/TodoWait.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
@@ -121,6 +124,86 @@ describe("ExecutionHost over the compose Postgres", () => {
         expect(yield* status(sql, name, executionId)).toBe("completed")
       })
     ))
+
+  test.each([true, false])("signal before park=%s survives host replacement and duplicate delivery", (early) =>
+    withSchema(({ name, sql, url }) => Effect.gen(function* () {
+      const Event = Flow.make("probe/Signal", {
+        payload: {}, success: Schema.Json, error: WaitFor.WaitForRequestInvalid,
+        body: Node.capture({ wait: WaitFor.action.name }, () => WaitFor.action.call({ name: "published" }).pipe(
+          Node.andThen(WaitFor.action.call({ name: "merge" })),
+        )),
+      })
+      const object = memory()
+      const executionId = crypto.randomUUID()
+      const make = () => ExecutionHost.make(object.storage, {
+        hostId: `object-${executionId}`, database: ExecutionHost.database(url, name),
+        flows: { flows: [Event], registration: Layer.merge(Interpreter.layer(Event), WaitFor.layer).pipe(
+          Layer.provideMerge(Action.layerImplementations),
+        ) },
+        router: recording().router,
+      })
+      const host = make()
+      yield* host.start(yield* ExecutionHost.intent(Event, { executionId, payload: {} }))
+      expect((yield* host.alarm())._tag).toBe("Parked")
+      expect(object.alarm()).toBeNull()
+      if (early) yield* host.signal(WaitFor.deferred("merge").name)
+      yield* host.signal(WaitFor.deferred("published").name)
+      if (!early) {
+        expect((yield* host.alarm())._tag).toBe("Parked")
+        yield* host.signal(WaitFor.deferred("merge").name)
+      }
+      const restarted = make()
+      yield* restarted.signal(WaitFor.deferred("merge").name)
+      expect(object.alarm()).toBeLessThanOrEqual(Date.now())
+      expect((yield* restarted.alarm())._tag).toBe("Settled")
+      expect(yield* status(sql, name, executionId)).toBe("completed")
+      const completions = yield* sql`SELECT * FROM ${sql(name)}.flows_deferred_completions
+        WHERE execution_id = ${executionId}`
+      expect(completions).toHaveLength(2)
+    })))
+
+  test("TODO event waits use an hourly durable fallback without failed attempts", () =>
+    withSchema(({ name, sql, url }) => Effect.gen(function* () {
+      let closed = false
+      const Check = Action.make("probe/MergeFallback", { payload: {}, success: Schema.Void })
+      const Fallback = Flow.make("probe/MergeFallback", {
+        payload: {}, success: Schema.Void,
+        body: Node.capture({ check: Check.name }, () => Check.call({})),
+      })
+      const object = memory()
+      const executionId = crypto.randomUUID()
+      const host = ExecutionHost.make(object.storage, {
+        hostId: `object-${executionId}`, database: ExecutionHost.database(url, name),
+        flows: { flows: [Fallback], registration: Interpreter.layerWithImplementations(Fallback,
+          Check.toLayer(() => Effect.suspend(() => closed ? Effect.void : awaitPullClosed(1))),
+        ).pipe(Layer.provideMerge(Action.layerImplementations)) },
+        router: recording().router,
+      })
+      yield* host.start(yield* ExecutionHost.intent(Fallback, { executionId, payload: {} }))
+      const before = Date.now()
+      const parked = yield* host.alarm()
+      expect(parked._tag).toBe("Parked")
+      const due = object.alarm()!
+      expect(due).toBeGreaterThan(before)
+      expect(due).toBeLessThanOrEqual(Date.now() + 60 * 60_000)
+      const attempts = yield* sql`SELECT state, error_json FROM ${sql(name)}.flows_attempts WHERE run_id = ${executionId}`
+      expect(attempts.every((row) => row.error_json === null)).toBe(true)
+      // The PR remains open past the old 70-second retry interval: no failed attempt or new attempt is made.
+      const stillOpen = yield* Effect.gen(function* () {
+        yield* TestClock.setTime(due + 1)
+        return yield* host.alarm()
+      }).pipe(Effect.provide(TestClock.layer()))
+      expect(stillOpen._tag).toBe("Parked")
+      expect(Math.abs(object.alarm()! - (due + 60 * 60_000))).toBeLessThanOrEqual(5)
+      const after = yield* sql`SELECT state, error_json FROM ${sql(name)}.flows_attempts WHERE run_id = ${executionId}`
+      expect(after).toEqual(attempts)
+      // A lost webhook: the following hourly alarm re-enters the check and observes the terminal fact.
+      closed = true
+      const nextDue = object.alarm()!
+      const settled = yield* Effect.gen(function* () { yield* TestClock.setTime(nextDue + 1); return yield* host.alarm() }).pipe(Effect.provide(TestClock.layer()))
+      expect(settled._tag).toBe("Settled")
+      expect(yield* status(sql, name, executionId)).toBe("completed")
+    })))
 
   test("start wakes the object at once; alarms drive probe/Pause through its durable sleep to the end", () =>
     withSchema(({ name, sql, url }) =>
@@ -720,5 +803,75 @@ test("retry requires the engine cancellation receipt, not the object's stop requ
     expect(yield* stopped(attemptId)).toBe(false)
     yield* host.alarm()
     expect(yield* stopped(attemptId)).toBe(true)
+  })),
+)
+
+
+test("a webhook signal cannot revive a durably cancelled execution", () =>
+  withSchema(({ name, sql, url }) => Effect.gen(function* () {
+    const Event = Flow.make("probe/CancelledSignal", {
+      payload: {}, success: Schema.Json, error: WaitFor.WaitForRequestInvalid,
+      body: Node.capture({ wait: WaitFor.action.name }, () => WaitFor.action.call({ name: "merge" })),
+    })
+    const object = memory()
+    const executionId = crypto.randomUUID()
+    const make = () => ExecutionHost.make(object.storage, {
+      hostId: executionId, database: ExecutionHost.database(url, name),
+      flows: { flows: [Event], registration: Layer.merge(Interpreter.layer(Event), WaitFor.layer).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+      ) },
+      router: recording().router,
+    })
+    const host = make()
+    yield* host.start(yield* ExecutionHost.intent(Event, { executionId, payload: {} }))
+    expect((yield* host.alarm())._tag).toBe("Parked")
+    yield* host.cancel()
+    const restarted = make()
+    yield* restarted.signal(WaitFor.deferred("merge").name)
+    yield* restarted.alarm()
+    expect(yield* status(sql, name, executionId)).toBe("cancelled")
+    yield* restarted.signal(WaitFor.deferred("merge").name)
+    yield* restarted.alarm()
+    expect(yield* status(sql, name, executionId)).toBe("cancelled")
+  })),
+)
+
+test.each([0, 600_000])("webhook delivery leaves cancelled work for its budgeted alarm (%s ms)", (driveBudgetMs) =>
+  withSchema(({ name, sql, url }) => Effect.gen(function* () {
+    let actions = 0
+    const After = Action.make("probe/AfterCancelledSignal", { payload: {}, success: Schema.Json })
+    const Event = Flow.make("probe/SignalAdmission", {
+      payload: {}, success: Schema.Json, error: WaitFor.WaitForRequestInvalid,
+      body: Node.capture({ wait: WaitFor.action.name, after: After.name }, () =>
+        WaitFor.action.call({ name: "merge" }).pipe(Node.andThen(After.call({})))),
+    })
+    const object = memory()
+    const executionId = crypto.randomUUID()
+    const make = (budget?: number) => ExecutionHost.make(object.storage, {
+      hostId: executionId, database: ExecutionHost.database(url, name), driveBudgetMs: budget,
+      flows: { flows: [Event], registration: Layer.mergeAll(
+        Interpreter.layer(Event), WaitFor.layer,
+        After.toLayer(() => Effect.sync(() => { actions++; return null })),
+      ).pipe(Layer.provideMerge(Action.layerImplementations)) },
+      router: recording().router,
+    })
+    const host = make()
+    yield* host.start(yield* ExecutionHost.intent(Event, { executionId, payload: {} }))
+    expect((yield* host.alarm())._tag).toBe("Parked")
+    // Both fresh delivery and registration recovery of a repeated delivery
+    // persist readiness without starting an unbudgeted drain.
+    yield* host.signal(WaitFor.deferred("merge").name)
+    yield* host.signal(WaitFor.deferred("merge").name)
+    expect(yield* status(sql, name, executionId)).toBe("suspended")
+    expect(actions).toBe(0)
+    yield* host.cancel()
+    const restarted = make(driveBudgetMs)
+    yield* restarted.signal(WaitFor.deferred("merge").name)
+    expect((yield* restarted.alarm())._tag).toBe("Settled")
+    expect(yield* status(sql, name, executionId)).toBe("cancelled")
+    yield* restarted.signal(WaitFor.deferred("merge").name)
+    expect((yield* restarted.alarm())._tag).toBe("Settled")
+    expect(yield* status(sql, name, executionId)).toBe("cancelled")
+    expect(actions).toBe(0)
   })),
 )

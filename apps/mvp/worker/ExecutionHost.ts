@@ -1,9 +1,9 @@
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
-import type { Flow, FlowRuntime } from "@smthrs/flow"
+import { DurableDeferred, type Flow, FlowRuntime } from "@smthrs/flow"
 import type { Channels } from "@smthrs/notifications"
 import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare"
-import { Effect, Layer } from "effect"
+import { Effect, Exit, Layer, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import * as Checks from "./flows/Checks.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
@@ -248,7 +248,7 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never>(
   },
 ) => {
   const { flows, registration } = options.flows
-  return ExecutionObject.make(storage, {
+  const host = ExecutionObject.make(storage, {
     flows,
     runtime: (intent) =>
       CloudflareRuntime.layer(
@@ -260,4 +260,20 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never>(
     driveBudgetMs: options.driveBudgetMs,
     afterAlarm: options.afterAlarm,
   })
+  return {
+    ...host,
+    /** Persist before waking: a delivery racing the park, or repeated after a crash, is not lost. */
+    signal: (deferredName: string) => Effect.scoped(Effect.gen(function* () {
+      const raw = yield* storage.get<string>(ExecutionObject.intentKey)
+      if (raw === undefined) return
+      const intent = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw)
+      const deferred = DurableDeferred.make(deferredName, { success: Schema.Json })
+      yield* Effect.flatMap(FlowRuntime.FlowRuntime, (engine) => engine.deferredDone(deferred, {
+        flowName: intent.flow, executionId: intent.executionId, deferredName, exit: Exit.succeed(null),
+      })).pipe(Effect.provide(CloudflareRuntime.layer(
+        { hostId: options.hostId, executionId: intent.executionId, flow: intent.flow }, registration,
+      ).pipe(Layer.provide(options.database))))
+      yield* ExecutionObject.wake(storage)
+    })).pipe(Effect.orDie),
+  }
 }

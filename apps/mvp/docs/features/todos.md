@@ -126,7 +126,7 @@ todo/Publish    one commit, createCommitOnBranch fenced by the base ("T<n>: <tit
                 request into its base (a draft while that is another TODO's branch), its body the prompt, "Fixes #n" for
                 a TODO from an issue, and whom the App acted for ─▶ writer: in review, which frees the lane for the
                 next TODO; the head's checks start (checks/Run, docs/features/pulls.md)
-todo/Await      re-reads the pull request, 5 s doubling to a minute, until a person merges or closes it; a TODO dropped
+todo/Await      parks on a durable PR-close event; GitHub Apply signals it after a merge or close; an hourly engine clock covers missed webhooks; a TODO dropped
                 in Smithers meanwhile closes the pull request its run opened. Stacked: see below
 todo/Settle     writer: merged releases the next Queued TODO; an unmerged close fails queued successors base_closed
 todo/Fail       any step that gave up ─▶ writer: failed with its code (implement, empty_change, publish_refused,
@@ -289,3 +289,14 @@ Retry uses the same `worker/stack/TodoRuns.ts` adapter as durable Drop and admis
 The writer admits no queued TODO beyond the first failed predecessor. A person’s Drop removes that dependency and releases the queue. A PR closed unmerged fails queued successors `base_closed`; a missing published base branch also refuses `base_closed`, never falling back to main. Already published descendants retain the existing close-and-fail behavior. Retrying the failed predecessor preserves its position; its publication releases the held TODO onto its branch.
 
 Stack initialization retains the store’s shape source, including cache isolation and injected access refusals. A prompt shape refused with 401 or 403 keeps access at `sign_in` or `forbidden` even when the TODO shape succeeds.
+
+
+### Merge wake (2026-10-22)
+
+`github/Apply/read` signals a TODO's own PR and every active TODO based on that PR's branch after re-reading a terminal PR from GitHub. The execution host persists the durable deferred before arming the alarm. Early signals, duplicate delivery and replacement hosts retain the same completion. The run parks without `StillOpen` failures; an engine-owned clock at the next hourly boundary re-enters inspection if a webhook is lost. Stacked inspection also re-reads the base PR, so fallback recovery does not depend on its run settling first. Existing retry-policy declarations are retained for persisted-plan compatibility; retries cover failed inspections, not an open PR.
+
+A verified close is terminal for that TODO attempt. Reopening the GitHub PR before the host resumes does not resurrect the attempt or restore retry polling. A verified base close similarly fails the dependent attempt, even if that base PR reopens.
+
+Retry keeps the previous attempt's branch and PR number in `todo_attempts` before
+clearing the current projection. Published descendants continue to resolve their
+original base after replacement publication, including a confirmed GitHub merge.
