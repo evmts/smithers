@@ -1,3 +1,4 @@
+import { MAX_VIEW_TEXT_BYTES } from "../src/features/docs/contract.ts"
 // The views routes (worker/Views.ts, docs/features/web-pages.md#the-views-table), through ChatApi's real handler on this
 // file's schema of the compose Postgres (`pnpm db:up`). The route is the server's half of `app/web/open`: the flow on the
 // device checks a page first, and the route checks it again before it keeps it.
@@ -5,8 +6,7 @@ import { ConfigProvider, Deferred, Effect, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
-import { MAX_VIEW_TEXT_BYTES } from "../src/features/docs/contract.ts"
-import { MAX_VIEW_BODY_BYTES } from "../src/features/views/contract.ts"
+import { MAX_GENERATED_BODY_BYTES, MAX_VIEW_BODY_BYTES } from "../src/features/views/contract.ts"
 import type { Actor } from "./Actor.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { shared, tracked } from "./test/branch.ts"
@@ -145,8 +145,16 @@ describe("POST /api/views", () => {
       const response = await add(h, body)
       expect([response.status, await response.json()]).toEqual([400, { code: "invalid" }])
     }
-    const large = await add(h, "x".repeat(MAX_VIEW_BODY_BYTES + 1))
+    const large = await add(h, "x".repeat(MAX_GENERATED_BODY_BYTES + 1))
     expect([large.status, await large.json()]).toEqual([413, { code: "too_large" }])
+    // Only a generated view's module takes more than a page's or a form's 8 KiB.
+    const properties = Object.fromEntries(
+      Array.from({ length: 200 }, (_, index) => [`field${index}`, { type: "string", title: "A field of the form" }]),
+    )
+    const form = { id: crypto.randomUUID(), template: "form", props: { title: "Big", schema: { type: "object", properties }, submitLabel: "Send" } }
+    expect(JSON.stringify(form).length).toBeGreaterThan(MAX_VIEW_BODY_BYTES)
+    const largeForm = await add(h, form)
+    expect([largeForm.status, await largeForm.json()]).toEqual([413, { code: "too_large" }])
     const broken = await add(h, new Uint8Array([0x7b, 0xff, 0xfe]))
     expect([broken.status, await broken.json()]).toEqual([400, { code: "invalid" }])
     expect(h.line("chat.view.add").at(-1)?.annotations).toMatchObject({ status: 400, bytes: 3 })

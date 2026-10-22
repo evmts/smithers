@@ -14,27 +14,30 @@ export interface ViewsConfig {
 }
 
 /**
- * The view this tab shows full screen, once the device has it: a `webpage` or a `docs` page have a full size; a `link`
- * card doesn't.
+ * The view this tab shows full screen, once the device has it: a `webpage`, a form or a generated view. A `link` card
+ * has no full size.
  */
 export const shownQuery = (views: Collection.Collection<View>, showing: Collection.Collection<Showing, string>) =>
   LiveQuery.make((q) =>
     q
       .from({ showing: showing.tanstack })
       .innerJoin({ view: views.tanstack }, ({ showing, view }) => Query.eq(showing.viewId, view.id))
-      .where(({ view }) => Query.or(Query.eq(view.template, "webpage"), Query.eq(view.template, "docs")))
+      .where(({ view }) => Query.not(Query.eq(view.template, "link")))
       .select(({ view }) => ({
         id: view.id,
         template: view.template,
-        url: view.props.url,
-        title: view.props.title,
-        description: view.props.description,
-        icon: view.props.icon,
-        markdown: view.props.text,
-        truncated: view.props.truncated,
+        props: view.props,
+        title: view.title,
+        state: view.state,
+        html: view.html,
+        interactions: view.interactions,
+        revision: view.revision,
       }))
       .findOne()
   )
+
+/** Every view of a conversation on this device: the rows the conversation renders its views from, by id. */
+export const rowsQuery = (views: Collection.Collection<View>) => LiveQuery.make((q) => q.from({ view: views.tanstack }))
 
 type Shown<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
 
@@ -57,6 +60,8 @@ export class ViewsStore extends Context.Service<
     readonly forConversation: (conversationId: string) => Effect.Effect<ElectricCollection.ElectricCollection<View>>
     /** The view this tab shows full screen from a branch conversation opened before, once the device has it. */
     readonly shownIn: (conversationId: string) => Shown<typeof shownQuery> | undefined
+    /** A conversation's views on this device, as a live query: the home conversation's, or a branch's opened before. */
+    readonly rowsIn: (conversationId: string | undefined) => Shown<typeof rowsQuery>
   }
 >()("@smthrs/mvp/views/ViewsStore") {
   /** The store; its collections cleaned up and its Electric shape closed when the scope closes. */
@@ -71,7 +76,7 @@ export class ViewsStore extends Context.Service<
           schema: View,
           getKey: (row) => row.id,
           syncMode: "eager",
-          persist: { schemaVersion: 3 },
+          persist: { schemaVersion: 4 },
           shape: {
             url: `${config.origin}${VIEWS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -85,6 +90,8 @@ export class ViewsStore extends Context.Service<
           initialData: [{ id: SHOWING, viewId: null, conversationId: null }],
         })
         const shown = yield* shownQuery(views, showing)
+        const rows = yield* rowsQuery(views)
+        const rowsBy = new Map<string, Shown<typeof rowsQuery>>()
         const opened = new Map<string, ElectricCollection.ElectricCollection<View>>()
         const shownBy = new Map<string, Shown<typeof shownQuery>>()
         // Include query creation and cache publication in the same first-open critical section.
@@ -98,7 +105,7 @@ export class ViewsStore extends Context.Service<
               schema: View,
               getKey: (row) => row.id,
               syncMode: "eager",
-              persist: { schemaVersion: 3 },
+              persist: { schemaVersion: 4 },
               shape: {
                 url: `${config.origin}${VIEWS_SHAPE_ROUTE}?conversation=${encodeURIComponent(conversationId)}`,
                 columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -108,11 +115,15 @@ export class ViewsStore extends Context.Service<
               Scope.provide(scope),
               Effect.provideService(Persistence.Persistence, persistence),
               Effect.tap((collection) =>
-                Effect.flatMap(Scope.provide(shownQuery(collection, showing), scope), (query) =>
-                  Effect.sync(() => {
-                    opened.set(conversationId, collection)
-                    shownBy.set(conversationId, query)
-                  }))
+                Effect.flatMap(
+                  Scope.provide(Effect.all([shownQuery(collection, showing), rowsQuery(collection)]), scope),
+                  ([query, all]) =>
+                    Effect.sync(() => {
+                      opened.set(conversationId, collection)
+                      shownBy.set(conversationId, query)
+                      rowsBy.set(conversationId, all)
+                    }),
+                )
               ),
               Effect.orDie,
             )
@@ -123,6 +134,7 @@ export class ViewsStore extends Context.Service<
           shown,
           forConversation,
           shownIn: (conversationId) => shownBy.get(conversationId),
+          rowsIn: (conversationId) => (conversationId === undefined ? undefined : rowsBy.get(conversationId)) ?? rows,
         })
       }),
     )

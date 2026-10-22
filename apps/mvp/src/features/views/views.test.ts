@@ -18,6 +18,8 @@ import { CANT_OPEN } from "../web/contract"
 import { pagesOpened } from "../web/metrics"
 import { Web } from "../web/web"
 import { viewPath } from "./contract"
+import { TIC_TAC_TOE, TIC_TAC_TOE_STATE } from "./renderer"
+import { pageOf } from "./rows"
 import { ViewsStore } from "./store"
 import { Views } from "./views"
 
@@ -54,6 +56,15 @@ const HOMES = [{
   home: { docs: "https://docs.example/llms.txt", blocks: [{ type: "text", text: "Widgets" }] },
 }]
 
+/** The page of the view `id` in the home conversation, as its row says: what the conversation renders it from. */
+const pageIn = (
+  views: Views["Service"],
+  id: string,
+): { readonly url?: string; readonly title?: string; readonly description?: string; readonly icon?: string } => {
+  const row = views.queries.rowsIn(undefined).toArray.find((view) => view.id === id)
+  return row === undefined ? {} : pageOf(row)
+}
+
 /**
  * The app as `actor` (a Member unless `null`), with its conversation and full-screen view started as React starts them,
  * and the session row set as sign-in's `load` sets it, so the composer offers `/web`.
@@ -65,7 +76,7 @@ const open = async (options: TabOptions = {}, actor: Actor | null = member) => {
   const views = await runtime.runPromise(Effect.service(Views))
   const commands = await runtime.runPromise(Effect.service(Commands))
   const chatStore = await runtime.runPromise(Effect.service(ChatStore))
-  for (const query of [chat.queries.conversation, views.queries.shown, commands.queries.menu, chatStore.composerState.tanstack]) {
+  for (const query of [chat.queries.conversation, views.queries.shown, views.queries.rowsIn(undefined), commands.queries.menu, chatStore.composerState.tanstack]) {
     query.startSyncImmediate()
   }
   const { session } = await runtime.runPromise(Effect.service(AuthStore))
@@ -87,13 +98,17 @@ const open = async (options: TabOptions = {}, actor: Actor | null = member) => {
     views,
     /** The conversation as the screen shows it: each row's role, and a view's template and page. */
     conversation: () =>
-      chat.queries.conversation.toArray.map((row) => (row.role === "view" ? `view ${row.template} ${row.url}` : row.role)),
+      chat.queries.conversation.toArray.map((row) =>
+        row.role === "view" ? `view ${row.template} ${pageIn(views, row.id).url}` : row.role
+      ),
     viewIds: () => chat.queries.conversation.toArray.flatMap((row) => (row.role === "view" ? [row.id] : [])),
     /** Each view's preview, as its card or frame shows it. */
     preview: () =>
-      chat.queries.conversation.toArray.flatMap((row) =>
-        row.role === "view" ? [{ title: row.title, description: row.description, icon: row.icon }] : []
-      ),
+      chat.queries.conversation.toArray.flatMap((row) => {
+        if (row.role !== "view") return []
+        const { title, description, icon } = pageIn(views, row.id)
+        return [{ title, description, icon }]
+      }),
     draft: () => chatStore.composerState.tanstack.toArray[0]?.draft,
     count: (attributes: Record<string, string>) =>
       runtime.runSync(Metric.value(Metric.withAttributes(pagesOpened, attributes))).count,
@@ -126,11 +141,12 @@ describe("/web <url>", () => {
     const other = openTab(tab.api)
     runtimes.push(other)
     const chat = await other.runPromise(Effect.service(Chat))
+    const otherViews = await other.runPromise(Effect.service(Views))
     chat.queries.conversation.startSyncImmediate()
+    otherViews.queries.rowsIn(undefined).startSyncImmediate()
     await until(() =>
-      expect(chat.queries.conversation.toArray.flatMap((row) => (row.role === "view" ? [row.url] : []))).toEqual([
-        "https://example.com/",
-      ])
+      expect(chat.queries.conversation.toArray.flatMap((row) => (row.role === "view" ? [pageIn(otherViews, row.id).url] : [])))
+        .toEqual(["https://example.com/"])
     )
   }, WITHIN)
 
@@ -213,7 +229,7 @@ describe("a view's sizes", () => {
 
     tab.views.actions.show(page)
     await until(() =>
-      expect(tab.views.queries.shown.toArray).toEqual([expect.objectContaining({ id: page, url: "https://example.com/docs" })])
+      expect(tab.views.queries.shown.toArray).toEqual([expect.objectContaining({ id: page, props: expect.objectContaining({ url: "https://example.com/docs" }) })])
     )
     tab.views.actions.show(card)
     await until(() => expect(tab.views.queries.shown.toArray).toEqual([]))
@@ -225,16 +241,11 @@ describe("a view's sizes", () => {
     send(tab, "/docs acme/widgets retry")
 
     await until(() => expect(tab.conversation()).toEqual(["view docs https://docs.example/guide/retrying.md"]))
-    const chat = await tab.runtime.runPromise(Effect.service(Chat))
-    expect(chat.queries.conversation.toArray[0]).toMatchObject({
-      title: "Retrying",
-      markdown: "# Retrying\n\nUse `retry`.\n",
-    })
     const [page] = tab.viewIds() as [string]
     tab.views.actions.show(page)
     await until(() =>
       expect(tab.views.queries.shown.toArray).toEqual([
-        expect.objectContaining({ id: page, template: "docs", title: "Retrying", markdown: "# Retrying\n\nUse `retry`.\n" }),
+        expect.objectContaining({ id: page, template: "docs", props: expect.objectContaining({ title: "Retrying", text: "# Retrying\n\nUse `retry`.\n" }) }),
       ])
     )
   }, WITHIN)
@@ -245,5 +256,34 @@ describe("a view's sizes", () => {
     tab.web.actions.cardOpened()
 
     expect(tab.count({ web_mode: "tab", door: "view", outcome: "opened" })).toBe(1)
+  }, WITHIN)
+})
+
+describe("a generated view", () => {
+  test("a person's move goes through view/set-state, and the board every tab reads changes once ChatApi made it", async () => {
+    const tab = await open()
+    const id = crypto.randomUUID()
+    const added = await tab.api.fetch(`${CHATAPI_ORIGIN}/api/views`, {
+      method: "POST",
+      body: JSON.stringify({
+        id,
+        template: "generated",
+        title: "Tic-tac-toe",
+        size: "inline",
+        code: TIC_TAC_TOE,
+        props: {},
+        state: TIC_TAC_TOE_STATE,
+      }),
+    })
+    expect(added.status).toBe(202)
+    const rows = tab.views.queries.rowsIn(undefined)
+    await until(() => expect(rows.toArray.find((row) => row.id === id)?.revision).toBe(0))
+    // The full-screen route shows a generated view too.
+    tab.views.actions.show(id)
+    await until(() => expect(tab.views.queries.shown.toArray).toEqual([expect.objectContaining({ id, template: "generated" })]))
+
+    await tab.views.actions.move(id, 0, { name: "cell", arg: "4" })
+
+    await until(() => expect(rows.toArray.find((row) => row.id === id)).toMatchObject({ revision: 1, state: { turn: "O" } }))
   }, WITHIN)
 })

@@ -30,6 +30,7 @@ import { RunReporter } from "../features/status/reporter"
 import * as Theme from "../features/theme/flows"
 import * as TodoSteps from "../features/todos/steps"
 import { ViewsClient } from "../features/views/api"
+import * as ViewSteps from "../features/views/steps"
 import { PreviewClient } from "../features/web/api"
 import * as WebPages from "../features/web/steps"
 import { DocsClient } from "../features/docs/api"
@@ -77,7 +78,19 @@ export interface HostOptions extends AgentHost.HostOptions {
   /** Whether `app/web/open` opens `http:` pages on this machine: development only. Default `false`. */
   readonly localHttp?: boolean
   readonly summaryModel?: import("@smthrs/model").Model.Model
+  /** The renderer's model in place of the endpoint's `renderer` role: only the end-to-end tests' scripted agent. */
+  readonly rendererModel?: import("@smthrs/model").Model.Model
 }
+
+/**
+ * `ui/form`, `ui/render` and `view/set-state` (docs/features/views.md): views added and moved through ChatApi on
+ * `origin`, written by the model endpoint's `renderer` role (or `rendererModel`).
+ */
+export const views = (origin: string, rendererModel?: import("@smthrs/model").Model.Model) =>
+  ViewSteps.registration.pipe(
+    Layer.provide(ViewsClient.layer({ origin })),
+    Layer.provide(ViewSteps.RendererSeat.layer(origin, rendererModel)),
+  )
 
 /** Jev's flows, `app/jev/classify` and `app/jev/evaluate`, judging through the model endpoint's `judge` role on `origin`. */
 export const jev = (origin: string) => Jev.registration.pipe(Layer.provide(Jev.JudgeSeat.layer(origin)))
@@ -99,6 +112,7 @@ export const registrations = (options: HostOptions) =>
     Files.registration,
     webPages(options.origin, options.localHttp ?? false),
     docsSearch(options.origin),
+    views(options.origin, options.rendererModel),
     AgentHost.layer(options),
     repoFlows(options.origin),
     jev(options.origin),

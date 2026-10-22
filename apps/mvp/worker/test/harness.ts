@@ -27,6 +27,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.ts"
 import * as RunCredentials from "../RunCredentials.ts"
 import * as SessionKeys from "../SessionKeys.ts"
+import * as ViewRealm from "../ViewRealm.ts"
 import * as Conversations from "../branch/Conversations.ts"
 import * as Chat from "../Chat.ts"
 import * as DocsApi from "../docs/Api.ts"
@@ -42,7 +43,7 @@ export const testFile = (prefix: string) => {
   const runtime = ManagedRuntime.make(TestDatabase.layer(prefix))
   beforeAll(() => runtime.runPromise(Effect.void))
   beforeEach(() =>
-    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE messages, views RESTART IDENTITY`))
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE messages, views, view_moves RESTART IDENTITY`))
   )
   afterAll(() => runtime.dispose())
   return runtime
@@ -97,6 +98,9 @@ interface HarnessOptions {
 }
 
 /** ChatApi's routes on the file's schema and a scripted model, recording every log line, span and metric. */
+/** One presentation realm for every harness in a test file: QuickJS compiles once. */
+const nodeRealm = ViewRealm.once(ViewRealm.loadNode)
+
 export const harness = async (runtime: Runtime, script: Script, options: HarnessOptions = {}) => {
   const scratch = await runtime.runPromise(Effect.gen(function* () {
     return yield* TestDatabase.Scratch
@@ -142,7 +146,11 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
   )
   const chat = await runtime.runPromise(
     observed(
-      Chat.make(database, options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }).pipe(
+      Chat.make(database, {
+        ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
+        // Generated views render in the realm Node compiles, loaded once for the whole file (worker/ViewRealm.ts).
+        realm: nodeRealm,
+      }).pipe(
         Effect.provide(hostModel),
       ),
     ),

@@ -1,3 +1,4 @@
+import * as ViewRealm from "../../worker/ViewRealm.ts"
 import * as Pg from "@effect/sql-pg"
 import { ImmutableCache } from "@smthrs/artifacts"
 import { PostgresDatabase } from "@smthrs/database"
@@ -121,6 +122,9 @@ import { workerRegistrations } from "../flows/registrations"
 import type { Endpoint } from "../flows/tabPort"
 import { faultyServices } from "./faults"
 import { tempDirectory } from "./tempDirectory"
+
+/** One presentation realm for every test app in a file: QuickJS compiles once. */
+const nodeRealm = ViewRealm.once(ViewRealm.loadNode)
 
 // ChatApi's real handler (worker/Chat.ts, and RepoApi for repositories, as worker/ChatApi.ts routes them), as the
 // browser reaches it, over the compose Postgres and Electric (`pnpm db:up`). Only the model is scripted: a test writes
@@ -417,7 +421,8 @@ export class TestChatApi extends Context.Service<
             ? { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: yield* Effect.promise(codeStorageKey) }
             : {})
         })
-        const chat = yield* Chat.make(database).pipe(
+        // Generated views render in the realm Node compiles (worker/ViewRealm.ts).
+        const chat = yield* Chat.make(database, { realm: nodeRealm }).pipe(
           Effect.provide(
             Layer.succeed(
               HostModel,

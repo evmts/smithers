@@ -1,5 +1,6 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { OtlpRelay } from "@smthrs/observability"
+import { Interactions, type PresentationRealm } from "@smthrs/views"
 import { Clock, Data, Effect, type Layer, Metric, Option, Schema, Tracer } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { type SqlClient, SqlError } from "effect/sql"
@@ -14,6 +15,7 @@ import {
 import { ANSWERS_ROUTE } from "../src/features/agent/contract.ts"
 import { MODEL_ROLES, MODEL_ROUTE, type ModelRole } from "../src/features/model/contract.ts"
 import { VIEWS_ROUTE, VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
+import { FormValues } from "../src/features/views/schema.ts"
 import { WEB_PREVIEW_ROUTE } from "../src/features/web/contract.ts"
 import { RUNS_ROUTE, RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
 import { ACK_ROUTE, NOTIFICATIONS_SHAPE_ROUTE, WATCHES_ROUTE } from "../src/features/attention/contract.ts"
@@ -103,9 +105,20 @@ const Question = Schema.Struct({
   // conversation, so an ask queued by the build before branches still lands.
   conversationId: Schema.optional(Schema.String.check(Schema.isUUID())),
   text: Schema.Trim.check(Schema.isBetweenLength(1, MAX_QUESTION_LENGTH)),
+  // A question sent from a view (docs/features/views.md): the view and its event, and the values sent with it.
+  source: Schema.optional(Schema.Struct({ viewId: Schema.String.check(Schema.isUUID()), event: Interactions.Name })),
+  data: Schema.optional(FormValues),
 }).check(Schema.makeFilter((question) => question.id.toLowerCase() !== question.answerId.toLowerCase()))
 
 const decodeQuestion = Schema.decodeUnknownEffect(Schema.fromJsonString(Question))
+
+/** What the person reads when ChatApi won't take a question sent from a view, by code. */
+const refusedSource: Readonly<Record<string, string>> = {
+  view_not_found: "That form or view isn't in this conversation.",
+  undeclared: "That view doesn't send this.",
+  invalid_values: "Those values don't fit the form.",
+  submitted: "This form was already sent.",
+}
 
 const invalid = `Send JSON { id, answerId, conversationId, text }: two different UUIDs, a conversation's id and 1 to ${
   MAX_QUESTION_LENGTH.toLocaleString("en-US")
@@ -130,7 +143,12 @@ class Refusal extends Data.TaggedError("Refusal")<{
  */
 export const make = <E, R>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
-  options: { readonly localHttp?: boolean; readonly spendAlerts?: boolean } = {},
+  options: {
+    readonly localHttp?: boolean
+    readonly spendAlerts?: boolean
+    /** The realm generated views render in (worker/ViewRealm.ts): `load` on Cloudflare, `loadNode` in the tests. */
+    readonly realm: Effect.Effect<PresentationRealm.Realm, PresentationRealm.RealmError>
+  },
 ) =>
   Effect.gen(function* () {
     // POST /api/model/<role>: the metered model endpoint (docs/features/model-endpoint.md), which starts the spend
@@ -227,6 +245,8 @@ export const make = <E, R>(
           askedBy: asker.subject.id,
         }
         fields.questionId = question.id
+        // Asked from a view: logged as that alone, never by the view's event, which a module names.
+        if (decoded.source !== undefined) fields.source = "view"
         fields.answerId = question.answerId
         fields.conversationId = conversationId
         yield* Effect.annotateCurrentSpan({
@@ -239,9 +259,20 @@ export const make = <E, R>(
         // uninterruptible unit, so a caller that goes away between them can't leave a stored ask without its expiry.
         const asked = yield* Effect.uninterruptible(
           Effect.gen(function* () {
-            const asked = yield* Messages.ask(question).pipe(Effect.provide(database), Effect.mapError(refuseStore))
-            // Asking puts the conversation in the asker's list, never bringing back one they archived; the question
-            // stands whether or not that row could be written.
+            const asked = yield* (decoded.source === undefined
+              ? Messages.ask(question)
+              : Views.askFrom(
+                question,
+                { viewId: decoded.source.viewId.toLowerCase(), event: decoded.source.event },
+                decoded.data,
+              )).pipe(
+                Effect.provide(database),
+                Effect.mapError((error) =>
+                  error instanceof Views.SourceRefused
+                    ? new Refusal({ status: error.status, errorCode: error.code, explanation: refusedSource[error.code] })
+                    : refuseStore(error)
+                ),
+              )
             yield* ConversationPeople.asked(conversationId, asker.subject.id).pipe(
               Effect.provide(database),
               Effect.catchCause(() => Effect.logWarning("conversation.asked.failed")),
@@ -328,6 +359,8 @@ export const make = <E, R>(
       }
       if (path === SHAPE_ROUTE) return yield* shape
       if (path === VIEWS_ROUTE) return yield* views.add
+      const stateOf = Views.stateViewId(path)
+      if (stateOf !== undefined) return yield* views.state(stateOf)
       if (path === VIEWS_SHAPE_ROUTE) return yield* views.shape
       if (path === WEB_PREVIEW_ROUTE) return yield* webPreview.preview
       if (path === RUNS_SHAPE_ROUTE) return yield* runs.shape

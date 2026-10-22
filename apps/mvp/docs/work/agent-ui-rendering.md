@@ -2,8 +2,8 @@
 title: The agent talks through UI (feature 3)
 status: in-progress
 area: app
-owner: Opus forms/views builder running in isolated mini repository; Codex tracker curates note
-updated: 2026-10-21 20:55 PDT
+owner: Codex GPT-6.1 Sol agent-ui rebase
+updated: 2026-10-23
 links: [review-round-4.md, app-wiring.md, ../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0004-agent-ui-codemode-and-rendering-comparison.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0006-repo-clone-and-view.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, agent-evals.md, agent-repo-navigation.md, flows-and-agent.md, disk-space.md, durable-browser-engine.md, sdk-test-reds.md, repo-checks-green.md, flows-root-platform-neutral.md, code-reviews.md, observability.md, repo-clone-and-view.md]
 ---
 
@@ -164,9 +164,18 @@ Will: "The agent has the ability to talk to us in forms. Note the agent uses cod
 - Opus P3-11, unrouted: the sandboxed-frame handshake exists twice (`adapters/terminal-frame/TerminalFrame.tsx:122-161` and `GeneratedView.tsx:82-127`, plus `frame.ts`), a duplicate implementation; every `GeneratedView` reports the others' `ui/initialize` as `wrong_source` (`GeneratedView.tsx:87-95`); `framedPageTarget` accepts any `https:` URL when the host origin is unknown under SSR (`web-page/webPageUrl.ts:93`); OSC 8 terminal links can show one URL and open another (`frame.ts:60`); `jsonValueText` rounds int8 ids above 2^53.
 - **13:38:27 on 2026-10-20: R4-9 and R4-27 fixed** (round 4's SDK fix agent, with Fable S-P2-6): freezing alone didn't stop the leak, so `require` and every module behind it are deep-frozen and each render and interaction gets a fresh QuickJS runtime, about 47 ms per render (median) instead of under 2 ms. A patched React renderer checks every element it emits, so a hand-built `<script>` element no longer gets through; five docs say the realm's HTML is untrusted. Changeset `views-fresh-frozen-runtime.md`. Optional, not done: `arguments` in `refusedNames`; a pre-warmed runtime pool if interaction feels slow.
 
+- **2026-10-21: V3 to V5, the app half, built** by the agent-ui builder ([views](../features/views.md)):
+  - **V3:** `ui/form`, `ui/render` (the `renderer` role, a sealed `ModelStep` per attempt, two corrections) and `view/set-state`; migration `0051_agent_views`; ChatApi checks and renders generated views in its own QuickJS realm (`worker/ViewRealm.ts`) and keeps that HTML, never a device's; a move is `POST /api/views/<id>/state` from the state it keeps, with revisions; a form's submission is an outbox question with `source` and `data`, marking the form submitted in the same transaction; the turn reads the values. The browser shows `FlowFormView` and `GeneratedView` inline, with Full screen at `/app/views/<id>`.
+  - **V4:** eval cases `form-ask`, `form-clone-no-url`, `board` and `view-loads-script`, and an `inertViews` safety check on every case. Not run live: no model key.
+  - **V5:** `e2e/forms.spec.ts` and `e2e/generated-view.spec.ts` with the models scripted in the browser (`?agent=form`, `?agent=board`).
+  - Upstream: `@smthrs/ui`'s clipboard fallback uses `appendChild`, so the Worker compiles `@smthrs/ui`'s root (changeset `ui-copy-append-child.md`).
+  - Not built: 0004 §6's instant local render in a tab realm (a move waits for ChatApi and Electric); a renderer prompt generated from `@smthrs/ui`'s docs; 0004 §9's twelve-case suite beyond these four.
+
 ## Next
 
-From 13:38 on 2026-10-20: R4-9 and R4-27 land in round 3 ([land to main](land-to-main.md)); the pool and `refusedNames` are optional follow-ups in the [P3 cleanup](review-round-4-p3-cleanup.md).
+From 2026-10-21: land the agent-ui builder's commits (`builder/agent-ui`), then record the four eval cases' live baseline with a model key.
+
+Until 2026-10-21 the next step was, from 13:38 on 2026-10-20: R4-9 and R4-27 land in round 3 ([land to main](land-to-main.md)); the pool and `refusedNames` are optional follow-ups in the [P3 cleanup](review-round-4-p3-cleanup.md).
 
 Until 13:46 on 2026-10-20 the next step was, from 11:07 on 2026-10-20: the lead rules on round 4's R4-9 (P1) and routes the fix, with the mutation cases added to the poison test ([review round 4](review-round-4.md)); the duplicate frame handshake goes with it.
 
@@ -194,3 +203,7 @@ The renderer's model comes from the `renderer` role on the [model endpoint](mode
 - May the renderer move to a paid frontier model if evals show Qwen's views fail? Recommended: Qwen until then. (Answered 22:34: the same model, configurable by admins.)
 - Should views sync across devices? Recommended: yes. (Answered 22:35: yes.)
 - None open.
+
+## 2026-10-22 rebase proof
+
+Rebased onto main `998199dc6263`; migration `0051_agent_views` leaves reserved 0043 free. Latitude regenerated the append-only schema lock at epoch 66. Main’s device authority, plugins, timeline telemetry and runs history remain. Added calibration for view moves and retained engine admission telemetry. App typecheck and importRules pass; the full suite passed 3,264 tests with six failures, all six suites then passed in the 230-test focused run after fixes. UI typecheck and 2,611 coverage-enabled tests pass (70.57% aggregate lines; no configured package threshold). Both form/board Mac mini E2Es pass. The full app coverage gate was not proved green. No push. Receipts: ~/smithers-builders/rb22-agent-ui-*.log.

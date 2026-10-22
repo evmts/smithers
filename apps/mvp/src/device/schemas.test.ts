@@ -6,6 +6,7 @@ import { Unsent } from "../features/chat/schema"
 import { listed } from "../features/runs/contract"
 import { RepositoryV3 } from "./repo-history"
 import { RunV1 } from "./runs-history"
+import { UnsentV1 } from "./history"
 import { ChatUnsentStore, deviceRegistry, IssueRequestedStore } from "./registry"
 
 // The check that fails a persisted schema changed without a new version (decision 0021 §5): every store and outbox
@@ -55,10 +56,17 @@ describe("the device's stores", () => {
     const changed = Migrations.registry({
       ...deviceRegistry,
       stores: deviceRegistry.stores.map((store) =>
-        store === ChatUnsentStore ? Migrations.local({ id: "chat-unsent", versions: [Changed], getKey: (row) => row.id }) : store
+        store === ChatUnsentStore
+          ? Migrations.local({
+            id: "chat-unsent",
+            versions: [UnsentV1, Changed],
+            migrations: [Migrations.step(UnsentV1, Changed, (row) => ({ ...row, pinned: false }))],
+            getKey: (row) => row.id,
+          })
+          : store
       ),
     })
-    expect(explain(Migrations.check(changed, read()))).toEqual([`chat-unsent v1: ${advice.changed_without_version}`])
+    expect(explain(Migrations.check(changed, read()))).toEqual([`chat-unsent v2: ${advice.changed_without_version}`])
   })
 
   test("a local store's new version can't be declared without a migration to it", () => {

@@ -21,6 +21,7 @@ import { TerminalSockets } from "./branch/Sandboxes.ts"
 import * as BranchRooms from "./BranchRooms.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import * as Chat from "./Chat.ts"
+import * as ViewRealm from "./ViewRealm.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Executions from "./Executions.ts"
@@ -88,6 +89,8 @@ export const program = (options: ProgramOptions = {}) =>
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(ChatDatabase)
     const database = Database.layer(hyperdrive.connectionString)
     const chat = yield* Chat.make(database, {
+      // Generated views render in the realm on the QuickJS build the bundle compiled (worker/ViewRealm.ts).
+      realm: ViewRealm.load,
       ...(options.localHttp === undefined ? {} : { localHttp: options.localHttp }),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
     })

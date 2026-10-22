@@ -49,7 +49,7 @@ const tabOn = async <R, E>(
   const views = await runtime.runPromise(Effect.service(Views))
   const commands = await runtime.runPromise(Effect.service(Commands))
   const api = await runtime.runPromise(Effect.service(TestChatApi))
-  for (const query of [chat.queries.conversation, chat.queries.place, chat.queries.history, views.queries.shown, commands.queries.menu]) {
+  for (const query of [chat.queries.conversation, chat.queries.place, chat.queries.history, views.queries.shown, views.queries.rowsIn(undefined), commands.queries.menu]) {
     query.startSyncImmediate()
   }
   // Signed in as sign-in's `load` sets it, so the composer offers the slash commands.
@@ -65,8 +65,13 @@ const tabOn = async <R, E>(
   const shown = (conversationId: string | null) => {
     const window = chat.queries.of(conversationId)
     window.conversation.startSyncImmediate()
+    // A view renders from its own row, by id (src/features/views/views.ts `rowsIn`).
+    const rows = views.queries.rowsIn(conversationId ?? undefined)
+    rows.startSyncImmediate()
     return window.conversation.toArray.map((row) =>
-      row.role === "view" ? `view ${row.template} ${row.url}` : `${row.role} ${row.status} ${row.text}`
+      row.role === "view"
+        ? `view ${row.template} ${(rows.toArray.find((view) => view.id === row.id)?.props as { url?: string } | undefined)?.url}`
+        : `${row.role} ${row.status} ${row.text}`
     )
   }
   return {
@@ -477,7 +482,7 @@ describe("pages in a branch's conversation", () => {
 
     const inBranch = tab.views.queries.shownIn(branch)
     inBranch.startSyncImmediate()
-    await until(() => expect(inBranch.toArray).toEqual([expect.objectContaining({ id: viewId, url: "https://example.com/docs" })]))
+    await until(() => expect(inBranch.toArray).toEqual([expect.objectContaining({ id: viewId, props: expect.objectContaining({ url: "https://example.com/docs" }) })]))
     // Home's own query for none, or a conversation this tab never opened: the view isn't home's.
     expect(tab.views.queries.shownIn(undefined)).toBe(tab.views.queries.shown)
     expect(tab.views.queries.shownIn(crypto.randomUUID())).toBe(tab.views.queries.shown)

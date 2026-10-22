@@ -14,7 +14,9 @@ import {
   HISTORY,
   HOME_DRAFT,
   PLACE,
+  type Source,
 } from "./schema"
+import type { FormValues } from "../views/schema"
 import { type DraftSelection, SharedPrompt } from "./sharedPrompt"
 import { ChatStore, keepUnsent, timeFirstText } from "./store"
 
@@ -230,12 +232,21 @@ export type AskResult =
   | { readonly asked: true; readonly questionId: string; readonly answerId: string }
   | { readonly asked: false; readonly reason: "empty" | "too_long" }
 
+/** Where a question asked from a view came from, and the values sent with it (docs/features/views.md). */
+export interface FromView {
+  readonly source: Source
+  readonly data?: FormValues
+  /** The conversation the view is in: a branch's, or the home conversation's when absent. */
+  readonly conversationId?: string
+}
+
 /**
  * Asks Smithers `text`, trimmed: the question shows at once at the end of the conversation and the draft clears,
  * online or not, while an answer streams or not. The outbox sends it (store.ts). A blank question or one over
- * `MAX_QUESTION_LENGTH` changes nothing, so the draft stays.
+ * `MAX_QUESTION_LENGTH` changes nothing, so the draft stays. Sent from a view (`from`), it names the view and carries
+ * the values, goes to the view's own conversation, and leaves the draft as it is.
  */
-export const ask = (text: string): Effect.Effect<AskResult, never, ChatStore> =>
+export const ask = (text: string, from?: FromView): Effect.Effect<AskResult, never, ChatStore> =>
   Effect.gen(function* () {
     const question = text.trim()
     if (question === "") return { asked: false, reason: "empty" } as const
@@ -246,18 +257,20 @@ export const ask = (text: string): Effect.Effect<AskResult, never, ChatStore> =>
     const askedAt = yield* Clock.currentTimeMillis
     const queuedAt = yield* Ref.updateAndGet(store.lastQueuedAt, (last) => Math.max(askedAt, last + 1))
     const queued = Option.getOrThrow(yield* store.connection.get(CONNECTION)).status !== "up"
-    const conversationId = yield* placeNow
+    const conversationId = from === undefined ? yield* placeNow : from.conversationId
     yield* admit({
       id: questionId,
       answerId,
       text: question,
       queuedAt,
-      v: 1,
+      v: 2,
       ...(conversationId === undefined ? {} : { conversationId }),
+      ...(from === undefined ? {} : { source: from.source }),
+      ...(from?.data === undefined ? {} : { data: from.data }),
     }).pipe(
       Effect.withSpan("chat.ask", { attributes: { questionId, answerId, "question.length": question.length } }),
     )
-    yield* setDraft("")
+    if (from === undefined) yield* setDraft("")
     yield* Metric.update(Metric.withAttributes(questionsAsked, { queued: String(queued) }), 1)
     yield* Effect.forkIn(timeFirstText(answerId, askedAt), store.scope, { startImmediately: true })
     yield* Effect.logInfo("question asked").pipe(
@@ -302,10 +315,19 @@ export const resendUnsent = (id: string) =>
   Effect.gen(function* () {
     const row = yield* unsentRow(id)
     if (Option.isNone(row)) return
-    const { answerId, text, queuedAt, conversationId } = row.value
+    const { answerId, text, queuedAt, conversationId, source, data } = row.value
     // The unsent row goes only once the outbox has the question again, so it never vanishes in between: until then
-    // it hides the queued row. It is sent to the conversation it was asked in.
-    const again: Asking = { id, answerId, text, queuedAt, v: 1, ...(conversationId === undefined ? {} : { conversationId }) }
+    // it hides the queued row. It is sent to the conversation it was asked in, from the view it was sent from.
+    const again: Asking = {
+      id,
+      answerId,
+      text,
+      queuedAt,
+      v: 2,
+      ...(conversationId === undefined ? {} : { conversationId }),
+      ...(source === undefined ? {} : { source }),
+      ...(data === undefined ? {} : { data }),
+    }
     if (yield* admit(again)) yield* dropUnsent(id, "retry")
   }).pipe(Effect.annotateLogs({ feature: "chat" }))
 

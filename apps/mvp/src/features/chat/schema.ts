@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { Part } from "../agent/schema"
+import { FormValues } from "../views/schema"
 import { COPY_ANSWERS, EDIT_ANSWERS } from "./contract"
 import { copyPayload, editPayload } from "./flows"
 
@@ -36,19 +37,31 @@ export const Message = Schema.Struct({
 })
 export type Message = typeof Message.Type
 
+/** The view a question was sent from, and the event that sent it (docs/features/views.md). */
+export const Source = Schema.Struct({ viewId: Schema.String, event: Schema.String })
+export type Source = typeof Source.Type
+
+/** What a question sent from a view carries besides its text: the view and event, and the values sent with it. */
+const fromView = {
+  source: Schema.optional(Source),
+  data: Schema.optional(FormValues),
+}
+
 /**
  * A question asked on this device that Postgres doesn't have yet: the optimistic row of its outbox write, keyed by the
  * question's id. `answerId` is the id its answer gets. `queuedAt` (epoch ms) orders it among other local rows, after
- * every synced one; it never orders synced rows (docs/state.md rule 7). `v` is the row's version in the outbox.
+ * every synced one; it never orders synced rows (docs/state.md rule 7). `v` is the row's version in the outbox:
+ * version 2 adds the view a question was sent from (`source`) and its values (`data`).
  */
 export const Asking = Schema.Struct({
   id: Schema.String,
   answerId: Schema.String,
   text: Schema.String,
   queuedAt: Schema.Number,
-  v: Schema.Literal(1),
+  v: Schema.Literal(2),
   /** The branch conversation it is asked in (decision 0013 §1); absent for the home conversation `/app` shows. */
   conversationId: Schema.optional(Schema.String),
+  ...fromView,
 })
 export type Asking = typeof Asking.Type
 
@@ -74,6 +87,8 @@ export const Unsent = Schema.Struct({
   reason: UnsentReason,
   /** The branch conversation it was asked in; absent for the home conversation. */
   conversationId: Schema.optional(Schema.String),
+  /** Version 2: the view it was sent from, and its values, so Retry sends them again. */
+  ...fromView,
 })
 export type Unsent = typeof Unsent.Type
 

@@ -57,11 +57,6 @@ export function Conversation({ empty = <Wordmark />, readOnly = false, timelineT
           <ConversationView
             key={message.id}
             id={message.id}
-            template={message.template}
-            url={message.url}
-            preview={{ title: message.title, description: message.description, icon: message.icon }}
-            markdown={message.markdown}
-            truncated={message.truncated}
             {...(place?.conversationId == null ? {} : { conversationId: place.conversationId })}
           />
         ) : (

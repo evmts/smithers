@@ -1,7 +1,7 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { VIEWS_ROUTE } from "./contract"
-import { ViewAdded, ViewRefusal, type ViewWrite } from "./schema"
+import { VIEWS_ROUTE, viewStateRoute } from "./contract"
+import { NotRenderedBody, StateChanged, type StateWrite, ViewAdded, ViewRefusal, type ViewWrite } from "./schema"
 
 // ChatApi's `POST /api/views` as a flow step calls it (docs/features/web-pages.md#the-views-table), through Effect's
 // HttpClient, with one deadline covering the whole exchange.
@@ -10,18 +10,43 @@ import { ViewAdded, ViewRefusal, type ViewWrite } from "./schema"
  * ChatApi didn't add the view: no whole answer within the deadline, or no network (`status` absent), or a refusal
  * (`status`, with ChatApi's `code` when its body had one).
  */
-export class ViewRefused extends Data.TaggedError("ViewRefused")<{ readonly status?: number; readonly code?: string }> {}
+export class ViewRefused extends Data.TaggedError("ViewRefused")<{
+  readonly status?: number
+  readonly code?: string
+  /** What went wrong with a generated view's module (`422`), for its renderer to correct; never logged. */
+  readonly detail?: string
+  /** The view's revision, when a move was against an older one (`409 stale`). */
+  readonly revision?: number
+}> {}
 
 /** How long a step gives ChatApi to add a view. */
 export const ADD_WITHIN = "15 seconds"
 
 const decodeRefusal = Schema.decodeUnknownOption(Schema.fromJsonString(ViewRefusal))
+const decodeNotRendered = Schema.decodeUnknownOption(Schema.fromJsonString(NotRenderedBody))
+const decodeStale = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ code: Schema.Literal("stale"), revision: Schema.Number })),
+)
 const decodeAdded = Schema.decodeUnknownEffect(ViewAdded)
+const decodeChanged = Schema.decodeUnknownEffect(StateChanged)
+
+/** A refused response read: its status, and its code, detail or revision when its body has them. */
+const refusedBy = (status: number, text: string) =>
+  new ViewRefused({
+    status,
+    ...Option.match(decodeRefusal(text), { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
+    ...Option.match(decodeNotRendered(text), { onNone: () => ({}), onSome: ({ detail }) => ({ detail }) }),
+    ...Option.match(decodeStale(text), { onNone: () => ({}), onSome: ({ revision }) => ({ revision }) }),
+  })
 
 /** Adds views to the conversation through ChatApi on `origin`. */
 export class ViewsClient extends Context.Service<
   ViewsClient,
-  { readonly add: (write: ViewWrite) => Effect.Effect<void, ViewRefused> }
+  {
+    readonly add: (write: ViewWrite) => Effect.Effect<ViewAdded, ViewRefused>
+    /** One move in a generated view: its new revision. */
+    readonly setState: (viewId: string, write: StateWrite) => Effect.Effect<number, ViewRefused>
+  }
 >()("@smthrs/mvp/views/ViewsClient") {
   /** The client over the host's `HttpClient`: `202` added the view, `200` had it already; anything else is refused. */
   static readonly layer = (options: { readonly origin: string; readonly within?: Duration.Input }) =>
@@ -36,18 +61,34 @@ export class ViewsClient extends Context.Service<
             ).pipe(Effect.mapError(() => new ViewRefused({})))
             yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
             if (response.status !== 200 && response.status !== 202) {
-              const body = decodeRefusal(yield* Effect.orElseSucceed(response.text, () => ""))
-              return yield* new ViewRefused({
-                status: response.status,
-                ...Option.match(body, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
-              })
+              return yield* refusedBy(response.status, yield* Effect.orElseSucceed(response.text, () => ""))
             }
-            yield* response.json.pipe(
+            return yield* response.json.pipe(
               Effect.flatMap(decodeAdded),
               Effect.mapError(() => new ViewRefused({ status: response.status })),
             )
           }, (effect) =>
             // Interrupting the request aborts its fetch, so a stalled body stops too.
+            Effect.timeoutOrElse(effect, {
+              duration: options.within ?? ADD_WITHIN,
+              orElse: () => Effect.fail(new ViewRefused({})),
+            })),
+          setState: Effect.fn("chat.view.state.post")(function* (viewId, write) {
+            const response = yield* client.execute(
+              HttpClientRequest.post(`${options.origin}${viewStateRoute(viewId)}`).pipe(
+                HttpClientRequest.bodyJsonUnsafe(write),
+              ),
+            ).pipe(Effect.mapError(() => new ViewRefused({})))
+            yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+            if (response.status !== 200) {
+              return yield* refusedBy(response.status, yield* Effect.orElseSucceed(response.text, () => ""))
+            }
+            const changed = yield* response.json.pipe(
+              Effect.flatMap(decodeChanged),
+              Effect.mapError(() => new ViewRefused({ status: response.status })),
+            )
+            return changed.revision
+          }, (effect) =>
             Effect.timeoutOrElse(effect, {
               duration: options.within ?? ADD_WITHIN,
               orElse: () => Effect.fail(new ViewRefused({})),

@@ -44,6 +44,7 @@ import { AlertChannelSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoRetry } from "../features/todos/flows"
+import { AskWithForm, RenderView, SetViewState } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
 
@@ -149,6 +150,11 @@ export const registry = {
       hints: { fields: { conversationId: { hidden: true }, pages: { hidden: true } } },
     },
   },
+  // The agent talks through UI (docs/features/views.md): a form, a generated view, and a move in one. A person's click
+  // in a view runs `view/set-state` too; the form and the view are the agent's to add.
+  "ui/form": { flow: AskWithForm, changes: "adds a form to the chat" },
+  "ui/render": { flow: RenderView, changes: "adds a view to the chat" },
+  "view/set-state": { flow: SetViewState, changes: "makes a move in a view in the chat" },
   "chat/Answer": {
     flow: AnswerReference,
     acts: "agent",

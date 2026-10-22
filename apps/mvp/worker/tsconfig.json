@@ -6,6 +6,9 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
+    // ChatApi renders generated views with `@smthrs/ui`'s presentation bundle (worker/ViewRealm.ts), so it compiles that
+    // package's root, its components included, from source.
+    "jsx": "react-jsx",
     // DOM next to workers-types: the Smithers packages these files compile from source are typed against DOM's
     // globals (`globalThis.crypto`, `TextDecoder` options), which workerd provides and workers-types declares narrower.
     "lib": [

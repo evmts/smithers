@@ -104,6 +104,8 @@ export const FLOWS_TELEMETRY = {
     "flows_step_cache_lookups",
     "flows_step_cache_puts",
     // Usage: which flows run and how (@smthrs/flow RunMetrics, recorded by the engine and the agent's model steps).
+    "flow.run.created",
+    "flow.run.claimed",
     "flow.run.started",
     "flow.run.settled",
     "flow.model.call",
@@ -133,6 +135,8 @@ export const FLOWS_TELEMETRY = {
     "error.type",
     "flows",
     "smithers.execution.id",
+    "createdAtMs",
+    "claimedAtMs",
     "smithers.flow",
     "createdAtMs",
     "claimedAtMs",

@@ -6,6 +6,8 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
+    // Alchemy follows ChatApi into the generated-view presentation components.
+    "jsx": "react-jsx",
     // DOM next to workers-types: the Smithers packages these files compile from source are typed against DOM's
     // globals (`globalThis.crypto`, `TextDecoder` options), which workerd provides and workers-types declares narrower.
     "lib": [

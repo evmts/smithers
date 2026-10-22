@@ -12,7 +12,7 @@ import type { Asking, Composer, Connection, History, Message, Place, Unsent } fr
  * The whole conversation on this device: `messages ∪ views ∪ (unsent − messages) ∪ (asking − messages − unsent)`.
  * - Synced rows come first, in Postgres' order (`position`); a failed answer reads the failure copy. A view
  *   (src/features/views, role `view`) shares the messages' positions, so it sits where it was added, with its template
- *   and its page's URL.
+ *   and its id, by which the conversation reads the row itself.
  * - Then this device's own rows, in the order they were asked (`queuedAt`): questions the server refused or the outbox
  *   couldn't take (`unsent`; `sendAgain` when the outbox couldn't, so Retry applies rather than Edit), unless Postgres
  *   has that very question with the answer this device made for it, and questions the outbox holds that Postgres
@@ -56,15 +56,9 @@ export const conversationQuery = (
           local: 0,
           at: view.position,
           createdAt: view.createdAt,
+          // What it shows is the view's own row, which the conversation reads by id (src/features/views): an object
+          // column here collapses the union's row type.
           template: view.template,
-          url: view.props.url,
-          // What the page says about itself, read by ChatApi's check: a card shows it, a framed page until it loads.
-          title: view.props.title,
-          description: view.props.description,
-          icon: view.props.icon,
-          // A docs page's Markdown, as ChatApi read it from the repository's docs index, and whether it was cut.
-          markdown: view.props.text,
-          truncated: view.props.truncated,
         })),
         q
           .from({ refused: unsent.tanstack })

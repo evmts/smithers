@@ -23,7 +23,7 @@ import {
   SubscriptionRef,
 } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
-import { ChatDraftsStore, outboxUpgrade } from "../../device/registry"
+import { ChatDraftsStore, ChatUnsentStore, outboxUpgrade } from "../../device/registry"
 import type { ChatDraftV1 } from "../../device/history"
 import { OutboxWrites } from "../../outbox"
 import { ViewsStore } from "../views/store"
@@ -40,6 +40,7 @@ import {
   queuedQuery,
   shownQuery,
 } from "./queries"
+import { FormValues } from "../views/schema"
 import {
   Asking,
   COMPOSER,
@@ -51,6 +52,7 @@ import {
   Message,
   PLACE,
   Place,
+  Source,
   Unsent,
   type UnsentReason,
 } from "./schema"
@@ -207,6 +209,8 @@ export const keepUnsent = (unsent: Collection.Collection<Unsent, string>, row: A
       queuedAt: row.queuedAt,
       reason,
       ...(row.conversationId === undefined ? {} : { conversationId: row.conversationId }),
+      ...(row.source === undefined ? {} : { source: row.source }),
+      ...(row.data === undefined ? {} : { data: row.data }),
     })
     return Effect.orDie(kept.persisted)
   }).pipe(Effect.orDie)
@@ -218,6 +222,8 @@ const ParkedQuestion = Schema.Struct({
   text: Schema.String,
   queuedAt: Schema.Number,
   conversationId: Schema.optional(Schema.String),
+  source: Schema.optional(Source),
+  data: Schema.optional(FormValues),
 })
 
 /**
@@ -228,7 +234,7 @@ export const keepParked = (unsent: Collection.Collection<Unsent, string>, write:
   Effect.gen(function* () {
     const row = Schema.decodeUnknownOption(ParkedQuestion)(write.rows[0])
     if (Option.isNone(row)) return false
-    yield* Effect.flatten(keepUnsent(unsent, { ...row.value, v: 1 }, "not_admitted"))
+    yield* Effect.flatten(keepUnsent(unsent, { ...row.value, v: 2 }, "not_admitted"))
     yield* Effect.logWarning("question parked").pipe(Effect.annotateLogs({ reason: write.reason, questionId: row.value.id }))
     return true
   })
@@ -283,12 +289,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     getKey: (row) => row.id,
     initialData: [{ id: PLACE, conversationId: null, shared: false }],
   })
-  const unsent = yield* Collection.persisted<Unsent, string>({
-    id: "chat-unsent",
-    schema: Unsent,
-    getKey: (row) => row.id,
-    schemaVersion: 1,
-  })
+  const unsent = yield* Collection.persisted(ChatUnsentStore)
   const drafts = yield* Collection.persisted(ChatDraftsStore)
   const messages = yield* ElectricCollection.make<Message>({
     id: "chat-messages",
@@ -367,6 +368,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         answerId: row.answerId,
         text: row.text,
         ...(row.conversationId === undefined ? {} : { conversationId: row.conversationId }),
+        ...(row.source === undefined ? {} : { source: row.source }),
+        ...(row.data === undefined ? {} : { data: row.data }),
       }).pipe(
         Effect.catchTag("QuestionNotTaken", (error): Effect.Effect<never, Outbox.Retry | Outbox.Refused> => {
           const reason = refusal(error.status)

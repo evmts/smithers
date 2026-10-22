@@ -124,7 +124,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       "chat-drafts": "current 1→1 migrated 0 kept 0",
       "chat-messages": legacy ? "resync 2→3 migrated 0 kept 0" : "current 3→3 migrated 0 kept 0",
       [branch]: legacy ? "resync 2→3 migrated 0 kept 0" : "current 3→3 migrated 0 kept 0",
-      "chat-unsent": "current 1→1 migrated 0 kept 0",
+      "chat-unsent": "migrated 1→2 migrated 1 kept 0",
       flows: legacy ? "resync 1→2 migrated 0 kept 0" : "current 2→2 migrated 0 kept 0",
       "issue-drafts": "current 1→1 migrated 0 kept 0",
       "issue-items": legacy ? "resync 1→3 migrated 0 kept 0" : "current 3→3 migrated 0 kept 0",
@@ -132,7 +132,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       preferences: "current 1→1 migrated 0 kept 0",
       "repo-repositories": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
       runs: "resync 1→2 migrated 0 kept 0",
-      views: legacy ? "resync 1→3 migrated 0 kept 0" : "resync 2→3 migrated 0 kept 0"
+      views: legacy ? "resync 1→4 migrated 0 kept 0" : "resync 2→4 migrated 0 kept 0"
     })
     expect(report.epoch).toBe(deviceRegistry.epoch)
     expect(await keptRows(path)).toEqual([])
@@ -175,9 +175,16 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       }
     ]
     expect(await synced(path, MessagesStore, "chat-messages", server)).toEqual(server)
+    // The server's row now: every column, `null` where a page has none (0051_agent_views).
     const view: typeof View.Type = {
       ...(rowsOf(fixture, "views")[0] as unknown as typeof View.Type),
-      props: { url: "https://effect.website", title: "Effect" }
+      props: { url: "https://effect.website", title: "Effect" },
+      title: null,
+      size: "inline",
+      state: null,
+      html: null,
+      interactions: null,
+      revision: 0
     }
     expect(await synced(path, ViewsStore, "views", [view])).toEqual([view])
     const fresh = await deviceFrom({ ...fixture, collections: {}, outbox: {} })
@@ -213,7 +220,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
           ["issue-write", "agent", "Parked"]
         ] :
         [
-          ["ask", "-", "Current"],
+          ["ask", "-", "Upgraded"],
           ["issue-write", "-", "Upgraded"],
           ["issue-write", "-", "Upgraded"]
         ]
@@ -228,7 +235,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       JSON.parse(valueOf(upgraded, index)).mutations[0].modified
     // A question is the same question, stamped; an issue write names nobody now.
     expect(Schema.is(Asking)(rowOf(ask!))).toBe(true)
-    expect(JSON.parse(valueOf(ask!, 0)).metadata.versions).toEqual({ asking: 1 })
+    expect(JSON.parse(valueOf(ask!, 0)).metadata.versions).toEqual({ asking: 2 })
     expect(Schema.is(IssueSending)(rowOf(person!))).toBe(true)
     expect(rowOf(person!)).not.toHaveProperty("via")
     if (fixture.build === "7b96f878") {

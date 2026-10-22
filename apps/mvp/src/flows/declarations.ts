@@ -43,6 +43,7 @@ import { AlertChannelSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoRetry } from "../features/todos/flows"
+import { AskWithForm, RenderView, SetViewState } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
 import { type FlowName, type FlowOf, names } from "./registry"
@@ -63,6 +64,9 @@ export const declarations = {
   "file/close": CloseFile,
   "app/web/open": OpenWebPage,
   "app/docs/search": SearchDocs,
+  "ui/form": AskWithForm,
+  "ui/render": RenderView,
+  "view/set-state": SetViewState,
   "chat/Answer": Answer,
   "chat/Close": Close,
   "chat/copy": ChatCopy,

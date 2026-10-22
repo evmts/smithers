@@ -296,6 +296,7 @@ describe("the flow", () => {
           ViewsClient,
           Effect.map(Effect.service(ViewsClient), (client) =>
             ViewsClient.of({
+              ...client,
               add: (write) => failures++ === 0 ? Effect.fail(new ViewRefused({ status: 503 })) : client.add(write),
             })),
         ).pipe(Layer.provide(real)),

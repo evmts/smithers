@@ -8,6 +8,12 @@ import { SqlClient } from "effect/sql"
 const MAX_EXCHANGES = 19
 const MAX_HISTORY_CHARACTERS = 24_000
 
+/**
+ * What the agent reads after a question sent from a form or a view, before the values sent with it as JSON: the
+ * question's text is the submit label, so the values are what it asks about (docs/features/views.md#forms).
+ */
+export const SENT_VALUES = "\nThe values the person sent with it: "
+
 /** One finished exchange of the conversation. */
 export interface Exchange {
   readonly question: string
@@ -28,7 +34,8 @@ type Asked = { readonly txid: number | null }
  * so no later pair can become visible ahead of an earlier pair. Ids are lowercase, as Postgres prints them.
  * `askedBy` is the asking actor's person id, from the session (worker/Chat.ts): only that person may write the answer
  * (worker/Answers.ts). When a message with the question's id exists, nothing changes: it is a retry if it is the same
- * question (role `user`, same text, same answer id, same asker, same conversation), and `IdTaken` otherwise. An answer id another message
+ * question (role `user`, same text, same answer id, same asker, same conversation, same view and values), and
+ * `IdTaken` otherwise. An answer id another message
  * has fails the statement with a unique violation, and nothing is written.
  */
 export const ask = (question: {
@@ -37,15 +44,22 @@ export const ask = (question: {
   readonly conversationId: string
   readonly text: string
   readonly askedBy: string
+  /** The view it was sent from, and the event (worker/Views.ts `askFrom`). */
+  readonly source?: { readonly viewId: string; readonly event: string }
+  /** The values sent with it: a form's, or a view's message event's. */
+  readonly data?: Readonly<Record<string, unknown>>
 }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    const source = question.source === undefined ? null : JSON.stringify(question.source)
+    const data = question.data === undefined ? null : JSON.stringify(question.data)
     return yield* sql.withTransaction(Effect.gen(function* () {
       yield* sql`SELECT id FROM conversations WHERE id = ${question.conversationId} FOR UPDATE`
       const [inserted] = yield* sql<{ readonly txid: string }>`
         WITH question AS (
-          INSERT INTO messages (id, role, text, status, asked_by, conversation_id)
-          VALUES (${question.id}, 'user', ${question.text}, 'done', ${question.askedBy}, ${question.conversationId})
+          INSERT INTO messages (id, role, text, status, asked_by, conversation_id, source, data)
+          VALUES (${question.id}, 'user', ${question.text}, 'done', ${question.askedBy}, ${question.conversationId},
+            ${source}::jsonb, ${data}::jsonb)
           ON CONFLICT (id) DO NOTHING
           RETURNING position
         )
@@ -60,13 +74,15 @@ export const ask = (question: {
         readonly answerId: string | null
         readonly askedBy: string | null
         readonly conversationId: string
+        readonly sameView: boolean
       }>`
-        SELECT q.role, q.text, a.id AS "answerId", q.asked_by AS "askedBy", q.conversation_id AS "conversationId"
+        SELECT q.role, q.text, a.id AS "answerId", q.asked_by AS "askedBy", q.conversation_id AS "conversationId",
+          q.source IS NOT DISTINCT FROM ${source}::jsonb AND q.data IS NOT DISTINCT FROM ${data}::jsonb AS "sameView"
         FROM messages q LEFT JOIN messages a ON a.question_id = q.id
         WHERE q.id = ${question.id}`
       const same = existing !== undefined && existing.role === "user" && existing.text === question.text &&
         existing.answerId === question.answerId && existing.askedBy === question.askedBy &&
-        existing.conversationId === question.conversationId
+        existing.conversationId === question.conversationId && existing.sameView
       if (!same) return yield* new IdTaken()
       return { txid: null } satisfies Asked
     }))
@@ -75,15 +91,19 @@ export const ask = (question: {
 /**
  * The history the model sees before an answer, oldest first: the most recent finished (`done`) exchanges before
  * it in its own conversation, stopping at the first one, going back, that would pass `MAX_EXCHANGES` or `MAX_HISTORY_CHARACTERS`.
+ * A question sent from a view counts with its values, as the model reads it.
  */
 export const history = (answerId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql<Exchange>`
       SELECT question, answer FROM (
-        SELECT q.text AS question, a.text AS answer, a.position,
-          sum(char_length(q.text) + char_length(a.text)) OVER (ORDER BY a.position DESC) AS characters
+        SELECT asked.question, a.text AS answer, a.position,
+          sum(char_length(asked.question) + char_length(a.text)) OVER (ORDER BY a.position DESC) AS characters
         FROM messages a JOIN messages q ON q.id = a.question_id
+        CROSS JOIN LATERAL (
+          SELECT q.text || CASE WHEN q.data IS NULL THEN '' ELSE ${SENT_VALUES}::text || q.data::text END AS question
+        ) asked
         JOIN messages t ON t.id = ${answerId}
         WHERE a.status = 'done' AND a.conversation_id = t.conversation_id AND a.position < t.position
         ORDER BY a.position DESC

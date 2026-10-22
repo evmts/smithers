@@ -31,7 +31,7 @@ import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending,
 import { View } from "../features/views/schema"
 import { CuratedRowV1, HomeRowV2 } from "./home-history"
 import { Draft as PluginDraft } from "../plugins/schema"
-import { AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, RequestedV1, TodoRequestedV1 } from "./history"
+import { AskingV1, AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, RequestedV1, TodoRequestedV1, UnsentV1 } from "./history"
 
 // Every store this device keeps, and its history (decision 0021): each persisted collection, synced or local, and
 // each payload the outbox carries. A store's collection opens only at the version declared here (the app's
@@ -46,7 +46,13 @@ import { AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, Requested
 export const BranchConversationsStore = Migrations.local({ id: "branch-conversations", versions: [ConversationRoute], getKey: (row) => row.id })
 
 /** Questions the server refused or the outbox couldn't take (src/features/chat/store.ts). */
-export const ChatUnsentStore = Migrations.local({ id: "chat-unsent", versions: [Unsent], getKey: (row) => row.id })
+export const ChatUnsentStore = Migrations.local({
+  id: "chat-unsent",
+  versions: [UnsentV1, Unsent],
+  // Version 2 adds a question's view and values; a question kept before has neither.
+  migrations: [Migrations.step(UnsentV1, Unsent, (row) => row)],
+  getKey: (row) => row.id,
+})
 
 /**
  * The composer's draft in each conversation whose prompt isn't shared (src/features/chat/store.ts); on a branch its
@@ -146,8 +152,8 @@ export const TimelineSummariesStore = Migrations.local({
 /** The conversation's messages, one collection per conversation. Version 3: an answer's steps (`parts`). */
 export const MessagesStore = Migrations.synced({ id: "chat-messages", version: 3, schema: Message, family: true })
 
-/** The conversation's views. Version 2: a page's title, description and icon. Version 3: a docs page. */
-export const ViewsStore = Migrations.synced({ id: "views", version: 3, schema: View, family: true })
+/** The conversation's views. Version 2: a page's title, description and icon. Version 3: docs pages. Version 4: forms and generated views. */
+export const ViewsStore = Migrations.synced({ id: "views", version: 4, schema: View, family: true })
 
 const synced = [
   MessagesStore,
@@ -181,7 +187,12 @@ const synced = [
 // --- The outbox's payloads, by the collection key each write names ---
 
 /** Chat's questions (src/features/chat/store.ts, mutation `ask`). */
-export const AskingPayload = Migrations.payload({ key: "asking", versions: [Asking] })
+export const AskingPayload = Migrations.payload({
+  key: "asking",
+  versions: [AskingV1, Asking],
+  // Version 2 adds a question's view and values; a question queued before has neither.
+  migrations: [Migrations.step(AskingV1, Asking, (row) => ({ ...row, v: 2 as const }))],
+})
 
 /**
  * Issue writes (src/features/issues/writes.ts, mutation `issue-write`). Version 2 (after `7b96f878`): the request

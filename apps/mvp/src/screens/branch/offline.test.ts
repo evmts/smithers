@@ -83,7 +83,7 @@ const open = async (reopenRoute?: () => void) => {
       const conversationId = crypto.randomUUID()
       yield* branchStore.conversations.restored
       yield* branchStore.conversations.insert({ id: "octo/hello/work", conversationId })
-      yield* store.asking.insert({ v: 1, id: crypto.randomUUID(), answerId: crypto.randomUUID(),
+      yield* store.asking.insert({ v: 2, id: crypto.randomUUID(), answerId: crypto.randomUUID(),
         text: "saved offline question", queuedAt: 1, conversationId })
     })),
     previousBranch: () => runtime.runPromise(Effect.gen(function* () {

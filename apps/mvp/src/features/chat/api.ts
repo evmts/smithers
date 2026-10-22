@@ -2,7 +2,14 @@ import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 /** A question for `POST /api/questions` (docs/features/chat.md#post-apiquestions). */
-export type Question = { readonly id: string; readonly answerId: string; readonly text: string }
+export type Question = {
+  readonly id: string
+  readonly answerId: string
+  readonly text: string
+  /** The view it was sent from, and the values sent with it (docs/features/views.md). */
+  readonly source?: { readonly viewId: string; readonly event: string }
+  readonly data?: Readonly<Record<string, string | number | boolean>>
+}
 
 /**
  * What ChatApi did with a question:

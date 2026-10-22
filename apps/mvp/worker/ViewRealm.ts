@@ -1,0 +1,52 @@
+/// <reference path="./quickjs-wasm.d.ts" />
+import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
+import { QuickJSVariant } from "@smthrs/harness"
+import { loadPresentationBundle } from "@smthrs/ui"
+import { PresentationRealm } from "@smthrs/views"
+import { Effect, type Layer, Scope } from "effect"
+import { newVariant, type QuickJSSyncVariant } from "quickjs-emscripten-core"
+
+// ChatApi's presentation realm (decision 0004 §4, docs/features/views.md#where-a-view-runs): where a generated view's
+// module runs, and nowhere else. `@smthrs/views`' `PresentationRealm` loads `@smthrs/ui`'s presentation bundle (React,
+// `renderToStaticMarkup` and the audited component subset) into QuickJS, and each render and move gets a fresh runtime
+// with no clock, network, storage or host object, bounded in time, steps, memory and output.
+//
+// On Cloudflare the realm runs on the build whose `.wasm` the bundler compiled, as the agent's cell sandbox does
+// (worker/AgentSandbox.ts): workerd refuses to compile WebAssembly from bytes. Node, in the tests, loads the same build's
+// `.wasm` file from disk.
+
+/** The separate-file build, whose emscripten glue has a `workerd` export condition (worker/AgentSandbox.ts). */
+const base = wasmfile as unknown as QuickJSSyncVariant
+
+/**
+ * Loads the realm over `@smthrs/ui`'s presentation bundle, on the QuickJS build `variant` provides. The realm lives as
+ * long as the isolate, so its scope never closes.
+ */
+const loadOn = (variant: Layer.Layer<QuickJSVariant.Variant>) =>
+  Effect.gen(function* () {
+    const bundle = yield* Effect.promise(loadPresentationBundle)
+    const scope = yield* Scope.make()
+    return yield* PresentationRealm.make({ bundle }).pipe(Scope.provide(scope), Effect.provide(variant))
+  })
+
+/**
+ * `load` once: the realm it loads the first time it succeeds, for every later call. QuickJS compiles once per realm, so
+ * an isolate pays for it on its first generated view only; a load that failed is tried again on the next call.
+ */
+export const once = <E>(load: Effect.Effect<PresentationRealm.Realm, E>): Effect.Effect<PresentationRealm.Realm, E> => {
+  let loaded: PresentationRealm.Realm | undefined
+  return Effect.suspend(() =>
+    loaded === undefined ? Effect.tap(load, (realm) => Effect.sync(() => void (loaded = realm))) : Effect.succeed(loaded)
+  )
+}
+
+/** The realm on the build whose module `load` gives: what the Worker runs. */
+export const loadFrom = (load: () => Promise<{ readonly default: WebAssembly.Module }>) =>
+  Effect.flatMap(Effect.promise(load), ({ default: wasmModule }) =>
+    loadOn(QuickJSVariant.layerVariant(newVariant(base, { wasmModule }))))
+
+/** The realm on Cloudflare: the module the bundle compiled. Imported only when the first generated view needs it. */
+export const load = loadFrom(() => import("#quickjs.wasm"))
+
+/** The realm on the same build in Node, which reads its `.wasm` file itself: the tests'. */
+export const loadNode = loadOn(QuickJSVariant.layerVariant(base))

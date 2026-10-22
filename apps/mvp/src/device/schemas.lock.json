@@ -10,7 +10,8 @@
     "chat-unsent": {
       "kind": "local",
       "versions": {
-        "1": "9a9f1d7276e2a5c7"
+        "1": "9a9f1d7276e2a5c7",
+        "2": "14a0841638f7bbbc"
       }
     },
     "chat-drafts": {
@@ -269,7 +270,8 @@
     "asking": {
       "kind": "payload",
       "versions": {
-        "1": "e01399d99860628a"
+        "1": "e01399d99860628a",
+        "2": "53668480e49f69ec"
       }
     },
     "issue-sending": {

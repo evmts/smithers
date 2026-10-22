@@ -63,7 +63,8 @@ const target = (answerId: string, liveSeconds: number) =>
       readonly waiting: boolean
       readonly waitedMs: number
     }>`
-      SELECT a.status, q.text AS question, a.text, a.failure, q.asked_by AS "askedBy",
+      SELECT a.status, q.text || CASE WHEN q.data IS NULL THEN '' ELSE ${Messages.SENT_VALUES}::text || q.data::text END
+        AS question, a.text, a.failure, q.asked_by AS "askedBy",
         EXISTS (
           SELECT 1 FROM messages e
           WHERE e.conversation_id = a.conversation_id AND e.role = 'assistant' AND e.status = 'streaming'

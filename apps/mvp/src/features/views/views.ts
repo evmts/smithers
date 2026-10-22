@@ -1,4 +1,6 @@
+import type { Interactions } from "@smthrs/views"
 import { Context, Effect, Layer } from "effect"
+import { FlowDispatch } from "../../flows/dispatch"
 import { SHOWING } from "./schema"
 import { ViewsStore } from "./store"
 
@@ -13,6 +15,11 @@ export interface ViewsQueries {
   readonly shown: Store["shown"]["tanstack"]
   /** The view shown full screen from branch conversation `conversationId`; the home one's for none or one not open. */
   readonly shownIn: (conversationId: string | undefined) => Store["shown"]["tanstack"]
+  /**
+   * The views of branch conversation `conversationId`, or of the home conversation for none or one not open: each
+   * row, by which the conversation renders a view it lists (src/features/chat/queries.ts).
+   */
+  readonly rowsIn: (conversationId: string | undefined) => ReturnType<Store["rowsIn"]>["tanstack"]
 }
 
 /** What a person does, as plain functions. Each returns at once. */
@@ -22,6 +29,12 @@ export interface ViewsActions {
    * when given (decision 0013 §1). Resolves once that conversation's views are open.
    */
   readonly show: (viewId: string, conversationId?: string) => Promise<void>
+  /**
+   * A person's move in a generated view (a `state` event from its frame): `view/set-state` through door `view`. ChatApi
+   * makes it from the board it keeps, and every device shows the new board once it syncs; a move against an older
+   * board changes nothing. Resolves once the flow has answered.
+   */
+  readonly move: (viewId: string, revision: number, event: Interactions.Event) => Promise<void>
 }
 
 /** Shows the view with `viewId` full screen in this tab: the one row of `showing`. */
@@ -39,22 +52,34 @@ export const show = (viewId: string, conversationId?: string) =>
     Effect.orDie,
   )
 
+/** Dispatches the move: `view/set-state`, door `view`. Its outcome is the flow's to record (src/features/views/steps.ts). */
+export const move = (viewId: string, revision: number, event: Interactions.Event) =>
+  Effect.gen(function* () {
+    yield* (yield* FlowDispatch).dispatch("view/set-state", { viewId, revision, event }, { door: "view" }).pipe(
+      Effect.ignore,
+    )
+  }).pipe(Effect.withSpan("views.move.dispatch"))
+
 export class Views extends Context.Service<Views, { readonly queries: ViewsQueries; readonly actions: ViewsActions }>()(
   "@smthrs/mvp/views/Views",
 ) {
-  /** Binds the store's query and the action for frontends, run with the services this layer was built with. */
+  /** Binds the store's query and the actions for frontends, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
     Views,
     Effect.gen(function* () {
       const store = yield* ViewsStore
-      const run = Effect.runPromiseWith(yield* Effect.context<ViewsStore>())
+      const run = Effect.runPromiseWith(yield* Effect.context<ViewsStore | FlowDispatch>())
       return Views.of({
         queries: {
           shown: store.shown.tanstack,
           shownIn: (conversationId) =>
             (conversationId === undefined ? undefined : store.shownIn(conversationId))?.tanstack ?? store.shown.tanstack,
+          rowsIn: (conversationId) => store.rowsIn(conversationId).tanstack,
         },
-        actions: { show: (viewId, conversationId) => run(Effect.asVoid(show(viewId, conversationId))) },
+        actions: {
+          show: (viewId, conversationId) => run(Effect.asVoid(show(viewId, conversationId))),
+          move: (viewId, revision, event) => run(move(viewId, revision, event)),
+        },
       })
     }),
   )

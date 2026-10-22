@@ -37,7 +37,7 @@ test("a branch page announces Offline and the queued count, then clears on recon
   const connection = () => render().match(/<div[^>]*aria-label="Connection"[^>]*>(.*?)<\/div>/s)?.[1]
 
   expect(connection()).toContain("Offline")
-  await runtime.runPromise(store.asking.insert({ v: 1, id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "queued", queuedAt: 1 }))
+  await runtime.runPromise(store.asking.insert({ v: 2, id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "queued", queuedAt: 1 }))
   expect(connection()).toContain("Offline · 1")
   const tracked = await runtime.runPromise(api.branches.run(Conversations.track("github/octo/hello", "main", "open", shaOf("main"))))
   const conversationId = tracked.branch.conversationId
@@ -45,7 +45,7 @@ test("a branch page announces Offline and the queued count, then clears on recon
   chat.queries.of(conversationId).queued.startSyncImmediate()
   expect(connection()).toContain("Offline")
   expect(connection()).not.toContain("·")
-  await runtime.runPromise(store.asking.insert({ v: 1, id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "branch queued", queuedAt: 2, conversationId }))
+  await runtime.runPromise(store.asking.insert({ v: 2, id: crypto.randomUUID(), answerId: crypto.randomUUID(), text: "branch queued", queuedAt: 2, conversationId }))
   expect(connection()).toContain("Offline · 1")
   await runtime.runPromise(store.connection.update("connection", (row) => { row.status = "up" }))
   expect(connection()).toBe("")

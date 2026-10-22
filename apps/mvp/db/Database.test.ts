@@ -873,3 +873,48 @@ describe("0049–0050 GitHub write upgrade", () => {
       expect(await on(through("0050"))).toEqual([])
     }))
 })
+
+describe("0051_agent_views", () => {
+  test("adds forms and generated views, each with what it needs, and questions that name the view they came from", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0050"))
+      const applied = await on(through("0051"))
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["51_agent_views"])
+      const [home] = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<{ readonly id: string }>`SELECT id FROM conversations LIMIT 1`))
+      const insert = (template: string, columns: Record<string, unknown>) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql`INSERT INTO views ${sql.insert({ id: crypto.randomUUID(), template, conversation_id: home!.id, ...columns })}`))
+          .then(() => "taken", () => "refused")
+      const json = (value: unknown) => JSON.stringify(value)
+      // A page keeps only its props; a form needs its state; a generated view its title, state, code, HTML and events.
+      expect(await insert("webpage", { props: json({ url: "https://example.com/" }) })).toBe("taken")
+      expect(await insert("link", { props: json({ url: "https://example.com/" }), state: json({}) })).toBe("refused")
+      expect(await insert("form", { props: json({ title: "Clone" }), state: json({ submitted: false }) })).toBe("taken")
+      expect(await insert("form", { props: json({ title: "Clone" }) })).toBe("refused")
+      const generated = {
+        props: json({}),
+        title: "Tic-tac-toe",
+        state: json({ cells: [] }),
+        code: "export default function View() { return null }",
+        html: "<div></div>",
+        interactions: json({ cell: { kind: "state" } }),
+      }
+      expect(await insert("generated", generated)).toBe("taken")
+      expect(await insert("generated", { ...generated, html: null })).toBe("refused")
+      expect(await insert("generated", { ...generated, size: "huge" })).toBe("refused")
+      expect(await insert("chart", generated)).toBe("refused")
+      // Only a question names a view, and its values are an object.
+      const ask = (role: string, data: unknown) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql`INSERT INTO messages (id, role, text, status, conversation_id, source, data)
+            VALUES (${crypto.randomUUID()}, ${role}, 'Clone', 'done', ${home!.id},
+              ${json({ viewId: crypto.randomUUID(), event: "submit" })}, ${json(data)})`)).then(() => "taken", () => "refused")
+      expect(await ask("user", { url: "https://github.com/a/b" })).toBe("taken")
+      expect(await ask("assistant", { url: "https://github.com/a/b" })).toBe("refused")
+      expect(await ask("user", ["a"])).toBe("refused")
+    }))
+})

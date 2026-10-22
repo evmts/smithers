@@ -20,6 +20,7 @@ import { NAVIGATION_TELEMETRY } from "./features/navigation/contract"
 import { REPO_TELEMETRY } from "./features/repo/contract"
 import { THEME_TELEMETRY } from "./features/theme/contract"
 import { TIMELINE_TELEMETRY } from "./features/timeline/contract"
+import { VIEWS_TELEMETRY } from "./features/views/contract"
 import { WEB_TELEMETRY } from "./features/web/contract"
 import { FLOWS_TELEMETRY } from "./flows/contract"
 import { FLOWS_UI_TELEMETRY } from "./features/flows-ui/contract"
@@ -137,6 +138,7 @@ const features: ReadonlyArray<Telemetry> = [
   REPO_TELEMETRY,
   CODE_INTEL_TELEMETRY,
   WEB_TELEMETRY,
+  VIEWS_TELEMETRY,
   JEV_TELEMETRY,
   ISSUES_TELEMETRY,
   PULLS_TELEMETRY,

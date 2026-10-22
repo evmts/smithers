@@ -4,6 +4,7 @@ import { Page, reload } from "../../page"
 import {
   type AskResult,
   ask,
+  type FromView,
   closeComposer,
   copy,
   discardUnsent,
@@ -57,6 +58,8 @@ export class NotCopied extends Data.TaggedError("NotCopied") {}
 /** What a person does, as plain functions. Each finishes before it returns, but Copy, which resolves once it copied. */
 export interface ChatActions {
   readonly ask: (text: string) => AskResult
+  /** Asks from a form or a view: its submit label or event label, with the view and the values (docs/features/views.md). */
+  readonly askFromView: (text: string, from: FromView) => AskResult
   readonly openComposer: (via: Via) => void
   readonly closeComposer: () => void
   /** Consume an opening's focus request when the frontend input mounts. */
@@ -129,6 +132,7 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
         },
         actions: {
           ask: (text) => run(ask(text)),
+          askFromView: (text, from) => run(ask(text, from)),
           openComposer: (via) => run(openComposer(via)),
           closeComposer: () => run(closeComposer),
           takeComposerFocus: () => run(takeComposerFocus),

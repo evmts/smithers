@@ -98,3 +98,26 @@ export const TodoRequestedV2 = Schema.Struct({
   op: Schema.Literals(["commit", "drop", "retry"]),
   reason: Schema.NullOr(Schema.Literals(["invalid", "authentication", "forbidden", "not_found", "conflict", "stack_full", "merged", "not_retryable", "too_large"])),
 })
+
+/** The outbox's `asking` rows, version 1 (`41ebbdd6`): a question waiting to be sent, before questions from views. */
+export const AskingV1 = Schema.Struct({
+  id: Schema.String,
+  answerId: Schema.String,
+  text: Schema.String,
+  queuedAt: Schema.Number,
+  v: Schema.Literal(1),
+  conversationId: Schema.optional(Schema.String),
+})
+export type AskingV1 = typeof AskingV1.Type
+
+/** `chat-unsent`, version 1 (`41ebbdd6`): a question kept on the device as Not sent, before questions from views. */
+export const UnsentV1 = Schema.Struct({
+  id: Schema.String,
+  answerId: Schema.String,
+  text: Schema.String,
+  queuedAt: Schema.Number,
+  reason: Schema.Literals(["refused", "conflict", "too_large", "not_admitted"]),
+  conversationId: Schema.optional(Schema.String),
+})
+export type UnsentV1 = typeof UnsentV1.Type
+
