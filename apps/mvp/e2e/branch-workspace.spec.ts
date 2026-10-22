@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test"
 import { expect, step, test } from "./fixtures"
+import { openComposer } from "./composer"
 import { me, requires } from "./target"
 
 // The branch workspace's first slice (decision 0013 §9, docs/features/branch-workspace.md), end to end against the
@@ -51,8 +52,7 @@ const expectWorkspace = (page: Page, branch: string) =>
 
 /** Moves the tab to branch `to` in place, as `/navigate` does: no reload. */
 const switchBranch = async (page: Page, to: string) => {
-  const composer = page.getByRole("textbox", { name: "Message Smithers" })
-  if (!(await composer.isVisible())) await page.getByRole("button", { name: /Chat/ }).click()
+  const composer = await openComposer(page)
   await composer.fill(`/navigate ${REPO}/tree/${to}`)
   await composer.press("Enter")
   await expect(page).toHaveURL(new RegExp(`/tree/${to}$`), { timeout: 30_000 })
@@ -62,8 +62,7 @@ const switchBranch = async (page: Page, to: string) => {
 /** Asks Smithers `question` in the page's conversation. */
 const ask = (page: Page, question: string) =>
   step(`Ask "${question}"`, async () => {
-    const composer = page.getByRole("textbox", { name: "Message Smithers" })
-    if (!(await composer.isVisible())) await page.getByRole("button", { name: /Chat/ }).click()
+    const composer = await openComposer(page)
     await composer.fill(question)
     await composer.press("Enter")
     await expect(conversationOf(page).getByText(question)).toBeVisible()
@@ -187,8 +186,7 @@ test("branch views: a page opened on a branch lands in that branch's conversatio
   // `/web` on the branch, then straight to another branch in the same tab (`/navigate`) before the flow's step runs:
   // the page stays where it was asked for, because the conversation is pinned when the person dispatched it. (A reload
   // at that instant would drop a run the engine hadn't taken yet, as it would a keystroke.)
-  await page.getByRole("button", { name: /Chat/ }).click()
-  const composer = page.getByRole("textbox", { name: "Message Smithers" })
+  const composer = await openComposer(page)
   await composer.fill(`/web ${url}`)
   await composer.press("Enter")
   await switchBranch(page, "test-branch")
@@ -202,8 +200,12 @@ test("branch views: a page opened on a branch lands in that branch's conversatio
   await expect(page).toHaveURL(new RegExp(`/app/views/${id}\\?conversation=[0-9a-f-]{36}$`))
   const main = page.getByRole("main", { name: "View" })
   await expect(main.locator("iframe")).toBeVisible({ timeout: 30_000 })
+  await expect(main.frameLocator("iframe").getByText("This domain is for use in documentation examples")).toBeVisible({ timeout: 30_000 })
   await page.reload()
   await expect(main.locator("iframe")).toBeVisible({ timeout: 30_000 })
+  await expect(main.frameLocator("iframe").getByText("This domain is for use in documentation examples")).toBeVisible({ timeout: 30_000 })
+
+  await test.info().attach("Full screen after reload", { body: await page.screenshot(), contentType: "image/png" })
 
   // The other branch's conversation doesn't have it.
   await openBranch(page, "test-branch")

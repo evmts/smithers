@@ -207,6 +207,12 @@ No record carries a login, a person's place or a path; a share's records name it
 | Real container | `@smthrs/platform-cloudflare`'s `test/ContainerTerminal.workerd.test.ts`: local workerd and Docker with this image |
 | End to end | `e2e/branch-workspace.spec.ts`, `e2e/branch-offline.spec.ts` (a branch's page opened offline past tracking's 30 s, then the network returning) and `e2e/branch-sharing.spec.ts` (two and three people on separate devices: share to view and edit, a viewer's input refused by the server, revoke, general access and a Guest) against `alchemy dev` (`pnpm e2e e2e/branch-sharing.spec.ts`, `pnpm e2e:gifs`) |
 
+The branch workspace's composer helper waits for either the visible input or
+Chat button before choosing an action (`e2e/composer.ts`). A branch URL and its
+pending chrome can arrive before those controls. `e2e/composer.test.ts` reproduces
+that gap in a real browser; `branch-load.spec.ts` checks the conversation's load
+budget independently.
+
 ## Running it locally
 
 `pnpm db:up`, `pnpm db:migrate`, `pnpm dev`, then open `https://localhost:1443/octocat/Spoon-Knife/tree/test-branch`. `alchemy dev` builds the sandbox image for `linux/amd64` through Docker on first start (a few minutes under emulation on Apple Silicon) and runs each branch's container in local workerd. A Worker reload restarts the objects and their containers, so an open terminal ends `lost` and Open terminal starts a new one.
