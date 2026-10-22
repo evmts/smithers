@@ -157,9 +157,9 @@ const firstRemote = (host: Host, directory: string): string | null => {
 }
 
 /**
- * The repository a checkout's remote names. With `allowedHosts`, only remotes
- * on those hosts count, origin first; `remoteName` further limits them to one
- * remote.
+ * The repository a checkout's remote names. `remoteName` limits discovery to
+ * that remote; `allowedHosts` independently limits accepted hosts. Origin wins
+ * when no remote is requested.
  *
  * @category constructors
  * @since 1.0.0
@@ -170,7 +170,7 @@ export const resolveRepo = (
   allowedHosts?: ReadonlySet<string>,
   remoteName?: string
 ): string => {
-  if (allowedHosts) {
+  if (allowedHosts !== undefined || remoteName !== undefined) {
     const remotes = [
       host.read("jj", ["git", "remote", "list"], directory),
       host.read("git", ["remote", "-v"], directory)
@@ -189,7 +189,7 @@ export const resolveRepo = (
     throw new CliError.UsageError({ message: `${directory} has no git remote naming owner/repo.` })
   }
   const repo = repoFromRemote(remote)
-  if (repo === null) throw new CliError.UsageError({ message: `The remote ${remote} does not name owner/repo.` })
+  if (repo === null) throw new CliError.UsageError({ message: "The remote does not name owner/repo." })
   return repo
 }
 

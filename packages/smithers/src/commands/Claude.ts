@@ -92,43 +92,52 @@ export const make = <E, R>({ guard, required }: Options<E, R>) => {
   }, (config) =>
     Effect.gen(function*() {
       yield* guard
-      const control = yield* ControlService.Control
-      yield* RunReads.existing(control, config.runId)
-      const deadline = Date.now() + config.timeout
-      const history = BoundedEvents.empty<ControlSchema.ControlEvent>()
-      let afterSequence: number | undefined
-      for (;;) {
-        const previousLength = history.values.length
-        yield* BoundedEvents.collectInto(
-          control.watch({
-            runId: config.runId,
-            follow: false,
-            ...(afterSequence === undefined ? {} : { afterSequence })
-          }),
-          history,
-          { operation: "node wait", subject: `run ${JSON.stringify(config.runId)}` }
-        ).pipe(
-          Effect.mapError((error) =>
-            error instanceof CliError.ResourceLimitError
-              ? error
-              : Settlement.watchFailure(error, config.runId, "node wait")
+      const node = yield* Effect.gen(function*() {
+        const control = yield* ControlService.Control
+        yield* RunReads.existing(control, config.runId)
+        const history = BoundedEvents.empty<ControlSchema.ControlEvent>()
+        let afterSequence: number | undefined
+        let terminal: ControlSchema.RunSummary | undefined
+        for (;;) {
+          const previousLength = history.values.length
+          yield* BoundedEvents.collectInto(
+            control.watch({
+              runId: config.runId,
+              follow: false,
+              ...(afterSequence === undefined ? {} : { afterSequence })
+            }),
+            history,
+            { operation: "node wait", subject: `run ${JSON.stringify(config.runId)}` }
+          ).pipe(
+            Effect.mapError((error) =>
+              error instanceof CliError.ResourceLimitError
+                ? error
+                : Settlement.watchFailure(error, config.runId, "node wait")
+            )
           )
-        )
-        for (let index = previousLength; index < history.values.length; index++) {
-          const event = history.values[index]!
-          if (afterSequence === undefined || event.sequence > afterSequence) afterSequence = event.sequence
+          for (let index = previousLength; index < history.values.length; index++) {
+            const event = history.values[index]!
+            if (afterSequence === undefined || event.sequence > afterSequence) afterSequence = event.sequence
+          }
+          const node = NodeOutput.find(history.values, config.nodeId)
+          if (node !== undefined && node.outcome !== "pending") return { ...node, timedOut: false }
+          if (terminal !== undefined) {
+            return { nodeId: config.nodeId, outcome: "vanished", status: terminal.status, timedOut: false }
+          }
+          const run = yield* RunReads.summary(control, config.runId)
+          if (run !== undefined && ClaudeMirror.isTerminal(run.status)) {
+            // Completion can land after our history snapshot. Read its final
+            // suffix before concluding that the requested node never appeared.
+            terminal = run
+            continue
+          }
+          yield* Effect.sleep("250 millis")
         }
-        const node = NodeOutput.find(history.values, config.nodeId)
-        if (node !== undefined && node.outcome !== "pending") return yield* renderJson({ ...node, timedOut: false })
-        const run = yield* RunReads.summary(control, config.runId)
-        if (run !== undefined && ClaudeMirror.isTerminal(run.status)) {
-          return yield* renderJson({ nodeId: config.nodeId, outcome: "vanished", status: run.status, timedOut: false })
-        }
-        if (Date.now() >= deadline) {
-          return yield* renderJson({ nodeId: config.nodeId, outcome: "pending", timedOut: true })
-        }
-        yield* Effect.sleep("250 millis")
-      }
+      }).pipe(Effect.timeoutOrElse({
+        duration: config.timeout,
+        orElse: () => Effect.succeed({ nodeId: config.nodeId, outcome: "pending", timedOut: true })
+      }))
+      yield* renderJson(node)
     })).pipe(Command.withDescription("Block until one node settles"))
 
   const monitor = Command.make("monitor", {

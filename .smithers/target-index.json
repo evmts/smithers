@@ -5090,6 +5090,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/docs/command-safety.md"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/docs/concepts/command-surface.md"
       },
       {

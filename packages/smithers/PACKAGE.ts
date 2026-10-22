@@ -43,6 +43,24 @@ const importRules = ImportRules({
       callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "vi.spyOn", "jest.mock"],
       because:
         "Backend safety regressions use real transports and inject faults through Effect services. See AGENTS.md."
+    },
+    {
+      kind: "rootImportsOnly",
+      files: ["src/commands/{Open,Bug,Claude,FlowCatalog}.ts"],
+      packages: ["@smthrs/*"],
+      because: "sdk.root-imports-only: commands consume public package roots. See apps/mvp/docs/rules.md."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/{Open,CommandVerbs,CommandProjections}.test.ts"],
+      callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "jest.mock"],
+      because: "test.no-mocks-of-our-code: inject faulty Effect services or use real dependencies."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/{Open,CommandVerbs,CommandProjections}.test.ts"],
+      callees: ["setTimeout", "*.setTimeout", "sleep", "*.sleep", "*.waitForTimeout"],
+      because: "test.behavioral: wait on a condition or use TestClock. See apps/mvp/docs/rules.md."
     }
   ]
 })

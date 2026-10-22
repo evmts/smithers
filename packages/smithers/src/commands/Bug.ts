@@ -127,7 +127,7 @@ export const submit = (
         new CliError.Refused({
           fault: "dependency",
           code: "bug_report_unreachable",
-          message: `Could not reach ${endpoint}. The report was not sent.`
+          message: `Could not confirm delivery to ${endpoint}. The report may have been sent.`
         })
     })
     if (!posted.ok) {

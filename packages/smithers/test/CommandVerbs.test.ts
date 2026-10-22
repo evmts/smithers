@@ -24,9 +24,9 @@
 import { NodeServices } from "@effect/platform-node"
 import { Control as ControlService, type ControlSchema } from "@smthrs/control"
 import * as TestControl from "@smthrs/control/test/TestControl"
-import { Context, Effect, Layer, Stream } from "effect"
+import { Context, Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import { Command } from "effect/cli"
-import { TestConsole } from "effect/testing"
+import { TestClock, TestConsole } from "effect/testing"
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
@@ -357,6 +357,88 @@ describe("smthrs claude node-wait", () => {
     expect(node).toMatchObject({ nodeId: "read#1", outcome: "success", timedOut: false })
   })
 
+  it("rereads history after observing terminal status before calling a completed node vanished", async () => {
+    let reads = 0
+    const racing = Layer.effect(
+      ControlService.Control,
+      Effect.gen(function*() {
+        const control = yield* ControlService.Control
+        return ControlService.make({
+          ...control,
+          list: (request) =>
+            request._tag === "runs"
+              ? Effect.succeed({
+                _tag: "runs",
+                items: [{
+                  runId: "run-1",
+                  flowId: "demo/ship",
+                  status: reads === 0 ? "running" : "completed",
+                  createdAt: 0,
+                  updatedAt: 0
+                }]
+              })
+              : control.list(request),
+          watch: (request) =>
+            Stream.suspend(() => {
+              const snapshot = ++reads === 1 ? settled.slice(0, 1) : settled
+              return Stream.fromIterable(
+                snapshot.filter((row) => request.afterSequence === undefined || row.sequence > request.afterSequence)
+              )
+            })
+        })
+      })
+    ).pipe(Layer.provide(historyControl([])))
+    const node = await run(json(["claude", "node-wait", "run-1", "read#1"]), racing)
+    expect(node).toMatchObject({ nodeId: "read#1", outcome: "success", timedOut: false, value: "contents of a" })
+    expect(reads).toBe(2)
+  })
+
+  it.each(["initial summary", "history", "summary"])(
+    "enforces the deadline during a stalled %s read",
+    async (stage) => {
+      await run(
+        Effect.gen(function*() {
+          const entered = yield* Deferred.make<void>()
+          let interrupted = false
+          let lists = 0
+          const stalled = Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(Effect.sync(() => {
+              interrupted = true
+            }))
+          )
+          const faulty = Layer.effect(
+            ControlService.Control,
+            Effect.gen(function*() {
+              const control = yield* ControlService.Control
+              return ControlService.make({
+                ...control,
+                list: (request) =>
+                  Effect.suspend(() => {
+                    lists += 1
+                    return stage === "initial summary" || (stage === "summary" && lists > 1)
+                      ? stalled
+                      : control.list(request)
+                  }),
+                watch: (request) => stage === "history" ? Stream.fromEffect(stalled) : control.watch(request)
+              })
+            })
+          ).pipe(Layer.provide(historyControl([])))
+          const fiber = yield* Effect.forkChild(
+            json(["claude", "node-wait", "run-1", "read#1", "--timeout-ms", "1000"]).pipe(Effect.provide(faulty)),
+            { startImmediately: true }
+          )
+          yield* Deferred.await(entered)
+          yield* TestClock.adjust("1000 millis")
+          expect(fiber.pollUnsafe()).toBeDefined()
+          expect(yield* Fiber.join(fiber)).toEqual({ nodeId: "read#1", outcome: "pending", timedOut: true })
+          expect(interrupted).toBe(true)
+        }).pipe(Effect.provide(TestClock.layer())),
+        testControl
+      )
+    }
+  )
+
   it("reports a node that never appeared in a run that has already ended", async () => {
     const node = await run(
       json(["claude", "node-wait", "run-1", "ghost#1"]),
@@ -512,6 +594,53 @@ describe("the paged flow catalog's refusals", () => {
     const failure = exit._tag === "Failure" ? exit.cause : undefined
     expect(String(failure)).toContain("50000")
     expect(String(failure)).toContain("events")
+  })
+
+  it.each(["count", "bytes"])("bounds unique warning %s before retaining warnings", async (limit) => {
+    const warnings = limit === "count"
+      ? Array.from(
+        { length: 50_001 },
+        (_, index) => ({ code: "missing_name" as const, path: `flow/${index}`, message: "invalid" })
+      )
+      : [{ code: "missing_name" as const, path: "flow", message: "x".repeat(16 * 1024 * 1024) }]
+    const exit = await run(
+      Effect.exit(text(["ls"])),
+      flowListingControl(() => ({
+        _tag: "flows",
+        items: [],
+        warnings
+      }))
+    )
+    expect(exit._tag).toBe("Failure")
+    expect(String(exit._tag === "Failure" ? exit.cause : "")).toContain("ResourceLimitError")
+  })
+
+  it("bounds empty pages with fresh cursors", async () => {
+    let pages = 0
+    const exit = await run(
+      Effect.exit(text(["ls"])),
+      flowListingControl(() => {
+        pages += 1
+        return flowPage([], pages <= 50_001 ? `cursor-${pages}` : undefined)
+      })
+    )
+    expect(exit._tag).toBe("Failure")
+    expect(pages).toBeLessThanOrEqual(50_001)
+    expect(String(exit._tag === "Failure" ? exit.cause : "")).toContain("ResourceLimitError")
+  })
+
+  it("charges retained cursor bytes to the catalog budget", async () => {
+    let pages = 0
+    const exit = await run(
+      Effect.exit(text(["ls"])),
+      flowListingControl(() => {
+        pages += 1
+        return flowPage([], pages === 1 ? "x".repeat(16 * 1024 * 1024) : undefined)
+      })
+    )
+    expect(exit._tag).toBe("Failure")
+    expect(pages).toBe(1)
+    expect(String(exit._tag === "Failure" ? exit.cause : "")).toContain("bytes")
   })
 
   it("reports each distinct discovery warning once, however many pages repeat it", async () => {

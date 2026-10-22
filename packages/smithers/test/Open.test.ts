@@ -163,6 +163,29 @@ describe("remote discovery", () => {
     launch: async () => 0
   })
 
+  it.each([
+    "https://synthetic-user:synthetic-password@github.com/owner/repo?access_token=synthetic-query",
+    "https://github.com/owner/repo?opaque=synthetic-query",
+    "ssh://synthetic-user:synthetic-password@github.com/too/many/segments"
+  ])("keeps rejected remote credentials out of diagnostics: %s", (remote) => {
+    expect(() => Open.resolveRepo(reading({ "git remote get-url origin": remote }), "/w"))
+      .toThrow("The remote does not name owner/repo.")
+  })
+
+  it.each(["git remote -v", "jj git remote list"])(
+    "honors an explicit remote without a host filter through %s",
+    (listing) => {
+      const h = reading({
+        "git remote get-url origin": "https://github.com/origin/repo.git",
+        [listing]: "origin https://github.com/origin/repo.git\nupstream https://example.com/up/stream.git"
+      })
+      expect(Open.resolveRepo(h, "/w", undefined, "upstream")).toBe("up/stream")
+      expect(() => Open.resolveRepo(h, "/w", undefined, "absent")).toThrow("Could not determine repository")
+      expect(() => Open.resolveRepo(h, "/w", new Set(["github.com"]), "upstream"))
+        .toThrow("Could not determine repository")
+    }
+  )
+
   it("uses origin from the listing, then the first remote, then jj", () => {
     expect(Open.resolveRepo(
       reading({

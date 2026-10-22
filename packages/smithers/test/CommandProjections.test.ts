@@ -229,7 +229,7 @@ describe("smthrs claude", () => {
 
 describe("smthrs bug", () => {
   /** A real HTTP endpoint on a loopback port, and the requests it received. */
-  const endpoint = async (status: number) => {
+  const endpoint = async (status: number, dropResponse = false) => {
     const received: Array<unknown> = []
     const server = createServer((request, response) => {
       let body = ""
@@ -239,6 +239,10 @@ describe("smthrs bug", () => {
       })
       request.on("end", () => {
         received.push(JSON.parse(body))
+        if (dropResponse) {
+          request.socket.destroy()
+          return
+        }
         response.writeHead(status, { "content-type": "application/json" })
         response.end("{}")
       })
@@ -296,6 +300,21 @@ describe("smthrs bug", () => {
     expect(error).toMatchObject({ _tag: "/cli/Refused", fault: "dependency", code: "bug_report_rejected" })
   })
 
+  it("reports uncertain delivery when the server receives the POST but drops its response", async () => {
+    const target = await endpoint(202, true)
+    const exit = await withEndpoint(
+      target.url,
+      () => run(Effect.exit(text(["bug", "--yes", "synthetic delivery probe"])), testControl)
+    )
+    expect(target.received).toHaveLength(1)
+    const error = exit._tag === "Failure" ? Cause.squash(exit.cause) : undefined
+    expect(error).toMatchObject({
+      _tag: "/cli/Refused",
+      code: "bug_report_unreachable",
+      message: `Could not confirm delivery to ${target.url}. The report may have been sent.`
+    })
+  })
+
   it("names the endpoint it could not reach, never the transport's raw text", async () => {
     const exit = await withEndpoint(
       "http://127.0.0.1:1/",
@@ -307,7 +326,7 @@ describe("smthrs bug", () => {
       _tag: "/cli/Refused",
       fault: "dependency",
       code: "bug_report_unreachable",
-      message: "Could not reach http://127.0.0.1:1/. The report was not sent."
+      message: "Could not confirm delivery to http://127.0.0.1:1/. The report may have been sent."
     })
     expect(CliError.exitCode(error as CliError.CliError)).toBe(1)
   })
@@ -355,13 +374,19 @@ describe("smthrs bug", () => {
   it.each([true, false])("posts only when the TTY confirmation is accepted (%s)", async (accepted) => {
     const target = await endpoint(202)
     const input = new PassThrough()
+    let rendered = ""
+    let answered = false
     const output = new Writable({
-      write(_chunk, _encoding, callback) {
+      write(chunk, _encoding, callback) {
+        rendered += String(chunk)
         callback()
+        if (!answered && rendered.includes("Post this report to")) {
+          answered = true
+          queueMicrotask(() => input.write(accepted ? "y\r" : "n\r"))
+        }
       }
     })
     const ui = Ui.make({ input, output, interactive: true })
-    const keys = setTimeout(() => input.write(accepted ? "y\r" : "n\r"), 100)
     try {
       const exit = await withEndpoint(target.url, () =>
         run(
@@ -371,7 +396,6 @@ describe("smthrs bug", () => {
       expect(exit._tag).toBe(accepted ? "Success" : "Failure")
       expect(target.received).toHaveLength(accepted ? 1 : 0)
     } finally {
-      clearTimeout(keys)
       input.destroy()
       output.destroy()
     }
