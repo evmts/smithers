@@ -26,6 +26,9 @@ The suite declaration is wrong. The suite author fixes it.
 | `Invalid suite case on line N`                                    | `line[N]`                                                                                                       | The fixture line is not a `{ name, input, expected? }` case                              |
 | `Invalid sampling policy for scorer`                              | `bindings[N].sampling`                                                                                          | The scorers package cannot decide the policy; see the [scorers API](/api/scorers)        |
 
+Snapshot getters that throw fail with `invalid_suite` at `options`, retaining
+the thrown value as `cause` without interpolating it into the message.
+
 ## invalid_run_options
 
 `Runner.run`'s own options are wrong, not the suite. The caller fixes them.
@@ -36,6 +39,9 @@ The suite declaration is wrong. The suite author fixes it.
   2026-01-01T00:00:00.000Z`, at `options.at`: the value must carry millisecond
   precision and round-trip through parse and re-render.
   `new Date().toISOString()` satisfies the format.
+
+Invalid timestamp values are flattened before they enter diagnostics, replacing
+control characters with spaces.
 
 ## invalid_baseline
 
@@ -109,7 +115,9 @@ provide a batch runner that implements `runBatchCorrelated`.
 
 A batch runner broke the `runBatch` or `runBatchCorrelated` contract: the
 wrong number of results, a duplicate identity, an unknown identity, or an
-observation that does not echo its job's `targetStepKey` and `scorerKey`.
+missing observation, or an observation that does not echo its job's
+`targetStepKey` and `scorerKey`. Returned identifiers are flattened in diagnostics
+to prevent control characters from changing log output.
 Nothing it returned can be trusted. The message names the offending call, as
 in `runBatchCorrelated[0]`. Compare the adapter against `Runner.makeInline()`,
 the reference implementation of the protocol.

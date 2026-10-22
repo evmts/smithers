@@ -263,25 +263,29 @@ const copyBinding = (binding: Binding, index: number): Effect.Effect<Binding, Ev
  * @since 0.1.0
  */
 export const make = (options: MakeOptions): Effect.Effect<Suite, EvalError> =>
-  Effect.suspend(() => {
-    const name = options.name
-    const concurrency = options.concurrency
-    const cases = [...options.cases].map(readCase)
-    const bindings = [...(options.bindings ?? [])].map(readBinding)
-    const trials = options.trials ?? 1
-    const snapshot = { name, concurrency, cases, bindings, trials }
+  Effect.gen(function*() {
+    const snapshot = yield* Effect.try({
+      try: () => {
+        const name = options.name
+        const concurrency = options.concurrency
+        const cases = [...options.cases].map(readCase)
+        const bindings = [...(options.bindings ?? [])].map(readBinding)
+        const trials = options.trials ?? 1
+        return { name, concurrency, cases, bindings, trials }
+      },
+      catch: (cause) => invalid("Cannot read suite snapshot", "options", cause)
+    })
+    const { name, concurrency, cases, bindings, trials } = snapshot
     const error = validate(snapshot)
-    if (error !== undefined) return Effect.fail(error)
-    return Effect.gen(function*() {
-      const copiedCases = yield* Effect.forEach(cases, copyCase)
-      const copiedBindings = yield* Effect.forEach(bindings, copyBinding)
-      return Object.freeze({
-        name,
-        cases: Object.freeze(copiedCases),
-        bindings: Object.freeze(copiedBindings),
-        concurrency,
-        trials
-      })
+    if (error !== undefined) return yield* Effect.fail(error)
+    const copiedCases = yield* Effect.forEach(cases, copyCase)
+    const copiedBindings = yield* Effect.forEach(bindings, copyBinding)
+    return Object.freeze({
+      name,
+      cases: Object.freeze(copiedCases),
+      bindings: Object.freeze(copiedBindings),
+      concurrency,
+      trials
     })
   })
 

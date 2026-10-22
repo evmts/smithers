@@ -48,6 +48,83 @@ const failureOf = (effect: Effect.Effect<unknown, EvalError, never>): Promise<Ev
   Effect.runPromise(Effect.flip(effect))
 
 describe("Runner", () => {
+  it.each([false, true])("rejects null batch observations as scorer_protocol (correlated: %s)", async (correlated) => {
+    const suite = await suiteOf("null-observation", [binding])
+    const scorer: Runner.ScoreBatchRunner = {
+      runBatch: () => Effect.succeed([null as unknown as Runner.ScoreObservation]),
+      ...(correlated
+        ? {
+          runBatchCorrelated: (jobs: ReadonlyArray<Runner.ScoreJob>) =>
+            Effect.succeed(jobs.map((job) => ({
+              identity: job.identity,
+              observation: null as unknown as Runner.ScoreObservation
+            })))
+        }
+        : {})
+    }
+    const error = await failureOf(Runner.run(suite, { ...runOptions, scorer }).pipe(Effect.provide(succeeding)))
+    expect(error).toBeInstanceOf(EvalError)
+    expect(error.code).toBe("scorer_protocol")
+    expect(error.path).toBe(`${correlated ? "runBatchCorrelated" : "runBatch"}[0]`)
+  })
+
+  it("rejects an absent observation in a correctly sized sparse batch", async () => {
+    const suite = await suiteOf("sparse-observation", [binding])
+    const scorer: Runner.ScoreBatchRunner = {
+      runBatch: () => Effect.succeed(new Array<Runner.ScoreObservation>(1))
+    }
+    const error = await failureOf(Runner.run(suite, { ...runOptions, scorer }).pipe(Effect.provide(succeeding)))
+    expect(error.code).toBe("scorer_protocol")
+    expect(error.path).toBe("runBatch[0]")
+  })
+
+  it.each([false, true])("sanitizes returned scorer and step identifiers (correlated: %s)", async (correlated) => {
+    const suite = await suiteOf("unsafe-identifiers", [binding])
+    const observation = (job: Runner.ScoreJob): Runner.ScoreObservation => ({
+      ...job.observation,
+      kind: "score",
+      score: 1,
+      at: job.at,
+      scorerKey: "bad\n\u001b\u009b\u202e-scorer",
+      targetStepKey: "bad\r\u007f\u2066-step"
+    })
+    const scorer: Runner.ScoreBatchRunner = {
+      runBatch: (jobs) => Effect.succeed(jobs.map(observation)),
+      ...(correlated
+        ? {
+          runBatchCorrelated: (jobs: ReadonlyArray<Runner.ScoreJob>) =>
+            Effect.succeed(jobs.map((job) => ({ identity: job.identity, observation: observation(job) })))
+        }
+        : {})
+    }
+    const error = await failureOf(Runner.run(suite, { ...runOptions, scorer }).pipe(Effect.provide(succeeding)))
+    expect(error.code).toBe("scorer_protocol")
+    expect(error.path).toBe(`${correlated ? "runBatchCorrelated" : "runBatch"}[0]`)
+    expect(error.message).toContain("'bad    -scorer'")
+    expect(error.message).toContain("'bad   -step'")
+  })
+
+  it("sanitizes invalid timestamps in validation errors before executing cases", async () => {
+    const suite = await suiteOf("unsafe-timestamp", [])
+    let calls = 0
+    const executor = executorFor(() => {
+      calls += 1
+      return Effect.succeed({ output: 1, stepKey: "step", latencyMs: 0, target })
+    })
+    const error = await failureOf(
+      Runner.run(suite, {
+        ...runOptions,
+        at: "invalid\n\u001b\u007f\u009b\u202e\u2066timestamp"
+      }).pipe(Effect.provide(executor))
+    )
+    expect(error.code).toBe("invalid_run_options")
+    expect(error.path).toBe("options.at")
+    expect(error.message).toBe(
+      "Deterministic runs require a canonical UTC timestamp such as 2026-01-01T00:00:00.000Z, got 'invalid      timestamp'"
+    )
+    expect(calls).toBe(0)
+  })
+
   it("runs a case three times and reports pass@k", async () => {
     const suite = await suiteOf("trials", [binding], [{ name: "one", input: 1, expected: 1 }])
     let calls = 0

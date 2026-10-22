@@ -639,20 +639,31 @@ const score = (
     const { at } = context
     const observations: Array<Observation> = []
     for (const [index, request] of requests.entries()) {
-      const result = results[index]!
+      const result = results[index]
+      if (result === null || result === undefined) {
+        return yield* Effect.fail(
+          new EvalError({
+            code: "scorer_protocol",
+            message: `Scorer batch returned a missing observation for job ${index}`,
+            path: `${protocol}[${index}]`
+          })
+        )
+      }
       if (result.targetStepKey !== request.stepKey || result.scorerKey !== scorerKeyOf(request.binding)) {
         return yield* Effect.fail(
           new EvalError({
             code: "scorer_protocol",
-            message: protocol === "runBatchCorrelated"
-              ? `Correlated scorer batch identity '${
-                jobs[index]!.identity
-              }' returned step '${result.targetStepKey}' and scorer '${result.scorerKey}' where job ${index} asked for scorer '${
-                scorerKeyOf(request.binding)
-              }' at step '${flattenControlCharacters(request.stepKey)}'`
-              : `Scorer batch returned an observation for '${result.scorerKey}' at step '${result.targetStepKey}' where job ${index} asked for '${
-                scorerKeyOf(request.binding)
-              }' at step '${flattenControlCharacters(request.stepKey)}'; results must stay aligned with their jobs`,
+            message: flattenControlCharacters(
+              protocol === "runBatchCorrelated"
+                ? `Correlated scorer batch identity '${
+                  jobs[index]!.identity
+                }' returned step '${result.targetStepKey}' and scorer '${result.scorerKey}' where job ${index} asked for scorer '${
+                  scorerKeyOf(request.binding)
+                }' at step '${request.stepKey}'`
+                : `Scorer batch returned an observation for '${result.scorerKey}' at step '${result.targetStepKey}' where job ${index} asked for '${
+                  scorerKeyOf(request.binding)
+                }' at step '${request.stepKey}'; results must stay aligned with their jobs`
+            ),
             path: `${protocol}[${index}]`
           })
         )
@@ -722,8 +733,9 @@ export const run = (
       return yield* Effect.fail(
         new EvalError({
           code: "invalid_run_options",
-          message:
-            `Deterministic runs require a canonical UTC timestamp such as 2026-01-01T00:00:00.000Z, got '${options.at}'`,
+          message: flattenControlCharacters(
+            `Deterministic runs require a canonical UTC timestamp such as 2026-01-01T00:00:00.000Z, got '${options.at}'`
+          ),
           path: "options.at"
         })
       )

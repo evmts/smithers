@@ -31,6 +31,33 @@ const judge = Scorer.make<JudgeUnavailable>({
 })
 
 describe("Suite", () => {
+  it.each([
+    ...["name", "concurrency", "cases", "bindings", "trials"].map((field) => ["options", field]),
+    ...["name", "input", "expected"].map((field) => ["case", field]),
+    ...["scorer", "appliesTo", "sampling", "groundTruth", "context"].map((field) => ["binding", field])
+  ])("returns typed invalid_suite when a %s snapshot getter for %s throws", async (location, field) => {
+    const cause = new Error("unreadable snapshot")
+    let reads = 0
+    const suiteCase = { name: "a", input: 1 }
+    const binding = { ...Binding.make({ scorer, appliesTo: target }) }
+    const options = { name: "throwing-getter", concurrency: 1, cases: [suiteCase], bindings: [binding] }
+    const source = location === "options" ? options : location === "case" ? suiteCase : binding
+    Object.defineProperty(source, field!, {
+      get() {
+        reads += 1
+        throw cause
+      }
+    })
+    const effect = Suite.make(options)
+    expect(reads).toBe(0)
+    const error = await failure(effect)
+    expect(error).toBeInstanceOf(EvalError)
+    expect(error.code).toBe("invalid_suite")
+    expect(error.path).toBe("options")
+    expect(error.cause).toBe(cause)
+    expect(reads).toBe(1)
+  })
+
   it("pins the documented numeric ceilings", () => {
     expect(Suite.limits).toEqual({ cases: 10_000, concurrency: 1024, fixtureLength: 8_388_608 })
   })

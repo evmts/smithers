@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ImportRules,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode
+} from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
@@ -7,6 +12,17 @@ const cwd = "packages/smithers/agent/evals"
 const standard = BuildAndCheckTypeScriptPackage({ cwd, sources: Input.glob("{src,examples}/**/*.ts") })
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
+
+/** Eval regressions synchronize on conditions instead of fixed sleeps. */
+const importRules = ImportRules({
+  cwd,
+  rules: [{
+    kind: "forbidCalls",
+    files: ["test/**/*.ts"],
+    callees: ["setTimeout", "*.sleep", "*.waitForTimeout"],
+    because: "test.behavioral: wait on a condition or TestClock, never a fixed sleep."
+  }]
+})
 
 /**
  * Changed public APIs against the package README, every docs page (concepts
@@ -126,6 +142,7 @@ export const Package = Smithers.Package({
     docs,
     docsFiles,
     fmt,
+    importRules,
     lib,
     lint,
     reviewDocsAgainstCode,
