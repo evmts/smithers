@@ -44,12 +44,12 @@ export type FailurePolicy = "halt" | "quarantine"
  * @category models
  * @since 0.1.0
  */
-export type MergeQueueFlow = Flow.Flow<
+export type MergeQueueFlow<R = never> = Flow.Flow<
   string,
   typeof OpaqueInput,
   typeof Schema.Unknown,
   typeof Schema.Unknown,
-  any
+  R
 >
 
 /**
@@ -58,9 +58,9 @@ export type MergeQueueFlow = Flow.Flow<
  * @category models
  * @since 0.1.0
  */
-export interface Member {
+export interface Member<R = never> {
   readonly id: string
-  readonly flow: Callable<any>
+  readonly flow: Callable<R>
   readonly priority?: number | undefined
 }
 
@@ -78,10 +78,10 @@ export interface Member {
  * @category models
  * @since 0.1.0
  */
-export interface MakeOptions {
+export interface MakeOptions<R = never> {
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly members: ReadonlyArray<Member>
+  readonly members: ReadonlyArray<Member<R>>
   readonly concurrency?: number | undefined
   readonly priority?: number | undefined
   readonly failurePolicy: FailurePolicy
@@ -98,7 +98,6 @@ export interface RuntimeMember<I, Out, E, R> {
   readonly priority?: number | undefined
   readonly run: (args: {
     readonly id: string
-    readonly priority: number
     readonly position: number
     readonly input: I
   }) => Effect.Effect<Out, E, R>
@@ -284,10 +283,10 @@ type Outcome =
  * @category constructors
  * @since 0.1.0
  */
-export const make = (options: MakeOptions): MergeQueueFlow => {
+export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's members or options again.
-  const snapshot: ReadonlyArray<Member> = options.members.map((member) => ({
+  const snapshot: ReadonlyArray<Member<R>> = options.members.map((member) => ({
     id: member.id,
     flow: member.flow,
     priority: member.priority
@@ -324,8 +323,8 @@ export const make = (options: MakeOptions): MergeQueueFlow => {
     }
     return { landed, quarantined, order: captures.members }
   }
-  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, any> => {
-    const landing = (entry: Position<Member>): Node.Node<unknown, unknown, any> => {
+  const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
+    const landing = (entry: Position<Member<R>>): Node.Node<unknown, unknown, R> => {
       const declared = Node.map(
         Node.priority(
           callMember(entry.member.flow, {
@@ -345,13 +344,13 @@ export const make = (options: MakeOptions): MergeQueueFlow => {
         )
       })
     }
-    const fold = (carried: Readonly<Record<string, Planned.Planned<unknown>>>): Node.Node<unknown, unknown, any> =>
+    const fold = (carried: Readonly<Record<string, Planned.Planned<unknown>>>): Node.Node<unknown, unknown, R> =>
       Node.map(Node.succeed(carried), Node.capture(captures, settled))
     if (concurrency === 1) {
       const walk = (
         index: number,
         carried: Readonly<Record<string, Planned.Planned<unknown>>>
-      ): Node.Node<unknown, unknown, any> => {
+      ): Node.Node<unknown, unknown, R> => {
         const entry = queue[index]
         if (entry === undefined) return fold(carried)
         // `bindPlanned` alone would let the next landing start while this one
@@ -369,16 +368,16 @@ export const make = (options: MakeOptions): MergeQueueFlow => {
       }
       return walk(0, {})
     }
-    const batchAt = (offset: number): Node.Node<unknown, unknown, any> => {
+    const batchAt = (offset: number): Node.Node<unknown, unknown, R> => {
       const group = Object.fromEntries(
         queue.slice(offset, offset + concurrency).map((entry) => [entry.id, landing(entry)])
-      ) as Record<string, Node.Any>
+      )
       return Node.all(group)
     }
     const visit = (
       offset: number,
       carried: Readonly<Record<string, Planned.Planned<unknown>>>
-    ): Node.Node<unknown, unknown, any> => {
+    ): Node.Node<unknown, unknown, R> => {
       if (offset >= queue.length) return fold(carried)
       const batched = queue.slice(offset, offset + concurrency).map((entry) => entry.id)
       return Node.bindPlanned(
@@ -411,6 +410,8 @@ export const make = (options: MakeOptions): MergeQueueFlow => {
  *
  * At the default concurrency of 1 the members land strictly one at a time, in
  * descending priority and then declaration order.
+ * Members receive `{ id, position, input }`, as in {@link make}. Priority
+ * controls queue order and stays out of member payloads.
  *
  * Under `failurePolicy: "halt"` a failing member fails the queue and no member
  * behind it lands, which is why `halt` runs only at concurrency 1: a wider
@@ -456,7 +457,6 @@ export const run = <I, Out, E = never, R = never>(
       (entry) => {
         const attempt = entry.member.run({
           id: entry.id,
-          priority: entry.priority,
           position: entry.position,
           input
         })

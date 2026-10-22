@@ -8,7 +8,7 @@ import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
-import { expect } from "vitest"
+import { expect, expectTypeOf } from "vitest"
 import * as MergeQueue from "../src/MergeQueue.ts"
 import { PatternError } from "../src/PatternError.ts"
 import { execute } from "./Execute.ts"
@@ -69,6 +69,40 @@ const settle = (running: Promise<unknown>): Promise<Result.Result<unknown, unkno
   running.then((value) => Result.succeed(value), (failure: unknown) => Result.fail(failure))
 
 describe("MergeQueue", () => {
+  it("preserves the requirements of its declared members", () => {
+    const first = Action.make("mergeQueue/first", { payload: {}, success: Schema.String })
+    const second = Action.make("mergeQueue/second", { payload: {}, success: Schema.String })
+    const queue = MergeQueue.make<Action.Requirement<"mergeQueue/first"> | Action.Requirement<"mergeQueue/second">>({
+      members: [{ id: "first", flow: first }, { id: "second", flow: second }],
+      failurePolicy: "halt"
+    })
+    expectTypeOf(queue).toEqualTypeOf<
+      MergeQueue.MergeQueueFlow<Action.Requirement<"mergeQueue/first"> | Action.Requirement<"mergeQueue/second">>
+    >()
+    const inferred = MergeQueue.make({ members: [{ id: "first", flow: first }], failurePolicy: "halt" })
+    expectTypeOf(inferred).toEqualTypeOf<MergeQueue.MergeQueueFlow<Action.Requirement<"mergeQueue/first">>>()
+    expect(Graph.diagnostics(Graph.build(queue, { input: undefined }))).toEqual([])
+  })
+
+  it.effect("hands declared and runtime members the same payload without priority", () =>
+    Effect.gen(function*() {
+      for (const priority of [5000, 7000]) {
+        const graph = Graph.build(
+          MergeQueue.make({
+            members: [{ id: "docs", flow: land, priority }],
+            failurePolicy: "halt"
+          }),
+          target
+        )
+        const result = yield* MergeQueue.run(target.input, {
+          members: [{ id: "docs", priority, run: (payload) => Effect.succeed(payload) }],
+          failurePolicy: "halt"
+        })
+        expect(result.landed[0]!.output).toEqual(literals(graph)[0])
+        expect(Object.hasOwn(result.landed[0]!.output, "priority")).toBe(false)
+      }
+    }))
+
   it("sorts members by descending priority then declaration order", () => {
     expect(MergeQueue.ordered(members, MergeQueue.DefaultPriority).map((member) => member.id)).toEqual([
       "hotfix",
