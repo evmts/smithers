@@ -168,6 +168,7 @@ export const clipped = (template: Flow.Any, supplied: Flow.Any): Clipped => {
 /**
  * Applies a decorator and re-declares the result under the wrapped flow's
  * schema and authority ceiling.
+ * An incompatible payload, success, or error schema fails `invalid_decorator`.
  *
  * The returned name derives from the decorator result (or the decorator
  * function name), and the extra flow call makes the decorator chain part of
@@ -187,7 +188,7 @@ export const decorate: {
       message: "A flow decorator must return a Flow"
     })
   }
-  const issue = Decorate.schemasCompatible(self.payloadSchema, self.successSchema, supplied)
+  const issue = Decorate.schemasCompatible(self.payloadSchema, self.successSchema, supplied, self.errorSchema)
   if (issue !== undefined) {
     throw new PatternError({
       code: "invalid_decorator",

@@ -76,6 +76,29 @@ const bindInput = (expected: Schema.Top, actual: Schema.Top): Flow.Any =>
   )
 
 describe("Pattern", () => {
+  it("refuses a decorator with an incompatible error schema", () => {
+    const declaration = (error: Schema.Top) =>
+      Flow.make("pattern/errors", {
+        payload: { value: Schema.String },
+        success: Schema.String,
+        error,
+        body: ({ value }) => Node.succeed(value)
+      })
+    for (const error of [Schema.Never, Schema.Number]) {
+      expect(() => Pattern.decorate(declaration(error), () => declaration(Schema.String))).toThrow(
+        expect.objectContaining({ code: "invalid_decorator", message: expect.stringContaining("error schema") })
+      )
+    }
+    for (const error of [Schema.String, Schema.Unknown]) {
+      expect(Flow.isFlow(Pattern.decorate(declaration(error), () => declaration(Schema.String)))).toBe(true)
+    }
+    expect(Flow.isFlow(Pattern.decorate(declaration(Schema.String), () => declaration(Schema.Never)))).toBe(true)
+    const shape = () => Schema.Struct({ reason: Schema.String })
+    expect(Flow.isFlow(Pattern.decorate(declaration(shape()), () => declaration(shape())))).toBe(true)
+    expect(() => Pattern.decorate(declaration(shape()), () => declaration(Schema.Struct({ code: Schema.Number }))))
+      .toThrow(expect.objectContaining({ code: "invalid_decorator", message: expect.stringContaining("error schema") }))
+  })
+
   it("executes a decorator through its declared call with the original payload", async () => {
     const payload = Schema.Struct({ value: Schema.String })
     const inner = Flow.make("pattern/uppercase", {

@@ -24,7 +24,7 @@ import * as Effects from "@smthrs/plan/Effects"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
-import type * as Schema from "effect/Schema"
+import * as Schema from "effect/Schema"
 import { PatternError } from "../PatternError.ts"
 import * as Compose from "./Compose.ts"
 import type { Member } from "./Member.ts"
@@ -88,9 +88,24 @@ export const displayName = (flow: Flow.Any): string => flow._tag
 export const schemasCompatible = (
   input: Schema.Top,
   output: Schema.Top,
-  flow: Flow.Any
-): SchemaCompatibilityIssue | undefined =>
-  Compose.declaredSchemasCompatible(input, output, { input: flow.payloadSchema, output: flow.successSchema })
+  flow: Flow.Any,
+  error?: Schema.Top
+): SchemaCompatibilityIssue | undefined => {
+  const issue = Compose.declaredSchemasCompatible(input, output, {
+    input: flow.payloadSchema,
+    output: flow.successSchema
+  })
+  if (issue !== undefined || error === undefined) return issue
+  // Errors flow out of the supplied declaration just like successful values.
+  const errorIssue = Compose.declaredSchemasCompatible(Schema.Never, error, {
+    input: Schema.Unknown,
+    output: flow.errorSchema
+  })
+  return errorIssue === undefined ? undefined : { ...errorIssue, side: "error" }
+}
+
+type WithSide<Issue, Side> = Issue extends { readonly side: unknown } ? Omit<Issue, "side"> & { readonly side: Side }
+  : never
 
 /**
  * What {@link schemasCompatible} reports when a declaration does not fit.
@@ -98,7 +113,10 @@ export const schemasCompatible = (
  * @since 1.0.0
  * @private
  */
-export type SchemaCompatibilityIssue = Exclude<ReturnType<typeof Compose.declaredSchemasCompatible>, undefined>
+export type SchemaCompatibilityIssue = WithSide<
+  Exclude<ReturnType<typeof Compose.declaredSchemasCompatible>, undefined>,
+  "input" | "output" | "error"
+>
 
 /**
  * The annotation bag a wrapper starts from: both inner bags, with the supplied
