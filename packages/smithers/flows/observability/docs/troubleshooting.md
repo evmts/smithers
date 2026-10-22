@@ -77,7 +77,9 @@ by default.
 ## An OTLP export batch was discarded
 
 A `Warn` record with code `otlp_export_discarded` means the transport discarded
-a batch because it exceeded 1 MiB (`oversized`), stalled for ten seconds
+a record too large for one request (`oversized`: over 1 MiB, or
+`Options.maxRequestBytes`, on its own; a larger batch is split, not
+discarded), stalled for ten seconds
 (`stalled`), or found all four request slots occupied (`saturated`). The
 `flows_observability_otlp_dropped` counter records every discarded batch. The
 warning carries the request byte size, limit and running drop count, and is

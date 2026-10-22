@@ -53,6 +53,8 @@ interface Options {
   readonly exportInterval?: Duration.Input | undefined
   readonly shutdownTimeout?: Duration.Input | undefined
   readonly spans?: ReadonlyArray<string> | undefined
+  readonly maxRequestBytes?: number | undefined
+  readonly maxRecords?: number | undefined
 }
 ```
 
@@ -83,6 +85,13 @@ interface Options {
   received. Logs and metrics are unaffected. Pass the span names of an
   `OtlpRelay.serve` allowlist so the exporter never sends what the relay
   drops.
+- `maxRequestBytes`: the largest request the collector accepts, in encoded
+  bytes; at most and by default `maxRequestBytes` (1 MiB). A larger batch is
+  split into several requests under it.
+- `maxRecords`: the most records one request carries: spans, log records, or
+  metric data points. Omitted, a request carries a whole batch. Pass
+  `OtlpRelay.serve`'s `maxBodyBytes` and `maxRecords` here so a burst reaches
+  the relay whole instead of answered `413` or cut short.
 
 ### Otlp.layer
 
@@ -101,8 +110,14 @@ something else. Both configuration inputs are decoded during acquisition, so
 the returned layer either exports or refuses. Ambient `OTEL_RESOURCE_ATTRIBUTES`
 cannot add unvalidated metadata to these explicit resources.
 
-Requests over `maxRequestBytes` (1 MiB), stalled for ten seconds, or exceeding
-four in-flight requests are discarded locally. Each discard increments
+A batch over `Options.maxRequestBytes` or `Options.maxRecords` is split into
+requests under both, in order, each record with its own resource and scope; a
+metric's data points are spread over requests when they must be. The parts go
+one after another under one of the four request slots. A refused part answers
+for the whole batch, which the exporter retries, so a part may arrive twice
+but none is lost. A record too large for any request on its own, a request
+stalled for ten seconds, and a batch finding all four slots occupied are
+discarded locally. Each discard increments
 `flows_observability_otlp_dropped`. A `Warn` diagnostic with code
 `otlp_export_discarded` reports `reason` (`oversized`, `stalled`, or `saturated`),
 `bytes`, `limit`, and cumulative `dropped` at most once per minute per transport.

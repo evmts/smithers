@@ -29,7 +29,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Headers from "effect/http/Headers"
 import type * as HttpBody from "effect/http/HttpBody"
 import * as HttpClient from "effect/http/HttpClient"
-import type * as HttpClientRequest from "effect/http/HttpClientRequest"
+import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
@@ -41,6 +41,7 @@ import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import * as Tracer from "effect/Tracer"
 import * as Endpoint from "./Endpoint.ts"
+import * as Split from "./internal/split.ts"
 import * as Resource from "./Resource.ts"
 
 /**
@@ -114,6 +115,12 @@ export const reservedBatchBytes = maxRequestBytes - Resource.maximumResourceByte
 
 type DiscardReason = "oversized" | "stalled" | "saturated"
 
+/** What one export request may carry: its encoded bytes and its records. */
+interface Limits {
+  readonly maxRequestBytes: number
+  readonly maxRecords: number
+}
+
 /**
  * A collector's answer reduced to what the exporter acts on: its status and
  * its `retry-after` delay, with no body.
@@ -137,92 +144,112 @@ const withoutBody = (response: HttpClientResponse.HttpClientResponse): HttpClien
   return HttpClientResponse.fromWeb(response.request, answer)
 }
 
-const boundedClient = Layer.effect(
-  HttpClient.HttpClient,
-  Effect.gen(function*() {
-    // The exporter reads every response body to its end, after the deadline
-    // and the in-flight limit below have let the request go. A collector that
-    // never ended its answer would stall that signal and grow the buffered
-    // body without bound. So the exchange ends here: the exporter receives the
-    // status and retry delay, and closing the scope aborts the transport with
-    // the body unread.
-    const client = HttpClient.transformResponse(
-      HttpClient.withScope(yield* HttpClient.HttpClient),
-      (exchange) => exchange.pipe(Effect.map(withoutBody), Effect.scoped)
-    )
-    const clock = yield* Clock
-    // The loggers installed when this transport is acquired. The OTLP logger
-    // the same acquisition installs does not exist yet, so a diagnostic pinned
-    // to this set cannot enter the exporter it describes, whichever fiber runs
-    // the export: the interval and shutdown fibers inherit this set anyway,
-    // but a flush requested from application code runs with the application's
-    // loggers, which by then include this exporter.
-    const ambientLoggers = yield* Effect.withFiber((fiber) => Effect.succeed(fiber.getRef(Logger.CurrentLoggers)))
-    const permits = Semaphore.makeUnsafe(maxInFlight)
-    // The counter lives with the transport it describes.
-    const droppedExports = Metric.counter("flows_observability_otlp_dropped")
-    let nextDiagnosticAt = -Infinity
-    // A local discard is terminal, so the upstream retry loop must not retain
-    // or retry its payload, and the counter records batches, not records. The
-    // warning is the diagnostic the counter cannot be: the counter is exported
-    // through this same transport and shares every outage with it. One
-    // warning per minute keeps a sustained outage from flooding the ambient
-    // loggers; the running total in its annotations carries the volume.
-    // Replace ambient annotations and log spans to bound the diagnostic itself.
-    const discard = (reason: DiscardReason, request: HttpClientRequest.HttpClientRequest, bytes: number) =>
-      Metric.update(droppedExports, 1).pipe(
-        Effect.andThen(Effect.suspend(() => {
-          const now = clock.currentTimeMillisUnsafe()
-          if (now < nextDiagnosticAt) return Effect.void
-          nextDiagnosticAt = now + diagnosticIntervalMillis
-          return Metric.value(droppedExports).pipe(
-            Effect.flatMap((dropped) =>
-              Effect.logWarning("An OTLP export batch was discarded").pipe(
-                Effect.provideService(References.CurrentLogSpans, []),
-                Effect.provideService(References.CurrentLogAnnotations, {
-                  code: "otlp_export_discarded",
-                  reason,
-                  bytes,
-                  limit: maxRequestBytes,
-                  dropped: dropped.count
-                })
-              )
-            ),
-            Effect.provideService(Logger.CurrentLoggers, ambientLoggers)
-          )
-        })),
-        Effect.as(HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
+const boundedClient = (limits: Limits) =>
+  Layer.effect(
+    HttpClient.HttpClient,
+    Effect.gen(function*() {
+      // The exporter reads every response body to its end, after the deadline
+      // and the in-flight limit below have let the request go. A collector that
+      // never ended its answer would stall that signal and grow the buffered
+      // body without bound. So the exchange ends here: the exporter receives the
+      // status and retry delay, and closing the scope aborts the transport with
+      // the body unread.
+      const client = HttpClient.transformResponse(
+        HttpClient.withScope(yield* HttpClient.HttpClient),
+        (exchange) => exchange.pipe(Effect.map(withoutBody), Effect.scoped)
       )
-    return HttpClient.transform(client, (requestEffect, request) =>
-      Effect.suspend(() => {
-        // layerJson always supplies a Uint8Array body with a byte length.
-        const bytes = (request.body as HttpBody.Uint8Array).contentLength
-        if (bytes > maxRequestBytes) return discard("oversized", request, bytes)
-        // Fetch must expose redirects before any credential or signal body
-        // leaves the configured endpoint, even when the caller enables follow.
-        const confinedRequest = Effect.flatMap(Effect.serviceOption(FetchHttpClient.RequestInit), (init) =>
-          requestEffect.pipe(
+      const clock = yield* Clock
+      // The loggers installed when this transport is acquired. The OTLP logger
+      // the same acquisition installs does not exist yet, so a diagnostic pinned
+      // to this set cannot enter the exporter it describes, whichever fiber runs
+      // the export: the interval and shutdown fibers inherit this set anyway,
+      // but a flush requested from application code runs with the application's
+      // loggers, which by then include this exporter.
+      const ambientLoggers = yield* Effect.withFiber((fiber) => Effect.succeed(fiber.getRef(Logger.CurrentLoggers)))
+      const permits = Semaphore.makeUnsafe(maxInFlight)
+      // The counter lives with the transport it describes.
+      const droppedExports = Metric.counter("flows_observability_otlp_dropped")
+      let nextDiagnosticAt = -Infinity
+      // A local discard is terminal, so the upstream retry loop must not retain
+      // or retry its payload, and the counter records batches, not records. The
+      // warning is the diagnostic the counter cannot be: the counter is exported
+      // through this same transport and shares every outage with it. One
+      // warning per minute keeps a sustained outage from flooding the ambient
+      // loggers; the running total in its annotations carries the volume.
+      // Replace ambient annotations and log spans to bound the diagnostic itself.
+      const discard = (reason: DiscardReason, request: HttpClientRequest.HttpClientRequest, bytes: number) =>
+        Metric.update(droppedExports, 1).pipe(
+          Effect.andThen(Effect.suspend(() => {
+            const now = clock.currentTimeMillisUnsafe()
+            if (now < nextDiagnosticAt) return Effect.void
+            nextDiagnosticAt = now + diagnosticIntervalMillis
+            return Metric.value(droppedExports).pipe(
+              Effect.flatMap((dropped) =>
+                Effect.logWarning("An OTLP export batch was discarded").pipe(
+                  Effect.provideService(References.CurrentLogSpans, []),
+                  Effect.provideService(References.CurrentLogAnnotations, {
+                    code: "otlp_export_discarded",
+                    reason,
+                    bytes,
+                    limit: limits.maxRequestBytes,
+                    dropped: dropped.count
+                  })
+                )
+              ),
+              Effect.provideService(Logger.CurrentLoggers, ambientLoggers)
+            )
+          })),
+          Effect.as(HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
+        )
+      // Fetch must expose redirects before any credential or signal body
+      // leaves the configured endpoint, even when the caller enables follow.
+      const confined = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        Effect.flatMap(Effect.serviceOption(FetchHttpClient.RequestInit), (init) =>
+          effect.pipe(
             Effect.provideService(FetchHttpClient.RequestInit, {
               ...Option.getOrUndefined(init),
               redirect: "manual"
             })
           ))
-        return confinedRequest.pipe(
-          Effect.timeoutOrElse({
-            duration: requestTimeout,
-            orElse: () =>
-              discard("stalled", request, bytes)
-          }),
-          permits.withPermitsIfAvailable(1),
-          Effect.flatMap(Option.match({
-            onNone: () =>
-              discard("saturated", request, bytes),
-            onSome: Effect.succeed
-          }))
-        )
-      }))
-  })
-)
+      const deadline =
+        (request: HttpClientRequest.HttpClientRequest, bytes: number) =>
+        <E, R>(effect: Effect.Effect<HttpClientResponse.HttpClientResponse, E, R>) =>
+          Effect.timeoutOrElse(effect, { duration: requestTimeout, orElse: () => discard("stalled", request, bytes) })
+      // Sends the parts in order and answers the first refusal, which the
+      // upstream exporter retries as one batch: a part already accepted is then
+      // sent again, never lost.
+      const sendParts = (request: HttpClientRequest.HttpClientRequest, bytes: number) =>
+        Effect.suspend(() => {
+          const body = (request.body as HttpBody.Uint8Array).body
+          const { requests, oversized } = Split.split(body, limits.maxRequestBytes, limits.maxRecords)
+          const loss = oversized === 0 ? Effect.void : discard("oversized", request, bytes)
+          const each = Effect.forEach(requests, (part) =>
+            Effect.suspend(() => {
+              const one = HttpClientRequest.bodyUint8Array(request, part, "application/json")
+              return confined(client.execute(one)).pipe(deadline(one, part.byteLength))
+            }))
+          return Effect.map(Effect.andThen(loss, each), (answers) =>
+            answers.find((answer) => answer.status < 200 || answer.status >= 300)
+              ?? answers[answers.length - 1]
+              ?? HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })))
+        })
+      return HttpClient.transform(client, (requestEffect, request) =>
+        Effect.suspend(() => {
+          // layerJson always supplies a Uint8Array body with a byte length.
+          const bytes = (request.body as HttpBody.Uint8Array).contentLength
+          const whole = bytes <= limits.maxRequestBytes && limits.maxRecords === Infinity
+          const sent = whole ? confined(requestEffect).pipe(deadline(request, bytes)) : sendParts(request, bytes)
+          return sent.pipe(
+            permits.withPermitsIfAvailable(1),
+            Effect.flatMap(Option.match({
+              onNone: () =>
+                discard("saturated", request, bytes),
+              onSome: Effect.succeed
+            }))
+          )
+        }))
+    })
+  )
 
 const loopbackIpv4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/
 
@@ -368,12 +395,32 @@ export interface Options {
    * would drop.
    */
   readonly spans?: ReadonlyArray<string> | undefined
+  /**
+   * The largest export request the collector accepts, in encoded bytes, at
+   * most and by default {@link maxRequestBytes}. A larger batch is split into
+   * several requests under it, sent in order; only a record too large for a
+   * request on its own is discarded. Pass the collector's body limit, such as
+   * `OtlpRelay.serve`'s `maxBodyBytes`.
+   */
+  readonly maxRequestBytes?: number | undefined
+  /**
+   * The most records one export request carries: spans, log records, or
+   * metric data points. A batch with more is split into several requests.
+   * Omitted, a request carries a whole batch. Pass the collector's record
+   * limit, such as `OtlpRelay.serve`'s `maxRecords`.
+   */
+  readonly maxRecords?: number | undefined
 }
 
 /**
  * Creates the OTLP logs, metrics, and traces layer with flows resource
  * defaults, JSON-serialized. Exports share a four-request limit with no waiting
- * queue. Requests larger than 1 MiB or stalled for ten seconds are discarded;
+ * queue. A batch larger than 1 MiB, or than {@link Options.maxRequestBytes}
+ * or {@link Options.maxRecords}, is split into requests under both limits and
+ * sent in order under one of those four; a refused part answers for the whole
+ * batch, which the exporter retries, so a part may arrive twice but none is
+ * lost. A record too large for a request on its own, and a request stalled
+ * for ten seconds, are discarded;
  * `flows_observability_otlp_dropped` counts discarded batches, and at most
  * once a minute a `Warn` record with code `otlp_export_discarded` names the
  * reason, the request size, and the running total through the loggers that
@@ -434,7 +481,10 @@ export const layer = (
             tracerExportInterval: options.exportInterval,
             shutdownTimeout: options.shutdownTimeout
           }).pipe(
-            Layer.provide(boundedClient),
+            Layer.provide(boundedClient({
+              maxRequestBytes: Math.min(options.maxRequestBytes ?? maxRequestBytes, maxRequestBytes),
+              maxRecords: Math.max(1, options.maxRecords ?? Infinity)
+            })),
             // Upstream merges OTEL_RESOURCE_ATTRIBUTES even with explicit
             // options. Keep unvalidated ambient metadata out of every request.
             Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),

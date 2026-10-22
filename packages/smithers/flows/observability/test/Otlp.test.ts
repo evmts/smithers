@@ -562,6 +562,158 @@ describe("Otlp", () => {
       ).pipe(Effect.provide(Logger.layer([])))
     }))
 
+  describe("a collector with limits", () => {
+    const bytesOf = (request: RecordedRequest) => new TextEncoder().encode(JSON.stringify(request.body)).byteLength
+    const logRecords = (request: RecordedRequest) =>
+      (request.body as {
+        resourceLogs: Array<{ scopeLogs: Array<{ logRecords: Array<{ body: { stringValue: string } }> }> }>
+      })
+        .resourceLogs.flatMap((resource) => resource.scopeLogs.flatMap((scope) => scope.logRecords))
+    const flushed = (effect: Effect.Effect<void>) =>
+      Effect.gen(function*() {
+        yield* effect
+        yield* (yield* OtlpExporter.Flusher).flush
+      })
+    const limited = (options: Partial<Otlp.Options>) =>
+      Otlp.layerFetch({ baseUrl: "http://collector.invalid:4318", exportInterval: "1 hour", ...options }).pipe(
+        Layer.provideMerge(OtlpExporter.layerFlusher)
+      )
+
+    it.effect("splits a batch over the byte limit into requests under it, every record delivered once, in order", () =>
+      Effect.gen(function*() {
+        const collector = recordingFetch()
+        yield* runExportingTimed(
+          flushed(
+            Effect.forEach(
+              Array.from({ length: 400 }, (_, n) => n),
+              (n) => Effect.logInfo(`record ${n} ${"x".repeat(1_000)}`),
+              { discard: true }
+            )
+          ),
+          limited({ maxRequestBytes: 128 * 1024 }),
+          collector.fetch
+        ).pipe(Effect.provide(Logger.layer([])))
+        const logs = collector.requests.filter((request) => request.url.endsWith("/v1/logs"))
+        expect(logs.length).toBeGreaterThan(2)
+        for (const request of logs) expect(bytesOf(request)).toBeLessThanOrEqual(128 * 1024)
+        expect(logs.flatMap(logRecords).map((record) => record.body.stringValue.split(" ")[1])).toEqual(
+          Array.from({ length: 400 }, (_, n) => String(n))
+        )
+      }))
+
+    it.effect("splits spans over the record limit, keeping each span's resource and scope", () =>
+      Effect.gen(function*() {
+        const collector = recordingFetch()
+        yield* runExportingTimed(
+          flushed(
+            Effect.forEach(
+              Array.from({ length: 450 }, (_, n) => n),
+              (n) => Effect.void.pipe(Effect.withSpan(`span ${n}`)),
+              { discard: true }
+            )
+          ),
+          limited({ maxRecords: 200, serviceName: "limited" }),
+          collector.fetch
+        )
+        const traces = collector.requests.filter((request) => request.url.endsWith("/v1/traces"))
+        expect(traces.map((request) => exportedSpans([request]).length)).toEqual([200, 200, 50])
+        expect(exportedSpans(traces).map((span) => span.name)).toEqual(
+          Array.from({ length: 450 }, (_, n) => `span ${n}`)
+        )
+        for (const request of traces) {
+          expect(JSON.stringify(request.body)).toContain("\"limited\"")
+        }
+      }))
+
+    it.effect("spreads one metric's data points over requests and merges neighbours back into one metric", () =>
+      Effect.gen(function*() {
+        const collector = recordingFetch()
+        yield* runExportingTimed(
+          flushed(
+            Effect.forEach(
+              Array.from({ length: 250 }, (_, n) => n),
+              (n) => Metric.update(Metric.withAttributes(Metric.counter("limited_points"), { n: String(n) }), 1),
+              {
+                discard: true
+              }
+            )
+          ),
+          limited({ maxRecords: 100 }),
+          collector.fetch
+        )
+        const metrics = collector.requests.filter((request) => request.url.endsWith("/v1/metrics"))
+        // Each export is a snapshot of every series, so the flush and the shutdown each send all 250 points.
+        const points = metrics.map((request) =>
+          (request.body as {
+            resourceMetrics: Array<
+              {
+                scopeMetrics: Array<{
+                  metrics: Array<{
+                    name: string
+                    sum?: { dataPoints: Array<{ attributes: Array<{ key: string; value: { stringValue: string } }> }> }
+                  }>
+                }>
+              }
+            >
+          }).resourceMetrics.flatMap((resource) =>
+            resource.scopeMetrics.flatMap((scope) => scope.metrics.filter((metric) => metric.name === "limited_points"))
+          )
+        )
+        for (const metricsIn of points) {
+          expect(metricsIn.length).toBeLessThanOrEqual(1)
+          expect(metricsIn[0]?.sum!.dataPoints.length ?? 0).toBeLessThanOrEqual(100)
+        }
+        const series = points.flat().flatMap((metric) => metric.sum!.dataPoints).map((point) =>
+          point.attributes.find((attribute) => attribute.key === "n")!.value.stringValue
+        )
+        expect(new Set(series).size).toBe(250)
+      }))
+
+    it.effect("discards only a record too large for any request, and counts it", () =>
+      Effect.gen(function*() {
+        const collector = recordingFetch()
+        yield* runExportingTimed(
+          Effect.gen(function*() {
+            yield* flushed(Effect.gen(function*() {
+              yield* Effect.logInfo("before")
+              yield* Effect.logInfo("x".repeat(64 * 1024))
+              yield* Effect.logInfo("after")
+            }))
+            expect((yield* Metric.value(Metric.counter("flows_observability_otlp_dropped"))).count).toBe(1)
+          }),
+          limited({ maxRequestBytes: 32 * 1024 }),
+          collector.fetch
+        ).pipe(Effect.provide(Logger.layer([])))
+        const logs = collector.requests.filter((request) => request.url.endsWith("/v1/logs"))
+        expect(logs.flatMap(logRecords).map((record) => record.body.stringValue)).toEqual(["before", "after"])
+      }))
+
+    it.effect("answers a refused part for the whole batch, so the exporter sends it again", () =>
+      Effect.gen(function*() {
+        let answered = 0
+        const collector = recordingFetch(() =>
+          Promise.resolve(new Response(null, { status: answered++ === 1 ? 503 : 200 }))
+        )
+        yield* runExportingTimed(
+          Effect.gen(function*() {
+            yield* Effect.forEach(Array.from({ length: 5 }, (_, n) => n), (n) => Effect.logInfo(`record ${n}`), {
+              discard: true
+            })
+            yield* TestClock.adjust("1 second")
+            yield* TestClock.adjust("10 seconds")
+          }),
+          Otlp.layerFetch({ baseUrl: "http://collector.invalid:4318", exportInterval: "1 second", maxRecords: 3 }),
+          collector.fetch
+        ).pipe(Effect.provide(Logger.layer([])))
+        const delivered = collector.requests.filter((request) => request.url.endsWith("/v1/logs")).map((request) =>
+          logRecords(request).map((record) => record.body.stringValue)
+        )
+        expect(delivered.slice(0, 2)).toEqual([["record 0", "record 1", "record 2"], ["record 3", "record 4"]])
+        expect(delivered.flat()).toEqual(expect.arrayContaining(["record 3", "record 4"]))
+        expect(delivered.length).toBeGreaterThan(2)
+      }))
+  })
+
   it.effect.each(boundaryResources)(
     "exports every signal with a resource at the byte boundary: $serviceName",
     (configuration) =>
