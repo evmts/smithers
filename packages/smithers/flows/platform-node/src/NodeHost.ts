@@ -31,6 +31,7 @@ import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import type { HostServiceIds } from "@smthrs/kernel/HostServices"
 import type * as KernelProcessConfinement from "@smthrs/kernel/ProcessConfinement"
 import type * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import * as Effect from "effect/Effect"
 import type { FileSystem } from "effect/FileSystem"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
@@ -101,7 +102,7 @@ export type NodeHost =
   | KernelProcessConfinement.ProcessConfinement
 
 /**
- * Invalid repository-root configuration, refused before layer construction.
+ * Invalid repository-root configuration, refused when the layer is built.
  * @category errors
  * @since 1.0.0-rc.0
  */
@@ -112,15 +113,13 @@ export class NodeHostError extends Schema.TaggedError<NodeHostError>()("@smthrs/
   override readonly name = "NodeHostError"
 }
 
-const absoluteRoot = (root: string): string => {
-  if (isAbsolute(root)) return root
-  throw new NodeHostError({
-    code: "invalid_repository_root",
-    message: `NodeHost requires an absolute repository root, got ${
-      JSON.stringify(Array.from(root).slice(0, 64).join(""))
-    }`
-  })
-}
+const absoluteRoot = (root: string): Effect.Effect<string, NodeHostError> =>
+  isAbsolute(root) ? Effect.succeed(root) : Effect.fail(
+    new NodeHostError({
+      code: "invalid_repository_root",
+      message: "NodeHost requires an absolute repository root"
+    })
+  )
 
 /**
  * Stable implementation identities for the raw bundle's five Host slots.
@@ -185,14 +184,15 @@ export const layer: Layer.Layer<NodeHost> = Layer.mergeAll(
  * @category layers
  * @since 1.0.0
  */
-export const layerAt = (repositoryRoot: string): Layer.Layer<NodeHost> =>
-  Layer.mergeAll(
-    ProcessConfinement.layer(),
-    platform,
-    Layer.provide(NodeChildProcessSpawner.layer, platform),
-    httpClient,
-    NodeJj.layerAt(absoluteRoot(repositoryRoot))
-  )
+export const layerAt = (repositoryRoot: string): Layer.Layer<NodeHost, NodeHostError> =>
+  Layer.unwrap(Effect.map(absoluteRoot(repositoryRoot), (root) =>
+    Layer.mergeAll(
+      ProcessConfinement.layer(),
+      platform,
+      Layer.provide(NodeChildProcessSpawner.layer, platform),
+      httpClient,
+      NodeJj.layerAt(root)
+    )))
 
 /**
  * Provides the Node host with process containment turned on.
@@ -250,15 +250,16 @@ export const layerContained = (
 export const layerContainedAt = (
   repositoryRoot: string,
   options?: ContainedOptions
-): Layer.Layer<NodeHost, never, ProcessLedger.ProcessLedger> => {
-  const spawner = Layer.provide(
-    ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
-    Layer.provide(NodeChildProcessSpawner.layer, platform)
-  )
-  return Layer.mergeAll(
-    ProcessConfinement.layer(),
-    platform,
-    httpClient,
-    Layer.provideMerge(NodeJj.layerSpawnerAt(absoluteRoot(repositoryRoot)), spawner)
-  ).pipe(Layer.provideMerge(ProcessReaper.layer(reaping(options))))
-}
+): Layer.Layer<NodeHost, NodeHostError, ProcessLedger.ProcessLedger> =>
+  Layer.unwrap(Effect.map(absoluteRoot(repositoryRoot), (root) => {
+    const spawner = Layer.provide(
+      ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
+      Layer.provide(NodeChildProcessSpawner.layer, platform)
+    )
+    return Layer.mergeAll(
+      ProcessConfinement.layer(),
+      platform,
+      httpClient,
+      Layer.provideMerge(NodeJj.layerSpawnerAt(root), spawner)
+    ).pipe(Layer.provideMerge(ProcessReaper.layer(reaping(options))))
+  }))

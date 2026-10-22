@@ -85,6 +85,11 @@ directory. This package's `NodeRuntime` composes `layerContainedAt`, so both
 the repository and the process containment are pinned by the runtime rather
 than inherited from whatever shell started it.
 
+Both rooted factories return a layer immediately. A relative or empty root
+fails layer construction with typed `NodeHostError` (`invalid_repository_root`),
+so callers can recover through Effect without catching synchronous exceptions.
+The diagnostic does not echo the configured path.
+
 The contained pair carries a requirement the plain pair does not: a
 `ProcessLedger`. See [Process containment](./process-containment.md) for what
 it buys and why the ledger is not defaulted.
@@ -131,3 +136,18 @@ On top of that, the atomic filesystem is compared row by row against
 `@effect/platform-node`'s own adapter (open flags, errno classification, `stat`
 fields, and the glob grammar), and containment is driven over real detached
 process groups.
+
+## Sandbox authority
+
+Seatbelt retains declared file reads individually; it never promotes a set of
+files to a directory grant. New children therefore need their own declaration.
+Large profiles can be refused by the platform compiler rather than widen access.
+A workspace symlink does not add its target to `externalReads`: access outside
+the workspace, including credential locations, requires an explicit external
+declaration.
+
+A directory write that names an existing file is refused. Use `writeFiles` to
+explicitly grant the parent needed for file creation and replacement. Bubblewrap
+refuses rendering when a missing `readOnly` entry lies beneath a writable mount;
+it cannot skip that protection. Docker refuses loopback-only networking both
+when selecting a mechanism and when rendering a plan.

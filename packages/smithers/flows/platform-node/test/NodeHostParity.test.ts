@@ -31,24 +31,24 @@ it.effect("uses native path semantics for absolute filesystem paths", () =>
     expect(path.join(root, "nested", "file.ts")).toBe(NativePath.join(root, "nested", "file.ts"))
   }).pipe(Effect.provide(NodeHost.layerAt(process.cwd()))))
 
-it("refuses invalid roots with the NodeHost error before composition", () => {
-  for (const factory of [NodeHost.layerAt, NodeHost.layerContainedAt]) {
-    for (const root of ["", "relative", "x".repeat(1000)]) {
-      expect(() => factory(root)).toThrow(NodeHost.NodeHostError)
-      try {
-        factory(root)
-      } catch (error) {
+it.effect("refuses invalid roots through typed layer failure", () =>
+  Effect.gen(function*() {
+    for (const factory of [NodeHost.layerAt, NodeHost.layerContainedAt]) {
+      for (const root of ["", "relative", "x".repeat(1000)]) {
+        const error = yield* Effect.scoped(Layer.build(factory(root))).pipe(
+          Effect.provide(ProcessLedger.layerMemory({ hostId: "invalid-root", ownerPid: process.pid })),
+          Effect.flip
+        )
         expect(error).toMatchObject({
           _tag: "@smthrs/platform-node/NodeHostError",
           name: "NodeHostError",
           code: "invalid_repository_root"
         })
-        expect((error as Error).message.length).toBeLessThan(200)
+        expect(error.message.length).toBeLessThan(200)
       }
+      expect(factory("/repo")).toBeDefined()
     }
-    expect(factory("/repo")).toBeDefined()
-  }
-})
+  }))
 
 it.effect("every native host bundle provides real process confinement", () =>
   Effect.gen(function*() {

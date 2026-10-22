@@ -511,12 +511,16 @@ describe("plan", () => {
     expect(large).toBeLessThan(10_000 * 100)
   })
 
-  it("records where a read that links out of the workspace really lives, and nothing for the rest", () => {
+  it("requires explicit authority for reads that link out of the workspace", () => {
     const linked: ProcessSandbox.Host = {
       ...linux,
       realpath: (path) => path === "/work/ws/node_modules" ? "/tmp/real-ws/node_modules" : path
     }
-    expect(planned(linked).externalReads).toEqual(["/tmp/real-ws/node_modules"])
+    expect(ProcessSandbox.isUnenforceable(ProcessSandbox.plan(request, {
+      workspaceRoot: root,
+      cwd: root,
+      tmp: "/tmp/sandbox"
+    }, linked))).toBe(true)
     expect(planned(linux).externalReads).toEqual([])
     const inside: ProcessSandbox.Host = {
       ...linux,
@@ -760,7 +764,13 @@ describe("bubblewrap argv", () => {
       ...linux,
       realpath: (path) => path === "/work/ws/node_modules" ? "/tmp/real-ws/node_modules" : path
     }
-    const argv = ProcessSandbox.bubblewrap(planned(linked), ["node", "build.js"], linux)
+    const argv = ProcessSandbox.bubblewrap(
+      planned({ ...linked, exists: (path) => path === "/tmp/real-ws/node_modules" || linked.exists(path) }, {
+        externalReads: ["/tmp/real-ws/node_modules"]
+      }),
+      ["node", "build.js"],
+      { ...linux, exists: (path) => path === "/tmp/real-ws/node_modules" || linux.exists(path) }
+    )
     const text = argv.join(" ")
     expect(text).toContain("--ro-bind /tmp/real-ws/node_modules /tmp/real-ws/node_modules")
     expect(text).toContain("--ro-bind /work/ws/node_modules /work/ws/node_modules")
@@ -770,17 +780,17 @@ describe("bubblewrap argv", () => {
 
   it("re-closes a read-only subtree under a writable directory", () => {
     const argv = ProcessSandbox.bubblewrap(
-      planned(host("linux", { bwrap: "/usr/bin/bwrap" }, [], ["/work/ws/.flows"]), {
+      planned(host("linux", { bwrap: "/usr/bin/bwrap" }, [], ["/work/ws/.flows", "/work/ws/.flows/cache"]), {
         writes: [".flows"],
         readOnly: [".flows/cache"]
       }),
       ["true"],
-      linux
+      host("linux", { bwrap: "/usr/bin/bwrap" }, [], ["/work/ws/.flows", "/work/ws/.flows/cache"])
     )
     const text = argv.join(" ")
     expect(text).toContain("--bind /work/ws/.flows /work/ws/.flows")
-    expect(text).toContain("--ro-bind-try /work/ws/.flows/cache /work/ws/.flows/cache")
-    expect(text.indexOf("--ro-bind-try")).toBeGreaterThan(text.indexOf("--bind /work/ws/.flows "))
+    expect(text).toContain("--ro-bind /work/ws/.flows/cache /work/ws/.flows/cache")
+    expect(text.indexOf("--ro-bind")).toBeGreaterThan(text.indexOf("--bind /work/ws/.flows "))
   })
 
   it("does not remount the root read-only when the root itself is the declared write directory", () => {
@@ -812,7 +822,7 @@ describe("bubblewrap argv", () => {
   })
 })
 
-describe("folding declared files into directories", () => {
+describe("preserving declared read authority", () => {
   const listing: Readonly<Record<string, ReadonlyArray<string>>> = {
     "/work/ws": ["src", "node_modules", "package.json"],
     "/work/ws/src": ["lib", "c.ts", "d.ts", "__generated__"],
@@ -832,30 +842,20 @@ describe("folding declared files into directories", () => {
   }
   const reads = ["src/lib/a.ts", "src/lib/b.ts", "src/lib/deep/e.ts", "src/c.ts"]
 
-  it("grants a mostly declared subtree whole and re-closes what the declaration left out", () => {
+  it("preserves exactly declared reads even when current directory contents are mostly covered", () => {
     const plan = planned(listingHost, { reads, writes: [] })
-    expect(plan.reads).toEqual(["/work/ws/src"])
-    expect(plan.readDenies).toEqual(["/work/ws/src/d.ts", "/work/ws/src/__generated__"])
-    const profile = ProcessSandbox.seatbelt(plan, linux)
-    const grant = profile.indexOf("(subpath \"/work/ws/src\")")
-    const close = profile.indexOf(
-      "(deny file-read* (subpath \"/work/ws/src/d.ts\") (subpath \"/work/ws/src/__generated__\"))"
-    )
-    expect(grant).toBeGreaterThan(0)
-    expect(close).toBeGreaterThan(grant)
-    expect(profile).not.toContain("a.ts")
+    expect([...plan.reads].sort()).toEqual([...files].sort())
+    expect(plan.readDenies).toEqual([])
+    expect(ProcessSandbox.seatbelt(plan, linux)).not.toContain("(subpath \"/work/ws/src\")")
   })
 
-  it("counts a declared write as covered, never folds the root, and keeps every file when the host cannot list", () => {
-    const withWrite = planned(listingHost, { reads, writes: ["src/__generated__"] })
-    expect(withWrite.reads).toEqual(["/work/ws/src"])
-    expect(withWrite.readDenies).toEqual(["/work/ws/src/d.ts"])
-    const rootOnly = planned(listingHost, { reads: ["package.json"], writes: [] })
-    expect(rootOnly.reads).toEqual(["/work/ws/package.json"])
-    expect(rootOnly.readDenies).toEqual([])
-    const blind = planned({ ...listingHost, entries: undefined }, { reads, writes: [] })
-    expect([...blind.reads].sort()).toEqual([...files].sort())
-    expect(blind.readDenies).toEqual([])
+  it("keeps declared reads with writes and without directory listings", () => {
+    for (const facts of [listingHost, { ...listingHost, entries: undefined }]) {
+      const result = planned(facts, { reads, writes: ["src/__generated__"] })
+      expect([...result.reads].sort()).toEqual([...files].sort())
+      expect(result.readDenies).toEqual([])
+    }
+    expect(planned(listingHost, { reads: ["package.json"], writes: [] }).reads).toEqual(["/work/ws/package.json"])
   })
 
   /**
@@ -893,7 +893,7 @@ describe("folding declared files into directories", () => {
       expect(plan.writes.some((write) => write === deny || write.startsWith(`${deny}/`))).toBe(false)
     }
     expect(plan.readDenies).toEqual([])
-    expect(plan.reads).toEqual(["/work/ws/pkg/src", "/work/ws/pkg/package.json", "/work/ws/pkg/tsconfig.json"])
+    expect(plan.reads).toEqual(["/work/ws/pkg/src/a.ts", "/work/ws/pkg/package.json", "/work/ws/pkg/tsconfig.json"])
     expect(ProcessSandbox.seatbelt(plan, nestedHost)).not.toContain("(subpath \"/work/ws/pkg/dist\")")
   })
 
@@ -905,16 +905,14 @@ describe("folding declared files into directories", () => {
       ) => (directory === "/work/ws/src/lib" ? ["a.ts", "b.ts", "deep", "n1", "n2", "n3", "n4"] : listing[directory])
     }
     const plan = planned(sparse, { reads, writes: [] })
-    // lib: three covered entries (a, b, and the folded deep) against four uncovered ones: not folded.
+    // Sparse listings must not turn exact file grants into directory grants.
     expect(plan.reads).not.toContain("/work/ws/src/lib")
     expect(plan.reads).not.toContain("/work/ws/src")
-    expect(plan.reads).toContain("/work/ws/src/lib/deep")
+    expect(plan.reads).toContain("/work/ws/src/lib/deep/e.ts")
   })
 
   it("keeps a directory's declared files when the host cannot list that one directory", () => {
-    // `entries` answers for the workspace but not for one candidate: the
-    // deepest directory is neither promoted nor denied, and because it stays
-    // uncovered its parents cannot be folded over it either.
+    // Missing listing information must preserve the declared file set.
     const unlistable: ProcessSandbox.Host = {
       ...listingHost,
       entries: (directory) => (directory === "/work/ws/src/lib/deep" ? undefined : listing[directory])
@@ -1780,7 +1778,7 @@ describe("sandbox refusal and declaration boundaries", () => {
     expect(argv).not.toContain("PATH=/host/bin")
   })
 
-  it("folds equally deep sibling directories and leaves explicitly covered directories alone", () => {
+  it("keeps sibling file grants exact and leaves explicitly declared directories alone", () => {
     const listing: ProcessSandbox.Host = {
       ...darwin,
       exists: () => true,
@@ -1792,7 +1790,13 @@ describe("sandbox refusal and declaration boundaries", () => {
       writes: [],
       writeFiles: []
     })
-    expect([...result.reads].sort()).toEqual(["/work/ws/explicit", "/work/ws/src/a", "/work/ws/src/b"])
+    expect([...result.reads].sort()).toEqual([
+      "/work/ws/explicit",
+      "/work/ws/src/a/one.ts",
+      "/work/ws/src/a/two.ts",
+      "/work/ws/src/b/one.ts",
+      "/work/ws/src/b/two.ts"
+    ])
   })
 
   it("renders an empty argv without inventing a launcher", () => {
@@ -1817,7 +1821,7 @@ describe("sandbox refusal and declaration boundaries", () => {
       NodeFs.mkdirSync(NodePath.join(outside, "existing"))
       NodeFs.symlinkSync(outside, NodePath.join(workspaceRoot, "link"), "dir")
       const result = ProcessSandbox.plan(
-        { network: "none", reads: ["link"], writes: [] },
+        { network: "none", reads: ["link"], writes: [], externalReads: [outside] },
         { workspaceRoot, cwd: workspaceRoot, tmp: NodePath.join(base, "tmp") },
         facts
       )
@@ -1957,7 +1961,7 @@ describe("diagnostic ordering", () => {
     )
   })
 
-  it("folds sibling directories independently of declaration order", () => {
+  it("preserves sibling file authority independently of declaration order", () => {
     const listing: ProcessSandbox.Host = {
       ...darwin,
       exists: () => true,
@@ -1969,7 +1973,12 @@ describe("diagnostic ordering", () => {
       writes: [],
       writeFiles: []
     })
-    expect([...result.reads].sort()).toEqual(["/work/ws/src/a", "/work/ws/src/b"])
+    expect([...result.reads].sort()).toEqual([
+      "/work/ws/src/a/one.ts",
+      "/work/ws/src/a/two.ts",
+      "/work/ws/src/b/one.ts",
+      "/work/ws/src/b/two.ts"
+    ])
   })
 })
 

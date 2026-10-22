@@ -124,15 +124,14 @@ export interface Host {
   readonly isSymbolicLink?: ((path: string) => boolean) | undefined
   /**
    * The names of a directory's direct children, or undefined when the host
-   * cannot list it. Optional: a host without it keeps every declared file as
-   * its own entry, which is correct and merely long.
+   * cannot list it. Read grants remain exact regardless of this listing.
    */
   readonly entries?: ((directory: string) => ReadonlyArray<string> | undefined) | undefined
   /**
    * Where a path's bytes actually live once every symbolic link on it is
    * followed, or `undefined` when the host cannot say. Write validation uses
    * the real host when this probe is omitted and refuses unresolved existing
-   * paths. Read aliases are only collected when this probe is supplied.
+   * paths. Explicit external read aliases use this probe when supplied.
    */
   readonly realpath?: ((path: string) => string | undefined) | undefined
   /**
@@ -356,6 +355,9 @@ export const select = (
   const declared = request.mechanism
   const platform = hostFacts.platform
   if (declared !== undefined && declared._tag === "docker") {
+    if (request.network === "loopback") {
+      return unenforceable(platform, "docker", "network: true", "docker cannot expose only the host loopback interface")
+    }
     const executable = hostFacts.executable("docker")
     if (executable === undefined) {
       return unenforceable(platform, "docker", "docker", "a docker mechanism is selected but docker is not on PATH")
@@ -488,74 +490,6 @@ export const validateWrites = (confinement: Plan, hostFacts: Host = host()): voi
 }
 
 /**
- * Folds a declared file set into directories plus the entries to re-close.
- *
- * The seatbelt compiler caps one rule's data at 64 KiB, so a workspace with a
- * few thousand declared sources cannot be granted file by file. Deepest
- * first, a directory in which at least as many entries are covered as not is
- * granted whole, and its uncovered entries are listed for a deny rule that
- * follows the grant. The result admits exactly the declared set plus the
- * granted directories' future entries. A directory whose uncovered entry
- * still holds a covered path deeper down is never folded over that entry,
- * the workspace root is never folded, and a host that cannot list a
- * directory leaves its files as they were. Covered means a declared read, a
- * declared write, or the private tmp.
- */
-const fold = (
-  root: string,
-  declared: ReadonlyArray<string>,
-  alsoCovered: ReadonlyArray<string>,
-  hostFacts: Host
-): { readonly reads: ReadonlyArray<string>; readonly denies: ReadonlyArray<string> } => {
-  const entries = hostFacts.entries
-  if (entries === undefined) return { reads: declared, denies: [] }
-  const covered = new Set([...declared, ...alsoCovered])
-  const candidates = new Set<string>()
-  for (const path of declared) {
-    let current = pathApi(path).dirname(path)
-    while (insideRoot(root, current) && current !== root && !candidates.has(current)) {
-      candidates.add(current)
-      current = pathApi(current).dirname(current)
-    }
-  }
-  // An undeclared directory on the way down to a covered write or read-only
-  // path is not a candidate, so nothing else would stop its parent being
-  // folded over it. The deny that follows the grant names the directory, and
-  // because later rules win in SBPL it closes reads on the very subtree the
-  // plan grants a write to.
-  const holdsCovered = new Set<string>()
-  for (const path of alsoCovered) {
-    let current = pathApi(path).dirname(path)
-    while (insideRoot(root, current) && current !== root && !holdsCovered.has(current)) {
-      holdsCovered.add(current)
-      current = pathApi(current).dirname(current)
-    }
-  }
-  const deepestFirst = [...candidates].sort((left, right) => right.length - left.length || (left < right ? -1 : 1))
-  const promoted: Array<string> = []
-  const denies: Array<string> = []
-  for (const directory of deepestFirst) {
-    if (covered.has(directory)) continue
-    const children = entries(directory)
-    if (children === undefined || children.length === 0) continue
-    const uncovered: Array<string> = []
-    let coveredCount = 0
-    let partial = false
-    for (const child of children) {
-      const path = pathApi(directory).join(directory, child)
-      if (covered.has(path)) coveredCount += 1
-      else if (candidates.has(path) || holdsCovered.has(path)) partial = true
-      else uncovered.push(path)
-    }
-    if (partial || coveredCount === 0 || coveredCount < uncovered.length) continue
-    covered.add(directory)
-    promoted.push(directory)
-    denies.push(...uncovered)
-  }
-  return { reads: [...declared, ...promoted], denies }
-}
-
-/**
  * Orders paths so that every subtree is contiguous and its root comes first.
  *
  * Comparing on the path plus its separator is what makes that hold: `a/b` and
@@ -598,7 +532,8 @@ const collapse = (paths: ReadonlyArray<string>): ReadonlyArray<string> => {
  * bubblewrap cannot bind a missing path, and a declared input that vanished is
  * the executor's measurement failure, not this module's. A write containing
  * any symbolic link below the canonical root is refused, including a missing
- * output below a linked ancestor.
+ * output below a linked ancestor. A read resolving outside the root requires
+ * an explicit external read covering its target.
  *
  * @category resolution
  * @since 0.1.0
@@ -623,15 +558,15 @@ export const plan = (
     return insideRoot(root, absolute) ? absolute : undefined
   }
   const declared: Array<string> = []
-  // A declared link grants its target as well: native read allowlists and
-  // Docker's image filesystem otherwise hide bytes outside the workspace.
+  // Only explicit externalReads may grant authority outside the workspace.
   const externalReads: Array<string> = []
+  const linkedReads: Array<string> = []
   for (const relative of request.reads) {
     const absolute = anchor(relative)
     if (absolute === undefined || !hostFacts.exists(absolute)) continue
     declared.push(absolute)
-    const real = hostFacts.realpath?.(absolute)
-    if (real !== undefined && real !== absolute && !insideRoot(root, real)) externalReads.push(real)
+    const real = (hostFacts.realpath ?? realized)(absolute)
+    if (real !== undefined && !insideRoot(root, real)) linkedReads.push(real)
   }
   for (const path of request.externalReads ?? []) {
     if (!pathApi(path).isAbsolute(path) || insideRoot(root, path) || !hostFacts.exists(path)) continue
@@ -640,12 +575,21 @@ export const plan = (
     const real = hostFacts.realpath?.(path) ?? path
     if (!insideRoot(root, real)) externalReads.push(real)
   }
+  for (const target of linkedReads) {
+    if (!externalReads.some((read) => insideRoot(read, target))) {
+      return unenforceable(
+        hostFacts.platform,
+        selected._tag,
+        "explicit external read",
+        "a workspace read resolves outside its declared root"
+      )
+    }
+  }
   // A write names a directory the tool may fill, and is bound as declared
   // whether or not it exists yet: a name is never read as a file, because a
   // dot in `.cargo-home` or `dist.new` would otherwise widen the bind to the
   // parent, and a parent that is the workspace root opens every file in it.
-  // A path that is already a file on the host is the one exception, since a
-  // file cannot be bound as a writable directory.
+  // Existing files are refused rather than widening the declaration.
   const writes: Array<string> = []
   const add = (absolute: string): Unenforceable | undefined => {
     if (!safeWrite(root, absolute, hostFacts)) return unsafeWrite(hostFacts.platform, selected._tag, absolute)
@@ -656,9 +600,15 @@ export const plan = (
     const absolute = anchor(relative)
     if (absolute === undefined) continue
     if (!safeWrite(root, absolute, hostFacts)) return unsafeWrite(hostFacts.platform, selected._tag, absolute)
-    const refusal = add(
-      hostFacts.exists(absolute) && !hostFacts.isDirectory(absolute) ? pathApi(absolute).dirname(absolute) : absolute
-    )
+    if (hostFacts.exists(absolute) && !hostFacts.isDirectory(absolute)) {
+      return unenforceable(
+        hostFacts.platform,
+        selected._tag,
+        "directory write",
+        "the declared write is not a directory tree"
+      )
+    }
+    const refusal = add(absolute)
     if (refusal !== undefined) return refusal
   }
   // A declared output file opens its parent: a file cannot be bound before it
@@ -677,9 +627,6 @@ export const plan = (
     const absolute = anchor(relative)
     if (absolute !== undefined) readOnly.push(absolute)
   }
-  const folded = selected._tag === "seatbelt"
-    ? fold(root, declared, [...writes, ...readOnly, location.tmp], hostFacts)
-    : { reads: declared, denies: [] }
   return {
     mechanism: selected,
     network: request.network,
@@ -687,8 +634,8 @@ export const plan = (
     strict: request.strict,
     workspaceRoot: root,
     cwd: location.cwd,
-    reads: collapse(folded.reads),
-    readDenies: collapse(folded.denies),
+    reads: collapse(declared),
+    readDenies: [],
     writes: collapse(writes),
     readOnly: collapse(readOnly),
     externalReads: collapse(externalReads),
@@ -964,7 +911,15 @@ export const bubblewrap = (
   for (const write of confinement.writes) out.push("--bind", write, write)
   for (const closed of confinement.readOnly) {
     if (confinement.writes.some((write) => closed === write || closed.startsWith(write + pathApi(write).sep))) {
-      out.push("--ro-bind-try", closed, closed)
+      if (!hostFacts.exists(closed)) {
+        throw unenforceable(
+          hostFacts.platform,
+          "bubblewrap",
+          "existing readOnly path",
+          "a missing readOnly path cannot be sealed beneath a writable mount"
+        )
+      }
+      out.push("--ro-bind", closed, closed)
     }
   }
   const granted = [
@@ -1172,6 +1127,9 @@ export const docker = (
 ): ReadonlyArray<string> => {
   if (confinement.mechanism._tag !== "docker") throw new Error("docker argv needs a docker plan")
   validateWrites(confinement, hostFacts)
+  if (confinement.network === "loopback") {
+    throw unenforceable(hostFacts.platform, "docker", "network: true", "docker cannot render loopback-only networking")
+  }
   const out: Array<string> = [
     confinement.mechanism.executable,
     "run",
