@@ -91,10 +91,24 @@ describe("which pages open", () => {
     expect(reason("https://smithers.sh.example.com/", "embed")).toBe("ok")
   })
 
-  test("without the app's origin, only the scheme, http: and credentials rules apply", () => {
-    const policy = { localHttp: true, appOrigin: "" }
-    expect(reason("https://example.com/", "embed", policy)).toBe("ok")
-    expect(reason("http://localhost:1337/", "tab", policy)).toBe("ok")
+  test("an unusable application origin cannot disable host and site refusals", () => {
+    for (const appOrigin of [
+      "", "not an origin", "https://", "null", "data:text/plain,app", "file:///app", "ftp://app.smithers.sh",
+    ]) {
+      const policy = { localHttp: true, appOrigin }
+      for (const mode of ["embed", "tab"] as const) {
+        for (const url of [
+          "https://app.smithers.sh/", "https://docs.smithers.sh/", "https://example.com/", "http://localhost:1337/",
+        ]) {
+          expect([appOrigin, mode, url, reason(url, mode, policy)]).toEqual([
+            appOrigin,
+            mode,
+            url,
+            url.startsWith("http:") && mode === "embed" ? "insecure" : "invalid",
+          ])
+        }
+      }
+    }
   })
 })
 

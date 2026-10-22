@@ -37,7 +37,7 @@ A person's own `/web <url> tab` is different: it runs synchronously in their Ent
 
 ## Which pages
 
-`checkUrl(url, mode, policy)` (`src/features/web/url.ts`) is the one check. The flow's step, a person's `/web` and ChatApi all run it.
+`checkUrl(url, mode, policy)` (`src/features/web/url.ts`) is the one check. The flow's step, a person's `/web` and ChatApi all run it. An unparseable or non-HTTP(S) application origin refuses every page as `invalid`, because its host and site cannot be checked.
 
 | Refusal | When |
 |---|---|

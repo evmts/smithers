@@ -18,7 +18,7 @@ export const REFUSALS = ["invalid", "scheme", "insecure", "credentials", "same_o
 
 /**
  * One of {@link REFUSALS}:
- * - `invalid`: not an absolute URL, or longer than `MAX_URL_LENGTH`;
+ * - `invalid`: not an absolute URL, longer than `MAX_URL_LENGTH`, or an unusable application origin;
  * - `scheme`: not `https:` or `http:`, such as `javascript:`, `data:`, `file:` or `blob:`;
  * - `insecure`: `http:`, which only a new tab on `localhost` in development takes;
  * - `credentials`: it names a user or a password;
@@ -81,8 +81,11 @@ export const checkUrl = (input: string, mode: WebMode, policy: Policy): Checked 
   }
   if (url.username !== "" || url.password !== "") return { ok: false, reason: "credentials" }
   const app = parse(policy.appOrigin)
-  if (app !== undefined && url.host === app.host) return { ok: false, reason: "same_origin" }
-  if (mode === "embed" && app !== undefined && within(url.hostname, siteOf(app.hostname))) {
+  if (app === undefined || (app.protocol !== "https:" && app.protocol !== "http:")) {
+    return { ok: false, reason: "invalid" }
+  }
+  if (url.host === app.host) return { ok: false, reason: "same_origin" }
+  if (mode === "embed" && within(url.hostname, siteOf(app.hostname))) {
     return { ok: false, reason: "same_site" }
   }
   return { ok: true, page: { href: url.href, origin: url.origin } }
