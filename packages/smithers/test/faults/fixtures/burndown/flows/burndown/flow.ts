@@ -80,32 +80,34 @@ export const layer = Layer.mergeAll(
       }
     }), { implementationVersion: "fault-3367/v2" }),
   Land.toLayer(({ root, count, index }) =>
-    Effect.tryPromise({
-      try: async (signal) => {
-        if (existsSync(`${root}/landing-network.json`)) {
-          await Effect.runPromise(
-            ridingOutages(Effect.tryPromise({
-              try: async (retrySignal) => {
-                appendFileSync(`${root}/landing-attempts`, `${index}\n`)
-                await promisify(execFile)(process.execPath, [`${root}/network.mjs`, root, "landing"], {
-                  signal: retrySignal
-                })
-              },
-              catch: (error) => ({ message: String(error) })
-            })),
-            { signal }
-          )
-        }
-        return (await promisify(execFile)(process.execPath, [
-          `${root}/agent.mjs`,
-          root,
-          `land-${index}`,
-          "0",
-          String(count)
-        ], { signal })).stdout.trim()
-      },
-      catch: (error) => String(error)
-    }), { implementationVersion: "fault-3367/v1" })
+    Effect.gen(function*() {
+      if (existsSync(`${root}/landing-network.json`)) {
+        yield* ridingOutages(Effect.tryPromise({
+          try: async (signal) => {
+            appendFileSync(`${root}/landing-attempts`, `${index}\n`)
+            await promisify(execFile)(process.execPath, [`${root}/network.mjs`, root, "landing"], { signal })
+          },
+          catch: (error) => ({ message: String(error) })
+        }), {
+          name: "burndown/LandingNetwork",
+          idempotencyKey: `landing-network:${root}:${index}`,
+          implementationVersion: "fault-3367/v3",
+          success: Schema.Void,
+          error: Schema.Struct({ message: Schema.String })
+        })
+      }
+      return yield* Effect.tryPromise({
+        try: async (signal) =>
+          (await promisify(execFile)(process.execPath, [
+            `${root}/agent.mjs`,
+            root,
+            `land-${index}`,
+            "0",
+            String(count)
+          ], { signal })).stdout.trim(),
+        catch: (error) => String(error)
+      })
+    }), { implementationVersion: "fault-3367/v3" })
 )
 export default Flow.make("burndown", {
   description: "Deterministic infrastructure fault fixture.",

@@ -18,7 +18,7 @@ it("constructs reusable hosts without evaluating approval configuration", async 
     bearerPrincipal: {
       get id() {
         reads++
-        return "gateway"
+        return "gateway" as const
       },
       kind: "bearer"
     }

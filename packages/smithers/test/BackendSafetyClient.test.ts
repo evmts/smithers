@@ -7,7 +7,8 @@ import * as Failure from "../src/internal/Failure.ts"
 
 const protectedValue = "private-session-value-462605"
 const clientOutput = () => {
-  const stdout = new PassThrough(), stderr = new PassThrough()
+  const stdout = Object.assign(new PassThrough(), { isTTY: false, columns: 80 }),
+    stderr = Object.assign(new PassThrough(), { isTTY: false, columns: 80 })
   let out = "", err = ""
   stdout.on("data", (chunk) => out += chunk.toString())
   stderr.on("data", (chunk) => err += chunk.toString())
@@ -119,7 +120,7 @@ it.each([
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   try {
     const { port } = server.address() as { port: number }
-    const stderr = new PassThrough()
+    const stderr = Object.assign(new PassThrough(), { isTTY: false, columns: 80 })
     stderr.resume()
     const client = new Client({
       stderr,
