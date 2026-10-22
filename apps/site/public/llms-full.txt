@@ -15446,7 +15446,7 @@ handoffs; explicit cancellation still cascades to linked children.
 | `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                               |
 | `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions). |
 | `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" } \| { _tag: "Yielded" }` | What one `drive` left an execution as.                                                                         |
-| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number }`                                                                       | What `drive` drives, with an optional budget. See [Drive budget](#drive-budget).                               |
+| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number; holdMs?: number }`                                                      | What `drive` drives, with an optional budget and hold. See [Drive budget](#drive-budget).                      |
 | `Driver`                | `Context.Service<{ drive }>`                                                                                                        | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`.                                          |
 | `drive`                 | `(flow: Flow.Any, options: DriveOptions) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>`                             | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                          |
 
@@ -15626,6 +15626,16 @@ Set the budget at the invocation's limit less the longest step it may start.
 Each yield counts on `EngineStoreMetrics.driveYields` and logs
 `engine-store: drive yielded its budget at a step boundary` with the budget and
 the elapsed time.
+
+A run its own flow parks on a wake due within `holdMs` (`defaultHoldMs`, five
+seconds, unless set), such as a durable sleep of a second or a clock that came
+due as the park committed, is driven again by the same drive once the wake is
+due, while the budget lasts: its host would otherwise build its runtime, claim
+the run and replay it in a new invocation to do the same. A wake past the hold
+or the budget's end is handed back as `Parked`; `holdMs: 0` hands every park
+back. Each such drive counts on `EngineStoreMetrics.heldDrives`. A drive that
+still leaves work due logs `engine-store.drive.unfinished` with the run's
+status and whether a claim or an owner holds it, never its state.
 
 Full model: [Ownership and fencing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/ownership-and-fencing.md) and
 [Attempts and replay](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/attempts-and-replay.md).
@@ -16855,6 +16865,8 @@ remain host-owned.
 | `materializationConflicts`                                              | counter                                                                                                                       |
 | `storageUnavailable`                                                    | counter                                                                                                                       |
 | `driveYields`                                                           | counter                                                                                                                       |
+| `heldDrives`                                                            | counter                                                                                                                       |
+| `replaySeeds`                                                           | counter                                                                                                                       |
 | `boundarySettlements`, `boundarySettlement`                             | counter and views keyed by `Clean`, `Deviation`, `Violation`, `Refused`                                                       |
 | `stepCacheDecisions`, `stepCacheDecision`                               | counter and views keyed by `VerifiedHit`, `Miss`, `UnverifiableEvidence`, `Unmeasurable`, `StaleReadSet`, `ReplayFailed`      |
 | `claims`, `claim`                                                       | counter and views keyed by `Activated`, `Terminal`, `HeartbeatFresh`, `StealRefusedOwnerAlive`, `ClaimLost`, `ActivationLost` |
@@ -22874,6 +22886,8 @@ Fallible journal operations use `JournalError` with a stable `code`.
 | `emitDurable`         | `(input: Input, owner: OwnerId) => Effect<DurableReceipt, JournalError>`                           | allocates and commits inside the write transaction, fenced on `owner`                                                                                                       |
 | `emitDurableUnfenced` | `(input: Input) => Effect<DurableReceipt, JournalError>`                                           | the same commit with no fence, for a genuinely ownerless admission                                                                                                          |
 | `emitDeferred?`       | `(input: Input, owner: OwnerId) => Effect<void, JournalError>`                                     | queues a fenced entry to commit with its run's next durable write                                                                                                           |
+| `recall?`             | `(runId: RunId) => Effect<void, JournalError>`                                                     | reads the run's latest committed entries into memory in one read, so their re-emissions are answered without a write                                                        |
+| `recorded?`           | `(input: Input) => Effect<boolean>`                                                                | whether the journal knows `input` is committed, by identity and content, without a read; `false` means not known                                                            |
 | `transact`            | `<A, E, R>(effect: Effect<A, E, R>, options?: WriteOptions) => Effect<A, E \| JournalError, R>`    | runs a state projection and its `emitDurable` calls in one transaction; `options.partition` names the run it writes                                                         |
 | `whenCommitted`       | `(update: Effect<void>) => Effect<boolean>`                                                        | accepts a short, non-failing update after managed commit, or runs it immediately outside a transaction; returns `false` without publishing when commit ownership is unknown |
 | `stream`              | `(options: StreamOptions) => Stream<Entry, JournalError>`                                          | durable history, then committed changes; never completes                                                                                                                    |
@@ -22900,6 +22914,23 @@ the run meanwhile loses what it queued and learns so from its own next fenced
 write. The flow engine queues its node records this way, so a drive writes a
 handful of transactions instead of one per record. Optional on the service: a
 journal without it is used through `emitDurable`.
+
+An entry the journal knows is committed with the same content is dropped
+rather than queued. The journal knows what it committed itself, what its
+startup read retained (the latest `sourceEventCache` entries), and what
+`recall(runId)` read: the run's latest committed entries, in one statement. A
+resumed run recalls its journal once and then re-emits every node record its
+first walk wrote; none of them reaches the database.
+
+`recorded(input)` answers the same question for a caller that would emit
+durably: `true` when an entry with the producer identity (`sourceId` and
+`sourceSeq`) and content of `input` is committed. It reads nothing, and `false`
+means not known, never absent: an entry without a `sourceSeq` is new every
+time, and an input the journal refuses is reported by its emit instead. Skipping
+an emit because it is recorded is not a fenced write, so skip only an emit whose
+caller then does nothing the fence guards. The engine store skips the records a
+replay answered from a recorded attempt re-emits. Both are optional on the
+service.
 
 Every append, checkpoint and compaction writes its run's partition
 (`DurableWriter.WriteOptions`), so on PostgreSQL it waits only for that run's
@@ -38430,6 +38461,18 @@ properties and ignores other own data fields, so an `Attempt` from `put` or
 `get` passes directly as the id. A non-plain prototype, an enumerable accessor
 on any key, or a missing or inherited id field is refused with
 `invalid_attempt`.
+
+#### listRun
+
+```ts
+const listRun?: (runId: string) => Effect<ReadonlyArray<Attempt>, AttemptStoreError>
+```
+
+Every attempt row of one run, ordered by step key digest and attempt, in one
+read. Each row is what `get` answers for it. A resumed run's replay reads its
+recorded attempts here once instead of one `get` per step. It is optional:
+`AttemptStore.layer` implements it, `makeNoop` omits it, and a caller of a store
+without it reads each attempt with `get`.
 
 #### heartbeat
 

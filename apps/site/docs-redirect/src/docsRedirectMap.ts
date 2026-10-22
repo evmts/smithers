@@ -644,6 +644,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/platform-cloudflare/concepts/execution-lifecycle/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/concepts/execution-lifecycle.md"],
     ["/platform-cloudflare/concepts/host-surface/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/concepts/host-surface.md"],
     ["/platform-cloudflare/guides/attach-a-terminal-to-a-container/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/guides/attach-a-terminal-to-a-container.md"],
+    ["/platform-cloudflare/guides/command-latency/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/guides/command-latency.md"],
     ["/platform-cloudflare/guides/host-a-flow-in-a-durable-object/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/guides/host-a-flow-in-a-durable-object.md"],
     ["/platform-cloudflare/installation/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/installation.md"],
     ["/platform-cloudflare/quickstart/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/quickstart.md"],
