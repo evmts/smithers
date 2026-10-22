@@ -77,6 +77,8 @@ The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it an
 - **No secrets inside:** the machine has no internet and no credential. Its only way out is the forge proxy, and, with `SANDBOX_SECRETS` on (off by default), the secrets egress for every other host, whose placeholders the tools' commands get as their environment ([secrets](secrets.md#wiring-into-the-box)).
 - **A check job's machine** (`kind: "job"`, one per pull request head) differs in one way: its box reaches the npm registry and dprint's plugins, and nothing else, so a repository's checks can install their packages. It gets no placeholder ([where checks run](pulls.md#where-checks-run)).
 
+The host-independent `worker/branch/Session.ts` owns terminal session startup; `BranchSandboxes.ts` injects the container and the catalog's `@smthrs/platform-cloudflare` terminal service. Startup has one Effect Clock deadline, `SANDBOX_SESSION_TIMEOUT_SECONDS` (positive integer, default 60), covering `start` (including the activity record), `provision` and `session` (tmux). Success logs `sandbox.session` at info with `outcome: started`, `startMs`, `provisionMs` and `sessionMs`. Failure logs it at warning with `stage`, `outcome: failed` or `timeout`, completed stage durations, `errorCode` and `errorName`; no branch or terminal ids, command arguments, error messages or user content. Failure and expiry answer `false`: the caller raises `SandboxUnavailable` with reason `exec`, and the durable `terminal/Open` flow owns retry and the final failed record.
+
 ## Sleep and wake
 
 - **Create on demand:** the first call or terminal wakes the machine: it starts the container, clones the branch and puts back the last checkpoint.
@@ -104,7 +106,7 @@ Content-free: ids, tools, outcomes, exit codes, statuses, counts and durations; 
 | ChatApi | `sandbox.call`, `sandbox.result` (logs, spans), `smithers_sandbox_call_requests{route,outcome}` |
 | `sandbox/Call` | `sandbox.tool`, `sandbox.call` (logs), `sandbox.call.tool`, `sandbox.call.settle` (spans), `smithers_sandbox_calls{tool,outcome}` |
 | `sandbox/Keep` | `sandbox.keep`, `sandbox.slept` (logs, spans), `smithers_sandbox_keeps{outcome}` |
-| `SandboxObject` | `sandbox.object.tool`, `sandbox.object.sleep`, `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (spans), `smithers_sandbox_checkpoints{op,outcome}`; `sandbox.wake` and `sandbox.object.session` warnings with the failed `stage` (`start`, `checkout`, `restore`, `placeholders`) and the error's code; `@smthrs/platform-cloudflare`'s `cloudflare.sandbox.wake`, `cloudflare.sandbox.rearm` and `@smthrs/sandbox`'s `sandbox.tool` span |
+| `SandboxObject` | `sandbox.object.tool`, `sandbox.object.sleep`, `sandbox.checkpoint.save`, `sandbox.checkpoint.restore` (spans), `smithers_sandbox_checkpoints{op,outcome}`; `sandbox.wake` warnings name the failed `stage` (`start`, `checkout`, `restore`, `placeholders`); `sandbox.session` logs `startMs`, `provisionMs`, `sessionMs` on success, or the failed/timed-out `stage` (`start`, `provision`, `session`) and safe failure fields; `@smthrs/platform-cloudflare`'s `cloudflare.sandbox.wake`, `cloudflare.sandbox.rearm` and `@smthrs/sandbox`'s `sandbox.tool` span |
 | Browser (`SANDBOX_TELEMETRY`) | `sandbox.call`, `sandbox.call.start`, `sandbox.call.post`, `sandbox.call.result`, `smithers_web_sandbox_calls{tool,outcome}` |
 
 ## Tests

@@ -15,7 +15,8 @@ import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
 import * as Machine from "./branch/Machine.ts"
 import { Machines, type SleepOutcome, type ToolOutcome } from "./branch/Machines.ts"
-import { envOf, idOf, provisionArgv, userOf } from "./branch/Users.ts"
+import { userOf } from "./branch/Users.ts"
+import { asUser, configuredSessionOn, failureFields, runOn } from "./branch/Session.ts"
 import { Forge, forgeOf } from "./branch/Forge.ts"
 import {
   type Attachment,
@@ -27,7 +28,6 @@ import {
   SandboxUnavailable,
   TerminalSockets,
 } from "./branch/Sandboxes.ts"
-import { codeOf } from "./ErrorCode.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as JobEgress from "./branch/JobEgress.ts"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"
@@ -98,31 +98,11 @@ if [ -f ${CONTAINER_CA} ]; then
 fi
 printf '%s\n' '[ -r /run/smithers/env ] && { set -a; . /run/smithers/env; set +a; }' >/etc/profile.d/smithers-env.sh`
 
-/**
- * What a log line says about a failure: its code (`codeOf`, of the failure itself, not its cause) and, for an error with
- * no tag, its class name, such as `TypeError`. Never its message.
- */
-const failureFields = (cause: Cause.Cause<unknown>) => {
-  const error = Cause.squash(cause)
-  return { errorCode: codeOf(error), errorName: error instanceof Error ? error.name : typeof error }
-}
-
 /** Whether a wake failed because the container didn't finish starting in time (`SANDBOX_START_TIMEOUT_SECONDS`). */
 const startTimedOut = (cause: Cause.Cause<unknown>) => Cause.squash(cause) instanceof SandboxHost.StartTimedOut
 
 /** The step of a wake a failure happened in, as its `sandbox.wake` log line names it. */
 type WakeStage = "start" | "checkout" | "restore" | "placeholders"
-
-/**
- * How a command runs as the machine's user `name`: its numeric `uid:gid` (a deployed container refuses a name) and the
- * variables `exec` doesn't give it (worker/branch/Users.ts). A name with no uid is a defect.
- */
-const asUser = (name: string) => {
-  const user = idOf(name)
-  return user === undefined
-    ? Effect.die(new Error("the machine has no uid for this user"))
-    : Effect.succeed({ user, env: envOf(name) })
-}
 
 /** `NAME=value` lines as variables. */
 const variablesOf = (environment: string): Record<string, string> =>
@@ -196,6 +176,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
     const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
     const instance = yield* sandboxInstance.pipe(Effect.orDie)
     const startTimeoutMs = (yield* sandboxStartTimeoutSeconds.pipe(Effect.orDie)) * 1000
+    const sessionOn = yield* configuredSessionOn
     const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
     const database = Database.layer(hyperdrive.connectionString)
@@ -253,8 +234,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
 
       /** Runs `argv` as the machine's user `name`, answering its exit code. */
       const run = (argv: Array<string>, name: string) =>
-        Effect.flatMap(asUser(name), (options) =>
-          Effect.scoped(Effect.flatMap(box.exec(argv, options), (process) => process.exitCode)))
+        runOn(box, argv, name)
 
       // A wake's failure is logged with the step it failed in: the container's start, the checkout, the restore or
       // the placeholders, so a failure only production shows says where it happened. A wake that works logs how long
@@ -410,22 +390,10 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
 
       // Each person's shell runs as their own user, made on first use (worker/branch/Users.ts). Opening one is use.
       const session = (terminalId: string, ownerId: string) =>
-        Effect.gen(function* () {
-          yield* start
-          yield* Machine.touch(machine)
-          const name = userOf(ownerId)
-          if ((yield* run(provisionArgv(name), "root")) !== 0) return false
-          const { env, user } = yield* asUser(name)
-          yield* ContainerTerminal.ensureSession(box, { name: terminalId, user, cwd: WORKSPACE, env })
-          return true
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.as(
-              Effect.logWarning("sandbox.object.session").pipe(Effect.annotateLogs(failureFields(cause))),
-              false,
-            )
-          ),
-        )
+        sessionOn({
+          box, start, touch: Machine.touch(machine),
+          ensureSession: (options) => ContainerTerminal.ensureSession(box, options),
+        })(terminalId, ownerId)
 
       const alive = (terminalId: string, ownerId: string) =>
         Effect.gen(function* () {
