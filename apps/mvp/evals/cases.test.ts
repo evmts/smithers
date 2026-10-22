@@ -193,7 +193,8 @@ describe("caseNamed and inputOf", () => {
   })
 
   test("hand the executor plain data, with the default person when the case sets none", () => {
-    expect(inputOf(caseNamed("greeting"))).toEqual({ name: "greeting", ask: "hi", person: DEFAULT_PERSON, provider: "model" })
+    expect(inputOf(caseNamed("greeting"))).toEqual({ name: "greeting", ask: "hi", person: DEFAULT_PERSON, provider: "model",
+      seed: null })
     expect(inputOf(caseNamed("provider-refuses")).provider).toBe("refuses")
     expect(inputOf(caseNamed("ask-approval-denied")).person).toEqual({ words: "No.", approve: false })
     expect(structuredClone(CASES.map(inputOf))).toEqual(CASES.map(inputOf))

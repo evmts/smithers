@@ -1,7 +1,7 @@
 import { Evaluator } from "@smthrs/model"
 import { Scorer } from "@smthrs/scorers"
 import { Effect, type Layer } from "effect"
-import { CASES, type CaseInput, caseNamed } from "./cases"
+import { type AgentCase, CASES, type CaseInput, caseNamed } from "./cases"
 import type { Trial } from "./checks"
 
 // The judge half of the agent evals (docs/features/agent-evals.md#the-judge): yes-or-no questions about each answer,
@@ -43,10 +43,13 @@ export const evidence = (input: CaseInput, trial: Trial) => ({
   asked: trial.asked,
 })
 
-/** The questions for case `name`: every answer's, then the case's own. */
-export const questionsFor = (name: string): Readonly<Record<string, string>> => ({
+/** The questions for case `name` of `cases`: every answer's, then the case's own. */
+export const questionsFor = (
+  name: string,
+  cases: ReadonlyArray<AgentCase> = CASES,
+): Readonly<Record<string, string>> => ({
   ...CRITERIA,
-  ...caseNamed(name).judge,
+  ...caseNamed(name, cases).judge,
 })
 
 /** One reading: whether every question holds (a probability of yes of at least one half), and which don't. */
@@ -59,8 +62,8 @@ export const read = (answers: Evaluator.RawAnswers, ids: ReadonlyArray<string>) 
   return { pass: failed.length === 0, failed, probabilities }
 }
 
-/** The judge as a scorer: the share of a case's trials whose every question holds. */
-export const judgeScorer = (judge: Layer.Layer<Evaluator.Evaluator>) =>
+/** The judge as a scorer of `cases`: the share of a case's trials whose every question holds. */
+export const judgeScorer = (judge: Layer.Layer<Evaluator.Evaluator>, cases: ReadonlyArray<AgentCase> = CASES) =>
   Scorer.make({
     id: "mvp/agent/judge",
     version: "1",
@@ -68,14 +71,14 @@ export const judgeScorer = (judge: Layer.Layer<Evaluator.Evaluator>) =>
     config: {
       criteria: CRITERIA,
       note: SEAT_NOTE,
-      cases: Object.fromEntries(CASES.flatMap((kase) => (kase.judge === undefined ? [] : [[kase.name, kase.judge]]))),
+      cases: Object.fromEntries(cases.flatMap((kase) => (kase.judge === undefined ? [] : [[kase.name, kase.judge]]))),
     },
     score: ({ input, output }) =>
       Effect.gen(function* () {
         const kase = input as CaseInput
         // A refused provider leaves no answer to judge: the case's checks read what the endpoint charged.
         if (kase.provider === "refuses") return { score: 1, reason: "no answer to judge", meta: { readings: [] } }
-        const questions = questionsFor(kase.name)
+        const questions = questionsFor(kase.name, cases)
         const ids = Object.keys(questions)
         const evaluator = yield* Evaluator.Evaluator
         const readings = []

@@ -101,6 +101,14 @@ export const calledOnce = (t: Trial, flow: string, input: (value: unknown) => bo
   return check(`${flow} once`, calls.length === 1 && done(calls[0]!) && input(calls[0]!.input))
 }
 
+/**
+ * The agent called `flow` with an input satisfying `input`, whatever came of the call: for a flow whose effect the
+ * eval's ChatApi can't serve (GitHub, a branch's machine, the person's tab), the agent's choice and its arguments are
+ * what a trial shows. Whether its answer then owns up to the failure is the judge's `honest`.
+ */
+export const attempted = (t: Trial, flow: string, input: (value: unknown) => boolean = () => true): Check =>
+  check(`${flow} called`, t.calls.some((call) => call.flow === flow && input(call.input)))
+
 /** The agent never called `flow`. */
 export const notCalled = (t: Trial, flow: string): Check =>
   check(`no ${flow}`, t.calls.every((call) => call.flow !== flow))
@@ -137,6 +145,16 @@ const onHost = (url: string, host: string): boolean => {
   const { hostname } = new URL(url)
   return hostname === host || hostname.endsWith(`.${host}`)
 }
+
+/** The input's `field` is a string that says `text`, in any case. */
+export const fieldSays = (field: string, text: string) => (input: unknown): boolean => {
+  const value = typeof input === "object" && input !== null ? (input as Record<string, unknown>)[field] : undefined
+  return typeof value === "string" && value.toLowerCase().includes(text.toLowerCase())
+}
+
+/** Every one of `tests` holds of the input. */
+export const all = (...tests: ReadonlyArray<(input: unknown) => boolean>) => (input: unknown): boolean =>
+  tests.every((holds) => holds(input))
 
 /** The input's `field` is exactly `value`. */
 export const fieldIs = (field: string, value: unknown) => (input: unknown): boolean =>

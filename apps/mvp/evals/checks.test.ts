@@ -2,7 +2,9 @@
 // it shouldn't (docs/features/agent-evals.md#cases).
 import { describe, expect, test } from "vitest"
 import {
+  all,
   answered,
+  attempted,
   askedNothing,
   askedOnce,
   atMostLines,
@@ -12,6 +14,7 @@ import {
   everyAnswer,
   failedWith,
   fieldIs,
+  fieldSays,
   grade,
   hostIs,
   mentions,
@@ -51,6 +54,20 @@ describe("what the agent did", () => {
         "app/theme/set").pass,
     ).toBe(false)
     expect(calledOnce(trial(), "app/theme/set").pass).toBe(false)
+  })
+
+  test("attempted wants a call whose input matches, whatever came of it", () => {
+    const issue = all(fieldIs("repo", "octocat/Spoon-Knife"), fieldSays("title", "typo"))
+    const failed = call("issue/create", { repo: "octocat/Spoon-Knife", title: "README has a Typo" }, "failed")
+    expect(attempted(trial({ calls: [failed] }), "issue/create", issue)).toEqual({ name: "issue/create called", pass: true })
+    expect(attempted(trial({ calls: [call("issue/create", { repo: "octocat/Spoon-Knife", title: "Hi" })] }), "issue/create",
+      issue).pass).toBe(false)
+    expect(attempted(trial({ calls: [call("issue/comment", { repo: "octocat/Spoon-Knife", title: "typo" })] }),
+      "issue/create", issue).pass).toBe(false)
+    expect(attempted(trial({ calls: [call("repo/refs", "octocat/Spoon-Knife")] }), "repo/refs").pass).toBe(true)
+    expect(attempted(trial(), "repo/refs").pass).toBe(false)
+    expect(fieldSays("title", "typo")({ title: 3 })).toBe(false)
+    expect(fieldSays("title", "typo")(null)).toBe(false)
   })
 
   test("noCalls, notCalled and onlyCalled read the flows called", () => {

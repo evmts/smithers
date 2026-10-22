@@ -25,7 +25,8 @@ import type { testFile } from "../worker/test/harness.ts"
 import { DEFAULT_CHAT_MODEL } from "../worker/ModelRoles.ts"
 import { answerRow, openAgent } from "../src/test/agent"
 import { openDevice } from "../src/test/device"
-import type { CaseInput, Person } from "./cases"
+import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
+import type { CaseInput, Person, Seed } from "./cases"
 import type { Asked, Draft, Trial, Usage, View } from "./checks"
 import { tokenCap } from "./report"
 
@@ -128,15 +129,58 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
     return asked
   }
 
+  /**
+   * Makes what `seed` names on `device` as a person's own presses do (door `button`, which asks nothing), before the
+   * ask: a flow saved from a ready draft written through ChatApi's route, or a run of the device's engine.
+   */
+  const plant = async (asking: typeof agent, device: Device, seed: Seed) => {
+    const press = (flow: string, payload: unknown) =>
+      Effect.runPromise(Effect.exit(device.dispatch.dispatch(flow as never, payload as never, { door: "button" })))
+    if (seed === "theme-run") return void await press("app/theme/set", { mode: "dark" })
+    // ChatApi here routes no repositories, so the lookup fails as an unreachable repository does.
+    if (seed === "failed-run") return void await press("repo/refs", { repo: "octocat/Spoon-Knife" })
+    const draftId = crypto.randomUUID()
+    const written = await asking.h.fetch(`/api/flow-drafts/${draftId}`, {
+      method: "POST",
+      body: JSON.stringify({
+        scope: "person",
+        round: 0,
+        request: "Open the Effect docs for me",
+        name: "effect-docs",
+        status: "ready",
+        summary: null,
+        files: [{
+          path: SOURCE_PATH,
+          text: renderSource({
+            name: "effect-docs",
+            description: "Opens the Effect docs in the chat.",
+            flows: ["app/web/open"],
+            instructions: "Open https://effect.website/docs in the chat, then say it is open.",
+          }),
+        }],
+        checks: [{ check: "parses", ok: true }],
+        questions: [],
+        failure: null,
+        flowId: null,
+      }),
+    })
+    if (written.status !== 200) throw new Error(`the seed's draft wasn't written: ${written.status}`)
+    const saved = await press("flow/save", { draftId })
+    if (saved._tag !== "Success") throw new Error("the seed's flow wasn't saved")
+  }
+
   /** One trial of `kase`: a fresh conversation and device, its ask, and what came of it. */
   const trial = async (kase: CaseInput): Promise<Trial> => {
     cap.before(kase.name)
     await query((sql) =>
-      sql`TRUNCATE messages, views, runs, flow_drafts, flow_revisions, flows, model_usage RESTART IDENTITY CASCADE`
+      sql`TRUNCATE messages, views, runs, flow_drafts, flow_revisions, flows, model_usage, watches RESTART IDENTITY CASCADE`
     )
     const asking = await agentFor(kase.provider)
     const device = await openDevice(asking.fetch)
     try {
+      if (kase.seed !== null) await plant(asking, device, kase.seed)
+      // What the seed painted or moved isn't the agent's.
+      const [paintedBefore, navigatedBefore] = [device.painted.length, device.navigated.length]
       const started = Date.now()
       const answerId = await asking.ask(kase.ask)
       const asked = await answer(device, answerId, kase.person)
@@ -162,8 +206,8 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
         calls: [...inspection.children]
           .sort((a, b) => a.createdAtMs - b.createdAtMs)
           .map((child) => ({ flow: child.flowName, input: parsed(child.input.text), status: child.status })),
-        painted: device.painted.filter((mode) => mode !== undefined),
-        navigated: [...device.navigated],
+        painted: device.painted.slice(paintedBefore).filter((mode) => mode !== undefined),
+        navigated: device.navigated.slice(navigatedBefore),
         views: views.map((view): View => ({
           template: view.template,
           url: typeof view.props.url === "string" ? view.props.url : null,
