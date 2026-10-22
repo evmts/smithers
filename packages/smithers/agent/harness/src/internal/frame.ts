@@ -807,8 +807,10 @@ const measuredDemand = (
  *    every turn above it.
  *
  * The fifth runs only where the workflow armed it with a positive `claimCap`
- * (Will, 2026-10-14, #3993); with the default of zero the four measured
- * demands are the whole judgement and no model is asked. Armed, it is the one
+ * (Will, 2026-10-14, #3993). With zero, the independent measured demands
+ * decide completion and no model is asked. `UnmovedTree` also needs a positive
+ * `claimCap` and an unsupported claim; it is not issued independently. Armed,
+ * the claim brake is the one
  * that is read on *every* completion, and the three things below that take a
  * demand away do not take the reading away. The
  * others are recomputable from the journal, so skipping them costs a grader
@@ -891,7 +893,9 @@ export const judgeCompletion = (
 
     // The sixth brake, and the only one that leaves this package to decide.
     // `claimCap` of zero, the default, leaves it off: no request, no event,
-    // no failure. A workflow that wants a model in this path arms it.
+    // no failure. This also disarms UnmovedTree, which depends on this reading.
+    // The independent measured demands above remain subject to their own caps.
+    // A workflow that wants a model in this path arms it.
     if (state.claimCap === 0) return stands
     // A host may put prior conversation before the current request. Keep
     // both ends of the task; clipping its head alone can leave only history.

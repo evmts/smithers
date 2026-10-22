@@ -46,6 +46,11 @@ to the next slot. Replay skips existing empty markers before reconstructing
 the terminal frame. An attempt that parks or is interrupted leaves a marker
 and can resume its calls without an enclosing frame activity.
 
+Call settlement uses the same attempt-marker protocol. The harness reads a
+saved settlement before dispatch, including a per-call timeout, so reconstructing
+a cell does not repeat a call whose settlement already exists. Unsettled calls
+remain outside record activities so durable waits and permission parks can resume.
+
 A whole-frame timeout records the last dispatched and last delivered bridge
 ordinals with the frame outcome. Replay reads that record before evaluating
 the cell, reconstructs the settled prefix, and interrupts the bridge at the
@@ -184,6 +189,10 @@ transitions. A completion is an idle boundary: queued follow-ups can keep the
 run going. When the frame budget is exhausted, undeliverable notifications stay
 pending in the durable queue for the host to carry forward.
 
+A parked question remains answerable on the final frame. Its drain reads queued
+answers on resume; an accepted answer grants one frame to process it when the
+original frame budget is exhausted. Replay restores that delivery and extension.
+
 Pending steering detected after the model returns holds the proposed cell until
 another model frame consumes the instruction. If no frame remains, the run fails
 with `engine_failed` and leaves the instruction pending, including when the
@@ -244,3 +253,10 @@ verbatim. It is constant for a run, so the cached prefix holds.
 Enforced by `CellTurn.teach`, which renders the contract and the callable-flow
 catalog into the prefix zone of a `ContextWindow`, where every transition
 preserves them.
+
+## Truncated writes
+
+The call boundary refuses input fields byte-identical to known truncated output
+when a flow declares writes or its input carries a command or script. Shell
+programs can write without a declared write set, so their payloads are checked
+conservatively. Ordinary non-writing search inputs can still consume fragments.

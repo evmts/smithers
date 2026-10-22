@@ -325,9 +325,10 @@ ctx.done({ names: Object.keys(ctx.flows), original: Object.keys(originalCatalog)
       }, { engine: journaled(fixture, snapshots) })
       expect(result.failure).toBeUndefined()
       expect(result.interrupted).toBe(false)
-      expect(fixture.recorder.calls.map((call) => [call.flowName, call.identity.declaration])).toEqual([
-        ["promoted", Cell.declarationDigest(promoted)]
-      ])
+      expect(of(result.events, "cell-call-started").map(({ call }) => [call.flowName, call.identity.declaration]))
+        .toEqual([
+          ["promoted", Cell.declarationDigest(promoted)]
+        ])
       const output = JSON.parse(resolvedText(result.events))
       expect(output).toEqual({
         names: ["promoted"],
@@ -2070,55 +2071,64 @@ describe("CellTurn recorded observations", () => {
     expect(requests).toBe(1)
   })
 
-  it("replays a call's recorded timeout instead of re-racing the clock", async () => {
-    const records = new Map<string, unknown>()
-    const cell = `const first = await ctx.call("fs/list", { path: "." })
+  it.each(["current", "legacy"])(
+    "replays a call's recorded timeout instead of re-racing the clock (%s)",
+    async (format) => {
+      const records = new Map<string, unknown>()
+      const cell = `const first = await ctx.call("fs/list", { path: "." })
        if (first.ok === false) { await ctx.call("fs/list", { path: "narrow" }) }
        ctx.done(first.ok === false ? "timed out" : "answered at once")`
 
-    const attempt = async (stalls: boolean) => {
-      const model = ScriptedModel.make([emits(cell)])
-      const engine = ScriptedEngine.make(model.model, [])
-      const stub = EngineLike.make({
-        ...engine.engine,
-        call: (call) => {
-          engine.recorder.calls.push(call)
-          return stalls && call.identity.ordinal === 0
-            ? Effect.never
-            : Effect.succeed(new Cell.CallResult({ outcome: "success", value: ["alpha.md"] }))
+      const attempt = async (stalls: boolean) => {
+        const model = ScriptedModel.make([emits(cell)])
+        const engine = ScriptedEngine.make(model.model, [])
+        const stub = EngineLike.make({
+          ...engine.engine,
+          call: (call) => {
+            engine.recorder.calls.push(call)
+            return stalls && call.identity.ordinal === 0
+              ? Effect.never
+              : Effect.succeed(new Cell.CallResult({ outcome: "success", value: ["alpha.md"] }))
+          }
+        })
+        const observed = await collect(
+          { state: state({ maxFrames: 2 }), flows: [lister], limits: { callMs: 50 } },
+          { engine: journaled({ ...engine, engine: stub }, records) }
+        )
+        return { ...observed, calls: engine.recorder.calls }
+      }
+
+      // The original attempt: the first call never settles and is answered at its
+      // own budget, so the cell takes the narrowing branch.
+      const first = await attempt(true)
+      expect(resolvedText(first.events)).toBe("timed out")
+
+      if (format === "legacy") {
+        // Older journals stored the settlement directly in slot zero.
+        for (const [key, value] of records) {
+          if (key.includes("cell-call:") && key.endsWith(":attempt:1")) {
+            records.set(key.slice(0, -":attempt:1".length), value)
+            records.delete(key)
+          }
         }
-      })
-      const observed = await collect(
-        { state: state({ maxFrames: 2 }), flows: [lister], limits: { callMs: 50 } },
-        { engine: journaled({ ...engine, engine: stub }, records) }
-      )
-      return { ...observed, calls: engine.recorder.calls }
+      }
+
+      // The host would answer at once on resume, but both settlements already
+      // exist. Replay must rebuild the frame without dispatching either call.
+      const second = await attempt(false)
+      expect(resolvedText(second.events)).toBe("timed out")
+      // The cell still observes both calls, so replay preserves the accounting
+      // the frame derives from their recorded settlements.
+      expect(of(second.events, "cell-call-started").map((event) => event.call.input)).toEqual([
+        { path: "." },
+        { path: "narrow" }
+      ])
+      // Reading a recorded timeout must precede any dispatch: repeating the
+      // interrupted host call could duplicate effects it performed before waiting.
+      expect(second.calls).toEqual([])
+      expect(of(second.events, "cell-call-settled").map((event) => event.result.code)).toEqual(["timeout", undefined])
     }
-
-    // The original attempt: the first call never settles and is answered at its
-    // own budget, so the cell takes the narrowing branch.
-    const first = await attempt(true)
-    expect(resolvedText(first.events)).toBe("timed out")
-
-    // The resumed attempt, in the world a resume actually finds: the call the
-    // clock cut off is journaled nowhere, so a re-execution runs it again — and
-    // it answers at once this time. Nothing about the frame may change.
-    const second = await attempt(false)
-    expect(resolvedText(second.events)).toBe("timed out")
-    // The cell issued both calls again and the frame's ledger saw both, so a
-    // boundary that replayed the settlement did not erase the accounting the
-    // frame derives from it.
-    expect(of(second.events, "cell-call-started").map((event) => event.call.input)).toEqual([
-      { path: "." },
-      { path: "narrow" }
-    ])
-    // And the first call ANSWERED this time — the engine really was asked, and
-    // really did succeed — yet the cell was still told the timeout. The
-    // settlement the cell branches on comes from the journal, not from what the
-    // clock happened to do on this attempt.
-    expect(second.calls.map((call) => call.input)).toEqual([{ path: "." }, { path: "narrow" }])
-    expect(of(second.events, "cell-call-settled").map((event) => event.result.code)).toEqual(["timeout", undefined])
-  })
+  )
 
   it("admits a call before its clock starts and hands the cell a refusal admit returns", async () => {
     const cell = `const slow = await ctx.call("fs/list", { path: "slow" })
@@ -2226,7 +2236,7 @@ describe("CellTurn recorded observations", () => {
           work: work === undefined ? undefined : { ...work, callMs: 0 }
         }))
       expect(cells(replay.events)).toEqual(cells(first.events))
-      const settlementKey = [...records.keys()].find((key) => key.includes("cell-call:"))!
+      const settlementKey = [...records.keys()].find((key) => key.includes("cell-call:") && records.get(key) !== null)!
       const settlement = records.get(settlementKey)
       records.delete(settlementKey)
       const incomplete = await attempt(false)
@@ -2345,7 +2355,7 @@ describe("CellTurn recorded observations", () => {
     }
   )
 
-  it("answers a parked run with a steer admitted while it was parked", async () => {
+  it.each([1, 3])("answers a parked run with a steer admitted while it was parked (budget %s)", async (maxFrames) => {
     const records = new Map<string, unknown>()
     const queue = steeringQueue()
 
@@ -2357,7 +2367,7 @@ describe("CellTurn recorded observations", () => {
       const engine = ScriptedEngine.make(model.model, [])
       return {
         ...await collect(
-          { state: state({ maxFrames: 3, approvalChannel: true }), flows: [lister] },
+          { state: state({ maxFrames, approvalChannel: true }), flows: [lister] },
           { engine: journaled(engine, records), steering: queue.layer }
         ),
         model
@@ -2518,8 +2528,8 @@ describe("CellTurn recorded observations", () => {
       )
     }
 
-    // The original attempt parks. The call never settled, so it never reached
-    // the boundary and the boundary journaled nothing.
+    // The original attempt parks. It leaves an empty attempt marker but no
+    // settlement, so the grant can unblock the next attempt.
     const parked = await attempt(false)
     expect(of(parked.events, "permission-required")[0]?.request.requestId).toBe("perm-replayed")
 
@@ -2691,10 +2701,7 @@ describe("CellTurn delivery through the durable notification queue", () => {
           Effect.provideService(Steering.Source, source),
           Effect.result
         )
-        if (maxFrames === 1 && approvalChannel) {
-          expect(result).toMatchObject({ _tag: "Failure", failure: { code: "suspended", message: "which branch?" } })
-          expect(of(events, "resolved")).toHaveLength(0)
-        } else expect(result._tag).toBe("Success")
+        expect(result._tag).toBe("Success")
         return yield* queue.pending("run")
       }).pipe(Effect.provide(NotificationQueue.layer.pipe(Layer.provide(journal))), Effect.scoped)
     )
@@ -2728,10 +2735,16 @@ describe("CellTurn delivery through the durable notification queue", () => {
     expect(pending).toEqual([])
   })
 
-  it.each(cases)("retains an undeliverable steer after the last %s frame", async (_, first, approvalChannel) => {
-    const { model, pending } = await deliver(first, approvalChannel, 1, "steer")
-    expect(model.recorder.requests).toHaveLength(1)
-    expect(pending.map((message) => message.id)).toEqual(["follow-up"])
+  it.each(cases)("delivers or retains a steer after the last %s frame", async (_, first, approvalChannel) => {
+    const { model, pending, events } = await deliver(first, approvalChannel, 1, "steer")
+    if (approvalChannel) {
+      expect(model.recorder.requests).toHaveLength(2)
+      expect(pending).toEqual([])
+      expect(resolvedText(events)).toBe("follow-up answered")
+    } else {
+      expect(model.recorder.requests).toHaveLength(1)
+      expect(pending.map((message) => message.id)).toEqual(["follow-up"])
+    }
   })
 })
 
@@ -2867,7 +2880,7 @@ describe("CellTurn timeout guard", () => {
     return { ...observed, guard, records: engine.recorder.records }
   }
 
-  it("parks a call cut off at the per-call ceiling with its exact limit and records nothing for it", async () => {
+  it("parks a call cut off at the per-call ceiling with its exact limit and no settlement", async () => {
     const observed = await callRun({ parks: true, call: () => Effect.never })
     const frameSubject = frameSubjectOf(observed.records)
     const callSubject = callSubjectOf(observed.records, 0)
@@ -2889,7 +2902,7 @@ describe("CellTurn timeout guard", () => {
     ])
     // Continue must issue the call again: nothing settled it, and the frame
     // never got past its attempt marker.
-    expect(observed.records.filter((record) => record.name === "cell-call")).toEqual([])
+    expect(observed.records.filter((record) => record.name === "cell-call" && record.call !== undefined)).toEqual([])
     expect(observed.records.filter((record) => record.name === "cell-frame")).toHaveLength(1)
     expect(of(observed.events, "resolved")).toEqual([])
   })
@@ -2910,7 +2923,7 @@ describe("CellTurn timeout guard", () => {
       message: "Flow fs/list timed out."
     })
     expect(observed.guard.admitted.at(-1)).toBe(callSubject)
-    expect(observed.records.filter((record) => record.name === "cell-call")).toEqual([])
+    expect(observed.records.filter((record) => record.name === "cell-call" && record.call !== undefined)).toEqual([])
   })
 
   it("parks a call that reports its own timeout on the limit it recorded, not the per-call ceiling", async () => {
@@ -2934,7 +2947,7 @@ describe("CellTurn timeout guard", () => {
       limitMillis: 5,
       message: "Flow fs/list failed: Command timed out: ls"
     }])
-    expect(observed.records.filter((record) => record.name === "cell-call")).toEqual([])
+    expect(observed.records.filter((record) => record.name === "cell-call" && record.call !== undefined)).toEqual([])
   })
 
   it("hands the cell its timeout and records it when the run's timeouts are not guarded", async () => {
@@ -2943,7 +2956,9 @@ describe("CellTurn timeout guard", () => {
     expect(observed.failure).toBeUndefined()
     expect(resolvedText(observed.events)).toBe("timeout")
     expect(observed.guard.tripped.map((timeout) => timeout.limitMillis)).toEqual([20])
-    expect(observed.records.filter((record) => record.name === "cell-call")).toHaveLength(1)
+    expect(observed.records.filter((record) => record.name === "cell-call" && record.call !== undefined)).toHaveLength(
+      1
+    )
   })
 
   it("fails the run with the guard's Stop before a stopped call is issued again", async () => {
@@ -2957,7 +2972,7 @@ describe("CellTurn timeout guard", () => {
 
     expect(observed.failure).toBe(observed.guard.stop)
     expect(observed.guard.log).toEqual([`admit ${frameSubject}`, `admit ${callSubject}`])
-    expect(observed.records.filter((record) => record.name === "cell-call")).toEqual([])
+    expect(observed.records.filter((record) => record.name === "cell-call" && record.call !== undefined)).toEqual([])
   })
 
   it("never asks the guard about a call the host refused before it ran", async () => {

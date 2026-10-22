@@ -11,6 +11,16 @@ const source = (name: string) => readFileSync(new URL(`../src/${name}.ts`, impor
 const comments = (name: string) => source(name).match(/\/\*\*[\s\S]*?\*\//g) ?? []
 
 describe("public cell documentation", () => {
+  it("documents the unmoved-tree exception to claimCap-independent demands", () => {
+    const defaults = comments("CellTurn").find((comment) =>
+      comment.includes("Default number of frames a run is given to prove a claim")
+    )!
+    expect(defaults).not.toContain("deterministic completion demands still run on every")
+    expect(defaults).toContain("unmoved-tree")
+    expect(defaults).toContain("claimCap")
+    expect(defaults).toContain("positive")
+  })
+
   it("describes ordinary call failures as resolved data throughout the public API", () => {
     for (const name of ["Sandbox", "EngineLike", "CellCalls", "FlowBinding", "Cell"]) {
       const docs = comments(name).join("\n")

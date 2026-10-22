@@ -408,9 +408,9 @@ describe("CellTurn", () => {
 
     const identities = engine.recorder.calls.map((call) => call.identity)
     expect(
-      engine.recorder.records.filter((boundary) => boundary.name === "cell-call").map((boundary) =>
-        boundary.call?.identity
-      )
+      engine.recorder.records.filter((boundary) => boundary.name === "cell-call" && boundary.call !== undefined).map((
+        boundary
+      ) => boundary.call?.identity)
     ).toEqual(identities)
     // Identical arguments and declaration; only the position differs.
     expect(identities.map((identity) => [identity.frame, identity.ordinal])).toEqual([[0, 0], [0, 1], [1, 0]])
@@ -574,10 +574,11 @@ console.log(kept)`
 
   for (const maxFrames of [1, 8]) {
     for (const channel of ["empty", "answering"] as const) {
-      it(`suspends a final-frame park with an ${channel} source (${maxFrames} frames)`, async () => {
+      it(`${channel === "empty" ? "suspends" : "answers"} a final-frame park with an ${channel} source (${maxFrames} frames)`, async () => {
         const parks: Array<{ readonly reason: string; readonly message: string }> = []
         const script = Array.from({ length: maxFrames - 1 }, (_, index) => emits(`console.log(${index})`))
         script.push(emits(`ctx.park("waiting-input", "Required final question?")`))
+        if (channel === "answering") script.push(emits(`ctx.done("confirmed")`))
         const { events, engine, failure, model } = await run({
           state: state({ approvalChannel: true, maxFrames }),
           script,
@@ -597,15 +598,25 @@ console.log(kept)`
             })
           })
         })
-        expect(failure).toMatchObject({ code: "suspended", message: "Required final question?" })
-        expect(parks).toEqual([])
-        expect(of(events, "resolved")).toHaveLength(0)
-        expect(of(events, "suspended")[0]?.reason).toMatchObject({
-          code: "waiting-input",
-          message: "Required final question?"
-        })
-        expect(engine.recorder.suspend).toHaveLength(1)
-        expect(model.recorder.requests).toHaveLength(maxFrames)
+        if (channel === "empty") {
+          expect(failure).toMatchObject({ code: "suspended", message: "Required final question?" })
+          expect(parks).toEqual([])
+          expect(of(events, "resolved")).toHaveLength(0)
+          expect(of(events, "suspended")[0]?.reason).toMatchObject({
+            code: "waiting-input",
+            message: "Required final question?"
+          })
+          expect(engine.recorder.suspend).toHaveLength(1)
+          expect(model.recorder.requests).toHaveLength(maxFrames)
+        } else {
+          expect(failure).toBeUndefined()
+          expect(parks).toEqual([{ reason: "waiting-input", message: "Required final question?" }])
+          expect(of(events, "resolved")[0]?.message.content).toEqual([
+            expect.objectContaining({ type: "text", text: "confirmed" })
+          ])
+          expect(engine.recorder.suspend).toEqual([])
+          expect(model.recorder.requests).toHaveLength(maxFrames + 1)
+        }
       })
     }
   }
@@ -4881,6 +4892,19 @@ describe("CellTurn truncated output", () => {
     expect(text).toContain("byte-identical")
     expect(text).toContain("bash cut stdout and dropped 24071 bytes")
     expect(text).toContain("git checkout or git restore")
+  })
+
+  it.each(["command", "script"])("refuses an undeclared shell write of truncated data via %s", async (program) => {
+    const { engine, events } = await run({
+      script: [emits(`const out = await ctx.call("bash", { command: "read source" })
+        const wrote = await ctx.call("shell/run", { mode: "unhermetic", ${program}: "echo \\"$CAPTURE\\" > src/module.py", env: { CAPTURE: out.stdout } })
+        ctx.done(wrote.ok === false ? wrote.error.code : "overwrote")`)],
+      flows: [...restoreFlows, descriptor("shell/run")],
+      calls: [truncatedShellResult, { _tag: "Success", value: {} }]
+    })
+    expect(engine.recorder.calls.map((call) => call.flowName)).toEqual(["bash"])
+    const result = of(events, "resolved")[0]?.message.content[0]
+    expect(result?.type === "text" ? result.text : "").toBe("truncated_write")
   })
 
   it("refuses on the declared write set rather than on the flow's name", async () => {

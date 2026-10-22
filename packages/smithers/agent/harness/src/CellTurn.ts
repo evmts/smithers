@@ -256,8 +256,10 @@ export const defaultUnresolvedDemands = 1
  * tell the two apart; its "Completion review" bounce held 101 completions, and
  * 89 of the frames that answered it completed again without changing the tree
  * (`results-2026-10-14/why-codex-won.md` defect 2, `why-more-output.md`
- * section 3). The deterministic completion demands still run on every
- * completion; they read the run's own record and ask no model.
+ * section 3). The measured completion demands read the run's own record.
+ * Most are independent of `claimCap`, subject to their own caps and frame room.
+ * The unmoved-tree demand is the exception: it also requires a positive
+ * `claimCap` and a claim the model reads as unsupported.
  *
  * A workflow arms the brake with a positive cap through the seam that already
  * carried it: `AgentAction`'s `claimCap`, `AgentAction.Host.claimCap`,
@@ -1857,8 +1859,9 @@ const readOnlyCapFailure = (cap: number, frames: number): HarnessError =>
  * is whatever the host bound.
  *
  * This is a claim, not an observation, and the two are used for different
- * things. The claim decides authority — whether the truncated-write refusal
- * applies to this call — and the frame's *measured* change decides discipline.
+ * things. The claim decides checkpoint authority, and the frame's *measured*
+ * change decides discipline. Truncation protection also checks command and
+ * script inputs, whose effects can exceed their declarations.
  * A shell command that rewrites a tracked source file declares nothing and is
  * false here; it is still a mutation, and {@link witness} is what sees it.
  */
@@ -2003,16 +2006,15 @@ const pin = (
  * time, and takes a branch the original attempt never took — and every
  * irreversible effect below the fork is bought twice.
  *
- * The record is written AFTER the call and read INSTEAD of it, which is the
- * only order available and is the one that matters. The call cannot run inside
- * the boundary: `EngineLike.call` is where a cell reaches a durable wait, and a
- * `Flow.suspend` raised inside an enclosing activity suspends that activity's
- * attempt rather than the run, so a cell that slept on the durable clock never
- * woke. So this issues the call, records what the cell is about to be told, and
- * on any later attempt hands back the recorded settlement whatever the re-issued
- * call answered this time. The cell's branch is what has to be stable, and it
- * is; the re-issued call is work the run pays for twice, which is what a call
- * the ceiling cut off already cost before this existed.
+ * As with frame evaluation, an empty attempt marker lets the loop look for
+ * a recorded settlement before dispatch. Existing markers are skipped; a fresh
+ * marker permits one attempt outside the record, and its settlement is saved
+ * in the next slot. A parked or interrupted attempt leaves only its marker.
+ * Legacy settlements in slot zero remain readable.
+ *
+ * The call cannot run inside `record.execute`: `EngineLike.call` can reach a
+ * durable wait, which must suspend the run rather than an enclosing activity.
+ * Once a settlement is recorded, replay returns it without issuing the call.
  *
  * The drive loop is told the settlement is bounded here
  * (`Sandbox.RealmEvaluation.bounded`): two clocks over one call would settle it
@@ -2033,60 +2035,61 @@ const issued = (
   call: Cell.Call
 ): Effect.Effect<Cell.CallResult, HarnessError> =>
   Effect.gen(function*() {
-    if (replaying) {
-      // A terminal frame proves this prefix settled. Read its settlements
-      // directly, including per-call timeouts whose host activity never settled.
+    const identity = (attempt: number): EngineLike.BoundaryIdentity => ({
+      session: state.session,
+      frame: state.frame,
+      boundary: `cell-call:${cell}:${ordinal}${attempt === 0 ? "" : `:attempt:${attempt}`}`
+    })
+    for (let attempt = 0;; attempt++) {
+      let fresh = false
+      const recorded = yield* engine.record({
+        name: "cell-call",
+        identity: identity(attempt),
+        success: Schema.NullOr(Cell.CallResultVariant),
+        execute: replaying
+          ? Effect.fail(
+            new HarnessError({
+              code: "incompatible_journal",
+              message: `The timed-out frame is missing settlement ${ordinal}`
+            })
+          )
+          : Effect.sync(() => {
+            fresh = true
+            return null
+          })
+      })
+      if (recorded !== null) return yield* Cell.decodeCallResult(recorded)
+      if (!fresh) continue
+      // A permission park, abort or engine failure leaves only the marker.
+      // A later attempt can ask again, outside any enclosing record activity.
+      // Authority is decided before the clock starts: approval time is not
+      // the flow's to spend.
+      const refused = engine.admit === undefined ? undefined : yield* engine.admit(call)
+      const subject = EngineLike.callSubject(call.identity)
+      const guarded = refused === undefined ? engine.guard : undefined
+      if (guarded !== undefined) yield* guarded.admit(subject)
+      const settlement = refused ?? (yield* issue.pipe(
+        Effect.timeoutOrElse({ duration: callMs, orElse: () => Effect.succeed(Sandbox.callTimedOut(flow, callMs)) }),
+        Effect.flatMap(Cell.decodeCallResult)
+      ))
+      if (guarded !== undefined && settlement.outcome === "failure" && settlement.code === "timeout") {
+        // Continue may retry a guarded timeout; no settlement is recorded
+        // until the guard allows the cell to receive one.
+        yield* guarded.trip({
+          source: "tool-call",
+          subject,
+          limitMillis: limitOf(settlement),
+          message: settlement.message ?? `Flow ${flow} timed out.`
+        })
+      }
       return yield* engine.record({
         name: "cell-call",
         call,
-        identity: { session: state.session, frame: state.frame, boundary: `cell-call:${cell}:${ordinal}` },
+        identity: identity(attempt + 1),
         success: Cell.CallResultVariant,
-        execute: Effect.fail(
-          new HarnessError({
-            code: "incompatible_journal",
-            message: `The timed-out frame is missing settlement ${ordinal}`
-          })
-        )
+        execute: Effect.succeed(settlement)
       }).pipe(Effect.flatMap(Cell.decodeCallResult))
     }
-    // An escape — a permission park, an abort, an engine failure — never
-    // reaches the record at all, so nothing journals it and the attempt the
-    // grant answers asks again. That is the whole reason the call sits outside
-    // the boundary rather than inside its `execute`.
-    //
-    // Authority is decided before the clock starts: time a person spends
-    // answering an approval is not the flow's to spend.
-    const refused = engine.admit === undefined ? undefined : yield* engine.admit(call)
-    const identity = { session: state.session, frame: state.frame, boundary: `cell-call:${cell}:${ordinal}` }
-    // A guarded host parks a timed-out call instead of letting the cell read
-    // it. The call's own timeout (a command's, a child await still running)
-    // is reported under the same code as this boundary's. Nothing is recorded
-    // for the parked call, so Continue issues it again and Stop refuses it
-    // here before it runs.
-    const subject = EngineLike.callSubject(call.identity)
-    const guarded = refused === undefined ? engine.guard : undefined
-    if (guarded !== undefined) yield* guarded.admit(subject)
-    const settlement = refused ?? (yield* issue.pipe(
-      Effect.timeoutOrElse({ duration: callMs, orElse: () => Effect.succeed(Sandbox.callTimedOut(flow, callMs)) }),
-      Effect.flatMap(Cell.decodeCallResult)
-    ))
-    if (guarded !== undefined && settlement.outcome === "failure" && settlement.code === "timeout") {
-      // The limit it ran past: this boundary's, or the one the flow's own
-      // timeout recorded (a command's `timeoutMs` or default, an await's).
-      yield* guarded.trip({
-        source: "tool-call",
-        subject,
-        limitMillis: limitOf(settlement),
-        message: settlement.message ?? `Flow ${flow} timed out.`
-      })
-    }
-    return yield* engine.record({
-      name: "cell-call",
-      call,
-      identity,
-      success: Cell.CallResultVariant,
-      execute: Effect.succeed(settlement)
-    }).pipe(Effect.flatMap(Cell.decodeCallResult))
   })
 
 /**
@@ -2342,11 +2345,15 @@ const callHandler = (
         `Flow ${invocation.flow} needs ${refused.join(", ")}, which is outside this run's capability envelope.`
       )
     }
-    // Only a call that changes something is checked. Passing a fragment to a
-    // search, a diff, or a summary is ordinary use of what the flow returned;
-    // handing it to something that writes is the one case that destroys a file.
+    // A command or script can write without declaring it. Check its payload
+    // conservatively too; ordinary search/diff inputs can still use fragments.
     const changes = mutating(descriptor, invocation.input)
-    if (changes) {
+    const payload =
+      invocation.input !== null && typeof invocation.input === "object" && !Array.isArray(invocation.input)
+        ? invocation.input as Schema.JsonObject
+        : undefined
+    const executable = typeof payload?.command === "string" || typeof payload?.script === "string"
+    if (changes || executable) {
       const found = TruncatedOutput.reuse(invocation.input, ledger)
       if (found !== undefined) {
         return refusal("truncated_write", TruncatedOutput.refusal(invocation.flow, found))
@@ -4083,17 +4090,6 @@ const frame = (
           message: `The run requires an answer but has no approval channel: ${transition.message}`
         })
       }
-      // No frame remains to consume an answer. Keep pending steering at its
-      // source and suspend with the question instead of reporting completion.
-      if (!Frame.hasNextFrame(state)) {
-        return yield* finish(exit, {
-          _tag: "Suspend",
-          reason: new EngineLike.SuspendReason({
-            code: transition.reason,
-            message: transition.message
-          })
-        })
-      }
       // The drain on the park path, and the only thing that can ever answer an
       // honored park.
       //
@@ -4148,7 +4144,10 @@ const frame = (
         // streak is carried rather than advanced.
         const step = yield* resumed(exit, answered, {
           pendingReadOnlyDemand: undefined,
-          readOnlyFrames: state.readOnlyFrames
+          readOnlyFrames: state.readOnlyFrames,
+          // An answer to the final frame's question needs one frame to act on
+          // it. Replaying this delivery derives the same extension.
+          maxFrames: Frame.hasNextFrame(state) ? state.maxFrames : state.frame + 2
         })
         return yield* finish(exit, step)
       }
