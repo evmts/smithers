@@ -26,6 +26,7 @@ import { Spend } from "./features/spend/spend"
 import { Attention } from "./features/attention/attention"
 import { Todos } from "./features/todos/todos"
 import { CodeIntel } from "./features/code-intel/codeIntel"
+import { Pulls } from "./features/pulls/pulls"
 import { StoragePersistence } from "@smthrs/platform-browser"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
 import { inProcessWorker } from "./test/languageServer"
@@ -62,7 +63,7 @@ const app = async () => {
 
 const granted = StoragePersistence.make({ persist: () => Promise.resolve(true) })
 
-test("renders the chat, sign-in, theme, repository, slash-command, views and web-page layers, binds the keys, asks to keep the device's storage, records boot time once the device's conversation is restored, and unbinds when stopped", async () => {
+test("renders the chat, sign-in, theme, repository, slash-command, views, web-page and pull-request layers, binds the keys, asks to keep the device's storage, records boot time once the device's conversation is restored, and unbinds when stopped", async () => {
   const { runtime, exported } = await app()
   const target = new EventTarget()
   const views: Array<ReadonlyArray<unknown>> = []
@@ -101,6 +102,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views and web
       Effect.service(Attention),
       Effect.service(Todos),
       Effect.service(CodeIntel),
+      Effect.service(Pulls),
     ]),
   )
   expect(views[0]).toHaveLength(layers.length)
