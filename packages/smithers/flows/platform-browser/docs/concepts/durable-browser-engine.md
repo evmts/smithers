@@ -42,8 +42,9 @@ It then:
    yet, it opens the pool again for up to about five seconds.
 2. Builds the engine and registers the flows. Registration re-arms every
    durable timer, so a sleep that came due while no tab was open fires now.
-3. Drives every unfinished run once, in the background. A run the old leader
-   held is taken at once, because the engine's liveness check,
+3. Drives every unfinished run once, in the background, two at a time (see
+   [Resumed runs wait their turn](#resumed-runs-wait-their-turn)). A run the
+   old leader held is taken without waiting, because the engine's liveness check,
    `@smthrs/run-store`'s `Ownership.singleIncarnationLiveness`, declares every
    other incarnation of the same engine dead: only the lock holder runs, and the
    old one no longer holds the lock. Without that answer the engine would wait
@@ -52,6 +53,40 @@ It then:
 
 From then on the engine sweeps its own store once a second, as on a server, so
 timers fire and stalled runs are reclaimed while the tab stays open.
+
+### Resumed runs wait their turn
+
+The engine has one connection to its store, and one run costs it about 100 ms
+of SQL and engine work from admission to settlement (`pnpm bench`, over the
+in-memory OPFS). An engine that resumed every unfinished run at once would make
+a run a tab starts next queue behind all of them: with 60 runs resumed
+together, a newly started three-step run reached its first step after 447 ms
+and settled after 2.8 s. A page cut off with that many runs, as a branch page
+with one summary run per conversation entry was, showed its conversation
+seconds late.
+
+So the leader's engine resumes runs two at a time (`@smthrs/engine-store`
+`EngineStore.Options.resumeConcurrency`, its
+[resume lane](../../../engine-store/docs/api.md#resume-lane)), and a tab never
+waits for that backlog:
+
+- **A run a tab starts goes ahead.** `BrowserEngine.start` drives the run at
+  once; it shares the connection with at most two resumed runs. With the same
+  60 runs waiting, it reached its first step after 60 ms and settled after
+  133 ms.
+- **A run a tab asks for again goes ahead too.** Starting a run that still
+  waits its turn, with the execution id it had, drives it at once. A tab that
+  waits on a run the old leader was cut off in starts it again rather than only
+  waiting for its result. A signal to a waiting run, or `BrowserEngine.cancel`
+  of one, drives it at once as well.
+- **Every resumed run still runs once.** The backlog drains in the background,
+  two runs at a time, and each run resumes at the step it was in. The
+  leader's first drive and the engine's own sweep, which reclaims released
+  runs and runs whose lease lapsed, share the same two turns.
+- **A turn lasts until the run settles or parks.** A resumed run inside a long
+  step, such as a model call, keeps its turn for as long as the step takes, so
+  two of them hold the rest of the backlog back until one ends. A run that
+  parks on a timer or a signal gives its turn up.
 
 Another context can take the lock with `WebLock.hold(name, { steal: true })`.
 The leader whose lock is stolen stops leading at once, closing its engine and

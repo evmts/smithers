@@ -79,6 +79,18 @@ const engineHost: Layer.Layer<Exclude<Host, RunInspection.RunInspection>> = Laye
 ).pipe(Layer.provideMerge(WebCrypto.layer))
 
 /**
+ * How many runs the engine resumes on its own at once (`@smthrs/flows`
+ * `Runtime.Options.resumeConcurrency`). The engine has one connection to its
+ * store, so every run in flight shares it with the run a tab starts next; two
+ * at a time leaves that run a turn at the connection however many runs the
+ * last leader was cut off with.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const resumeConcurrency = 2
+
+/**
  * The durable engine, the run catalog and the run reads over the `SqlClient`
  * the caller provides; see `BrowserRuntime.layer`.
  *
@@ -90,7 +102,12 @@ export const layer = <Registered, RegistrationError, RegistrationRequirements>(
   registerFlows: Layer.Layer<Registered, RegistrationError, RegistrationRequirements>
 ) =>
   Runtime.layer(
-    { owner: { hostId: options.name }, isAlive: Ownership.singleIncarnationLiveness, placement: "browser" },
+    {
+      owner: { hostId: options.name },
+      isAlive: Ownership.singleIncarnationLiveness,
+      placement: "browser",
+      resumeConcurrency
+    },
     StepBoundary.layerUnsupported,
     WorkspaceSandbox.layerUnsupported,
     registerFlows

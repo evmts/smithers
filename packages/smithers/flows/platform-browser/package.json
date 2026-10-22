@@ -142,7 +142,8 @@
     "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
     "circular": "node scripts/circular.mjs",
     "test": "vitest",
-    "coverage": "vitest --coverage"
+    "coverage": "vitest --coverage",
+    "bench": "vitest run --config vitest.bench.config.ts"
   },
   "dependencies": {
     "@journeyapps/wa-sqlite": "1.7.2",

@@ -208,6 +208,12 @@ target. It kills the browser after a step is recorded and checks the run
 resumes at the next one. The same target runs `BrowserCache.layer` over real
 Cache Storage and checks an entry survives the browser being killed.
 
+`pnpm bench` times what one run costs the engine from admission to settlement
+over the in-memory OPFS, one run at a time and ten at once
+(`test/Settle.bench.ts`, `vitest.bench.config.ts`). It prints its numbers and
+asserts nothing; the admission suite, `test/Admission.test.ts`, holds the
+budgets a tab's run must meet while a reload's runs resume.
+
 ## Test the immutable cache
 
 Node has no `caches` global. Give `BrowserCache.layer` a `CacheStorage` whose
