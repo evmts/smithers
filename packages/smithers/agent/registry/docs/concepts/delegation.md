@@ -73,11 +73,11 @@ so the step key an envelope carrying a placement hashes to does not move.
 
 ## Three declarations reach the runtime
 
-| Declared on the body                                                                   | Lowered onto                                                                                                                                                                                             |
-| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CacheEnvironment.CachePolicyAnnotation` | the action the bridged flow dispatches, which is what [`@smthrs/engine-store`](/api/engine-store) reads a policy off, plus the delegating node's captured key material and the flow's own annotation bag |
-| `Annotations.Priority`                                                                 | the delegating node's `Node.priority`, which becomes `NodeDraft.priority` for `@smthrs/engine-store`'s `PlanScheduler`                                                                                   |
-| `Flow.within(...)`, or the descriptor's own placement directive                        | the flow's `@smthrs/flow` placement annotation and the `Invocation.placement` plus `Invocation.placementOptions` a host selects a spawn target with                                                      |
+| Declared on the body                                            | Lowered onto                                                                                                                                                                                             |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CacheEnvironment.CachePolicyAnnotation`                        | the action the bridged flow dispatches, which is what [`@smthrs/engine-store`](/api/engine-store) reads a policy off, plus the delegating node's captured key material and the flow's own annotation bag |
+| `Annotations.Priority`                                          | the delegating node's `Node.priority`, which becomes `NodeDraft.priority` for `@smthrs/engine-store`'s `PlanScheduler`                                                                                   |
+| `Flow.within(...)`, or the descriptor's own placement directive | the flow's `@smthrs/flow` placement annotation and the `Invocation.placement` plus `Invocation.placementOptions` a host selects a spawn target with                                                      |
 
 A body annotation wins over the descriptor's frontmatter directive in all
 three, because the body is the later and more specific statement.

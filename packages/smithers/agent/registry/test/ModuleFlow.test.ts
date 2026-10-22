@@ -113,7 +113,9 @@ describe("ModuleFlow.fromModule", () => {
     ])
     expect(unreadable.warnings[0]!.message).toBe("Could not statically read the default Flow.make declaration")
 
-    const budgeted = fromModule(module.replace("  capabilities: [],", "  capabilities: [],\n  budget: { tokens: 1000 },"))
+    const budgeted = fromModule(
+      module.replace("  capabilities: [],", "  capabilities: [],\n  budget: { tokens: 1000 },")
+    )
     expect(Option.getOrThrow(budgeted.descriptor).budget).toEqual({ tokens: 1000 })
 
     const lined = fromModule(module.replace("  capabilities: [],", "  capabilities: granted,"))
