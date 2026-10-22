@@ -27,7 +27,7 @@ import type * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import { ExecutionFacts } from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
-import type * as ReplayOnly from "@smthrs/engine-store/ReplayOnly"
+import * as ReplayOnly from "@smthrs/engine-store/ReplayOnly"
 import { RunState } from "@smthrs/engine-store/RunState"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
@@ -225,6 +225,8 @@ export interface HostState {
   catalog: Executable.Catalog | undefined
   /** Approved historical modules available for replay, never for new admission. */
   replayDescriptors?: ReadonlySet<Descriptor.FlowDescriptor>
+  /** True only when this executor is bound to the engine's replay-only service. */
+  replayOnly?: boolean
   /**
    * The workspace revision the catalog above was read out of, or `undefined`
    * when this host cannot name one.
@@ -1234,6 +1236,8 @@ export const make = (
               if (Option.isNone(found)) return undefined
               // Metadata refresh is safe for active callbacks; rebuilding their
               // shared module scope requires every other root to be terminal.
+              // A replay-only host cannot dispatch an unrecorded action; private
+              // verification copies may rebuild each root despite parked siblings.
               const persisted = yield* controlSql<{ readonly stateJson: string }>`
                 SELECT state_json AS "stateJson" FROM flows_runs WHERE run_id = ${runId}
               `
@@ -1258,7 +1262,7 @@ export const make = (
               `
               for (const row of otherRoots) {
                 const summary = yield* Effect.try(() => JSON.parse(row.stateJson) as { readonly flowId?: string })
-                if (summary.flowId === flowId) return undefined
+                if (summary.flowId === flowId && host.replayOnly !== true) return undefined
               }
               const descriptor = yield* executor.onHost(Effect.gen(function*() {
                 yield* executor.prepareAdoption?.(flowId, runId, identity) ?? Effect.void
@@ -1879,6 +1883,7 @@ export const make = (
         // registration layer currently holds, so a rebuilt entry reaches
         // planning without this reference being written again.
         engine.host.catalog = catalog
+        engine.host.replayOnly = Option.isSome(yield* Effect.serviceOption(ReplayOnly.ReplayOnly))
         /*
          * And the tree it was read out of, so a plan's sites can be opened at
          * the revision they describe. A host with no catalog builds no graph,

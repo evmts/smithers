@@ -326,3 +326,5 @@ Reports go to `https://bug.smithers.sh/api/bugs` unless
 - [CLI reference](../reference/cli/README.md): `smthrs runs` and `smthrs doctor`.
 
 A terminal root is readable after its native result has been copied into the control journal. A detached child does not hold that read open; its later events keep flowing until it finishes. Rewinding the root requires fresh evidence from the new journal generation.
+
+Bulk replay verification rebuilds changed source separately for each run in copied stores. Parked siblings in a copy do not block replay-only analysis. Live source adoption still refuses to replace a module used by another unfinished run.
