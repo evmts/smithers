@@ -9,6 +9,8 @@ import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
+import * as Flows from "./Flows.ts"
+import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
@@ -228,7 +230,7 @@ describe("ExecutionHost over the compose Postgres", () => {
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const flows = ExecutionHost.remote(services)
-        expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert])
+        expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad])
         const object = memory()
         const executionId = crypto.randomUUID()
         const host = ExecutionHost.make(object.storage, {
@@ -333,6 +335,85 @@ describe("ExecutionHost over the compose Postgres", () => {
     expect(alert).toEqual({ id: start!.executionId, calls: 1 })
   }, 60_000)
 
+  test("after each alarm, whatever it did, the host runs afterAlarm", () =>
+    withSchema(({ name, url }) =>
+      Effect.gen(function* () {
+        const object = memory()
+        let after = 0
+        const executionId = crypto.randomUUID()
+        const host = ExecutionHost.make(object.storage, {
+          hostId: `object-${executionId}`,
+          database: ExecutionHost.database(url, name),
+          flows: { flows: [Pause.Pause], registration: Pause.registration((label) => Effect.succeed(label)) },
+          router: recording().router,
+          afterAlarm: Effect.sync(() => void after++),
+        })
+        expect((yield* host.alarm())._tag).toBe("Idle")
+        expect(after).toBe(1)
+        const payload = { label: "a", pauseMs: 0 }
+        yield* host.start(yield* ExecutionHost.intent(Pause.Pause, { executionId, payload }))
+        expect((yield* host.alarm())._tag).toBe("Settled")
+        expect(after).toBe(2)
+      })
+    ))
+
+  test("the deployed flows run ops/DatabaseLoad: an alarm starts its window's sample, which samples once", async () => {
+    const services = await appServices()
+    const samples: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
+    const logger = Logger.make((options) => void samples.push(StructuredLogger.formatStructured.log(options)))
+    await withSchema(({ name, sql, url }) =>
+      Effect.gen(function* () {
+        // Every execution's alarm starts the window's sample on the sample's own object, as worker/Executions.ts does.
+        const loadObject = memory()
+        const started: Array<string> = []
+        const starter = Flows.FlowStarter.of({
+          start: (flow, { executionId, payload }) =>
+            ExecutionHost.intent(flow, { executionId, payload: payload as never }).pipe(
+              Effect.flatMap((intent) => ExecutionHost.recordStart(loadObject.storage, intent)),
+              Effect.tap(() => Effect.sync(() => void started.push(executionId))),
+              Effect.orDie,
+            ),
+        })
+        const hostFor = (
+          object: ReturnType<typeof memory>,
+          executionId: string,
+          sampleLoad: Effect.Effect<void, never, Flows.FlowStarter>,
+        ) =>
+          ExecutionHost.make(object.storage, {
+            hostId: `object-${executionId}`,
+            database: ExecutionHost.database(url, name),
+            flows: ExecutionHost.remote(services),
+            router: recording().router,
+            afterAlarm: sampleLoad.pipe(Effect.provideService(Flows.FlowStarter, starter)),
+          })
+
+        // Another execution's alarm, in one isolate.
+        const pauseObject = memory()
+        const pauseId = crypto.randomUUID()
+        const pause = hostFor(pauseObject, pauseId, yield* DatabaseLoad.sampler)
+        const payload = { label: "p", pauseMs: 0 }
+        yield* pause.start(yield* ExecutionHost.intent(Pause.Pause, { executionId: pauseId, payload }))
+        expect((yield* pause.alarm())._tag).toBe("Settled")
+        expect(started).toHaveLength(1)
+        const loadId = started[0]!
+        expect(loadId).toMatch(/^database-load-300000-\d+$/)
+        expect(loadObject.alarm()).not.toBeNull()
+
+        // The sample's own object, in another isolate: its alarm samples and settles, then starts its own window again.
+        const load = hostFor(loadObject, loadId, yield* DatabaseLoad.sampler)
+        const settled = yield* load.alarm()
+        expect(settled._tag).toBe("Settled")
+        expect(yield* status(sql, name, loadId)).toBe("completed")
+        expect(started).toEqual([loadId, loadId])
+        // That start was the same intent: the next alarm answers with the settlement and samples nothing more.
+        expect((yield* load.alarm())._tag).toBe("Settled")
+        expect(samples.filter((line) => line.message === "database.connections")).toHaveLength(1)
+        // This isolate started its window already: its later alarms start nothing.
+        expect(started).toEqual([loadId, loadId])
+      }).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+    )
+  }, 60_000)
+
   test("a chat/Expire round that finds the queue moved during its wait hands off to the next round's own object", async () => {
     const h = await harness(app, answers("never"), {
       actor: { subject: { kind: "person", id: "person-member" }, role: "member" },
@@ -408,6 +489,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       Pause.Pause,
       Expire.Expire,
       SpendAlert.SpendAlert,
+      DatabaseLoad.DatabaseLoad,
       RecheckRole.RecheckRole,
       RevokeGitHubToken.RevokeGitHubToken,
     ])
@@ -478,7 +560,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       index: () => Effect.succeed(3),
       installed: () => Effect.succeed(false),
     })
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, RepoClone.Clone])
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, RepoClone.Clone])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()
@@ -518,6 +600,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       Pause.Pause,
       Expire.Expire,
       SpendAlert.SpendAlert,
+      DatabaseLoad.DatabaseLoad,
       SandboxCall.SandboxCall,
       SandboxKeep.Keep,
       ...SandboxCommand.Command.flows,
@@ -539,7 +622,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       session: (_, id, ownerId) => Effect.sync(() => void machines.push(`session ${id} ${ownerId}`)),
     }))
     const flows = ExecutionHost.withTerminals(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, sandboxes)
-    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, TerminalOpen.TerminalOpen])
+    expect(flows.flows).toEqual([Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad, TerminalOpen.TerminalOpen])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()

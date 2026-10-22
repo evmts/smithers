@@ -14,8 +14,16 @@ export const COMPUTE_MAX_CU = 1
 export const maxConnections = (cu: number) => Math.min(4000, Math.floor(cu * 450))
 
 /**
- * The most server connections each client of the production database may hold. Their sum stays under 80% of the
- * `max_connections` of the range's bottom, so the budget holds even if Neon sized by it (docs/infrastructure.md#connections):
+ * The share of `max_connections`, in percent, the budget stays under. Connections in use past it alert the deployment's
+ * Admins (`ops/DatabaseLoad`, worker/flows/DatabaseLoad.ts): a client over its cap, or something else holding
+ * connections, before the compute stops accepting logins.
+ */
+export const ALERT_PERCENT = 80
+
+/**
+ * The most server connections each client of the production database may hold. Their sum stays under `ALERT_PERCENT`
+ * of the `max_connections` of the range's bottom, so the budget holds even if Neon sized by it
+ * (docs/infrastructure.md#connections):
  * - `hyperdrive`: the `ChatDatabase` config's origin connection limit. Every Worker, ChatApi's requests and every
  *   `FlowExecution` alarm, shares it; `@smthrs/database` writers let theirs go after 2 seconds of waiting for the engine
  *   schema's writer lock, so a queue of them can't hold it all.

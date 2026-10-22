@@ -92,11 +92,11 @@ describe("spend alerts", () => {
   test("production's default is on: an admitted call starts its window's alert once, with the window and budget", async () => {
     // No setting and no dev default: what a deploy runs.
     const h = await harness(runtime, reporting({ inputTokens: 1, outputTokens: 1 }), { actor: member })
-    const before = ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
+    const before = Flows.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
     expect(await ask(h)).toBe(200)
     expect(await ask(h)).toBe(200)
     expect(await ask(h, "judge")).toBe(200)
-    const after = ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
+    const after = Flows.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
 
     // One start per window this isolate saw: one, unless the calls straddled a window's end.
     const windows = before.from === after.from ? [before] : [before, after]
@@ -174,7 +174,7 @@ describe("spend alerts", () => {
         }),
     })
     const h = await harness(runtime, reporting({ inputTokens: 1, outputTokens: 1 }), { actor: member, starter })
-    const before = ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
+    const before = Flows.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
     expect(await ask(h)).toBe(200)
     expect(h.only("model.spend.alert")).toMatchObject({
       level: "ERROR",
@@ -184,7 +184,7 @@ describe("spend alerts", () => {
     expect(await ask(h)).toBe(200)
     expect(await ask(h)).toBe(200)
     // The second call started it again; the third found it started in this isolate, unless a window ended between.
-    if (ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW).from === before.from) {
+    if (Flows.windowAt(Date.now(), ModelSpend.ALERT_WINDOW).from === before.from) {
       expect(attempts).toEqual([SpendAlert.executionId(before), SpendAlert.executionId(before)])
     }
     expect(h.line("model.spend.alert")).toHaveLength(1)
@@ -208,10 +208,10 @@ describe("spend alerts", () => {
         }),
     })
     const h = await harness(runtime, reporting({ inputTokens: 1, outputTokens: 1 }), { actor: member, starter })
-    const before = ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
+    const before = Flows.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
     expect(await ask(h)).toBe(200)
     expect(await ask(h)).toBe(200)
-    if (ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW).from === before.from) {
+    if (Flows.windowAt(Date.now(), ModelSpend.ALERT_WINDOW).from === before.from) {
       expect(attempts).toEqual([SpendAlert.executionId(before)])
     }
     expect(h.line("model.spend.alert")).toEqual([])
@@ -235,12 +235,5 @@ describe("the settings", () => {
     expect(Exit.isFailure(await read({ MODEL_SPEND_ALERT_WINDOW: "500 millis" }))).toBe(true)
     expect(Exit.isFailure(await read({ MODEL_SPEND_ALERT_WINDOW: "Infinity" }))).toBe(true)
     expect(Exit.isFailure(await read({ MODEL_SPEND_ALERTS: "maybe" }))).toBe(true)
-  })
-
-  test("windows lie end to end from the epoch", () => {
-    const window = Duration.minutes(15)
-    expect(ModelSpend.windowAt(0, window)).toEqual({ from: 0, until: 900_000 })
-    expect(ModelSpend.windowAt(899_999, window)).toEqual({ from: 0, until: 900_000 })
-    expect(ModelSpend.windowAt(900_000, window)).toEqual({ from: 900_000, until: 1_800_000 })
   })
 })

@@ -1186,10 +1186,10 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
     })
     const { local } = await seat(answering)
     const agent = local("agent", starter)
-    const before = ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
+    const before = Flows.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
     expect(Exit.isSuccess(await run(agent, ask("implement this")))).toBe(true)
     expect(Exit.isSuccess(await run(agent, ask("and this")))).toBe(true)
-    const window = ModelSpend.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
+    const window = Flows.windowAt(Date.now(), ModelSpend.ALERT_WINDOW)
     // Two calls in one window start it once; a window that ended between them starts the next one.
     expect(starts.map((start) => start.flow)).toEqual(window.from === before.from ? [SpendAlert.SpendAlert._tag] : [
       SpendAlert.SpendAlert._tag,

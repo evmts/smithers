@@ -108,7 +108,7 @@ ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and not
 
 ### Connections
 
-Neon sizes `max_connections` by the compute's largest size, about 450 per compute unit: 450 for the range above, 112 for 0.25 units. Each client's cap is set in `CONNECTION_BUDGET` (`infra/Connections.ts`), and their sum stays under 80% of 112, so the budget holds at the range's bottom too. `infra/Connections.test.ts` fails when it doesn't.
+Neon sizes `max_connections` by the compute's largest size, about 450 per compute unit: 450 for the range above, 112 for 0.25 units. Each client's cap is set in `CONNECTION_BUDGET` (`infra/Connections.ts`), and their sum stays under `ALERT_PERCENT`, 80%, of 112, so the budget holds at the range's bottom too. `infra/Connections.test.ts` fails when it doesn't. Once a window, `ops/DatabaseLoad` samples the connections in use, and when they reach 80% of the server's `max_connections`, it alerts the Admins by email and Telegram ([database alerts](features/database-alerts.md)).
 
 | Client | Cap | Set by |
 | --- | --- | --- |

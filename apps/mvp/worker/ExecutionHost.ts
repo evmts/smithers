@@ -6,6 +6,7 @@ import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare"
 import { Effect, Layer } from "effect"
 import type { SqlClient } from "effect/sql"
 import * as Checks from "./flows/Checks.ts"
+import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
@@ -44,15 +45,16 @@ export interface Flows<ROut, E, R> {
 /**
  * The deployed remote flows: `probe/Pause`, whose steps log, `chat/Expire` over `app`: the app's own tables (not
  * the engine's schema) and how old a streaming answer gets before it settles (docs/features/agent.md#settling), and
- * `ops/SpendAlert` over the app's tables, sending through `channels`, the deployment's email and Telegram providers
- * (none by default; docs/features/spend-alerts.md#channels).
+ * `ops/SpendAlert` and `ops/DatabaseLoad` over the app's tables, sending through `channels`, the deployment's email and
+ * Telegram providers (none by default; docs/features/spend-alerts.md#channels, docs/features/database-alerts.md).
  */
 export const remote = <E, R>(app: Expire.Services<E, R>, channels?: Layer.Layer<Channels.Channels>) => ({
-  flows: [Pause.Pause, Expire.Expire, SpendAlert.SpendAlert],
+  flows: [Pause.Pause, Expire.Expire, SpendAlert.SpendAlert, DatabaseLoad.DatabaseLoad],
   registration: Layer.mergeAll(
     Pause.registration(Pause.logged),
     Expire.registration(app),
     SpendAlert.registration(app.database, channels),
+    DatabaseLoad.registration(app.database, channels),
   ),
 })
 
@@ -221,15 +223,17 @@ export const readDatabase = (url: string, schema: string): Layer.Layer<SqlClient
  *   arms the next wake (`ExecutionObject.alarm`). It never fails: a failure re-arms the alarm with backoff.
  *
  * `database` is a layer, so each alarm opens its own connection and closes it when the alarm ends. `router` reaches
- * other objects of the same class by execution id.
+ * other objects of the same class by execution id. `afterAlarm` runs once each alarm is done, whatever it did, and
+ * fails nothing: on Cloudflare it starts the window's `ops/DatabaseLoad` (`DatabaseLoad.sampler`).
  */
-export const make = <RS, RD, ROut, E, R, RE, RR>(
+export const make = <RS, RD, ROut, E, R, RE, RR, RA = never>(
   storage: ExecutionObject.Storage<RS>,
   options: {
     readonly hostId: string
     readonly database: Layer.Layer<SqlClient.SqlClient, never, RD>
     readonly flows: Flows<ROut, E, R>
     readonly router: ExecutionObject.Router<RE, RR>
+    readonly afterAlarm?: Effect.Effect<void, never, RA>
     readonly driveBudgetMs?: number | undefined
   },
 ) => {
@@ -246,6 +250,6 @@ export const make = <RS, RD, ROut, E, R, RE, RR>(
           ),
         router: options.router,
         driveBudgetMs: options.driveBudgetMs,
-      }),
+      }).pipe(Effect.tap(() => options.afterAlarm ?? Effect.void)),
   }
 }

@@ -271,6 +271,25 @@ Spans: `model.spend.alert` (internal) with `smithers.spend_alert.id`, around the
 
 In the browser (`src/features/spend/`, `SPEND_TELEMETRY`), an Admin's tab records `spend.alert.shown` (Info: `alertId`, `calls`, `tokens`) and `smithers_web_spend_alerts_shown` once per alert per tab, and `spend.alert.hidden` (Info: `alertId`) and `smithers_web_spend_alerts_hidden` once the device stored a Hide. Each Save of a channel runs `alert/channel`, whose step records `alerts.channel.set` (Info `sent`, Warn `refused` and `unsent`: `channel`, `destinations` as a count, `outcome`, and ChatApi's `status` and `code` when it refused) and `smithers_web_alert_channel_sets` by `channel` and `outcome`, with its span `alerts.channel.set` (client).
 
+### Database load
+
+The app's Postgres connections, sampled once a window by `ops/DatabaseLoad` ([database-alerts.md](features/database-alerts.md), `worker/flows/DatabaseLoad.ts`), and its alert's delivery. They carry counts and the ratio, never a query, a role, an address or a chat id.
+
+| Message | When | Level | Fields |
+|---|---|---|---|
+| `database.connections` | each `ops/SampleConnections` attempt that ended | Info `under`, Warn `over` and `failed` | `outcome`; `used` (client connections in use), `max` (`max_connections`) and `ratio` (`used / max`) unless it failed; `errorCode` (`sql:<reason>`) when it failed |
+| `database.connections` | a `FlowExecution` alarm couldn't start its window's sample | Error | `outcome: not_started`, `errorCode` (the host's, or the failure's tag, `unknown` for a defect) |
+| `database.alert.delivery` | each `ops/DeliverDatabaseAlert` attempt that ended | Info `sent`, `off`, `existing`; Warn `refused` and `failed` | `alertId` (the execution id), `channel`, `outcome`; `errorCode` and `status` when it failed, as `spend.alert.delivery` |
+
+Spans: `database.connections` (internal) with `smithers.database_load.id`, around the sample and its query; `database.alert.delivery` with `smithers.database_load.id` and `smithers.channel`, around a delivery, with `@smthrs/notifications`' `notifications.channel.send` inside it, as a spend alert's.
+
+| Metric | Kind | Attributes | Log field |
+|---|---|---|---|
+| `smithers_database_connections` | gauge | none | `database.connections` `used` |
+| `smithers_database_max_connections` | gauge | none | `database.connections` `max` |
+| `smithers_database_load_samples` | counter | `outcome` = `under`, `over`, `failed` or `not_started` | `database.connections` `outcome` |
+| `smithers_database_alert_deliveries` | counter | `channel`; `outcome` = `sent`, `refused`, `failed`, `off` or `existing` | `database.alert.delivery` `outcome` |
+
 ### Sign-in
 
 ChatApi's sign-in routes and sessions ([sign-in.md](features/sign-in.md), `worker/SignIn.ts`), the role check (`auth/RecheckRole`, `worker/flows/RecheckRole.ts`) and the token revocation at sign-out (`auth/RevokeGitHubToken`, `worker/flows/RevokeGitHubToken.ts`). No record carries a token, a code, `state`, a cookie, a secret, GitHub's text or a login: a person is their id, a session its id.
@@ -657,6 +676,7 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | `worker/ShapeProxy.test.ts` | one `chat.shape` line per request with its bytes (502 at Error, an abandoned request `aborted`), and the Electric secret in no log or span |
 | `worker/ModelEndpoint.test.ts` "telemetry" | a sentinel in the prompt, echoed by the model and quoted in a provider's error, and a sentinel key, appear in no log, span attribute, event or failure, or metric attribute |
 | `worker/ModelSpend.test.ts`, `worker/flows/SpendAlert.test.ts`, `worker/SpendAlerts.test.ts` | `model.spend` and both spend counters by role and model, with no prompt; `model.spend.alert` `not_started` by code, never a defect's message, and `smithers_model_spend_alerts` by outcome; the alert step's lines at Warn and Info and its failure by `sql:<reason>`; `spend.alerts.shape` and its count |
+| `worker/flows/DatabaseLoad.test.ts` | `database.connections` at Info under the share and Warn over it with only `used`, `max`, `ratio` and the span's ids, both gauges, `smithers_database_load_samples` by outcome and the step's span around its query; a failed sample by `sql:<reason>`; a refused start at Error by code; `database.alert.delivery` and its count, naming no chat or token |
 | `src/features/spend/spend.test.ts` | `smithers_web_spend_alerts_shown` once per alert per tab, and `smithers_web_spend_alerts_hidden` once per stored Hide |
 | `worker/ModelEndpoint.test.ts` refusal, role and metering tests | `model.proxy.serve` with `role` and its outcome for 401, 403, 400, 429 and 503; `model.endpoint` with `sql:<reason>` and `unusable:<reason>`; `model.usage` for `refused` and `kept` (with `ended`, `reported` and the failure's `errorCode`), `expired` and a failed settle, and `smithers_model_usage_writes` by outcome; `smithers_model_tokens` by role and model |
 | `worker/SetModel.test.ts` | `admin.set_model` at Warn with the refusal's reason, and at Error with the SQL reason |

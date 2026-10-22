@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  ALERT_PERCENT,
   COMPUTE_MAX_CU,
   COMPUTE_MIN_CU,
   CONNECTION_BUDGET,
@@ -14,9 +15,9 @@ describe("the production database's connection budget", () => {
     expect(COMPUTE_MIN_CU).toBeLessThan(COMPUTE_MAX_CU)
   })
 
-  it("leaves a fifth of the smallest compute's connections free with every client at its cap", () => {
+  it("stays under the alert share of the smallest compute's connections with every client at its cap", () => {
     const sum = Object.values(CONNECTION_BUDGET).reduce((total, share) => total + share, 0)
-    expect(sum).toBeLessThanOrEqual(0.8 * maxConnections(COMPUTE_MIN_CU))
+    expect(sum * 100).toBeLessThanOrEqual(ALERT_PERCENT * maxConnections(COMPUTE_MIN_CU))
   })
 
   it("gives Electric's query pool its share less the replication connection", () => {

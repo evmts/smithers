@@ -1,8 +1,7 @@
 import { type ModelProxy, Pricing } from "@smthrs/model"
-import { Cause, Clock, Config, Duration, Effect, Metric, Ref, Schema } from "effect"
+import { Config, Duration, Effect, Metric, Schema } from "effect"
 import type { ModelRole } from "../src/features/model/contract.ts"
-import { codeOf } from "./ErrorCode.ts"
-import { FlowStarter, StartUnavailable } from "./Flows.ts"
+import * as Flows from "./Flows.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 
 // Model spend (docs/features/spend-alerts.md): what each call the model endpoint meters spent, by role and model, and
@@ -75,45 +74,27 @@ export const settings = (defaults: { readonly on?: boolean } = {}) =>
     return { on, window } satisfies AlertSettings
   })
 
-/** The window `now` falls in: windows of `window` laid end to end from the epoch. */
-export const windowAt = (now: number, window: Duration.Duration) => {
-  const length = Duration.toMillis(window)
-  const from = Math.floor(now / length) * length
-  return { from, until: from + length }
-}
-
 /**
  * Returns what each admitted call runs: it starts the current window's `ops/SpendAlert` through `FlowStarter`, once
- * per window in this isolate. The start is the window's one execution, so other isolates starting it again are no-ops,
- * and a start that found it started already (`StartConflict`) counts as started. A start the host can't record is an
- * Error `model.spend.alert` line, `not_started`, and the next call starts it again; the call itself goes on. With
- * alerts off, it does nothing.
+ * per window in this isolate (`Flows.startEachWindow`). The start is the window's one execution, so other isolates
+ * starting it again are no-ops, and a start that found it started already (`StartConflict`) counts as started. A
+ * start the host can't record is an Error `model.spend.alert` line, `not_started`, and the next call starts it again;
+ * the call itself goes on. With alerts off, it does nothing.
  */
 export const alerter = (alerting: AlertSettings, budget: number) =>
-  Effect.gen(function* () {
-    // The window this isolate last started; a cache of the starts, never their record, which is the execution.
-    const started = yield* Ref.make<number | undefined>(undefined)
-    return Effect.gen(function* () {
-      if (!alerting.on) return
-      const window = windowAt(yield* Clock.currentTimeMillis, alerting.window)
-      if ((yield* Ref.get(started)) === window.from) return
-      const starter = yield* FlowStarter
-      yield* starter.start(SpendAlert.SpendAlert, {
+  Effect.map(
+    Flows.startEachWindow(
+      alerting.window,
+      (window) => ({
+        flow: SpendAlert.SpendAlert,
         executionId: SpendAlert.executionId(window),
         payload: { ...window, budget },
-      }).pipe(Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.void))
-      yield* Ref.set(started, window.from)
-    }).pipe(
-      Effect.catchCause((cause) =>
+      }),
+      (errorCode) =>
         Effect.andThen(
           Metric.update(Metric.withAttributes(SpendAlert.alerts, { outcome: "not_started" }), 1),
-          Effect.logError("model.spend.alert").pipe(
-            Effect.annotateLogs({ outcome: "not_started", errorCode: errorCodeOf(Cause.squash(cause)) }),
-          ),
-        )
-      ),
-    )
-  })
-
-/** A failed start's code: the host's, or the failure's own. */
-const errorCodeOf = (error: unknown) => (error instanceof StartUnavailable ? error.errorCode : codeOf(error))
+          Effect.logError("model.spend.alert").pipe(Effect.annotateLogs({ outcome: "not_started", errorCode })),
+        ),
+    ),
+    (start): Effect.Effect<void, never, Flows.FlowStarter> => (alerting.on ? start : Effect.void),
+  )

@@ -50,7 +50,7 @@ Settings ── Save ──▶ alert/channel { channel, destinations }      (the
 
 ### Delivery
 
-`ops/DeliverSpendAlert { alertId, channel, outcome }` sends through `@smthrs/notifications`' `Channels` (library catalog: "Send a person a short message by email or Telegram from a durable step"):
+`ops/DeliverSpendAlert { alertId, channel, outcome }` sends through `@smthrs/notifications`' `Channels` (library catalog: "Send a person a short message by email or Telegram from a durable step"). What it does on one channel is every alert's delivery (`worker/flows/AlertDelivery.ts`): [database alerts](database-alerts.md) deliver the same way, to the same channels, with receipts in the same table.
 
 - **Email: Resend.** One `POST /emails` per alert with the alert's id as its `Idempotency-Key`, so a retried step sends one email. Resend was picked because a Worker reaches it with one `fetch` (no SMTP, no binding, so the same code runs on any host and a test points it at a local server), and its idempotency key makes the engine's retries safe. Postmark and MailChannels have no idempotency key; Cloudflare Email Routing's `send_email` is a Worker binding that reaches only verified addresses and can't be pointed at a local fake.
 - **Telegram: the Bot API's `sendMessage`.** It has no idempotency key, so a host that dies after Telegram took the message and before the step recorded it sends it again.
@@ -102,8 +102,9 @@ Blocking a network and pausing asking without a deploy are not built ([todo.md](
 
 | File | What it holds |
 |---|---|
-| `worker/ModelSpend.ts` | the per-call records, the settings, the windows, and the start of a window's alert |
+| `worker/ModelSpend.ts` | the per-call records, the settings, and the start of a window's alert (`Flows.startEachWindow`, with the windows, in `worker/Flows.ts`) |
 | `worker/flows/SpendAlert.ts` | `ops/SpendAlert`: the wait, the claim and the alert |
+| `worker/flows/AlertDelivery.ts` | what every alert's delivery step does on one channel, shared with [database alerts](database-alerts.md) |
 | `worker/SpendAlerts.ts` | `GET /api/shapes/spend-alerts`, Admins only |
 | `worker/ModelEndpoint.ts` | calls `ModelSpend.record` when a call ends and the alert start when one is admitted |
 | `db/migrations/0019_spend_alerts.ts` | `spend_alerts`, and `model_usage.spend_alert_id` |
@@ -127,6 +128,7 @@ Blocking a network and pausing asking without a deploy are not built ([todo.md](
 |---|---|
 | `worker/ModelEndpoint.test.ts` "a server flow's own calls" | given the host's starter, a server seat's admitted calls start their window's alert once a window; a refused call, a seat with no starter or alerts off start none |
 | `worker/ModelSpend.test.ts` | each call's tokens and cost by role and model, a provider's own charge, an unpriced model, no usage; production's default is on and starts its window's alert once with the window and budget; a refused call starts nothing; the dev default is off, the setting turns it back on and off; the window setting; a start the host refuses or that dies is logged by code and retried by the next call, and one already started counts as started; the settings' bounds |
+| `worker/Flows.test.ts` | the windows, laid end to end from the epoch, and the start once a window both alerts use |
 | `worker/flows/SpendAlert.test.ts` | on the Node host: waits for the window to end, then one alert with each role's calls, tokens and cost, carrying only uncarried calls from before the window's end; an unpriced model; a step run again; a window with nothing to carry; its records; Postgres failing |
 | `worker/ExecutionHost.test.ts` "the deployed flows run ops/SpendAlert" | the deployed host's flows include it: a model call starts it, its alarms wait out the window, and it records the alert |
 | `worker/SpendAlerts.test.ts` | a model call starts the alert, the flow records it, and the compose Electric syncs it to an Admin; a Member, an agent for an Admin and a signed-out request receive 403 without contacting Electric; sessions unreadable is 503 |

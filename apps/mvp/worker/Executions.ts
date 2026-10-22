@@ -11,6 +11,7 @@ import { codeOf } from "./ErrorCode.ts"
 import * as AgentSandbox from "./AgentSandbox.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
+import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as Todo from "./flows/Todo.ts"
@@ -80,11 +81,20 @@ export const starter = (objects: Objects) =>
  * The object's implementation over `connection`, the Hyperdrive config the engine reaches Postgres through. Its id is
  * the engine's host id, the same for every incarnation of the object, so a new incarnation takes over its run at once.
  * `dev` (`alchemy dev` only) lets an alert provider pointed at a local fake send without its key
- * (worker/AlertChannels.ts `channelsConfig`).
+ * (worker/AlertChannels.ts `channelsConfig`). Each alarm, once done, starts its window's `ops/DatabaseLoad`
+ * (docs/features/database-alerts.md): the window this isolate last started is built with the layer, once per isolate,
+ * not with each object.
  */
 export const live = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   options: { readonly dev?: boolean; readonly spendAlerts?: boolean } = {},
+) => Layer.unwrap(Effect.map(DatabaseLoad.sampler, (sampleLoad) => object(connection, options, sampleLoad)))
+
+/** One object, whose alarms start the window's `ops/DatabaseLoad` through `sampleLoad`. */
+const object = <E, R>(
+  connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
+  options: { readonly dev?: boolean; readonly spendAlerts?: boolean },
+  sampleLoad: Effect.Effect<void, never, Flows.FlowStarter>,
 ) =>
   FlowExecution.make(
     Effect.gen(function* () {
@@ -138,6 +148,9 @@ export const live = <E, R>(
       const logs = Logger.layerStructuredJson()
       // The object's id exists only at runtime: Alchemy evaluates this outer effect at plan time with a stand-in state.
       return Effect.sync(() => {
+        // Where a server seat's call starts its window's spend alert, and an alarm its window's database sample: this
+        // alarm's own runtime, on the started execution's object.
+        const flowStarter = starter(executions)
         const hostFor = <ROut, FE, FR>(flows: ExecutionHost.Flows<ROut, FE, FR>) =>
           ExecutionHost.make(state.storage, {
             hostId: state.id.toString(),
@@ -148,6 +161,8 @@ export const live = <E, R>(
               start: (intent) => executions.getByName(intent.executionId).start(intent),
               wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake()),
             },
+            afterAlarm: Effect.flatMap(flowStarter, (started) =>
+              sampleLoad.pipe(Effect.provideService(Flows.FlowStarter, started))),
           })
         // Each wake of a branch's machine starts that generation's `sandbox/Keep` on its own object, once
         // (docs/features/sandbox-tools.md#sleep-and-wake).
@@ -178,8 +193,6 @@ export const live = <E, R>(
           ),
           appDatabase,
         )
-        // Where a server seat's call starts its window's spend alert: this alarm's own runtime, on the alert's object.
-        const flowStarter = starter(executions)
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review judge with the `judge` role, admitted and metered as the endpoint's calls are.
