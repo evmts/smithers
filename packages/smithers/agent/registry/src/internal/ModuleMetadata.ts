@@ -693,9 +693,15 @@ const propertiesFrom = (
 
 const decodeEscapes = (value: string): string =>
   value.replace(
-    /\\(u\{[0-9a-fA-F]{1,6}\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|n|r|t|b|f|v|0|\\|"|'|`)/g,
+    /\\(u\{[0-9a-fA-F]{1,6}\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|\r\n|[\s\S])/g,
     (_match, sequence: string) => {
       switch (sequence) {
+        case "\n":
+        case "\r":
+        case "\r\n":
+        case "\u2028":
+        case "\u2029":
+          return ""
         case "n":
           return "\n"
         case "r":
@@ -719,6 +725,7 @@ const decodeEscapes = (value: string): string =>
         case "`":
           return "`"
         default: {
+          if (sequence.length === 1) return sequence
           const hexadecimal = sequence.startsWith("u{") ? sequence.slice(2, -1) : sequence.slice(1)
           const codePoint = Number.parseInt(hexadecimal, 16)
           return codePoint > 0x10ffff ? `\\${sequence}` : String.fromCodePoint(codePoint)
@@ -777,15 +784,24 @@ const booleanLiteral = (source: string | undefined): boolean | undefined =>
     : undefined
 
 const objectProperties = (
-  source: string | undefined
+  source: string | undefined,
+  allowEffectsConstructor = false
 ): ReturnType<typeof propertiesFrom> | undefined => {
   if (source === undefined) {
     return undefined
   }
-  const tokens = tokenize(source)
-  const openingIndex = tokens.findIndex((token) => token.value === "{")
+  let tokens = tokenize(source)
+  // Preserve the supported constructor, without searching arbitrary expressions.
+  if (
+    allowEffectsConstructor &&
+    tokens.slice(0, 4).map((token) => token.value).join(" ") === "Effects . make (" &&
+    tokens.at(-1)?.value === ")"
+  ) {
+    tokens = tokens.slice(4, -1)
+  }
+  const openingIndex = 0
   const opening = tokens[openingIndex]
-  if (opening === undefined) {
+  if (opening?.value !== "{" || tokens.at(-1)?.value !== "}") {
     return undefined
   }
   let depth = 1
@@ -796,7 +812,9 @@ const objectProperties = (
     } else if (token?.value === "}") {
       depth--
       if (depth === 0) {
-        return propertiesFrom(source.slice(opening.end, token.start))
+        return index === tokens.length - 1
+          ? propertiesFrom(source.slice(opening.end, token.start))
+          : undefined
       }
     }
   }
@@ -807,7 +825,7 @@ const effectDeclaration = (
   capabilities: ReadonlyArray<string>,
   warnings: Array<MetadataWarning>
 ): EffectDeclaration => {
-  const properties = objectProperties(source)
+  const properties = objectProperties(source, true)
   const unreadable = source !== undefined &&
     (properties === undefined || properties.hasUnprojectableMembers)
   if (unreadable) {

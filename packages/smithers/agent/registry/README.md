@@ -28,7 +28,10 @@ Nested Struct, Array, optional and Literals calls and import aliases are support
 The descriptor keeps its module locator: admission uses the module's real
 decoder. Dynamic schemas, refinements, spreads, computed properties and
 unproven imports remain unavailable in metadata and produce a warning;
-discovery never evaluates them.
+discovery never evaluates them. Effect envelopes project only complete object
+literals or the supported single-object `Effects.make({...})` form; arbitrary
+expressions keep conservative effects and a warning. String values decode
+JavaScript identity escapes and line continuations without evaluating source.
 
 ## Install
 

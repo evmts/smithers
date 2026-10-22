@@ -5,6 +5,47 @@ import * as ModuleMetadata from "../src/internal/ModuleMetadata.ts"
 import discoveredFlow from "./fixtures/project/flows/review/read-pr/flow.ts"
 
 describe("ModuleMetadata", () => {
+  it.each([
+    "choose({ reads: [], writes: [], mode: \"hermetic\", tier: \"sealed\" })",
+    "flag ? { reads: [], writes: [], tier: \"sealed\" } : external",
+    "({ reads: [], writes: [], tier: \"sealed\" }).value",
+    "{ reads: [], writes: [], tier: \"sealed\" } || external",
+    "[{ reads: [], writes: [], tier: \"sealed\" }]",
+    "{ reads: [], writes: [], tier: \"sealed\" } || { reads: [\"**\"] }",
+    "Effects.make({ reads: [], writes: [], tier: \"sealed\" }, external)"
+  ])("keeps effects nested in an arbitrary expression conservative (%s)", (effects) => {
+    const metadata = ModuleMetadata.parse(
+      `export default Flow.make("review", { capabilities: [], effects: ${effects} })`
+    )
+    expect(metadata.effects).toEqual({
+      reads: ["**"],
+      writes: ["**"],
+      mode: "expected",
+      onConflict: "serialize",
+      tier: "irreversible"
+    })
+    expect(metadata.warnings).toContainEqual({
+      message: "Effects must be a statically projectable object literal; using conservative effects"
+    })
+  })
+
+  it.each([
+    [String.raw`"fs:re\ad"`, "fs:read"],
+    [String.raw`'hello\q'`, "helloq"],
+    ["\"before\\\nafter\"", "beforeafter"],
+    ["\"before\\\rafter\"", "beforeafter"],
+    ["\"before\\\r\nafter\"", "beforeafter"],
+    ["\"before\\\u2028after\"", "beforeafter"],
+    ["\"before\\\u2029after\"", "beforeafter"]
+  ])("decodes JavaScript identity escapes and continuations (%s)", (source, expected) => {
+    expect(ModuleMetadata.stringLiteral(source)).toBe(expected)
+    const metadata = ModuleMetadata.parse(
+      `export default Flow.make("review", { description: ${source}, capabilities: [${source}] })`
+    )
+    expect(metadata.description).toBe(expected)
+    expect(metadata.capabilities).toEqual([expected])
+  })
+
   it.each(["'unterminated", "\"unterminated", "`unterminated", "\"read\" + grants", "\"read\" \"write\""])(
     "refuses an incomplete or composite string literal (%s)",
     (source) => {
