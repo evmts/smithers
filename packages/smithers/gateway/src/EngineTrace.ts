@@ -5,7 +5,7 @@
  */
 
 import { RunState } from "@smthrs/engine-store/RunState"
-import { ResultEncoded } from "@smthrs/flow/Flow"
+import { Result } from "@smthrs/flow/Flow"
 import * as EngineEvent from "@smthrs/journal/EngineEvent"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import { Option, Schema } from "effect"
@@ -57,7 +57,12 @@ const decodeCancellation = Schema.decodeUnknownOption(Schema.Struct({
   owner: Schema.String,
   cascadedTo: Schema.optionalKey(Schema.Array(JournalEvent.RunId))
 }))
-const decodeResult = Schema.decodeUnknownOption(ResultEncoded, { onExcessProperty: "error" })
+const decodeResult = Schema.decodeUnknownOption(
+  Schema.toCodecJson(Result({ success: Schema.Any, error: Schema.Any })),
+  { onExcessProperty: "error" }
+)
+
+const encodeCause = Schema.encodeSync(Schema.toCodecJson(Schema.Cause(Schema.Any, Schema.Defect())))
 
 const json = (value: unknown): string => typeof value === "string" ? value : JSON.stringify(value)
 const identity = (...parts: ReadonlyArray<string | number>) =>
@@ -546,10 +551,10 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
           ...execution.span.detail,
           ...(decodedResult.value.exit._tag === "Success"
             ? { output: json(decodedResult.value.exit.value) }
-            : { message: json(decodedResult.value.exit.cause) })
+            : { message: json(encodeCause(decodedResult.value.exit.cause)) })
         }
         if (decodedResult.value.exit._tag === "Success") result(decodedResult.value.exit.value)
-        else failure("cause", decodedResult.value.exit.cause)
+        else failure("cause", encodeCause(decodedResult.value.exit.cause))
       }
       continue
     }

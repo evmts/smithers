@@ -128,3 +128,5 @@ scopes and their resources do not survive process death.
   two ways a body parks on purpose.
 - [Trampoline rounds](./trampoline-rounds.md): the third result, and the loops it
   makes possible.
+
+Concurrent nested action regions wait for running siblings. Enclosing regions blocked by a suspended child are excluded from every sibling waiter, so mutually suspending branches can settle. The encoded result codec exposes its JSON type without a type assertion. Readers that inspect a result decode it through the JSON codec of `Flow.Result` to validate its structure.

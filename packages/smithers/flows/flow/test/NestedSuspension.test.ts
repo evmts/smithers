@@ -189,3 +189,28 @@ describe("an action that awaits a durable deferred on the flow's own instance", 
       expect(order).toEqual(["slow settled", "round settled"])
     }))
 })
+
+describe("concurrent nested regions", () => {
+  it.live("settles sibling regions whose nested regions suspend together", () =>
+    Effect.gen(function*() {
+      const instance = makeInstance(Host, "concurrent-nested-suspension")
+      const ready = yield* Deferred.make<void>()
+      let entered = 0
+      const nested = Flow.wrapActionResult(
+        Effect.gen(function*() {
+          if (++entered === 2) yield* Deferred.succeed(ready, undefined)
+          yield* Deferred.await(ready)
+          return new Flow.Suspended()
+        }),
+        Flow.isResult
+      )
+      const outer = Flow.wrapActionResult(nested, Flow.isResult)
+      const result = yield* settlement(
+        Effect.all([outer, outer], { concurrency: 2 }).pipe(
+          Effect.provideService(FlowRuntime.FlowInstance, instance)
+        )
+      )
+      expect(result).not.toBe("never settled")
+      expect(instance.actionState.count).toBe(0)
+    }))
+})

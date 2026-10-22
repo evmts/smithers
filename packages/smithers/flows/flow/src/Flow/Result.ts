@@ -289,11 +289,11 @@ const AnyOrVoid = Schema.Union([Schema.Any, Schema.Void])
  * @category results
  * @since 0.1.0
  */
-export const ResultEncoded: Schema.Codec<ResultEncoded<any, any>> = Schema.toEncoded(
+export const ResultEncoded: Schema.Codec<Schema.Json> = Schema.toEncoded(
   Schema.toCodecJson(
     Result({
       success: AnyOrVoid,
       error: AnyOrVoid
     })
   )
-) as any
+)

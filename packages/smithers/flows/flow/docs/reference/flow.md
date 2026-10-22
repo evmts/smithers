@@ -194,7 +194,7 @@ Finds write `name`'s object, or makes it once. It calls `find(key)` and adopts w
 - **Type:** `Schema.TaggedError` with fields `name: string` and `message: string`
 - **Since:** `1.0.0`
 
-The defect `Action.once` and `Action.effectKey` die with outside a flow dispatch, where no `FlowInstance` or `Action.CurrentInvocationKey` is supplied. Registered as a `bug` fault with tag `@smthrs/flow/EffectKeyUnavailable`.
+The defect `Action.once` and `Action.effectKey` die with outside a flow dispatch, where no `FlowInstance` or `Action.CurrentInvocationKey` is supplied.
 
 ### `Action.DuplicateImplementation`
 
@@ -916,7 +916,7 @@ The result of a flow execution: a completed exit, a suspended state, or a handof
 
 ### `Flow.ResultEncoded`
 
-- **Type:** `CompleteEncoded<A, E> | typeof Suspended.Encoded | typeof Handoff.Encoded` as a type, and `Schema.Codec<ResultEncoded<any, any>>` as a schema
+- **Type:** `CompleteEncoded<A, E> | typeof Suspended.Encoded | typeof Handoff.Encoded` as a type, and `Schema.Codec<Schema.Json>` as a schema
 - **Since:** `0.1.0`
 
 The encoded form of a flow `Result`, as it is stored.

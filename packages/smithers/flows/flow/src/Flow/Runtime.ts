@@ -133,9 +133,9 @@ export const intoResult = <A, E, R>(
  * the whole of {@link wrapActionResult}'s liveness: a region that suspends
  * waits for the *other* open regions to settle, and an enclosing region can
  * never settle before the region inside it returns. Carrying the enclosing
- * instances in the context is what lets a suspension tell a sibling — which
- * will settle — from an ancestor, which is waiting on the very fiber that is
- * waiting on it.
+ * regions in the context lets a suspension identify its ancestors. Tracking
+ * which ancestors have suspending children also lets sibling waiters exclude
+ * those blocked regions, avoiding cycles between concurrent nested branches.
  *
  * It is a context reference rather than a fiber-local counter because the chain
  * crosses fibers: {@link intoResult} forks the body, and an engine gives every
@@ -143,7 +143,14 @@ export const intoResult = <A, E, R>(
  * a per-fiber counter would restart at each fork and read every ancestor as a
  * sibling again.
  */
-const EnclosingActions = Context.Reference<ReadonlyArray<FlowInstance["Service"]>>(
+interface ActionRegion {
+  readonly instance: FlowInstance["Service"]
+  suspendingChildren: number
+}
+
+const OpenActions = new WeakMap<FlowInstance["Service"], Set<ActionRegion>>()
+
+const EnclosingActions = Context.Reference<ReadonlyArray<ActionRegion>>(
   "@smthrs/flow/Flow/EnclosingActions",
   { defaultValue: () => [] }
 )
@@ -171,18 +178,19 @@ export const wrapActionResult = <A, E, R>(
   Effect.contextWith((context: Context.Context<FlowInstance>) => {
     const instance = Context.get(context, FlowInstance)
     const enclosing = Context.getUnsafe(context, EnclosingActions)
-    // How many of the regions counted on this instance are this one's own
-    // ancestors, and so how many of them will still be open once every sibling
-    // has settled.
-    let ancestors = 0
-    for (const open of enclosing) if (open === instance) ancestors++
+    const region: ActionRegion = { instance, suspendingChildren: 0 }
+    let open = OpenActions.get(instance)
+    if (!open) OpenActions.set(instance, open = new Set())
+    open.add(region)
+    const regions = open
     const state = instance.actionState
     if (state.count === 0) state.latch.closeUnsafe()
     state.count++
     return Effect.onExit(
-      Effect.provideService(effect, EnclosingActions, [...enclosing, instance]),
+      Effect.provideService(effect, EnclosingActions, [...enclosing, region]),
       (exit) => {
         state.count--
+        regions.delete(region)
         const isSuspended = Exit.isSuccess(exit) && isSuspend(exit.value)
         if (
           Exit.isSuccess(exit) &&
@@ -195,13 +203,18 @@ export const wrapActionResult = <A, E, R>(
             : exit.value.cause
         }
         if (state.count === 0) return state.latch.open
-        // Every decrement can satisfy a waiter whose threshold is not zero, so
-        // the waiters are released to re-test their own. `release` wakes them
-        // without opening the latch, so the ones still short of their threshold
-        // park again on the next turn of the loop.
-        return isSuspended
-          ? Effect.andThen(state.latch.release, waitForSiblings(instance, ancestors))
-          : Effect.asVoid(state.latch.release)
+        if (!isSuspended) return Effect.asVoid(state.latch.release)
+        // These ancestors cannot return until this suspended child returns.
+        // Every waiter must exclude them, including waiters in sibling trees.
+        const ancestors = enclosing.filter((parent) => parent.instance === instance)
+        for (const parent of ancestors) parent.suspendingChildren++
+        return Effect.andThen(
+          state.latch.release,
+          waitForSiblings(instance, regions, ancestors)
+        ).pipe(Effect.ensuring(Effect.suspend(() => {
+          for (const parent of ancestors) parent.suspendingChildren--
+          return state.latch.release
+        })))
       }
     )
   })
@@ -209,17 +222,20 @@ export const wrapActionResult = <A, E, R>(
 // Untraced because this latch loop is a flow scheduler hot path.
 const waitForSiblings = Effect.fnUntraced(function*(
   instance: FlowInstance["Service"],
-  ancestors: number
+  regions: Set<ActionRegion>,
+  ancestors: ReadonlyArray<ActionRegion>
 ) {
   const state = instance.actionState
+  const hasRunningSibling = () =>
+    [...regions].some((region) => region.suspendingChildren === 0 && !ancestors.includes(region))
   while (true) {
-    if (state.count > ancestors) {
+    if (hasRunningSibling()) {
       yield* state.latch.await
       yield* Effect.yieldNow
       continue
     }
     yield* Effect.yieldNow
-    if (state.count <= ancestors) return
+    if (!hasRunningSibling()) return
   }
 })
 

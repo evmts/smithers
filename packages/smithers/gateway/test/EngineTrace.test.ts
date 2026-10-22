@@ -549,6 +549,11 @@ describe("native evidence boundaries", () => {
 
   test.each([
     ["completed", undefined],
+    ["completed", null],
+    ["completed", 42],
+    ["completed", "Complete"],
+    ["completed", []],
+    ["completed", { _tag: "Complete", exit: null }],
     ["failed", { _tag: "Complete", exit: { _tag: "Success", value: "wrong" } }],
     ["completed", { _tag: "Complete", exit: { _tag: "Failure", cause: [] } }],
     ["failed", { _tag: "Handoff", flow: "next", payload: {} }],
@@ -557,7 +562,7 @@ describe("native evidence boundaries", () => {
     const rows = [wrap(1, "native", "flows.engine.run-decision", {
       decision: "transitioned",
       status,
-      state: { version: 1, flowName: "native", payload: {}, ...(result ? { result } : {}) }
+      state: { version: 1, flowName: "native", payload: {}, ...(result !== undefined ? { result } : {}) }
     })]
     expect(engineExecutionEvidence(rows)[0]).toMatchObject({ coherent: false, status: "unknown" })
   })
