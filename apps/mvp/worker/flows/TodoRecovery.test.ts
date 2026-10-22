@@ -96,6 +96,18 @@ test.each(["merged", "dropped", "failed"] as const)("%s retries same-process adm
   const action = (): Effect.Effect<Todo.Ran, Todo.TodoUnavailable> => state === "failed"
     ? steps.fail({ request, error: new Todo.TodoFailed({ failure: "implement" }) })
     : steps.settle({ request, awaited: { state: state === "merged" ? "merged" : "closed", mergeSha: null } })
+  if (state !== "merged") {
+    expect(await runtime.runPromise(action())).toEqual({ state })
+    expect(await runtime.runPromise(action())).toEqual({ state })
+    expect(calls).toEqual([])
+    expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT state, attempt FROM todos ORDER BY number`))).toEqual([
+      { state, attempt: 1 },
+      { state: state === "failed" ? "queued" : "failed", attempt: 0 },
+      { state: state === "failed" ? "queued" : "failed", attempt: 0 },
+    ])
+    return
+  }
   const first = await runtime.runPromise(Effect.exit(action()))
   expect(Exit.isFailure(first) && Cause.squash(first.cause)).toMatchObject({ step: "settle" })
   expect(await runtime.runPromise(action())).toEqual({ state })
@@ -176,6 +188,21 @@ test.each([
       : yield* ExecutionHost.intent(Settlement, { executionId, payload: { request, awaited: { state: state === "merged" ? "merged" : "closed", mergeSha: null } } })
     stage = "initial start"
     yield* host.start(intent)
+    if (state !== "merged") {
+      expect((yield* host.alarm())._tag).toBe("Settled")
+      const restarted = make()
+      yield* restarted.start(intent)
+      yield* restarted.alarm()
+      expect(calls).toEqual([])
+      expect(targets.size).toBe(0)
+      expect(yield* Effect.flatMap(SqlClient.SqlClient, (client) =>
+        client`SELECT state, attempt FROM todos ORDER BY number`).pipe(Effect.provide(services.database))).toEqual([
+        { state, attempt: 1 },
+        { state: state === "failed" ? "queued" : "failed", attempt: 0 },
+        { state: state === "failed" ? "queued" : "failed", attempt: 0 },
+      ])
+      return
+    }
     stage = "first alarm"
     // The engine retries inline during an active drive. Kill that host after the first failure is recorded,
     // while its next admission is unresolved, as an isolate reset would. No app timer or retry drives it.

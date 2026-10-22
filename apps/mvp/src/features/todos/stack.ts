@@ -104,7 +104,11 @@ const byPosition = (todos: ReadonlyArray<Row>): ReadonlyArray<Row> =>
 /** Starts the first Queued TODOs in order while a lane is free. */
 const fill = (todos: ReadonlyArray<Row>, lanes: number): { todos: ReadonlyArray<Row>; starts: ReadonlyArray<Start> } => {
   const free = lanes - todos.filter((todo) => inLane(todo.state)).length
-  const queued = byPosition(todos).filter((todo) => todo.state === "queued")
+  // A failed predecessor still owns its place. Only a person can remove that dependency;
+  // freeing its execution lane must never silently turn its successors into independent work.
+  const ordered = byPosition(todos)
+  const blocked = ordered.findIndex((todo) => todo.state === "failed")
+  const queued = (blocked < 0 ? ordered : ordered.slice(0, blocked)).filter((todo) => todo.state === "queued")
   const starting = new Set(queued.slice(0, Math.max(0, free)).map((todo) => todo.id))
   const starts: Array<Start> = []
   const next = todos.map((todo) => {
@@ -204,7 +208,7 @@ const finish = (stack: Stack, op: Extract<Op, { readonly kind: "finish" }>): { r
     todo.id === target.id
       ? { ...todo, state: op.state, position: leaves ? null : todo.position }
       : leaves && todo.position !== null && todo.position > from
-      ? { ...todo, position: todo.position - 1 }
+      ? { ...todo, position: todo.position - 1, state: op.state === "dropped" && todo.state === "queued" ? "failed" : todo.state }
       : todo
   )
   const filled = fill(changed, stack.lanes)

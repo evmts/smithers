@@ -122,12 +122,15 @@ describe("the stack's invariants, over random histories", () => {
 
   // A no-op drop leaves the stack exactly as it was, even when a failure the run reported left a lane free; the next
   // change that changes the stack fills it.
-  test("no lane is idle while a TODO waits: after a change, a free lane means nothing is Queued", () =>
+  test("a free lane admits every queued TODO before the first failed dependency", () =>
     check(History, (history) =>
       play(history, ({ after, op, result }) => {
         if (op === undefined || result?.kind === "refused" || (result?.kind === "dropped" && !result.changed)) return true
         const held = after.todos.filter((todo) => todo.state === "working")
-        return held.length >= after.lanes || openOf(after).every((todo) => todo.state !== "queued")
+        const ordered = openOf(after)
+        const blocked = ordered.findIndex((todo) => todo.state === "failed")
+        const eligible = blocked < 0 ? ordered : ordered.slice(0, blocked)
+        return held.length >= after.lanes || eligible.every((todo) => todo.state !== "queued")
       })))
 
   test("each start is the first Queued TODO, on its next attempt", () =>
@@ -264,8 +267,8 @@ describe("apply, case by case", () => {
   test("a failed TODO holds its place but not a lane", () => {
     const fail: Row = { id: "a", number: 1, state: "failed", position: 1, attempt: 1, revision: 1 }
     const { stack, result } = apply({ nextNumber: 2, lanes: 1, maxOpen: 5, todos: [fail] }, { kind: "commit", id: "b" })
-    expect(result).toMatchObject({ kind: "committed", position: 2, starts: [{ todoId: "b" }] })
-    expect(openOf(stack).map((todo) => [todo.id, todo.state])).toEqual([["a", "failed"], ["b", "working"]])
+    expect(result).toMatchObject({ kind: "committed", position: 2, starts: [] })
+    expect(openOf(stack).map((todo) => [todo.id, todo.state])).toEqual([["a", "failed"], ["b", "queued"]])
   })
 })
 

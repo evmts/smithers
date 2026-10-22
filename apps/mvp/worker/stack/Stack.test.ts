@@ -326,6 +326,56 @@ describe("a run's reports", () => {
       .toEqual([{ status: "settled", settled: true }, { status: "running", settled: false }])
   })
 
+  test("an implement failure holds successors until a person drops the failed base", async () => {
+    const attempt = await started(2)
+    await reportOn(attempt, { kind: "step", step: "implement" })
+    expect(await reportOn(attempt, { kind: "finished", state: "failed", failure: "implement" }))
+      .toEqual({ outcome: "applied", starts: [] })
+    expect((await todos()).map(({ state }) => state)).toEqual(["failed", "queued"])
+    await applyOn(commit(), true)
+    expect(await sql(`SELECT id FROM todo_attempts`)).toHaveLength(1)
+    const dropped = await applyOn(drop(1), true)
+    expect(dropped).toMatchObject({ receipt: { starts: [{ number: 2 }] } })
+  })
+
+  test("a retried failed predecessor publishes before the held successor starts on its branch", async () => {
+    const attempt = await started(2)
+    await reportOn(attempt, { kind: "step", step: "implement" })
+    expect((await reportOn(attempt, { kind: "finished", state: "failed", failure: "implement" })).starts).toEqual([])
+    const retriedResult = await applyOn({ ...drop(1), op: { kind: "retry", number: 1 } }, true)
+    if (retriedResult.kind !== "applied") throw new Error("retry refused")
+    const retried = retriedResult.receipt.starts[0]!
+    expect((await todos()).map(({ state }) => state)).toEqual(["working", "queued"])
+    expect(await reportOn(attempt, { kind: "published", headSha: HEAD, prNumber: 7, draft: false }))
+      .toEqual({ outcome: "stale", starts: [] })
+    await reportOn(retried, { kind: "branch", branch: "smithers/retried", baseSha: BASE, baseRef: "main" })
+    const published = await reportOn(retried, { kind: "published", headSha: HEAD, prNumber: 7, draft: false })
+    expect(published.starts).toHaveLength(1)
+    const next = published.starts[0]!
+    expect(next.number).toBe(2)
+    expect(await runtime.runPromise(Stack.belowOf({ ...next, ordinal: next.ordinal }))).toMatchObject({
+      value: { branch: "smithers/retried", headSha: HEAD, prNumber: 7 },
+    })
+  })
+
+  test("closing a predecessor preserves an already-failed successor's original reason", async () => {
+    const first = await started(2)
+    const published = await reportOn(first, { kind: "published", headSha: HEAD, prNumber: 7, draft: false })
+    const second = published.starts[0]!
+    await reportOn(second, { kind: "finished", state: "failed", failure: "implement" })
+    await reportOn(first, { kind: "finished", state: "dropped", note: "closed_on_github" })
+    expect(await sql(`SELECT state, failure FROM todos WHERE number = 2`)).toEqual([{ state: "failed", failure: "implement" }])
+  })
+
+  test("a base closed unmerged fails queued dependents without admitting them on main", async () => {
+    const attempt = await started(2)
+    expect(await reportOn(attempt, { kind: "finished", state: "dropped", note: "closed_on_github" }))
+      .toEqual({ outcome: "applied", starts: [] })
+    expect((await todos()).map(({ state }) => state)).toEqual(["dropped", "failed"])
+    expect(await sql(`SELECT failure FROM todos WHERE number = 2`)).toEqual([{ failure: "base_closed" }])
+    expect(await sql(`SELECT id FROM todo_attempts`)).toHaveLength(1)
+  })
+
   test("failed keeps the TODO's place with its code; a stale report changes nothing and is logged", async () => {
     const attempt = await started()
     await reportOn(attempt, { kind: "finished", state: "failed", failure: "implement" })
@@ -343,9 +393,9 @@ describe("a run's reports", () => {
       .toMatchObject({ outcome: "stale" })
   })
 
-  test.each(["merged", "dropped", "failed"] as const)("a %s report replays exactly its committed successor receipt", async (state) => {
+  test.each(["merged"] as const)("a %s report replays exactly its committed successor receipt", async (state) => {
     const attempt = await started(3)
-    const event: Stack.RunEvent = { kind: "finished", state, ...(state === "failed" ? { failure: "implement" as const } : {}) }
+    const event: Stack.RunEvent = { kind: "finished", state }
     const first = await reportOn(attempt, event)
     const before = await todos()
     const version = await stack()
@@ -401,13 +451,10 @@ describe("a run's reports", () => {
     const attempt = await started(4)
     const failed = await reportOn(attempt, { kind: "finished", state: "failed", failure: "implement" })
     const places = async () => (await todos()).map(({ state, position }) => [state, position])
-    expect(await places()).toEqual([["failed", 1], ["working", 2], ["queued", 3], ["queued", 4]])
-    const next = failed.starts[0]!
-    await reportOn({ attemptId: next.attemptId, todoId: next.todoId, repoId: REPO, ordinal: next.ordinal }, {
-      kind: "finished",
-      state: "merged",
-    })
-    expect(await places()).toEqual([["failed", 1], ["merged", null], ["working", 2], ["queued", 3]])
+    expect(failed.starts).toEqual([])
+    expect(await places()).toEqual([["failed", 1], ["queued", 2], ["queued", 3], ["queued", 4]])
+    await applyOn(drop(1), true)
+    expect(await places()).toEqual([["dropped", null], ["working", 1], ["queued", 2], ["queued", 3]])
   })
 
   test("a PR closed on GitHub drops the TODO; a dropped TODO's run is stale; with no runs nothing starts", async () => {
@@ -605,9 +652,8 @@ test("a queued successor is admitted exactly when the retried TODO publishes", a
   if (first.kind !== "applied") throw new Error("commit refused")
   const attempt = first.receipt.starts[0]!
   await runtime.runPromise(Stack.report(attempt, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
-  // A held successor is already queued. Admission is disabled while creating that precondition;
-  // the separate todo-stack-hold change owns keeping it queued on failure.
-  await runtime.runPromise(Stack.apply(commit(), { runs: false }))
+  // The failed predecessor holds the successor until retry publishes.
+  await runtime.runPromise(Stack.apply(commit(), { runs: true }))
   const retry = await runtime.runPromise(Stack.apply({ ...drop(1), op: { kind: "retry", number: 1 } }, { runs: true }))
   if (retry.kind !== "applied") throw new Error("retry refused")
   expect(retry.receipt.starts).toHaveLength(1)

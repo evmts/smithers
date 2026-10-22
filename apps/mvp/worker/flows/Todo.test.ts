@@ -304,16 +304,16 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect(await todo()).toMatchObject({ state: "dropped", note: "closed_on_github", position: null })
   })
 
-  test("an agent that changes nothing fails the TODO empty_change, and the next one starts", async () => {
+  test("an agent that changes nothing fails the TODO empty_change and holds the next one", async () => {
     const ctx = await setup({ agent: [`ctx.done({ summary: "Nothing to do." })`] })
     const start = (await commit("Nothing", "Change nothing."))!
     await commit("Next", "Then this.")
     const ran = await ctx.run(start)
     expect(ran.exit).toEqual(Exit.succeed({ state: "failed" }))
     expect(await todo(1)).toMatchObject({ state: "failed", failure: "empty_change", position: 1 })
-    expect(await todo(2)).toMatchObject({ state: "working" })
+    expect(await todo(2)).toMatchObject({ state: "queued" })
     expect(ctx.github.pulls.size).toBe(0)
-    expect(ctx.starts.map(({ flow }) => flow)).toEqual([Todo.Todo._tag])
+    expect(ctx.starts).toEqual([])
   })
 
   test("an agent that never answers in the schema fails the TODO implement", async () => {
@@ -1090,6 +1090,8 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
   test("stacked three high: T2 failed base_closed, T3 on T2's branch closes its own and fails base_closed too", async () => {
     const ctx = await setup()
     const { start2, begun, published } = await stacked(ctx)
+    // T3 was already admitted while T2 was published; a later failure must close it too.
+    const start3 = (await commit("Three", "Last."))!
     // T2 failed, its pull request closed: nothing will merge or restack it.
     await runtime.runPromise(Stack.report(
       { attemptId: start2.attemptId, todoId: start2.todoId, repoId: REPOSITORY.id, ordinal: start2.ordinal },
@@ -1103,8 +1105,6 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     const pull3 = ctx.github.openPull("smithers/t3-three", "T3: Three", BOT_LOGIN)
     pull3.base = begun.branch
     pull3.draft = true
-    // T1 in review and T2 failed hold no lane, so T3 starts at once.
-    const start3 = (await commit("Three", "Last."))!
     expect(start3).toBeDefined()
     const begun3 = { ...begun, branch: "smithers/t3-three", baseRef: begun.branch }
     const closed = await step(ctx, (steps) =>
@@ -1196,7 +1196,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     expect(Todo.baseOf({ ...begun(ctx, "feature"), baseRef: undefined })).toBe("main")
   })
 
-  test("begin: the TODO below's branch gone from GitHub, the TODO starts from main", async () => {
+  test("begin: a missing base branch is refused instead of starting from main", async () => {
     const ctx = await setup()
     const start1 = (await commit("One", "First."))!
     await commit("Two", "Then this.")
@@ -1208,7 +1208,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       Stack.report(attempt1, { kind: "published", headSha: BASE(), prNumber: 1, draft: false }, { runs: true }),
     )
     const begun2 = await dispatched(ctx, (steps) => steps.begin({ request: starts[0]! }))
-    expect(begun2._tag === "Success" && begun2.value).toMatchObject({ baseRef: "main", baseSha: ctx.github.refs.get("main") })
+    expect(failure(begun2)).toMatchObject({ failure: "base_closed" })
   })
 
   test("settle and fail: an ended run changes nothing, a stale report ends it, and Postgres down is retried", async () => {

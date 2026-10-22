@@ -344,3 +344,7 @@ Both designs were written independently, then Opus merged them. Adopted claims w
 ## Issue lifecycle seam (2026-10-20 19:42 brief; proposed in 0018)
 
 [0018](0018-issue-lifecycle.md) owns reproduction gating, acceptance for discussion, Maintainer commitment labels and `poc/<issue>` previews. None starts a TODO run. **Make TODO** reuses the issue-to-draft flow, with source issue and POC branch as context; the person still commits the draft. This factory starts only from that committed TODO. Acceptance and Now/Next/Later/No commitment labels grant no authority to implement, approve or merge. The lifecycle builder owns this addendum; the factory builder can bind its simplified addendum to this seam.
+
+## Dogfood correction — 2026-10-22: failed dependencies
+
+Will's production reproduction (#4430, runs b590330a and a6dc894b) supersedes the earlier failure-table statement that the next item starts after failure. Admission stops at the first failed predecessor. A person's Drop explicitly releases the dependency; an unmerged PR close fails queued successors `base_closed`. A missing published base branch is also `base_closed`, never permission to begin on main. The existing restack and descendant-close behavior still applies to TODOs already published.

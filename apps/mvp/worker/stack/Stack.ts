@@ -430,6 +430,7 @@ export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly
             UPDATE todos AS t
             SET state = v.state, position = v.position, attempt = v.attempt, updated_at = now(),
               step = CASE WHEN t.id = ${attempt.todoId}::uuid AND v.state <> 'in_review' THEN NULL ELSE t.step END,
+              failure = CASE WHEN t.id <> ${attempt.todoId}::uuid AND t.state = 'queued' AND v.state = 'failed' THEN 'base_closed' ELSE t.failure END,
               settled_at = CASE WHEN v.state IN ('merged', 'dropped') THEN coalesce(t.settled_at, now()) ELSE NULL END
             FROM jsonb_to_recordset(${values}::jsonb) AS v(id uuid, state text, position integer, attempt integer)
             WHERE t.id = v.id`

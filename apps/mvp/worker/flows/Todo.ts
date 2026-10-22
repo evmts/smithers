@@ -501,6 +501,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         const belowHead = Option.isSome(below)
           ? yield* GitHub.Refs.getBranch(repository.owner, repository.name, below.value.branch)
           : Option.none()
+        if (Option.isSome(below) && Option.isNone(belowHead)) return yield* new TodoFailed({ failure: "base_closed" })
         const baseRef = todo.baseRef ?? (Option.isSome(belowHead) ? belowHead.value.name : defaultBranch)
         // The branch, made once at its base's head and named with this step's key; a step that runs again finds it by
         // the key, at the commit it was made at, even after its base moved.
