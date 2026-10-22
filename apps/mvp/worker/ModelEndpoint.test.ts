@@ -1281,8 +1281,27 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
 
 
 describe("timeline summary role", () => {
+  test("SUMMARY_MODEL is captured when the endpoint builds, before request configuration loses it", async () => {
+    const upstream = await provider({ text: "Inspect both retry attempts" })
+    const config: Record<string, string> = {
+      ...keyConfig(upstream.origin),
+      SUMMARY_MODEL: JSON.stringify(rowModel(upstream.origin, "build-summary")),
+    }
+    const h = await harness(runtime, answering, { actor: member, config })
+    delete config.SUMMARY_MODEL
+
+    const answered = await call(h, ask("Summarize this entry"), "summary")
+
+    expect(answered.status).toBe(200)
+    expect(upstream.seen.map(({ body }) => body.model)).toEqual(["build-summary"])
+    expect(answered.lines.some(line => line.type === "text-delta" && line.text === "Inspect both retry attempts")).toBe(true)
+    expect(h.requests).toHaveLength(0)
+  })
+
   test("summary never silently spends on the default agent model", async () => {
-    const h = await harness(runtime, answering, { actor: member })
+    const config: Record<string, string> = {}
+    const h = await harness(runtime, answering, { actor: member, config })
+    config.SUMMARY_MODEL = "not JSON"
     const refused = await call(h, ask("Summarize this entry"), "summary")
     expect(refused.status).toBe(409)
     expect(refused.error).toMatchObject({ code: "no_route" })
@@ -1349,13 +1368,18 @@ describe("timeline summary role", () => {
     expect(upstream.seen.map(({ body }) => body.model)).toEqual(["cheap-summary", "set-summary"])
   })
 
-  test("a SUMMARY_MODEL that isn't a model record is refused as unusable configuration", async () => {
-    const h = await harness(runtime, answering, { actor: member, config: { SUMMARY_MODEL: "{\"modelId\": 1}" } })
+  test.each(["not JSON", "{\"modelId\": 1}"])("malformed SUMMARY_MODEL (%s) is captured as unusable configuration", async (value) => {
+    const config: Record<string, string> = { SUMMARY_MODEL: value }
+    const h = await harness(runtime, answering, { actor: member, config })
+    delete config.SUMMARY_MODEL
 
     const refused = await call(h, ask("Summarize this entry"), "summary")
 
     expect(refused.status).toBe(409)
+    expect(refused.error).toMatchObject({ code: "no_route" })
     expect(h.line("model.endpoint").map(({ annotations }) => annotations.errorCode)).toEqual(["unusable:config"])
+    expect(h.requests).toHaveLength(0)
+    expect(await usageRows()).toEqual([])
   })
   test("an explicit summary setting reaches the metered role through the real endpoint", async () => {
     const upstream = await provider({ text: "Inspect both retry attempts" })

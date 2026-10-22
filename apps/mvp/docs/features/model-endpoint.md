@@ -128,7 +128,7 @@ Migrations `0004_model_roles`, `0012_model_reservations` and `0017_model_charges
 | `MODEL_SPEND_ALERT_WINDOW` | `15 minutes` | a duration of at least a second: one spend alert per window at most |
 | `MODEL_RESERVATION_EXPIRY` | `1 hour` | a duration: how long a call's reservation lasts before it is final. The longest call the caps allow writes 16,000 tokens, about 27 minutes at 10 tokens a second |
 | `CHAT_MODEL` | Cerebras `qwen-3.8-27b` | the default model for every role without a setting but `summary`; see [chat.md](chat.md#configuration) |
-| `SUMMARY_MODEL` | none | the `summary` role's model when no admin set one: a model record as JSON, such as a cheap model. Unset, the role has no model (`unusable:unconfigured`); a value that isn't a record is `unusable:config` |
+| `SUMMARY_MODEL` | none | the `summary` role's model when no admin set one: a model record as JSON, captured when the endpoint builds so Alchemy binds it. Unset, the role has no model (`unusable:unconfigured`); a malformed value is refused per call as `unusable:config`, without failing the build |
 | `ANSWER_TURN_LIVE_SECONDS` | `30` | the `agent` role's liveness bound: how long a live run of the role may go without writing its answer, read beside the roles (`src/features/model/contract.ts`); the evidence for the default is in [agent.md](agent.md#turn-by-turn) |
 | a setting's credential | none | the key a `model_roles` record names, for example `CEREBRAS_API_KEY`; a custom credential `NAME` reads `SMITHERS_MODEL_KEY_NAME` and `SMITHERS_MODEL_KEY_NAME_ORIGIN` |
 

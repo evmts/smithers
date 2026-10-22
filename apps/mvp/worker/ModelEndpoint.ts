@@ -68,9 +68,10 @@ const INVALID_CAPS = "Send maxTokens as a whole number above 0 and thinkingBudge
 
 /**
  * Reads `MODEL_DAILY_TOKEN_BUDGET`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_MAX_MESSAGES`, `MODEL_MAX_REQUEST_BYTES`,
- * `MODEL_RESERVATION_EXPIRY` and the deployment's default model (`HostModel`), and returns what admits and meters one
- * call on a role: `admit` bounds the request, picks the role's model and reserves the call's worst case; `meter` settles
- * it. The endpoint (`make`) and a server flow's own calls (`local`) share them, so every call spends one budget.
+ * `MODEL_RESERVATION_EXPIRY`, `SUMMARY_MODEL` and the deployment's default model (`HostModel`) at build time,
+ * and returns what admits and meters one call on a role: `admit` bounds the request, picks the role's model and reserves
+ * the call's worst case; `meter` settles it. The endpoint (`make`) and a server flow's own calls (`local`) share them,
+ * so every call spends one budget.
  * `database` opens a Postgres client for each read and write.
  */
 const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
@@ -86,6 +87,11 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       Config.withDefault(MAX_REQUEST_BYTES),
     )
     const expiry = yield* Config.Duration("MODEL_RESERVATION_EXPIRY").pipe(Config.withDefault(RESERVATION_EXPIRY))
+    // Alchemy binds settings read while the program builds; keep a bad value as a per-call refusal.
+    const summary = yield* ModelRoles.summaryModel.pipe(
+      Effect.mapError(() => new HostModelUnusable({ reason: "config" })),
+      Effect.result,
+    )
     const fallback = yield* HostModel
 
     /** Logs why the endpoint couldn't serve a role, by code only. */
@@ -115,7 +121,7 @@ const metering = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         ) {
           return yield* refuse(400, "invalid_request", INVALID_CAPS)
         }
-        const resolved = yield* ModelRoles.resolve(role).pipe(
+        const resolved = yield* ModelRoles.resolve(role, summary).pipe(
           Effect.provide(database),
           Effect.provideService(HostModel, fallback),
           Effect.tapError((error) =>
