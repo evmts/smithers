@@ -64,6 +64,7 @@ import { isRepository, REPOS_ROUTE, repoId } from "../../src/features/repo/contr
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
+import * as Dispatch from "../ci/Dispatch.ts"
 import { FlowStarter } from "../Flows.ts"
 import * as Notifications from "../Notifications.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
@@ -84,7 +85,8 @@ import { Write } from "./Write.ts"
 // The git loop's routes in ChatApi (decision 0012 §2 and §4, docs/features/issues.md#routes):
 // - `POST /api/github/webhook`: GitHub's webhook. Verified with `X-Hub-Signature-256` (`Core.Channel` from
 //   `@smthrs/integrations`), it starts `github/Apply` for the issue it names, one execution per delivery, and records
-//   the delivery; it never writes a row itself. A payload names a subject; it never sets state.
+//   the delivery; it never writes a row itself. A payload names a subject; it never sets state. With `REPO_FLOWS` on, a
+//   push or a pull request also starts its `triggers/Dispatch` (worker/ci/Dispatch.ts).
 // - `POST /api/repos/<owner>/<name>/writes`: the one door every git write goes through. It checks sign-in, the App,
 //   the person's role on the repository the path names (`RepoRoles`, decision 0079), the bounds and the payload's
 //   hash, records the write while that role holds, and starts `github/Write` keyed by the device's write id. The
@@ -293,6 +295,8 @@ export interface Options<R = never> {
   readonly roles: RepoRoles.RepoRoles<R>
   /** How the routes' own reads reach GitHub (the compare route's): `fetch` unless set. */
   readonly http?: HttpClient.HttpClient
+  /** Whether pushes and pull requests start repositories' flows (`REPO_FLOWS`, docs/features/ci.md#triggers). */
+  readonly repoFlows?: boolean
 }
 
 /**
@@ -433,6 +437,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             })
           }
         }
+        // A push or a pull request of any repository the App is installed on: its flows' triggers decide what runs
+        // (docs/features/ci.md#triggers), on the delivery's own `triggers/Dispatch`.
+        const dispatch = options.repoFlows === true ? Dispatch.requestOf(event, deliveryId, delivered.payload) : Option.none()
+        if (Option.isSome(dispatch)) {
+          yield* (yield* FlowStarter).start(Dispatch.Dispatch, {
+            executionId: Dispatch.dispatchExecutionId(deliveryId),
+            payload: dispatch.value,
+          })
+          fields.dispatched = dispatch.value.repo
+        }
         // `main` moving and a new release reach everyone watching the repository (decision 0009 §8).
         const now = new Date(yield* Clock.currentTimeMillis)
         const repoEvent = Notifications.repoEventOf(event, delivered.payload, repository, now)
@@ -440,7 +454,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           fields.notified = yield* Notifications.recordRepoEvent(repoEvent.value).pipe(Effect.provide(database))
         }
         if (!first) return yield* answer(200, "duplicate")
-        return yield* answer(200, Option.isSome(named) || Option.isSome(repoEvent) ? "applied" : "ignored")
+        return yield* answer(200, Option.isSome(named) || Option.isSome(repoEvent) || Option.isSome(dispatch) ? "applied" : "ignored")
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {

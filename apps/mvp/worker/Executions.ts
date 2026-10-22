@@ -265,8 +265,9 @@ const object = <E, R>(
           Option.isSome(github)
             ? hostFor(
               // A repository's own flows (docs/features/ci.md#repository-flows) read their flow.ts and report their
-              // status as the App, and plan in the QuickJS build the agent's cells run on.
-              ExecutionHost.withRepoFlows(ExecutionHost.withTodos(
+              // status as the App, and plan in the QuickJS build the agent's cells run on. GitHub's pushes and pull
+              // requests start them through `triggers/Dispatch`, on each run's own object.
+              ExecutionHost.withTriggers(ExecutionHost.withRepoFlows(ExecutionHost.withTodos(
                 ExecutionHost.withGitHub(flows, githubServices(github.value)),
                 todoServices(github.value),
                 machines,
@@ -281,7 +282,7 @@ const object = <E, R>(
                   ))),
                 commandSeconds,
                 stepWaitSeconds,
-              ), githubServices(github.value), AgentSandbox.variant),
+              ), githubServices(github.value), AgentSandbox.variant), todoServices(github.value)),
             )
             : hostFor(flows)
         const host = Option.isSome(repoClone)

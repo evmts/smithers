@@ -7,6 +7,7 @@ import { CiJob } from "@smthrs/sandbox"
 import type { QuickJSVariant } from "@smthrs/harness"
 import { Effect, Exit, Layer, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
+import * as Dispatch from "./ci/Dispatch.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
 import * as Checks from "./flows/Checks.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
@@ -204,6 +205,18 @@ export const withRepoFlows = <ROut, E, R, SE, SR, DE, DR, VE, VR>(
     flows.registration,
     Layer.unwrap(Effect.map(services, (built) => RepoFlow.registration(built, variant))),
   ),
+})
+
+/**
+ * `flows`, plus `triggers/Dispatch`: a push's or a pull request's matching repository flows, started over `services`
+ * (Postgres, GitHub as the App, and where a run starts), docs/features/ci.md#triggers.
+ */
+export const withTriggers = <ROut, E, R, SE, SR, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  services: Effect.Effect<Dispatch.Services<DE, DR>, SE, SR>,
+) => ({
+  flows: [...flows.flows, Dispatch.Dispatch],
+  registration: Layer.mergeAll(flows.registration, Layer.unwrap(Effect.map(services, Dispatch.registration))),
 })
 
 /**

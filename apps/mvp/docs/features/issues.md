@@ -51,7 +51,7 @@ items, comments ◀── Electric ◀── Postgres ◀──┘
 
 | Route | Answers |
 |---|---|
-| `POST /api/github/webhook` | `200` once the delivery is verified, its `github/Apply` started (for an `issues` or `issue_comment` event naming the synced repository) and the delivery recorded; a repeat is counted `duplicate` and starts the same execution, which changes nothing. `401 { code: "invalid_signature" }`, `400 invalid` (no delivery id, no event, not JSON), `413 too_large` (over 5 MiB; Reconcile covers it), `405`, `503 not_configured` (no App or no webhook secret), `503 unavailable` |
+| `POST /api/github/webhook` | `200` once the delivery is verified, its `github/Apply` started (for an `issues` or `issue_comment` event naming the synced repository), with `REPO_FLOWS` on its `triggers/Dispatch` started (for a `push` or `pull_request` of any installed repository, [ci.md](ci.md#triggers)), and the delivery recorded; a repeat is counted `duplicate` and starts the same execution, which changes nothing. `401 { code: "invalid_signature" }`, `400 invalid` (no delivery id, no event, not JSON), `413 too_large` (over 5 MiB; Reconcile covers it), `405`, `503 not_configured` (no App or no webhook secret), `503 unavailable` |
 | `POST /api/repos/<owner>/<name>/writes` | `202 { txid, writeId }` for a new write, `200 { txid: null, writeId, status }` for one already taken (a pending one's execution is started again, which changes nothing). Refusals below |
 | `GET /api/shapes/items` | the synced repository's `items` with `ITEM_COLUMNS`; starts Reconcile when stale |
 | `GET /api/shapes/comments` | its `comments` with `COMMENT_COLUMNS` |

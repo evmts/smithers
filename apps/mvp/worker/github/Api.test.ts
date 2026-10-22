@@ -177,6 +177,35 @@ describe("POST /api/github/webhook", () => {
     expect(h.count(Metrics.webhooks, { event: "issues", outcome: "too_large" })).toBe(1)
   })
 
+  test("with REPO_FLOWS on, a push or a pull request of any installed repository starts its triggers/Dispatch; off, none", async () => {
+    const sha = "d".repeat(40)
+    const pushEvent = { ref: "refs/heads/feature/x", after: sha, repository: { full_name: "octo/other", default_branch: "trunk" } }
+    const on = await githubHarness(runtime, { repoFlows: true })
+    const id = crypto.randomUUID()
+    expect((await on.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", pushEvent, { id }))).status).toBe(200)
+    expect(on.starts).toEqual([{
+      flow: "triggers/Dispatch",
+      executionId: `triggers/dispatch:${id}`,
+      payload: {
+        delivery: id,
+        repo: "octo/other",
+        defaultBranch: "trunk",
+        event: "push",
+        ref: "refs/heads/feature/x",
+        branch: "feature/x",
+        tag: null,
+        action: null,
+        sha,
+        trusted: true,
+      },
+    }])
+    expect(on.count(Metrics.webhooks, { event: "push", outcome: "applied" })).toBe(1)
+    expect(on.line("github.webhook")[0]!.annotations).toMatchObject({ event: "push", dispatched: "octo/other", status: 200 })
+    const off = await githubHarness(runtime)
+    expect((await off.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("push", pushEvent))).status).toBe(200)
+    expect(off.starts).toEqual([])
+  })
+
   test("without the App's webhook secret the route refuses every delivery: 503 not_configured", async () => {
     for (const configured of [null, app({ webhookSecret: Option.none() })]) {
       const h = await githubHarness(runtime, { app: configured })

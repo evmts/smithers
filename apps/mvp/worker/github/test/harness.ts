@@ -107,6 +107,7 @@ export interface Options {
   readonly allowed?: ReadonlySet<string>
   /** Who has which role where: the real `RepoRoles` unless set, as a test of a faulty one sets it. */
   readonly roles?: RepoRoles.RepoRoles<never>
+  readonly repoFlows?: boolean
 }
 
 let harnessKey: Promise<Redacted.Redacted<string>> | undefined
@@ -191,7 +192,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     http: github.http,
   })))
   const routes = await runtime.runPromise(
-    observed(Api.make(database, { repository: own, app: configured, roles, http: github.http }).pipe(Effect.provideService(Scope.Scope, scope))),
+    observed(Api.make(database, { repository: own, app: configured, roles, http: github.http, repoFlows: options.repoFlows === true }).pipe(Effect.provideService(Scope.Scope, scope))),
   )
   // Electric, as the routes call it: each table in this file's schema.
   const tables = new Set([

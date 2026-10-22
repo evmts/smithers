@@ -1,6 +1,6 @@
 # CI on Smithers
 
-A repository's checks run on Smithers' machines, as durable flows, never on GitHub Actions (ruling FLOW-8; [the CI/CD parity proposal](../proposals/ci-cd-parity.md)). This page covers the spine: a CI job on its own machine, and a repository's own flow, planned in a QuickJS realm, whose jobs those are.
+A repository's checks run on Smithers' machines, as durable flows, never on GitHub Actions (ruling FLOW-8; [the CI/CD parity proposal](../proposals/ci-cd-parity.md)). This page covers the spine: a push or a pull request starts a repository's own flow, planned in a QuickJS realm, whose jobs each run on their own machine, and the result shows on the commit as the check `smithers/<flow>`.
 
 ```
 FlowExecution DO                                   SandboxObject DO + container (kind "job")
@@ -69,6 +69,45 @@ FlowExecution DO
 
 Not yet: a repository flow imports nothing but the four modules (no shared `../_ci/target.ts`); `Node.all` is the only combinator, so jobs can't depend on one another; a person can't start a repository flow by hand (`ci-parity-manual-run`); runs show on no page yet (`ci-parity-run-view`).
 
+## Triggers
+
+```
+GitHub ──push / pull_request──▶ POST /api/github/webhook (REPO_FLOWS on): verify, start triggers/Dispatch once per delivery (triggers/dispatch:<delivery>)
+triggers/Dispatch { delivery, repo, defaultBranch, event, ref, branch, tag, action, sha, trusted }
+  triggers/Match ── GET contents/.smithers/factory.json?ref=<default branch> (App, Contents: read)
+                 └─ matching trigger rows whose .smithers/flows/<flow>/flow.ts is on the default branch
+  triggers/Start ── repo/Run under <flow>:<delivery>, at the event's commit
+```
+
+A repository says when its flows run in its plugin manifest, `.smithers/factory.json` on its default branch (ruling FLOW-10; decision 0017's `Plugin.Manifest`). A flow file never says when it runs.
+
+```json
+{
+  "apiVersion": 1,
+  "id": "repository",
+  "contributes": {
+    "triggers": [
+      { "on": "github.push", "flow": "ci", "branches": ["main"] },
+      { "on": "github.pull_request", "flow": "ci" }
+    ]
+  }
+}
+```
+
+| Row | Matches |
+|---|---|
+| `on: "github.push"` | a push to a branch: every branch, or the `branches` globs; a tag only when `tags` names it; a trigger with only `tags` runs on no branch. A deleted ref never runs |
+| `on: "github.pull_request"` | `opened`, `synchronize` and `reopened`, or the `actions` it names; against every base branch, or the `branches` globs |
+| `branches`, `tags` | globs: `*` is any run of characters but `/`, `**` any run at all; matched without regular expressions, so no pattern backtracks |
+
+- **The default branch decides.** Triggers and flows are read from the default branch when the event arrives, so a branch or a pull request can't add a trigger to itself; a flow is active once a person merges its `flow.ts`. The run then plans `flow.ts` at the event's commit (a pull request's head).
+- **Every installed repository.** A push or a pull request of any repository the App is installed on dispatches, not only the deployment's `GITHUB_REPOSITORY`.
+- **Once per delivery.** The dispatch is `triggers/dispatch:<delivery>` and each run `<flow>:<delivery>` (a flow's name has no slash, so the two never meet), so a delivery GitHub sends again changes nothing.
+- **Unreadable is not an outage.** A manifest or a `flow.ts` GitHub refuses, or won't give as text (a directory, over 1 MB, not UTF-8), is read as absent at once; only an outage is retried. One unreadable flow never holds back the others.
+- **Secrets.** A fork's pull request, or one whose author is below Member (`author_association` not `OWNER`, `MEMBER` or `COLLABORATOR`), runs with `secrets: false`. Jobs get no secrets yet in any case ([job secrets](../work/ci-parity-job-secrets.md)).
+- **Off unless `REPO_FLOWS=true`.** Each run starts machines for every repository the App is installed on.
+- Not yet: `trust: "base"` (`pull_request_target`), tags, issues, comments, labels and reviews as triggers; `concurrency`; path filters; a manifest written as `FACTORY.ts` with `Trigger.bind` (flows-as-code-api.md §5.7), which projects to the same JSON. `.smithers/factory.json` written by `S.Factory`, as smithersai/smithers' is today, has no `apiVersion` and starts nothing.
+
 ## Observability
 
 | Name | Kind | Fields |
@@ -78,6 +117,11 @@ Not yet: a repository flow imports nothing but the four modules (no shared `../_
 | `ci.repo_flow.plan` | log, span | `run`, `repo`, `flow`, `sha`, `outcome` (`planned` or the refusal), `jobs` |
 | `ci.repo_flow.status` | log | `run`, `repo`, `flow`, `sha`, `state`, `outcome` (`sent`, `refused`, `dropped`), `errorCode` |
 | `ci.realm.plan`, `ci.repo_flow.report` | span | `smithers.ci.flow` |
+| `ci.dispatch` | log | `delivery`, `repo`, `event`, `sha`, `outcome` (`matched`, `none`, `no_manifest`, `unreadable`), `flows` |
+| `ci.start` | log | `delivery`, `repo`, `flow`, `executionId`, `outcome` (`started`, `not_started`), `errorCode` |
+| `ci.dispatch.match`, `ci.dispatch.start` | span | `smithers.ci.delivery` |
+| `smithers_ci_dispatches{event,outcome}`, `smithers_ci_starts{outcome}` | counter | |
+| `github.webhook` | log | gains `dispatched`: the repository a push or pull request dispatched for |
 | `smithers_repo_flow_plans{outcome}`, `smithers_repo_flow_statuses{state,outcome}` | counter | |
 
 No record carries a flow's source, a command, its output or a secret.
@@ -93,3 +137,7 @@ No record carries a flow's source, a command, its output or a secret.
 | `worker/ci/Realm.test.ts` | the realm in Node's QuickJS: a TypeScript flow's jobs; a body deciding from its payload; refused imports, used or not, static or aliased; a loop, a memory bomb and a runaway recursion stopped; syntax, throws, a forged `JSON.stringify`, bad or repeated jobs, a wrong tag |
 | `worker/ci/Realm.workerd.test.ts` | the realm in local workerd, bundled as Alchemy bundles ChatApi: a flow planned, and a loop stopped by the step budget, since workerd holds its clock still while code runs |
 | `worker/ci/RepoFlow.test.ts` | `repo/Run` on the Node host against the scripted GitHub: flow.ts read at the commit, two jobs on two machines, `smithers/ci` pending then success or `Failed: lint`, no flow or a refused one running nothing, missing permissions, and GitHub's and Postgres' outages retried |
+| `worker/ci/Triggers.test.ts` | the manifest's rows (a Plugin.Manifest only; rows this slice can't read skipped) and matching: branches, tags, tag-only triggers, pull request actions and base branches, globs |
+| `worker/ci/Dispatch.test.ts` | a delivery as the webhook names it (push, tag, deleted, pull requests from the repository, a fork or below Member); `triggers/Dispatch` on the Node host: active flows started under `<flow>:<delivery>`, a fork without secrets, a trigger only the branch adds starting nothing, no manifest, unreadable, outages retried |
+| `worker/github/Api.test.ts` | with `REPO_FLOWS` on, a push of any installed repository starts its `triggers/Dispatch`; off, nothing |
+| `e2e/ci.spec.ts` | the whole loop against a live instance: a real push as the test account, the delivery signed as GitHub signs it, each job on its own machine, `smithers/ci` success on the commit as GitHub shows it. Needs `repoFlows` (e2e/target.ts) |

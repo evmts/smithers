@@ -1,11 +1,19 @@
 ---
 title: CI parity: GitHub events start repository flows
-status: todo
+status: in-progress
 area: sdk
-owner: none
-updated: 2026-10-20 22:50 PDT
-links: [../proposals/ci-cd-parity.md, issues.md, no-github-actions.md, ../features/issues.md, ../decisions/0017-everything-is-a-plugin.md]
+owner: ci-spine builder (Claude Opus), from 2026-10-22
+updated: 2026-10-22 PDT
+links: [../proposals/ci-cd-parity.md, ../features/ci.md, issues.md, no-github-actions.md, ../features/issues.md, ../decisions/0017-everything-is-a-plugin.md]
 ---
+
+## Built, 2026-10-22 (the CI spine's slice 4)
+
+- With `REPO_FLOWS=true`, the webhook route starts `triggers/Dispatch` (`triggers/dispatch:<delivery>`) for every push and pull request of any repository the App is installed on (`worker/github/Api.ts`, `worker/ci/Dispatch.ts`). It reads `.smithers/factory.json` on the default branch as a `Plugin.Manifest`, keeps the `github.push` and `github.pull_request` trigger rows that match (`worker/ci/Triggers.ts`: `branches`, `tags`, `actions`, globs) and whose flow's `flow.ts` is on the default branch, and starts each as `repo/Run` under `<flow>:<delivery>` with `{ repo, sha, ref, event }`. A fork's pull request or one from below Member runs with `secrets: false`. Each run reports `smithers/<flow>` on the commit ([CI on Smithers](../features/ci.md#triggers)).
+- **Conflict with this note's design, resolved by FLOW-10:** the proposal's `triggers` literal on `Flow.make` is not built. Triggers are manifest data (flows-as-code-api.md §5.7-5.8, "a flow file never says when it runs"); `Trigger.bind` in `FACTORY.ts` is the authoring helper still to build, and it projects to the same JSON.
+- Execution ids: `<flow>:<delivery>` as asked, not `<repo>:<flow>:<delivery>`: delivery ids are GUIDs, unique across repositories.
+
+**Not built:** `trust: "base"`; tags beyond push filters, issues, comments, labels and reviews; the Smithers agent answering mentions; `concurrency` and path filters (their own notes).
 
 ## What
 

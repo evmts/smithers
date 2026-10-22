@@ -28,6 +28,7 @@ import * as Executions from "./Executions.ts"
 import * as Placement from "./Placement.ts"
 import * as Flows from "./Flows.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
+import * as Dispatch from "./ci/Dispatch.ts"
 import * as GitHubApi from "./github/Api.ts"
 import * as DocsApi from "./docs/Api.ts"
 import * as DocsSource from "./docs/Source.ts"
@@ -135,7 +136,7 @@ export const program = (options: ProgramOptions = {}) =>
       local: options.fallback !== undefined && Option.isNone(app),
     })
     // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes.
-    const github = yield* GitHubApi.make(database, { repository, app, roles })
+    const github = yield* GitHubApi.make(database, { repository, app, roles, repoFlows: yield* Dispatch.enabled })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
     const stack = yield* StackApi.make(database, roles)

@@ -243,6 +243,12 @@ const needs = {
     met: (run) => run.target === "deployment" && run.env.E2E_DOGFOOD === "smithersai/smithers",
     reason: "it builds Smithers with Smithers on the deployment: it opens a real issue on smithersai/smithers and runs TODOs to pull requests there, so it runs only when E2E_DOGFOOD names that repository (apps/mvp/docs/work/dogfood-loop.md)",
   },
+  repoFlows: {
+    met: (run) =>
+      run.target === "deployment" && set(run, "E2E_REPO_FLOWS_REPOSITORY", "E2E_GITHUB_TOKEN") &&
+      !/^smithersai\//i.test(run.env.E2E_REPO_FLOWS_REPOSITORY!),
+    reason: "it pushes a branch to a test repository and runs its CI: run against an instance started with REPO_FLOWS=true whose GitHub App is installed on E2E_REPO_FLOWS_REPOSITORY (never a smithersai one; its default branch holds e2e/fixtures/ci-repo), with E2E_GITHUB_TOKEN a token that may push there",
+  },
   githubApp: {
     met: (run) => run.target === "deployment",
     reason: "it syncs the deployment's GitHub repository through its GitHub App and webhook, which local development runs without",
