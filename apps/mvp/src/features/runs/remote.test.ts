@@ -94,8 +94,9 @@ describe("a TODO's run on Cloudflare", () => {
       await Effect.runPromise(t.api.remote.ready(runId))
       const beforeEligibility = t.page()
       const eligible = await Effect.runPromise(t.api.remote.prepareProgress(runId))
+      // The owner's heartbeat (each second) advances the revision too, so the tab may already be past `eligible`.
       await until(() => {
-        expect(t.revision(runId)).toBe(eligible)
+        expect(t.revision(runId)).toBeGreaterThanOrEqual(eligible)
         expect(t.page()).not.toBe(beforeEligibility)
       })
       const beforeProgress = t.reads()
