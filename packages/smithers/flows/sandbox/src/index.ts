@@ -35,6 +35,9 @@ export * as SandboxTools from "./SandboxTools/index.ts"
 /** A sandbox command as durable external work: start once, park between probes, collect, cancel. */
 export * as SandboxCommand from "./SandboxCommand/index.ts"
 
+/** A CI job: one machine, the commit checked out, its steps run in order, and an outcome. */
+export * as CiJob from "./CiJob/index.ts"
+
 /** Lands a session's captured work in a host jj repository. */
 export * as SandboxMerge from "./SandboxMerge/index.ts"
 

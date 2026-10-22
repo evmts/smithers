@@ -4977,6 +4977,9 @@ importers:
       '@smthrs/kernel':
         specifier: 1.0.0-rc.16
         version: link:../kernel
+      '@smthrs/plan':
+        specifier: 1.0.0-rc.16
+        version: link:../plan
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
@@ -4993,9 +4996,6 @@ importers:
       '@smthrs/engine':
         specifier: 1.0.0-rc.16
         version: link:../engine
-      '@smthrs/plan':
-        specifier: 1.0.0-rc.16
-        version: link:../plan
       '@smthrs/platform-bun':
         specifier: 1.0.0-rc.16
         version: link:../platform-bun

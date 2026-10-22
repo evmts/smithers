@@ -61,6 +61,8 @@
     "./SandboxTools/*": null,
     "./SandboxCommand": "./src/SandboxCommand/index.ts",
     "./SandboxCommand/*": null,
+    "./CiJob": "./src/CiJob/index.ts",
+    "./CiJob/*": null,
     "./AwsSandbox": "./src/AwsSandbox/index.ts",
     "./AwsSandbox/*": null,
     "./CloudflareSandbox": "./src/CloudflareSandbox/index.ts",
@@ -250,6 +252,17 @@
         }
       },
       "./SandboxCommand/*": null,
+      "./CiJob": {
+        "import": {
+          "types": "./dist/esm/CiJob/index.d.ts",
+          "default": "./dist/esm/CiJob/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CiJob/index.d.ts",
+          "default": "./dist/cjs/CiJob/index.js"
+        }
+      },
+      "./CiJob/*": null,
       "./AwsSandbox": {
         "import": {
           "types": "./dist/esm/AwsSandbox/index.d.ts",
@@ -353,10 +366,10 @@
   "dependencies": {
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/jj": "1.0.0-rc.16",
-    "@smthrs/kernel": "1.0.0-rc.16"
+    "@smthrs/kernel": "1.0.0-rc.16",
+    "@smthrs/plan": "1.0.0-rc.16"
   },
   "devDependencies": {
-    "@smthrs/plan": "1.0.0-rc.16",
     "@smthrs/engine": "1.0.0-rc.16",
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.0.5",

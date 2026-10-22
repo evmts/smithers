@@ -97,6 +97,37 @@ describe("checkoutArgv", () => {
   })
 })
 
+describe("checkoutArgv for a CI job", () => {
+  test("checks out one commit by its id, detached, with no branch: a commit only a branch reaches, never the default", () => {
+    const workspace = join(root, "job")
+    mkdirSync(workspace)
+    const feature = git(remote.slice("file://".length), "rev-parse", "feature/x").trim()
+    checkout(workspace, feature)
+    expect(git(workspace, "rev-parse", "HEAD").trim()).toBe(feature)
+    expect(readFileSync(join(workspace, "feature.txt"), "utf8")).toBe("x\n")
+    expect(exitOf(() => git(workspace, "symbolic-ref", "-q", "HEAD"))).not.toBe(0)
+    // Shallow: the one commit.
+    expect(git(workspace, "rev-list", "--count", "HEAD").trim()).toBe("1")
+  })
+
+  test("finishes a checkout a stopped machine left half done: a repository with its origin and no HEAD", () => {
+    const workspace = join(root, "job-resumed")
+    mkdirSync(workspace)
+    git(workspace, "init", "-q")
+    git(workspace, "remote", "add", "origin", remote)
+    const feature = git(remote.slice("file://".length), "rev-parse", "feature/x").trim()
+    checkout(workspace, feature)
+    expect(git(workspace, "rev-parse", "HEAD").trim()).toBe(feature)
+  })
+
+  test("fails the clone (72) on a commit the forge doesn't have, and leaves nothing checked out", () => {
+    const workspace = join(root, "job-missing")
+    mkdirSync(workspace)
+    expect(exitOf(() => checkout(workspace, "0".repeat(40)))).toBe(72)
+    expect(exitOf(() => git(workspace, "rev-parse", "--verify", "-q", "HEAD"))).not.toBe(0)
+  })
+})
+
 describe("forgeRemote", () => {
   test("names the forge proxy's host and the repository, escaped, never a credential", () => {
     expect(forgeRemote("octocat", "Spoon-Knife")).toBe("http://forge.smithers.internal/octocat/Spoon-Knife")

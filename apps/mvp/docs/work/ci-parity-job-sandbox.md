@@ -2,10 +2,19 @@
 title: CI parity: a machine per job with toolchains
 status: in-progress
 area: sdk
-owner: Opus dogfood builder assigned by lead
-updated: 2026-10-21 13:44 PDT
-links: [../proposals/ci-cd-parity.md, sandboxes.md, sandbox-budgets.md, ../features/sandbox-tools.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md]
+owner: ci-spine builder (Claude Opus), from 2026-10-22
+updated: 2026-10-22 PDT
+links: [../proposals/ci-cd-parity.md, ../features/ci.md, sandboxes.md, sandbox-budgets.md, ../features/sandbox-tools.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md]
 ---
+
+## Built, 2026-10-22: `ci/job` (the CI spine's slice 2)
+
+- `@smthrs/sandbox`'s `CiJob`: the `ci/job` child flow checks out exactly the commit, runs each step as its own durable action (`ci/job/Step`) and settles `{ outcome, steps }`, `passed`, `failed`, `cancelled` or `skipped`, never a failure. The host provides `CiJob.Machine` ([API](../../../../packages/smithers/flows/sandbox/docs/api.md#cijob)).
+- The app's machine (`worker/flows/CiJobMachine.ts`): one `SandboxObject` of `kind: "job"` per `job:<run>:<job>`, from the branch sandbox's image (Node 26.5.0, pnpm 11.25.0, git), registry-only egress, commands as the `ci` user. A job's machine fetches the one commit by its id (`worker/branch/Checkout.ts`), so a fork's head needs no branch. Registered on `FlowExecution` by `ExecutionHost.withCiJobs` ([CI on Smithers](../features/ci.md#jobs)).
+- **No `JobSandbox` container class and no `infra/job/Dockerfile`:** the branch sandbox's image already pins the toolchain, and a second class would duplicate `SandboxObject`. bun, build-essential, python3 and Postgres 18 are not in the image; a job that needs them waits for a job image of its own.
+- Proof: `worker/flows/CiJob.docker.test.ts` on the Mac mini, real containers of the image: two jobs at once at a commit of `roninjin10/smithers-github-tests` fetched from GitHub, `node --version` v26.5.0 and `pnpm --version` 11.25.0 pass while `exit 1` settles failed.
+
+**Not built:** long commands (`ci-parity-long-commands`: a step is still one sandbox-tools `run`, 600 s at most, 64 KiB of output kept), step logs on a run page, machine sizes.
 
 ## Built, 2026-10-21 (the dogfood loop's first slice)
 

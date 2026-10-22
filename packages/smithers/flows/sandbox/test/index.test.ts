@@ -10,6 +10,7 @@ describe("@smthrs/sandbox barrel", () => {
   it("re-exports every module as its own namespace", () => {
     expect(Object.keys(Sandbox).sort()).toEqual([
       "AwsSandbox",
+      "CiJob",
       "CloudflareSandbox",
       "CommandSandbox",
       "ContainerSandbox",

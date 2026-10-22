@@ -1,12 +1,14 @@
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
-import { DurableDeferred, type Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, DurableDeferred, type Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import type { Channels } from "@smthrs/notifications"
 import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare"
+import { CiJob } from "@smthrs/sandbox"
 import { Effect, Exit, Layer, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import * as Checks from "./flows/Checks.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
+import * as CiJobMachine from "./flows/CiJobMachine.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
@@ -167,6 +169,25 @@ export const withSandboxTools = <ROut, E, R, DE, DR, ME, MR>(
     SandboxCall.registration(database).pipe(Layer.provide(machines)),
     SandboxKeep.registration(database).pipe(Layer.provide(machines)),
     SandboxCommand.registration.pipe(Layer.provide(machines)),
+  ),
+})
+
+/**
+ * `flows`, plus `@smthrs/sandbox`'s `ci/job`: one CI job on its own machine (`machines`: on Cloudflare, the
+ * `SandboxObject` namespace, worker/BranchSandboxes.ts), docs/features/ci.md#jobs.
+ */
+export const withCiJobs = <ROut, E, R, ME, MR>(
+  flows: Flows<ROut, E, R>,
+  machines: Layer.Layer<Machines, ME, MR>,
+) => ({
+  flows: [...flows.flows, CiJob.CiJob],
+  registration: Layer.mergeAll(
+    flows.registration,
+    Interpreter.layerWithImplementations(CiJob.CiJob, CiJob.layer).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provide(CiJobMachine.layer),
+      Layer.provide(machines),
+    ),
   ),
 })
 

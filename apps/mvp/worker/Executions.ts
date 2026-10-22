@@ -193,9 +193,8 @@ const object = <E, R>(
           )
         }
         // `secret/Put` and `secret/Delete` write an Admin's sealed secrets (docs/features/secrets.md#writing). The
-        // sandbox tools run on the branches' machines (docs/features/sandbox-tools.md). `domain/*` verify and remove
-        // custom domains (docs/features/domains.md#flows).
-        const base = ExecutionHost.withDomains(ExecutionHost.withSecrets(
+        // Sandbox tools, custom domains, and CI jobs share the remote host.
+        const base = ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withSecrets(
           ExecutionHost.withSandboxTools(
             ExecutionHost.withTerminals(
               Option.isSome(signIn)
@@ -208,7 +207,7 @@ const object = <E, R>(
             BranchSandboxes.machinesLayer(sandboxObjects, keep),
           ),
           appDatabase,
-        ), appDatabase, Layer.succeed(DomainProvider, domains))
+        ), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(sandboxObjects, keep))
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review judge with the `judge` role, admitted and metered as the endpoint's calls are.
