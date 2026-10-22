@@ -4,7 +4,6 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Fault from "../Fault.ts"
 
 /**
  * A caller reused an execution id for different persisted run identity.
@@ -28,5 +27,3 @@ export class ExecutionIdentityConflict extends Schema.TaggedError<ExecutionIdent
     message: Schema.String
   }
 ) {}
-
-Fault.register("@smthrs/engine/ExecutionIdentityConflict", "bug")

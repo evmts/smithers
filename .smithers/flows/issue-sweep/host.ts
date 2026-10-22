@@ -129,22 +129,39 @@ export const workspaceOf = (issue: number) => `${workspaces}/issue-${issue}`
 /** The jj workspace name of one issue. */
 export const workspaceName = (issue: number) => `sweep-${issue}`
 
-// Keep the caller's error outside `cause`: Fault.of reads the innermost
-// registered cause, whereas this command diagnostic is the infra verdict.
-class HostOutage<E> extends Unreachable.Unreachable {
-  readonly original: E
-  constructor(message: string, original: E) {
-    super({ message })
-    this.original = original
-  }
-}
+// Keep the original error outside `cause`: Fault.of reads the innermost cause.
+Fault.register("issue-sweep/HostOutage", "infra")
 
-/** Retries classified host connectivity failures while preserving the caller's error type. */
-export const ridingOutages = <A, E extends { readonly message: string }, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(
-    Effect.mapError((error) =>
-      Unreachable.classifyExit(error.message) === undefined ? error : new HostOutage(error.message, error)
+/** Dispatches classified host connectivity failures as a keyed durable action. */
+export const ridingOutages = <
+  R,
+  Success extends Schema.Constraint,
+  Error extends Schema.Constraint & { readonly Type: { readonly message: string } }
+>(effect: Effect.Effect<Success["Type"], Error["Type"], R>, options: {
+  readonly name: string
+  readonly idempotencyKey: string
+  readonly implementationVersion: string
+  readonly success: Success
+  readonly error: Error
+}) => {
+  const Outage = Schema.Struct({
+    _tag: Schema.Literal("issue-sweep/HostOutage"),
+    message: Schema.String,
+    original: options.error
+  })
+  const Failure = Schema.Union([Outage, options.error])
+  return Fault.retryTransient<R, Success, typeof Failure>(
+    effect.pipe(
+      Effect.mapError((error) =>
+        Unreachable.classifyExit(error.message) === undefined
+          ? error
+          : { _tag: "issue-sweep/HostOutage" as const, message: error.message, original: error }
+      )
     ),
-    Fault.retryTransient,
-    Effect.mapError((error) => error instanceof HostOutage ? error.original : error)
+    { ...options, tier: "irreversible", error: Failure }
+  ).pipe(
+    Effect.mapError((error): Error["Type"] =>
+      Schema.is(Outage)(error) ? (error as { readonly original: Error["Type"] }).original : error
+    )
   )
+}

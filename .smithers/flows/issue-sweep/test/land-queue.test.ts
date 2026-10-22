@@ -13,6 +13,10 @@ import { join } from "node:path"
 import test from "node:test"
 import { type Checked, type Checks, LandFailed, makeBaselines, makeLander } from "../land.ts"
 
+import { type RetryServices, withRetryRuntime } from "./retry-runtime.ts"
+
+const run = <A, E>(effect: Effect.Effect<A, E, RetryServices>) => Effect.runPromise(effect.pipe(withRetryRuntime))
+
 const fixture = (t: { after: (fn: () => void) => void }) => {
   const root = mkdtempSync(join(tmpdir(), "issue-sweep-queue-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -113,7 +117,7 @@ test("two changes check concurrently, and their pushes run one at a time", { tim
       })
   })
 
-  const landed = await Effect.runPromise(
+  const landed = await run(
     Effect.all([land(one.workspace, one.id), land(two.workspace, two.id)], { concurrency: "unbounded" })
   )
 
@@ -141,7 +145,7 @@ test("a change tested on an older main lands without retesting when main moved e
     })
   )
 
-  const landed = await Effect.runPromise(makeLander({ checks })(mine.workspace, mine.id))
+  const landed = await run(makeLander({ checks })(mine.workspace, mine.id))
 
   assert.deepEqual(tested, ["//a:test"])
   assert.equal(cmd(origin, "git", "rev-parse", "main").trim(), landed)
@@ -161,7 +165,7 @@ test("a change tested on an older main is retested when main touched its package
     })
   )
 
-  const landed = await Effect.runPromise(makeLander({ checks })(mine.workspace, mine.id))
+  const landed = await run(makeLander({ checks })(mine.workspace, mine.id))
 
   assert.deepEqual(tested, ["//a:test", "//a:test"])
   assert.equal(cmd(origin, "git", "rev-parse", `${landed}^`).trim(), moved)
@@ -174,9 +178,9 @@ test("re-landing a change main already contains answers its commit without check
   const mine = change("mine", "a/mine.txt")
   const { checks, tested } = fakeChecks(() => Effect.succeed(green))
   const land = makeLander({ checks })
-  const first = await Effect.runPromise(land(mine.workspace, mine.id))
+  const first = await run(land(mine.workspace, mine.id))
 
-  const again = await Effect.runPromise(land(mine.workspace, mine.id))
+  const again = await run(land(mine.workspace, mine.id))
 
   assert.equal(again, first)
   assert.equal(originMain(), first)
@@ -190,9 +194,9 @@ test("a red label main also fails does not block; a new red does", { timeout: 60
   const excused = makeLander({ checks: { ...checks, redOnMain: (labels) => Effect.succeed(labels) } })
   const blocked = makeLander({ checks })
 
-  const failure = await Effect.runPromise(Effect.flip(blocked(mine.workspace, mine.id)))
+  const failure = await run(Effect.flip(blocked(mine.workspace, mine.id)))
   assert.match(failure.message, /checks red for .*: \/\/a:test/)
-  assert.match(await Effect.runPromise(excused(mine.workspace, mine.id)), /^[0-9a-f]{40}$/)
+  assert.match(await run(excused(mine.workspace, mine.id)), /^[0-9a-f]{40}$/)
 })
 
 test("the baseline cache measures a (commit, label) once, across concurrent asks and restarts", async (t) => {
@@ -209,7 +213,7 @@ test("the baseline cache measures a (commit, label) once, across concurrent asks
     })
   const redOn = makeBaselines({ file, measure })
 
-  const [first, second] = await Effect.runPromise(Effect.all([
+  const [first, second] = await run(Effect.all([
     redOn("c1", ["//l1:test", "//l2:test"]),
     redOn("c1", ["//l2:test", "//l3:test"])
   ], { concurrency: "unbounded" }))
@@ -220,9 +224,9 @@ test("the baseline cache measures a (commit, label) once, across concurrent asks
 
   // A restarted host reads the file; another commit is measured afresh.
   const restarted = makeBaselines({ file, measure })
-  assert.deepEqual(await Effect.runPromise(restarted("c1", ["//l3:test", "//l2:test"])), ["//l2:test"])
+  assert.deepEqual(await run(restarted("c1", ["//l3:test", "//l2:test"])), ["//l2:test"])
   assert.equal(measured.length, 3)
-  assert.deepEqual(await Effect.runPromise(restarted("c2", ["//l2:test"])), ["//l2:test"])
+  assert.deepEqual(await run(restarted("c2", ["//l2:test"])), ["//l2:test"])
   assert.equal(measured.length, 4)
 })
 
@@ -231,8 +235,8 @@ test("a baseline that could not run blocks its askers and is not remembered", as
   const redOn = makeBaselines({
     measure: () => Effect.sync(() => (runs += 1, { _tag: "Broken", message: "no install" } as Checked))
   })
-  assert.match((await Effect.runPromise(Effect.flip(redOn("c1", ["//a:test"])))).message, /no install/)
-  assert.match((await Effect.runPromise(Effect.flip(redOn("c1", ["//a:test"])))).message, /no install/)
+  assert.match((await run(Effect.flip(redOn("c1", ["//a:test"])))).message, /no install/)
+  assert.match((await run(Effect.flip(redOn("c1", ["//a:test"])))).message, /no install/)
   assert.equal(runs, 2)
 })
 
@@ -244,8 +248,8 @@ test("a baseline that failed fails its askers and runs again on the next ask", a
         (runs += 1) === 1 ? Effect.fail(new LandFailed({ message: "jj workspace add" })) : Effect.succeed(green)
       )
   })
-  const failure = await Effect.runPromise(Effect.flip(redOn("c1", ["//a:test"])))
+  const failure = await run(Effect.flip(redOn("c1", ["//a:test"])))
   assert.equal(failure.message, "jj workspace add")
-  assert.deepEqual(await Effect.runPromise(redOn("c1", ["//a:test"])), [])
+  assert.deepEqual(await run(redOn("c1", ["//a:test"])), [])
   assert.equal(runs, 2)
 })

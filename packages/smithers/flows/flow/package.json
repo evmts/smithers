@@ -340,6 +340,7 @@
     "@effect/platform-node": "4.0.5",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
+    "@smthrs/engine": "workspace:*",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

@@ -229,7 +229,7 @@ describe("Graph.build topology", () => {
 })
 
 describe("Graph.build planned values", () => {
-  it("threads reference paths from a payload into Ref inputs, once per distinct path", () => {
+  it("threads reference paths from a payload into Ref inputs, in placeholder occurrence order", () => {
     const flow = Flow.make("refs/thread", {
       payload: { path: Schema.String },
       success: Schema.Unknown,
@@ -263,11 +263,12 @@ describe("Graph.build planned values", () => {
         value: {
           values: [{ _tag: "PlannedInput", input: 0, path: ["value"] }, {
             _tag: "PlannedInput",
-            input: 0,
+            input: 1,
             path: ["value"]
           }]
         }
       },
+      { _tag: "Ref", from: upstream, path: ["value"] },
       { _tag: "Ref", from: upstream, path: ["value"] }
     ])
     expect(material(graph, "root.flow.then").inputs).toEqual([{ _tag: "Pending", from: upstream }, {

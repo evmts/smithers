@@ -1,6 +1,8 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
 import { Fault } from "@smthrs/flow"
 import { Unreachable } from "@smthrs/kernel"
-import { Effect, Exit, Fiber } from "effect"
+import { Effect, Exit, Fiber, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import assert from "node:assert/strict"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -19,6 +21,21 @@ import {
   workspaceOf,
   workspaces
 } from "../host.ts"
+
+import { withRetryInstance, withRetryRuntime } from "./retry-runtime.ts"
+
+const outageOptions = (name: string) => ({
+  name: `issue-sweep/test/${name}`,
+  implementationVersion: "host-test/v1",
+  idempotencyKey: name,
+  success: Schema.String,
+  error: Schema.Struct({
+    message: Schema.String,
+    code: Schema.optional(Schema.Number),
+    detail: Schema.optional(Schema.String),
+    _tag: Schema.optional(Schema.String)
+  })
+})
 
 const refused = (stderr: string) => ({ stdout: "", stderr, code: 255 })
 const sibling = "Internal error: The repo was loaded at operation 3798008d8429, which seems to be a sibling of " +
@@ -60,7 +77,7 @@ test("a network outage retries with transient backoff; other failures fail at on
     Effect.gen(function*() {
       let calls = 0
       const flaky = Effect.suspend(() => ++calls < 3 ? Effect.fail({ message: dns }) : Effect.succeed("fetched"))
-      const fiber = yield* ridingOutages(flaky).pipe(Effect.forkChild)
+      const fiber = yield* ridingOutages(flaky, outageOptions("flaky")).pipe(Effect.forkChild)
       yield* TestClock.adjust(4999)
       assert.equal(calls, 1)
       yield* TestClock.adjust(1)
@@ -71,14 +88,28 @@ test("a network outage retries with transient backoff; other failures fail at on
       let refusals = 0
       const failure = { message: "conflict in a.txt", detail: "original typed error" }
       const refused = Effect.suspend(() => (refusals++, Effect.fail(failure)))
-      const exit = yield* ridingOutages(refused).pipe(Effect.exit)
+      const exit = yield* ridingOutages(refused, outageOptions("refused")).pipe(Effect.exit)
       assert.ok(Exit.isFailure(exit))
       assert.equal(refusals, 1)
       if (Exit.isFailure(exit)) {
         const reason = exit.cause.reasons.find((reason) => reason._tag === "Fail")
-        assert.equal(reason?._tag === "Fail" && reason.error, failure)
+        assert.deepEqual(reason?._tag === "Fail" && reason.error, failure)
       }
-    }).pipe(Effect.provide(TestClock.layer()))
+    }).pipe(withRetryRuntime, Effect.provide(TestClock.layer()))
+  )
+})
+
+test("identical network commands run at each invocation and replay without running again", async () => {
+  let commands = 0
+  const fetch = () => ridingOutages(Effect.sync(() => `fetched-${++commands}`), outageOptions("fetch"))
+  const sequence = () => Effect.all([fetch(), fetch()], { concurrency: 1 }).pipe(withRetryInstance)
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      assert.deepEqual(yield* sequence(), ["fetched-1", "fetched-2"])
+      assert.equal(commands, 2)
+      assert.deepEqual(yield* sequence(), ["fetched-1", "fetched-2"])
+      assert.equal(commands, 2)
+    }).pipe(Effect.provide(FlowEngine.layerMemory), Effect.provide(NodeCrypto.layer))
   )
 })
 
@@ -91,16 +122,16 @@ test("exhausting transient retries restores the final original typed host error"
         last = { message: dns, code: ++attempts }
         return Effect.fail(last)
       })
-      const fiber = yield* ridingOutages(failed).pipe(Effect.exit, Effect.forkChild)
+      const fiber = yield* ridingOutages(failed, outageOptions("failed")).pipe(Effect.exit, Effect.forkChild)
       yield* TestClock.adjust(7200000)
       const exit = yield* Fiber.join(fiber)
       assert.ok(Exit.isFailure(exit))
       assert.ok(attempts > 20)
       if (Exit.isFailure(exit)) {
         const reason = exit.cause.reasons.find((reason) => reason._tag === "Fail")
-        assert.equal(reason?._tag === "Fail" && reason.error, last)
+        assert.deepEqual(reason?._tag === "Fail" && reason.error, last)
       }
-    }).pipe(Effect.provide(TestClock.layer()))
+    }).pipe(withRetryRuntime, Effect.provide(TestClock.layer()))
   )
 })
 
@@ -110,16 +141,19 @@ test("network signatures retry even when the original host error is registered a
     Effect.gen(function*() {
       let attempts = 0
       const failure = { _tag: "test/HostOutageBug", message: dns }
-      const fiber = yield* ridingOutages(Effect.suspend(() =>
-        ++attempts < 3
-          ? Effect.fail(failure) :
-          Effect.succeed("recovered")
-      )).pipe(Effect.forkChild)
+      const fiber = yield* ridingOutages(
+        Effect.suspend(() =>
+          ++attempts < 3
+            ? Effect.fail(failure) :
+            Effect.succeed("recovered")
+        ),
+        outageOptions("registered-bug")
+      ).pipe(Effect.forkChild)
       yield* TestClock.adjust(15000)
       assert.equal(yield* Fiber.join(fiber), "recovered")
       assert.equal(attempts, 3)
       assert.equal(Fault.of(failure).class, "bug")
-    }).pipe(Effect.provide(TestClock.layer()))
+    }).pipe(withRetryRuntime, Effect.provide(TestClock.layer()))
   )
 })
 
@@ -176,7 +210,7 @@ exit 255
     }
     const calls = readFileSync(join(root, "calls"), "utf8").trim().split("\n")
     assert.equal(calls.length, 1)
-    assert.ok(calls[0].includes("snapshot.auto-update-stale=false"))
+    assert.ok(calls[0]!.includes("snapshot.auto-update-stale=false"))
     assert.equal(readFileSync(join(root, "precious"), "utf8"), "keep")
   })
 }

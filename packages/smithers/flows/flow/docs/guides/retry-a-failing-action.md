@@ -110,11 +110,29 @@ For plain effects that the caller knows are safe to repeat:
 ```ts
 import { Fault } from "@smthrs/flow"
 
-const recovered = Fault.retryTransient(readStatus)
+const recovered = Fault.retryTransient(readStatus, {
+  name: "remote/read-status",
+  implementationVersion: "read-status/v1",
+  idempotencyKey: statusKey,
+  success: Status,
+  error: ReadStatusError
+})
 ```
 
-This helper retries typed infrastructure failures under the same bounded policy.
-It preserves the final typed error; defects and cancellation propagate directly.
+This helper dispatches a keyed action inside an implementation. The name,
+implementation version, idempotency key and success/error schemas identify and
+decode its recorded work. The engine applies its default transient policy,
+including durable attempts and backoff on a durable runtime; the helper keeps no
+retry state itself. It preserves the final typed error; defects and cancellation
+propagate directly. A volatile runtime supports only in-process replay.
+
+Calls using the former one-argument helper must supply these action options and
+run within a flow with its runtime and crypto services.
+
+For commands that must execute again at each logical invocation, pass
+`tier: "irreversible"`. Their idempotency key permits infrastructure retries,
+while the engine's invocation scope prevents a later call from reusing the
+earlier call's result. The default sealed tier intentionally reuses keyed work.
 Host command adapters can use `Unreachable.classifyExit(stderr)` from
 `@smthrs/kernel` to turn DNS, connection, HTTP 429, and HTTP 5xx failures into
 typed infrastructure errors. Ordinary command failures remain domain errors.

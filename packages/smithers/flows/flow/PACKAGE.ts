@@ -30,9 +30,9 @@ const importRules = ImportRules({
   cwd,
   rules: [{
     kind: "rootImportsOnly",
-    files: ["src/Graph.ts"],
+    files: ["src/Graph.ts", "src/Fault.ts", "test/TransientRetry.test.ts"],
     packages: ["@smthrs/*"],
-    because: "SDK-5: Graph consumes Smithers libraries through their public root entries."
+    because: "SDK-5: Graph and transient retries consume Smithers libraries through their public root entries."
   }]
 })
 

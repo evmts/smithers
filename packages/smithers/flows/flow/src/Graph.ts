@@ -683,7 +683,7 @@ const hydrate = (value: unknown, substitutions: ReadonlyMap<string, string>, at:
  * The hashed form of a payload: placeholders keep their property path and drop
  * the node they came from, because the node id is a lookup address and the
  * dependency itself is named by a separate `Ref`. The same walk collects every
- * distinct upstream result into `found`, in sorted-key order. Each placeholder
+ * placeholder occurrence into `found`, in sorted-key order. Each placeholder
  * records its slot in that list, preserving which input supplies each occurrence
  * without hashing structural node addresses. The payload is canonicalized once
  * rather than walked again for its references.
@@ -691,20 +691,14 @@ const hydrate = (value: unknown, substitutions: ReadonlyMap<string, string>, at:
  * @private
  */
 const literal = (value: unknown, found: Array<PlannedRecord>, at: string): unknown => {
-  const slots = new Map<string, number>()
   return walkPayload(value, {
     at,
     keysOf: (keys) => [...keys].sort(),
     resolve: (member) => {
       const reference = Planned.reference(member)
       if (reference === undefined) return undefined
-      const identity = JSON.stringify([reference.node, ...reference.path])
-      let input = slots.get(identity)
-      if (input === undefined) {
-        input = found.length
-        slots.set(identity, input)
-        found.push(reference)
-      }
+      const input = found.length
+      found.push(reference)
       return { value: { _tag: "PlannedInput", input, path: [...reference.path] } }
     }
   })
@@ -912,8 +906,9 @@ const renderPlacement = (value: unknown): string => {
 }
 
 /**
- * The `Literal` a payload hashes as, followed by one `Ref` per distinct
- * upstream result it reads.
+ * The `Literal` a payload hashes as, followed by one `Ref` per placeholder
+ * occurrence in the same sorted traversal order. Each placeholder's input
+ * index names its occurrence, including repeated reads of one upstream path.
  *
  * @private
  */

@@ -1,14 +1,15 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, ExternalJob, Flow, Interpreter } from "@smthrs/flow"
+import { Action, ExternalJob, Fault, Flow, Interpreter } from "@smthrs/flow"
 import { RemoteChildProcessSpawner, Sandbox } from "@smthrs/sandbox"
-import { Cause, Effect, Exit, Fiber, Layer, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { TestClock } from "effect/testing"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { AgentFailed, makeRemoteJob, RemoteFix } from "../work/flow.ts"
+import { type RetryServices, withRetryRuntime } from "./retry-runtime.ts"
 
 // Inject transport responses rather than replacing Sandbox.job: the real
 // launcher, retained identity validation, receipt store and capture run here.
@@ -129,8 +130,8 @@ const failure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     assert(Exit.isFailure(exit))
     return Cause.squash(exit.cause)
   })
-const run = <A, E>(effect: Effect.Effect<A, E, KeyValueStore.KeyValueStore>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(KeyValueStore.layerMemory)))
+const run = <A, E>(effect: Effect.Effect<A, E, KeyValueStore.KeyValueStore | RetryServices>) =>
+  Effect.runPromise(effect.pipe(withRetryRuntime, Effect.provide(KeyValueStore.layerMemory)))
 
 test("remote fix reattaches after host reconstruction without launching twice and saves rotated login", async () => {
   const f = fixture()
@@ -353,7 +354,13 @@ test("remote cancel preserves rotated login through a transient save failure", a
     Effect.gen(function*() {
       const handle = yield* f.job.start(input, "cancel-save#g1")
       f.state.saveLoginFailures = 1
-      const fiber = yield* Effect.forkChild(f.job.cancel(handle, "cancel-save#g1"))
+      const fiber = yield* Effect.forkChild(Fault.retryTransient(f.job.cancel(handle, "cancel-save#g1"), {
+        name: "test/remote-cancel",
+        implementationVersion: "remote-cancel-test/v1",
+        idempotencyKey: "cancel-save#g1",
+        success: Schema.Void,
+        error: Schema.Union([AgentFailed, RemoteChildProcessSpawner.ProviderError])
+      }))
       for (let turn = 0; turn < 100 && f.state.saveLoginFailures > 0; turn++) {
         yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
       }

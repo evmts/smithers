@@ -660,12 +660,18 @@ Reads the error and up to 15 `cause` links beneath it and answers the innermost 
 
 ### `Fault.retryTransient`
 
-- **Signature:** `retryTransient<A, E, R>(effect: Effect<A, E, R>): Effect<A, E, R>`
+- **Signature:** `retryTransient(effect, { name, idempotencyKey, success, error, implementationVersion?, tier? }): Action`
 
-Retries plain effects only while `Fault.of(error).class` is `infra`, using
-`RetryPolicy.transient`: 5 seconds doubling to 5 minutes, expiring after 2 hours.
-The caller guarantees the effect is safe to repeat. The final typed failure is
-preserved, including its class. Defects and interruption are not retried.
+Dispatches the effect as a keyed, schema-encoded action. The engine retries
+infrastructure failures with its default `RetryPolicy.transient`: 5 seconds
+doubling to 5 minutes, expiring after 2 hours. A durable runtime records attempts
+and backoff; a volatile runtime supports only in-process replay. Run inside a
+flow implementation with its runtime and crypto services. The final typed error
+is preserved; defects and interruption are not retried. The former one-argument
+helper requires migration to the action options.
+
+The default sealed tier reuses keyed work. Pass `tier: "irreversible"` for
+commands that need distinct invocation identities while remaining retryable.
 
 ### `Fault.respond`
 
@@ -1595,7 +1601,7 @@ Creates a policy after checking every numeric bound, and throws a `RangeError` n
 
 Frozen infrastructure policy: `initialMs: 5000`, `factor: 2`, `maxMs: 300000`,
 `expirationMs: 7200000`. Dispatch uses it by default for repeat-safe typed
-infrastructure failures; `Fault.retryTransient` uses it for plain effects.
+infrastructure failures; `Fault.retryTransient` dispatches a keyed action through that same default.
 
 ### `RetryPolicy.defaultRetryPolicy`
 

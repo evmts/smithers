@@ -37,6 +37,7 @@ import {
   requeue
 } from "../work/flow.ts"
 import { fixRemotely } from "./remote-capture.ts"
+import { withRetryRuntime } from "./retry-runtime.ts"
 
 test("commitMessage takes the agent's last COMMIT line and keeps its issue reference", () => {
   const reply = "Fixed it.\nCOMMIT: draft\nTests pass.\nCOMMIT: 🐛 fix(cli): pin the guest home (#3265)\n"
@@ -237,7 +238,7 @@ test("a remote fix made on a refreshed machine lands as one change on the host's
   const place = { repository: host, directory: join(root, "issue-7"), name: "sweep-7" }
   const message = commitMessage(remote.result.report, 7, "two")
   const adoption = { repo: "o/r", issue: 7, title: "two", remote }
-  const report = await Effect.runPromise(adoptWork(adoption, place))
+  const report = await Effect.runPromise(adoptWork(adoption, place).pipe(withRetryRuntime))
 
   // The host fetched the machine's main, and the change sits on it.
   assert.equal(report.base, main)
@@ -287,7 +288,7 @@ test("a remote fix made on a refreshed machine lands as one change on the host's
   assert.equal(cmd(place.directory, "jj", "log", "--no-graph", "-r", "@-", "-T", "change_id").trim(), report.change)
 
   // Replaying the adoption of the same journaled work answers the same change.
-  const again = await Effect.runPromise(adoptWork(adoption, place))
+  const again = await Effect.runPromise(adoptWork(adoption, place).pipe(withRetryRuntime))
   assert.equal(again.change, report.change)
   assert.equal(jjHost("log", "--no-graph", "-r", `description(exact:"${message}\n")`, "-T", "\"x\""), "x")
 })
@@ -350,7 +351,7 @@ const unsettled = (jjHost: (...args: Array<string>) => string) =>
 
 test("remote work that conflicts with the host's main fails typed, naming the paths, and leaves no change", async (t) => {
   const { jjHost, remote, overlapping, place } = await conflicting(t)
-  const error = failureOf(await Effect.runPromiseExit(adoptWork(adoption(remote), place)))
+  const error = failureOf(await Effect.runPromiseExit(adoptWork(adoption(remote), place).pipe(withRetryRuntime)))
   assert.ok(error instanceof AdoptConflicted)
   assert.match(error.message, /conflicts with [0-9a-f]{40} in README\.md$/)
   // What the sweep needs to apply the same work again, without the agent.

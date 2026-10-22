@@ -192,6 +192,12 @@ A deferred token encodes the flow name, the execution id, and the deferred name,
 
 A graph carrying a FATAL diagnostic is inspectable but deliberately not compilable, so a body whose topology is incomplete is reported rather than half-driven. Building refuses a nesting depth past its bound and refuses a duplicate node id, because a node id is durable dispatch identity and two nodes answering to one address would let a later settlement overwrite an earlier one.
 
+Payload key inputs retain one reference per placeholder occurrence in canonical
+traversal order. Each placeholder's input index names that occurrence, including
+repeated reads of the same upstream path. Changing a supplier changes the
+consumer's key without changing its producers. Existing persisted keys remain
+readable; newly built plans use the per-occurrence inputs.
+
 Building also enforces effect authority. A flow that declared an `effects` envelope grants it to everything spliced beneath it, and every call and every action that declares one of its own is checked against the enclosing grant: a read or write the envelope does not cover is `effect_outside_envelope`, an `expected` declaration inside a `hermetic` envelope is `effect_mode_widening`, and a tier that rose rather than narrowed is `effect_tier_widening`. A refused declaration does not become the envelope for what it encloses, so one over-claim cannot widen its siblings. A called flow requiring a capability the caller does not hold is the one ADVISORY refusal, `capability_outside_grant`: the call runs with the capability dropped, which is the safe direction, so `drafts` still hands the drafts over while `diagnostics` reports it. Every check runs for `.call()`, `.child()`, and `.to()` alike: a boundary gives a callee its own execution, not its own authority.
 
 A call node's key material folds in the declared schemas as their JSON Schema documents, so a change to what a callee accepts or produces re-keys the call. That identity is JSON-Schema-shaped, and the limit is worth stating: two schemas whose decoders disagree can serialize to the same document, so changing only a codec's behaviour does NOT re-key the call, and a result recorded under the old codec is replayed under the new one. Effect codecs are not serializable, so nothing can close this automatically. An author who changes a transformation and needs the call re-keyed renames the declaration.

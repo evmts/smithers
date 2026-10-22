@@ -3821,6 +3821,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../engine
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

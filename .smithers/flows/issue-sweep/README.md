@@ -93,3 +93,9 @@ Stale or sibling jj workspaces fail with `HostFailed.code = "stale_workspace"`.
 Host commands disable jj's automatic stale update and never run recovery or
 retry a stale command. Commit or back up the named workspace before deliberate
 recovery.
+
+Network commands dispatch keyed, invocation-scoped actions: repeated fetches and
+pushes run separately, while replay reuses each invocation's recorded result.
+Host outage codecs retain the original typed error. Remote cancellation leaves
+retry attempts to ExternalJob's keyed Cancel action; rollback calls the adapter
+once and records any stop failure.

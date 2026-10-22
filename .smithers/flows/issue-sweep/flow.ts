@@ -441,7 +441,11 @@ type Failure =
   | TriageFailed
   | Burndown.Stop
 /** What running the work child needs from the engine that executes the sweep. */
-type Engine = FlowRuntime.FlowRuntime | Crypto.Crypto | Action.Requirement<"issue-sweep/ensure-disk">
+type Engine =
+  | FlowRuntime.FlowRuntime
+  | FlowRuntime.FlowInstance
+  | Crypto.Crypto
+  | Action.Requirement<"issue-sweep/ensure-disk">
 const repoOf = (args: { readonly input: unknown }) => (args.input as typeof Input.Type).repo
 const ref = (args: Args) => `${repoOf(args)}#${args.item.number}`
 

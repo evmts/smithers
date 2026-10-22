@@ -1,3 +1,4 @@
+import { withRetryRuntime } from "./retry-runtime.ts"
 /** Opt-in real k=3 evidence; never runs in the ordinary suite or during host burndown. */
 import { Deferred, Effect, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
@@ -105,10 +106,12 @@ test("three agents on one real VM capture and apply independent edits", {
         assert.doesNotMatch(remote.work.patch, new RegExp(`shared-vm-agent-${other}\\.txt`))
       }
     }
-    const report = await Effect.runPromise(adoptWork(
-      { repo: "o/r", issue: index, title: `agent ${index}`, remote },
-      { repository: host, directory: join(root, `issue-${index}`), name: `shared-${index}` }
-    ))
+    const report = await Effect.runPromise(
+      adoptWork(
+        { repo: "o/r", issue: index, title: `agent ${index}`, remote },
+        { repository: host, directory: join(root, `issue-${index}`), name: `shared-${index}` }
+      ).pipe(withRetryRuntime)
+    )
     const content = execFileSync("jj", [
       "-R",
       host,

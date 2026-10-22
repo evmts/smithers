@@ -9,10 +9,13 @@
  * @since 1.0.0
  */
 
-import * as Clock from "effect/Clock"
-import * as Effect from "effect/Effect"
-import * as Result from "effect/Result"
+import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import type * as Scope from "effect/Scope"
+import type * as Action from "./Action/Action.ts"
+import { make as makeAction } from "./Action/make.ts"
+import type { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
+import type { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
 import type { HumanAnswerInvalid, HumanTaskFailed } from "./HumanTask.ts"
 import * as RetryPolicy from "./RetryPolicy.ts"
 
@@ -161,31 +164,32 @@ export const of = (error: unknown): Fault => {
 }
 
 /**
- * Retries typed infrastructure failures of an effect the caller can safely repeat.
- * Preserves its error channel when the bounded transient policy expires.
- * Defects and interruption propagate without retry.
+ * Dispatches repeat-safe work as a durable action. The engine's default
+ * transient policy retries only typed infrastructure failures, recording
+ * attempts and backoff through its runtime instead of an in-memory loop.
+ *
+ * A stable name, idempotency key, and result schemas are required so recovery
+ * can identify and decode recorded attempts. Provide a durable FlowRuntime
+ * inside a flow; a volatile runtime offers only in-process replay.
+ * Exhaustion preserves the final typed error. Defects and interruption do
+ * not retry.
  *
  * @category combinators
  * @since 1.0.0
  */
-export const retryTransient = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  Effect.gen(function*() {
-    const start = yield* Clock.currentTimeMillis
-    let attempt = 1
-    while (true) {
-      const result = yield* Effect.result(effect)
-      if (Result.isSuccess(result)) return result.success
-      if (of(result.failure).class !== "infra") return yield* Effect.fail(result.failure)
-      const decision = yield* RetryPolicy.decideEffect(RetryPolicy.transient, {
-        attempt,
-        error: result.failure,
-        elapsedMs: (yield* Clock.currentTimeMillis) - start
-      })
-      if (decision._tag === "GiveUp") return yield* Effect.fail(result.failure)
-      yield* Effect.sleep(decision.delayMs)
-      attempt++
-    }
-  })
+export const retryTransient = <R, Success extends Schema.Constraint, Error extends Schema.Constraint>(
+  effect: Effect.Effect<Success["Type"], Error["Type"], R>,
+  options: {
+    readonly name: string
+    readonly idempotencyKey: Action.IdempotencyKey
+    /** Use an invocation-scoped tier for work that must run again at another call site. */
+    readonly tier?: Action.Tier | undefined
+    readonly implementationVersion?: string | undefined
+    readonly success: Success
+    readonly error: Error
+  }
+): Action.Action<Success, Error, Exclude<R, FlowInstance | FlowRuntime | Scope.Scope>> =>
+  makeAction({ ...options, execute: effect })
 
 /**
  * What the responder knows when it picks a response.
@@ -223,6 +227,7 @@ export const respond = (fault: Fault, state: State): Response =>
     bug: "stop"
   } as const satisfies Record<Class, Response>)[fault.class]
 
+register("@smthrs/engine/ExecutionIdentityConflict", "bug")
 register("@smthrs/flow/InfraInterrupt", "infra")
 register("@smthrs/flow/InfraInterruptRetriesExhausted", "infra")
 register(

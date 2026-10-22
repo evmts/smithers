@@ -857,6 +857,7 @@ export const makeRemoteJob = (options: RemoteJobOptions = {}) => {
         if (collected._tag === "Failed") return yield* Effect.fail(collected.error)
         return collected.value
       }),
+    // ExternalJob's keyed Cancel action owns retries; rollback calls this once.
     cancel: (handle: typeof RemoteHandle.Type, key: string) =>
       Effect.gen(function*() {
         const p = yield* attach(handle, key)
@@ -875,7 +876,7 @@ export const makeRemoteJob = (options: RemoteJobOptions = {}) => {
             error.code === "not_found" ? Effect.void : Effect.fail(error)))
         }
         yield* cleanup(p, handle, key)
-      }).pipe(Fault.retryTransient, Effect.orDie)
+      })
   }
 }
 
@@ -936,7 +937,14 @@ export const adoptWork = (input: typeof Adopt.payloadSchema.Type, place: Place) 
       }
     }).pipe(
       Effect.provide(Layer.merge(NodeServices.layer, NodeJj.layerRepositoryMutation)),
-      ridingOutages,
+      (operation) =>
+        ridingOutages(operation, {
+          name: "issue-sweep/adopt-merge",
+          implementationVersion: "adopt-merge/v1",
+          idempotencyKey: JSON.stringify([input.attempt ?? 1, work.session, work.base, work.patch]),
+          success: SandboxMerge.Outcome,
+          error: Schema.Union([SandboxMerge.MergeError, AdoptConflicted])
+        }),
       Effect.mapError((cause) =>
         cause instanceof AdoptConflicted ? cause : new AgentFailed({ message: failed(cause.message) })
       )

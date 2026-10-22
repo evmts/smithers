@@ -9,8 +9,9 @@
  * it exists. The checks run inside `codex sandbox`, so code the agent wrote
  * can write only its own workspace and has no network.
  */
-import { Fault } from "@smthrs/flow"
+import { Fault, type FlowRuntime } from "@smthrs/flow"
 import { Cause, Deferred, Duration, Effect, Option, Result, Schema, Semaphore } from "effect"
+import type * as Crypto from "effect/Crypto"
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { matchesGlob } from "node:path"
@@ -213,7 +214,15 @@ const jjWriteUnder = (lock: string | undefined) => (workspace: string, args: Rea
       ? output("lockf", ["-k", "-t", "900", lock, "jj", "-R", workspace, ...args], { cwd: workspace })
       : output("jj", ["-R", workspace, ...args], { cwd: workspace })
   )
-  return args[0] === "git" ? ridingOutages(write) : write
+  return args[0] === "git"
+    ? ridingOutages(write, {
+      name: "issue-sweep/jj-network",
+      implementationVersion: "jj-network/v1",
+      idempotencyKey: JSON.stringify([workspace, args]),
+      success: Schema.String,
+      error: LandFailed
+    })
+    : write
 }
 
 /** A jj command in `workspace` that writes the shared repository, under the machine-wide VCS lock. */
@@ -345,9 +354,9 @@ const rememberedCommits = 64
  * host keeps it. A run that could not decide (`Broken`) fails its callers
  * and is not kept, so a later request retries it.
  */
-export const makeBaselines = (options: {
+export const makeBaselines = <R>(options: {
   readonly file?: string | undefined
-  readonly measure: (commit: string, labels: ReadonlyArray<string>) => Effect.Effect<Checked, LandFailed>
+  readonly measure: (commit: string, labels: ReadonlyArray<string>) => Effect.Effect<Checked, LandFailed, R>
 }) => {
   const read = (): Record<string, Record<string, boolean>> => {
     if (options.file === undefined) return {}
@@ -397,7 +406,7 @@ export const makeBaselines = (options: {
       // The file only saves work after a restart; memory still holds the answer.
     }
   }
-  return (commit: string, labels: ReadonlyArray<string>): Effect.Effect<ReadonlyArray<string>, LandFailed> =>
+  return (commit: string, labels: ReadonlyArray<string>): Effect.Effect<ReadonlyArray<string>, LandFailed, R> =>
     Effect.suspend(() => {
       const answers = known.get(commit) ?? new Map<string, Deferred.Deferred<boolean, LandFailed>>()
       known.set(commit, answers)
@@ -490,18 +499,24 @@ const syncDocs = (workspace: string, change: string, files: ReadonlyArray<string
  * and `redOnMain` answers which of `labels` are already red on `main` at a
  * commit.
  */
-export interface Checks {
-  readonly prepare: (workspace: string, change: string, files: ReadonlyArray<string>) => Effect.Effect<void, LandFailed>
-  readonly index: (workspace: string) => Effect.Effect<ReadonlyArray<IndexedTarget>, LandFailed>
-  readonly test: (workspace: string, labels: ReadonlyArray<string>) => Effect.Effect<Checked, LandFailed>
+type RetryServices = FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Crypto.Crypto
+
+export interface Checks<R = never> {
+  readonly prepare: (
+    workspace: string,
+    change: string,
+    files: ReadonlyArray<string>
+  ) => Effect.Effect<void, LandFailed, R>
+  readonly index: (workspace: string) => Effect.Effect<ReadonlyArray<IndexedTarget>, LandFailed, R>
+  readonly test: (workspace: string, labels: ReadonlyArray<string>) => Effect.Effect<Checked, LandFailed, R>
   readonly redOnMain: (
     labels: ReadonlyArray<string>,
     revision: string
-  ) => Effect.Effect<ReadonlyArray<string>, LandFailed>
+  ) => Effect.Effect<ReadonlyArray<string>, LandFailed, R>
 }
 
 /** The checks a live landing runs, sandboxed, in the change's workspace. */
-export const liveChecks: Checks = {
+export const liveChecks: Checks<RetryServices> = {
   prepare: (workspace, change, files) => asLand(Effect.andThen(install(workspace), syncDocs(workspace, change, files))),
   index: (workspace) =>
     asLand(Effect.flatMap(
@@ -527,8 +542,8 @@ const pushAttempts = 3
  * `lock` is the VCS lock file every repository write takes; `beforePush`
  * runs inside that serial step, before `main` moves.
  */
-export const makeLander = (options: {
-  readonly checks: Checks
+export const makeLander = <R>(options: {
+  readonly checks: Checks<R>
   readonly lock?: string | undefined
   readonly beforePush?: ((change: string) => Effect.Effect<void>) | undefined
 }) => {

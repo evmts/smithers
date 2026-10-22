@@ -1,3 +1,4 @@
+import { withRetryRuntime } from "./retry-runtime.ts"
 /**
  * The agent microVM against real Microsandbox on this host. Skipped, with the
  * reason, when `msb` or the issue-sweep snapshot is missing.
@@ -153,7 +154,7 @@ test("a microVM's edit comes back as work on main@origin and lands as a change i
   await cloned
   const place = { repository: host, directory: join(root, "issue-0"), name: "sweep-0" }
   const report = await Effect.runPromise(
-    adoptWork({ repo: "o/r", issue: 0, title: "a line from the microVM", remote }, place)
+    adoptWork({ repo: "o/r", issue: 0, title: "a line from the microVM", remote }, place).pipe(withRetryRuntime)
   )
   const readme = execFileSync("jj", [
     "-R",
