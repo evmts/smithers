@@ -24,6 +24,7 @@ import { retry, wentOffline } from "../chat/actions"
 import { Chat } from "../chat/chat"
 import { BranchClient, TrackRefused } from "./api"
 import { Branch } from "./branch"
+import { BranchStore } from "./store"
 import { openBranchPage } from "./navigation"
 import { Terminal } from "../terminal/terminal"
 import { TerminalStore } from "../terminal/store"
@@ -57,6 +58,7 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
   const branch = await runtime.runPromise(Effect.service(Branch))
   const chat = await runtime.runPromise(Effect.service(Chat))
   const api = await runtime.runPromise(Effect.service(TestChatApi))
+  const { conversations: cache } = await runtime.runPromise(Effect.service(BranchStore))
   branch.queries.current.startSyncImmediate()
   chat.queries.place.startSyncImmediate()
   api.branches.github.publish("octo", "hello", {
@@ -66,6 +68,7 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
   return {
     runtime,
     api,
+    cache,
     actions: branch.actions,
     current: () => branch.queries.current.toArray[0],
     /** The conversation this tab shows and asks in: a branch's id, or `null` for the home one. */
@@ -173,17 +176,22 @@ describe("opening a branch", () => {
 
   test("a branch GitHub doesn't have is missing, at once: a refusal isn't tried again", async () => {
     const tab = await open()
+    await tab.runtime.runPromise(tab.cache.restored)
+    await tab.runtime.runPromise(tab.cache.insert({ id: "octo/hello/nope", conversationId: "deleted-conversation" }))
 
     expect(await tab.actions.open("octo", "hello", "nope")).toBeUndefined()
 
     expect(tab.current()).toMatchObject({ name: "nope", status: "missing", branchId: null, conversationId: null, mode: null })
     expect(tab.opened("missing")).toBe(1)
+    expect(tab.cache.tanstack.has("octo/hello/nope")).toBe(false)
     // One read of the branch, never a second: the flow ended with the refusal.
     expect(tab.api.branches.github.seen.map(({ method, prefixes }) => [method, prefixes])).toEqual([
       ["POST", ["refs/heads/nope"]],
     ])
     expect(await tab.rows()).toEqual([])
     expect(tab.place()).toBeNull()
+    expect(await tab.actions.open("octo", "hello", "unseen")).toBeUndefined()
+    expect(tab.cache.tanstack.has("octo/hello/unseen")).toBe(false)
   }, WITHIN)
 
   test("ChatApi unavailable is tried again by the step's retry policy, and the branch is tracked once", async () => {
@@ -204,22 +212,26 @@ describe("opening a branch", () => {
     ["a Guest", { subject: { kind: "person", id: "person-guest" }, role: "guest" }, "forbidden"],
   ])("%s may not watch a branch: %s, and nothing is recorded", async (_who, actor, status) => {
     const tab = await open({}, { actor })
+    await tab.runtime.runPromise(tab.cache.restored)
+    await tab.runtime.runPromise(tab.cache.insert({ id: "octo/hello/feature/one", conversationId: "previous-conversation" }))
 
     expect(await tab.actions.open("octo", "hello", "feature/one")).toBeUndefined()
 
     expect(tab.current()).toMatchObject({ status, branchId: null, conversationId: null })
     expect(tab.opened(status)).toBe(1)
+    expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(false)
     expect(tab.api.branches.github.seen).toEqual([])
     expect(await tab.rows()).toEqual([])
   }, WITHIN)
 
   test("offline, the page shows at once without waiting for an answer, and opens the branch again once the browser is back online", async () => {
     let reopened = 0
-    const tab = await open({ reopenRoute: () => void reopened++ })
+    const recovered = new AbortController()
+    const tab = await open({ reopenRoute: () => { reopened++; recovered.abort() } })
     // ChatApi can't answer while the browser is offline: GitHub holds its answer, so the request never ends by itself.
     const release = tab.api.branches.github.hold()
 
-    const opening = tab.actions.open("octo", "hello", "feature/one")
+    const opening = tab.actions.open("octo", "hello", "feature/one", recovered.signal)
     await until(() => expect(tab.api.branches.github.seen).toHaveLength(1))
     expect(tab.current()).toMatchObject({ status: "tracking" })
     await tab.runtime.runPromise(wentOffline)
@@ -234,6 +246,8 @@ describe("opening a branch", () => {
     release()
     await tab.runtime.runPromise(retry("online"))
     await until(() => expect(reopened).toBe(1))
+    // Replacing the recovered navigation aborts its old signal; it is still one reopened attempt, never abandoned.
+    expect(tab.reopens("abandoned")).toBe(0)
     const branchId = await tab.actions.open("octo", "hello", "feature/one")
     expect(tab.current()).toMatchObject({ status: "ready", branchId })
 
@@ -250,6 +264,9 @@ describe("opening a branch", () => {
     await tab.runtime.runPromise(wentOffline)
     expect(await tab.actions.open("octo", "hello", "main", closed.signal)).toBeUndefined()
     closed.abort()
+    // Abandonment settles while still offline, even if no connection recovery or newer branch open ever occurs.
+    await until(() => expect(tab.reopens("abandoned")).toBe(1))
+    expect(reopened).toBe(1)
     await tab.runtime.runPromise(retry("online"))
 
     // Even when it aborts while the open still waits, before the browser goes offline.
@@ -262,7 +279,7 @@ describe("opening a branch", () => {
     expect(await late).toBeUndefined()
     await tab.runtime.runPromise(retry("online"))
     hold()
-    // Both aborted pages woke with the browser back online, and neither opened its route.
+    // Both aborted pages are counted once, and neither opened its route.
     await until(() => expect(tab.reopens("abandoned")).toBe(2))
     expect(tab.reopens("reopened")).toBe(1)
     expect(reopened).toBe(1)
@@ -270,11 +287,14 @@ describe("opening a branch", () => {
 
   test("a tab whose engine can't run fails to open the branch, and keeps the home conversation", async () => {
     const tab = await open({ host: nodeDevice({ engineWorker: failingWorker }) })
+    await tab.runtime.runPromise(tab.cache.restored)
+    await tab.runtime.runPromise(tab.cache.insert({ id: "octo/hello/feature/one", conversationId: "saved-conversation" }))
 
     expect(await tab.actions.open("octo", "hello", "feature/one")).toBeUndefined()
 
     expect(tab.current()).toMatchObject({ name: "feature/one", status: "failed", branchId: null })
     expect(tab.opened("failed")).toBe(1)
+    expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(true)
     expect(tab.place()).toBeNull()
   }, WITHIN)
 })

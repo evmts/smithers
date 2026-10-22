@@ -20,7 +20,7 @@ import { debugRunOf, timeOf } from "../view"
 // (src/features/views) shows where it was added, from its own row. An answer shows its agent status under it
 // (src/features/status): its question while it needs you, in place of an empty bubble. Empty, it shows `empty`: the
 // wordmark on /app, the branch's own empty state on a branch's page.
-export function Conversation({ empty = <Wordmark /> }: { readonly empty?: ReactNode } = {}) {
+export function Conversation({ empty = <Wordmark />, readOnly = false }: { readonly empty?: ReactNode; readonly readOnly?: boolean } = {}) {
   const { queries, actions } = useChat()
   // The conversation this tab shows: the branch's on a branch's page (decision 0013 §1), the home one on /app.
   const { data: place } = useLiveQuery(queries.place)
@@ -71,7 +71,7 @@ export function Conversation({ empty = <Wordmark /> }: { readonly empty?: ReactN
               <CopyButton variant="ghost" size="sm" onCopy={() => actions.copy(message.id)}>
                 {COPY}
               </CopyButton>
-            ) : message.status === "queued" && pill ? (
+            ) : message.status === "queued" && pill && !readOnly ? (
               <Button variant="ghost" size="sm" onClick={() => actions.edit(message.id)}>
                 {EDIT}
               </Button>
@@ -96,20 +96,20 @@ export function Conversation({ empty = <Wordmark /> }: { readonly empty?: ReactN
             ) : message.status === "unsent" ? (
               <>
                 <Badge variant="destructive">{NOT_SENT}</Badge>
-                {message.sendAgain ? (
+                {!readOnly && message.sendAgain ? (
                   <Button variant="ghost" size="sm" onClick={() => actions.resendUnsent(message.id)}>
                     Retry
                   </Button>
-                ) : (
+                ) : !readOnly ? (
                   <Button variant="ghost" size="sm" onClick={() => actions.editUnsent(message.id)}>
                     {EDIT}
                   </Button>
-                )}
-                <Button variant="ghost" size="sm" onClick={() => actions.discardUnsent(message.id)}>
+                ) : null}
+                {readOnly ? null : <Button variant="ghost" size="sm" onClick={() => actions.discardUnsent(message.id)}>
                   Discard
-                </Button>
+                </Button>}
               </>
-            ) : message.status === "failed" ? (
+            ) : message.status === "failed" && !readOnly ? (
               <Button variant="ghost" size="sm" onClick={() => actions.retryAnswer(message.id)}>
                 Retry
               </Button>
@@ -123,9 +123,9 @@ export function Conversation({ empty = <Wordmark /> }: { readonly empty?: ReactN
           )}
         </ChatMessage>
         )}
-        {message.role === "assistant" ? <div id={message.text === "" && statuses.find(status => status.id === message.id)?.state === "needs_you" ? message.id : undefined}><AnswerStatus id={message.id} statuses={status.statuses} /></div> : null}
+        {message.role === "assistant" && !readOnly ? <div id={message.text === "" && statuses.find(status => status.id === message.id)?.state === "needs_you" ? message.id : undefined}><AnswerStatus id={message.id} statuses={status.statuses} /></div> : null}
         {/* A TODO the agent drafted in this answer, private to this device until the person commits it (0016 §3). */}
-        {message.role === "assistant" ? <AnswerDrafts id={message.id} /> : null}
+        {message.role === "assistant" && !readOnly ? <AnswerDrafts id={message.id} /> : null}
         </Fragment>
         ),
       )}

@@ -29,7 +29,8 @@ export const Refused = Schema.Struct({ code: Schema.Literals(REFUSALS) })
  * - `ready` with the branch's ids, mode and what this person may do on it;
  * - `missing` when GitHub has no such branch, `sign_in` or `forbidden` when this person may not open it, `failed`
  *   when it couldn't be reached;
- * - `offline` when the browser went offline before it answered: the route opens it again once the browser is back.
+ * - `offline` when the browser went offline before it answered: a saved conversation id can be read, with no access
+ *   grant or branch id; the route opens it again once the browser is back.
  */
 export const CURRENT = "current"
 export const Current = Schema.Struct({
@@ -44,3 +45,10 @@ export const Current = Schema.Struct({
   access: Schema.NullOr(Schema.Literals(ACCESSES)),
 })
 export type Current = typeof Current.Type
+
+/** A verified route's conversation on this device; this records no workspace permission. */
+export const ConversationRoute = Schema.Struct({
+  id: Schema.String,
+  conversationId: Schema.String,
+})
+export type ConversationRoute = typeof ConversationRoute.Type

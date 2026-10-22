@@ -40,7 +40,7 @@ stacks under the view.
 
 - **Route** (`src/router.tsx`): the tree route warms the location (`repo.actions.warmRoute`; a link's hover does only that), then opens it (`repo.actions.openRoute`), tracks the branch (`branch.actions.open`), joins its room (`branch.presence.actions.join`) and, under `?terminal`, selects its loading terminal screen (`terminal.actions.showInBackground`) without awaiting terminal rows, then says where on the page the person is once they arrive (`branch.presence.actions.at`). `?terminal=me` is the person's own terminal, or the branch's first live one when they have none; `?terminal=<id>` shows that terminal. Leaving the route aborts its background terminal selection and leaves the room (`onLeave`).
 - **Screen**: `src/screens/branch/BranchScreen.tsx` composes `RepoHeader`, `BranchHeader` (the branch's name and this person's access, the people on it, Share for its owner, and the Code and Terminal tabs), `RepoPage`, `TerminalPanel` or, under `?edit=<path>`, the live editor (`SharedFile`, [co-editing](coedit.md#the-page)) in the view column, and chat's `Conversation` with the `Composer` at its foot (`docked={false}`) in the conversation column: once its owner shares the branch, the branch's prompt, typed together by those who may edit it and read-only for those who may only view it; until then the owner's own draft, kept on their device ([co-editing](coedit.md#the-prompt)). A branch this person may not open, or stops being able to, shows `No access` in the conversation's place beside the repository view (`src/features/branch/view.ts` `accessNow`).
-- **Offline**: the device can't say whether this person may open the branch, so the page doesn't wait for `branch/track`'s 30 s of retries. Once the browser reports it is offline, `branch.actions.open` answers at once, the branch's state is `offline` and the page shows the repository view with the pending view's public chrome (the branch's name, Code and Terminal) and no workspace, however long the person stays offline. Once the browser is back online, the route loads again in place (`router.invalidate`, the host's `reopenRoute`) and tracks the branch, with no reload. Another navigation, or leaving the page, first cancels it (the navigation's abort signal).
+- **Offline**: the device can't say whether this person may open the branch, so the page doesn't wait for `branch/track`'s 30 s of retries. Once the shared connection reports offline, `branch.actions.open` answers at once, the branch's state is `offline` and the page shows the pending view's public chrome (the branch's name, Code and Terminal). A verified route also restores its saved conversation read-only; it restores no workspace grant. Once the shared connection recovers, the route loads again in place (`router.invalidate`, the host's `reopenRoute`) and tracks the branch, with no reload. Another navigation, or leaving the page, first cancels it (the navigation's abort signal).
 - **`/app`** shows the home conversation: the deployment repository's (`GITHUB_REPOSITORY`) `main`. Its route leaves the branch, so the composer asks there again.
 - **A ref that isn't a branch** (a commit, a tag, a name GitHub doesn't have) shows the repository view alone.
 
@@ -224,3 +224,16 @@ budget independently.
 - Archive (`conversation_people`) and the branch picker.
 - Private repositories: they wait for per-repository GitHub App installation tokens.
 - The live half of the end-to-end test waits for Will's yes to deploy.
+
+### Reopening a saved conversation offline
+
+The device keeps each verified branch route’s conversation id (`branch-conversations`,
+[decision 0038](../decisions/0038-offline-branch-conversations.md)). Reopening offline
+restores that conversation, its queued questions and their Connection count. No
+workspace grant is cached: the composer, sharing and terminals wait for tracking
+to verify access again. An unknown route shows public chrome only. A definitive
+refusal removes the saved route; sign-out wipes it with the device.
+
+Regression: `src/features/branch/offlineConversation.test.ts`; browser proof:
+`e2e/local-first.spec.ts` “offline branch”. Both exercise the real device store
+and outbox. No model call is needed to prove restoring queued questions.

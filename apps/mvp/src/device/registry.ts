@@ -1,5 +1,6 @@
 import { Migrations } from "@smthrs/effect-tanstack-db"
 import { Notice, Pending } from "../features/attention/schema"
+import { ConversationRoute } from "../features/branch/schema"
 import { Confirmed } from "../features/auth/schema"
 import { Asking, Message, Unsent } from "../features/chat/schema"
 import { Sending as TextSending, TextUpdate } from "../features/coedit/schema"
@@ -35,6 +36,9 @@ import { AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, Requested
 // migration to it. Synced rows are never migrated: a new version drops them and they sync again.
 
 // --- Local: rows only this device has ---
+
+/** Verified branch routes, so an offline reload can select the saved conversation without restoring grants. */
+export const BranchConversationsStore = Migrations.local({ id: "branch-conversations", versions: [ConversationRoute], getKey: (row) => row.id })
 
 /** Questions the server refused or the outbox couldn't take (src/features/chat/store.ts). */
 export const ChatUnsentStore = Migrations.local({ id: "chat-unsent", versions: [Unsent], getKey: (row) => row.id })
@@ -179,6 +183,7 @@ export const SteerSendingPayload = Migrations.payload({ key: "steer-sending", ve
 /** Every store this build keeps, and its outbox's writes. */
 export const deviceRegistry = Migrations.registry({
   stores: [
+    BranchConversationsStore,
     ChatUnsentStore,
     ChatDraftsStore,
     IssueRequestedStore,

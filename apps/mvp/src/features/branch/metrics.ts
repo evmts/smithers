@@ -10,8 +10,8 @@ export const tracks = Metric.counter("smithers_web_branch_tracks", {
 })
 
 /**
- * Branch pages opened offline, once the browser is back online, by `outcome`: `reopened` (the route loads again), or
- * `abandoned` (its navigation was aborted: a newer one took over, or the page closed).
+ * Branch pages by `outcome`: `reopened` after the connection recovers, or `abandoned` when navigation is aborted
+ * while opening or waiting for recovery.
  */
 export const reopens = Metric.counter("smithers_web_branch_reopens", {
   description: "Branch pages opened offline, once the browser is back online, by outcome",

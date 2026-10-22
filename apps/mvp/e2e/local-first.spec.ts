@@ -1,7 +1,7 @@
 import { allServerRows, expect, expectSameThread, NOT_SENT, PAGE_SIZE, pairs, serverRows, test } from "./devices"
 import { faultyApp, faults } from "./faults"
 import { step } from "./fixtures"
-import { questionPost, requires, writeHeaders } from "./target"
+import { questionPost, requires, target, writeHeaders } from "./target"
 
 // Local-first guarantees across real devices (docs/decisions/0002-local-first.md §7): separate browser contexts, each
 // keeping the conversation on the device (SQLite on OPFS) and every question in its outbox (IndexedDB) until Postgres
@@ -69,6 +69,41 @@ test("restart offline: a question asked offline survives closing the app, and a 
   await again.expectAnswered(asked, `restart-${word}`)
   const rows = await serverRows(request, word)
   expect(rows.map(({ role }) => role)).toEqual(["user", "assistant"])
+})
+
+test("offline branch: its queued questions and count survive a reload and closing the app", {
+  annotation: { type: "summary", description: "A saved branch conversation and its queued count reopen offline without a server answer." },
+}, async ({ devices }) => {
+  const [a] = await devices.open("A")
+  // The production suite opens its own branch already. Locally use the public fixture from branch-workspace.spec.ts;
+  // tracking reads an existing ref, and never writes to GitHub. Nothing in this test asks the model.
+  if (target === "local") await step("Open the branch conversation", async () => {
+    await a.page.goto("/octocat/Spoon-Knife/tree/test-branch")
+    await expect(a.conversation).toBeVisible({ timeout: 30_000 })
+    await expect(a.page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0)
+  })
+  const path = new URL(a.page.url()).pathname
+  await a.offline()
+  const first = `Keep first-${devices.word}`
+  const second = `Keep second-${devices.word}`
+  await a.ask(first)
+  await a.ask(second)
+  await a.expectQueued(first)
+  await a.expectQueued(second)
+  await a.expectOffline(2)
+  await step("Reload the branch offline", () => a.page.reload())
+  await a.expectOffline(2)
+  await a.expectQueued(first)
+  await a.expectQueued(second)
+  await expect(a.conversation.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0)
+  await a.close()
+  const again = await devices.tab(a.device, "A again")
+  await step("Reopen the saved branch offline", () => again.page.goto(path))
+  await again.expectOffline(2)
+  await again.expectQueued(first)
+  await again.expectQueued(second)
+  await expect(again.page.locator('[aria-label="Connection"]')).toHaveCount(1)
+  expect(a.asked.filter(({ status }) => status !== undefined)).toEqual([])
 })
 
 test("closed before its run started: a question ChatApi took, whose tab closed before its engine recorded the run, is answered when the app opens again", { annotation: { type: "summary", description: "A question whose tab closed before it was answered is answered when the app opens again." } }, async ({ devices, request }) => {

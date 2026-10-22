@@ -12,6 +12,7 @@ import { Branch } from "../../features/branch/branch"
 import { BranchStore } from "../../features/branch/store"
 import { retry, wentOffline } from "../../features/chat/actions"
 import { Chat } from "../../features/chat/chat"
+import { ChatStore } from "../../features/chat/store"
 import { CodeIntel } from "../../features/code-intel/codeIntel"
 import { FlowsUi } from "../../features/flows-ui/flowsUi"
 import { Commands } from "../../features/commands/commands"
@@ -71,6 +72,14 @@ const open = async (reopenRoute?: () => void) => {
     release: () => runtime.runPromise(fault.releaseStarts),
     downShapes: () => runtime.runPromise(shapes.down()),
     upShapes: () => runtime.runPromise(shapes.heal),
+    savedQuestion: () => runtime.runPromise(Effect.gen(function* () {
+      const store = yield* ChatStore
+      const conversationId = crypto.randomUUID()
+      yield* branchStore.conversations.restored
+      yield* branchStore.conversations.insert({ id: "octo/hello/work", conversationId })
+      yield* store.asking.insert({ v: 1, id: crypto.randomUUID(), answerId: crypto.randomUUID(),
+        text: "saved offline question", queuedAt: 1, conversationId })
+    })),
     previousBranch: () => runtime.runPromise(Effect.gen(function* () {
       repo.actions.openRoute("tree", { owner: "old-owner", repo: "old-repo", ref: "previous" }, {})
       yield* branchStore.current.update("current", (row) => void Object.assign(row,
@@ -153,10 +162,11 @@ test("an evicted device renders branch chrome while tracking waits, then opens t
   }))
 }, 90_000)
 
-test("pending chrome names the destination and hides the previous branch through terminal preload", async () => {
-  const tab = await open()
+test("pending chrome names the destination and hides the previous branch through an outage and terminal preload", async () => {
+  let router: ReturnType<typeof onBranch> | undefined
+  const tab = await open(() => void router?.invalidate())
   await tab.previousBranch()
-  const router = onBranch(tab.context, true)
+  router = onBranch(tab.context, true)
   const entering = router.load()
   const render = () => tab.render(router)
   try {
@@ -167,9 +177,11 @@ test("pending chrome names the destination and hides the previous branch through
     expect(warming).not.toMatch(/old-owner|old-repo|previous|>Owner<|>Share</)
     await vi.waitFor(() => expect(tab.current()?.status).toBe("tracking"), { timeout: 10_000 })
     await tab.downShapes()
+    await tab.offline()
     await tab.release()
-    await vi.waitFor(() => expect(tab.current()?.status).toBe("ready"), { timeout: 40_000 })
-    // Tracking is verified but the full route still waits for B's live parts. A's terminal remains hidden.
+    await entering
+    expect(tab.current()?.status).toBe("offline")
+    // While the connection is down, the destination's pending chrome cannot expose A's terminal or grants.
     const tracked = pending()
     expect(tracked).toContain('aria-label="Branch"')
     expect(tracked).not.toContain('aria-label="Terminal"')
@@ -178,9 +190,13 @@ test("pending chrome names the destination and hides the previous branch through
   } finally {
     await tab.release()
     await tab.upShapes()
+    await tab.online()
     await entering
   }
-  expect(tab.context.terminal.queries.panel.toArray[0]?.branchId).toBe(tab.current()?.branchId)
+  await vi.waitFor(() => {
+    expect(tab.current()?.status).toBe("ready")
+    expect(tab.context.terminal.queries.panel.toArray[0]?.branchId).toBe(tab.current()?.branchId)
+  }, { timeout: 40_000 })
   const verified = render()
   expect(verified).toContain('aria-label="Terminal"')
   expect(verified).not.toContain("previous-owner")
@@ -222,4 +238,19 @@ test("offline, an evicted device's branch page shows its chrome at once, and its
   await missing.load()
   await vi.waitFor(() => expect(tab.current()?.status).toBe("missing"), { timeout: 10_000 })
   expect(tab.render(missing)).not.toContain('aria-label="Branch"')
+}, 90_000)
+
+test("a saved branch shows its queued conversation and one counted pill offline without workspace controls", async () => {
+  const tab = await open()
+  await tab.savedQuestion()
+  await tab.offline()
+  const router = onBranch(tab.context)
+  await router.load()
+  const html = tab.render(router)
+  expect(html.match(/aria-label="Connection"/g)).toHaveLength(1)
+  expect(html).toContain("Offline · 1")
+  expect(html).toContain('aria-label="Conversation"')
+  expect(html).toContain("saved offline question")
+  expect(html).not.toMatch(/>Owner<|>Can edit<|>Share<|>Edit<|>Discard<|data-slot="chat-composer"|aria-label="Terminal"/)
+  await tab.release()
 }, 90_000)

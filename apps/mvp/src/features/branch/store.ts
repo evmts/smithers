@@ -1,6 +1,7 @@
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, FiberHandle, Layer, type Scope } from "effect"
-import { CURRENT, Current } from "./schema"
+import { Context, Effect, FiberHandle, Layer, Ref, type Scope } from "effect"
+import { BranchConversationsStore } from "../../device/registry"
+import { CURRENT, Current, type ConversationRoute } from "./schema"
 
 // The branch this tab's route shows (docs/features/branch-workspace.md#the-page), as one local row: what the page
 // renders while `branch/track` runs and once it answers.
@@ -23,6 +24,8 @@ export class BranchRoute extends Context.Service<BranchRoute, { readonly reopen:
 export class BranchStore extends Context.Service<
   BranchStore,
   {
+    readonly generation: Ref.Ref<number>
+    readonly conversations: Collection.Collection<ConversationRoute, string>
     readonly current: Collection.Collection<Current, string>
     readonly currentState: Effect.Success<ReturnType<typeof currentQuery>>
     /** Follows the shown branch's permission list for its owner: only the latest branch's. */
@@ -51,6 +54,8 @@ export class BranchStore extends Context.Service<
         }],
       })
       return BranchStore.of({
+        generation: yield* Ref.make(0),
+        conversations: yield* Collection.persisted(BranchConversationsStore),
         current,
         currentState: yield* currentQuery(current),
         follower: yield* FiberHandle.make<void, never>(),

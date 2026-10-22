@@ -1,6 +1,12 @@
 {
-  "epoch": 60,
+  "epoch": 61,
   "stores": {
+    "branch-conversations": {
+      "kind": "local",
+      "versions": {
+        "1": "1b558ae889cb293f"
+      }
+    },
     "chat-unsent": {
       "kind": "local",
       "versions": {

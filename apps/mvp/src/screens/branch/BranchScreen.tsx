@@ -33,9 +33,10 @@ export function BranchScreen() {
   const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly edit?: string }
   const access = accessNow(current, room, selfAccessOf(participants))
   const open = access !== undefined && access !== "none"
+  const savedConversation = current?.status === "offline" && current.conversationId !== null
   const denied = access === "none" || current?.status === "forbidden"
   return (
-    <main className="branch-screen" aria-label="Repository" data-workspace={open || denied ? "true" : "false"}>
+    <main className="branch-screen" aria-label="Repository" data-workspace={open || denied || savedConversation ? "true" : "false"}>
       <RepoHeader />
       {/* Offline before tracking answered: the pending view's public chrome until the route opens again online. */}
       {open ? <BranchHeader access={access} /> : current?.status === "offline" ? <BranchHeader access={undefined} pending /> : null}
@@ -54,18 +55,18 @@ export function BranchScreen() {
           </Card>
         </div>
       ) : null}
-      {open ? (
+      {open || savedConversation ? (
         <div className="branch-screen-side">
           <Card className="branch-screen-conversation" aria-label="Conversation">
-            <Conversation empty={<EmptyState title={NO_MESSAGES} />} />
+            <Conversation readOnly={savedConversation} empty={<EmptyState title={NO_MESSAGES} />} />
           </Card>
-          <div className="branch-screen-composer">
+          {open ? <div className="branch-screen-composer">
             {writes(access) ? (
               <ComposerGate>
                 <Composer docked={false} />
               </ComposerGate>
             ) : <Composer docked={false} readOnly />}
-          </div>
+          </div> : null}
         </div>
       ) : null}
     </main>
