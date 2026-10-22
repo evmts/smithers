@@ -6,6 +6,7 @@ import { ask, setDraft } from "../chat/actions"
 import type { DraftSelection } from "../chat/sharedPrompt"
 import { COMPOSER } from "../chat/schema"
 import { ChatStore } from "../chat/store"
+import { pinRepository } from "../conversations/pin"
 import { pinConversation } from "../sandbox/actions"
 import { openWebPage, refusedPage } from "../web/actions"
 import { CANT_OPEN } from "../web/contract"
@@ -95,9 +96,12 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>) =>
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope)
     else {
       // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts), and
-      // `/docs` shows its pages in that conversation.
+      // `/docs` shows its pages in that conversation. `/new` starts the conversation in the repository of the branch this
+      // tab shows (src/features/conversations).
       const pinned = command.flow.startsWith("sandbox/") || command.flow === "app/docs/search"
         ? yield* pinConversation(payload)
+        : command.flow === "conversation/new"
+        ? yield* pinRepository(payload)
         : payload
       // A dispatch that fails is already logged and counted with the flow.
       yield* flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash" }).pipe(Effect.ignore, Effect.forkIn(scope))

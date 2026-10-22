@@ -17,13 +17,16 @@ export const conversationIdOf = (branchId: string) =>
   Uuid.v5(CONVERSATION_NAMESPACE, branchId.toLowerCase()).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
 
 /** `GITHUB_REPOSITORY`'s id: the deployment's own repository, whose `main` is the home conversation. */
-export const homeRepository = Config.String("GITHUB_REPOSITORY").pipe(
+export const homeRepositoryNames = Config.String("GITHUB_REPOSITORY").pipe(
   Config.withDefault(DEFAULT_REPOSITORY),
   Config.map((repository) => {
     const [owner = "", name = ""] = repository.split("/")
-    return repoId(owner, name)
+    return { owner, name }
   }),
 )
+
+/** `GITHUB_REPOSITORY`'s id. */
+export const homeRepository = homeRepositoryNames.pipe(Config.map(({ owner, name }) => repoId(owner, name)))
 
 /** A tracked branch as the routes answer it. */
 export interface Branch {
@@ -57,15 +60,23 @@ export const find = (repo: string, name: string) =>
  * Records branch `name` of `repo` with its conversation, in one transaction, unless the app already tracks it: either
  * way, the branch as it is now. Two requests at once record it once. `createdBy` owns it, private until they share it;
  * without one, or for a `locked` branch, it is the team's: anyone in the repository with the link may edit it.
+ * `createRequest` is the request that made it, when one did (`conversation/new`).
  */
-export const track = (repo: string, name: string, mode: Mode, baseSha: string, createdBy?: string) =>
+export const track = (
+  repo: string,
+  name: string,
+  mode: Mode,
+  baseSha: string,
+  createdBy?: string,
+  createRequest?: string,
+) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const owner = mode === "locked" ? null : createdBy ?? null
     return yield* sql.withTransaction(Effect.gen(function* () {
       const [inserted] = yield* sql<{ readonly id: string }>`
-        INSERT INTO branches (id, repo_id, name, mode, base_sha, created_by)
-        VALUES (gen_random_uuid(), ${repo}, ${name}, ${mode}, ${baseSha}, ${owner})
+        INSERT INTO branches (id, repo_id, name, mode, base_sha, created_by, create_request)
+        VALUES (gen_random_uuid(), ${repo}, ${name}, ${mode}, ${baseSha}, ${owner}, ${createRequest ?? null})
         ON CONFLICT (repo_id, name) WHERE deleted_at IS NULL DO NOTHING
         RETURNING id`
       if (inserted !== undefined) {
@@ -80,6 +91,15 @@ export const track = (repo: string, name: string, mode: Mode, baseSha: string, c
       }
       return { created: false, branch: (yield* find(repo, name))! }
     }))
+  })
+
+/** The request that made branch `branchId` (`conversation/new`), if one did. */
+export const createRequestOf = (branchId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly createRequest: string | null }>`
+      SELECT create_request AS "createRequest" FROM branches WHERE id = ${branchId}`
+    return row?.createRequest ?? null
   })
 
 /** The home conversation's id: the deployment repository's `main`, which 0014_branch_workspace records. */

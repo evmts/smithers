@@ -1,0 +1,10 @@
+import type { Listed } from "./schema"
+
+// What the list's rows link to (docs/features/conversations.md#the-list), worked out for the view.
+
+/** The branch route's params for `row`: its repository, and its branch's first segment with the rest as the splat. */
+export const paramsOf = (row: Listed) => {
+  const [owner = "", repo = ""] = row.repo.split("/")
+  const [ref = "", ...rest] = row.branch.split("/")
+  return { owner, repo, ref, _splat: rest.join("/") }
+}

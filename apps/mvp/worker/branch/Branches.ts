@@ -10,6 +10,7 @@ import { codeOf } from "../ErrorCode.ts"
 import { branchAccess, canView, isMember } from "./Access.ts"
 import * as Repos from "../Repos.ts"
 import * as Conversations from "./Conversations.ts"
+import * as ConversationPeople from "./ConversationPeople.ts"
 import { branchHead, createBranch, defaultBranch, type Forge } from "./Forge.ts"
 
 // `POST /api/branches` (decision 0013 §2, docs/features/branch-workspace.md#tracking-a-branch): the write path of the
@@ -22,7 +23,10 @@ import { branchHead, createBranch, defaultBranch, type Forge } from "./Forge.ts"
 // one is read from its forge first (`Forge`), with the read credential the server holds, so a name GitHub doesn't have
 // is never recorded, and becomes the Member's who tracked it, private until they share it. The repository's default
 // branch is recorded `locked` (decision 0007 §5), and is the team's. A new branch whose name the forge already has is
-// refused 409 `exists`: it is someone else's branch, not one this request made.
+// refused 409 `exists`: it is someone else's branch, not one this request made. A new branch may name no repository:
+// it is then the deployment's own (`GITHUB_REPOSITORY`), as `/new` makes from the home conversation. Every branch it
+// answers is opened by the person: its conversation joins their list, and comes back if they archived it
+// (docs/features/conversations.md).
 
 /** `POST /api/branches` requests, by `outcome`: `tracked`, `existing`, or the refusal's code. */
 export const tracks = Metric.counter("smithers_branch_tracks", {
@@ -31,13 +35,28 @@ export const tracks = Metric.counter("smithers_branch_tracks", {
 })
 
 const TrackRequest = Schema.Struct({
-  owner: Schema.String,
-  name: Schema.String,
+  /** The repository; both absent, with `create`, the deployment's own. */
+  owner: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.String),
   ref: Schema.String,
   /** `branch/create`'s: make the branch on the forge, from the default branch's head, before tracking it. */
   create: Schema.optional(Schema.Literal(true)),
+  /**
+   * With `create`, `conversation/new`'s: the request asking for a fresh branch. A branch the app tracks answers only to
+   * the request that made it; to any other, it is someone's branch already, refused `exists`.
+   */
+  request: Schema.optional(Schema.String.check(Schema.isUUID())),
+  /**
+   * When the person opened the branch, in milliseconds since the epoch, the same each time its step tries again; without
+   * one, now. At most a day ahead of the server's clock.
+   */
+  openedAt: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
 }).check(
-  Schema.makeFilter((request) => isRepository(request.owner, request.name) && isBranchName(request.ref)),
+  Schema.makeFilter((request) =>
+    ((request.owner === undefined && request.name === undefined && request.create === true) ||
+      (request.owner !== undefined && request.name !== undefined && isRepository(request.owner, request.name))) &&
+    isBranchName(request.ref) && (request.request === undefined || request.create === true)
+  ),
 )
 const decodeTrack = Schema.decodeUnknownEffect(Schema.fromJsonString(TrackRequest))
 
@@ -56,6 +75,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     const request = yield* HttpServerRequest.HttpServerRequest
     const startedAt = yield* Clock.currentTimeMillis
     const fields: Fields = {}
+    const madeBy = (branchId: string) => Conversations.createRequestOf(branchId).pipe(Effect.provide(database))
     const response = yield* Effect.gen(function* () {
       if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
       const actor = yield* (yield* Sessions).resolve
@@ -65,8 +85,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       )
       if (body._tag === "Failure") return refusal(body.failure.reason === "too_large" ? 413 : 400, "invalid")
       const decoded = yield* decodeTrack(body.success).pipe(Effect.option)
-      if (Option.isNone(decoded)) return refusal(400, "invalid")
-      const { owner, name, ref } = decoded.value
+      if (Option.isNone(decoded) || (decoded.value.openedAt ?? 0) > startedAt + 24 * 60 * 60 * 1000) {
+        return refusal(400, "invalid")
+      }
+      const { ref, request: createRequest, openedAt } = decoded.value
+      const home = yield* Conversations.homeRepositoryNames
+      const owner = decoded.value.owner ?? home.owner
+      const name = decoded.value.name ?? home.name
       const repo = repoId(owner, name)
       fields.repoId = repo
       const known = yield* Conversations.find(repo, ref).pipe(Effect.provide(database))
@@ -74,6 +99,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const found = yield* branchAccess(actor, known.branchId).pipe(Effect.provide(database))
         if (found === undefined) return refusal(404, "not_found")
         if (!canView(found.access)) return refusal(403, "forbidden")
+        if (createRequest !== undefined && (yield* madeBy(known.branchId)) !== createRequest) {
+          fields.outcome = "exists"
+          return refusal(409, "exists")
+        }
+        yield* ConversationPeople.opened(known.conversationId, actor.value.subject.id, owner, name, ref, openedAt).pipe(
+          Effect.provide(database),
+        )
         fields.outcome = "existing"
         fields.access = found.access
         return HttpServerResponse.jsonUnsafe({ ...known, access: found.access, shared: found.shared }, { headers: noStore })
@@ -127,13 +159,14 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         resolvedDefault = remoteDefault.success.branch
       }
       const mode = resolvedDefault === ref ? "locked" : "open"
-      const tracked = yield* Conversations.track(repo, ref, mode, head.success, actor.value.subject.id).pipe(
-        Effect.provide(database),
-      )
+      const tracked = yield* Conversations.track(repo, ref, mode, head.success, actor.value.subject.id, createRequest)
+        .pipe(Effect.provide(database))
       // Two people tracking one new branch at once: the one whose insert won owns it; the other may not see it.
       const found = yield* branchAccess(actor, tracked.branch.branchId).pipe(Effect.provide(database))
       if (found === undefined) return refusal(404, "not_found")
       if (!canView(found.access)) return refusal(403, "forbidden")
+      yield* ConversationPeople.opened(tracked.branch.conversationId, actor.value.subject.id, owner, name, ref, openedAt)
+        .pipe(Effect.provide(database))
       fields.outcome = tracked.created ? "tracked" : "existing"
       fields.mode = mode
       fields.access = found.access

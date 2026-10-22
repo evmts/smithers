@@ -35,7 +35,7 @@ import { PresenceStore } from "../presence/store"
 import { CONVERSATION_NAMESPACE } from "./contract"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
 import { opens, reopens, tracks } from "./metrics"
-import { requestTrack } from "./steps"
+import { requestTrack, stampOpen } from "./steps"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -602,3 +602,10 @@ test("a branch page handles missing branches, editor locations, aborts and actio
   await branch.coedit.actions.hideFiles()
   await terminal.actions.show(null)
 }, WITHIN)
+
+test("an open's time is the page's when it gave one, else the clock's now, which the stamp step records once", async () => {
+  expect(await Effect.runPromise(stampOpen({ repo: "octo/hello", branch: "main", openedAt: 5 })))
+    .toEqual({ repo: "octo/hello", branch: "main", openedAt: 5 })
+  const now = await Effect.runPromise(stampOpen({ repo: "octo/hello", branch: "main" }))
+  expect(Math.abs(now.openedAt - Date.now())).toBeLessThan(5_000)
+})

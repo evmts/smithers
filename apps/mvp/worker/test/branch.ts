@@ -325,7 +325,7 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
     if (url.hostname.endsWith(".code.storage")) return forge.fetch(input, init)
     electric.push(new URL(url))
     const table = url.searchParams.get("table")
-    if (table === TERMINALS_TABLE || table === SHARES_TABLE || table === TEXT_UPDATES_TABLE) {
+    if (table === "conversation_people" || table === TERMINALS_TABLE || table === SHARES_TABLE || table === TEXT_UPDATES_TABLE) {
       url.searchParams.set("table", `${scratch.name}.${table}`)
     }
     return globalThis.fetch(url, init)
@@ -397,6 +397,7 @@ export const resetBranches = (runtime: Runtime) =>
   runtime.runPromise(Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const home = yield* Conversations.home
+    yield* sql`DELETE FROM conversation_people`
     yield* sql`DELETE FROM terminal_sessions`
     yield* sql`DELETE FROM sandbox_calls`
     yield* sql`DELETE FROM text_updates`

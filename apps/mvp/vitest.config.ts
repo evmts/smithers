@@ -144,6 +144,8 @@ export default defineConfig({
         "worker/branch/*.ts",
         "db/migrations/0014_branch_workspace.ts",
         "db/migrations/0023_branch_sharing.ts",
+        // Your conversations (docs/features/conversations.md).
+        "db/migrations/0047_conversation_people.ts",
         // The sandbox tools: their calls on a branch's machine (docs/features/sandbox-tools.md).
         "db/migrations/0024_sandbox_calls.ts",
         // Co-editing: the texts people edit together (docs/features/coedit.md).

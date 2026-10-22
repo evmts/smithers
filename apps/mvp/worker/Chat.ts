@@ -33,6 +33,7 @@ import { BROWSER_TELEMETRY, TELEMETRY_LIMITS } from "../src/telemetry.ts"
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
 import * as Answers from "./Answers.ts"
 import { branchAccess, canEdit, canView } from "./branch/Access.ts"
+import * as ConversationPeople from "./branch/ConversationPeople.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
 import * as ChatMetrics from "./ChatMetrics.ts"
@@ -239,6 +240,12 @@ export const make = <E, R>(
         const asked = yield* Effect.uninterruptible(
           Effect.gen(function* () {
             const asked = yield* Messages.ask(question).pipe(Effect.provide(database), Effect.mapError(refuseStore))
+            // Asking puts the conversation in the asker's list, never bringing back one they archived; the question
+            // stands whether or not that row could be written.
+            yield* ConversationPeople.asked(conversationId, asker.subject.id).pipe(
+              Effect.provide(database),
+              Effect.catchCause(() => Effect.logWarning("conversation.asked.failed")),
+            )
             if (asked.txid === null) fields.existing = true
             fields.expiry = yield* expire(question.answerId)
             return asked

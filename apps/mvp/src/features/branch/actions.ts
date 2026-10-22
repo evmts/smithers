@@ -1,6 +1,7 @@
 import { Data, Effect, Fiber, FiberHandle, Metric, Option, Queue, Ref, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { share, show } from "../chat/actions"
+import { openAt } from "../conversations/actions"
 import { ChatStore } from "../chat/store"
 import { isRepository } from "../repo/contract"
 import { SharingStore } from "../sharing/store"
@@ -89,7 +90,13 @@ export const open = (owner: string, repo: string, ref: string, signal?: AbortSig
     // run does, and settles.
     const tracking = yield* Effect.forkIn(
       Effect.result(
-        (yield* FlowDispatch).dispatch("branch/track", { repo: `${owner}/${repo}`, branch: ref }, { door: "view" }),
+        (yield* FlowDispatch).dispatch(
+          "branch/track",
+          // When this open happened, later than anything the device saw for the branch: its step tried again never undoes
+          // an archive made since (docs/features/conversations.md#archive).
+          { repo: `${owner}/${repo}`, branch: ref, openedAt: yield* openAt(owner, repo, ref) },
+          { door: "view" },
+        ),
       ),
       (yield* BranchStore).scope,
     )

@@ -1,0 +1,220 @@
+// Your conversations on the device (decision 0013 decision 2, docs/features/conversations.md), driven as React drives
+// them: through the branch layer's plain actions, reading its live queries, with no React. Two devices of one person
+// run the browser's own layer (`appLayer`) on Node devices whose engines lead, against ChatApi's real handler over the
+// compose Postgres and Electric (src/test/chatApi.ts). The forge is Code Storage scripted over the test git host
+// (worker/test/branch.ts), which can make a branch; the deployment's own repository is `octo/hello`. Unhappy paths use
+// ChatApi's real refusals.
+import { Effect, Metric } from "effect"
+import { afterEach, describe, expect, test, vi } from "vitest"
+import { DEFAULT_REPOSITORY } from "../../../worker/SignIn.ts"
+import { shaOf } from "../../../worker/test/branch.ts"
+import { dispatches } from "../../flows/dispatch"
+import { nodeDevice, type NodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { AuthStore, SESSION } from "../auth/store"
+import { Branch } from "../branch/branch"
+import { Chat } from "../chat/chat"
+import { Commands } from "../commands/commands"
+import { NEW_BRANCH_PREFIX } from "./contract"
+import { dropped } from "./metrics"
+import { ConversationsStore } from "./store"
+
+const runtimes: Array<{ dispose: () => Promise<void> }> = []
+afterEach(async () => {
+  for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose()
+})
+
+/** How long a flow may take on the device's engine, its first start included, on a loaded machine. */
+const until = (assertion: () => void | Promise<void>, timeout = 40_000) => vi.waitFor(assertion, { timeout, interval: 20 })
+
+/** A test's budget: flows on fresh devices' engines, each with its first start, on a loaded machine. */
+const WITHIN = 120_000
+
+/**
+ * ChatApi on Code Storage, from a first tab whose engine never leads; `octo/hello` has `main` and `feature/one`, and the
+ * deployment's own repository (`GITHUB_REPOSITORY`, unset here) has `main` and `taken`.
+ */
+const openApi = async () => {
+  const runtime = openTestApp({ answers: false }, { forge: "code-storage" })
+  runtimes.push(runtime)
+  const api = await runtime.runPromise(Effect.service(TestChatApi))
+  api.branches.github.publish("octo", "hello", {
+    defaultBranch: "main",
+    branches: { main: shaOf("main"), "feature/one": shaOf("feature/one") },
+  })
+  const [owner, name] = DEFAULT_REPOSITORY.split("/") as [string, string]
+  api.branches.github.publish(owner, name, { defaultBranch: "main", branches: { main: shaOf("main"), taken: shaOf("taken") } })
+  return api
+}
+
+/** One of the person's devices, its engine leading, signed in as a Member, with the live queries React starts. */
+const openDevice = async (api: TestChatApi["Service"]) => {
+  const host: NodeDevice = nodeDevice({ agent: api })
+  const runtime = openTab(api, { host })
+  runtimes.push(runtime)
+  const branch = await runtime.runPromise(Effect.service(Branch))
+  const chat = await runtime.runPromise(Effect.service(Chat))
+  const commands = await runtime.runPromise(Effect.service(Commands))
+  const store = await runtime.runPromise(Effect.service(ConversationsStore))
+  const { conversations } = branch
+  for (const query of [conversations.queries.list, conversations.queries.search, branch.queries.current, chat.queries.place]) {
+    query.startSyncImmediate()
+  }
+  // Signed in as sign-in's `load` sets it, so the composer offers the slash commands.
+  const { session } = await runtime.runPromise(Effect.service(AuthStore))
+  await until(() => expect(session.tanstack.get(SESSION)?.status).not.toBe("loading"))
+  await runtime.runPromise(
+    session.update(SESSION, (row) => void Object.assign(row, { status: "signed_in", login: "member", role: "member" })),
+  )
+  return {
+    host,
+    runtime,
+    branch,
+    commands,
+    actions: conversations.actions,
+    /** The list as it shows: each row's branch, and whether it is archived. */
+    list: () => conversations.queries.list.toArray.map((row) => `${row.branch}${row.archived ? " (archived)" : ""}`),
+    loaded: () => conversations.queries.search.toArray[0]?.loaded,
+    /** The acts this device holds until the rows show them. */
+    pending: () => store.pending.tanstack.toArray.map((act) => act.archived),
+    count: (metric: typeof dropped, attributes: Record<string, string>) =>
+      runtime.runSync(Metric.value(Metric.withAttributes(metric, attributes))).count,
+  }
+}
+
+describe("your conversations", () => {
+  test("opening a branch lists its conversation on every device; Archive hides it on both; opening it brings it back", async () => {
+    const api = await openApi()
+    const [laptop, phone] = [await openDevice(api), await openDevice(api)]
+    expect(laptop.list()).toEqual([])
+    // An empty list is said only once the device knows it is empty: restored, and the first sync answered.
+    await until(() => expect(laptop.loaded()).toBe(true))
+
+    const branchId = await laptop.branch.actions.open("octo", "hello", "feature/one")
+    expect(branchId).toBeDefined()
+    const conversationId = laptop.branch.queries.current.toArray[0]!.conversationId!
+    await until(() => expect(laptop.list()).toEqual(["feature/one"]))
+    await until(() => expect(phone.list()).toEqual(["feature/one"]))
+
+    // Archive shows on this device before ChatApi answers, then on the person's other device.
+    const archiving = laptop.actions.archive(conversationId, true)
+    await until(() => expect(laptop.list()).toEqual([]))
+    await archiving
+    await until(() => expect(phone.list()).toEqual([]))
+    // Once the row shows it, the device forgets its act.
+    await until(() => expect(laptop.pending()).toEqual([]))
+    await phone.actions.showArchived(true)
+    await until(() => expect(phone.list()).toEqual(["feature/one (archived)"]))
+
+    // Opening the branch, on any device, brings it back everywhere.
+    await phone.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(laptop.list()).toEqual(["feature/one"]))
+    await until(() => expect(phone.list()).toEqual([]))
+    await phone.actions.showArchived(false)
+    await until(() => expect(phone.list()).toEqual(["feature/one"]))
+
+    // Restore from the archived list does the same without opening it.
+    await laptop.actions.archive(conversationId, true)
+    await until(() => expect(phone.list()).toEqual([]))
+    await phone.actions.archive(conversationId, false)
+    await until(() => expect(laptop.list()).toEqual(["feature/one"]))
+
+    // Two presses before the first lands: the later one wins, on this device and everywhere.
+    const first = laptop.actions.archive(conversationId, true)
+    const second = laptop.actions.archive(conversationId, false)
+    await Promise.all([first, second])
+    expect(laptop.list()).toEqual(["feature/one"])
+    await until(() => expect(laptop.pending()).toEqual([]))
+    await until(() => expect(phone.list()).toEqual(["feature/one"]))
+  }, WITHIN)
+
+  test("search matches the repository and the branch, every word", async () => {
+    const api = await openApi()
+    const laptop = await openDevice(api)
+    await laptop.branch.actions.open("octo", "hello", "feature/one")
+    await laptop.branch.actions.open("octo", "hello", "main")
+    await until(() => expect(laptop.list()).toEqual(["main", "feature/one"]))
+
+    await laptop.actions.search("FEATURE")
+    await until(() => expect(laptop.list()).toEqual(["feature/one"]))
+    await laptop.actions.search("octo/hello main")
+    await until(() => expect(laptop.list()).toEqual(["main"]))
+    await laptop.actions.search("nothing")
+    await until(() => expect(laptop.list()).toEqual([]))
+    await laptop.actions.search("")
+    await until(() => expect(laptop.list()).toEqual(["main", "feature/one"]))
+
+    // Opening one again moves it first.
+    await laptop.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(laptop.list()).toEqual(["feature/one", "main"]))
+  }, WITHIN)
+
+  test("an archive ChatApi refuses leaves the device: the row shows as it is, counted and logged", async () => {
+    const api = await openApi()
+    const laptop = await openDevice(api)
+    // A conversation no branch has: ChatApi answers 404, which is final.
+    const unknown = "00000000-0000-4000-8000-000000000000"
+    await laptop.actions.archive(unknown, true)
+    await until(() => expect(laptop.count(dropped, { reason: "@smthrs/mvp/conversations/ArchiveRefused" })).toBe(1))
+    expect(laptop.pending()).toEqual([])
+
+    // A press replaced before its refusal lands: only the latest act is taken back, once.
+    await Promise.all([laptop.actions.archive(unknown, true), laptop.actions.archive(unknown, false)])
+    await until(() => expect(laptop.pending()).toEqual([]))
+    await until(() => expect(laptop.count(dropped, { reason: "@smthrs/mvp/conversations/ArchiveRefused" })).toBe(2))
+  }, WITHIN)
+})
+
+test("an act a closed tab left on the device follows its run when the device opens again, and leaves when it can't land", async () => {
+  const api = await openApi()
+  const host = nodeDevice({ agent: api })
+  const before = openTab(api, { host })
+  const store = await before.runPromise(Effect.service(ConversationsStore))
+  // The tab wrote the act and closed before its run started: a conversation no branch has, which ChatApi refuses.
+  const unknown = "00000000-0000-4000-8000-000000000000"
+  await before.runPromise(Effect.flatMap(store.pending.insert({ conversationId: unknown, archived: true, at: 5 }), (tx) => tx.persisted))
+  await before.dispose()
+
+  const after = openTab(api, { host })
+  runtimes.push(after)
+  const reopened = await after.runPromise(Effect.service(ConversationsStore))
+  reopened.pending.tanstack.startSyncImmediate()
+  await after.runPromise(Effect.service(Branch))
+  await until(() => expect(reopened.pending.tanstack.toArray).toEqual([]))
+  expect(after.runSync(Metric.value(Metric.withAttributes(dropped, { reason: "@smthrs/mvp/conversations/ArchiveRefused" }))).count)
+    .toBe(1)
+}, WITHIN)
+
+describe("a new conversation", () => {
+  test("/new makes a new branch of the repository the tab shows and opens it there; from home, the deployment's own", async () => {
+    const api = await openApi()
+    const laptop = await openDevice(api)
+    await laptop.branch.actions.open("octo", "hello", "feature/one")
+
+    laptop.commands.actions.type("/new topic-two")
+    laptop.commands.actions.submit("/new topic-two")
+    await until(() => expect(laptop.host.navigated).toEqual(["/octo/hello/tree/topic-two"]))
+    await until(() => expect(laptop.list()).toContain("topic-two"))
+
+    // From the home conversation, with no name: the deployment's own repository, a name drawn from the run.
+    await laptop.branch.actions.leave()
+    laptop.commands.actions.type("/new")
+    laptop.commands.actions.submit("/new")
+    await until(() => expect(laptop.host.navigated).toHaveLength(2))
+    expect(laptop.host.navigated[1]).toMatch(new RegExp(`^/${DEFAULT_REPOSITORY}/tree/${NEW_BRANCH_PREFIX}[0-9a-f]{6}$`))
+    await until(() =>
+      expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "done" })).toBe(2)
+    )
+  }, WITHIN)
+
+  test("a name the forge already has is refused exists, never tried again, and the tab stays", async () => {
+    const api = await openApi()
+    const laptop = await openDevice(api)
+    laptop.commands.actions.type("/new taken")
+    laptop.commands.actions.submit("/new taken")
+    // The step's refusal is final: one failed run, no retries for a day.
+    await until(() =>
+      expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "failed" })).toBe(1)
+    )
+    expect(laptop.host.navigated).toEqual([])
+  }, WITHIN)
+})

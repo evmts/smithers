@@ -1,5 +1,5 @@
 {
-  "epoch": 68,
+  "epoch": 69,
   "stores": {
     "branch-conversations": {
       "kind": "local",
@@ -75,6 +75,12 @@
       "kind": "local",
       "versions": {
         "1": "05618a6f6026892d"
+      }
+    },
+    "conversation-pending": {
+      "kind": "local",
+      "versions": {
+        "1": "c011a7d1a3ae4eb4"
       }
     },
     "spend-seen": {
@@ -181,6 +187,12 @@
       "kind": "synced",
       "versions": {
         "1": "7e884d326cb0e6c8"
+      }
+    },
+    "my-conversations": {
+      "kind": "synced",
+      "versions": {
+        "1": "50ade954f9984c9f"
       }
     },
     "spend-alerts": {

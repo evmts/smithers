@@ -6,7 +6,9 @@ import { Data, Deferred, Effect, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
+import * as TestDatabase from "../db/TestDatabase.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "./Actor.ts"
+import * as ConversationPeople from "./branch/ConversationPeople.ts"
 import * as ChatMetrics from "./ChatMetrics.ts"
 import * as Flows from "./Flows.ts"
 import * as Expire from "./flows/Expire.ts"
@@ -56,6 +58,29 @@ const bytes = (...parts: ReadonlyArray<string | ReadonlyArray<number>>) =>
   new Uint8Array(parts.flatMap((part) => (typeof part === "string" ? [...new TextEncoder().encode(part)] : part)))
 
 describe("POST /api/questions", () => {
+  test("history persistence failing never fails an already stored ask", async () => {
+    const branch = await tracked(runtime, "github/octocat/spoon-knife", `history-fault-${uuid()}`)
+    const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    let acquisitions = 0
+    const database = Layer.unwrap(Effect.sync(() => ++acquisitions === 3 ? nowhere : scratch.database))
+    const h = await asMember({ database })
+    const response = await h.ask({ id: uuid(), answerId: uuid(), text: "Hello", conversationId: branch.conversationId })
+    expect(response.status).toBe(202)
+    expect(h.only("conversation.asked.failed").level).toBe("WARN")
+  })
+
+  test("asking adds personal history and later asks leave its archive untouched", async () => {
+    const branch = await tracked(runtime, "github/octocat/spoon-knife", `history-${uuid()}`)
+    const h = await asMember()
+    const ask = () => h.ask({ id: uuid(), answerId: uuid(), text: "Hello", conversationId: branch.conversationId })
+    expect((await ask()).status).toBe(202)
+    await runtime.runPromise(ConversationPeople.archive(branch.conversationId, member.subject.id, true, Date.now() + 1000))
+    expect((await ask()).status).toBe(202)
+    const rows = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`SELECT archived_at FROM conversation_people WHERE conversation_id = ${branch.conversationId} AND person_id = ${member.subject.id}`))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].archived_at).not.toBeNull()
+  })
+
   test("inserts the question and a streaming answer, 202 with its transaction's id, and answers nothing", async () => {
     const h = await asMember()
     const ids = { id: uuid(), answerId: uuid() }

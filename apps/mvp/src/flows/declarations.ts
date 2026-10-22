@@ -38,6 +38,7 @@ import { Navigate } from "../features/navigation/flows"
 import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
+import { ConversationArchive, ConversationNew } from "../features/conversations/flows"
 import { AlertChannelSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { SetTheme } from "../features/theme/flows"
@@ -97,6 +98,8 @@ export const declarations = {
   "run/steer": Steer,
   "branch/track": BranchTrack,
   "branch/create": BranchCreate,
+  "conversation/new": ConversationNew,
+  "conversation/archive": ConversationArchive,
   "branch/share": BranchShare,
   "terminal/open": TerminalOpenRequest,
   "issue/create": IssueCreate,

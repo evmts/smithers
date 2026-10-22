@@ -2,6 +2,8 @@ import { Context, Effect, Layer } from "effect"
 import { ChatStore } from "../chat/store"
 import { FlowDispatch } from "../../flows/dispatch"
 import { Coedit, type CoeditView } from "../coedit/coedit"
+import { Conversations, type ConversationsView } from "../conversations/conversations"
+import { ConversationsStore } from "../conversations/store"
 import { Presence, type PresenceView } from "../presence/presence"
 import { Sharing, type SharingView } from "../sharing/sharing"
 import { SharingStore } from "../sharing/store"
@@ -11,7 +13,8 @@ import { BranchRoute, BranchStore } from "./store"
 // The branch workspace as a frontend sees it (docs/features/branch-workspace.md#the-page): a live query to read and
 // plain functions to act, with no Effect in sight, and the workspace's live parts beside it: who it is shared with
 // (`sharing`, src/features/sharing), who is on it now (`presence`, src/features/presence), and the texts people edit
-// together (`coedit`, src/features/coedit).
+// together (`coedit`, src/features/coedit), and the person's own list of conversations, one per branch
+// (`conversations`, src/features/conversations).
 
 type Store = BranchStore["Service"]
 
@@ -38,11 +41,12 @@ export class Branch extends Context.Service<
     readonly sharing: SharingView
     readonly presence: PresenceView
     readonly coedit: CoeditView
+    readonly conversations: ConversationsView
   }
 >()("@smthrs/mvp/branch/Branch") {
   /**
-   * Binds the store's query and actions for frontends, with the services this layer was built with; sharing and
-   * presence reach ChatApi on `origin`. `reopenRoute` opens the tab's route again, once a branch opened offline can be
+   * Binds the store's query and actions for frontends, with the services this layer was built with; sharing,
+   * presence and the conversations reach ChatApi on `origin`. Needs the branch's store, which the composer reads too. `reopenRoute` opens the tab's route again, once a branch opened offline can be
    * tracked.
    */
   static readonly layer = (config: { readonly origin: string; readonly reopenRoute: () => void }) =>
@@ -50,7 +54,7 @@ export class Branch extends Context.Service<
       Branch,
       Effect.gen(function* () {
         const store = yield* BranchStore
-        const run = Effect.runPromiseWith(yield* Effect.context<BranchRoute | BranchStore | ChatStore | FlowDispatch | SharingStore>())
+        const run = Effect.runPromiseWith(yield* Effect.context<BranchRoute | BranchStore | ChatStore | ConversationsStore | FlowDispatch | SharingStore>())
         return Branch.of({
           queries: { current: store.currentState.tanstack },
           actions: {
@@ -60,14 +64,15 @@ export class Branch extends Context.Service<
           sharing: yield* Sharing,
           presence: yield* Presence,
           coedit: yield* Coedit,
+          conversations: yield* Conversations,
         })
       }),
     ).pipe(
-      Layer.provideMerge(BranchStore.layer),
       Layer.provideMerge(BranchRoute.layer(config.reopenRoute)),
       Layer.provideMerge(Sharing.layer(config)),
       Layer.provideMerge(Presence.layer(config)),
       Layer.provideMerge(Coedit.layer),
+      Layer.provideMerge(Conversations.layer(config)),
     )
 }
 

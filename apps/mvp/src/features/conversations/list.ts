@@ -1,0 +1,51 @@
+import { timeOf } from "../attention/entries"
+import type { Listed, Mine, Pending, Search } from "./schema"
+
+// Your conversations' list, worked out from what the device has (docs/features/conversations.md#the-list): the synced
+// rows, this device's acts on their way, and the search. Pure, so every frontend and test shares it.
+
+/** When `row` was last archived or brought back, in milliseconds since the epoch. */
+const changedAt = (row: Mine) => timeOf(row.changedAt)
+
+/** Whether `row` is archived for its person: this device's act when it is later than the row's, else the row. */
+export const archivedOf = (row: Mine, pending: Pending | undefined): boolean =>
+  pending !== undefined && pending.at > changedAt(row) ? pending.archived : row.archivedAt !== null
+
+/** The acts the rows already show, or later ones replaced: the device can forget them. */
+export const landed = (rows: ReadonlyArray<Mine>, pending: ReadonlyArray<Pending>): ReadonlyArray<string> => {
+  const byId = new Map(rows.map((row) => [row.conversationId, row]))
+  return pending.flatMap((act) => {
+    const row = byId.get(act.conversationId)
+    return row !== undefined && changedAt(row) >= act.at ? [act.conversationId] : []
+  })
+}
+
+/** Whether `row` matches every word of `text`, ignoring case, in its repository or its branch's name. */
+const matches = (row: Mine, text: string) => {
+  const haystack = `${row.owner}/${row.repo} ${row.branch}`.toLowerCase()
+  return text.toLowerCase().split(/\s+/).every((word) => haystack.includes(word))
+}
+
+/**
+ * The list `search` shows: the conversations that aren't archived, or, with `search.archived`, those that are; those
+ * matching its text; the latest opened first.
+ */
+export const listOf = (
+  rows: ReadonlyArray<Mine>,
+  pending: ReadonlyArray<Pending>,
+  search: Search,
+): ReadonlyArray<Listed> => {
+  const acts = new Map(pending.map((act) => [act.conversationId, act]))
+  return rows
+    .map((row) => ({ row, archived: archivedOf(row, acts.get(row.conversationId)) }))
+    .filter(({ row, archived }) => archived === search.archived && matches(row, search.text.trim()))
+    .sort((a, b) => timeOf(b.row.openedAt) - timeOf(a.row.openedAt) ||
+      a.row.conversationId.localeCompare(b.row.conversationId))
+    .map(({ row, archived }) => ({
+      conversationId: row.conversationId,
+      repo: `${row.owner}/${row.repo}`,
+      branch: row.branch,
+      openedAt: row.openedAt,
+      archived,
+    }))
+}

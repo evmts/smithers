@@ -1,6 +1,7 @@
 import { Migrations } from "@smthrs/effect-tanstack-db"
 import { Notice, Pending } from "../features/attention/schema"
 import { ConversationRoute } from "../features/branch/schema"
+import { Mine, Pending as ConversationPending } from "../features/conversations/schema"
 import { Confirmed } from "../features/auth/schema"
 import { Asking, Message, Unsent } from "../features/chat/schema"
 import { Sending as TextSending, TextUpdate } from "../features/coedit/schema"
@@ -105,6 +106,13 @@ export const AttentionPendingStore = Migrations.local({
   getKey: (row) => row.id,
 })
 
+/** Archives and restores of your conversations not yet synced back (src/features/conversations/store.ts). */
+export const ConversationPendingStore = Migrations.local({
+  id: "conversation-pending",
+  versions: [ConversationPending],
+  getKey: (row) => row.conversationId,
+})
+
 /** The spend alerts this device has seen, by kind. */
 export const SpendSeenStore = Migrations.local({ id: "spend-seen", versions: [Seen], getKey: (row) => row.kind })
 
@@ -152,6 +160,7 @@ const synced = [
   Migrations.synced({ id: "flows", version: 2, schema: FlowRow }),
   Migrations.synced({ id: "flow-drafts", version: 1, schema: FlowDraft }),
   Migrations.synced({ id: "notifications", version: 1, schema: Notice }),
+  Migrations.synced({ id: "my-conversations", version: 1, schema: Mine }),
   Migrations.synced({ id: "spend-alerts", version: 1, schema: SpendAlert }),
   Migrations.synced({ id: "alert-channels", version: 1, schema: AlertChannel }),
   Migrations.synced({ id: "alert-deliveries", version: 1, schema: AlertDelivery }),
@@ -209,6 +218,7 @@ export const deviceRegistry = Migrations.registry({
     HomesStore,
     CuratedHomesStore,
     AttentionPendingStore,
+    ConversationPendingStore,
     SpendSeenStore,
     TodoDraftsStore,
     TodoRequestedStore,

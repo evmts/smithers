@@ -37,6 +37,20 @@ export type TrackFailure = typeof TrackFailure.Type
 const payload = { repo: RepoName, branch: BranchName }
 
 /**
+ * `branch/track`'s: with `openedAt`, when the person opened the branch, in milliseconds since the epoch, the same each
+ * time its step tries again, so an open tried again never undoes an archive made since
+ * (docs/features/conversations.md#archive). Without it, when the run began: the stamp step records it once.
+ */
+const trackPayload = { ...payload, openedAt: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))) }
+const stampedTrack = { ...payload, openedAt: Schema.Int.check(Schema.isGreaterThan(0)) }
+
+/** The first step: the open with its `openedAt`, or now. The engine records its answer, so a retry reads the same time. */
+export const TrackStamp = Action.make("branch/track/stamp", {
+  payload: trackPayload,
+  success: Schema.Struct(stampedTrack),
+})
+
+/**
  * While ChatApi is unreachable or restarting, the step tries again: 500 ms doubling to 4 s, for at most 30 seconds,
  * since a page waits on it. Tracking is idempotent: the branch is recorded once.
  */
@@ -50,7 +64,7 @@ export const TRACK_RETRY = RetryPolicy.make({
 
 /** The step: ask ChatApi to track the branch. */
 export const TrackBranch = Action.make("branch/track/request", {
-  payload,
+  payload: stampedTrack,
   success: Tracked,
   error: TrackFailure,
   retryPolicy: TRACK_RETRY,
@@ -63,10 +77,13 @@ export const BranchTrack = Flow.make("branch/track", {
     "access owner, edit or view. " +
     "BranchTrackRefused says why not: not_found, sign_in, forbidden or invalid.",
   modelInvocable: true,
-  payload,
+  payload: trackPayload,
   success: Tracked,
   error: TrackFailure,
-  body: Node.capture({ action: TrackBranch.name }, (request) => TrackBranch.call(request)),
+  body: Node.capture({ stamp: TrackStamp.name, action: TrackBranch.name }, (request) =>
+    TrackStamp.call(request).pipe(
+      Node.bindPlanned(Node.capture({ action: TrackBranch.name }, (open) => TrackBranch.call(open))),
+    )),
 }).annotate(Flow.Placement, Placement.client())
 
 /** `branch/create`'s step: ask ChatApi to make the branch on the forge, then track it. */

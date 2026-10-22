@@ -9,6 +9,7 @@ import {
   CreateBranch,
   type TrackFailure,
   TrackBranch,
+  TrackStamp,
 } from "./flows"
 import { tracks } from "./metrics"
 import { parts } from "../repo/flows"
@@ -38,12 +39,21 @@ export const trackFailure = (refused: TrackRefused): TrackFailure =>
  * outcome and ChatApi's status, and a count of `tracks` by outcome: `tracked`, the refusal's reason, or `unavailable`.
  * Never the branch's name.
  */
-export const requestTrack = ({ repo, branch }: { readonly repo: string; readonly branch: string }, create = false) =>
+export const requestTrack = (
+  { repo, branch, openedAt }: { readonly repo: string; readonly branch: string; readonly openedAt?: number | undefined },
+  create = false,
+) =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
     const [owner, name] = parts(repo)
     const answer = yield* Effect.result(
-      (yield* BranchClient).track({ owner, name, ref: branch, ...(create ? { create: true as const } : {}) }),
+      (yield* BranchClient).track({
+        owner,
+        name,
+        ref: branch,
+        ...(create ? { create: true as const } : {}),
+        ...(openedAt === undefined ? {} : { openedAt }),
+      }),
     )
     const outcome = answer._tag === "Success"
       ? "tracked"
@@ -66,12 +76,19 @@ export const requestTrack = ({ repo, branch }: { readonly repo: string; readonly
     return yield* Effect.fail(trackFailure(answer.failure))
   }).pipe(Effect.withSpan("branch.track"))
 
+/** `branch/track/stamp`: the open's `openedAt`, or now. */
+export const stampOpen = <P extends object>(open: P & { readonly openedAt?: number | undefined }) =>
+  Effect.map(Clock.currentTimeMillis, (now) => ({ ...open, openedAt: open.openedAt ?? now }))
+
 /** `branch/create/request`: the same request, making the branch first. */
 export const requestCreate = (request: { readonly repo: string; readonly branch: string }) => requestTrack(request, true)
 
 /** Registers `branch/track` and `branch/create` with their steps, asking through the host's `BranchClient`. */
 export const registration = Layer.merge(
-  Interpreter.layerWithImplementations(BranchTrack, TrackBranch.toLayer((request) => requestTrack(request))),
+  Interpreter.layerWithImplementations(
+    BranchTrack,
+    Layer.merge(TrackStamp.toLayer(stampOpen), TrackBranch.toLayer((request) => requestTrack(request))),
+  ),
   Interpreter.layerWithImplementations(BranchCreate, CreateBranch.toLayer(requestCreate)),
 )
 

@@ -110,6 +110,14 @@ const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Pa
     bad: { calls: [call("sandbox/run", { command: "git checkout -b fix-typo" }, "failed")] },
   },
   "branch-track": { good: failed("branch/track", { repo: REPO, branch: "test-branch" }), bad: steps },
+  "conversation-new": {
+    good: failed("conversation/new", { repo: REPO, branch: "docs-pass" }),
+    bad: { calls: [call("sandbox/run", { command: "git checkout -b docs-pass" }, "failed")] },
+  },
+  "conversation-archive": {
+    good: { calls: [call("conversation/archive", { archived: true })], text: "Archived." },
+    bad: steps,
+  },
   "issue-create": {
     good: failed("issue/create", { repo: REPO, title: "README has a typo", body: "Line 2 misspells \"fork\"." }),
     bad: { text: `Type /issue ${REPO} README has a typo.` },

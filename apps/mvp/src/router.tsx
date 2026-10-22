@@ -39,6 +39,7 @@ import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
 import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
 import { RunScreen } from "./screens/runs/RunScreen"
+import { ConversationsScreen } from "./screens/conversations/ConversationsScreen"
 import { RunsScreen } from "./screens/runs/RunsScreen"
 import { SecretsScreen } from "./screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
@@ -185,6 +186,13 @@ const runsRoute = createRoute({
   path: "/app/runs",
   component: RunsScreen,
   beforeLoad: (load) => enter(load, () => load.context.runs.actions.warmList(), () => load.context.runs.actions.openList()),
+})
+
+/** `/app/conversations`: your conversations, one per branch, synced to every device of yours. */
+const conversationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/app/conversations",
+  component: ConversationsScreen,
 })
 
 /**
@@ -553,6 +561,7 @@ export const router = createRouter({
     draftRoute,
     codeRoute,
     runsRoute,
+    conversationsRoute,
     runRoute,
     settingsRoute,
     pluginIndexRoute,

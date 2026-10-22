@@ -16,6 +16,7 @@ import { Attention, type AttentionView } from "./features/attention/attention"
 import { AttentionNavigation, AttentionStore } from "./features/attention/store"
 import { Auth, bindSessionConnectivity, type AuthView } from "./features/auth/auth"
 import { Branch, type BranchView } from "./features/branch/branch"
+import { BranchStore } from "./features/branch/store"
 import { DeviceWipe } from "./features/auth/device"
 import { AuthStore } from "./features/auth/store"
 import { ChatClient } from "./features/chat/api"
@@ -299,8 +300,10 @@ export const appLayer = <S = never>(
     Layer.provideMerge(ViewsStore.layer({ origin })),
     Layer.provideMerge(Layer.succeed(WebTab, host.web)),
     Layer.provideMerge(RepoStore.layer({ origin })),
-    // Below the repository store, which shows the sign-in link in Clone's place from sign-in's row.
-    Layer.provideMerge(AuthStore.layer),
+    // Below the repository store, which shows the sign-in link in Clone's place from sign-in's row; beside it, the
+    // branch this tab's route shows: the branch layer's, and the composer's, whose `/new` starts a conversation in its
+    // repository (src/features/commands/actions.ts).
+    Layer.provideMerge(Layer.merge(AuthStore.layer, BranchStore.layer)),
     // Above dispatch, which remembers this tab's requests: `app/navigate` moves only the tab that asked, `repo/copy`
     // writes only its clipboard, and only the tab's own press of a person's flow runs with the person's session.
     Layer.provideMerge(

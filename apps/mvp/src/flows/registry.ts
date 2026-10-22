@@ -3,6 +3,7 @@ import { Remember } from "../features/agent/memoryFlows"
 import { Summarize } from "../features/timeline/flow"
 import type { BrowserEngine } from "@smthrs/platform-browser"
 import { BranchCreate, BranchTrack } from "../features/branch/flows"
+import { ConversationArchive, ConversationNew } from "../features/conversations/flows"
 import { BranchShare } from "../features/sharing/flows"
 import { TerminalOpenRequest } from "../features/terminal/flows"
 import {
@@ -247,6 +248,14 @@ export const registry = {
     changes: "makes a new branch of the repository and tracks it for the person",
     slash: { command: "branch.new", minimum: "member", fields: ["repo", "branch"] },
   },
+  // Your conversations (docs/features/conversations.md): one per branch, so `/new` makes a branch and opens it; the
+  // list's Archive and Restore change only the person's own list. The agent can do both.
+  "conversation/new": {
+    flow: ConversationNew,
+    changes: "makes a new branch of the repository, with its conversation, and opens it in the person's tab",
+    slash: { command: "new", minimum: "member", fields: ["branch"], hints: { fields: { repo: { hidden: true } } } },
+  },
+  "conversation/archive": { flow: ConversationArchive, changes: "archives one of the person's conversations, or brings it back" },
   "branch/share": {
     flow: BranchShare,
     userOnlyReason: "Sharing a branch is its owner's own act; the agent never grants access (decision 0008).",

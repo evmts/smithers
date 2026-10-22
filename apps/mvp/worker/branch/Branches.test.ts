@@ -342,6 +342,17 @@ describe("POST /api/branches with create: a new branch", () => {
   const create = (h: BranchHarness, ref: string, owner = "octocat") =>
     track(h, { owner, name: "Spoon-Knife", ref, create: true })
 
+  test("home create omits both repository names and opening refreshes the personal snapshot", async () => {
+    const h = await onCodeStorage({ config: { GITHUB_REPOSITORY: "octocat/Spoon-Knife", CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() } })
+    const response = await track(h, { ref: "conversation-abcdef", create: true })
+    expect(response.status).toBe(201)
+    const b = await response.json() as { conversationId: string }
+    const people = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`SELECT owner, repo, branch, archived_at FROM conversation_people WHERE conversation_id = ${b.conversationId}`))
+    expect(people).toEqual([{ owner: "octocat", repo: "Spoon-Knife", branch: "conversation-abcdef", archived_at: null }])
+    expect((await track(h, { ref: "conversation-abcdef" })).status).toBe(400)
+    expect((await track(h, { owner: "octocat", ref: "conversation-abcdef", create: true })).status).toBe(400)
+  })
+
   test("makes the branch on Code Storage at the default branch's head and records it open, the Member's; again, 200", async () => {
     const h = await onCodeStorage()
     const [status, body] = await json(await create(h, "maya/k3f9q2"))
@@ -354,6 +365,27 @@ describe("POST /api/branches with create: a new branch", () => {
     // Pressed again, or retried after a lost answer: the branch it made, at once, and nothing made twice.
     expect(await json(await create(h, "maya/k3f9q2"))).toEqual([200, body])
     expect(h.forge.created).toHaveLength(1)
+  })
+
+  test("a fresh conversation's request: its own branch again, 200; a branch the app tracks for anyone else, 409 exists", async () => {
+    const h = await onCodeStorage()
+    const request = "6a3c2d0e-8a8b-4c1f-9e0a-1d2b3c4d5e6f"
+    const ask = (ref: string, id = request) =>
+      track(h, { owner: "octocat", name: "Spoon-Knife", ref, create: true, request: id })
+    const [status, body] = await json(await ask("topic"))
+    expect(status).toBe(201)
+    // Tried again after a lost answer: the branch it made.
+    expect(await json(await ask("topic"))).toEqual([200, body])
+    // Another request for the same name, or a branch the app tracked without one: someone's conversation, never fresh.
+    expect(await json(await ask("topic", "0b5d7d1c-6f1d-4a65-9d7e-2c1a9c2f4b11"))).toEqual([409, { code: "exists" }])
+    expect((await create(h, "plain")).status).toBe(201)
+    expect(await json(await ask("plain"))).toEqual([409, { code: "exists" }])
+    expect(h.forge.created.map((made) => made.branch)).toEqual(["topic", "plain"])
+    // An open more than a day ahead of the server's clock can't be one.
+    const ahead = await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "topic", openedAt: Date.now() + 2 * 86_400_000 })
+    expect(ahead.status).toBe(400)
+    // A request belongs only with create.
+    expect((await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "topic", request })).status).toBe(400)
   })
 
   // A branch someone pushed under the name a create asked for was tracked as the requester's new branch, owned by them

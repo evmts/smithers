@@ -222,6 +222,18 @@ export const FLOW_CASES: ReadonlyArray<AgentCase> = [
     checks: (t) => [answered(t), attempted(t, "branch/track", all(repo, fieldIs("branch", "test-branch"))),
       ...changedOnly(t, ["branch/track", "app/navigate"])],
   },
+  // Conversations: one per branch, so a fresh one is a new branch; archive hides this one from the person's own list.
+  {
+    name: "conversation-new",
+    ask: `Start a fresh conversation on ${REPO}, on a new branch called docs-pass.`,
+    checks: (t) => [answered(t), attempted(t, "conversation/new", all(repo, fieldIs("branch", "docs-pass"))),
+      ...changedOnly(t, ["conversation/new", "branch/create", "app/navigate"])],
+  },
+  {
+    name: "conversation-archive",
+    ask: "Archive this conversation for me.",
+    checks: (t) => [answered(t), calledOnce(t, "conversation/archive"), ...changedOnly(t, ["conversation/archive"])],
+  },
   // Issues: written by the agent, never handed back as a form to fill.
   {
     name: "issue-create",

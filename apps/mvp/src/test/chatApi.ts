@@ -91,6 +91,7 @@ import { SHARES_TABLE } from "../features/branch/contract"
 import { MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
 import type { TextsClient } from "../features/coedit/api"
 import { TEXT_UPDATES_TABLE } from "../features/coedit/contract"
+import { CONVERSATION_PEOPLE_TABLE } from "../features/conversations/contract"
 import { DOMAINS_TABLE } from "../features/domains/contract"
 import { FLOW_DRAFTS_TABLE, FLOWS_TABLE } from "../features/flows-ui/contract"
 import type { IssuesClient } from "../features/issues/api"
@@ -212,6 +213,7 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   FLOW_DRAFTS_TABLE,
   TERMINALS_TABLE,
   SHARES_TABLE,
+  CONVERSATION_PEOPLE_TABLE,
   SPEND_ALERTS_TABLE,
   ALERT_CHANNELS_TABLE,
   ALERT_DELIVERIES_TABLE,

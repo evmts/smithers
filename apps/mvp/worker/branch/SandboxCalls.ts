@@ -86,7 +86,7 @@ const standing = (row: CallRow) =>
  * The conversation an agent's call works in: its answer's, when `actor` asked that answer's question. `forbidden` when
  * someone else asked it; nothing when there is no such answer.
  */
-const answerConversation = (answerId: string, actor: Actor) =>
+export const answerConversation = (answerId: string, actor: Actor) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly conversationId: string; readonly askedBy: string | null }>`

@@ -7,6 +7,7 @@ import { AnswerApi } from "../features/agent/answers"
 import * as AgentHost from "../features/agent/host"
 import * as Attention from "../features/attention/steps"
 import * as AuthSteps from "../features/auth/steps"
+import * as ConversationSteps from "../features/conversations/steps"
 import * as BranchSteps from "../features/branch/steps"
 import * as ChatSteps from "../features/chat/steps"
 import * as PersonalFlows from "../features/flows-ui/steps"
@@ -105,6 +106,7 @@ export const registrations = (options: HostOptions) =>
     PersonalFlows.layer(options.origin),
     Runs.registration.pipe(Layer.provide(AnswerApi.layerHttp(options.origin))),
     BranchSteps.registrationAt(options.origin),
+    ConversationSteps.registrationAt(options.origin),
     SharingSteps.registrationAt(options.origin),
     TerminalSteps.registrationAt(options.origin),
     SandboxSteps.registrationAt(options.origin),

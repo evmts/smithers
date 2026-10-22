@@ -24,8 +24,10 @@ export function AppShell() {
         <div className="app-shell-connection" role="status" aria-label="Connection" aria-live="polite">
           <ConnectionPill />
         </div>
-        {/* Your own flows and this device's runs (decision 0014 §5), an Admin's settings, and the plugins' entries. */}
+        {/* Your conversations (decision 0013), your own flows and this device's runs (decision 0014 §5), an Admin's
+            settings, and the plugins' entries. */}
         <nav className="app-shell-nav" aria-label="Pages">
+          <Link to="/app/conversations">Conversations</Link>
           <Link to="/app/flows">Flows</Link>
           <Link to="/app/runs">Runs</Link>
           <SettingsLink />

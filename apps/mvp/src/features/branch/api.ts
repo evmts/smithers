@@ -22,12 +22,19 @@ const decodeTracked = Schema.decodeUnknownEffect(Tracked)
 export class BranchClient extends Context.Service<
   BranchClient,
   {
-    /** Tracks `ref`; with `create`, makes it on the forge at the default branch's head first (`branch/create`). */
+    /**
+     * Tracks `ref`; with `create`, makes it on the forge at the default branch's head first (`branch/create`). A new
+     * branch that names no repository is the deployment's own (`conversation/new` from the home conversation).
+     */
     readonly track: (branch: {
-      readonly owner: string
-      readonly name: string
+      readonly owner?: string
+      readonly name?: string
       readonly ref: string
       readonly create?: true
+      /** With `create`, the request asking for a fresh branch (`conversation/new`). */
+      readonly request?: string
+      /** When the person opened the branch, in milliseconds since the epoch. */
+      readonly openedAt?: number
     }) => Effect.Effect<Tracked, TrackRefused>
   }
 >()("@smthrs/mvp/branch/BranchClient") {

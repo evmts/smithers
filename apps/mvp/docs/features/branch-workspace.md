@@ -46,7 +46,7 @@ stacks under the view.
 
 ## Tracking a branch
 
-`branch/track { repo, branch }` is a client flow a person's page and the agent run alike (`src/features/branch/flows.ts`). Its one step posts `POST /api/branches { owner, name, ref }` (`worker/branch/Branches.ts`):
+`branch/track { repo, branch, openId? }` is a client flow a person's page and the agent run alike (`src/features/branch/flows.ts`). Its one step posts `POST /api/branches { owner, name, ref, openId? }` (`worker/branch/Branches.ts`); a page's open names itself in `openId`, so the same open tried again never undoes an archive made since ([conversations](conversations.md#archive)):
 
 | Answer | When |
 |---|---|
@@ -81,6 +81,7 @@ The route's `branch.track` line says `created`: `created`, `exists`, or the forg
 - **The agent's turn and history are per conversation** (`worker/Answers.ts`, `worker/Messages.ts`): two branches' answers proceed in parallel; one conversation's still take turns.
 - **On the device** (`src/features/chat/store.ts`), the home conversation keeps its collection (`chat-messages`); each branch conversation opens its own (`chat-messages:<id>`, persisted) and views (`views:<id>`) when a page shows it. The `place` row says which conversation the tab shows and asks in. A question keeps the conversation it was asked in, whatever the tab shows when it sends. A conversation is blank until it opens: once the device's rows are restored, or, for one this device has no rows of yet, once its shape has synced, so switching to a branch never shows the empty state for a frame before its conversation arrives (`src/features/branch/conversation.test.ts`).
 - **Full-screen views** of a branch conversation are `/app/views/<id>?conversation=<conversation id>`.
+- **Your list of them**, Archive, and `/new` for a fresh one on a new branch: [conversations](conversations.md).
 
 ## The terminal
 

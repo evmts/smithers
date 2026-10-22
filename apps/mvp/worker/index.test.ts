@@ -14,6 +14,8 @@ const binding = (name: string, seen: Array<string>) =>
 
 test.each([
   ["POST", "/api/questions", "CHAT_API"],
+  ["POST", "/api/conversations/archive", "CHAT_API"],
+  ["GET", "/api/shapes/my-conversations?offset=-1", "CHAT_API"],
   ["GET", "/api/shapes/messages?offset=-1", "CHAT_API"],
   ["POST", "/api/telemetry/v1/logs", "CHAT_API"],
   ["GET", "/app", "ASSETS"],

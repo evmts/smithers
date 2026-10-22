@@ -7,6 +7,7 @@ import { AGENT_TELEMETRY } from "./features/agent/contract"
 import { ATTENTION_TELEMETRY } from "./features/attention/contract"
 import { AUTH_TELEMETRY } from "./features/auth/contract"
 import { BRANCH_TELEMETRY } from "./features/branch/contract"
+import { CONVERSATIONS_TELEMETRY } from "./features/conversations/contract"
 import { CHAT_TELEMETRY } from "./features/chat/contract"
 import { CODE_INTEL_TELEMETRY } from "./features/code-intel/contract"
 import { ISSUES_TELEMETRY } from "./features/issues/contract"
@@ -145,6 +146,7 @@ const features: ReadonlyArray<Telemetry> = [
   RUNS_TELEMETRY,
   STATUS_TELEMETRY,
   BRANCH_TELEMETRY,
+  CONVERSATIONS_TELEMETRY,
   SHARING_TELEMETRY,
   PRESENCE_TELEMETRY,
   COEDIT_TELEMETRY,

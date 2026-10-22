@@ -1,3 +1,4 @@
+import conversationPeople from "./migrations/0047_conversation_people.ts"
 import timelineSummaryRole from "./migrations/0030_timeline_summary_role.ts"
 import pulls from "./migrations/0031_pulls.ts"
 import pullWrites from "./migrations/0033_pull_writes.ts"
@@ -129,6 +130,7 @@ export const migrations = {
   "0044_todo_retry": todoRetry,
   "0045_todo_base_ancestry": todoBaseAncestry,
   "0046_domains": domains,
+  "0047_conversation_people": conversationPeople,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */
