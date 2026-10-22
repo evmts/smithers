@@ -41,7 +41,14 @@ Existing unrelated settings and servers are preserved. Verify registration with
 For Claude, the write is a temp-file-plus-rename under a lock file, with the original
 file's mode preserved, so a crash mid-write cannot leave a half-written
 configuration. The lock names the process holding it, so one left by a process
-that has since died is reclaimed rather than blocking every later run. If the file already holds the exact entry, nothing is written
+that has since died is reclaimed under an exclusive recovery guard. A crashed
+recovery leaves that guard in place; the refusal names it for manual removal
+once no Smithers process is running. A detected source mismatch leaves the
+configuration untouched and removes its temporary file. Writers that ignore
+Smithers' lock can still race the final replacement; concurrent vendor or manual
+edits are not protected by that lock.
+
+If the file already holds the exact entry, nothing is written
 and the result says `unchanged`. Add `--json` for one array of registration results,
 with `agent`, `path`, and `status` fields. Registration does not open a workspace
 database. If every target fails, the command prints

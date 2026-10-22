@@ -8,6 +8,45 @@ import {
 import { Smithers } from "@smthrs/targets"
 import { Package as repoTargetsPackage } from "../repo-targets/PACKAGE.ts"
 
+/** Regression cases wait on process receipts, conditions or the Effect test clock. */
+const importRules = ImportRules({
+  cwd: "packages/smithers",
+  rules: [
+    {
+      kind: "forbidCalls",
+      files: [
+        "test/ConfigurationRace.test.ts",
+        "test/CloudSandboxLease.test.ts",
+        "test/Bug.test.ts",
+        "test/ClaudeMirror.test.ts",
+        "test/support/configuration-race.mjs"
+      ],
+      callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.spyOn"],
+      because:
+        "test.behavioral: configuration and lease regressions use real dependencies and condition barriers, never fixed sleeps or mocks."
+    },
+    {
+      kind: "forbidCalls",
+      files: [
+        "test/BackendSafety*.test.ts",
+        "test/BackendCommands.test.ts",
+        "test/ProductApi.test.ts",
+        "test/BackendStack.test.ts",
+        "test/BackendMutations.test.ts"
+      ],
+      callees: ["setTimeout", "*.sleep", "*.waitForTimeout"],
+      because: "test.behavioral: wait on conditions or TestClock, never fixed sleeps. See AGENTS.md."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/BackendSafety*.test.ts"],
+      callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "vi.spyOn", "jest.mock"],
+      because:
+        "Backend safety regressions use real transports and inject faults through Effect services. See AGENTS.md."
+    }
+  ]
+})
+
 const tuiSources = Smithers.Filegroup({
   cwd: "apps/tui",
   srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("src/**/*.tsx")]
@@ -47,32 +86,6 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
 
 /** Changed exports against their own JSDoc. */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers" })
-
-/** Backend safety regressions wait on conditions and exercise the real transport. */
-const importRules = ImportRules({
-  cwd: "packages/smithers",
-  rules: [
-    {
-      kind: "forbidCalls",
-      files: [
-        "test/BackendSafety*.test.ts",
-        "test/BackendCommands.test.ts",
-        "test/ProductApi.test.ts",
-        "test/BackendStack.test.ts",
-        "test/BackendMutations.test.ts"
-      ],
-      callees: ["setTimeout", "*.sleep", "*.waitForTimeout"],
-      because: "test.behavioral: wait on conditions or TestClock, never fixed sleeps. See AGENTS.md."
-    },
-    {
-      kind: "forbidCalls",
-      files: ["test/BackendSafety*.test.ts"],
-      callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "vi.spyOn", "jest.mock"],
-      because:
-        "Backend safety regressions use real transports and inject faults through Effect services. See AGENTS.md."
-    }
-  ]
-})
 
 /** The history suite needs a real PostgreSQL server on the Linux CI runner. */
 const historyPostgresDatabase = Smithers.Docker.Service({
@@ -150,6 +163,7 @@ const test = Smithers.Shell.Test({
     Smithers.glob("src/**/*.ts"),
     Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
     Smithers.file("vitest.config.ts"),
+    Smithers.file("test/support/configuration-race.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
     // `EvaluationCli.test.ts` lists the repository's shipped suites.
@@ -425,6 +439,7 @@ const localSmithersUnit = Smithers.NodeTest({
 
 export const Package = Smithers.Package({
   targets: {
+    importRules,
     localSmithers,
     localSmithersUnit,
     tuiSources,
@@ -436,7 +451,6 @@ export const Package = Smithers.Package({
     fmt,
     hostProcessSampler,
     cliInstall,
-    importRules,
     lib,
     lint,
     nativeSources,

@@ -275,3 +275,20 @@ describe("the report", () => {
     expect(Bug.timeoutMs).toBe(15_000)
   })
 })
+
+it.each([new ArrayBuffer(4), new Uint8Array(4), new DataView(new ArrayBuffer(4))])(
+  "inspects binary sizes without executing a byteLength accessor (%s)",
+  (value) => {
+    let reads = 0
+    Object.defineProperty(value, "byteLength", {
+      enumerable: true,
+      get: () => {
+        reads++
+        return 4
+      }
+    })
+    expect(() => Bug.report({ summary: "failure", version: "1", platform: "test", node: "test", runs: [value] }))
+      .toThrow(/accessor/)
+    expect(reads).toBe(0)
+  }
+)

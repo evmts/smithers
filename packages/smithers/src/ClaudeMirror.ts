@@ -16,8 +16,8 @@
  * Subscriptions exist because the mirror follows the runs *this* Claude
  * session started, not every run in the project. The registry never throws: a
  * missing or corrupt file degrades to no subscriptions, and writes are
- * temp-plus-rename with last-write-wins, because the next tick re-asserts a
- * lost upsert.
+ * atomic per-entry records, so unrelated updates cannot resurrect a removed
+ * subscription. TTL buckets bound storage; original snapshots remain readable.
  *
  * @since 1.0.0
  * @deprecated Use canonical flow and runs commands through Cli.makeCli; removed in #3634 phase 2.
@@ -25,8 +25,18 @@
 
 import type { ControlSchema } from "@smthrs/control"
 import { asRecord } from "@smthrs/gateway/Diagnosis"
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { createHash, randomUUID } from "node:crypto"
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync
+} from "node:fs"
+import { dirname, join } from "node:path"
 import * as NodeOutput from "./NodeOutput.ts"
 import * as Project from "./Project.ts"
 
@@ -80,35 +90,84 @@ export interface Subscription {
  */
 export const readSubscriptions = (root: string, now: number = Date.now()): ReadonlyArray<Subscription> => {
   const path = subscriptionsPath(root)
-  if (!existsSync(path)) return []
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"))
-    const entries = Array.isArray(parsed) ? parsed : []
-    return entries.flatMap((entry) => {
-      const record = asRecord(entry)
-      const runId = record["runId"]
-      const sessionId = record["sessionId"]
-      const updatedAtMs = record["updatedAtMs"]
-      if (typeof runId !== "string" || typeof sessionId !== "string" || typeof updatedAtMs !== "number") return []
-      if (now - updatedAtMs > subscriptionTtlMs) return []
-      return [{ runId, sessionId, updatedAtMs }]
-    })
-  } catch {
-    return []
+  const entries = new Map<string, { entry: Subscription; removed: boolean }>()
+  const apply = (entry: unknown, removed = false): void => {
+    const record = asRecord(entry)
+    const runId = record["runId"]
+    const sessionId = record["sessionId"]
+    const updatedAtMs = record["updatedAtMs"]
+    if (
+      typeof runId !== "string" || typeof sessionId !== "string" || typeof updatedAtMs !== "number" ||
+      !Number.isFinite(updatedAtMs)
+    ) return
+    const id = JSON.stringify([runId, sessionId])
+    const previous = entries.get(id)
+    if (
+      previous &&
+      (previous.entry.updatedAtMs > updatedAtMs || previous.entry.updatedAtMs === updatedAtMs && previous.removed)
+    ) return
+    entries.set(id, { entry: { runId, sessionId, updatedAtMs }, removed })
   }
+  try {
+    if (existsSync(path)) {
+      const parsed: unknown = JSON.parse(readFileSync(path, "utf8"))
+      if (Array.isArray(parsed)) { for (const entry of parsed) apply(entry) }
+    }
+  } catch {
+    // Existing persisted snapshots remain readable; a corrupt one is silent.
+  }
+  const bucket = Math.floor(now / subscriptionTtlMs)
+  for (const time of [bucket - 1, bucket]) {
+    const directory = join(`${path}.entries`, String(time))
+    try {
+      for (const name of readdirSync(directory)) {
+        if (!/^[a-f0-9]{64}\.json$/.test(name)) continue
+        try {
+          const record = asRecord(JSON.parse(readFileSync(join(directory, name), "utf8")))
+          if (record["operation"] === "subscribe" || record["operation"] === "unsubscribe") {
+            apply(record, record["operation"] === "unsubscribe")
+          }
+        } catch {
+          // One damaged record must not hide unrelated subscriptions.
+        }
+      }
+    } catch {
+      // A missing bucket has no mutations to overlay.
+    }
+  }
+  // Overlay removals before expiring records, including older snapshots.
+  return [...entries.values()].flatMap(({ entry, removed }) =>
+    !removed && now - entry.updatedAtMs <= subscriptionTtlMs ? [entry] : []
+  ).sort((left, right) =>
+    left.updatedAtMs - right.updatedAtMs || left.runId.localeCompare(right.runId) ||
+    left.sessionId.localeCompare(right.sessionId)
+  )
 }
 
-/** Writes the registry atomically; a failed write is silence, never a throw. */
-const writeSubscriptions = (root: string, entries: ReadonlyArray<Subscription>): void => {
-  const path = subscriptionsPath(root)
+/** Atomically replaces only this subscription's record; failures remain silent. */
+const writeSubscriptions = (root: string, entry: Subscription, operation: "subscribe" | "unsubscribe"): void => {
+  const directory = `${subscriptionsPath(root)}.entries`
+  const bucket = Math.floor(entry.updatedAtMs / subscriptionTtlMs)
+  const id = createHash("sha256").update(JSON.stringify([entry.runId, entry.sessionId])).digest("hex")
+  const path = join(directory, String(bucket), `${id}.json`)
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`
   try {
-    mkdirSync(Project.stateDirectory(root), { recursive: true })
-    const temporary = `${path}.${process.pid}.tmp`
-    writeFileSync(temporary, `${JSON.stringify(entries, null, 2)}\n`, "utf8")
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(temporary, JSON.stringify({ ...entry, operation }), { encoding: "utf8", flag: "wx", mode: 0o600 })
     renameSync(temporary, path)
+    // Old buckets cannot contain a currently valid mutation. Removing their
+    // distinct paths cannot unlink a new record in either retained bucket.
+    for (const name of readdirSync(directory)) {
+      if (/^-?\d+$/.test(name) && Number(name) < bucket - 1) {
+        rmSync(join(directory, name), { recursive: true, force: true })
+      }
+    }
   } catch {
-    // A registry that cannot be written degrades to no subscriptions, which
-    // the monitor already handles. Failing the tick would be worse.
+    // Failing a frame over an unwritable scratch registry would be worse.
+  } finally {
+    try {
+      unlinkSync(temporary)
+    } catch { /* Already moved, or never created. */ }
   }
 }
 
@@ -126,10 +185,8 @@ export const subscribe = (
   sessionId: string,
   now: number = Date.now()
 ): ReadonlyArray<Subscription> => {
-  const kept = readSubscriptions(root, now).filter((entry) => !(entry.runId === runId && entry.sessionId === sessionId))
-  const entries = [...kept, { runId, sessionId, updatedAtMs: now }]
-  writeSubscriptions(root, entries)
-  return entries
+  writeSubscriptions(root, { runId, sessionId, updatedAtMs: now }, "subscribe")
+  return readSubscriptions(root, now)
 }
 
 /**
@@ -145,11 +202,8 @@ export const unsubscribe = (
   sessionId: string,
   now: number = Date.now()
 ): ReadonlyArray<Subscription> => {
-  const entries = readSubscriptions(root, now).filter((entry) =>
-    !(entry.runId === runId && entry.sessionId === sessionId)
-  )
-  writeSubscriptions(root, entries)
-  return entries
+  writeSubscriptions(root, { runId, sessionId, updatedAtMs: now }, "unsubscribe")
+  return readSubscriptions(root, now)
 }
 
 /**

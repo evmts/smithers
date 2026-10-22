@@ -48,7 +48,7 @@ export const workspaceApi = (environment: Readonly<Record<string, string | undef
 export interface Options {
   /** Local host spawner, used to run the SSH client. */
   readonly persistence?: "ephemeral" | "sticky" | undefined
-  /** Workspace lease; scoped work renews continuously, retained work on attach. Default 900 seconds. */
+  /** Workspace lease; held scopes renew continuously, retained work also on attach. Default 900 seconds. */
   readonly clientLeaseSeconds?: number | undefined
   readonly spawner: ChildProcessSpawner["Service"]
   /** Cloud repository, OWNER/REPO. */
@@ -205,23 +205,21 @@ export const make = (options: Options): Sandbox.Provider => {
               Effect.logWarning(`cloud-sandbox: could not delete workspace ${id}; retained for client lease expiry`)
             )
           ))
-      if (!sticky) {
-        // Renew independently of guest commands, including a single long command.
-        // The scope stops this fiber before attempting workspace deletion.
-        yield* Effect.forkScoped(Effect.gen(function*() {
-          for (;;) {
-            yield* Effect.sleep(Duration.seconds(lease / 3))
-            yield* request(
-              "POST",
-              `${base}/${encodeURIComponent(id)}/lease`,
-              undefined,
-              "could not renew workspace lease"
-            ).pipe(
-              Effect.catch(() => Effect.logWarning(`cloud-sandbox: could not renew workspace ${id} client lease`))
-            )
-          }
-        }))
-      }
+      // Renew independently of guest commands, including a single long command.
+      // The scope stops this fiber before attempting workspace deletion.
+      yield* Effect.forkScoped(Effect.gen(function*() {
+        for (;;) {
+          yield* Effect.sleep(Duration.seconds(lease / 3))
+          yield* request(
+            "POST",
+            `${base}/${encodeURIComponent(id)}/lease`,
+            undefined,
+            "could not renew workspace lease"
+          ).pipe(
+            Effect.catch(() => Effect.logWarning(`cloud-sandbox: could not renew workspace ${id} client lease`))
+          )
+        }
+      }))
       if (sticky) {
         yield* request("POST", `${base}/${encodeURIComponent(id)}/lease`, undefined, "could not renew workspace lease")
       }

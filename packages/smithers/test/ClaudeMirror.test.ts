@@ -6,7 +6,7 @@
  * answer RPC) and `continuedAs` is gone (rc.0 has no `continued` status).
  */
 import type { ControlSchema } from "@smthrs/control"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -105,14 +105,14 @@ describe("subscriptions", () => {
   it("stays silent when the registry cannot be written, leaving the existing one byte for byte", () => {
     // A registry the filesystem refuses is an operator's problem, not a reason
     // to fail the frame the plugin is waiting on. The write stages
-    // `<registry>.<pid>.tmp`, so a directory parked on that exact path refuses
-    // the staging write deterministically, on every platform and for every uid.
+    // a per-entry directory, so a file parked on that exact path
+    // refuses record creation deterministically, on every platform and for every uid.
     const root = project()
     const path = ClaudeMirror.subscriptionsPath(root)
     const kept = [{ runId: "run-1", sessionId: "session-a", updatedAtMs: 1000 }]
     writeFileSync(path, `${JSON.stringify(kept, null, 2)}\n`, "utf8")
     const before = readFileSync(path, "utf8")
-    mkdirSync(`${path}.${process.pid}.tmp`)
+    writeFileSync(`${path}.entries`, "obstruction")
 
     expect(() => ClaudeMirror.subscribe(root, "run-2", "session-b", 1000)).not.toThrow()
     expect(() => ClaudeMirror.unsubscribe(root, "run-1", "session-a", 1000)).not.toThrow()
@@ -266,4 +266,60 @@ describe("the monitor stream", () => {
 
     expect(ClaudeMirror.transition(orphan)).toMatchObject({ runId: "", status: "failed" })
   })
+})
+
+it("retains legacy subscriptions and removals across damaged entry records", () => {
+  const root = project()
+  const path = ClaudeMirror.subscriptionsPath(root)
+  writeFileSync(path, JSON.stringify([{ runId: "legacy", sessionId: "old", updatedAtMs: 1000 }]))
+  ClaudeMirror.subscribe(root, "new", "current", 1000)
+  ClaudeMirror.unsubscribe(root, "legacy", "old", 1000)
+  writeFileSync(join(`${path}.entries`, "0", `${"f".repeat(64)}.json`), "{ not json")
+  ClaudeMirror.subscribe(root, "later", "current", 2000)
+  expect(ClaudeMirror.readSubscriptions(root, 2000)).toEqual([
+    { runId: "new", sessionId: "current", updatedAtMs: 1000 },
+    { runId: "later", sessionId: "current", updatedAtMs: 2000 }
+  ])
+  expect(ClaudeMirror.readSubscriptions(root, ClaudeMirror.subscriptionTtlMs + 2001)).toEqual([])
+})
+
+it("bounds subscription storage across repeated refreshes and expiration", () => {
+  const root = project()
+  const storedBytes = (directory: string): number =>
+    readdirSync(directory).reduce((sum, name) => {
+      const path = join(directory, name)
+      const info = statSync(path)
+      return sum + (info.isDirectory() ? storedBytes(path) : info.size)
+    }, 0)
+  for (let now = 0; now < 100; now++) ClaudeMirror.subscribe(root, "run", "session", now)
+  expect(ClaudeMirror.readSubscriptions(root, 100)).toEqual([{ runId: "run", sessionId: "session", updatedAtMs: 99 }])
+  expect(storedBytes(Project.stateDirectory(root))).toBeLessThan(4096)
+  for (let index = 0; index < 100; index++) ClaudeMirror.subscribe(root, `old-${index}`, "session", 100)
+  const later = ClaudeMirror.subscriptionTtlMs * 2 + 101
+  ClaudeMirror.subscribe(root, "current", "session", later)
+  expect(ClaudeMirror.readSubscriptions(root, later)).toEqual([{
+    runId: "current",
+    sessionId: "session",
+    updatedAtMs: later
+  }])
+  expect(storedBytes(Project.stateDirectory(root))).toBeLessThan(4096)
+})
+
+it("keeps removals across TTL bucket rollover without reviving a legacy snapshot", () => {
+  const root = project()
+  const before = ClaudeMirror.subscriptionTtlMs - 1
+  const after = before + 2
+  writeFileSync(
+    ClaudeMirror.subscriptionsPath(root),
+    JSON.stringify([{ runId: "run", sessionId: "session", updatedAtMs: before }])
+  )
+  ClaudeMirror.subscribe(root, "run", "session", before)
+  expect(ClaudeMirror.unsubscribe(root, "run", "session", after)).toEqual([])
+  expect(ClaudeMirror.readSubscriptions(root, after + 1)).toEqual([])
+  expect(ClaudeMirror.readSubscriptions(root, after + ClaudeMirror.subscriptionTtlMs)).toEqual([])
+  expect(ClaudeMirror.subscribe(root, "run", "session", after + 1)).toEqual([{
+    runId: "run",
+    sessionId: "session",
+    updatedAtMs: after + 1
+  }])
 })

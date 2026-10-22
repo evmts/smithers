@@ -79793,6 +79793,44 @@
     }
   },
   {
+    "label": "//packages/smithers:importRules",
+    "package": "packages/smithers",
+    "name": "importRules",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs}",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportAnalysis.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers:lib",
     "package": "packages/smithers",
     "name": "lib",
@@ -80158,6 +80196,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/vitest.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/test/support/configuration-race.mjs"
       },
       {
         "kind": "file",

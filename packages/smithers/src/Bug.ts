@@ -11,7 +11,7 @@
  */
 
 import * as Redaction from "@smthrs/journal/Redaction"
-import { isProxy } from "node:util/types"
+import { isArrayBuffer, isDataView, isProxy } from "node:util/types"
 import * as CliError from "./CliError.ts"
 
 /**
@@ -28,9 +28,20 @@ const reportOnlySecretKey = /(?:dsn|connection)/i
 const refusal = (reason: string): CliError.Refused =>
   new CliError.Refused({ fault: "bug", code: "bug_report_refused", message: `Bug report refused: ${reason}` })
 
+// Invoke only the built-in getters. Ordinary property access can execute an
+// own or inherited accessor before descriptor inspection has refused it.
+const arrayBufferSize = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "byteLength")!.get!
+const dataViewSize = Object.getOwnPropertyDescriptor(DataView.prototype, "byteLength")!.get!
+const typedArraySize = Object.getOwnPropertyDescriptor(
+  Object.getPrototypeOf(Uint8Array.prototype),
+  "byteLength"
+)!.get!
+
 const binarySize = (value: object): number | undefined => {
-  if (value instanceof ArrayBuffer) return value.byteLength
-  if (ArrayBuffer.isView(value)) return value.byteLength
+  if (isArrayBuffer(value)) return arrayBufferSize.call(value)
+  if (ArrayBuffer.isView(value)) {
+    return isDataView(value) ? dataViewSize.call(value) : typedArraySize.call(value)
+  }
   return undefined
 }
 

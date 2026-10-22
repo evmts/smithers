@@ -316,8 +316,8 @@ const reclaimLock = (lockPath: string, path: string): Refusal | undefined => {
     }
   }
   try {
-    // Read the owner again immediately before removing it, so an observation
-    // that has since been replaced never deletes the new owner's lock.
+    // The recovery guard excludes other recoverers through the next claim.
+    // Keep the token check for a fast-path acquirer that won before this read.
     if (readFileSync(lockPath, "utf8") === observed) unlinkSync(lockPath)
   } catch {
     // Another process recovered it first, which is the outcome this wanted.
@@ -328,13 +328,26 @@ const reclaimLock = (lockPath: string, path: string): Refusal | undefined => {
 /** Takes the registration lock, recovering one left by a dead process. */
 const acquireLock = (lockPath: string, path: string, token: string): Refusal | undefined => {
   if (claimLock(lockPath, token)) return undefined
-  const refusal = reclaimLock(lockPath, path)
-  if (refusal !== undefined) return refusal
-  if (claimLock(lockPath, token)) return undefined
-  // The lock was recovered and immediately taken by a live peer.
-  return {
-    reason: `${path} is being updated by another Smithers process. No change was written; run this again, ` +
-      `or delete ${lockPath} if no other Smithers process is running.`
+  // Serialize stale observations through removal AND the following claim.
+  // A second recoverer must never unlink a lock acquired after its stale read.
+  // Recovery-guard crashes fail closed; the refusal names the guard for repair.
+  const recoveryPath = `${lockPath}.recovery`
+  if (!claimLock(recoveryPath, token)) {
+    return {
+      reason: `${path} lock recovery is already in progress. No change was written; ` +
+        `run this again, or delete ${recoveryPath} if no Smithers process is running.`
+    }
+  }
+  try {
+    const refusal = reclaimLock(lockPath, path)
+    if (refusal !== undefined) return refusal
+    if (claimLock(lockPath, token)) return undefined
+    return {
+      reason: `${path} is being updated by another Smithers process. No change was written; run this again, ` +
+        `or delete ${lockPath} if no other Smithers process is running.`
+    }
+  } finally {
+    releaseLock(recoveryPath, token)
   }
 }
 
@@ -482,13 +495,12 @@ export const addMcp = (
       }
       renameSync(temporary, path)
       syncPath(dirname(path))
-    } catch (error) {
+    } finally {
       try {
         unlinkSync(temporary)
       } catch {
         // The temp file is already gone, which is the outcome this wanted.
       }
-      throw error
     }
     return { agent: agent.id, path, status: "written" }
   } catch (error) {

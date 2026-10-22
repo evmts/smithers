@@ -162,3 +162,12 @@ line.
   that start a run in depth.
 - [Troubleshooting](./troubleshooting.md): the refusals this CLI prints, and
   what to change.
+
+### Legacy Claude mirror subscriptions
+
+The deprecated mirror reads existing `claude-mirror-subscriptions.json` snapshots
+and overlays per-subscription records from the adjacent `.entries` directory.
+Updates atomically replace only the caller's subscription or removal, so they
+cannot restore unrelated removed entries. Refreshes reuse a record; TTL buckets
+bound retained storage. A damaged record does not hide unrelated entries.
+Concurrent operations on the same subscription use last replacement wins.

@@ -46,8 +46,10 @@ A deletion failure fails release so it remains visible.
 
 Set `persistence: "sticky"` for [retained external jobs](/pkg/sandbox/guides/retained-jobs).
 Scope closure leaves the workspace running. `attach` observes the existing
-workspace without provisioning or resuming it, and each attach renews its client
-lease. `clientLeaseSeconds` defaults to 900 and accepts 60 through 86400. Set it
+workspace without provisioning or resuming it. Both acquisition and attachment
+renew the client lease throughout their open scope, including while a single
+command runs. Renewal stops when the scope closes; detached work then has only
+the remaining lease until another attachment renews it. `clientLeaseSeconds` defaults to 900 and accepts 60 through 86400. Set it
 above the maximum probe interval; the backend reclaims abandoned workspaces when
 the lease lapses. Explicit `destroy` is idempotent. Job metadata uses the
 writable `/home/developer/.local/state/smthrs-jobs`, outside the checkout. A
