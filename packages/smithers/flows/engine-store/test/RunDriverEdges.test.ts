@@ -304,6 +304,62 @@ describe("RunDriver missing and foreign rows", () => {
       }
     }))
 
+  // On Cloudflare each alarm is a new incarnation of the same host. One died
+  // between stealing a running run and activating it, and every later alarm's
+  // steal lost to its claim, `Undriven`, for hours (production, 2026-10-22).
+  it.effect("releases a dead stealer's expired claim on a running run and steals it", () =>
+    Effect.gen(function*() {
+      let executions = 0
+      const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
+        const store = yield* RunStore.RunStore
+        const driver = yield* makeDriver(() => Effect.succeed(false))
+        const runId = "orphaned-steal"
+        yield* store.create(runId, stateJson(EdgeFlow._tag))
+        // The first incarnation ran it, then died.
+        const first = { hostId: owner.hostId, pid: 303, nonce: "first" }
+        const ranAtMs = yield* Clock.currentTimeMillis
+        expect(yield* store.claimAndOwn(runId, { status: "pending", owner: null, heartbeatAtMs: null }, first, ranAtMs))
+          .toEqual({ _tag: "Activated" })
+        // The second stole it from the first, then died before activating.
+        yield* TestClock.adjust(31_000)
+        const crashed = { hostId: owner.hostId, pid: 404, nonce: "crashed" }
+        const claimedAtMs = yield* Clock.currentTimeMillis
+        const stolen = yield* store.steal(
+          runId,
+          { status: "running", owner: first, heartbeatAtMs: ranAtMs },
+          crashed,
+          claimedAtMs,
+          { expectedOwner: first, checkedAtMs: claimedAtMs, kind: "same-host-pid-dead" }
+        )
+        expect(stolen._tag).toBe("Claimed")
+        yield* TestClock.adjust(31_000)
+        yield* driver.register(EdgeFlow, () =>
+          Effect.sync(() => {
+            executions++
+            return "driven"
+          }))
+        yield* driver.resume(EdgeFlow, runId)
+        const journal = yield* Journal.Journal
+        yield* journal.flush
+        const page = yield* JournalRecords.entries(runId, undefined, 100)
+        return {
+          decisions: page.entries
+            .filter((entry) => entry.eventType === "flows.engine.run-decision")
+            .map((entry) => entry.payload as { decision: string; recoveredClaim?: unknown }),
+          row: yield* store.get(runId),
+          crashed,
+          claimedAtMs
+        }
+      })))
+      expect(executions).toBe(1)
+      expect(result.row.status).toBe("completed")
+      expect(result.decisions).toContainEqual(expect.objectContaining({
+        decision: "stolen-and-activated",
+        recoveredClaim: { claimant: result.crashed, claimedAtMs: result.claimedAtMs }
+      }))
+      expect(result.decisions.map((entry) => entry.decision)).not.toContain("claim-lost")
+    }))
+
   it.effect("does not report a recovery that a racing process performed", () =>
     Effect.gen(function*() {
       const rival: Ownership.OwnerId = { hostId: owner.hostId, pid: 9, nonce: "rival" }

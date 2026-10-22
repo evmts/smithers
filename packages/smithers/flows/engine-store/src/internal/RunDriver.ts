@@ -1123,7 +1123,7 @@ const claimable = (driver: Driver, row: RunStore.RunRow): Effect.Effect<boolean>
 /**
  * Steals a running row whose owner is gone, or answers `undefined` when the
  * owner still holds it: its lease is fresh, or the liveness check reports
- * it alive.
+ * it alive. A dead stealer's claim left on the row is released first.
  */
 const steal = (
   driver: Driver,
@@ -1155,6 +1155,11 @@ const steal = (
       return undefined
     }
     const evidence = livenessEvidenceKind(driver, row.owner)
+    // A stealer that died between its steal and its activation left its claim
+    // on the running row, and every later steal lost to it (`AlreadyClaimed`):
+    // on Cloudflare its execution retried `Undriven` every alarm, for hours
+    // (production, 2026-10-22). It is released first, as a parked row's is.
+    const recoveredClaim = yield* recoverDeadClaim(driver, row, nowMs)
     const claim = yield* driver.store.steal(
       row.runId,
       expected,
@@ -1166,7 +1171,7 @@ const steal = (
         kind: evidence
       }
     ).pipe(Effect.orDie)
-    return { claim, evidence }
+    return { claim, evidence, recoveredClaim }
   })
 
 /**
