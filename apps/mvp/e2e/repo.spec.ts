@@ -71,8 +71,12 @@ test("refusals: a repository GitHub doesn't have says Not found, and so does a m
   await page.goto(`/octocat/${name}`)
   const header = page.locator('header[aria-label="Repository"]')
   await expect(header).toContainText(`octocat / ${name}`, { timeout: 30_000 })
+  // AppShell is a sibling route: this page has just the header's connection live region.
+  await expect(page.getByRole("status", { name: "Connection", exact: true })).toHaveCount(1)
+  await expect(header.getByRole("status", { name: "Connection", exact: true })).toHaveAttribute("aria-live", "polite")
   // About answers independently of a clone's launch, execution and Electric settlement.
-  await expect(header.getByRole("status")).toHaveText("Not found", { timeout: 30_000 })
+  // Its unnamed status is distinct from Connection; status roles don't derive their name from their text.
+  await expect(header.getByRole("status").filter({ hasText: /^Not found$/ })).toHaveText("Not found", { timeout: 30_000 })
   await header.getByRole("button", { name: "Clone", exact: true }).click()
   // The same header text cannot prove the requested clone finished: require its feed outcome and recovery action.
   const subject = `clone:github/octocat/${name}`
