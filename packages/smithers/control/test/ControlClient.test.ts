@@ -33,6 +33,7 @@ const served = (
 ) =>
   HttpRouter.serve(
     ControlServer.layerHttp.pipe(
+      Layer.provide(Layer.succeed(ControlServer.RequestScheme, "http:")),
       Layer.provide(authentication),
       Layer.provide(RpcSerialization.layerNdjson)
     ),
@@ -728,9 +729,29 @@ describe("ControlClient", () => {
           "content-type": "text/plain"
         }, "POST"),
         sameOrigin: yield* status(url, "/rpc/ws", { ...upgrade, origin: `http://${host}` }),
+        wrongScheme: yield* status(url, "/rpc/ws", { ...upgrade, origin: `https://${host}` }),
+        untrustedForwardedHttp: yield* status(url, "/rpc/ws", {
+          ...upgrade,
+          origin: `http://${host}`,
+          "x-forwarded-proto": "https"
+        }),
+        untrustedForwardedHttps: yield* status(url, "/rpc/ws", {
+          ...upgrade,
+          origin: `https://${host}`,
+          "x-forwarded-proto": "https"
+        }),
         noOrigin: yield* status(url, "/rpc/ws", upgrade)
       }
     }))
-    expect(result).toEqual({ hostile: 403, spoofedPath: 403, hostilePost: 403, sameOrigin: 101, noOrigin: 101 })
+    expect(result).toEqual({
+      hostile: 403,
+      spoofedPath: 403,
+      hostilePost: 403,
+      sameOrigin: 101,
+      wrongScheme: 403,
+      untrustedForwardedHttp: 101,
+      untrustedForwardedHttps: 403,
+      noOrigin: 101
+    })
   })
 })

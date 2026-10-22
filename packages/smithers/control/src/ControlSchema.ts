@@ -86,7 +86,7 @@ export type Principal = typeof Principal.Type
  * `budget` holds the run's approved ceilings: `tokens`, `milliseconds` of
  * active time, and `usd` in dollars, and its `deadline`: milliseconds of
  * wall-clock time counted from the run's first start, shared by every round
- * of the run. An absent ceiling or deadline is none.
+ * of the run. Ceilings are nonnegative. An absent ceiling or deadline is none.
  *
  * @since 0.1.0
  * @category models
@@ -97,9 +97,9 @@ export const Envelope = Schema.Struct({
   hostImports: Schema.optional(Schema.Array(Schema.String)),
   flows: Schema.Array(Schema.String),
   budget: Schema.Struct({
-    tokens: Schema.optional(Schema.Number),
-    milliseconds: Schema.optional(Schema.Number),
-    usd: Schema.optional(Schema.Number),
+    tokens: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
+    milliseconds: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
+    usd: Schema.optional(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
     onExceeded: Schema.optional(BudgetOnExceeded),
     deadline: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0)))
   }),
@@ -481,7 +481,12 @@ export const Cancellation = Schema.Struct({
   reason: Schema.optional(Schema.String),
   /** The cancelled ancestor this run was swept up with, on a cascade. */
   cascadedFrom: Schema.optional(RunId)
-})
+}).check(
+  Schema.makeFilter((value) =>
+    value.source !== "engine" || (value.principal === undefined && value.reason === undefined) ||
+    "An engine cancellation cannot carry a principal or reason"
+  )
+)
 
 /**
  * Who cancelled a run, why, and on whose behalf.
@@ -962,7 +967,13 @@ export const WatchFilter = Schema.Struct({
   /** Resume after one emitted event, even inside an expansion. Requires `runId`. Cannot be combined with `afterSequence`. */
   afterCursor: Schema.optional(WatchCursor),
   follow: Schema.optional(Schema.Boolean)
-})
+}).check(Schema.makeFilter((value) => {
+  if ((value.afterSequence !== undefined || value.afterCursor !== undefined) && value.runId === undefined) {
+    return "A watch cursor requires runId"
+  }
+  return value.afterSequence === undefined || value.afterCursor === undefined ||
+    "afterCursor cannot be combined with afterSequence"
+}))
 
 /**
  * A resumable journal-projection watch cursor and optional run restriction.

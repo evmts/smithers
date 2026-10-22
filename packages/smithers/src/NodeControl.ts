@@ -810,6 +810,7 @@ export const layerServer = (
 ) =>
   HttpRouter.serve(
     ControlServer.layerHttp.pipe(
+      Layer.provide(Layer.succeed(ControlServer.RequestScheme, "http:")),
       Layer.provide(auth),
       Layer.provide(RpcSerialization.layerNdjson)
     ),

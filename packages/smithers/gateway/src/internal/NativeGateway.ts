@@ -18,7 +18,7 @@
  * @since 1.0.0
  */
 
-import { ControlRpcs, ScopedToken } from "@smthrs/control"
+import { ControlRpcs, ControlServer, ScopedToken } from "@smthrs/control"
 import { Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
 import type { HttpServer } from "effect/http/HttpServer"
@@ -36,6 +36,8 @@ import type * as RuntimeBridge from "../RuntimeBridge.ts"
  * @category models
  */
 export interface ServerOptions extends ListenOptions {
+  /** External scheme for browser Origin checks. Set `https:` behind a trusted TLS terminator. */
+  readonly requestScheme?: "http:" | "https:" | undefined
   /** Additional accepted Host header names (without ports), for network or proxy access. */
   readonly allowedHosts?: ReadonlyArray<string> | undefined
   /** The `--listen` opt-in required for a non-loopback host. */
@@ -137,6 +139,7 @@ export const listenOptions = (options: ServerOptions): Effect.Effect<ListenOptio
       listen: _listen,
       maxRequestBodyBytes: _maxBody,
       runtimeBridge: _runtimeBridge,
+      requestScheme: _requestScheme,
       ...node
     } = options
     return Effect.succeed({ ...node, host: node.host ?? "127.0.0.1" })
@@ -350,6 +353,7 @@ export const makeLayer = (
             }
           })
         }).pipe(
+          Layer.provide(Layer.succeed(ControlServer.RequestScheme, options.requestScheme ?? "http:")),
           Layer.provide(layerAuth(options)),
           Layer.provide(RpcSerialization.layerNdjson)
         ),

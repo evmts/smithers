@@ -1,7 +1,7 @@
 /**
  * A handler defect is the server's own bug. Its raw text (a driver message,
- * a path, a secret in an error string) stays in the server log; every client
- * reads only the designed sentence. Typed control errors still arrive intact.
+ * a path, a secret in an error string) reaches neither logs nor clients; clients
+ * read only the designed sentence. Typed control errors still arrive intact.
  */
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
@@ -77,7 +77,7 @@ const run = <A, E>(logs: Array<string>, effect: Effect.Effect<A, E, HttpServer.H
   Effect.runPromise(effect.pipe(Effect.provide(served(logs)), Effect.scoped))
 
 describe("control RPC defect redaction", () => {
-  it("sends the designed sentence for a unary handler defect and logs the raw defect on the server", async () => {
+  it("sends the designed sentence for a unary handler defect and logs only a safe diagnostic on the server", async () => {
     const logs: Array<string> = []
     const body = await run(
       logs,
@@ -90,7 +90,8 @@ describe("control RPC defect redaction", () => {
     expect(body).toContain(sentence)
     expect(body).not.toContain(secret)
     expect(body).not.toContain("at ")
-    expect(logs.some((line) => line.includes(secret))).toBe(true)
+    expect(logs.some((line) => line.includes("A control RPC handler died"))).toBe(true)
+    expect(logs.join("\n")).not.toContain(secret)
   })
 
   it("sanitizes request-decoding defects as well", async () => {
@@ -122,7 +123,8 @@ describe("control RPC defect redaction", () => {
     expect(cause).toBeInstanceOf(Error)
     expect((cause as Error).message).toBe(sentence)
     expect(JSON.stringify(cause)).not.toContain(secret)
-    expect(logs.some((line) => line.includes(secret))).toBe(true)
+    expect(logs.some((line) => line.includes("A control RPC handler died"))).toBe(true)
+    expect(logs.join("\n")).not.toContain(secret)
   })
 
   it("delivers a typed control error intact", async () => {

@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ImportRules,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode
+} from "@smthrs/repo-targets"
 /** Standard package targets. */
 import { Smithers } from "@smthrs/targets"
 
@@ -14,6 +19,16 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   // The example projects examples 16 and 24 discover flows in read their
   // markdown descriptors off disk at run time.
   testData: ["examples/**/*.mdx"]
+})
+
+const importRules = ImportRules({
+  cwd: "packages/smithers/flows",
+  rules: [{
+    kind: "forbidCalls",
+    files: ["test/examples/24-control-plane-and-gateway.test.ts"],
+    callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.doMock", "jest.mock"],
+    because: "test.behavioral: control HTTP host tests use real services and completion signals."
+  }]
 })
 
 /**
@@ -139,6 +154,7 @@ export const Package = Smithers.Package({
     fmt,
     lib,
     lint,
+    importRules,
     test,
     ...securityReview
   }

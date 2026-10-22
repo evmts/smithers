@@ -140,6 +140,7 @@ export const startLaunch = <A, E, R>(
 export const serve = (credential: string) =>
   HttpRouter.serve(
     ControlServer.layerHttp.pipe(
+      Layer.provide(Layer.succeed(ControlServer.RequestScheme, "http:")),
       Layer.provide(ControlRpcs.layerBearerAuth({ token: credential, principal: { id: "local", kind: "operator" } })),
       Layer.provide(
         HttpRouter.middleware(Effect.gen(function*() {

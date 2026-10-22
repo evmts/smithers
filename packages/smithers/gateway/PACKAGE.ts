@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ImportRules,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode
+} from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -11,6 +16,21 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   deps: [],
   testSources: Input.glob("{test,examples}/**/*.ts"),
   cwd: "packages/smithers/gateway"
+})
+
+const importRules = ImportRules({
+  cwd: "packages/smithers/gateway",
+  rules: [{
+    kind: "forbidCalls",
+    files: ["src/internal/NativeGateway.ts"],
+    callees: ["*.runPromise", "*.runSync", "*.runFork"],
+    because: "effect.boundary-only: native gateway composition supplies services and returns layers."
+  }, {
+    kind: "forbidCalls",
+    files: ["test/DefectRedaction.test.ts"],
+    callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.doMock", "jest.mock"],
+    because: "test.behavioral: defect redaction uses real HTTP handlers and faulty Effect services."
+  }]
 })
 
 /**
@@ -254,6 +274,7 @@ export const Package = Smithers.Package({
     fmt,
     lib,
     lint,
+    importRules,
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test,

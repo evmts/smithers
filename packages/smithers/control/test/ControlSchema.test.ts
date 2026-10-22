@@ -18,6 +18,52 @@ const envelope = {
 const principal = { id: "operator-1", kind: "user", stampedAt: 1 }
 
 describe("ControlSchema", () => {
+  it.each(["tokens", "milliseconds", "usd"])("rejects negative %s ceilings", (field) => {
+    const schema = ControlSchema.Envelope
+    for (const value of [-1, -0.5]) {
+      const input = { ...envelope, budget: { [field]: value } }
+      expect(() => Schema.decodeUnknownSync(schema)(input)).toThrow()
+      expect(() => Schema.encodeSync(schema)(input)).toThrow()
+    }
+    for (const value of [0, 0.5, 1_000]) {
+      roundTrip(schema, { ...envelope, budget: { [field]: value } })
+    }
+    roundTrip(schema, { ...envelope, budget: {} })
+  })
+
+  it.each([{ principal }, { reason: "operator request" }, { principal, reason: "operator request" }])(
+    "rejects engine cancellation attribution: %j",
+    (attribution) => {
+      const input = { requestedAt: 1, source: "engine" as const, ...attribution }
+      expect(() => Schema.decodeUnknownSync(ControlSchema.Cancellation)(input)).toThrow()
+      expect(() => Schema.encodeSync(ControlSchema.Cancellation)(input)).toThrow()
+    }
+  )
+
+  it("preserves valid cancellation attribution", () => {
+    roundTrip(ControlSchema.Cancellation, { requestedAt: 1, source: "engine" })
+    for (const source of ["control", "cascade"] as const) {
+      for (const attribution of [{}, { principal }, { reason: "" }, { principal, reason: "operator request" }]) {
+        roundTrip(ControlSchema.Cancellation, { requestedAt: 1, source, ...attribution })
+      }
+    }
+  })
+
+  it.each([
+    { afterSequence: 0 },
+    { afterCursor: { sequence: 0 } },
+    { runId: "run-1", afterSequence: 0, afterCursor: { sequence: 0 } }
+  ])("rejects invalid watch cursor combinations: %j", (input) => {
+    expect(() => Schema.decodeUnknownSync(ControlSchema.WatchFilter)(input)).toThrow()
+    expect(() => Schema.encodeSync(ControlSchema.WatchFilter)(input)).toThrow()
+  })
+
+  it("preserves valid watch filters", () => {
+    for (const input of [{}, { follow: false }, { runId: "run-1" }, { runId: "run-1", afterSequence: 0 }]) {
+      roundTrip(ControlSchema.WatchFilter, input)
+    }
+  })
+
   it("round-trips a plan card", () => {
     roundTrip(ControlSchema.PlanCard, {
       planId: "plan-1",

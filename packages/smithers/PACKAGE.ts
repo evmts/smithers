@@ -112,6 +112,16 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
   sources: Smithers.glob("{src,examples}/**/*.ts")
 })
 
+const importRules = ImportRules({
+  cwd: "packages/smithers",
+  rules: [{
+    kind: "forbidCalls",
+    files: ["test/ControlSurface.test.ts"],
+    callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.doMock", "jest.mock"],
+    because: "test.behavioral: control HTTP host tests use real services and completion signals."
+  }]
+})
+
 /**
  * Changed public APIs and commands against the package README, every docs
  * page, and the site CLI reference page.
@@ -494,6 +504,7 @@ export const Package = Smithers.Package({
     cliInstall,
     lib,
     lint,
+    importRules,
     nativeSources,
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,

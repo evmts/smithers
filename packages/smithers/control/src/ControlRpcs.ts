@@ -96,7 +96,7 @@ export const defectMessage = "Something went wrong on our side. Not your fault."
  * Encoding replaces a defect value (an `Error`, a failure an `orDie` turned
  * into a defect, or a string) with `{ name: "Error", message }`
  * carrying {@link defectMessage}, so a driver message, path, or stack never
- * reaches a client. The server logs the raw defect. Strings receive the same protection,
+ * reaches a client. The server logs a content-free diagnostic. Strings receive the same protection,
  * including request-decoding failures.
  *
  * Decoding is Effect's default `Schema.Defect()` decoding, so a client reads

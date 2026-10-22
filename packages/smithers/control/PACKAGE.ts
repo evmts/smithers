@@ -38,6 +38,28 @@ const importRules = ImportRules({
       ],
       callees: ["setTimeout", "*.waitForTimeout", "*.sleep", "vi.mock", "vi.doMock", "vi.stubGlobal", "jest.mock"],
       because: "test.behavioral: use real services, wait on conditions or TestClock, and never fixed sleeps."
+    },
+    {
+      kind: "forbidHostModules",
+      files: ["src/ControlSchema.ts", "src/ControlServer.ts"],
+      because: "sdk.platform-neutral: control boundary validation uses injected HTTP services."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["src/ControlSchema.ts", "src/ControlServer.ts"],
+      callees: ["*.runPromise", "*.runSync", "*.runFork"],
+      because: "effect.boundary-only: the control boundary returns Effects to its host."
+    },
+    {
+      kind: "forbidCalls",
+      files: [
+        "test/ControlSchema.test.ts",
+        "test/ControlOrigin.test.ts",
+        "test/ControlClient.test.ts",
+        "test/DefectRedaction.test.ts"
+      ],
+      callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.doMock", "vi.stubGlobal", "jest.mock"],
+      because: "test.behavioral: boundary regressions use real services, fault injection, and completion signals."
     }
   ]
 })

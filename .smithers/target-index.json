@@ -75919,6 +75919,44 @@
     }
   },
   {
+    "label": "//packages/smithers/flows:importRules",
+    "package": "packages/smithers/flows",
+    "name": "importRules",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/flows/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs}",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportAnalysis.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/flows/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/flows:lib",
     "package": "packages/smithers/flows",
     "name": "lib",
@@ -76388,6 +76426,44 @@
       {
         "kind": "file",
         "path": "packages/smithers/gateway/dprint.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/gateway/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/gateway:importRules",
+    "package": "packages/smithers/gateway",
+    "name": "importRules",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/gateway/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs}",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportAnalysis.ts"
       }
     ],
     "outputs": [],

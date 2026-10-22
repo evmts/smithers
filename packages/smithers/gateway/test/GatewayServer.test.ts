@@ -985,12 +985,40 @@ describe("the assembled gateway over a real loopback bind", () => {
         ]
       ) {
         const headers = [`Host: ${new URL(origin).host}`, `Origin: ${origin}`]
-        expect([origin, (yield* Effect.promise(() => postRpc(headers))).status]).toEqual([origin, 200])
-        expect([origin, (yield* Effect.promise(() => upgradeRpc(headers))).status]).toEqual([origin, 101])
+        const secure = new URL(origin).protocol === "https:"
+        expect([origin, (yield* Effect.promise(() => postRpc(headers))).status]).toEqual([origin, secure ? 403 : 200])
+        expect([origin, (yield* Effect.promise(() => upgradeRpc(headers))).status]).toEqual([
+          origin,
+          secure ? 403 : 101
+        ])
       }
       expect((yield* Effect.promise(() => postRpc([]))).status).toBe(200)
       expect((yield* Effect.promise(() => upgradeRpc([]))).status).toBe(101)
     }).pipe(Effect.provide(served())))
+
+  test("uses the explicitly configured external scheme for control browser origins", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      const body = `${
+        JSON.stringify({ _tag: "Request", id: "1", tag: "List", payload: { _tag: "runs" }, headers: [] })
+      }\n`
+      for (const scheme of ["http:", "https:"]) {
+        const response = yield* Effect.promise(() =>
+          raw(
+            url,
+            [
+              "POST /rpc HTTP/1.1",
+              `Origin: ${scheme}//localhost`,
+              "Content-Type: application/ndjson",
+              `Content-Length: ${body.length}`
+            ],
+            body,
+            "localhost"
+          )
+        )
+        expect([scheme, response.status]).toEqual([scheme, scheme === "https:" ? 200 : 403])
+      }
+    }).pipe(Effect.provide(served({ host: "127.0.0.1", port: 0, requestScheme: "https:" }))))
 
   /**
    * A malformed request is the caller's mistake, and the status code is how a

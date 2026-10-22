@@ -1,5 +1,5 @@
 /**
- * A projection handler that dies is the gateway's own bug. The raw defect is
+ * A projection handler that dies is the gateway's own bug. A content-free diagnostic is
  * logged on the server; the `/projections` wire carries only the designed
  * sentence. A typed `GatewayError` still arrives with its code and message.
  */
@@ -65,7 +65,7 @@ const run = <A>(logs: Array<string>, effect: Effect.Effect<A, never, HttpServer.
   Effect.runPromise(effect.pipe(Effect.provide(served(logs)), Effect.scoped))
 
 describe("gateway projection defect redaction", () => {
-  it("sends the designed sentence for a handler defect and logs the raw defect", async () => {
+  it("sends the designed sentence for a handler defect and logs a content-free diagnostic", async () => {
     const logs: Array<string> = []
     const body = await run(logs, snapshot({ _tag: "run-summary", runId: "run-1" }))
 
@@ -75,7 +75,8 @@ describe("gateway projection defect redaction", () => {
     expect(frame.exit._tag).toBe("Failure")
     expect(frame.exit.cause).toEqual([{ _tag: "Die", defect: { name: "Error", message: sentence } }])
     expect(body).not.toContain(secret)
-    expect(logs.some((line) => line.includes(secret))).toBe(true)
+    expect(logs.some((line) => line.includes("A control RPC handler died"))).toBe(true)
+    expect(logs.join("\n")).not.toContain(secret)
   })
 
   it("delivers a typed GatewayError intact", async () => {

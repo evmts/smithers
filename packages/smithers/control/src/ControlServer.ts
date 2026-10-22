@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import { Cause, Effect, Layer, Stream } from "effect"
+import { Cause, Context, Effect, Layer, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcServer } from "effect/rpc"
 import { Control } from "./Control.ts"
@@ -12,16 +12,30 @@ import { Unauthorized } from "./ControlError.ts"
 import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.ts"
 
 /**
- * Logs the raw defect of a failed RPC handler on the server, and nothing for
- * a typed failure or an interruption. `ControlRpcs.ControlDefect` sends
- * clients only the designed sentence, so this log is where the detail lives.
+ * Logs a content-free diagnostic for a failed RPC handler, and nothing for
+ * a typed failure or an interruption. Causes may contain credentials or user
+ * content, so neither their values nor their stacks enter the log.
  * Pass it to `Effect.tapCause` or `Stream.tapCause` around a handler.
  *
  * @category logging
  * @since 1.0.0
  */
 export const logDefect = (cause: Cause.Cause<unknown>): Effect.Effect<void> =>
-  Cause.hasDies(cause) ? Effect.logError("A control RPC handler died", cause) : Effect.void
+  Cause.hasDies(cause) ? Effect.logError("A control RPC handler died") : Effect.void
+
+/**
+ * The effective external scheme for hosts whose request URLs are relative.
+ * A TLS host or trusted TLS-terminating proxy supplies `https:`; a plain HTTP
+ * host supplies `http:`. Forwarding headers are not trusted automatically.
+ * Without an absolute URL or this service, browser origins fail closed.
+ *
+ * @category services
+ * @since 1.0.0
+ */
+export const RequestScheme = Context.Reference<"http:" | "https:" | undefined>(
+  "/control/RequestScheme",
+  { defaultValue: () => undefined }
+)
 
 const logged = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.tapCause(effect, logDefect)
 
@@ -120,18 +134,25 @@ export const layer = ControlRpcs.toLayer(
  *
  * Non-browser clients send no `Origin`. A browser always sends one, on POST
  * and on the WebSocket upgrade, and a cross-site page cannot forge it. Refusing
- * any `Origin` whose authority differs from `Host` stops a page on another site
+ * any `Origin` whose scheme or authority differs from the endpoint stops a page on another site
  * from riding a credential that a proxy or cookie attaches on the victim's
  * behalf (cross-site WebSocket hijacking of the `Watch` stream).
  */
-const sameOrigin = (headers: Readonly<Record<string, string>>): boolean => {
+const sameOrigin = (
+  request: HttpServerRequest.HttpServerRequest,
+  scheme: "http:" | "https:" | undefined
+): boolean => {
+  const headers = request.headers
   const origin = headers.origin
   if (origin === undefined) return true
   const host = headers.host
   const parsed = URL.parse(origin)
+  // Web adapters retain the absolute URL. Other hosts supply the external
+  // scheme explicitly: a relative URL reveals nothing about transport security.
+  const protocol = URL.parse(request.originalUrl)?.protocol ?? scheme
   return host !== undefined && parsed !== null &&
     (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-    parsed.origin === origin && parsed.host === host.toLowerCase()
+    parsed.protocol === protocol && parsed.origin === origin && parsed.host === host.toLowerCase()
 }
 
 /**
@@ -139,13 +160,18 @@ const sameOrigin = (headers: Readonly<Record<string, string>>): boolean => {
  * matching decides what it guards, and a host's stricter global policy (the
  * gateway's ingress) still answers first with its own typed refusal.
  */
-const originGuard = HttpRouter.middleware((httpEffect) =>
-  Effect.gen(function*() {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    if (sameOrigin(request.headers)) return yield* httpEffect
-    return HttpServerResponse.text("The browser Origin must match the control server Host", { status: 403 })
-  })
-).layer
+const originGuard = Layer.unwrap(
+  Effect.map(RequestScheme, (scheme) =>
+    HttpRouter.middleware((httpEffect) =>
+      Effect.gen(function*() {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        if (sameOrigin(request, scheme)) return yield* httpEffect
+        return HttpServerResponse.text("The browser Origin must match the control server scheme and Host", {
+          status: 403
+        })
+      })
+    ).layer)
+)
 
 const server = RpcServer.layer(ControlRpcs, {
   disableFatalDefects: true
@@ -169,7 +195,7 @@ const websocket = server.pipe(
  * mounted together because `ControlClient` projects the same `Control` vtable
  * across the two transports.
  *
- * A request carrying a browser `Origin` that does not match its `Host` is
+ * A request carrying a browser `Origin` that does not match its scheme and `Host` is
  * refused with 403 before authentication, so a page on another site cannot
  * open the socket or post to `/rpc` with a credential a proxy attaches.
  *
