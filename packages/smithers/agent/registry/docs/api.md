@@ -109,7 +109,8 @@ one with `sandbox: { provider, network?, cpus?, memoryMib?, timeoutSecs? }`:
 `container`, `daytona`, `directory`, `just-bash`, `kubernetes`, `microsandbox`,
 `vercel`), `network` is `none`, `open`, or `{ allow: [hosts] }` of host names (absent,
 the provider's default applies; `microsandbox` then gives no network), `cpus` is a positive
-number, and the other limits are positive whole numbers. A selection places the
+finite number, and the other limits are positive whole numbers. `SandboxSelection`
+enforces these limits when decoding descriptors too. A selection places the
 flow in `sandbox`. An unknown provider or key, a malformed option, or a
 `placement` other than `sandbox` refuses the flow with `invalid_sandbox`.
 
@@ -155,6 +156,9 @@ exclusion is `pack`, which describes where discovery found the declaration
 rather than what the call depends on. `capabilities` is sorted because a set is
 what it means; every other array hashes in declaration order. Absent `Option`
 and optional fields hash as `null`.
+
+Measured `lockfiles` contribute their relative root and digest. When absent,
+this field is omitted from the hash to preserve historical declaration identities.
 
 Unlike `executionDigest` this is always defined. It identifies what was
 declared, not whether the source bytes were measured, so a descriptor with no
@@ -1523,10 +1527,9 @@ The registry sources one pack contributes, in manifest order. Every `flows` and
 pack root. Discovery uses the same pipeline as project directories. `source`
 carries `pack:<name>`, which is what a warning about a pack file reads back.
 
-Lexical containment is always enforced. When the pack root's real path
-resolves, a source must resolve inside it or not exist yet; any other
-`realPath` failure is refused. Hosts that cannot resolve the pack root use the
-lexical verdict. The defense
+Lexical containment is always enforced. The pack root's real path must resolve,
+or `sources` fails `invalid_pack`. A source must resolve inside it or not exist
+yet (`NotFound`); any other `realPath` failure is refused. The defense
 is repeated here because callers may construct an `Installed` value without
 decoding a manifest first. Discovery repeats the real-path check for the
 source root, every descended directory, and every selected entry file. Nested

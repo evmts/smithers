@@ -133,13 +133,13 @@ the pack, its range, and the runtime.
 
 A pack is third-party content, so this module holds exactly one piece of
 filesystem policy: source roots, descended directories, and selected entry
-files stay inside the pack root when the host can resolve their real paths.
+files stay inside the pack root. The pack root's real path must resolve.
 
 | Rule                                                                                                                                    | Where it is enforced                                                                                                                        |
 | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | A manifest entry is a relative path with no empty, `.`, or `..` segment, no NUL byte, no backslash, no leading `/`, and no drive prefix | `Pack.read`, as a decode refusal that fails `invalid_pack` naming the offending entry                                                       |
 | A resolved entry stays under the resolved pack root                                                                                     | `Pack.sources`, so a directly constructed `Installed` value is checked too                                                                  |
-| A manifest source root's real path stays under the pack root's real path                                                                | `Pack.sources`, wherever the host can answer `realPath`, so a symlinked escape is refused alongside a lexical one                           |
+| A manifest source root's real path stays under the pack root's real path                                                                | `Pack.sources`; an unresolved pack root fails `invalid_pack`, as does a symlinked escape                                                    |
 | Every descended directory and selected entry file stays under the pack root's real path                                                 | `Discovery.scan`, using `Source.confinementRoot` from `Pack.sources`; escapes are skipped with `outside_root` before reading their contents |
 
 The check is repeated in `Pack.sources` because callers may construct an
@@ -148,8 +148,10 @@ and symlinked `flow.ts`, `flow.mdx`, and `SKILL.md` files are checked, so an
 outside target contributes no descriptor for body loading or executable
 catalog import. Links within the pack remain eligible. Once the pack root's
 real path resolves, a target whose real path cannot be resolved is refused as
-well. If the pack root cannot resolve, discovery refuses the source with
-`outside_root`. These checks apply during discovery. They do not sandbox module
+well; `Pack.sources` permits a not-yet-created source (`NotFound`) under a resolved
+root. If the pack root cannot resolve, `Pack.sources` fails `invalid_pack`.
+Discovery independently refuses an unresolved confinement root with `outside_root`.
+These checks apply during discovery. They do not sandbox module
 imports or protect against concurrent filesystem changes.
 
 ## The content address

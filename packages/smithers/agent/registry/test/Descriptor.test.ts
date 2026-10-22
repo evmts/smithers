@@ -3,6 +3,31 @@ import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Disclosure from "../src/Disclosure.ts"
 
+describe("SandboxSelection resource limits", () => {
+  it.each(
+    (["cpus", "memoryMib", "timeoutSecs"] as const).flatMap((field) =>
+      [0, -1, Number.NaN, Infinity, -Infinity].map((value) => [field, value] as const)
+    )
+  )("rejects %s ceiling %s", (field, value) => {
+    expect(() => Schema.decodeUnknownSync(Descriptor.SandboxSelection)({ provider: "container", [field]: value }))
+      .toThrow()
+  })
+
+  it.each(["memoryMib", "timeoutSecs"] as const)("rejects fractional %s ceilings", (field) => {
+    expect(() => Schema.decodeUnknownSync(Descriptor.SandboxSelection)({ provider: "container", [field]: 0.5 }))
+      .toThrow()
+  })
+
+  it.each([
+    { provider: "container" },
+    { provider: "container", cpus: 0.5, memoryMib: 1, timeoutSecs: 1 },
+    { provider: "container", cpus: 2, memoryMib: 512, timeoutSecs: 60 }
+  ])("round-trips valid ceilings %j", (selection) => {
+    const decoded = Schema.decodeUnknownSync(Descriptor.SandboxSelection)(selection)
+    expect(Schema.encodeSync(Descriptor.SandboxSelection)(decoded)).toEqual(selection)
+  })
+})
+
 describe("inputDocument", () => {
   it("returns the inline document without interpreting or replacing it", () => {
     const document = { type: "object", properties: { command: { type: "string" } }, required: ["command"] }
@@ -531,6 +556,20 @@ describe("declarationDigest", () => {
         })
       })
     )).toBe(Descriptor.declarationDigest(base))
+  })
+
+  it.each([
+    { root: ".", digest: "2".repeat(64) },
+    { root: "..", digest: "1".repeat(64) },
+    undefined
+  ])("changes when only measured lockfile identity changes to %j", (lockfiles) => {
+    const measured = new Descriptor.FlowDescriptor({ ...base, lockfiles: { root: ".", digest: "1".repeat(64) } })
+    const changed = new Descriptor.FlowDescriptor({ ...measured, lockfiles })
+    expect(Descriptor.declarationDigest(changed)).not.toBe(Descriptor.declarationDigest(measured))
+    const restored = Schema.decodeUnknownSync(Descriptor.FlowDescriptor)(
+      Schema.encodeSync(Descriptor.FlowDescriptor)(changed)
+    )
+    expect(Descriptor.declarationDigest(restored)).toBe(Descriptor.declarationDigest(changed))
   })
 
   it("does not depend on key order or on capability order", () => {

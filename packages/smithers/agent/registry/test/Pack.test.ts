@@ -89,17 +89,6 @@ const readPackError = (nodes: Map<string, Node>, dir: string) =>
     }).pipe(Effect.provide(NodePath.layerPosix))
   )
 
-const packSources = (pack: Pack.Installed) =>
-  Effect.runPromise(
-    Effect.gen(function*() {
-      const path = yield* Path.Path
-      return yield* Pack.sources(pack, path)
-    }).pipe(
-      Effect.provide(NodeFileSystem.layer),
-      Effect.provide(NodePath.layerPosix)
-    )
-  )
-
 const packSourcesError = (pack: Pack.Installed, paths = NodePath.layerPosix) =>
   Effect.runPromise(
     Effect.gen(function*() {
@@ -277,6 +266,45 @@ describe("Pack.read", () => {
 })
 
 describe("Pack.sources", () => {
+  it.each(["NotFound", "Unknown", "PermissionDenied"] as const)(
+    "refuses a root realPath %s failure regardless of source resolution",
+    async (tag) => {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          const path = yield* Path.Path
+          const root = yield* fs.makeTempDirectoryScoped({ prefix: "registry-pack-root-" })
+          yield* fs.makeDirectory(path.join(root, "flows"))
+          const pack = installed(root, localManifest, "installed")
+          for (const source of ["inside", "outside", "unresolved"] as const) {
+            const faulty: FileSystem.FileSystem = {
+              ...fs,
+              realPath: (location) =>
+                location === root || source === "unresolved"
+                  ? Effect.fail(PlatformError.systemError({
+                    _tag: tag,
+                    module: "FileSystem",
+                    method: "realPath",
+                    pathOrDescriptor: location
+                  }))
+                  : source === "outside"
+                  ? fs.realPath(path.dirname(root))
+                  : fs.realPath(location)
+            }
+            const outcome = yield* Pack.sources(pack, path).pipe(
+              Effect.provideService(FileSystem.FileSystem, faulty),
+              Effect.result
+            )
+            expect(outcome).toMatchObject({
+              _tag: "Failure",
+              failure: { code: "invalid_pack", path: path.join(root, "pack.json") }
+            })
+          }
+        }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
+      )
+    }
+  )
+
   it("rechecks directly constructed installed values for lexical containment", async () => {
     const pack: Pack.Installed = {
       manifest: {
@@ -314,16 +342,20 @@ describe("Pack.sources", () => {
   })
 
   it("keeps benign nested flow and skill entries inside the pack root", async () => {
-    const pack = installed(
-      "/pack",
-      { ...localManifest, flows: ["a/b"], skills: ["skills/review"] },
-      "installed"
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "registry-pack-nested-" })
+        yield* fs.makeDirectory(path.join(root, "a/b"), { recursive: true })
+        yield* fs.makeDirectory(path.join(root, "skills/review"), { recursive: true })
+        const pack = installed(root, { ...localManifest, flows: ["a/b"], skills: ["skills/review"] }, "installed")
+        expect(yield* Pack.sources(pack, path)).toEqual([
+          { source: "pack:acme/review", root: path.join(root, "a/b"), confinementRoot: root, naming: "path" },
+          { source: "pack:acme/review", root: path.join(root, "skills/review"), confinementRoot: root, naming: "path" }
+        ])
+      }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
     )
-
-    await expect(packSources(pack)).resolves.toEqual([
-      { source: "pack:acme/review", root: "/pack/a/b", confinementRoot: "/pack", naming: "path" },
-      { source: "pack:acme/review", root: "/pack/skills/review", confinementRoot: "/pack", naming: "path" }
-    ])
   })
 
   it("refuses a source whose real path escapes through a symlink", async () => {

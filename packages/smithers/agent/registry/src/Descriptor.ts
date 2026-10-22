@@ -89,9 +89,9 @@ export const SandboxSelection = Schema.Struct({
     Schema.Literals(["none", "open"]),
     Schema.Struct({ allow: Schema.Array(Schema.String) })
   ])),
-  cpus: Schema.optionalKey(Schema.Number),
-  memoryMib: Schema.optionalKey(Schema.Number),
-  timeoutSecs: Schema.optionalKey(Schema.Number)
+  cpus: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
+  memoryMib: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+  timeoutSecs: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0)))
 })
 
 /**
@@ -880,7 +880,8 @@ export const executionDigest = (descriptor: FlowDescriptor): string | undefined 
  *
  * `BodyRef.contentDigest` is the source identity discovery or `FlowBinding.make`
  * measured. It makes an in-place body edit material even when the locator is
- * unchanged.
+ * unchanged. Measured `lockfiles` bind both the relative root and digest;
+ * descriptors without this optional identity retain their historical digest.
  *
  * Unlike {@link executionDigest} this is always defined: it identifies what was
  * declared, not whether the source bytes were measured, so a descriptor with no
@@ -906,6 +907,7 @@ export const declarationDigest = (descriptor: FlowDescriptor): string =>
     path: descriptor.path,
     placement: Option.getOrNull(descriptor.placement),
     provenance: { root: descriptor.provenance.root, source: descriptor.provenance.source },
+    ...(descriptor.lockfiles === undefined ? {} : { lockfiles: descriptor.lockfiles }),
     // Spread only when present: hashing an absent selection as `null` would
     // move the identity of every declaration that selects none.
     ...(descriptor.sandbox === undefined ? {} : { sandbox: descriptor.sandbox })

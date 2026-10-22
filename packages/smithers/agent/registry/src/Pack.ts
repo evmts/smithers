@@ -437,10 +437,10 @@ export const compatible = (range: string, runtimeVersion: string): boolean => {
  *
  * Every path in `flows` and `skills` becomes a confined source rooted inside
  * the pack, so a pack is discovered by exactly the pipeline a project
- * directory is. Lexical containment is always enforced. When the pack root's
- * real path resolves, a source must resolve inside it or not exist yet; any
- * other `realPath` failure is refused. Hosts that cannot resolve the root use
- * the lexical verdict. `confinementRoot` carries the pack root into discovery so descended
+ * directory is. Lexical containment is always enforced. The pack root's real
+ * path must resolve; a source must resolve inside it or not exist yet. Any
+ * other `realPath` failure is refused.
+ * `confinementRoot` carries the pack root into discovery so descended
  * directories and selected entry files receive the same real-path check.
  * This defense is repeated because callers may construct `Installed`
  * values without decoding a manifest. `source` carries the pack name, which
@@ -484,16 +484,14 @@ export const sources = (
         Effect.result(fs.realPath(root)),
         Effect.result(fs.realPath(sourcePath))
       ])
-      // A root that will not resolve means the host cannot answer `realPath`,
-      // so the lexical verdict stands. Once it resolves, a source must either
+      // An unresolved root cannot establish physical confinement. A source must either
       // resolve inside it or not exist yet; any other failure (a looping or
       // unreadable link) is refused rather than trusted lexically.
-      if (Result.isSuccess(realRoot)) {
-        if (Result.isSuccess(realSource)) {
-          if (!contains(realRoot.success, realSource.success)) return yield* Effect.fail(invalid(relative))
-        } else if (realSource.failure.reason._tag !== "NotFound") {
-          return yield* Effect.fail(invalid(relative))
-        }
+      if (Result.isFailure(realRoot)) return yield* Effect.fail(invalid(relative))
+      if (Result.isSuccess(realSource)) {
+        if (!contains(realRoot.success, realSource.success)) return yield* Effect.fail(invalid(relative))
+      } else if (realSource.failure.reason._tag !== "NotFound") {
+        return yield* Effect.fail(invalid(relative))
       }
       output.push({
         source: `pack:${pack.manifest.name}`,
