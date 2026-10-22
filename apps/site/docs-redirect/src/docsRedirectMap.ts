@@ -1055,6 +1055,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/plugin/docs"],
     ["/concepts/configuration/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/configuration.md"],
     ["/concepts/hook-kinds/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/hook-kinds.md"],
+    ["/concepts/manifests/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/manifests.md"],
     ["/concepts/resolution/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/resolution.md"],
     ["/guides/cache-identity/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/guides/cache-identity.md"],
     ["/guides/contribute-services/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/guides/contribute-services.md"],

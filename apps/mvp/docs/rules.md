@@ -291,6 +291,24 @@ Code is structured to scale: one folder per screen and per feature, and each fil
 - **Enforced:** Jev.
 - **Jev asks:** Does this file mix unrelated responsibilities that belong in separate files or folders, such as a screen's layout together with feature logic and shared helpers, or several features in one module, so that it will not scale as features are added?
 
+## Plugins
+
+### plugin.core-names-no-plugin
+
+The core names a built-in plugin in one place, `src/plugins/builtin.ts`. Deleting a plugin's folder and its line there removes the feature.
+
+- **Will:** "It's very important that we similar to webpack try to treat everything like a plugin." (2026-10-20 14:40, PLUGIN-1).
+- **Scope:** every core source in `apps/mvp` (`src/`, `worker/`), `src/plugins/builtin.ts` left out.
+- **Enforced:** `ImportRules` `forbid` of `**/plugins/*/src/**` and `**/plugins/*/plugin.json` in `apps/mvp/PACKAGE.ts` (decision [0017](decisions/0017-everything-is-a-plugin.md), "The deletion test").
+
+### plugin.public-interface-only
+
+A compiled plugin imports only `@smthrs/*` roots, `react`, `@tanstack/react-db`, `effect` and its own folder. First-party plugins get no private interface; if one needs something, the public interface gains it.
+
+- **Will:** "The smitehrs UI should have it's core infrastructure and features but as many features as we support as possible should just be opinionated plugins we made using the same plugin interface anybody can use" (2026-10-20 14:40, PLUGIN-1).
+- **Scope:** `apps/mvp/plugins/*/src/**`.
+- **Enforced:** `ImportRules` `forbid` in `apps/mvp/PACKAGE.ts`: any other package, and any relative path that leaves the plugin's folder. This is hygiene, not containment: compiled code runs with the app's full power (decision 0017, "Compiled code is trusted application code").
+
 ## Configuration
 
 ### config.generic-names

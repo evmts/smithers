@@ -104,6 +104,12 @@ export interface Entry {
   readonly confirm?: string
   /** Its slash command; absent when the composer doesn't offer it. */
   readonly slash?: SlashDoor
+  /**
+   * The least a person must be for the server to run it, when it isn't its slash door's: a plugin's view or command
+   * that dispatches it must ask at least as much (decision 0017, `minimum_below_flow`), so nobody sees an action the
+   * server refuses them. Absent, it is its slash door's minimum, else anyone.
+   */
+  readonly minimum?: Minimum
 }
 
 /** Every flow the app declares, by name. */
@@ -155,7 +161,8 @@ export const registry = {
   "app/jev/evaluate": { flow: Evaluate },
   // Agent status (decision 0015): the agent asks the person; the person answers; the device delivers the answer.
   "app/agent/ask": { flow: Ask },
-  "run/answer": { flow: AnswerRun, userOnlyReason: "Only the person answers what the agent asks them." },
+  // Answering writes the run's row, which a Guest may not (worker/Runs.ts).
+  "run/answer": { flow: AnswerRun, minimum: "member", userOnlyReason: "Only the person answers what the agent asks them." },
   "run/deliver": {
     flow: Deliver,
     acts: "flow",

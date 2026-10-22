@@ -4186,7 +4186,7 @@
         "Interpreter.d.ts": "d3fa0230f79fe67cdd292f0744655c36e917b4b44191a9f02a5c10bedc5ab585",
         "Poll.d.ts": "597f0397f800733a8d7c7227fa4474ba6af5a84cea2b0b572acbc6bc6a643ab3",
         "RetryPolicy.d.ts": "cb9077b4e8ec6a9316c7d3cd25baf330ec7ef224859f6838bae091722a20a3c6",
-        "RunMetrics.d.ts": "f38244e142f9d2604c9ff81a82059e8069ad84e5b56c5866e6d72c385ebff4d4",
+        "RunMetrics.d.ts": "2cc73bfbf955b0b0f217d9ea9491017c04042dc35eca3d14e0c14e3c797febb5",
         "Sleep.d.ts": "47945c4da7b8c712b20dca0a885ffebf9e47645a6a207bcdc4653c164730763c",
         "Stall.d.ts": "5580fb50f9c8931aa456b984f95adbbd8070c8731a7bdec1f0e75eca637cc282",
         "WaitFor.d.ts": "63b998f7f184e3ee0e8be226a171e05362f3c173bec0101902443549229430ed",
@@ -8561,6 +8561,16 @@
         },
         "./internal/*": null,
         "./*/index": null,
+        "./Bind": {
+          "import": {
+            "types": "./dist/esm/Bind.d.ts",
+            "default": "./dist/esm/Bind.js"
+          },
+          "require": {
+            "types": "./dist/cjs/Bind.d.ts",
+            "default": "./dist/cjs/Bind.js"
+          }
+        },
         "./Config": {
           "import": {
             "types": "./dist/esm/Config.d.ts",
@@ -8569,6 +8579,16 @@
           "require": {
             "types": "./dist/cjs/Config.d.ts",
             "default": "./dist/cjs/Config.js"
+          }
+        },
+        "./Contribution": {
+          "import": {
+            "types": "./dist/esm/Contribution.d.ts",
+            "default": "./dist/esm/Contribution.js"
+          },
+          "require": {
+            "types": "./dist/cjs/Contribution.d.ts",
+            "default": "./dist/cjs/Contribution.js"
           }
         },
         "./Hooks": {
@@ -8581,6 +8601,26 @@
             "default": "./dist/cjs/Hooks.js"
           }
         },
+        "./Host": {
+          "import": {
+            "types": "./dist/esm/Host.d.ts",
+            "default": "./dist/esm/Host.js"
+          },
+          "require": {
+            "types": "./dist/cjs/Host.d.ts",
+            "default": "./dist/cjs/Host.js"
+          }
+        },
+        "./JsonSchema": {
+          "import": {
+            "types": "./dist/esm/JsonSchema.d.ts",
+            "default": "./dist/esm/JsonSchema.js"
+          },
+          "require": {
+            "types": "./dist/cjs/JsonSchema.d.ts",
+            "default": "./dist/cjs/JsonSchema.js"
+          }
+        },
         "./Kernel": {
           "import": {
             "types": "./dist/esm/Kernel.d.ts",
@@ -8589,6 +8629,36 @@
           "require": {
             "types": "./dist/cjs/Kernel.d.ts",
             "default": "./dist/cjs/Kernel.js"
+          }
+        },
+        "./Keys": {
+          "import": {
+            "types": "./dist/esm/Keys.d.ts",
+            "default": "./dist/esm/Keys.js"
+          },
+          "require": {
+            "types": "./dist/cjs/Keys.d.ts",
+            "default": "./dist/cjs/Keys.js"
+          }
+        },
+        "./Load": {
+          "import": {
+            "types": "./dist/esm/Load.d.ts",
+            "default": "./dist/esm/Load.js"
+          },
+          "require": {
+            "types": "./dist/cjs/Load.d.ts",
+            "default": "./dist/cjs/Load.js"
+          }
+        },
+        "./Manifest": {
+          "import": {
+            "types": "./dist/esm/Manifest.d.ts",
+            "default": "./dist/esm/Manifest.js"
+          },
+          "require": {
+            "types": "./dist/cjs/Manifest.d.ts",
+            "default": "./dist/cjs/Manifest.js"
           }
         },
         "./Plugin": {
@@ -8631,6 +8701,16 @@
             "default": "./dist/cjs/Resolve.js"
           }
         },
+        "./When": {
+          "import": {
+            "types": "./dist/esm/When.d.ts",
+            "default": "./dist/esm/When.js"
+          },
+          "require": {
+            "types": "./dist/cjs/When.d.ts",
+            "default": "./dist/cjs/When.js"
+          }
+        },
         "./index": {
           "import": {
             "types": "./dist/esm/index.d.ts",
@@ -8643,16 +8723,26 @@
         }
       },
       "declarations": {
+        "Bind.d.ts": "c2af780b0567359a7320baff445481febf3bc12dd65766c2d5051bc4e25f6fbe",
         "Config.d.ts": "81e411745d0e979449d895a24c1683cb9fa3a67ff147b94e30afc910bd10675b",
+        "Contribution.d.ts": "8d6fc6fdc1605f5cd785393fd3c818d10280c998bf5136269d5362f47c67bb76",
         "Hooks.d.ts": "5629ffd9370cdd6be877461dc25c577528582d8405218cebf7c54885b25a4285",
+        "Host.d.ts": "fd5cb1ac1eca14cfdf7220990dece8fb25395d7e64fcd9e8bc349dca4b97b2ba",
+        "JsonSchema.d.ts": "1df4c53748291d12f8f67ba19ab3a5db820de04c84eef085131875214c38cfbe",
         "Kernel.d.ts": "16a9ebe9f78324a38af991d8a93633a824d949a9581e2d8bbe2ceeece4492c79",
+        "Keys.d.ts": "8076f9206be2cadd1a1b178088b52cdd3d62179af42b1e08f2d9a95ac77bd71f",
+        "Load.d.ts": "7818edfb6fc3d2b9cedf0cc5f7b2288c7d419b95c6cb2bfa94f28a5a80bc6332",
+        "Manifest.d.ts": "c5bb78051336eb01f236a3a1d8fa154c1a52b8bc5b7040cfc0e6da1ebbae19b5",
         "Plugin.d.ts": "29348d1853cc34448296709d531bd739f6421f24e2bbd0bd9082760ef2e5e705",
         "PluginError.d.ts": "5fc4484776f8988e6931eb41235445a924a53d5acadd35e9933ea9052c7ff566",
         "Plugins.d.ts": "a42888d72e999ab3d5bd7a786d7913d8a1a1153ee352a75bd3e67404860acc16",
         "Resolve.d.ts": "efe2bfef32d5503d2576382a2be2ff058e73d0d0ec5ebbc848dea9995136d82e",
-        "index.d.ts": "5fec147e00011c6409fa51f8212fc49fe34d9b27d0ec67324ced5d6a087b7540",
+        "When.d.ts": "259f96c785075747a6371f0b90efe3d9e95d2d48d8db22117950a53d96f08e9e",
+        "index.d.ts": "4255f9a07ff2f7106f0d7461a8fb711ee2b495ffed43cccd04516fcdcbb0ea25",
         "internal/Boundary.d.ts": "36c426a6465cf01d65ae6ef50f8ed010ce7c0f5e7b02662f3278d78d430aac00",
         "internal/mergePluginLayers.d.ts": "65757af1b2f3de64e70c8a12857c97433177512437f2e973a3cee0430968b603",
+        "internal/path.d.ts": "e687b28cbc2328540fd0796d0821c7dc745bdbdf0e55fbb295bc535260ebc0a6",
+        "internal/patterns.d.ts": "34e044350c7f9240c67b9c9ac6989005673e17a56aa36ad47eff664db4faa1b5",
         "internal/snapshotCacheEnvironment.d.ts": "1f9adea7c9a4fd98d09cec1956a8e2aa6a6cd335b304e83ebdbeaff97edbb077"
       }
     },

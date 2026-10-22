@@ -13,7 +13,7 @@ plugins/queue/
   src/components/*.tsx     React over { queries, actions }; the names its `component` renders name
 ```
 
-`plugin.json` is decoded and checked by `@smthrs/plugin`'s `Manifest` and `Load` ([library catalog](../../../../docs/libraries.md)). It declares the flows the plugin borrows (`uses`), its capability ceiling (`capabilities`), and what it contributes. The core names a plugin in one place, `src/plugins/builtin.ts`; deleting the folder and that line removes the feature. A plugin imports only `@smthrs/*` roots, `react`, `@tanstack/react-db`, `effect` and its own folder.
+`plugin.json` is decoded and checked by `@smthrs/plugin`'s `Manifest` and `Load` ([library catalog](../../../../docs/libraries.md)). It declares the flows the plugin borrows (`uses`), its capability ceiling (`capabilities`), and what it contributes. The core names a plugin in one place, `src/plugins/builtin.ts`; deleting the folder and that line removes the feature (rule [`plugin.core-names-no-plugin`](../rules.md#plugincore-names-no-plugin)). A plugin imports only `@smthrs/*` roots, `react`, `@tanstack/react-db`, `effect` and its own folder ([`plugin.public-interface-only`](../rules.md#pluginpublic-interface-only)).
 
 ## Loading
 
@@ -28,6 +28,20 @@ use    a slot draws · a view opens · a key or command fires ─▶ the plugin'
 - **The host's points.** This host implements `views`, `slots`, `commands` and `keybindings` (with view events). A manifest using any other point is refused `unsupported_point`; nothing it declares is silently ignored (`src/plugins/contract.ts`).
 - **A refused plugin never blocks boot.** It is logged as `plugin.refused` with its reason and the field (`contributes.keybindings[2].event`), and the rest load. A component that throws, or a chunk that fails, shows one line naming the plugin, and the shell stays (`Boundary.tsx`).
 - **Lazy.** No component, tab or flow body loads at boot. A plugin's tab is built on first use, in the host's scope, from `PluginHost` alone.
+
+## Trust boundaries
+
+The loader checks every manifest against the host's facts (`src/plugins/facts.ts`):
+
+| Boundary | How it holds | Refusal |
+|---|---|---|
+| System flows can't be overridden | Every flow in the registry is the core's: a plugin may borrow one through `uses`, never own, replace or rename one. Owned flow tags, plugin ids and contribution ids may not start with a reserved segment (`app`, `chat`, `run`, `flow`, `secret`, `auth`, `system`, `plugin`, `core`, …). | `conflict`, `reserved` |
+| A plugin acts only through what it declares | A contribution may name only flows it owns or `uses`; every used flow's capabilities must be in the manifest's ceiling; `PluginHost` serves only the queries its contributions `read` and the events its views declare. | `undeclared_use`, `capability_exceeded`; at run time `undeclared_query`, `undeclared_event` |
+| Person-only actions need a person | A command may point at a person-only flow only in a built-in plugin, and a plugin keys only its own commands. An event whose flow is person-only (a `userOnlyReason` in the registry, as `run/answer`) is never dispatched for plugin code: `PluginHost.dispatch` refuses it `person_only`. The host's action strip draws it under the view, and the person's press (door `button`) or key (door `key`) sends it with their own session ([run credentials](sign-in.md#run-credentials)). | `person_only` |
+| Nobody sees what the server refuses | A view's, slot's or command's `minimum` must be at least every flow it dispatches. | `minimum_below_flow` |
+| Secrets stay opaque | No tier holds a `secret:` capability until an Admin's per-installation grant exists (decision 0017 slice 6), and a schema field named like a secret, `format: "password"` or `writeOnly` is refused, so a plugin never collects or reads one. No core query carries a secret. | `capability_exceeded`, `secret_field` |
+
+Compiled code runs with the app's full power: the import rules are hygiene, its boundary is code review and the build (decision 0017, "Compiled code is trusted application code").
 
 ## The host contract
 
@@ -44,7 +58,9 @@ use    a slot draws · a view opens · a key or command fires ─▶ the plugin'
 
 ## The action strip
 
-Under a plugin's view, in host UI (`ActionStrip.tsx`, `src/plugins/strip.ts`): one button per person-only event whose key's `when` holds for the selected item. An event that picks one of the item's choices (`$item.options[$event.index]`) is one button per choice, keyed `1` to `9`. One text box fills every text field (a note); `i` focuses it and `Esc` leaves it. A note belongs to its item: it is kept on the device per view and item (`plugin-drafts`, src/device/registry.ts), so a reload keeps it and it never rides with another item, and it is dropped once its answer went. A button acts only on the item it was drawn for: if that item moved on meanwhile (answered on another device, a new version), the press does nothing (`stale`). While a press is on its way the strip shows `Sending` and further presses do nothing, so two presses record one answer; a failed press shows `Not sent`, keeps the note, and the next press retries. A view's keys are its own bindings: another plugin's binding of an event with the same name never changes this strip.
+Under a plugin's view, in host UI (`ActionStrip.tsx`, `src/plugins/strip.ts`): one button per person-only event whose key's `when` holds for the selected item. An event that picks one of the item's choices (`$item.options[$event.index]`) is one button per choice, keyed `1` to `9`. One text box fills every text field (a note); it declares `i`, which the app's one-key shortcuts focus, and `Esc` leaves it. A note belongs to its item: it is kept on the device per view and item (`plugin-drafts`, src/device/registry.ts), so a reload keeps it and it never rides with another item, and it is dropped once its answer went. A button acts only on the item it was drawn for: if that item moved on meanwhile (answered on another device, a new version), the press does nothing (`stale`). While a press is on its way the strip shows `Sending` and further presses do nothing, so two presses record one answer; a failed press shows `Not sent`, keeps the note, and the next press retries. A view's keys are its own bindings: another plugin's binding of an event with the same name never changes this strip.
+
+**Not yet.** `core/waits` rows have no `deadline` or `addressedTo` (slice 2). The loader knows a core flow's payload field names but not which are required or their types (`src/plugins/facts.ts`), so an event whose args miss a required field loads and its press ends `Not sent` (`invalid`).
 
 ## Keys
 
@@ -67,6 +83,6 @@ The first plugin (`plugins/queue/`): everything that waits on you, one item at a
 ## Tests
 
 - `@smthrs/plugin`'s suite: the manifest, the checks and every refusal reason, the binding, `when` and key grammars, fuzzed decoding.
-- `src/plugins/*.test.ts`: the app's manifests load with no refusal; `PluginHost` scoping and its refusals; the strip and the keymap over a real device (`src/test/chatApi.ts`).
+- `src/plugins/*.test.ts`: the app's manifests load with no refusal; the trust boundaries above against the real registry; `PluginHost` scoping and its refusals; the strip and the keymap over a real device (`src/test/chatApi.ts`).
 - `plugins/queue/src/tab.test.ts`: the queue over real waits, answered through the strip, on a real device.
 - `e2e/queue.spec.ts`: the agent asks three times; `g q`; `2`, `j`, a note and `a`, `1`; every asking run goes on. With a GIF.

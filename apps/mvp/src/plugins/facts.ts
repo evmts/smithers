@@ -23,7 +23,7 @@ const payloadOf = (entry: Entry) => {
  */
 export const factsOf = (entry: Entry): Load.FlowFacts => ({
   capabilities: (entry.flow as { readonly capabilities?: ReadonlyArray<string> }).capabilities ?? [],
-  minimum: entry.slash?.minimum ?? "anyone",
+  minimum: entry.minimum ?? entry.slash?.minimum ?? "anyone",
   personOnly: entry.userOnlyReason !== undefined,
   system: true,
   ...withPayload(payloadOf(entry)),
@@ -31,11 +31,22 @@ export const factsOf = (entry: Entry): Load.FlowFacts => ({
 
 const withPayload = (payload: ReturnType<typeof payloadOf>) => (payload === undefined ? {} : { payload: payload as never })
 
+/**
+ * A capability no tier holds yet: a secret. A plugin names one only with an Admin's grant to that installation, which
+ * slice 6 adds (decision 0017, "Review, activation and grants"); until then a manifest asking for one is refused
+ * `capability_exceeded`, and secrets stay opaque to every plugin.
+ */
+export const ungranted = (capability: string): boolean => /^secret(:|$)/.test(capability)
+
 /** The host facts for `catalog`: the app's registry by default. */
 export const hostFacts = (catalog: Readonly<Record<string, Entry>> = registry): Load.HostFacts => ({
   api: Manifest.PLUGIN_API,
   points: POINTS,
   catalog: new Map(Object.entries(catalog).map(([name, entry]) => [name, factsOf(entry)])),
   queries: new Map([["core/waits", WAITS_ROW as never]]),
-  tierCap: { "built-in": () => true, repository: () => true, personal: () => true },
+  tierCap: {
+    "built-in": (capability) => !ungranted(capability),
+    repository: (capability) => !ungranted(capability),
+    personal: (capability) => !ungranted(capability),
+  },
 })

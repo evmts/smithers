@@ -31,6 +31,25 @@ const workerSources = [
   "worker/!(test)/!(test)/**/!(*.test).ts"
 ]
 
+/** The built-in plugins' sources (decision 0017, `apps/mvp/plugins/<id>/src`), tests left out. */
+function pluginSources() {
+  return ["plugins/*/src/**/!(*.test).ts", "plugins/*/src/**/*.tsx"]
+}
+
+/**
+ * The core's sources that may not name a plugin: every app source but the built-in list, src/plugins/builtin.ts, the
+ * one place the core names one (decision 0017, "The deletion test").
+ */
+const coreSources = [
+  "src/!(test|plugins)/**/!(*.test).ts",
+  "src/!(*.test).ts",
+  "src/plugins/!(builtin|*.test).ts",
+  "src/plugins/*/**/!(*.test).ts",
+  "src/**/!(main).tsx",
+  "src/main.tsx",
+  ...workerSources
+]
+
 /**
  * The app's own sources, tests and test support left out: the browser state machine and components, the Worker
  * and the database code. `src/main.tsx` is left out too: it calls the browser's one Effect boundary and hands it
@@ -40,6 +59,7 @@ const appSources = [
   "src/!(test)/**/!(*.test).ts",
   "src/!(*.test).ts",
   "src/**/!(main).tsx",
+  ...pluginSources(),
   ...workerSources,
   "db/Database.ts",
   "db/migrations/*.ts"
@@ -52,7 +72,42 @@ const appSources = [
 export const importRules: ReadonlyArray<ImportRule> = [
   {
     kind: "forbid",
-    files: ["src/**/*.tsx"],
+    files: coreSources,
+    modules: ["**/plugins/*/src", "**/plugins/*/src/**", "**/plugins/*/plugin.json"],
+    because: "plugin.core-names-no-plugin: the core names a built-in plugin only in src/plugins/builtin.ts, so " +
+      "deleting the plugin's folder and its line there removes the feature. See \"Everything is a plugin\" in the " +
+      "root AGENTS.md and apps/mvp/docs/rules.md."
+  },
+  {
+    kind: "forbid",
+    files: pluginSources(),
+    modules: [
+      "@tanstack/!(react-db)",
+      "@tanstack/!(react-db)/**",
+      "!(@smthrs|@tanstack|react|effect|.|..)",
+      "!(@smthrs|@tanstack|react|effect|.|..)/**"
+    ],
+    because: "plugin.public-interface-only: a compiled plugin imports only @smthrs/* roots, react, " +
+      "@tanstack/react-db, effect and its own folder; anything else it needs, the public interface gains. See " +
+      "\"Everything is a plugin\" in the root AGENTS.md and apps/mvp/docs/rules.md."
+  },
+  {
+    kind: "forbid",
+    files: ["plugins/*/src/*.{ts,tsx}"],
+    modules: ["../../**"],
+    because: "plugin.public-interface-only: a compiled plugin reaches nothing outside its own folder. See " +
+      "apps/mvp/docs/rules.md."
+  },
+  {
+    kind: "forbid",
+    files: ["plugins/*/src/*/**/*.{ts,tsx}"],
+    modules: ["../../../**"],
+    because: "plugin.public-interface-only: a compiled plugin reaches nothing outside its own folder. See " +
+      "apps/mvp/docs/rules.md."
+  },
+  {
+    kind: "forbid",
+    files: ["src/**/*.tsx", "plugins/*/src/**/*.tsx"],
     modules: ["effect", "effect/**"],
     because: "A component renders state and dispatches actions; the framework-free state machine runs Effect. " +
       "See \"Effect\" and \"State (flux)\" in apps/mvp/AGENTS.md."
@@ -66,7 +121,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
   },
   {
     kind: "forbidNames",
-    files: ["src/**/*.tsx"],
+    files: ["src/**/*.tsx", "plugins/*/src/**/*.tsx"],
     modules: ["react"],
     names: ["useState", "useEffect"],
     because: "UI state is a local-only TanStack DB collection read through live queries, never useState or " +
