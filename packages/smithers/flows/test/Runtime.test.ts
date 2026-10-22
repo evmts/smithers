@@ -11,7 +11,7 @@ import * as Jj from "@smthrs/jj/Jj"
 import { Workspace } from "@smthrs/kernel"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Migrations as RunMigrations, RunStore } from "@smthrs/run-store"
-import { Context, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Context, Effect, Exit, Layer, Metric, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -44,6 +44,8 @@ it("reports invalid JavaScript configuration before constructing injected servic
     [{ cacheEnvironment: { layers: [] } }, "cacheEnvironment"],
     // A ref a reader could not resolve is not a revision (D-068).
     [{ sourceRevision: "" }, "sourceRevision"],
+    [{ placement: "" }, "placement"],
+    [{ placement: 1 }, "placement"],
     [{ privilegedJj: "jj" }, "privilegedJj"],
     // A host-driven sweep names the one execution it drives.
     [{ sweep: "sometimes" }, "sweep"],
@@ -204,7 +206,7 @@ it("runs a flow on a host with no filesystem, from injected services alone", asy
     Jj.layerNoop({})
   )))
   const runtime = Runtime.layer(
-    { ...options, sweep: { host: "hello-1", flow: Hello._tag } },
+    { ...options, placement: "cloudflare", sweep: { host: "hello-1", flow: Hello._tag } },
     StepBoundary.layerUnsupported,
     WorkspaceSandbox.layerUnsupported,
     Interpreter.layer(Hello).pipe(
@@ -223,9 +225,13 @@ it("runs a flow on a host with no filesystem, from injected services alone", asy
       // The host's own drive, once, as a Durable Object alarm runs it.
       const driven = yield* EngineStore.drive(Hello, { executionId: "hello-1", payload: { name: "worker" } })
       const greeting = yield* flows.execute(Hello, { executionId: "hello-1", payload: { name: "worker" } })
-      return { driven, greeting, wake: yield* EngineStore.nextWake("hello-1") }
-    }).pipe(Effect.provide(runtime), Effect.scoped)
+      return { driven, greeting, wake: yield* EngineStore.nextWake("hello-1"), metrics: yield* Metric.snapshot }
+    }).pipe(Effect.provide(runtime), Effect.provideService(Metric.MetricRegistry, new Map()), Effect.scoped)
   )
+  expect(outcome.metrics.filter(({ id }) => id === "flows_runs_started")).toMatchObject([{
+    attributes: { flow: Hello._tag, placement: "cloudflare" },
+    state: { count: 1 }
+  }])
   expect(outcome.driven).toEqual({ _tag: "Settled", status: "completed" })
   expect(outcome.greeting).toBe("hello worker")
   // Settled, so its host has nothing left to wake.
