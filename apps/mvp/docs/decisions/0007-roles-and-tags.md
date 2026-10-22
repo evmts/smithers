@@ -69,6 +69,7 @@ Each row is a `repo:` action in `@smthrs/capability`. A flow declares the action
 | `repo:merge` | merging a PR through the merge flow | the merge flow's minimum: Maintainer by default, never below Member | confirm |
 | `repo:preapprove` | pre-approving a TODO (M-39) | Maintainer | never |
 | `repo:secret-write` | adding, replacing or deleting a secret (0005) | Admin | never |
+| `repo:domain-write` | adding, refreshing or removing a custom domain, and seeing them (0039) | Maintainer | never |
 | `repo:members` | adding a person, changing their role, removing them | Admin | never |
 | `repo:protect` | branch protection rules | Admin | never |
 | `repo:settings`, `repo:delete` | admin settings such as models and budgets; deleting the repository | Admin | never |
