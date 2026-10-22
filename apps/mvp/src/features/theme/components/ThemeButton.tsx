@@ -16,14 +16,14 @@ export const useShownMode = (): "light" | "dark" => {
   const theme = useContext(ThemeContext)
   if (theme === null) throw new Error("useShownMode needs a ThemeProvider")
   const { data: preference } = useLiveQuery(theme.queries.theme)
-  return (preference?.mode ?? theme.queries.shown()) === "dark" ? "dark" : "light"
+  const { data: shown } = useLiveQuery(theme.queries.shownMode)
+  return (preference?.mode ?? shown?.mode ?? theme.queries.shown()) === "dark" ? "dark" : "light"
 }
 
 export function ThemeButton() {
   const theme = useContext(ThemeContext)
   if (theme === null) throw new Error("ThemeButton needs a ThemeProvider")
-  const { data: preference } = useLiveQuery(theme.queries.theme)
-  const dark = (preference?.mode ?? theme.queries.shown()) === "dark"
+  const dark = useShownMode() === "dark"
   return (
     <Button
       variant="ghost"

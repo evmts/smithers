@@ -1,5 +1,5 @@
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, Schema, Stream } from "effect"
+import { Context, Deferred, Effect, Layer, Metric, Queue, Schema, Stream } from "effect"
 import type { Handlers } from "../../flows/tabPort"
 import type { ThemeMode } from "./contract"
 import { Preferences, WriteTheme } from "./flows"
@@ -18,6 +18,8 @@ export interface ThemeHost {
   readonly mirror: (mode: ThemeMode | undefined) => void
   /** The system's mode (`prefers-color-scheme`): what the page shows while there is no preference. */
   readonly system: () => ThemeMode
+  /** Host notifications when the system color scheme changes. */
+  readonly systemChanges?: EventTarget
   /**
    * The mode `<html data-theme>` holds, if any: what index.html painted from the mirror before the store opened, or
    * what the follower painted since.
@@ -28,6 +30,8 @@ export interface ThemeHost {
 /** This device's preference, if it has one: what frontends read. */
 export const themeQuery = (preferences: Collection.Collection<Preference, string>) =>
   LiveQuery.make((q) => q.from({ preference: preferences.tanstack }).findOne())
+
+export const systemChanges = Metric.counter("smithers_theme_system_changes", { incremental: true })
 
 type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
 
@@ -46,6 +50,7 @@ export class ThemeStore extends Context.Service<
     readonly preferences: Collection.Collection<Preference, string>
     readonly theme: Query<typeof themeQuery>
     readonly current: Effect.Effect<ThemeMode>
+    readonly shownMode: Query<typeof themeQuery>
     /** What the page shows while the query has no row: the painted mode, else the system's. */
     readonly shown: () => ThemeMode
     readonly write: (mode: ThemeMode) => Effect.Effect<void>
@@ -63,16 +68,43 @@ export class ThemeStore extends Context.Service<
           schemaVersion: 1,
         })
         const theme = yield* themeQuery(preferences)
+        // Transient projection only: system changes must never create a saved preference.
+        const display = yield* Collection.local({ id: "theme-display", schema: Preference, getKey: (row): string => row.id })
+        yield* display.insert({ id: THEME, mode: host.painted() ?? host.system() })
+        const shownMode = yield* themeQuery(display)
+        const paint = (mode: ThemeMode | undefined) => Effect.sync(() => host.paint(mode)).pipe(
+          Effect.andThen(() => display.update(THEME, (draft) => { draft.mode = mode ?? host.system() })),
+        )
+        if (host.systemChanges !== undefined) {
+          const target = host.systemChanges
+          const listening = yield* Deferred.make<void>()
+          yield* Stream.callback<void>((queue) => Effect.acquireRelease(
+            Effect.sync(() => {
+              const changed = () => { Queue.offerUnsafe(queue, undefined) }
+              target.addEventListener("change", changed)
+              return changed
+            }),
+            (changed) => Effect.sync(() => target.removeEventListener("change", changed)),
+          ).pipe(Effect.andThen(Deferred.succeed(listening, undefined)))).pipe(
+            Stream.runForEach(() => preferences.get(THEME).pipe(
+              Effect.flatMap((row) => row._tag === "Some" ? Effect.void : paint(undefined).pipe(
+                Effect.andThen(Metric.update(systemChanges, 1)),
+                Effect.andThen(Effect.logInfo("theme.system_changed")),
+                Effect.withSpan("theme.system_changed"),
+              )),
+            )),
+            Effect.forkScoped({ startImmediately: true }),
+          )
+          yield* Deferred.await(listening)
+        }
         yield* preferences.changes({ initial: true }).pipe(
           Stream.runForEach((changes) =>
-            Effect.sync(() => {
-              for (const change of changes) {
-                // Without a preference the page follows the system again.
-                const mode = change.type === "delete" ? undefined : change.value.mode
-                host.paint(mode)
-                host.mirror(mode)
-              }
-            })
+            Effect.forEach(changes, (change) => Effect.gen(function* () {
+              // Without a preference the page follows the system again.
+              const mode = change.type === "delete" ? undefined : change.value.mode
+              yield* paint(mode)
+              yield* Effect.sync(() => host.mirror(mode))
+            }))
           ),
           Effect.forkScoped,
         )
@@ -100,7 +132,7 @@ export class ThemeStore extends Context.Service<
             Effect.orDie,
             Effect.asVoid,
           )
-        return ThemeStore.of({ preferences, theme, current, shown, write })
+        return ThemeStore.of({ preferences, theme, shownMode, current, shown, write })
       }),
     )
 }

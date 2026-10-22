@@ -19,6 +19,12 @@ export const THEME_MIRROR_KEY = "smithers.theme"
  * src/telemetry.ts merges from every feature.
  */
 export const THEME_TELEMETRY = {
-  records: ["execute_tool app/theme/set"],
+  records: [
+    "execute_tool app/theme/set",
+    "theme.system_changed",
+    "smithers_theme_system_changes",
+    "theme.toggle.defect",
+    "smithers_theme_toggle_defects",
+  ],
   fields: ["gen_ai.tool.name", "gen_ai.tool.call.id"],
 } as const

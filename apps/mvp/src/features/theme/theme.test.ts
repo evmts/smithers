@@ -4,7 +4,8 @@ import { FlowRegistry } from "../../flows/registry"
 // dispatch on the Node host's engine over the compose Postgres (`pnpm db:up`).
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Action } from "@smthrs/flow"
-import { Cause, Context, Effect, Exit, Layer, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Scope, Tracer } from "effect"
+import { getEventListeners } from "node:events"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { build } from "../../../worker/test/flowHost.ts"
 import { ClientEngine, FlowDispatch } from "../../flows/dispatch"
@@ -20,9 +21,12 @@ afterEach(async () => {
 })
 
 /** A tab's theme store in Node, on a host that records what it painted and mirrored. */
-const openStore = async (system: ThemeMode = "light", paintedAtBoot?: ThemeMode) => {
+const openStore = async (system: ThemeMode = "light", paintedAtBoot?: ThemeMode, systemChanges?: EventTarget) => {
   const painted: Array<ThemeMode | undefined> = []
   const mirrored: Array<ThemeMode | undefined> = []
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  const spans: Array<Tracer.NativeSpan> = []
+  const registry: Metric.MetricRegistry = new Map()
   const scope = Effect.runSync(Scope.make())
   disposables.push(() => Effect.runPromise(Scope.close(scope, Exit.void)))
   const context = await Effect.runPromise(
@@ -32,15 +36,24 @@ const openStore = async (system: ThemeMode = "light", paintedAtBoot?: ThemeMode)
           paint: (m) => void painted.push(m),
           mirror: (m) => void mirrored.push(m),
           system: () => system,
+          systemChanges,
           // What index.html painted from the mirror before the store opened, then each paint since.
           painted: () => painted.length > 0 ? painted.at(-1) : paintedAtBoot,
         })
           .pipe(Layer.provide(Persistence.memory)),
       ),
+    ).pipe(
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+      Effect.provideService(Tracer.Tracer, Tracer.make({ span: (options) => {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      } })),
+      Effect.provideService(Metric.MetricRegistry, registry),
     ),
   )
   const run = <A, E>(effect: Effect.Effect<A, E, ThemeStore>) => Effect.runPromise(Effect.provide(effect, context))
-  return { run, store: Context.get(context, ThemeStore), painted, mirrored, setSystem: (mode: ThemeMode) => { system = mode } }
+  return { run, store: Context.get(context, ThemeStore), painted, mirrored, logs, spans, registry, setSystem: (mode: ThemeMode) => { system = mode } }
 }
 
 const until = (check: () => boolean) => vi.waitFor(() => expect(check()).toBe(true), { timeout: 2_000, interval: 10 })
@@ -176,5 +189,67 @@ describe("the theme button's toggle", () => {
     expect(theme.queries.shown()).toBe("dark")
     expect(await Effect.runPromise(current)).toBe("dark")
     expect(theme.queries.theme.id).toEqual(expect.any(String))
+  })
+})
+
+describe("theme regressions", () => {
+  test("publishes system changes without pinning the page or writing a preference", async () => {
+    const changes = new EventTarget()
+    const { store, painted, mirrored, setSystem, logs, spans, registry } = await openStore("light", "light", changes)
+    await Effect.runPromise(store.shownMode.preload)
+    setSystem("dark")
+    changes.dispatchEvent(new Event("change"))
+    await until(() => painted.length === 1)
+    expect(painted).toEqual([undefined])
+    expect(mirrored).toEqual([])
+    expect(store.shown()).toBe("dark")
+    await vi.waitFor(async () => expect(await Effect.runPromise(store.shownMode.toArray)).toMatchObject([{ mode: "dark" }]))
+    expect(await Effect.runPromise(store.preferences.toArray)).toEqual([])
+    const changed = Metric.counter("smithers_theme_system_changes", { incremental: true })
+    await vi.waitFor(async () => expect((await Effect.runPromise(Metric.value(changed).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))).count).toBe(1))
+    expect(JSON.stringify(logs)).toContain("theme.system_changed")
+    expect(spans.map((span) => span.name)).toContain("theme.system_changed")
+  })
+
+  test("removes the system listener when its scope closes", async () => {
+    const changes = new EventTarget()
+    await openStore("light", undefined, changes)
+    expect(getEventListeners(changes, "change")).toHaveLength(1)
+    await disposables.pop()!()
+    expect(getEventListeners(changes, "change")).toHaveLength(0)
+  })
+
+  test("toggle contains dispatch defects and records no defect content", async () => {
+    const { store } = await openStore()
+    const scope = Effect.runSync(Scope.make())
+    disposables.push(() => Effect.runPromise(Scope.close(scope, Exit.void)))
+    const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const spans: Array<Tracer.NativeSpan> = []
+    const registry: Metric.MetricRegistry = new Map()
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Theme.layer.pipe(
+      Layer.provide(Layer.succeed(ThemeStore, store)),
+      Layer.provide(Layer.succeed(FlowDispatch, FlowDispatch.of({
+        dispatch: () => Effect.die("private defect sentinel"),
+      }))),
+    ))).pipe(
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
+      Effect.provideService(Tracer.Tracer, Tracer.make({ span: (options) => {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      } })),
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))
+    await expect(Context.get(context, Theme).actions.toggle()).resolves.toBeUndefined()
+    const defects = Metric.counter("smithers_theme_toggle_defects", { incremental: true })
+    expect((await Effect.runPromise(Metric.value(defects).pipe(Effect.provideService(Metric.MetricRegistry, registry)))).count).toBe(1)
+    expect(logs).toHaveLength(1)
+    expect(JSON.stringify(logs)).toContain("theme.toggle.defect")
+    expect(spans.map((span) => span.name)).toEqual(["theme.toggle.defect"])
+    expect(JSON.stringify(logs)).not.toContain("private defect sentinel")
+    expect(spans[0]!.attributes.size).toBe(0)
+    expect(await Effect.runPromise(store.preferences.toArray)).toEqual([])
   })
 })

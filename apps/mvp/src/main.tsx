@@ -164,6 +164,7 @@ const host: Host = {
         // Storage blocked: the store still has the mode, and the next load paints it once the store opens.
       }
     },
+    systemChanges: matchMedia("(prefers-color-scheme: dark)"),
     system: () => (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
     painted: () => {
       const mode = document.documentElement.getAttribute(THEME_ATTRIBUTE)
