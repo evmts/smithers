@@ -432,6 +432,11 @@ describe("EngineStore.drive", () => {
           const driver = yield* EngineStore.Driver
           yield* driver.admit(Blink, { executionId: "blink", payload: {} })
           const drive = yield* Effect.forkChild(driver.drive(Blink, { executionId: "blink", payload: {} }))
+          // The clock moves once the run has parked on its wake, however long the store took to get it there.
+          for (let tries = 0; (yield* statusOf("blink")) !== "suspended"; tries++) {
+            if (tries > 1_000) return yield* Effect.die("the run never parked")
+            yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 10)))
+          }
           yield* TestClock.adjust(Duration.seconds(1))
           return yield* Fiber.join(drive)
         }).pipe(Effect.provide(blinking("blink", 1, starts)))
