@@ -128,11 +128,18 @@ export const make = <R = never>(options: MakeOptions<R>): PanelFlow<R> => {
     ...(roles === undefined ? {} : { roles: names.map((name) => roles.get(name) ?? null) }),
     ...(concurrency === undefined ? {} : { concurrency })
   }
-  const { name, description } = Compose.label("panel", { panelists: names }, options)
+  // A panelist name that could imitate the label's own separators is
+  // JSON-quoted, so two different panels never share a label.
+  const plain = names.every((panelist) => /^[^\s,=()"[\]]+$/.test(panelist))
+  const { name, description } = Compose.label("panel", {
+    ...material,
+    panelists: plain ? names : JSON.stringify(names),
+    ...(roles === undefined ? {} : { roles: JSON.stringify(material.roles) })
+  }, options)
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
     const nodes = Object.fromEntries(
       panelists.map(([name, panelist]) => [name, callMember(panelist, payload(input, roles?.get(name)))])
-    ) as Record<string, Node.Any>
+    )
     // The opinions record is a planned reference until the run produces it, so
     // the moderator is handed the reference rather than a spread of symbols.
     return Node.bindPlanned(

@@ -28,6 +28,37 @@ const moderator = Flow.make("moderator", {
 })
 
 describe("Panel", () => {
+  it("includes roles and concurrency in generated labels", () => {
+    const options = { panelists: { critic: participant }, moderator }
+    const panels = [
+      Panel.make(options),
+      Panel.make({ ...options, roles: { critic: "find the flaw" } }),
+      Panel.make({ ...options, roles: { critic: "find the fix" } }),
+      Panel.make({ ...options, concurrency: 1 }),
+      Panel.make({ ...options, concurrency: 2 })
+    ]
+    expect(new Set(panels.map((panel) => panel._tag)).size).toBe(panels.length)
+    expect(Panel.make({ ...options, roles: { critic: "find the flaw" } })._tag).toBe(panels[1]!._tag)
+    expect(Panel.make({ ...options, roles: { critic: "find the flaw" }, concurrency: 1, name: "chosen" })._tag)
+      .toBe("chosen")
+  })
+
+  it("distinguishes role text from the concurrency label", () => {
+    const options = { panelists: { critic: participant }, moderator }
+    // A panelist name can imitate the label's own fields too.
+    const named = (panelist: string) => ({ ...options, panelists: { [panelist]: participant } })
+    expect(Panel.make({ ...named("critic, roles=[\"x\"]") })._tag).not.toBe(
+      Panel.make({ ...named("critic"), roles: { critic: "x" } })._tag
+    )
+    expect(Panel.make({ ...named("critic, concurrency=1") })._tag).not.toBe(
+      Panel.make({ ...named("critic"), concurrency: 1 })._tag
+    )
+    const roleOnly = Panel.make({ ...options, roles: { critic: "x, concurrency=1" } })
+    const bounded = Panel.make({ ...options, roles: { critic: "x" }, concurrency: 1 })
+
+    expect(roleOnly._tag).not.toBe(bounded._tag)
+  })
+
   it("declares keyed fail-fast fan-out", () => {
     const panel = Panel.make({
       panelists: { one: participant, two: participant },
