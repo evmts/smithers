@@ -1490,6 +1490,228 @@
         "require": "./dist/cjs/TurnLog.js"
       },
       "reason": "Appends a recorded model's turn trace through node:fs. Node-only, so it stays off the root barrel that browser test hosts load; packages/testing/README.md, docs/api.md and docs/installation.md name the subpath."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./github/AppAuth",
+      "development": "./src/github/AppAuth.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/github/AppAuth.d.ts",
+          "default": "./dist/esm/github/AppAuth.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/AppAuth.d.ts",
+          "default": "./dist/cjs/github/AppAuth.js"
+        }
+      },
+      "reason": "GitHub App authentication is public in src/github.ts, docs/api.md and both package export maps."
+    },
+    {
+      "name": "@smthrs/integrations",
+      "subpath": "./github/Issues",
+      "development": "./src/github/Issues.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/github/Issues.d.ts",
+          "default": "./dist/esm/github/Issues.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Issues.d.ts",
+          "default": "./dist/cjs/github/Issues.js"
+        }
+      },
+      "reason": "GitHub issue operations are public in src/github.ts, docs/api.md and both package export maps."
+    },
+    {
+      "name": "@smthrs/memory",
+      "subpath": "./Opening",
+      "development": "./src/Opening.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Opening.d.ts",
+          "default": "./dist/esm/Opening.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Opening.d.ts",
+          "default": "./dist/cjs/Opening.js"
+        }
+      },
+      "reason": "Opening-context selection is public in src/index.ts, docs/surface.md and the development export map; publish its matching ESM and CommonJS entry."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./TerminalProtocol",
+      "development": "./src/TerminalProtocol/index.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/TerminalProtocol/index.d.ts",
+          "default": "./dist/esm/TerminalProtocol/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TerminalProtocol/index.d.ts",
+          "default": "./dist/cjs/TerminalProtocol/index.js"
+        }
+      },
+      "reason": "The terminal wire protocol is public in src/index.ts, docs/api.md and the development export map; publish its matching ESM and CommonJS entry."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./TerminalProtocol/*",
+      "development": null,
+      "published": null,
+      "reason": "Keep TerminalProtocol implementation paths private; the directory has one reviewed public entry."
+    },
+    {
+      "name": "@smthrs/registry",
+      "subpath": "./ModuleFlow",
+      "development": "./src/ModuleFlow.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/ModuleFlow.d.ts",
+          "default": "./dist/esm/ModuleFlow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModuleFlow.d.ts",
+          "default": "./dist/cjs/ModuleFlow.js"
+        }
+      },
+      "reason": "ModuleFlow is public in src/index.ts and docs/api.md with matching development and publication maps."
+    },
+    {
+      "name": "@smthrs/engine-store",
+      "subpath": "./RunInspection",
+      "development": "./src/RunInspection.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/RunInspection.d.ts",
+          "default": "./dist/esm/RunInspection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunInspection.d.ts",
+          "default": "./dist/cjs/RunInspection.js"
+        }
+      },
+      "reason": "RunInspection is public in src/index.ts and docs/api.md with matching development and publication maps."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./SandboxTools",
+      "development": "./src/SandboxTools/index.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/SandboxTools/index.d.ts",
+          "default": "./dist/esm/SandboxTools/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SandboxTools/index.d.ts",
+          "default": "./dist/cjs/SandboxTools/index.js"
+        }
+      },
+      "reason": "SandboxTools is public in src/index.ts and docs/api.md with matching development and publication maps."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./SandboxTools/*",
+      "development": null,
+      "published": null,
+      "reason": "Keep SandboxTools implementation paths private behind its reviewed directory entry."
+    },
+    {
+      "name": "@smthrs/sync",
+      "subpath": "./PresenceProtocol",
+      "development": "./src/PresenceProtocol.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/PresenceProtocol.d.ts",
+          "default": "./dist/esm/PresenceProtocol.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PresenceProtocol.d.ts",
+          "default": "./dist/cjs/PresenceProtocol.js"
+        }
+      },
+      "reason": "PresenceProtocol is public in src/index.ts and docs/api.md with matching development and publication maps."
+    },
+    {
+      "name": "@smthrs/sync",
+      "subpath": "./PresenceRoom",
+      "development": "./src/PresenceRoom.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/PresenceRoom.d.ts",
+          "default": "./dist/esm/PresenceRoom.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PresenceRoom.d.ts",
+          "default": "./dist/cjs/PresenceRoom.js"
+        }
+      },
+      "reason": "PresenceRoom is public in src/index.ts and docs/api.md with matching development and publication maps."
+    },
+    {
+      "name": "@smthrs/sync",
+      "subpath": "./PresenceSocket",
+      "development": "./src/PresenceSocket.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/PresenceSocket.d.ts",
+          "default": "./dist/esm/PresenceSocket.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PresenceSocket.d.ts",
+          "default": "./dist/cjs/PresenceSocket.js"
+        }
+      },
+      "reason": "PresenceSocket is public in src/index.ts and docs/api.md with matching development and publication maps."
+    },
+    {
+      "name": "@smthrs/sync",
+      "subpath": "./SharedText",
+      "development": "./src/SharedText.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/SharedText.d.ts",
+          "default": "./dist/esm/SharedText.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SharedText.d.ts",
+          "default": "./dist/cjs/SharedText.js"
+        }
+      },
+      "reason": "SharedText is public in src/index.ts and docs/api.md with matching development and publication maps."
+    },
+    {
+      "name": "@smthrs/notifications",
+      "subpath": "./Channels",
+      "development": "./src/Channels.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Channels.d.ts",
+          "default": "./dist/esm/Channels.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Channels.d.ts",
+          "default": "./dist/cjs/Channels.js"
+        }
+      },
+      "reason": "Channels is public in src/index.ts and docs/api.md with matching development and publication maps."
+    },
+    {
+      "name": "@smthrs/notifications",
+      "subpath": "./Inbox",
+      "development": "./src/Inbox.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Inbox.d.ts",
+          "default": "./dist/esm/Inbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Inbox.d.ts",
+          "default": "./dist/cjs/Inbox.js"
+        }
+      },
+      "reason": "Inbox is public in src/index.ts and docs/api.md with matching development and publication maps."
     }
   ],
   "removed": [

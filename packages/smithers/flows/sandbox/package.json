@@ -160,6 +160,17 @@
         }
       },
       "./RemoteChildProcessSpawner/*": null,
+      "./TerminalProtocol": {
+        "import": {
+          "types": "./dist/esm/TerminalProtocol/index.d.ts",
+          "default": "./dist/esm/TerminalProtocol/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TerminalProtocol/index.d.ts",
+          "default": "./dist/cjs/TerminalProtocol/index.js"
+        }
+      },
+      "./TerminalProtocol/*": null,
       "./Sandbox": {
         "import": {
           "types": "./dist/esm/Sandbox/index.d.ts",

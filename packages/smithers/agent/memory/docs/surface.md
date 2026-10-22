@@ -35,6 +35,9 @@ import * as Flows2 from "@smthrs/memory/Flows" // the same module, subpath form
 
 The [API reference](./api.md) documents every export of every module.
 
+`Opening` ships with ESM and CommonJS entrypoints and matching declarations,
+both through the root namespace and the `@smthrs/memory/Opening` subpath.
+
 ## The test layer
 
 `@smthrs/memory/test/TestMemory` is published separately as the in-memory test layer. It provides the authoritative SQL store over a fresh in-memory database with deterministic test services.

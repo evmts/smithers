@@ -38439,6 +38439,9 @@ The base is resolved after the provider hands over the session, so a provider th
 
 ## TerminalProtocol
 
+`@smthrs/sandbox/TerminalProtocol` ships ESM and CommonJS entrypoints with
+matching declarations. Its nested implementation paths are private.
+
 The wire protocol between a browser terminal and the host that attaches it to a shell in a sandbox, one WebSocket per
 viewer. It is pure, so the host (`@smthrs/platform-cloudflare`'s `ContainerTerminal`) and the client
 (`@smthrs/platform-browser`'s `TerminalSocket`) share one definition.

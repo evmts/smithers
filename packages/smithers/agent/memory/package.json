@@ -189,6 +189,16 @@
           "default": "./dist/cjs/Namespace.js"
         }
       },
+      "./Opening": {
+        "import": {
+          "types": "./dist/esm/Opening.d.ts",
+          "default": "./dist/esm/Opening.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Opening.d.ts",
+          "default": "./dist/cjs/Opening.js"
+        }
+      },
       "./Recall": {
         "import": {
           "types": "./dist/esm/Recall.d.ts",
