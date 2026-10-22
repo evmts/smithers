@@ -116,6 +116,7 @@ and Paper light/dark, rather than restating them.
   [use a heavy renderer](./guides/use-a-heavy-renderer.md),
   [show a generated view](./guides/show-a-generated-view.md),
   [show a web page](./guides/show-a-web-page.md),
+  [show a docs page](./guides/show-a-docs-page.md),
   [show a run](./guides/show-a-run.md),
   [show a repository home](./guides/show-a-repository-home.md),
   [show a stack](./guides/show-a-stack.md), and

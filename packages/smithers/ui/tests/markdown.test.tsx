@@ -661,3 +661,37 @@ describe("Markdown (images)", () => {
     }
   });
 });
+
+describe("Markdown (baseUrl)", () => {
+  const hrefs = (html: string) => [...html.matchAll(/<a class="sui-md-link"(?: href="([^"]*)")?/g)].map((match) => match[1]);
+
+  test("resolves relative links against the document's URL and keeps absolute ones", () => {
+    const html = renderToStaticMarkup(
+      <Markdown
+        variant="document"
+        baseUrl="https://docs.example/guide/intro.md"
+        content={"[a](/setup/vite.md) [b](./next.md) [c](#part) [d](https://other.example/x) [e](mailto:a@b.c)"}
+      />,
+    );
+    expect(hrefs(html)).toEqual([
+      "https://docs.example/setup/vite.md",
+      "https://docs.example/guide/next.md",
+      "https://docs.example/guide/intro.md#part",
+      "https://other.example/x",
+      "mailto:a@b.c",
+    ]);
+  });
+
+  test("never turns an unsafe link into an href, with or without a base", () => {
+    const html = renderToStaticMarkup(
+      <Markdown variant="document" baseUrl="https://docs.example/a.md" content={"[x](javascript:alert(1)) <a href=\"javascript:alert(1)\">y</a>"} />,
+    );
+    expect(html).not.toContain("javascript:");
+    expect(html).toContain("x");
+  });
+
+  test("leaves relative links as written without a base, or with one that isn't a URL", () => {
+    expect(hrefs(renderToStaticMarkup(<Markdown content="[a](/x.md)" />))).toEqual(["/x.md"]);
+    expect(hrefs(renderToStaticMarkup(<Markdown baseUrl="not a url" content="[a](/x.md)" />))).toEqual(["/x.md"]);
+  });
+});

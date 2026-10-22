@@ -54,6 +54,7 @@ import { issuesViewCss } from "./issues-view/issuesViewCss";
 import { itemConversationCss } from "./item-conversation/itemConversationCss";
 import { triageControlCss } from "./triage-control/triageControlCss";
 import { webPageCss } from "./web-page/webPageCss";
+import { docsPageCss } from "./docs-page/docsPageCss";
 import { agentStatusCss } from "./agent-status/agentStatusCss";
 import { jsonValueCss } from "./json-value/jsonValueCss";
 import { runPageCss } from "./run-page/runPageCss";
@@ -764,6 +765,7 @@ export const smithersUiCss = [
   itemConversationCss,
   triageControlCss,
   webPageCss,
+  docsPageCss,
   agentStatusCss,
   jsonValueCss,
   runPageCss,

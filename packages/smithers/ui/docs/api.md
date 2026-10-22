@@ -156,7 +156,7 @@ sourced from a host cannot resolve through `Object.prototype`.
 | `KpiStat`                                                                                   | `KpiStatProps`                 | `label`, `value`, `hint`.                                                                     |
 | `StageStrip`, `stageTone`                                                                   | `StageStripProps`, `StageStripItem`, `StageTone` | `stages`, `showSummary`, `summaryLabel`.                                    |
 | `CollapsiblePanel`                                                                          | `CollapsiblePanelProps`        | `title`, `status`, `statusLabel`, `meta`, controlled or uncontrolled `open`.                  |
-| `Markdown`                                                                                  | `MarkdownProps`, `MarkdownLinkClick`, `MarkdownVariant`, `MarkdownImageResolver` | Dependency-free renderer. Builds React children rather than `innerHTML`, and scheme-filters link hrefs. `variant="document"` reads a repository file as GitHub does: HTML comments dropped, `<pre>` kept preformatted, other tags reduced to their text, single newlines joined, `>` blockquotes nested, a quote whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` drawn as a GitHub alert, and images reduced to their alt text (no `<img>`, no request). `resolveImage` draws a line that is exactly `![alt](https://example.com/image.png)` as the light and dark files it returns, one shown per `html[data-theme]`; on a miss the line renders as it would without it. |
+| `Markdown`                                                                                  | `MarkdownProps`, `MarkdownLinkClick`, `MarkdownVariant`, `MarkdownImageResolver` | Dependency-free renderer. Builds React children rather than `innerHTML`, and scheme-filters link hrefs. `variant="document"` reads a repository file as GitHub does: HTML comments dropped, `<pre>` kept preformatted, other tags reduced to their text, single newlines joined, `>` blockquotes nested, a quote whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` drawn as a GitHub alert, and images reduced to their alt text (no `<img>`, no request). `resolveImage` draws a line that is exactly `![alt](https://example.com/image.png)` as the light and dark files it returns, one shown per `html[data-theme]`; on a miss the line renders as it would without it. `baseUrl` resolves relative links (`/x.md`, `./y.md`, `#part`) against the document's own URL, so they open where it lives, not on the host. |
 | `FileTree`                                                                                  | `FileTreeProps`, `FileTreeItem`, `FileTreeNode`, `FileTreeNodeProps`, `FileTreeDirectoryProps` | Flat `/`-delimited paths grouped into a nested tree, with controlled single selection. |
 | `Breadcrumbs`                                                                               | `BreadcrumbsProps`, `BreadcrumbItem` | A path trail. Every step but the last with a safe URL is an `<a href>`; unsafe URLs stay plain text. The last is `aria-current="page"`. `onNavigate` takes a plain click; a modified click stays the browser's. |
 | `Popover`, `PopoverTrigger`, `PopoverContent`                                               | Radix Popover props            | A panel anchored to its trigger, in a portal, on the overlay tokens. `PopoverContent` aligns to the trigger's start, 6px below it, unless `align` or `sideOffset` say otherwise. Escape, a click outside and the trigger close it. |
@@ -1125,6 +1125,40 @@ over-refuses. An unknown host origin refuses framing, including during SSR;
 an explicitly opaque origin (`"null"`) shares no host site. Both components pass `window.location.origin` and, on `null`,
 render `EmptyState` titled `Can't show this page` with `data-refused="true"`
 and no frame or link. `webPageCss` is part of `smithersUiCss`.
+
+## Docs pages
+
+One page of a docs site, read from its Markdown. See
+[show a docs page](./guides/show-a-docs-page.md).
+
+```ts
+function DocsPageView(props: DocsPageViewProps): JSX.Element
+function docsPageTarget(url: string): WebPageTarget | null
+const docsPageCss: string
+
+type DocsPageViewProps = Omit<ComponentProps<"article">, "children" | "title" | "ref" | "dangerouslySetInnerHTML"> & {
+  title: string                 // the heading
+  url: string                   // the page on its docs site
+  text: string                  // the page's Markdown
+  truncated?: boolean           // a `Shortened` line after the text
+  size?: "inline" | "full"      // default "inline"
+  headingLevel?: 1 | 2 | 3      // default 2
+  actions?: ReactNode           // in the bar, before Open on site
+  onLinkClick?: MarkdownLinkClick
+}
+```
+
+`DocsPageView` renders an `article` (`data-slot="docs-page-view"`,
+`data-size`): a bar with the site's origin (`docs-page-origin`), `actions` and
+an `Open on site` link (`docs-page-open`, `target="_blank"`,
+`rel="noopener noreferrer"`), then the title as a heading and the text as
+`Markdown variant="document"` with `baseUrl` set to the page, so relative
+links open on the docs site and no HTML in the text becomes an element.
+`truncated` adds `Shortened` (`docs-page-truncated`). `inline` bounds the body
+to 28rem and scrolls it; `full` fills its container. `docsPageTarget` accepts
+an absolute `https:` or `http:` URL with no credentials; on `null` the view is
+`EmptyState` titled `Can't show this page` with `data-refused="true"`.
+`docsPageCss` is part of `smithersUiCss`.
 
 ## Agent status
 

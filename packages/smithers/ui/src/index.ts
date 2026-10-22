@@ -949,6 +949,7 @@ export {
   type WebPageTarget,
   type WebPageViewProps,
 } from "./web-page";
+export { DocsPageView, docsPageCss, docsPageTarget, type DocsPageViewProps } from "./docs-page";
 export {
   declaredInput,
   formFieldsFor,

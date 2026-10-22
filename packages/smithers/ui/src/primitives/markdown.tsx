@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type ComponentProps, Fragment, memo, type MouseEvent, type ReactNode, useMemo } from "react";
+import { type ComponentProps, createContext, Fragment, memo, type MouseEvent, type ReactNode, useContext, useMemo } from "react";
 import { CodeBlock } from "./CodeBlock";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../table";
 import { cn } from "../cn";
@@ -43,23 +43,46 @@ export type MarkdownLinkClick = (href: string, event: MouseEvent<HTMLAnchorEleme
  */
 export type MarkdownVariant = "chat" | "document";
 
+/** The `baseUrl` a document's relative links resolve against; none leaves them as written. */
+const MarkdownBase = createContext<string | undefined>(undefined);
+
+/**
+ * `href` resolved against `base` when it is relative (no scheme), so a page's
+ * `/x.md` points at its own site rather than the host's. An absolute `href`,
+ * or a `base` that isn't a URL, stays as it is.
+ */
+const resolveMarkdownHref = (href: string | undefined, base: string | undefined): string | undefined => {
+  if (href === undefined || base === undefined || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) return href;
+  try {
+    return new URL(href, base).href;
+  } catch {
+    return href;
+  }
+};
+
+function MarkdownLink({ href: raw, label, onLinkClick }: { href: string | undefined; label: ReactNode; onLinkClick?: MarkdownLinkClick }) {
+  const href = resolveMarkdownHref(raw, useContext(MarkdownBase));
+  return (
+    <a
+      className="sui-md-link"
+      href={href}
+      onClick={
+        onLinkClick
+          ? (event) => {
+              event.preventDefault();
+              if (href !== undefined) onLinkClick(href, event);
+            }
+          : undefined
+      }
+    >
+      {label}
+    </a>
+  );
+}
+
 /** A link with a scheme-filtered href; an unsafe href leaves an anchor without one. */
 const linkNode = (href: string | undefined, label: ReactNode, key: string, onLinkClick?: MarkdownLinkClick) => (
-  <a
-    className="sui-md-link"
-    key={key}
-    href={href}
-    onClick={
-      onLinkClick
-        ? (event) => {
-            event.preventDefault();
-            if (href !== undefined) onLinkClick(href, event);
-          }
-        : undefined
-    }
-  >
-    {label}
-  </a>
+  <MarkdownLink key={key} href={href} label={label} {...(onLinkClick ? { onLinkClick } : {})} />
 );
 
 const keep = (text: string) => text;
@@ -751,6 +774,12 @@ export type MarkdownProps = Omit<ComponentProps<"div">, "children" | "onClick"> 
    * line shows its alt text; without it the line renders as it would as a paragraph.
    */
   resolveImage?: MarkdownImageResolver;
+  /**
+   * The absolute URL the source came from: relative links (`/x.md`, `./y.md`,
+   * `#part`) resolve against it, so they open where the document lives, not
+   * on the host. Without it they stay as written.
+   */
+  baseUrl?: string;
 };
 
 /**
@@ -763,7 +792,7 @@ export type MarkdownProps = Omit<ComponentProps<"div">, "children" | "onClick"> 
  * Wrapped in `React.memo`, with completed blocks cached by source so streaming
  * updates only re-parse the trailing block.
  */
-function MarkdownImpl({ content, onLinkClick, variant = "chat", resolveImage, className, ...props }: MarkdownProps) {
+function MarkdownImpl({ content, onLinkClick, variant = "chat", resolveImage, baseUrl, className, ...props }: MarkdownProps) {
   useInjectUiCss();
   const completedBlocks = useMemo(() => new Map<string, ReactNode[]>(), [onLinkClick, variant, resolveImage]);
   const spans = scanBlocks(content, variant);
@@ -789,9 +818,11 @@ function MarkdownImpl({ content, onLinkClick, variant = "chat", resolveImage, cl
   }
 
   return (
-    <div data-slot="markdown" className={cn("sui-md", className)} {...props}>
-      {rendered}
-    </div>
+    <MarkdownBase.Provider value={baseUrl}>
+      <div data-slot="markdown" className={cn("sui-md", className)} {...props}>
+        {rendered}
+      </div>
+    </MarkdownBase.Provider>
   );
 }
 
