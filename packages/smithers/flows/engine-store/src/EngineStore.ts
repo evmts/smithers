@@ -1015,7 +1015,15 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
   // two same-name spans around one operation.
   register: (flow, execute) =>
     store.driver.register(flow, execute).pipe(
-      Effect.tap(() => store.deferred.sweepDue(flow._tag, store.hostedExecution))
+      Effect.tap(() => store.deferred.sweepDue(flow._tag, store.hostedExecution).pipe(
+        Effect.timed,
+        Effect.flatMap(([elapsed]) => Effect.logInfo("engine-store.registration.recovered").pipe(
+          Effect.annotateLogs({
+            "smithers.flow": flow._tag,
+            durationMs: Math.round(Duration.toMillis(elapsed))
+          })
+        ))
+      ))
     ),
   execute: store.driver.execute,
   poll: store.driver.poll,
