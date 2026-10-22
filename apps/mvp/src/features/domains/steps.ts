@@ -1,0 +1,74 @@
+import { Interpreter } from "@smthrs/flow"
+import { Effect, Layer, Metric } from "effect"
+import { DomainsClient, type DomainNotTaken } from "./api"
+import { type Refusal, REFUSALS } from "./contract"
+import {
+  AddRequestStep,
+  DomainAdd,
+  type DomainFailure,
+  DomainRefused,
+  DomainRemove,
+  DomainUnsent,
+  RemoveRequestStep,
+} from "./flows"
+import type { DomainRequest } from "./schema"
+
+// Adding and removing a custom domain (docs/features/domains.md): one ChatApi request each, through `DomainsClient`. A
+// Maintainer's press runs these steps on this device's engine.
+
+/** Domain writes sent, by `op` (`add`, `remove`) and `outcome`: `sent`, `refused` or `unsent`. */
+export const requests = Metric.counter("smithers_web_domain_requests", {
+  description: "Custom domain writes a Maintainer sent, by op and outcome",
+  incremental: true,
+})
+
+const isRefusal = (code: string | undefined): code is Refusal =>
+  code !== undefined && (REFUSALS as ReadonlyArray<string>).includes(code)
+
+/**
+ * What ChatApi's answer means to the flow: a 4xx is final, with its code when it is one, and so is `503 off` (no
+ * provider: trying again changes nothing); anything else is tried again.
+ */
+export const failureOf = (refused: DomainNotTaken): DomainFailure =>
+  refused.status !== undefined && (refused.status >= 400 && refused.status < 500 || refused.code === "off")
+    ? new DomainRefused({ status: refused.status, ...(isRefusal(refused.code) ? { code: refused.code } : {}) })
+    : new DomainUnsent()
+
+/**
+ * One request as a step: a log line `domain.request` and a count by op and outcome, with ChatApi's status and code;
+ * never the hostname, which only the repository's Maintainers see.
+ */
+const request = (op: "add" | "remove", payload: DomainRequest) =>
+  Effect.gen(function* () {
+    const client = yield* DomainsClient
+    const answer = yield* Effect.result(op === "add" ? client.add(payload) : client.remove(payload))
+    const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined
+    const outcome = failure === undefined ? "sent" : failure._tag === "@smthrs/mvp/domains/DomainRefused" ? "refused" : "unsent"
+    yield* Metric.update(Metric.withAttributes(requests, { op, outcome }), 1)
+    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("domain.request").pipe(
+      Effect.annotateLogs({
+        op,
+        outcome,
+        ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
+        ...(answer._tag === "Failure" && answer.failure.code !== undefined ? { code: answer.failure.code } : {}),
+        feature: "domains",
+      }),
+    )
+    if (answer._tag === "Success") return answer.success
+    return yield* Effect.fail(failure!)
+  })
+
+/** `domain/add/request`: one `POST /api/repos/<owner>/<name>/domains`. */
+export const requestAdd = (payload: DomainRequest) => request("add", payload)
+
+/** `domain/remove/request`: one `DELETE /api/repos/<owner>/<name>/domains/<hostname>`. */
+export const requestRemove = (payload: DomainRequest) => request("remove", payload)
+
+/** Registers `domain/add` and `domain/remove` with their steps, asking through the host's `DomainsClient`. */
+export const registration = Layer.merge(
+  Interpreter.layerWithImplementations(DomainAdd, AddRequestStep.toLayer(requestAdd)),
+  Interpreter.layerWithImplementations(DomainRemove, RemoveRequestStep.toLayer(requestRemove)),
+)
+
+/** The flows, asking ChatApi on `origin`. Needs the host's `HttpClient`. */
+export const registrationAt = (origin: string) => registration.pipe(Layer.provide(DomainsClient.layer({ origin })))

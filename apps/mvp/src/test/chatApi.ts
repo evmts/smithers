@@ -56,6 +56,10 @@ import {
 } from "../../worker/github/test/scriptedGitHub.ts"
 import * as DocsApi from "../../worker/docs/Api.ts"
 import * as DocsSource from "../../worker/docs/Source.ts"
+import * as DomainsApi from "../../worker/domains/Api.ts"
+import * as DomainsConfig from "../../worker/domains/Config.ts"
+import * as DomainFlows from "../../worker/domains/DomainFlows.ts"
+import { DomainProvider } from "../../worker/domains/Provider.ts"
 import * as HomeApi from "../../worker/home/Api.ts"
 import type { CuratedFile } from "../../worker/home/Curated.ts"
 import * as RemoteRuns from "../../worker/RemoteRuns.ts"
@@ -84,6 +88,7 @@ import { SHARES_TABLE } from "../features/branch/contract"
 import { MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
 import type { TextsClient } from "../features/coedit/api"
 import { TEXT_UPDATES_TABLE } from "../features/coedit/contract"
+import { DOMAINS_TABLE } from "../features/domains/contract"
 import { FLOW_DRAFTS_TABLE, FLOWS_TABLE } from "../features/flows-ui/contract"
 import type { IssuesClient } from "../features/issues/api"
 import {
@@ -96,7 +101,7 @@ import {
 import type { PullsClient } from "../features/pulls/api"
 import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE } from "../features/pulls/contract"
 import { todoExecutionId } from "../features/pulls/contract"
-import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
+import { REPOS_ROUTE, repoId, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
 import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
 import { RUNS_TABLE } from "../features/status/contract"
 import { TERMINALS_TABLE } from "../features/terminal/contract"
@@ -186,6 +191,7 @@ export interface Started {
 
 /** The tables whose shapes the test's Electric reads from the ChatApi's own schema. */
 const SCHEMA_TABLES: ReadonlySet<string> = new Set([
+  DOMAINS_TABLE,
   MESSAGES_TABLE,
   TEXT_UPDATES_TABLE,
   REPOSITORIES_TABLE,
@@ -492,10 +498,13 @@ export class TestChatApi extends Context.Service<
         // ChatApi checks before it is framed to the scripted outside web.
         const closing = new AbortController()
         const outside = outsideWeb(options.pages ?? {})
+        const emptyResolver: typeof globalThis.fetch = async () => Response.json({ Status: 0, Answer: [] })
         const electric: typeof globalThis.fetch = (input, init) => {
           const upstream = new URL(input instanceof Request ? input.url : String(input))
           if (upstream.hostname === "github.com") return branchGitHub.fetch(input, init)
           if (upstream.hostname.endsWith(".code.storage")) return branchForge.fetch(input, init)
+          // The `dns` domain provider's resolver: it knows no record, so every domain stays pending.
+          if (upstream.hostname === "cloudflare-dns.com") return emptyResolver(input, init)
           if (upstream.protocol === "https:") return outside(input, init)
           const table = upstream.searchParams.get("table")
           if (table !== null && SCHEMA_TABLES.has(table)) upstream.searchParams.set("table", `${schema}.${table}`)
@@ -553,6 +562,37 @@ export class TestChatApi extends Context.Service<
           flows: [Pause.Pause]
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
 
+        // Custom domains, as ChatApi routes them (worker/domains/Api.ts), with `domain/Verify` and `domain/Remove` run
+        // for real on an engine of their own, started and not awaited as the Cloudflare host does, and the real `dns`
+        // provider over a resolver that knows no record: every domain stays pending, its certificate the host's.
+        const domainsSchema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+        stores.push(domainsSchema)
+        const domainProvider = yield* DomainsConfig.provider({ dev: true }).pipe(
+          Effect.provide(FetchHttpClient.layer),
+          Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
+          Effect.orDie,
+        )
+        const domainEngine = yield* Effect.cached(
+          buildEngine(DomainFlows.registration(database, Layer.succeed(DomainProvider, domainProvider)), {
+            schema: domainsSchema,
+          }).pipe(Scope.provide(layerScope), Effect.orDie),
+        )
+        const domainStarter = Flows.FlowStarter.of({
+          start: (flow, { executionId, payload }) =>
+            Effect.flatMap(domainEngine, (engine) =>
+              Effect.asVoid(
+                Effect.forkIn(
+                  (Context.get(engine.context, FlowRuntime.FlowRuntime).execute(flow as never, {
+                    executionId,
+                    payload: payload as never,
+                  }) as Effect.Effect<unknown, unknown>).pipe(Effect.provide(engine.context), Effect.ignore),
+                  layerScope,
+                ),
+              )
+            ),
+        })
+        const domains = yield* DomainsApi.make({ id: repoId(repository.owner, repository.name) }, database)
+
         // ChatApi acknowledges an ask only once its answer's expiry started, so the chat routes' host takes every start,
         // as a Durable Object would, and runs none: no answer here lives 25 minutes.
         const expiries = Flows.FlowStarter.of({ start: () => Effect.void })
@@ -592,6 +632,12 @@ export class TestChatApi extends Context.Service<
               Effect.provideService(Rooms, branchRooms.service),
               Effect.provide(directory),
               Effect.provide(options.forge === "code-storage" ? Forge.layerConfig : Forge.gitHub)
+            )
+          }
+          if (DomainsApi.handles(path)) {
+            return domains.fetch.pipe(
+              Effect.provideService(Flows.FlowStarter, domainStarter),
+              Effect.provideService(DomainProvider, domainProvider),
             )
           }
           if (GitHubApi.handles(path)) return github.fetch.pipe(Effect.provideService(Flows.FlowStarter, recording))

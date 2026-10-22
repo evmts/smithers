@@ -1,14 +1,21 @@
 ---
 title: Prelaunch — custom domains, Vercel-style
 status: in-progress
-area: infra
-owner: Opus custom-domains builder running in isolated mini repository; Codex tracker curates note
-updated: 2026-10-21 20:55 PDT
+area: hosting
+owner: codex custom-domains rebase
+updated: 2026-10-22
 links:
   - ../rulings.md
   - prelaunch-vibelang-on-smithers.md
   - ../infrastructure.md
+  - ../decisions/0039-custom-domains.md
+  - ../features/domains.md
+  - app-at-domain.md
 ---
+
+## Rebase — 2026-10-22
+
+Rebased the two-commit feature stack on `998199dc6263`. Decision 0039 and migration 0044 preserve main's records and reserved migration 0043. Domain flows extend the shared person-only registry; boot, routes, telemetry and the execution host retain main's plugin, sign-in, attention, TODO and recovery behavior. Domain collections are not persisted, so decision 0021's schema history and epoch 63 are unchanged. Latitude: all four typechecks, importRules, schema-lock generation (byte-identical, epoch 63), 405 targeted tests and 122 domain tests passed; domain statements, branches, functions and lines are 100%. Mac mini: both domain journeys passed together. The full app run passed 3,334 tests with three failures; the missing Auth provider in the connection test renderer and upstream telemetry contract drift were fixed and revalidated. The remaining killed-run recovery timeout in `src/features/status/flows.test.ts:233` reproduces on untouched main `998199dc6263` on a second Latitude host. Full-app validation is blocked by that existing failure; no assertion, timeout or coverage gate was weakened. The external rebase report records the receipts. Library catalog entries remain the feature's existing flow, Electric and TanStack DB wrappers; no dependency or SDK package is added.
 
 ## Tracker reconciliation — 2026-10-21 20:55 PDT
 
@@ -60,10 +67,11 @@ SCOPE-12, Will, 2026-10-21: "add support to smithers for configuring your own do
 - **Vercel-quality UI:** add a domain, DNS records to copy, live verification status, certificate state, and remove.
 
 ## Current state
-Not built. Cloudflare (ARCH-3) offers Custom Hostnames, Cloudflare for SaaS, for exactly this. It must be reached through dependency injection (ARCH-7), as a service whose Cloudflare layer is one implementation.
+Built behind Cloudflare for SaaS custom hostnames ([decision 0039](../decisions/0039-custom-domains.md), [feature](../features/domains.md)): the `DomainProvider` service (Cloudflare and DNS adapters, ARCH-7), `domain/Verify` (a durable poll) and `domain/Remove`, the Maintainer-only routes and shape, and the repository Settings page's Domains section. Tests and the e2e pass against the `dns` provider; GIF: `~/Desktop/smithers-mvp/gifs/domains-maintainer.gif`.
 
 ## Next step
-A design pass after tonight's deploy: the data model, the verification flow (durable, DUR-1), TLS status, the Settings UI, and who may add a domain (Maintainers and up).
+1. From the MacBook: the Cloudflare setup in [domains.md](../features/domains.md#cloudflare-setup-once-from-the-macbook) and `worker/domains/Cloudflare.live.test.ts`.
+2. With the smithers.sh cut-over: the fallback origin and Worker route in `alchemy.run.ts`, and the site Worker serving a custom host's repository app.
 
 ## Open questions for Will
 None yet. The design will bring any, with confidence scores.

@@ -36,6 +36,9 @@ import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
 import * as RepoApi from "./RepoApi.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
 import * as RepoConfig from "./RepoConfig.ts"
+import * as DomainsApi from "./domains/Api.ts"
+import * as DomainsConfig from "./domains/Config.ts"
+import { DomainProvider } from "./domains/Provider.ts"
 import * as SecretsApi from "./secrets/Api.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
@@ -98,6 +101,12 @@ export const program = (options: ProgramOptions = {}) =>
     // Repository secrets (docs/features/secrets.md): write-only values sealed under SECRETS_KEY, off without it.
     const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
     const secretsApi = yield* SecretsApi.make(yield* GitHubConfig.repository)
+    // Custom domains (docs/features/domains.md): a Maintainer's, through the deployment's provider; off without one.
+    const domainsApi = yield* DomainsApi.make(yield* GitHubConfig.repository, database)
+    const domainProvider = yield* DomainsConfig.provider(options).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.orDie,
+    )
     const sandboxObjects = (yield* BranchSandboxes.SandboxObject) as Cloudflare.DurableObject<
       BranchSandboxes.SandboxObjectShape
     >
@@ -226,6 +235,13 @@ export const program = (options: ProgramOptions = {}) =>
           return yield* secretsApi.fetch.pipe(
             Effect.provideService(Flows.FlowStarter, starter),
             Effect.provideService(SecretKeys, secretKeys),
+            Effect.provide(signedIn),
+          )
+        }
+        if (DomainsApi.handles(path)) {
+          return yield* domainsApi.fetch.pipe(
+            Effect.provideService(Flows.FlowStarter, starter),
+            Effect.provideService(DomainProvider, domainProvider),
             Effect.provide(signedIn),
           )
         }

@@ -9,6 +9,8 @@ import * as AlertChannels from "./AlertChannels.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as AgentSandbox from "./AgentSandbox.ts"
+import * as DomainsConfig from "./domains/Config.ts"
+import { DomainProvider } from "./domains/Provider.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
@@ -150,6 +152,8 @@ const object = <E, R>(
       // `ops/SpendAlert` sends by email and Telegram through the deployment's providers, from its secrets
       // (docs/features/spend-alerts.md#channels).
       const alertChannels = yield* AlertChannels.channelsConfig(options).pipe(Effect.orDie)
+      // `domain/Verify` and `domain/Remove` reach the deployment's domain provider (docs/features/domains.md).
+      const domains = yield* DomainsConfig.provider(options).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
       // `terminal/Open` wakes a branch's machine, its `SandboxObject` (docs/features/branch-workspace.md#opening-a-terminal).
       const sandboxObjects = (yield* BranchSandboxes.SandboxObject) as Cloudflare.DurableObject<
         BranchSandboxes.SandboxObjectShape
@@ -189,8 +193,9 @@ const object = <E, R>(
           )
         }
         // `secret/Put` and `secret/Delete` write an Admin's sealed secrets (docs/features/secrets.md#writing). The
-        // sandbox tools run on the branches' machines (docs/features/sandbox-tools.md).
-        const base = ExecutionHost.withSecrets(
+        // sandbox tools run on the branches' machines (docs/features/sandbox-tools.md). `domain/*` verify and remove
+        // custom domains (docs/features/domains.md#flows).
+        const base = ExecutionHost.withDomains(ExecutionHost.withSecrets(
           ExecutionHost.withSandboxTools(
             ExecutionHost.withTerminals(
               Option.isSome(signIn)
@@ -203,7 +208,7 @@ const object = <E, R>(
             BranchSandboxes.machinesLayer(sandboxObjects, keep),
           ),
           appDatabase,
-        )
+        ), appDatabase, Layer.succeed(DomainProvider, domains))
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review judge with the `judge` role, admitted and metered as the endpoint's calls are.

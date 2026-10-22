@@ -39,6 +39,7 @@ import { Cancel, Inspect, List, Resume, Retry, Steer } from "../features/runs/fl
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet } from "../features/spend/flows"
+import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
@@ -309,6 +310,16 @@ export const registry = {
   "alert/channel": {
     flow: AlertChannelSet,
     userOnlyReason: "Where spend alerts go is an Admin's own choice; the agent never redirects them.",
+  },
+  // Custom domains (decision 0039, docs/features/domains.md): what a repository's app answers on a Maintainer's own
+  // domain. Only a person points a domain at the app.
+  "domain/add": {
+    flow: DomainAdd,
+    userOnlyReason: "Pointing a domain at the app is a Maintainer's own act; the agent never adds or checks one.",
+  },
+  "domain/remove": {
+    flow: DomainRemove,
+    userOnlyReason: "Removing a domain takes the app off it; only a Maintainer does, never the agent.",
   },
   // The sandbox tools (decision 0005 §5, docs/features/sandbox-tools.md): what the agent's hands are on a branch's
   // machine, and a person's slash commands alike. Each runs as the person who asked, who must be able to edit the

@@ -150,6 +150,8 @@ Every engine statement is a round trip from an execution's Durable Object to Pos
 
 `APP_DOMAIN` names the hostname the app serves at, such as `example.com`. A production deploy refuses to run without it (`infra/Domain.ts`), so a deployer who leaves it out can't detach the domain or drop the docs site by accident. `APP_DOMAIN=workers.dev` deploys with no custom domain and no docs site: the app answers only at the site Worker's `workers.dev` URL. Under `alchemy dev` it is ignored.
 
+A repository's own domains, such as vibelang.sh, are Cloudflare for SaaS custom hostnames on `APP_DOMAIN`'s zone, added by its Maintainers in Settings ([domains.md](features/domains.md), decision 0039).
+
 With a domain, one hostname serves two sites:
 
 ```

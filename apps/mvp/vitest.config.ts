@@ -127,6 +127,9 @@ export default defineConfig({
         // Repository secrets: the write routes, the flows, the shape and the sandbox egress (docs/features/secrets.md).
         "worker/secrets/*.ts",
         "db/migrations/0021_secrets.ts",
+        // Custom domains: the provider adapters, the flows, the routes and the shape (docs/features/domains.md).
+        "worker/domains/*.ts",
+        "db/migrations/0046_domains.ts",
         // TODOs and the stack: its one writer, its route and shapes (docs/features/todos.md).
         "worker/stack/*.ts",
         "db/migrations/0022_todos.ts",

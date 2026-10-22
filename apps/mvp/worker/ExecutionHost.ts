@@ -15,6 +15,8 @@ import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SandboxCall from "./flows/SandboxCall.ts"
 import * as SandboxCommand from "./flows/SandboxCommand.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
+import * as DomainFlows from "./domains/DomainFlows.ts"
+import type { DomainProvider } from "./domains/Provider.ts"
 import * as SecretFlows from "./secrets/SecretFlows.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
@@ -178,6 +180,19 @@ export const withSecrets = <ROut, E, R, DE, DR>(
 ) => ({
   flows: [...flows.flows, SecretFlows.Put, SecretFlows.Delete],
   registration: Layer.merge(flows.registration, SecretFlows.registration(database)),
+})
+
+/**
+ * `flows`, plus `domain/Verify` and `domain/Remove` over the app's tables, reaching `provider`: a Maintainer's custom
+ * domains (docs/features/domains.md#flows).
+ */
+export const withDomains = <ROut, E, R, DE, DR>(
+  flows: Flows<ROut, E, R>,
+  database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
+  provider: Layer.Layer<DomainProvider>,
+) => ({
+  flows: [...flows.flows, DomainFlows.Verify, DomainFlows.Remove],
+  registration: Layer.merge(flows.registration, DomainFlows.registration(database, provider)),
 })
 
 /**

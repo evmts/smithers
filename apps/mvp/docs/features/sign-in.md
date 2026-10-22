@@ -100,6 +100,8 @@ ChatApi: Sessions.resolve ── a bearer token? ──▶ verify: signature, ex
 | `terminal/open` | `POST /api/terminals` | `403 person_only` |
 | `notification/ack` | `POST /api/notifications/ack` | `403 person_only` |
 | `alert/channel` | `POST /api/alert-channels` | `403 person_only` |
+| `domain/add` | `POST /api/repos/<owner>/<name>/domains` | `403 person_only` |
+| `domain/remove` | `DELETE /api/repos/<owner>/<name>/domains/<hostname>` | `403 person_only` |
 | `issue/triage`, `triage/run`, `triage/enable`, `triage/pause`, `issue/commitment`, `pr/merge` | `POST /api/repos/<owner>/<name>/writes` | `403 forbidden`, the route's own contract |
 | `todo/commit`, `todo/drop` | `POST /api/repos/<owner>/<name>/stack` | `403 forbidden`, the route's own contract |
 | `secret` | `PUT`, `DELETE /api/repos/<owner>/<name>/secrets/<name>` | `403 forbidden`, the route's own contract |

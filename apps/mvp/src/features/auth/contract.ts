@@ -51,6 +51,12 @@ export const ASKING_ROLES: ReadonlyArray<Role> = ["admin", "maintainer", "member
 /** Whether a person with `role` may ask Smithers: Member, Maintainer or Admin; a Guest or no role may not. */
 export const mayAsk = (role: Role | null): boolean => role !== null && ASKING_ROLES.includes(role)
 
+/** The roles that may add and remove a repository's custom domains (`repo:domain-write`, decision 0039). */
+export const DOMAIN_ROLES: ReadonlyArray<Role> = ["admin", "maintainer"]
+
+/** Whether a person with `role` may manage custom domains: Maintainer or Admin. */
+export const mayManageDomains = (role: Role | null): boolean => role !== null && DOMAIN_ROLES.includes(role)
+
 /**
  * What stands where the composer goes: the composer (`ask`), the line saying only Members ask (`members_only`), the
  * sign-in prompt (`sign_in`), or nothing yet (`wait`).

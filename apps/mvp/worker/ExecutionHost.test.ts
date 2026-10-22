@@ -34,6 +34,8 @@ import { Machines } from "./branch/Machines.ts"
 import * as SandboxCall from "./flows/SandboxCall.ts"
 import * as SandboxCommand from "./flows/SandboxCommand.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
+import * as DomainFlows from "./domains/DomainFlows.ts"
+import { DomainProvider } from "./domains/Provider.ts"
 import * as SecretFlows from "./secrets/SecretFlows.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
 import { openExecutionId } from "../src/features/terminal/contract.ts"
@@ -715,13 +717,17 @@ describe("ExecutionHost over the compose Postgres", () => {
     expect(await repositoryRow(app, "github/octocat/spoon-knife")).toMatchObject({ status: "ready" })
   })
 
-  test("the deployed flows add the sandbox tools' and the secrets' flows, as worker/Executions.ts composes them", async () => {
+  test("the deployed flows add the sandbox tools', the secrets' and the domains' flows, as worker/Executions.ts composes them", async () => {
     const database = (await app.runPromise(Effect.service(TestDatabase.Scratch))).database
     // Never built: only the registration's composition is read.
     const machines = Layer.effect(Machines, Effect.die(new Error("no machine in this test")))
-    const flows = ExecutionHost.withSecrets(
-      ExecutionHost.withSandboxTools(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, machines),
+    const flows = ExecutionHost.withDomains(
+      ExecutionHost.withSecrets(
+        ExecutionHost.withSandboxTools(ExecutionHost.remote({ database, expiry: Expire.DEFAULT_EXPIRY }), database, machines),
+        database,
+      ),
       database,
+      DomainProvider.off,
     )
     expect(flows.flows).toEqual([
       Pause.Pause,
@@ -733,6 +739,8 @@ describe("ExecutionHost over the compose Postgres", () => {
       ...SandboxCommand.Command.flows,
       SecretFlows.Put,
       SecretFlows.Delete,
+      DomainFlows.Verify,
+      DomainFlows.Remove,
     ])
     expect(Layer.isLayer(flows.registration)).toBe(true)
   })

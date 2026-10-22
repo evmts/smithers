@@ -1,6 +1,7 @@
 import { openBranchPage } from "./features/branch/navigation"
 import { createRootRouteWithContext, createRoute, createRouter, notFound, redirect } from "@tanstack/react-router"
 import type { BranchView } from "./features/branch/branch"
+import type { DomainsView } from "./features/domains/domains"
 import type { FlowsUiView } from "./features/flows-ui/flowsUi"
 import { pathOfSplat } from "./features/docs/contract"
 import type { DocsView } from "./features/docs/docs"
@@ -38,6 +39,7 @@ import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
 import { RunScreen } from "./screens/runs/RunScreen"
 import { RunsScreen } from "./screens/runs/RunsScreen"
+import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
 import { SettingsScreen } from "./screens/settings/SettingsScreen"
 import { PluginScreen } from "./screens/plugin/PluginScreen"
 import type { PluginsView } from "./plugins/ui"
@@ -69,6 +71,7 @@ export interface RouterContext {
   readonly runs: RunsView
   readonly flows: FlowsUiView
   readonly plugins: PluginsView
+  readonly domains: DomainsView
 }
 
 /**
@@ -453,6 +456,18 @@ const pullTabRoute = createRoute({
 })
 
 /**
+ * `/$owner/$repo/settings`: the repository's settings, for a Maintainer or Admin (decision 0039): its custom domains,
+ * which sync while the page shows. Anyone else sees the page's header alone, and ChatApi gives them no rows.
+ */
+const repoSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/settings",
+  component: RepoSettingsScreen,
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(load, local, () => context.domains.actions.open(params.owner, params.repo)),
+})
+
+/**
  * `/$owner/$repo/stack`: the repository's stack of TODOs (decision 0016 §4), as GitHub's issue list: the open TODOs in
  * merge order, or with `?state=closed` the merged and dropped ones.
  */
@@ -504,6 +519,7 @@ export const router = createRouter({
     settingsRoute,
     pluginIndexRoute,
     pluginPathRoute,
+    repoSettingsRoute,
     repoRoute,
     treeRoute,
     blobRoute,
@@ -536,6 +552,7 @@ export const router = createRouter({
     plugins: undefined!,
     runs: undefined!,
     flows: undefined!,
+    domains: undefined!,
   },
 })
 

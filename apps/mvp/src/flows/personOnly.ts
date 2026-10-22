@@ -50,6 +50,8 @@ export const PERSON_ONLY_FLOWS = {
   "todo/commit": { route: "POST /api/repos/<owner>/<name>/stack" },
   "todo/drop": { route: "POST /api/repos/<owner>/<name>/stack" },
   "notification/ack": { route: "POST /api/notifications/ack" },
+  "domain/add": { route: "POST /api/repos/<owner>/<name>/domains" },
+  "domain/remove": { route: "DELETE /api/repos/<owner>/<name>/domains/<hostname>" },
   "alert/channel": { route: "POST /api/alert-channels" },
 } as const satisfies { readonly [N in PersonOnlyFlow]: PersonOnlyEnforcement }
 

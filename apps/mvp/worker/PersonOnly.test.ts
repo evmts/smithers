@@ -3,7 +3,7 @@
 // in (`act`), and counts it, through that route's real handler on this file's schema of the compose Postgres. The cases
 // are keyed by the list itself, so a person-only flow added to the registry fails the compiler here until its route is
 // held to it.
-import { Stream } from "effect"
+import { Effect, Option, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { secretRoute } from "../src/features/secrets/contract.ts"
 import { stackRoute } from "../src/features/todos/contract.ts"
@@ -11,6 +11,8 @@ import { writesRoute } from "../src/features/issues/contract.ts"
 import { type Act, type Actor, PERSON_ONLY_FLOWS, type PersonOnlyAct, personOnlyRefusals, PROTECTED_ACTS } from "./Actor.ts"
 import { REPOSITORY } from "./github/test/fixtures.ts"
 import { githubHarness } from "./github/test/harness.ts"
+import { domainRoute, domainsRoute } from "../src/features/domains/contract.ts"
+import { domainsHarness, switchable } from "./domains/test/harness.ts"
 import { REPO, secretsHarness } from "./secrets/test/harness.ts"
 import { stackHarness } from "./stack/test/stack.ts"
 import { branchHarness } from "./test/branch.ts"
@@ -72,6 +74,18 @@ const branch = (path: string, body: unknown): Case => async (actor, act) => {
   return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
 }
 
+/** A custom-domain route: `init` at `path`, with a provider on and a starter that is never reached. */
+const domain = (path: string, init: RequestInit): Case => async (actor, act) => {
+  const h = await domainsHarness(runtime, {
+    actor,
+    starter: { start: () => Effect.die(new Error("never started")) },
+    provider: Option.some(switchable(globalThis.fetch).provider),
+    fetch: globalThis.fetch,
+  })
+  const { status } = await h.fetch(path, init)
+  return { status, counted: h.count(personOnlyRefusals, { act, by: actor.act!.kind }) }
+}
+
 type Routed = {
   readonly [N in keyof typeof PERSON_ONLY_FLOWS as (typeof PERSON_ONLY_FLOWS)[N] extends { readonly device: string } ? never
     : N]: Case
@@ -100,6 +114,8 @@ const flows: Routed = {
   "todo/commit": stackChange({ op: "commit", title: "Fix the crash", prompt: "Fix it" }),
   "todo/drop": stackChange({ op: "drop", number: 1 }),
   "alert/channel": chat((h) => h.fetch("/api/alert-channels", json({ channel: "email", destinations: [] }))),
+  "domain/add": domain(domainsRoute(REPO.owner, REPO.name), json({ hostname: "docs.example.com" })),
+  "domain/remove": domain(domainRoute(REPO.owner, REPO.name, "docs.example.com"), { method: "DELETE" }),
 }
 
 /** How each protected act's route is reached. */

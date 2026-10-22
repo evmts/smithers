@@ -78,6 +78,7 @@ import { pluginKeys } from "./plugins/keymap"
 import { Plugins } from "./plugins/plugins"
 import { PluginsUi, type PluginsView } from "./plugins/ui"
 import { SpendStore } from "./features/spend/store"
+import { Domains, type DomainsView } from "./features/domains/domains"
 import { type ThemeHost, ThemeStore } from "./features/theme/store"
 import { Theme, type ThemeView } from "./features/theme/theme"
 import { ViewsStore } from "./features/views/store"
@@ -204,6 +205,8 @@ export const appLayer = <S = never>(
     Layer.merge(Status.layer, Attention.layer),
     // Model spend alerts, which only an Admin's devices sync (docs/features/spend-alerts.md).
     Spend.layer.pipe(Layer.provideMerge(SpendStore.layer({ origin }))),
+    // A repository's custom domains, which only a Maintainer's or Admin's Settings page syncs (docs/features/domains.md).
+    Domains.layer({ origin }),
     // The branch workspace (docs/features/branch-workspace.md): the route's branch, who it is shared with, who is on it,
     // and its terminal.
     Branch.layer({ origin, reopenRoute: host.reopenRoute }),
@@ -405,6 +408,7 @@ export interface BootOptions {
     pulls: PullsLayer,
     plugins: PluginsView,
     docs: DocsView,
+    domains: DomainsView,
   ) => void
 }
 
@@ -437,6 +441,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const pulls = yield* Pulls
     const plugins = yield* PluginsUi
     const docs = yield* Docs
+    const domains = yield* Domains
     const store = yield* ChatStore
     yield* bindSessionConnectivity(options.target)
     yield* Effect.sync(() =>
@@ -462,6 +467,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         pulls,
         plugins,
         docs,
+        domains,
       )
     )
     yield* chatShortcuts(options.target)

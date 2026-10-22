@@ -26,6 +26,7 @@ import { HOME_TELEMETRY } from "./features/home/contract"
 import { RUNS_TELEMETRY } from "./features/runs/contract"
 import { SPEND_TELEMETRY } from "./features/spend/contract"
 import { PLUGINS_TELEMETRY } from "./plugins/contract"
+import { DOMAINS_TELEMETRY } from "./features/domains/contract"
 import { STATUS_TELEMETRY } from "./features/status/contract"
 import { TERMINAL_TELEMETRY } from "./features/terminal/contract"
 import { PRESENCE_TELEMETRY } from "./features/presence/contract"
@@ -147,6 +148,7 @@ const features: ReadonlyArray<Telemetry> = [
   SANDBOX_TELEMETRY,
   SPEND_TELEMETRY,
   PLUGINS_TELEMETRY,
+  DOMAINS_TELEMETRY,
   HOME_TELEMETRY,
   DOCS_TELEMETRY,
   ATTENTION_TELEMETRY,

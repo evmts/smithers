@@ -2,21 +2,26 @@ import { Button } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useLocation } from "@tanstack/react-router"
 import { NotificationsBell } from "../../attention/components/NotificationsBell"
+import { useAuth } from "../../auth/components/AuthContext"
+import { mayManageDomains, signInHref } from "../../auth/contract"
 import { ConnectionPill } from "../../chat/components/ConnectionPill"
-import { signInHref } from "../../auth/contract"
+import { SETTINGS } from "../../domains/copy"
 import { ISSUES } from "../../issues/contract"
 import { STACK } from "../../todos/contract"
 import { CLONE, TRY_AGAIN } from "../contract"
 import { headerOf } from "../view"
 import { useRepo } from "./RepoContext"
 
-// The repository's name, which opens its home or root, its Issues and its Stack, then what can be done about it: Clone;
+// The repository's name, which opens its home or root, its Issues, its Stack and, for a Maintainer or Admin, its
+// Settings (decision 0039), then what can be done about it: Clone;
 // nothing while it clones (the files' place says Cloning, RepoPage); the sign-in link in Clone's place for a signed-out
 // person; or why a clone failed or was refused, with Try again. The person's bell is its last slot, so it never sits on
 // an action: the screens that render this header don't float it (attention/contract.ts `BELL_ROUTES`).
 export function RepoHeader() {
   const { queries, actions } = useRepo()
   const { data } = useLiveQuery(queries.view)
+  const auth = useAuth()
+  const { data: session } = useLiveQuery(auth.queries.session)
   const location = useLocation()
   if (data === undefined || data.view.repoId === null) return null
   const { view, repository, clone, about } = data
@@ -34,6 +39,13 @@ export function RepoHeader() {
       </Button>
       {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
         ? <span role="status">{header.status}</span>
+        : null}
+      {session?.status === "signed_in" && mayManageDomains(session.role)
+        ? (
+          <Button asChild variant="ghost">
+            <Link to="/$owner/$repo/settings" params={{ owner: view.owner, repo: view.name }}>{SETTINGS}</Link>
+          </Button>
+        )
         : null}
       {header.kind === "clone"
         ? <Button onClick={() => actions.clone(view.owner, view.name)}>{CLONE}</Button>

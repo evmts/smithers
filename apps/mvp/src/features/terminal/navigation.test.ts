@@ -17,6 +17,7 @@ import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
 import { Chat } from "../chat/chat"
 import { Commands } from "../commands/commands"
+import { Domains } from "../domains/domains"
 import { FlowsUi } from "../flows-ui/flowsUi"
 import { Home } from "../home/home"
 import { Issues } from "../issues/issues"
@@ -52,6 +53,7 @@ test.each(["empty", "mine", "watching"] as const)(
         repo: yield* Repo, home: yield* Home, views: yield* Views, branch: yield* Branch,
         terminal: yield* Terminal, issues: yield* Issues, pulls: yield* Pulls,
         todos: yield* Todos, runs: yield* Runs, flows: yield* FlowsUi, plugins: yield* PluginsUi, docs: yield* Docs,
+        domains: yield* Domains,
       }
     }))
     const theme = await runtime.runPromise(Effect.service(Theme))

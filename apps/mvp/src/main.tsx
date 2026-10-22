@@ -25,6 +25,7 @@ import { ThemeProvider } from "./features/theme/components/ThemeButton"
 import { StatusProvider } from "./features/status/components/StatusContext"
 import { SpendProvider } from "./features/spend/components/SpendContext"
 import { PluginsProvider } from "./plugins/components/PluginsContext"
+import { DomainsProvider } from "./features/domains/components/DomainsContext"
 import { TerminalProvider } from "./features/terminal/components/TerminalContext"
 import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
@@ -292,6 +293,7 @@ const render: BootOptions["render"] = (
   pulls,
   plugins,
   docs,
+  domains,
 ) =>
   root.render(
     <StrictMode>
@@ -306,36 +308,38 @@ const render: BootOptions["render"] = (
                   <WebProvider value={web}>
                     <StatusProvider value={status}>
                       <SpendProvider value={spend}>
-                        <BranchProvider value={branch}>
-                          <TerminalProvider value={terminal}>
-                            {/* The routes' loaders open what they show through `repo`, `views`, `branch` and `terminal`
-                                (src/router.tsx). */}
-                            <IssuesProvider value={issues}>
-                              <PullsProvider value={pulls}>
-                              <TodosProvider value={todos}>
-                              <RunsProvider value={runs}>
-                                <FlowsUiProvider value={flows}>
-                                  <HomeProvider value={home}>
-                                    <DocsProvider value={docs}>
-                                    {/* The one toast stack reads the feed (decision 0009). */}
-                                    <AttentionProvider value={attention}>
-                                      {/* The plugin host: its slots in the shell, its views' routes (src/plugins/). */}
-                                      <PluginsProvider value={plugins}>
-                                        <RouterProvider
-                                          router={router}
-                                          context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins }}
-                                        />
-                                      </PluginsProvider>
-                                    </AttentionProvider>
-                                    </DocsProvider>
-                                  </HomeProvider>
-                                </FlowsUiProvider>
-                              </RunsProvider>
-                              </TodosProvider>
-                              </PullsProvider>
-                            </IssuesProvider>
-                          </TerminalProvider>
-                        </BranchProvider>
+                        <DomainsProvider value={domains}>
+                          <BranchProvider value={branch}>
+                            <TerminalProvider value={terminal}>
+                              {/* The routes' loaders open what they show through `repo`, `views`, `branch` and `terminal`
+                                  (src/router.tsx). */}
+                              <IssuesProvider value={issues}>
+                                <PullsProvider value={pulls}>
+                                <TodosProvider value={todos}>
+                                <RunsProvider value={runs}>
+                                  <FlowsUiProvider value={flows}>
+                                    <HomeProvider value={home}>
+                                      <DocsProvider value={docs}>
+                                      {/* The one toast stack reads the feed (decision 0009). */}
+                                      <AttentionProvider value={attention}>
+                                        {/* The plugin host: its slots in the shell, its views' routes (src/plugins/). */}
+                                        <PluginsProvider value={plugins}>
+                                          <RouterProvider
+                                            router={router}
+                                            context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins, domains }}
+                                          />
+                                        </PluginsProvider>
+                                      </AttentionProvider>
+                                      </DocsProvider>
+                                    </HomeProvider>
+                                  </FlowsUiProvider>
+                                </RunsProvider>
+                                </TodosProvider>
+                                </PullsProvider>
+                              </IssuesProvider>
+                            </TerminalProvider>
+                          </BranchProvider>
+                        </DomainsProvider>
                       </SpendProvider>
                     </StatusProvider>
                   </WebProvider>

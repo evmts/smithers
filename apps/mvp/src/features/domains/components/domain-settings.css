@@ -1,0 +1,12 @@
+/* Layout only; components, colors and type come from @smthrs/ui. */
+.domain-settings { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.domain-settings-add { display: flex; align-items: flex-end; gap: 0.75rem; flex-wrap: wrap; }
+.domain-settings-add [data-slot="field"] { flex: 1 1 18rem; min-width: 0; }
+.domain-settings-save { margin: 0; }
+.domain-settings-host { overflow-wrap: anywhere; }
+.domain-card-actions { display: flex; gap: 0.5rem; }
+.domain-card-body { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.domain-card-status { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.domain-card-problem { margin: 0; }
+.domain-record-value { font-family: var(--sui-font-mono); overflow-wrap: anywhere; }
+.domain-record-value > span { margin-right: 0.5rem; }

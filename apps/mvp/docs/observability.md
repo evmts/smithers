@@ -624,6 +624,24 @@ An Admin's writes of repository secrets, their shape, and a box's requests throu
 
 The egress turns its HTTP client's own span off, so no request header reaches a trace. `secret_events` keeps each decision in Postgres for the audit.
 
+### Custom domains
+
+A Maintainer's custom domains: the routes, their shape and the `domain/*` flows' steps ([domains.md](features/domains.md#observability)). Records carry the repository, codes and outcomes; never a hostname (unpublished until its owner points DNS at it), the provider's token or a request body.
+
+| Record | Kind | Where | Fields |
+|---|---|---|---|
+| `domain.request` | log, span | ChatApi | `op` (`add`, `remove`), `repoId`, `outcome` (`adding`, `refreshing`, `removing`, or the refusal), `code`, `status`, `durationMs`, `errorCode` |
+| `smithers_domain_requests` | counter | ChatApi | `op`, `outcome` |
+| `domain.shape` | log, span | ChatApi | `status`, `live`, `durationMs`, `bytes`, `outcome` |
+| `smithers_domain_shape_requests` | counter | ChatApi | `status`, `live` |
+| `domain.step` | log, span | the `FlowExecution` Durable Object | `op` (`claim`, `check`, `release`), `repoId`, `outcome` (a claim's `add`, `refresh`, `taken`, `removing`, `missing`, `repeat`; a check's state, `superseded`, `unreachable` or `orphaned`; `released`, `missing`, `unavailable`), `errorCode` |
+| `smithers_domain_steps` | counter | the `FlowExecution` Durable Object | `op`, `outcome` |
+| `domains.off` | log | ChatApi, the `FlowExecution` Durable Object | `reason` (`no_zone`, `no_zone_id`, `no_token`) |
+
+In the browser (`src/features/domains/`, `DOMAINS_TELEMETRY`), each press on a repository's Settings page is a span `domain.add.press`, `domain.refresh.press` or `domain.remove.press`. Each runs `domain/add` or `domain/remove`, whose step records `domain.request` (Info `sent`, Warn `refused` and `unsent`: `op`, `outcome`, and ChatApi's `status` and `code` when it refused) and `smithers_web_domain_requests` by `op` and `outcome`, with its span `domain.add.send` or `domain.remove.send` (client). None carries a hostname or a DNS record.
+
+`domain_events` keeps each add, refresh, removal and each change of state or problem in Postgres for the audit.
+
 ### TODOs
 
 The stack's route, its one writer, its shapes and the browser's TODO steps and sends ([todos.md](features/todos.md#observability)). No record carries a title, a prompt, a criterion or a login: only ids, numbers, operations, outcomes, statuses and durations. `worker/stack/Stack.test.ts` and `worker/stack/Api.test.ts` assert the records and their sentinels.

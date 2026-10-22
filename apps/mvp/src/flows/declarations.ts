@@ -38,6 +38,7 @@ import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } f
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet } from "../features/spend/flows"
+import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
@@ -110,6 +111,8 @@ export const declarations = {
   "watch/set": WatchSet,
   "notification/ack": Ack,
   "alert/channel": AlertChannelSet,
+  "domain/add": DomainAdd,
+  "domain/remove": DomainRemove,
   "sandbox/run": SandboxRun,
   "sandbox/read": SandboxRead,
   "sandbox/write": SandboxWrite,
