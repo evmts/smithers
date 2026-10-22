@@ -267,6 +267,16 @@ export interface Service {
    * scheduled again. Call it only for a run the store holds as settled.
    */
   readonly reannounce: (executionId: string) => Effect.Effect<void>
+  /**
+   * Ends the active drive of `executionId` at once and releases the run, as
+   * an interruption does, recording the release as `yielded`: its host spent
+   * the drive's budget and drives the run again right away. Waits for the
+   * release to be written. A run with no active drive is left as it is.
+   *
+   * The caller decides when: `EngineStore.drive` calls it only once no step
+   * is running, so nothing it interrupts has started an attempt.
+   */
+  readonly yieldDrive: (executionId: string) => Effect.Effect<void>
 }
 
 interface Registration {
@@ -484,6 +494,11 @@ interface Driver {
    */
   readonly waitNotices: Map<string, string>
   readonly liveInstances: Map<string, FlowRuntime.FlowInstance["Service"]>
+  /**
+   * Runs whose drive {@link Service.yieldDrive} is ending, so the release
+   * its interruption writes records `yielded` rather than `interrupted`.
+   */
+  readonly yielding: Set<string>
   /**
    * Flow scopes retained past a round's settlement.
    *
@@ -3026,7 +3041,7 @@ const settleResult = (
 
 /**
  * Settles an interrupted drive against the state it read, saying why: the
- * lease lapsed, or the drive was simply interrupted.
+ * lease lapsed, the drive yielded its budget, or it was simply interrupted.
  */
 const releaseInterrupted = (driver: Driver, attempt: Drive): Effect.Effect<void> =>
   attempt.state === undefined
@@ -3035,11 +3050,24 @@ const releaseInterrupted = (driver: Driver, attempt: Drive): Effect.Effect<void>
       driver,
       attempt.executionId,
       attempt.state,
-      attempt.lapsedMs === undefined
-        ? { kind: "interrupted" }
-        : { kind: "lease-lapsed", unconfirmedMs: Math.max(0, Math.floor(attempt.lapsedMs)) },
+      attempt.lapsedMs !== undefined
+        ? { kind: "lease-lapsed", unconfirmedMs: Math.max(0, Math.floor(attempt.lapsedMs)) }
+        : driver.yielding.has(attempt.executionId)
+        ? { kind: "yielded" }
+        : { kind: "interrupted" },
       attempt.round
     )
+
+/**
+ * Ends the active drive of `executionId`, recording its release as
+ * `yielded`. See {@link Service.yieldDrive}.
+ */
+const yieldDrive = (driver: Driver, executionId: string): Effect.Effect<void> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => driver.yielding.add(executionId)),
+    () => driver.coordinator.interrupt(executionId),
+    () => Effect.sync(() => driver.yielding.delete(executionId))
+  )
 
 /**
  * The drive's ONE cleanup region, registered before the race starts and
@@ -4082,7 +4110,8 @@ const service = (driver: Driver): Service => ({
     scheduleResume(driver, flowName, executionId, reason, sourceId),
   active: active(driver),
   retainedRuns: retainedRuns(driver),
-  reannounce: (executionId) => reannounce(driver, executionId)
+  reannounce: (executionId) => reannounce(driver, executionId),
+  yieldDrive: (executionId) => yieldDrive(driver, executionId)
 })
 
 /**
@@ -4183,6 +4212,7 @@ export const make = (
       stealRefusals: new Map(),
       waitNotices: new Map(),
       liveInstances: new Map(),
+      yielding: new Set(),
       retainedScopes,
       pendingCycles: new Map(),
       pendingCancellationCycle: undefined,

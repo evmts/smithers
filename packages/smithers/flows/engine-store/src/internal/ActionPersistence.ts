@@ -331,6 +331,13 @@ export interface Dependencies {
    * and a dispatch that would execute a body dies with `WouldExecute` first.
    */
   readonly replayOnly?: ReplayOnly.Service | undefined
+  /**
+   * Wraps admitting and running an attempt no record answered: a fresh one,
+   * or an orphaned one this dispatch adopts. A hosted drive's budget holds
+   * the step back here once it is spent (`internal/DriveBudget`); a replay
+   * or a cache hit never reaches it. Absent, the attempt runs at once.
+   */
+  readonly step?: (<A, E, R>(attempt: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>) | undefined
 }
 
 const AttemptMeta = Schema.Struct({
@@ -1873,14 +1880,17 @@ const answer = (dispatch: Dispatch) =>
     if (deps.replayOnly !== undefined) {
       return yield* stopAtReplayGate(dispatch, deps.replayOnly, adopted)
     }
-    yield* admitAttempt(dispatch, adopted, runningMeta)
-    const preImage = yield* anchorPreImage(dispatch, adopted, runningMeta)
-    const isolation = yield* prepareIsolation(dispatch)
-    // Observe interruption before restoring it to the caller, and settle
-    // the attempt while masked so failed cleanup survives in the journal.
-    return yield* Effect.uninterruptibleMask((restore) =>
-      runAttempt(dispatch, { adopted, runningMeta, preImage, isolation }, restore)
-    )
+    const attempt = Effect.gen(function*() {
+      yield* admitAttempt(dispatch, adopted, runningMeta)
+      const preImage = yield* anchorPreImage(dispatch, adopted, runningMeta)
+      const isolation = yield* prepareIsolation(dispatch)
+      // Observe interruption before restoring it to the caller, and settle
+      // the attempt while masked so failed cleanup survives in the journal.
+      return yield* Effect.uninterruptibleMask((restore) =>
+        runAttempt(dispatch, { adopted, runningMeta, preImage, isolation }, restore)
+      )
+    })
+    return yield* deps.step === undefined ? attempt : deps.step(attempt)
   })
 
 /**

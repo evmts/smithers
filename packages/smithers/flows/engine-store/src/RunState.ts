@@ -109,8 +109,11 @@ export type RunState = typeof RunState.Type
  *
  * `lease-lapsed` means the host went `unconfirmedMs` without confirming its
  * run lease (a stalled or overloaded host), so the heartbeat loop stopped the
- * run's work before a peer could take it. `interrupted` is any other
- * interruption that was not a cancellation, usually a host shutdown.
+ * run's work before a peer could take it. `yielded` means a hosted drive
+ * spent its budget (`EngineStore.drive`'s `budgetMs`) and released the run
+ * at a step boundary for its host to drive again at once. `interrupted` is
+ * any other interruption that was not a cancellation, usually a host
+ * shutdown.
  *
  * Decisions written before this field existed carry no cause; read them with
  * {@link releaseCauseOf}, which answers `undefined` for them.
@@ -123,6 +126,7 @@ export const ReleaseCause = Schema.Union([
     kind: Schema.Literal("lease-lapsed"),
     unconfirmedMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
   }),
+  Schema.Struct({ kind: Schema.Literal("yielded") }),
   Schema.Struct({ kind: Schema.Literal("interrupted") })
 ])
 

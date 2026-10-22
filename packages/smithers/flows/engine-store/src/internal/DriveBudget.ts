@@ -1,0 +1,81 @@
+/**
+ * The budget of one hosted drive (`EngineStore.drive`'s `budgetMs`): which
+ * steps the drive may still start, and when it is time to yield.
+ *
+ * A host such as a Cloudflare Durable Object alarm runs one drive per
+ * invocation, and the platform kills an invocation that runs too long. A run
+ * with enough work never parks by itself, so the drive must stop on its own:
+ * at a step boundary, never inside a step, or the next drive runs that step
+ * again.
+ *
+ * - A step is an attempt no record answered: a fresh one, or an orphaned one
+ *   being adopted. Replays and cache hits are not steps; they run however the
+ *   budget stands.
+ * - A step that starts before the deadline runs to the end, however long it
+ *   takes, and its result is recorded.
+ * - A step whose turn comes at or after the deadline is held: it waits,
+ *   without an attempt row, until the drive releases the run.
+ * - The drive yields once a step is held and none is running. A run that
+ *   settles or parks first never yields.
+ * - The first step of a drive is never held, so a budget shorter than the
+ *   run's replay, or than one step, still moves the run one step per drive.
+ *
+ * @since 1.0.0
+ */
+
+import * as Clock from "effect/Clock"
+import * as Deferred from "effect/Deferred"
+import * as Effect from "effect/Effect"
+
+/**
+ * One drive's budget.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface DriveBudget {
+  /**
+   * Runs one step under the budget: at once while the budget lasts, or held
+   * forever once it is spent, until the drive's release interrupts it.
+   */
+  readonly step: <A, E, R>(step: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+  /** Completes once a step is held and none is running: the drive yields. */
+  readonly spent: Effect.Effect<void>
+}
+
+/**
+ * A budget whose steps may start until `deadlineMs`, in epoch milliseconds
+ * on the effect `Clock`.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const make = (deadlineMs: number): DriveBudget => {
+  const spent = Deferred.makeUnsafe<void>()
+  let started = 0
+  let running = 0
+  let held = 0
+  const yieldIfIdle = () => {
+    if (held > 0 && running === 0) Deferred.doneUnsafe(spent, Effect.void)
+  }
+  return {
+    step: (step) =>
+      Effect.flatMap(Clock.currentTimeMillis, (nowMs) => {
+        if (started > 0 && nowMs >= deadlineMs) {
+          held++
+          yieldIfIdle()
+          return Effect.ensuring(Effect.never, Effect.sync(() => held--))
+        }
+        started++
+        running++
+        return Effect.ensuring(
+          step,
+          Effect.sync(() => {
+            running--
+            yieldIfIdle()
+          })
+        )
+      }),
+    spent: Deferred.await(spent)
+  }
+}

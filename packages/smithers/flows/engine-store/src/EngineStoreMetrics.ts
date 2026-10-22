@@ -256,6 +256,20 @@ export const storageUnavailable = Metric.counter("flows_engine_storage_unavailab
 })
 
 /**
+ * Counter over hosted drives that spent their budget (`EngineStore.drive`'s
+ * `budgetMs`) and yielded at a step boundary. Each one releases its run for a
+ * drive that follows at once; a run that yields on every drive has more work
+ * than one drive's budget, which is what the budget is for.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const driveYields = Metric.counter("flows_engine_drive_yields", {
+  description: "Hosted drives that spent their budget and yielded at a step boundary",
+  incremental: true
+})
+
+/**
  * Counter over step-boundary settlements at the dispatch seam, dimensioned by
  * `outcome`: `clean` evidence, an `expected`-mode `deviation`, or a hard
  * `violation` (undeclared write, missing declared output, surviving declared

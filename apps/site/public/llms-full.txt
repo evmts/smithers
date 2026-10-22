@@ -15365,9 +15365,10 @@ handoffs; explicit cancellation still cascades to linked children.
 | `layerWithPrivilegedJj` | `(options: Options, privilegedJj: Layer<Jj, E, R>) => Layer<SnapshotBoundary \| FlowRuntime, E, Requirements \| R>`                 | The same, with a private repository for engine bookkeeping while ambient `Jj` stays for action bodies.         |
 | `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                               |
 | `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions). |
-| `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" }`                        | What one `drive` left an execution as.                                                                         |
+| `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" } \| { _tag: "Yielded" }` | What one `drive` left an execution as.                                                                         |
+| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number }`                                                                       | What `drive` drives, with an optional budget. See [Drive budget](#drive-budget).                               |
 | `Driver`                | `Context.Service<{ drive }>`                                                                                                        | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`.                                          |
-| `drive`                 | `(flow: Flow.Any, options: { executionId: string; payload: object }) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>` | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                          |
+| `drive`                 | `(flow: Flow.Any, options: DriveOptions) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>`                             | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                          |
 
 ### EngineStore.Options
 
@@ -15493,9 +15494,10 @@ The host owns three things the sweep and the lease did:
 3. **The next invocation.** Drive the execution with `drive(flow, { executionId,
    payload })`. It admits an execution the store does not hold, drives one it
    holds only when work is due, and returns without waiting for the run to
-   settle: `Settled`, `Parked` with `wakeAtMs`, or `Unfinished` when work is
-   due that the drive did not do. Arm the next invocation at `wakeAtMs`, or
-   after a backoff for `Unfinished`. A drive that finds the last round of a
+   settle: `Settled`, `Parked` with `wakeAtMs`, `Unfinished` when work is
+   due that the drive did not do, or `Yielded` when it spent its budget
+   ([Drive budget](#drive-budget)). Arm the next invocation at `wakeAtMs`,
+   after a backoff for `Unfinished`, or at once for `Yielded`. A drive that finds the last round of a
    lineage `Settled` records the wake of each parent still waiting on it
    again, without scheduling a wake already recorded, so an invocation that
    died between a child's settlement and its parent's wake record loses no
@@ -15517,6 +15519,33 @@ so the attempt row stays `running` and the run is released. The next drive
 adopts the attempt and records its result. Each one counts on
 `EngineStoreMetrics.storageUnavailable` and logs a warning naming the store's
 error code.
+
+#### Drive budget
+
+A host whose invocations have a hard time limit passes `budgetMs`. A run with
+enough work never parks by itself, so without a budget the drive runs until the
+platform kills the invocation, and the next one takes the run from the dead
+incarnation and runs its unfinished step again.
+
+- `budgetMs` is measured on the effect `Clock` from the drive's start.
+- A step is an attempt no record answered: a fresh one, or an orphaned one the
+  drive adopts. Replays and cache hits are not steps and run regardless.
+- A step that starts within the budget runs to the end and records its
+  result, however long it takes.
+- Once the budget is spent, the next step is held without an attempt row. When
+  no step is running, the drive releases the run (an `interrupt-released`
+  decision with cause `{ kind: "yielded" }`) and reports `Yielded`. The run is
+  `suspended` with waiting reason `released` and owner `null`, so the next
+  drive claims it like any due run; nothing judges it dead.
+- An action a running step calls is part of that step and is never held.
+- The first step of a drive is never held, so a budget shorter than the run's
+  replay, or than one step, still moves the run one step per drive.
+- A run that settles or parks within the budget reports `Settled` or `Parked`.
+
+Set the budget at the invocation's limit less the longest step it may start.
+Each yield counts on `EngineStoreMetrics.driveYields` and logs
+`engine-store: drive yielded its budget at a step boundary` with the budget and
+the elapsed time.
 
 Full model: [Ownership and fencing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/ownership-and-fencing.md) and
 [Attempts and replay](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/attempts-and-replay.md).
@@ -16740,6 +16769,7 @@ remain host-owned.
 | `sandboxMaterializations`, `materializationDuration`, `materialization` | counter, timer, and views keyed by `ExitTag`                                                                                  |
 | `materializationConflicts`                                              | counter                                                                                                                       |
 | `storageUnavailable`                                                    | counter                                                                                                                       |
+| `driveYields`                                                           | counter                                                                                                                       |
 | `boundarySettlements`, `boundarySettlement`                             | counter and views keyed by `Clean`, `Deviation`, `Violation`, `Refused`                                                       |
 | `stepCacheDecisions`, `stepCacheDecision`                               | counter and views keyed by `VerifiedHit`, `Miss`, `UnverifiableEvidence`, `Unmeasurable`, `StaleReadSet`, `ReplayFailed`      |
 | `claims`, `claim`                                                       | counter and views keyed by `Activated`, `Terminal`, `HeartbeatFresh`, `StealRefusedOwnerAlive`, `ClaimLost`, `ActivationLost` |
@@ -16785,8 +16815,9 @@ The versioned state envelope stored in each run row.
 `ReleaseCause` is why a driver released a run it still owned, recorded as the
 optional `cause` of its `interrupt-released` run decision:
 `{ kind: "lease-lapsed", unconfirmedMs }` when the host went that long without
-confirming its run lease, or `{ kind: "interrupted" }` for any other
-non-cancel interruption, usually a host shutdown. `releaseCauseOf(decision)`
+confirming its run lease, `{ kind: "yielded" }` when a hosted drive spent its
+budget ([Drive budget](#drive-budget)), or `{ kind: "interrupted" }` for any
+other non-cancel interruption, usually a host shutdown. `releaseCauseOf(decision)`
 reads it and answers `undefined` for decisions recorded before the field
 existed.
 

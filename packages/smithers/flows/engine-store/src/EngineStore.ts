@@ -40,6 +40,7 @@ import * as AttemptAdmission from "./internal/AttemptAdmission.ts"
 import * as AttemptProbe from "./internal/AttemptProbe.ts"
 import * as CacheAgeVerdicts from "./internal/CacheAgeVerdicts.ts"
 import * as DeferredPersistence from "./internal/DeferredPersistence.ts"
+import * as DriveBudget from "./internal/DriveBudget.ts"
 import * as EngineJj from "./internal/EngineJj.ts"
 import * as NodeJournal from "./internal/NodeJournal.ts"
 import * as RunDriver from "./internal/RunDriver.ts"
@@ -80,6 +81,11 @@ export type Sweep = RunDriver.Sweep
  * - `Unfinished`: it has work due now that this drive did not do, such as a
  *   run released when the store became unavailable mid-drive. Drive it again
  *   after a backoff.
+ * - `Yielded`: the drive spent its budget (`budgetMs`). It started no step
+ *   after that, let the steps already running finish and record their
+ *   results, and released the run at that step boundary. The run has work
+ *   due now and nothing is wrong with it: drive it again at once, without a
+ *   backoff. Only a drive given a budget reports it.
  *
  * @since 1.0.0
  * @category hosting
@@ -88,6 +94,33 @@ export type Driven =
   | { readonly _tag: "Settled"; readonly status: RunStore.TerminalRunStatus }
   | { readonly _tag: "Parked"; readonly wakeAtMs: number | undefined }
   | { readonly _tag: "Unfinished" }
+  | { readonly _tag: "Yielded" }
+
+/**
+ * What {@link drive} drives: the execution, the payload that admits it if
+ * the store does not hold it yet, and an optional budget.
+ *
+ * `budgetMs` bounds how long the drive keeps starting steps, measured on the
+ * effect `Clock` from the drive's start. A step that starts within it runs
+ * to the end, however long it takes; once it is spent the drive starts no
+ * other step, lets the running ones finish and record their results,
+ * releases the run, and reports `Yielded`. A run that settles or parks
+ * first reports that instead. The first step of a drive always starts, so a
+ * budget shorter than the run's replay, or than one step, still moves the
+ * run one step per drive. Absent, the drive runs until the run settles or
+ * parks.
+ *
+ * The budget bounds when steps start, not how long one runs: a host whose
+ * invocations have a hard limit sets it at that limit less its longest step.
+ *
+ * @since 1.0.0
+ * @category hosting
+ */
+export interface DriveOptions {
+  readonly executionId: string
+  readonly payload: object
+  readonly budgetMs?: number | undefined
+}
 
 /**
  * Drives one execution as far as it can go now, for a host that wakes it
@@ -99,7 +132,7 @@ export type Driven =
 export class Driver extends Context.Service<Driver, {
   readonly drive: (
     flow: Flow.Any,
-    options: { readonly executionId: string; readonly payload: object }
+    options: DriveOptions
   ) => Effect.Effect<Driven, FlowRuntime.FlowCycleDetected | RunStore.RunStoreError>
 }>()("@smthrs/engine-store/EngineStore/Driver") {}
 
@@ -112,9 +145,11 @@ export class Driver extends Context.Service<Driver, {
  * clock has not come due is left parked, without a replay. The drive claims
  * the run, or takes it from an earlier incarnation the host's `isAlive`
  * declares gone, replays what is recorded, and runs until the run settles or
- * parks. A drive that stopped without either, such as one released by an
- * unavailable store, reports `Unfinished`. A drive of a run the store holds
- * is a resumption: it waits for its turn under `Options.resumeConcurrency`.
+ * parks, or, given `budgetMs`, until it yields at a step boundary (see
+ * {@link DriveOptions}). A drive that stopped without any of those, such as
+ * one released by an unavailable store, reports `Unfinished`. A drive of a run
+ * the store holds is a resumption: it waits for its turn under
+ * `Options.resumeConcurrency`.
  *
  * A drive that finds the run `Settled`, and is the last round of its lineage,
  * records the wake of every parent still waiting on it again, without
@@ -131,7 +166,7 @@ export class Driver extends Context.Service<Driver, {
  */
 export const drive = (
   flow: Flow.Any,
-  options: { readonly executionId: string; readonly payload: object }
+  options: DriveOptions
 ): Effect.Effect<Driven, FlowRuntime.FlowCycleDetected | RunStore.RunStoreError, Driver> =>
   Effect.gen(function*() {
     const driver = yield* Driver
@@ -506,7 +541,12 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     driver,
     // The one execution a hosted store's registration recovers, if any.
     hostedExecution: typeof options.sweep === "object" ? options.sweep.host : undefined,
-    deferred
+    deferred,
+    // The budget of each execution a budgeted `drive` is driving now.
+    budgets: new Map<string, DriveBudget.DriveBudget>(),
+    // The instances action dispatches run their bodies under. A dispatch
+    // whose parent is one is called by a running step and is part of it.
+    dispatchInstances: new WeakSet<Instance>()
   }
 })
 
@@ -687,6 +727,7 @@ const actionExecute = Effect.fn("FlowEngine.actionExecute")(
       parent.executionId
     )
     store.ageVerdicts.set(instance, cacheAgeVerdict)
+    store.dispatchInstances.add(instance)
     const flowEngine = yield* Deferred.await(store.engine)
     instance.interrupted = parent.interrupted
     // DECIDED (2026-08-11, pending review): the waiting classification is
@@ -776,7 +817,10 @@ const persistAction = (
       : input.key,
     admission: store.admission,
     cacheAgeVerdict,
-    replayOnly: store.replayOnly
+    replayOnly: store.replayOnly,
+    // A step a budgeted drive starts; an action a running step calls is part
+    // of that step and never waits on the budget.
+    step: store.dispatchInstances.has(parent) ? undefined : store.budgets.get(parent.executionId)?.step
   })({
     action: input.action,
     attempt: input.attempt,
@@ -1055,6 +1099,38 @@ const driven = (store: Store, executionId: string) =>
       : { _tag: "Parked", wakeAtMs: Option.getOrUndefined(wake) } as const
   })
 
+/**
+ * Runs `round` under `budget`: once the budget is spent and no step is
+ * running, ends the round and releases the run as `yielded`. Answers whether
+ * it did; a round that settles or parks first is left to end by itself.
+ */
+const withinBudget = <A, E>(
+  store: Store,
+  executionId: string,
+  budget: DriveBudget.DriveBudget,
+  round: Effect.Effect<A, E>
+): Effect.Effect<{ readonly exit: Exit.Exit<A, E>; readonly yielded: boolean }> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => store.budgets.set(executionId, budget)),
+    () =>
+      Effect.suspend(() => {
+        let yielded = false
+        // The release completes the round with an interruption, so the round
+        // ends after it either way; `yielded` says which ending this was.
+        const yieldAtBudget = budget.spent.pipe(
+          Effect.andThen(Effect.sync(() => {
+            yielded = true
+          })),
+          Effect.andThen(store.driver.yieldDrive(executionId)),
+          Effect.andThen(Effect.never)
+        )
+        return Effect.raceFirst(Effect.exit(round), yieldAtBudget).pipe(
+          Effect.map((exit) => ({ exit, yielded }))
+        )
+      }),
+    () => Effect.sync(() => store.budgets.delete(executionId))
+  )
+
 /** The store's host-facing driver: one drive of one execution, and what it left. */
 const hostDriver = (store: Store) =>
   Driver.of({
@@ -1065,17 +1141,28 @@ const hostDriver = (store: Store) =>
         Effect.as(true),
         Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
       )
-      // A drive that ends on a lost fence or an unavailable store interrupts
-      // itself and releases the run; the store, read below, says what is
-      // left. Any other failure is the caller's.
-      const exit = yield* Effect.exit(
-        admitted
-          ? store.driver.resumeHosted(flow, input.executionId)
-          : store.driver.execute(flow, { executionId: input.executionId, payload: input.payload, discard: false })
-      )
+      const round = admitted
+        ? store.driver.resumeHosted(flow, input.executionId)
+        : store.driver.execute(flow, { executionId: input.executionId, payload: input.payload, discard: false })
+      const startedMs = yield* Clock.currentTimeMillis
+      // A drive that ends on a lost fence, an unavailable store or a spent
+      // budget interrupts itself and releases the run; the store, read below,
+      // says what is left. Any other failure is the caller's.
+      const { exit, yielded } = input.budgetMs === undefined
+        ? { exit: yield* Effect.exit(round), yielded: false }
+        : yield* withinBudget(store, input.executionId, DriveBudget.make(startedMs + input.budgetMs), round)
       if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause)
-      const outcome = yield* driven(store, input.executionId)
+      const left = yield* driven(store, input.executionId)
+      const outcome: Driven = yielded && left._tag === "Unfinished" ? { _tag: "Yielded" } : left
       if (outcome._tag === "Settled") yield* store.driver.reannounce(input.executionId)
+      if (outcome._tag === "Yielded") {
+        yield* Metric.update(EngineStoreMetrics.driveYields, 1)
+        yield* Effect.logInfo("engine-store: drive yielded its budget at a step boundary", {
+          executionId: input.executionId,
+          budgetMs: input.budgetMs,
+          elapsedMs: (yield* Clock.currentTimeMillis) - startedMs
+        })
+      }
       yield* Effect.annotateCurrentSpan({ outcome: outcome._tag })
       return outcome
     }, CapabilitySet.attenuateGroups(store.host.groups))
