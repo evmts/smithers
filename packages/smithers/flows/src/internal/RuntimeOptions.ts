@@ -130,6 +130,15 @@ export interface Options {
    */
   readonly sweep?: EngineStore.Sweep | undefined
   /**
+   * How many runs the engine resumes on its own at once, such as the runs a
+   * restarted host finds unfinished; absent is no bound. A run a caller
+   * starts or awaits never waits for them. See `@smthrs/engine-store`
+   * `EngineStore.Options.resumeConcurrency`.
+   *
+   * @since 1.0.0
+   */
+  readonly resumeConcurrency?: number | undefined
+  /**
    * Where this runtime's runs run, as their usage metrics label it:
    * `browser`, `cloudflare`, `sandbox` or `local`, the default. See
    * `@smthrs/flow` `RunMetrics`.
@@ -250,6 +259,15 @@ export const validate = (options: Options, label = "Runtime"): Options => {
   const placement = options.placement === undefined
     ? undefined
     : decodeField("placement", Schema.NonEmptyString, options.placement, nonEmpty, label)
+  const resumeConcurrency = options.resumeConcurrency === undefined
+    ? undefined
+    : decodeField(
+      "resumeConcurrency",
+      Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+      options.resumeConcurrency,
+      "must be a positive integer",
+      label
+    )
   return Object.freeze({
     owner: Object.freeze({ hostId }),
     isAlive,
@@ -260,6 +278,7 @@ export const validate = (options: Options, label = "Runtime"): Options => {
     sourceRevision,
     privilegedJj,
     sweep,
+    resumeConcurrency,
     placement
   })
 }

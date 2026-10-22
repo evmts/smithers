@@ -169,14 +169,19 @@ there instead of running.
 ### `Options`
 
 `owner`, `isAlive`, `canExecute`, `canActivate`, `requestResume`,
-`cacheEnvironment`, `sourceRevision`, `privilegedJj`, and `sweep`. The
+`cacheEnvironment`, `sourceRevision`, `privilegedJj`, `sweep`, and
+`resumeConcurrency`. The
 [`NodeRuntime` options table](../platform-node/docs/api.md#options) describes
 each field. `sweep` is `"process"` by default; `{ host: executionId }` is for a
 host that drives one execution per invocation and wakes it from outside. It runs
 no sweep fiber and renews no lease. The host drives the execution with
 `EngineStore.drive`, which the runtime's context provides, and arms its next
 invocation from the result; see
-[hosted executions](../engine-store/docs/api.md#hosted-executions). Invalid
+[hosted executions](../engine-store/docs/api.md#hosted-executions).
+`resumeConcurrency`, a positive integer, bounds how many runs the engine resumes
+on its own at once, such as the runs a restarted host finds unfinished; a run a
+caller starts or awaits never waits for them. Absent is no bound; see
+[the resume lane](../engine-store/docs/api.md#resume-lane). Invalid
 input throws [`RuntimeConfigurationError`](#runtimeconfigurationerror) naming the
 field. The native hosts take `NativeRuntime.Options` from
 `@smthrs/platform-node`, which adds `filename` and `workspaceRoot`.

@@ -47,7 +47,11 @@ it("reports invalid JavaScript configuration before constructing injected servic
     [{ privilegedJj: "jj" }, "privilegedJj"],
     // A host-driven sweep names the one execution it drives.
     [{ sweep: "sometimes" }, "sweep"],
-    [{ sweep: { host: "" } }, "sweep"]
+    [{ sweep: { host: "" } }, "sweep"],
+    // A bound on resumed runs is a count of turns, at least one.
+    [{ resumeConcurrency: 0 }, "resumeConcurrency"],
+    [{ resumeConcurrency: 1.5 }, "resumeConcurrency"],
+    [{ resumeConcurrency: "2" }, "resumeConcurrency"]
   ] as const
   for (const [patch, field] of invalid) {
     const parameters = [

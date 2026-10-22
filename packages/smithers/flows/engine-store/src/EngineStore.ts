@@ -113,7 +113,8 @@ export class Driver extends Context.Service<Driver, {
  * the run, or takes it from an earlier incarnation the host's `isAlive`
  * declares gone, replays what is recorded, and runs until the run settles or
  * parks. A drive that stopped without either, such as one released by an
- * unavailable store, reports `Unfinished`.
+ * unavailable store, reports `Unfinished`. A drive of a run the store holds
+ * is a resumption: it waits for its turn under `Options.resumeConcurrency`.
  *
  * A drive that finds the run `Settled`, and is the last round of its lineage,
  * records the wake of every parent still waiting on it again, without
@@ -263,6 +264,29 @@ export interface Options {
    * @since 1.0.0
    */
   readonly sweep?: Sweep | undefined
+  /**
+   * How many runs the engine resumes on its own at once. Absent, the default,
+   * is no bound.
+   *
+   * The engine resumes a run on its own when its sweep reclaims it (a run
+   * released by an engine that stopped, a running row whose owner's lease
+   * lapsed, an admitted run nobody drove, a timer that came due) and when a
+   * host drives it through the {@link Driver}, as a browser leader does for
+   * every unfinished run after a reload. Bounded, those drives take turns:
+   * at most this many run at once, and the rest wait in the order they were
+   * asked for. Nothing else waits for them. A run started or awaited with
+   * `FlowRuntime.execute`, or woken by an event such as a signal, a child's
+   * settlement or its own timer, drives at once, including a run still
+   * waiting for its turn, and so does `interrupt`, whose drive then delivers
+   * the cancellation.
+   *
+   * A host with one connection to its store, such as a browser leader, sets
+   * it so a backlog of resumed runs cannot starve the run a user just
+   * started. Must be a positive integer.
+   *
+   * @since 1.0.0
+   */
+  readonly resumeConcurrency?: number | undefined
   /**
    * Where this store's runs run, as their usage metrics label it:
    * `browser`, `cloudflare`, `sandbox` or `local` (`@smthrs/flow`
@@ -426,6 +450,7 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     engine: Deferred.await(engine),
     wakeBus,
     sweep: options.sweep,
+    resumeConcurrency: options.resumeConcurrency,
     placement: options.placement
   })
   const deferred = yield* DeferredPersistence.make({
@@ -1045,7 +1070,7 @@ const hostDriver = (store: Store) =>
       // left. Any other failure is the caller's.
       const exit = yield* Effect.exit(
         admitted
-          ? store.driver.resume(flow, input.executionId, { poll: true })
+          ? store.driver.resumeHosted(flow, input.executionId)
           : store.driver.execute(flow, { executionId: input.executionId, payload: input.payload, discard: false })
       )
       if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause)

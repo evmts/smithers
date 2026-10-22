@@ -499,3 +499,197 @@ describe("RunCoordinator", () => {
       expect(Array.from(yield* coordinator.active)).toEqual([])
     })))
 })
+
+describe("RunCoordinator resume lane", () => {
+  /** A coordinator whose drains wait on their own gate, recording which started. */
+  const gated = (resumeConcurrency?: number) =>
+    Effect.gen(function*() {
+      const gates = new Map<string, Deferred.Deferred<void>>()
+      const gate = (key: string) => {
+        let found = gates.get(key)
+        if (found === undefined) {
+          found = Deferred.makeUnsafe<void>()
+          gates.set(key, found)
+        }
+        return found
+      }
+      const started: Array<string> = []
+      const coordinator = yield* RunCoordinator.make({
+        drain: (key: string) => Effect.sync(() => started.push(key)).pipe(Effect.andThen(Deferred.await(gate(key)))),
+        ...(resumeConcurrency === undefined ? {} : { resumeConcurrency })
+      })
+      const open = (key: string) => Deferred.succeed(gate(key), undefined)
+      return { coordinator, started, open }
+    })
+
+  effect(
+    "drains at most resumeConcurrency resumed runs at once, in the order they asked",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const { coordinator, open, started } = yield* gated(2)
+        yield* coordinator.schedule("a", { resumed: true })
+        yield* coordinator.wake("b", { resumed: true })
+        yield* coordinator.schedule("c", { resumed: true })
+        const d = yield* coordinator.run("d", { resumed: true }).pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        expect(started).toEqual(["a", "b"])
+        // Queued runs are active: a second ask joins them rather than adding another drain.
+        expect([...(yield* coordinator.active)].sort()).toEqual(["a", "b", "c", "d"])
+        yield* open("a")
+        yield* coordinator.join("a")
+        yield* Effect.yieldNow
+        expect(started).toEqual(["a", "b", "c"])
+        yield* open("b")
+        yield* open("c")
+        yield* open("d")
+        yield* Fiber.join(d)
+        expect(started).toEqual(["a", "b", "c", "d"])
+        expect((yield* coordinator.active).size).toBe(0)
+      }))
+  )
+
+  effect(
+    "drives a queued run at once when anything but a resumption asks for it",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const { coordinator, open, started } = yield* gated(1)
+        for (const key of ["held", "run", "schedule", "scheduleIf", "wake", "queued"]) {
+          yield* coordinator.schedule(key, { resumed: true })
+        }
+        yield* Effect.yieldNow
+        expect(started).toEqual(["held"])
+        // A resumption that asks again leaves its run queued.
+        yield* coordinator.schedule("queued", { resumed: true })
+        const joined = yield* coordinator.run("queued", { resumed: true }).pipe(Effect.forkChild)
+        const run = yield* coordinator.run("run").pipe(Effect.forkChild)
+        yield* coordinator.schedule("schedule")
+        yield* coordinator.scheduleIf("scheduleIf", Effect.succeed(false))
+        yield* coordinator.wake("wake")
+        yield* Effect.yieldNow
+        expect([...started].sort()).toEqual(["held", "run", "schedule", "scheduleIf", "wake"])
+        for (const key of ["run", "schedule", "scheduleIf"]) yield* open(key)
+        yield* Fiber.join(run)
+        yield* coordinator.join("schedule")
+        yield* coordinator.join("scheduleIf")
+        // A promoted run holds no slot: the queued one still waits for the held one.
+        expect(started).not.toContain("queued")
+        yield* open("held")
+        yield* coordinator.join("held")
+        yield* Effect.yieldNow
+        expect(started).toContain("queued")
+        yield* open("queued")
+        yield* Fiber.join(joined)
+        // The wake asked for one more drain after the one it promoted.
+        yield* open("wake")
+        while ((yield* coordinator.active).has("wake")) yield* Effect.yieldNow
+        expect(started.filter((key) => key === "wake")).toHaveLength(2)
+      }))
+  )
+
+  effect(
+    "frees a slot however a resumed drain ends, and hands it to the next",
+    () =>
+      Effect.scoped(
+        Effect.gen(function*() {
+          const coordinator = yield* RunCoordinator.make({
+            drain: (key: string) => key === "fails" ? Effect.die("drain died") : Effect.void,
+            resumeConcurrency: 1
+          })
+          yield* coordinator.schedule("fails", { resumed: true })
+          yield* coordinator.schedule("next", { resumed: true })
+          yield* coordinator.join("next")
+          yield* coordinator.join("fails")
+          expect((yield* coordinator.active).size).toBe(0)
+        }).pipe(Effect.provide(Logger.layer([])))
+      )
+  )
+
+  effect(
+    "a resumption of a run already draining follows it, as a wake does",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const { coordinator, open, started } = yield* gated(1)
+        yield* coordinator.schedule("run")
+        yield* Effect.yieldNow
+        yield* coordinator.wake("run", { resumed: true })
+        yield* open("run")
+        while ((yield* coordinator.active).has("run")) yield* Effect.yieldNow
+        expect(started).toEqual(["run", "run"])
+      }))
+  )
+
+  effect("without resumeConcurrency, resumptions drain at once", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const { coordinator, started } = yield* gated()
+      for (const key of ["a", "b", "c"]) yield* coordinator.schedule(key, { resumed: true })
+      yield* Effect.yieldNow
+      expect(started).toEqual(["a", "b", "c"])
+    })))
+
+  effect(
+    "an interrupt of a queued run starts its drive at once, so the drive can deliver the cancellation",
+    () =>
+      Effect.scoped(Effect.gen(function*() {
+        const { coordinator, open, started } = yield* gated(1)
+        for (const key of ["held", "interrupted", "requested"]) yield* coordinator.schedule(key, { resumed: true })
+        yield* coordinator.interrupt("interrupted")
+        yield* coordinator.requestInterrupt("requested")
+        yield* Effect.yieldNow
+        expect([...started].sort()).toEqual(["held", "interrupted", "requested"])
+        // Their drives run to their end: the interrupt had no drive to stop when it came.
+        yield* open("interrupted")
+        yield* open("requested")
+        yield* coordinator.join("interrupted")
+        yield* coordinator.join("requested")
+        expect([...(yield* coordinator.active)]).toEqual(["held"])
+      }))
+  )
+
+  effect("closing the coordinator ends every run still waiting its turn", () =>
+    Effect.gen(function*() {
+      const outcome = yield* Effect.scoped(Effect.gen(function*() {
+        const { coordinator, started } = yield* gated(1)
+        yield* coordinator.schedule("held", { resumed: true })
+        const waiter = yield* coordinator.run("queued", { resumed: true }).pipe(Effect.forkDetach)
+        yield* Effect.yieldNow
+        expect(started).toEqual(["held"])
+        return { coordinator, waiter }
+      }))
+      expect((yield* outcome.coordinator.active).size).toBe(0)
+      const exit = yield* Fiber.await(outcome.waiter)
+      expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+    }))
+
+  effect("a resumed drain's follow-up keeps its turn when the drain fails", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        const started: Array<string> = []
+        let failures = 1
+        const coordinator = yield* RunCoordinator.make({
+          drain: (key: string) =>
+            Effect.sync(() => started.push(key)).pipe(
+              Effect.andThen(key === "a" && failures-- > 0 ? Effect.die("drain died") : Deferred.await(gate))
+            ),
+          resumeConcurrency: 1
+        })
+        yield* coordinator.schedule("a", { resumed: true })
+        yield* coordinator.wake("a", { resumed: true })
+        yield* coordinator.schedule("b", { resumed: true })
+        while (started.length < 2) yield* Effect.yieldNow
+        yield* Effect.yieldNow
+        // The failed drain's follow-up runs in its slot; the next run still waits.
+        expect(started).toEqual(["a", "a"])
+        yield* Deferred.succeed(gate, undefined)
+        yield* coordinator.join("b")
+        expect(started).toEqual(["a", "a", "b"])
+      }).pipe(Effect.provide(Logger.layer([])))
+    ))
+
+  it("refuses a resumeConcurrency that is not a positive integer", () => {
+    for (const resumeConcurrency of [0, -1, 1.5, Number.NaN]) {
+      expect(() => Effect.runSync(Effect.scoped(RunCoordinator.make({ drain: () => Effect.void, resumeConcurrency }))))
+        .toThrow(/resumeConcurrency/)
+    }
+  })
+})

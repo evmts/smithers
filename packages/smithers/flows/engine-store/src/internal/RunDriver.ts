@@ -193,6 +193,11 @@ export interface Dependencies {
    */
   readonly sweep?: Sweep | undefined
   /**
+   * How many runs the engine resumes on its own at once. Absent is no bound.
+   * See `EngineStore.Options.resumeConcurrency`.
+   */
+  readonly resumeConcurrency?: number | undefined
+  /**
    * Where this store's runs run, as their usage metrics label it
    * (`@smthrs/flow` `RunMetrics.placements`). Absent is `local`.
    */
@@ -231,6 +236,12 @@ export interface Service {
   readonly interrupt: FlowEngine.Encoded["interrupt"]
   readonly interruptUnsafe: FlowEngine.Encoded["interruptUnsafe"]
   readonly resume: FlowEngine.Encoded["resume"]
+  /**
+   * `resume` with `{ poll: true }` for a host that drives a run from outside,
+   * such as after a restart: an idle run waits for a slot of the resume lane
+   * (`Options.resumeConcurrency`).
+   */
+  readonly resumeHosted: (flow: Flow.Any, executionId: string) => Effect.Effect<void>
   readonly scheduleResume: (
     flowName: string,
     executionId: string,
@@ -3101,7 +3112,8 @@ const sweepCancelRequested = (driver: Driver): Effect.Effect<void> =>
         row.status === "suspended" &&
         (row.cancelRequestedAtMs !== null || waiting.reason === "released")
       ) {
-        yield* driver.coordinator.wake(row.runId)
+        // A released run is resumed in the lane; a cancellation is delivered at once.
+        yield* driver.coordinator.wake(row.runId, { resumed: row.cancelRequestedAtMs === null })
       }
     }
   })
@@ -3131,7 +3143,7 @@ const sweepReadyTimers = (driver: Driver): Effect.Effect<void> =>
         completions.set(state.flowName, ready)
       }
       if (!ready.has(row.runId)) continue
-      yield* driver.coordinator.schedule(row.runId)
+      yield* driver.coordinator.schedule(row.runId, { resumed: true })
     }
   })
 
@@ -3166,10 +3178,18 @@ const schedulePending = (
   current: () => boolean = () => true
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
-    if ((yield* driver.coordinator.active).has(runId)) return
+    // An admission nobody drove is resumed in the lane. A cancellation is
+    // delivered at once, including to a run still waiting its turn there.
+    const resumed = row.cancelRequestedAtMs === null
+    if ((yield* driver.coordinator.active).has(runId)) {
+      // A no-op for a drive under way, which already sees the request; a
+      // cancellation starts the drive of a run still waiting its turn.
+      yield* driver.coordinator.schedule(runId, { resumed })
+      return
+    }
     if (driver.dependencies.canExecute !== undefined && !(yield* driver.dependencies.canExecute(row))) return
     if (!current() || (yield* driver.coordinator.active).has(runId)) return
-    yield* driver.coordinator.schedule(runId)
+    yield* driver.coordinator.schedule(runId, { resumed })
   })
 
 /**
@@ -3335,7 +3355,7 @@ const sweepStaleRunning = (driver: Driver): Effect.Effect<void> =>
       const refusal = driver.stealRefusals.get(runId)
       if (refusal !== undefined && refusal.heartbeatAtMs === heartbeatAtMs && refusal.nextProbeAtMs > nowMs) continue
       woken = woken + 1
-      yield* driver.coordinator.wake(runId)
+      yield* driver.coordinator.wake(runId, { resumed: true })
     }
   })
 
@@ -4024,7 +4044,8 @@ const resume = Effect.fn("FlowEngine.resume")((
   driver: Driver,
   flow: Flow.Any,
   executionId: string,
-  options: Parameters<Service["resume"]>[2]
+  options: Parameters<Service["resume"]>[2],
+  ask?: RunCoordinator.Ask
 ) =>
   Effect.gen(function*() {
     yield* Effect.annotateCurrentSpan({ executionId, flow: flow._tag })
@@ -4042,7 +4063,7 @@ const resume = Effect.fn("FlowEngine.resume")((
     } else {
       yield* scheduleResume(driver, flow._tag, executionId, options?.delegated === true ? "delegated" : "operator")
     }
-    yield* driver.coordinator.run(executionId)
+    yield* driver.coordinator.run(executionId, ask)
   })
 )
 
@@ -4056,6 +4077,7 @@ const service = (driver: Driver): Service => ({
   interrupt: (flow, executionId) => interrupt(driver, flow, executionId),
   interruptUnsafe,
   resume: (flow, executionId, options) => resume(driver, flow, executionId, options),
+  resumeHosted: (flow, executionId) => resume(driver, flow, executionId, { poll: true }, { resumed: true }),
   scheduleResume: (flowName, executionId, reason, sourceId) =>
     scheduleResume(driver, flowName, executionId, reason, sourceId),
   active: active(driver),
@@ -4132,7 +4154,8 @@ export const make = (
     const retainedScopes = new Map<string, Scope.Closeable>()
     yield* Effect.addFinalizer(() => releaseRetainedScopes(retainedScopes))
     const coordinator = yield* RunCoordinator.make<string, never, Crypto.Crypto>({
-      drain: (executionId) => drive(driver, executionId)
+      drain: (executionId) => drive(driver, executionId),
+      resumeConcurrency: dependencies.resumeConcurrency
     })
     const driver: Driver = {
       dependencies,

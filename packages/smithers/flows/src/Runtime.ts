@@ -109,6 +109,7 @@ export const layer = <
     // nothing (D-068).
     sourceRevision: validated.sourceRevision,
     sweep: validated.sweep,
+    resumeConcurrency: validated.resumeConcurrency,
     placement: validated.placement
   }
   // A host that guards the ambient `Jj` for action bodies keeps the engine's

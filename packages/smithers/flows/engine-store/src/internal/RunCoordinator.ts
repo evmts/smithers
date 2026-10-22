@@ -14,6 +14,18 @@
 import { Cause, Deferred, Effect, Exit, Fiber, FiberSet, type Scope } from "effect"
 
 /**
+ * How a drain is asked for. `resumed` marks the engine resuming a run on its
+ * own, such as a sweep reclaiming it or a host driving it after a restart:
+ * while idle, such a drain waits for a slot of `resumeConcurrency`.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface Ask {
+  readonly resumed?: boolean | undefined
+}
+
+/**
  * Serializes drain execution for each key while allowing distinct keys to run
  * concurrently.
  *
@@ -34,7 +46,7 @@ export interface RunCoordinator<Key, E> {
    * @since 0.1.0
    * @category operations
    */
-  readonly run: (key: Key) => Effect.Effect<void, E>
+  readonly run: (key: Key, ask?: Ask) => Effect.Effect<void, E>
   /**
    * Joins the active drain for the key, and starts none while idle.
    *
@@ -48,7 +60,7 @@ export interface RunCoordinator<Key, E> {
    * @since 1.0.0
    * @category operations
    */
-  readonly schedule: (key: Key) => Effect.Effect<void>
+  readonly schedule: (key: Key, ask?: Ask) => Effect.Effect<void>
   /** Reserves an idle key, then starts its drain only while the supplied durable readiness holds. */
   readonly scheduleIf: (key: Key, ready: Effect.Effect<boolean>) => Effect.Effect<void>
   /**
@@ -57,7 +69,7 @@ export interface RunCoordinator<Key, E> {
    * @since 0.1.0
    * @category operations
    */
-  readonly wake: (key: Key) => Effect.Effect<void>
+  readonly wake: (key: Key, ask?: Ask) => Effect.Effect<void>
   /**
    * Interrupts the active drain for the key and waits for its cleanup.
    *
@@ -74,25 +86,56 @@ type Entry<E> = {
   owner?: Fiber.Fiber<void, never>
   pendingWake: boolean
   stopping: boolean
+  /** Waiting in the resume lane for a slot, with no drain started yet. */
+  queued: boolean
+  /** Holds one of the resume lane's slots until its drains end. */
+  slot: boolean
 }
 
 /**
  * Creates a scoped coordinator for keyed drain effects.
+ *
+ * `resumeConcurrency` bounds the resume lane: at most that many drains asked
+ * for with `{ resumed: true }` run at once, and the rest wait in the order
+ * they asked. Anything else that asks for a waiting key, a `run`, `schedule`,
+ * `scheduleIf` or `wake` without `resumed`, starts its drain at once, outside
+ * the lane, and so does an `interrupt` or `requestInterrupt`, which has no
+ * drain to stop yet: the drain it starts delivers the cancellation the caller
+ * recorded. Absent, resumed drains start at once like any other. A waiting
+ * key is active: `join` waits for it.
  *
  * @since 0.1.0
  * @category constructors
  */
 export const make = <Key, E, R>(options: {
   readonly drain: (key: Key) => Effect.Effect<void, E, R>
+  readonly resumeConcurrency?: number | undefined
 }): Effect.Effect<RunCoordinator<Key, E>, never, Scope.Scope | R> =>
   Effect.gen(function*() {
+    const limit = options.resumeConcurrency
+    if (limit !== undefined && !(Number.isSafeInteger(limit) && limit > 0)) {
+      return yield* Effect.die(new RangeError(`resumeConcurrency must be a positive integer, got ${limit}`))
+    }
     const active = new Map<Key, Entry<E>>()
     const fork = yield* FiberSet.makeRuntime<R, void, never>()
+    let free = limit ?? 0
+    const waiting: Array<readonly [Key, Entry<E>]> = []
+    // Closing the coordinator ends every drain; a key still waiting for a slot ends with them.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        for (const [key, entry] of waiting.splice(0)) {
+          active.delete(key)
+          Deferred.doneUnsafe(entry.done, Exit.failCause(Cause.interrupt()))
+        }
+      })
+    )
 
     const makeEntry = (): Entry<E> => ({
       done: Deferred.makeUnsafe<void, E>(),
       pendingWake: false,
-      stopping: false
+      stopping: false,
+      queued: false,
+      slot: false
     })
 
     const start = (
@@ -130,29 +173,71 @@ export const make = <Key, E, R>(options: {
       const successor = entry.pendingWake ? makeEntry() : undefined
       if (successor === undefined) active.delete(key)
       else {
+        // The follow-up drains in the slot its predecessor held.
+        successor.slot = entry.slot
+        entry.slot = false
         active.set(key, successor)
         start(key, successor, true)
       }
+      releaseSlot(entry)
       Deferred.doneUnsafe(entry.done, exit)
     }
 
-    const startIdle = (key: Key, onlyIf?: Effect.Effect<boolean>): Entry<E> => {
+    /** Gives an ended drain's slot to the next waiting key, or back to the lane. */
+    const releaseSlot = (entry: Entry<E>): void => {
+      if (!entry.slot) return
+      entry.slot = false
+      const next = waiting.shift()
+      if (next === undefined) {
+        free++
+        return
+      }
+      next[1].queued = false
+      next[1].slot = true
+      start(next[0], next[1])
+    }
+
+    /** Starts a waiting key's drain at once, outside the lane. */
+    const promote = (key: Key, entry: Entry<E>): void => {
+      if (!entry.queued) return
+      entry.queued = false
+      waiting.splice(waiting.findIndex(([, waiter]) => waiter === entry), 1)
+      start(key, entry)
+    }
+
+    const startIdle = (key: Key, onlyIf?: Effect.Effect<boolean>, ask?: Ask): Entry<E> => {
       const next = makeEntry()
       active.set(key, next)
+      if (ask?.resumed === true && limit !== undefined) {
+        if (free === 0) {
+          next.queued = true
+          waiting.push([key, next])
+          return next
+        }
+        free--
+        next.slot = true
+      }
       start(key, next, false, onlyIf)
       return next
     }
 
-    const run = (key: Key): Effect.Effect<void, E> =>
+    /** The key's entry, started at once if it was waiting and this ask is not a resumption. */
+    const asked = (key: Key, ask: Ask | undefined): Entry<E> | undefined => {
+      const entry = active.get(key)
+      if (entry !== undefined && ask?.resumed !== true) promote(key, entry)
+      return entry
+    }
+
+    const run = (key: Key, ask?: Ask): Effect.Effect<void, E> =>
       Effect.uninterruptibleMask((restore) => {
-        const entry = active.get(key)
+        const entry = asked(key, ask)
         if (entry !== undefined) {
           /* v8 ignore next -- stopping is a cooperative-scheduler handoff covered by the cleanup race test */
-          if (entry.stopping) return restore(Deferred.await(entry.done).pipe(Effect.andThen(run(key))))
+          if (entry.stopping) return restore(Deferred.await(entry.done).pipe(Effect.andThen(run(key, ask))))
           return restore(Deferred.await(entry.done))
         }
 
-        return restore(Deferred.await(startIdle(key).done))
+        return restore(Deferred.await(startIdle(key, undefined, ask).done))
       })
 
     const join = (key: Key): Effect.Effect<void, E> =>
@@ -161,29 +246,41 @@ export const make = <Key, E, R>(options: {
         return entry === undefined ? Effect.void : Deferred.await(entry.done)
       })
 
-    const schedule = (key: Key): Effect.Effect<void> =>
+    const schedule = (key: Key, ask?: Ask): Effect.Effect<void> =>
       Effect.sync(() => {
-        if (!active.has(key)) startIdle(key)
+        if (asked(key, ask) === undefined) startIdle(key, undefined, ask)
       })
 
     const scheduleIf = (key: Key, ready: Effect.Effect<boolean>): Effect.Effect<void> =>
       Effect.sync(() => {
-        if (!active.has(key)) startIdle(key, ready)
+        if (asked(key, undefined) === undefined) startIdle(key, ready)
       })
 
-    const wake = (key: Key): Effect.Effect<void> =>
+    const wake = (key: Key, ask?: Ask): Effect.Effect<void> =>
       Effect.sync(() => {
-        const entry = active.get(key)
+        const entry = asked(key, ask)
         if (entry !== undefined) {
           entry.pendingWake = true
           return
         }
 
-        startIdle(key)
+        startIdle(key, undefined, ask)
       })
+
+    /**
+     * Starts a waiting key's drain so it delivers the cancellation its caller
+     * recorded, answering whether the key was waiting.
+     */
+    const promoteToCancel = (key: Key): boolean => {
+      const entry = active.get(key)
+      if (entry === undefined || !entry.queued) return false
+      promote(key, entry)
+      return true
+    }
 
     const interrupt = (key: Key): Effect.Effect<void> =>
       Effect.suspend(() => {
+        if (promoteToCancel(key)) return Effect.void
         const entry = active.get(key)
         if (entry?.owner === undefined) return Effect.void
         entry.stopping = true
@@ -194,6 +291,7 @@ export const make = <Key, E, R>(options: {
     const requestInterrupt = (key: Key): Effect.Effect<void> =>
       Effect.withFiber((fiber) =>
         Effect.sync(() => {
+          if (promoteToCancel(key)) return
           const entry = active.get(key)
           if (entry?.owner === undefined) return
           entry.stopping = true

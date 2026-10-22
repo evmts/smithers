@@ -246,6 +246,40 @@ describe("pending cancellation sweep races", () => {
       })
     ))
 
+  it.effect("delivers a cancellation at once to a run still waiting its turn in the resume lane", () =>
+    run(
+      Effect.gen(function*() {
+        const runs = yield* RunStore.RunStore
+        const entered = yield* Latch.make(false)
+        const admitted: Array<string> = []
+        yield* request(runs, "holding")
+        yield* request(runs, "waiting")
+        const driver = yield* make({
+          resumeConcurrency: 1,
+          // The run holding the only turn never gets past admission.
+          canExecute: (row) =>
+            Effect.sync(() => admitted.push(row.runId)).pipe(
+              Effect.andThen(
+                row.runId === "holding" ? Latch.open(entered).pipe(Effect.andThen(Effect.never)) : Effect.void
+              ),
+              Effect.as(true)
+            )
+        })
+        yield* driver.resumeHosted(flow, "holding").pipe(Effect.forkScoped)
+        yield* Latch.await(entered)
+        const waiting = yield* driver.resumeHosted(flow, "waiting").pipe(Effect.forkScoped)
+        for (let turn = 0; turn < 100; turn++) yield* Effect.yieldNow
+        // The host's drive waits its turn behind the one that holds it.
+        expect(admitted).toEqual(["holding"])
+        // The cancellation sweep starts it at once.
+        yield* tick
+        yield* Fiber.join(waiting)
+        expect(yield* runs.get("waiting")).toMatchObject({ status: "cancelled", owner: null, claim: null })
+        expect(admitted).toEqual(["holding", "waiting"])
+        expect(yield* runs.get("holding")).toMatchObject({ status: "pending" })
+      })
+    ))
+
   it.effect("rechecks active dispatch when a concurrent wake arrives during sweep admission", () =>
     run(
       Effect.gen(function*() {
