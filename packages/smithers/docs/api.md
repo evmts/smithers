@@ -451,6 +451,14 @@ implement the one the operator picks.
 The implementation writes under the project root and never commits: the grant
 store denies `.git/` and `.flows/`, and there is no process-spawn grant at all.
 
+Briefs teach `.smithers/flows/<name>/flow.ts` with a named default `Flow.make`
+export. CI follow-ups use Smithers flow checks. Check discovery retains distinct
+commands with the same check name, qualifying later IDs with their command tool
+(for example `test:make` and `test:go`). Installation recipes freeze existing
+lockfiles and disable lockfile creation when none exists.
+Yarn 2+ and unversioned Yarn require an existing lockfile; lockless installation
+is available only for a declared Yarn 1 version.
+
 ## Providers
 
 Which seats this machine can run.

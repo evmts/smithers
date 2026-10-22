@@ -29,7 +29,8 @@ const project = (): string => {
   return directory
 }
 
-const flowBody = "---\ndescription: Reruns the tests whose inputs changed.\nmodel: openai:gpt-5.6-sol\n---\n\n# Test\n"
+const flowBody =
+  "import { Flow } from \"@smthrs/flow\"\nimport { Node } from \"@smthrs/plan\"\nimport { Schema } from \"effect\"\nexport default Flow.make(\"test-target\", { payload: {}, success: Schema.String, body: () => Node.succeed(\"ok\") })\n"
 
 const suggestionOf = async (id: string, repository: Checklist.Repository): Promise<Checklist.Suggestion> => {
   for await (const suggestion of Checklist.scan(repository)) if (suggestion.id === id) return suggestion
@@ -67,11 +68,11 @@ describe("the suggest flow with a scripted model", { timeout: 120_000 }, () => {
     const result = await execute(root, Brief.suggestion(context, suggestion), (prompt) => {
       asked.push(prompt)
       return [
-        `await ctx.call("write", { path: ".smithers/flows/test-target/flow.mdx", content: ${
+        `await ctx.call("write", { path: ".smithers/flows/test-target/flow.ts", content: ${
           JSON.stringify(flowBody)
         } })`,
         SuggestFlow.done({
-          files: [".smithers/flows/test-target/flow.mdx"],
+          files: [".smithers/flows/test-target/flow.ts"],
           command: "smthrs up test-target",
           notes: "scripted"
         })
@@ -79,17 +80,17 @@ describe("the suggest flow with a scripted model", { timeout: 120_000 }, () => {
     }, events)
 
     expect(result).toEqual({
-      files: [".smithers/flows/test-target/flow.mdx"],
+      files: [".smithers/flows/test-target/flow.ts"],
       command: "smthrs up test-target",
       notes: "scripted"
     })
-    expect(readFileSync(join(root, ".smithers", "flows", "test-target", "flow.mdx"), "utf8")).toBe(flowBody)
+    expect(readFileSync(join(root, ".smithers", "flows", "test-target", "flow.ts"), "utf8")).toBe(flowBody)
     // The teaching and the brief both reach the model, in that order.
     expect(asked[0]).toContain("# Implementing one suggestion in a Smithers project")
     expect(asked[0]).toContain("# Suggestion `test-target`: A test target that reruns only what changed")
-    expect(asked[0]).toContain("Seat for the flow's `model:` line: `openai:gpt-5.6-sol`")
+    expect(asked[0]).toContain("Seat for the flow's agent step: `openai:gpt-5.6-sol`")
     expect(asked[0]).toContain("- test runner: vitest")
-    expect(asked[0]).toContain("`.smithers/flows/test-target/flow.mdx` at least")
+    expect(asked[0]).toContain("`.smithers/flows/test-target/flow.ts` at least")
     expect(asked[0]).not.toContain("`flows/")
     // The host's judge is real, so the run arms judged discipline and is
     // taught to call jev.
@@ -151,7 +152,7 @@ describe("the suggest flow with a scripted model", { timeout: 120_000 }, () => {
 })
 
 describe("Brief.followUp", () => {
-  it("names the implemented files and the command, and asks for the CI workflow or the target", () => {
+  it("names the implemented files and the command, and asks for the CI flow checks or the target", () => {
     const facts = Checklist.evidence(Checklist.memoryRepository("/repo", { ".github/workflows/ci.yml": "" }))
     const suggestion: Checklist.Suggestion = {
       id: "lint-target",
@@ -162,13 +163,13 @@ describe("Brief.followUp", () => {
       followUps: [Checklist.followUps.ci, Checklist.followUps.incremental],
       files: []
     }
-    const implemented = { files: [".smithers/flows/lint-target/flow.mdx"], command: "smthrs up lint-target" }
+    const implemented = { files: [".smithers/flows/lint-target/flow.ts"], command: "smthrs up lint-target" }
     const ci = Brief.followUp({ seat: "s:m", facts }, suggestion, implemented, Checklist.followUps.ci)
     const incremental = Brief.followUp({ seat: "s:m", facts }, suggestion, implemented, Checklist.followUps.incremental)
 
     expect(ci).toContain("# Follow-up on `lint-target`: Run this in CI?")
-    expect(ci).toContain("It wrote: `.smithers/flows/lint-target/flow.mdx`. It runs with `smthrs up lint-target`.")
-    expect(ci).toContain(".github/workflows/ci.yml")
+    expect(ci).toContain("It wrote: `.smithers/flows/lint-target/flow.ts`. It runs with `smthrs up lint-target`.")
+    expect(ci).toContain("Smithers flow runs")
     expect(incremental).toContain("Make it incremental")
     expect(incremental).toContain("`PACKAGE.ts` target")
   })

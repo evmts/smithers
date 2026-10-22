@@ -3,11 +3,9 @@
  * implementation shares, and the brief for one suggestion or one follow-up.
  *
  * The teaching is the authoring model of a Smithers 1.0 project in the
- * fewest words that make a written flow launchable: a `flow.mdx` whose
- * frontmatter declares the seat, the capabilities, and a budget, and whose
- * body is the prompt; and, when the repository already carries `PACKAGE.ts`
- * files, a target in one of them. The agent is told to read what exists
- * before writing, so a repository's own conventions beat the sample here.
+ * fewest words that make a written flow launchable: a named Flow.make
+ * exported from flow.ts, and, when the repository carries PACKAGE.ts files,
+ * a target in one of them. Read existing code before writing.
  *
  * @since 1.0.0-rc.0
  */
@@ -19,28 +17,29 @@ const section = (title: string, body: string): string => `## ${title}\n\n${body}
 
 const fenced = (language: string, body: string): string => `\`\`\`${language}\n${body}\n\`\`\``
 
-const sampleFlow = `---
-name: "review"
-description: Reviews the uncommitted change against this repository's conventions.
-capabilities: ["fs:read:**", "proc:spawn:*"]
-model: <seat>
-budget:
-  tokens: 200000
-  milliseconds: 600000
----
+const sampleFlow = `import { AgentAction } from "@smthrs/agent"
+import { Flow } from "@smthrs/flow"
+import { Schema } from "effect"
 
-# Review the change
+const Review = AgentAction.make("review/Review", {
+  payload: {},
+  output: Schema.String,
+  seat: "<seat>",
+  system: ["Read the changed files and report findings with file and line."],
+  prompt: () => "Review the uncommitted change against this repository's conventions."
+})
 
-Run \`git diff\` through the \`bash\` tool and read the changed files in full.
+export const layer = Review.layer
 
-## Check
-
-- Every exported value carries a JSDoc block.
-- No test was deleted without a note saying why.
-
-## Report
-
-List each finding with the file and line, then say whether the change is ready.`
+export default Flow.make("review", {
+  description: "Reviews the uncommitted change.",
+  capabilities: ["fs:read:**", "proc:spawn:*", "model:call:*"],
+  effects: { reads: ["**"], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  payload: {},
+  success: Schema.String,
+  error: AgentAction.AgentFailure,
+  body: () => Review.call({})
+})`
 
 const samplePackage = `import { Smithers } from "@smthrs/targets"
 
@@ -72,17 +71,17 @@ export const system: string = [
     [
       "1. Write only under the project root you were given. Paths are project-relative.",
       "2. Never commit, never run a package manager, never touch `.git/` or `.flows/`.",
-      `3. Read before you write: an existing \`${projectFlowsDirectory}/<name>/flow.mdx\` or \`PACKAGE.ts\` shows this repository's conventions, and they beat the samples below.`,
+      `3. Read before you write: an existing \`${projectFlowsDirectory}/<name>/flow.ts\` or \`PACKAGE.ts\` shows this repository's conventions, and they beat the samples below.`,
       "4. Write the smallest thing that runs. One flow, one target, one prompt file. No scaffolding for cases the suggestion did not name.",
       "5. Every file you write is listed in your answer, and the answer names the one command that runs what you wrote."
     ].join("\n")
   ),
   "",
   section(
-    "Markdown flows",
-    `A flow is a directory \`${projectFlowsDirectory}/<name>/\` holding \`flow.mdx\`. The frontmatter declares it and the body is the prompt the run's agent is handed. \`model:\` is the seat; use the one named in the brief. \`capabilities\` are the kernel grants the body needs: \`fs:read:**\`, \`fs:write:**\`, \`proc:spawn:*\` (the \`bash\` tool). It runs with \`smthrs flow start <name>\`.
+    "Code flows",
+    `A flow lives at \`${projectFlowsDirectory}/<name>/flow.ts\` and exports \`Flow.make("<name>", { description, capabilities, effects, payload, success, error?, body })\` as its default. The required tag matches the directory name. Model calls belong in durable steps through \`@smthrs/agent\` or \`@smthrs/flow\`; use the seat named in the brief. Export the step implementation layer too. It runs with \`smthrs flow start <name>\`.
 
-${fenced("md", sampleFlow)}`
+${fenced("ts", sampleFlow)}`
   ),
   "",
   section(
@@ -154,7 +153,7 @@ export const suggestion = (context: Context, chosen: Checklist.Suggestion): stri
     "",
     `Why it matched: ${chosen.why}.`,
     "",
-    `Effort: ${chosen.effort}. Seat for the flow's \`model:\` line: \`${context.seat}\`.`,
+    `Effort: ${chosen.effort}. Seat for the flow's agent step: \`${context.seat}\`.`,
     "",
     section("What the scan read", factsBlock(context.facts)),
     "",
@@ -162,7 +161,7 @@ export const suggestion = (context: Context, chosen: Checklist.Suggestion): stri
     "",
     section(
       "Write",
-      `Implement \`${chosen.id}\` for this repository: \`${projectFlowsDirectory}/${chosen.id}/flow.mdx\` at least, a target in a \`PACKAGE.ts\` when the repository has one, and any prompt file the flow reads. Then answer with the files and the command.`
+      `Implement \`${chosen.id}\` for this repository: \`${projectFlowsDirectory}/${chosen.id}/flow.ts\` at least, exporting \`Flow.make("${chosen.id}", { description, capabilities, effects, payload, success, error?, body })\` as its default, a target in a \`PACKAGE.ts\` when the repository has one, and any prompt file the flow reads. Then answer with the files and the command.`
     )
   ].join("\n")
 
@@ -179,9 +178,7 @@ export const followUp = (
   which: Checklist.FollowUp
 ): string => {
   const task = which.id === "ci"
-    ? `Run it in CI. Add a workflow under \`.github/workflows/\` (or the CI system the repository already uses: ${
-      context.facts.ci.length === 0 ? "none found, so GitHub Actions" : context.facts.ci.join(", ")
-    }) that installs \`@smthrs/cli@next\` and runs \`${implemented.command}\` on pull requests and pushes to the default branch, with the provider key read from a repository secret.`
+    ? `Run it in CI through Smithers flow runs. Define a named flow under \`${projectFlowsDirectory}/<name>/flow.ts\` using \`Flow.make\` that runs \`${implemented.command}\` as pull-request checks and on pushes to the default branch. Read provider credentials by secret name through the host's secrets service.`
     : `Make it incremental. Turn the work into a \`PACKAGE.ts\` target whose inputs (\`srcs\`, \`data\`, \`deps\`) name exactly the files it reads, so \`smithers-build\` reuses the recorded result when they are unchanged; create a root \`PACKAGE.ts\` if there is none, and point the flow at the target.`
   return [
     `# Follow-up on \`${chosen.id}\`: ${which.question}`,

@@ -162,6 +162,30 @@ describe("machine evidence (§8.6.2)", () => {
     expect(machine({ "package.json": "{}" }).installs[0]?.command).toEqual(["npm", "install", "--package-lock=false"])
   })
 
+  it.each(
+    [
+      ["pnpm@10.0.0", ["pnpm", "install", "--lockfile=false"]],
+      ["yarn@1.22.22", ["yarn", "install", "--no-lockfile"]],
+      ["bun@1.3.0", ["bun", "install", "--no-save"]]
+    ] as const
+  )("does not generate a missing lockfile for %s, online or offline", (packageManager, command) => {
+    const install = machine({ "package.json": JSON.stringify({ packageManager }) }).installs[0]!
+    expect(install.command).toEqual(command)
+    expect(install.offline).toEqual([...command, "--offline"])
+    expect(install.files).toEqual(["package.json"])
+  })
+
+  it.each(["yarn@2.4.3", "yarn@4.0.0", "yarn"])(
+    "requires a lockfile when %s cannot guarantee a lockless install",
+    (packageManager) => {
+      const recipe = Checklist.evidence(Checklist.memoryRepository("/repo", {
+        "package.json": JSON.stringify({ packageManager })
+      })).machine
+      expect(recipe).toBeInstanceOf(Checklist.MachineRecipeError)
+      expect((recipe as Checklist.MachineRecipeError).fix).toBe("Change yarn.lock")
+    }
+  )
+
   it("has no tools or installs for absent or unsupported files", () => {
     const base = machine({})
     expect(base.tools).toEqual({})
@@ -260,16 +284,28 @@ describe("shared detected check inventory", () => {
     expect(recipe.installs).toEqual([])
   })
 
-  it("prefers package scripts to duplicate Makefile and language checks", () => {
+  it("retains distinct package, Makefile and language suites sharing an id", () => {
     const recipe = machine({
       "package.json": "{\"scripts\":{\"test\":\"vitest\",\"lint\":\"eslint .\"}}",
       "Makefile": "test:\nlint:\nbuild:\n",
-      "go.mod": "module x\ngo 1.23\n"
+      "go.mod": "module x\ngo 1.23\n",
+      "Cargo.toml": "[package]\nname='app'\n",
+      "pytest.ini": "[pytest]"
     })
-    expect(recipe.checks).toEqual([{ id: "test", argv: ["npm", "run", "test"] }, {
-      id: "lint",
-      argv: ["npm", "run", "lint"]
-    }, { id: "build", argv: ["make", "build"] }])
+    expect(recipe.checks).toEqual([
+      { id: "test", argv: ["npm", "run", "test"] },
+      {
+        id: "lint",
+        argv: ["npm", "run", "lint"]
+      },
+      { id: "test:make", argv: ["make", "test"] },
+      { id: "lint:make", argv: ["make", "lint"] },
+      { id: "build", argv: ["make", "build"] },
+      { id: "test:go", argv: ["go", "test", "./..."] },
+      { id: "test:cargo", argv: ["cargo", "test"] },
+      { id: "test:pytest", argv: ["pytest"] }
+    ])
+    expect(new Set(recipe.checks!.map((check) => check.id)).size).toBe(recipe.checks!.length)
     expect(machine({ "package.json": "{\"scripts\":{\"test\":\"echo no test specified\"}}" }).checks).toBeUndefined()
   })
 })

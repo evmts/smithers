@@ -358,7 +358,7 @@ describe("the interactive session", () => {
     ])
     expect(ui.briefs).toHaveLength(2)
     expect(ui.briefs[0]).toContain("# Suggestion `test-target`: A test target that reruns only what changed")
-    expect(ui.briefs[0]).toContain("Seat for the flow's `model:` line: `moonshot:kimi-k3`")
+    expect(ui.briefs[0]).toContain("Seat for the flow's agent step: `moonshot:kimi-k3`")
     expect(ui.briefs[1]).toContain("# Follow-up on `test-target`: Run this in CI?")
     // Every file it wrote, and the one command that runs them.
     expect(ui.lines).toContain(

@@ -279,8 +279,11 @@ const checksEvidence = (
   // Check inventory shares the manager and language facts. Makefile and legacy
   // Python check declarations contribute commands, never image tool versions.
   const addCheck = (id: string, argv: Array<string>) => {
-    if (checks.some((check) => check.id === id)) return
-    checks.push({ id, argv })
+    if (checks.some((check) => check.argv.length === argv.length && check.argv.every((arg, i) => arg === argv[i]))) {
+      return
+    }
+    const key = checks.some((check) => check.id === id) ? `${id}:${argv[0]}` : id
+    checks.push({ id: key, argv })
   }
   for (const name of ["test", "lint", "typecheck", "build"]) {
     const script = scripts[name]
@@ -364,12 +367,28 @@ const machineEvidence = (repository: Repository): MachineRecipe => {
     tool(manager, managerVersion, managerFile)
     r.packageManager = manager
     // Machine preparation must not add a generated lockfile to a TODO checkout.
+    // Modern Yarn has no lockless installation mode; an unknown version cannot
+    // safely select the Classic-only --no-lockfile option either.
+    if (manager === "yarn" && chosen.length === 0 && !managerVersion.startsWith("1.")) {
+      fail(
+        "yarn.lock",
+        "commit a lockfile before preparation; lockless installation requires a declared Yarn 1 version"
+      )
+    }
     const command = manager === "npm" && chosen.length > 0
       ? ["npm", "ci"]
       : [
         manager,
         "install",
-        ...(manager === "npm" ? ["--package-lock=false"] : chosen.length > 0 ? ["--frozen-lockfile"] : [])
+        ...(chosen.length > 0 ?
+          ["--frozen-lockfile"]
+          : manager === "npm" ?
+          ["--package-lock=false"]
+          : manager === "pnpm" ?
+          ["--lockfile=false"]
+          : manager === "yarn" ?
+          ["--no-lockfile"]
+          : ["--no-save"])
       ]
     const offline = manager === "pnpm" && chosen.length > 0
       ? ["pnpm", "install", "--offline", "--frozen-lockfile"]
