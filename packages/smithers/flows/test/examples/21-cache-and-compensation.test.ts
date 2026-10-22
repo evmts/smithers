@@ -213,3 +213,18 @@ it.effect("retains the original backup if both the swap and rollback fail", () =
     expect(readFileSync(join(f.root, retained[0]!, "backup", "state.txt"), "utf8"))
       .toBe("only surviving workspace data")
   }))
+
+it.effect("preserves the migrated schema when replaying the fixed execution", () =>
+  Effect.gen(function*() {
+    const filename = join(directory, "replay.sqlite")
+    const directories = {
+      workspace: join(directory, "replay-workspace"),
+      snapshots: join(directory, "replay-snapshots")
+    }
+    const first = yield* compensated(filename, directories)
+    const replay = yield* compensated(filename, directories)
+    expect(first.workspace).toBe("-- base\nALTER TABLE runs ADD COLUMN lane;\n")
+    expect(replay.result).toBe(first.result)
+    expect(replay.attempts).toEqual([])
+    expect(replay.workspace).toBe(first.workspace)
+  }))

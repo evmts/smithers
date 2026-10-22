@@ -4,6 +4,7 @@ import * as Control from "@smthrs/control/Control"
 import type * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Ref from "effect/Ref"
 import * as Fiber from "effect/Fiber"
 import { HttpServer } from "effect/http"
 import * as Layer from "effect/Layer"
@@ -231,3 +232,14 @@ it.live("awaits an active launch's finalizer before closing its services", () =>
       Effect.ensuring(Effect.suspend(() => launchFiber === undefined ? Effect.void : Fiber.interrupt(launchFiber)))
     )
   }))
+
+it.live("updates status after a background launch failure", () =>
+  Effect.scoped(Effect.gen(function*() {
+    const scope = yield* Effect.scope
+    const status = yield* Ref.make("running")
+    const pending = yield* startLaunch(scope, Effect.fail("launch failed"), Ref.set(status, "failed"))
+    yield* Deferred.succeed(pending.start, undefined)
+    const outcome = yield* Effect.exit(Fiber.join(pending.fiber))
+    expect(outcome._tag).toBe("Failure")
+    expect(yield* Ref.get(status)).toBe("failed")
+  })))

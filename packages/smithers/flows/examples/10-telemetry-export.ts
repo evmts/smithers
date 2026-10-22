@@ -26,7 +26,7 @@
  *    would read the attribute-less series and always see zero.
  *
  * `main` wraps the caller's `fetch` with a recorder so the summary can list
- * what the collector received; a production program provides
+ * what the collector acknowledged; a production program provides
  * `Otlp.layerFetch` exactly as written here and skips the recording.
  */
 import { EngineStoreMetrics } from "@smthrs/engine-store"
@@ -53,9 +53,9 @@ export const Ship = Flow.make("examples/Ship", {
 
 export interface Summary {
   readonly result: string
-  /** Distinct span names the collector received, sorted. */
+  /** Distinct span names the collector acknowledged, sorted. */
   readonly spanNames: ReadonlyArray<string>
-  /** Distinct metric series names the collector received, sorted. */
+  /** Distinct metric series names the collector acknowledged, sorted. */
   readonly metricNames: ReadonlyArray<string>
   /** The run's journal event types, in order, read without the collector. */
   readonly journalEventTypes: ReadonlyArray<string>
@@ -115,9 +115,10 @@ const metricNames = (recorded: ReadonlyArray<Recorded>): ReadonlyArray<string> =
 /**
  * Executes the flow with telemetry provided, then summarizes what exported.
  *
- * The default `fetchImpl` posts to a local collector; the test passes a stub
- * so the suite needs no network. Export flushes when the telemetry layer's
- * scope closes, so the summary is built after `Effect.scoped` completes.
+ * The default `fetchImpl` posts to a local collector; tests use a loopback
+ * collector. Only successful HTTP responses count as acknowledged exports.
+ * Export flushes when the telemetry layer's scope closes, so the summary is
+ * built after `Effect.scoped` completes.
  */
 export const main = (
   filename: string,
@@ -129,8 +130,11 @@ export const main = (
       input: Parameters<typeof globalThis.fetch>[0],
       init?: Parameters<typeof globalThis.fetch>[1]
     ) => {
-      recorded.push({ url: String(input), body: requestBody(init ?? undefined) })
-      return fetchImpl(input, init)
+      const request = { url: String(input), body: requestBody(init ?? undefined) }
+      return fetchImpl(input, init).then((response) => {
+        if (response.ok) recorded.push(request)
+        return response
+      })
     }) as typeof globalThis.fetch
 
     // The entire telemetry wiring: one layer against a collector endpoint.

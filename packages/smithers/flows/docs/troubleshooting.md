@@ -372,3 +372,13 @@ not, which is exactly why the native compositions live there.
 `@smthrs/flows` root over the browser or Cloudflare host instead. Durable
 execution is tested on Node.js 22.19+ and Bun 1.4+; `engines` requires Node
 `>=22.19.0`.
+
+## Example replay and transport failures
+
+Example 10 lists only exports acknowledged with a successful HTTP response;
+refused or failed requests do not establish collector receipt. Example 21 seeds
+`schema.sql` only when absent, preserving the applied migration when `migrate-1`
+is replayed. Example 24 mirrors engine status after a launched drive exits,
+including failure, without consuming the launch failure. Example 35 rejects
+listener startup failures; `startSharedTier` optionally accepts a port (zero by
+default) so an occupied address can be diagnosed by its original error.

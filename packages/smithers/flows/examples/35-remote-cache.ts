@@ -56,11 +56,12 @@ export const maxEntryBytes = 1024 * 1024
  * `PUT /ac/{key}` records one. `refusePut` makes every write answer 503, which
  * is how the third scenario reproduces an unreachable shared tier.
  *
+ * `port` defaults to an ephemeral listener; startup errors reject the promise.
  * A key that is not valid percent-encoding answers 400, and a body larger than
  * `maxEntryBytes` answers 413, so a malformed request cannot crash or exhaust
  * the process.
  */
-export const startSharedTier = (refusePut: boolean): Promise<SharedTier> => {
+export const startSharedTier = (refusePut: boolean, port = 0): Promise<SharedTier> => {
   const entries = new Map<string, string>()
   let reads = 0
   let writes = 0
@@ -113,8 +114,10 @@ export const startSharedTier = (refusePut: boolean): Promise<SharedTier> => {
     }
     response.writeHead(405).end()
   })
-  return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject)
+    server.listen(port, "127.0.0.1", () => {
+      server.removeListener("error", reject)
       const address = server.address()
       const port = typeof address === "object" && address !== null ? address.port : 0
       resolve({

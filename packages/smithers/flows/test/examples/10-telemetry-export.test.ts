@@ -9,15 +9,30 @@ const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
-/** An OTLP collector stand-in: accepts every export without a network. */
-const acceptingFetch = ((
-  _input: Parameters<typeof globalThis.fetch>[0],
-  _init?: Parameters<typeof globalThis.fetch>[1]
-) => Promise.resolve(new Response("{}", { status: 200 }))) as typeof globalThis.fetch
+/** A real collector bound to loopback for the lifetime of the test scope. */
+const collector = (status: number) => Effect.acquireRelease(
+  Effect.promise(async () => {
+    const { createServer } = await import("node:http")
+    const server = createServer((request, response) => {
+      request.resume()
+      response.writeHead(status).end("{}")
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const address = server.address() as import("node:net").AddressInfo
+    const forward = ((input: string | URL | Request, init?: RequestInit) =>
+      fetch(`http://127.0.0.1:${address.port}${new URL(String(input)).pathname}`, init)) as typeof fetch
+    return { server, forward }
+  }),
+  ({ server }) => Effect.promise(() => new Promise<void>((resolve) => {
+    server.closeAllConnections()
+    server.close(() => resolve())
+  }))
+)
 
-it.effect("exports granular spans and metrics from one added layer", () =>
+it.live("exports granular spans and metrics from one added layer", () =>
   Effect.gen(function*() {
-    const summary = yield* main(join(directory, "telemetry.sqlite"), acceptingFetch)
+    const { forward } = yield* collector(200)
+    const summary = yield* main(join(directory, "telemetry.sqlite"), forward)
 
     expect(summary.result).toBe("dist/server.tar")
 
@@ -41,4 +56,13 @@ it.effect("exports granular spans and metrics from one added layer", () =>
     // collector.
     expect(summary.journalEventTypes).toContain("flows.engine.attempt-finished")
     expect(summary.successfulDispatches).toBe(1)
+  }))
+
+it.live("does not report refused exports as received by the collector", () =>
+  Effect.gen(function*() {
+    const { forward } = yield* collector(400)
+    const summary = yield* main(join(directory, "refused.sqlite"), forward)
+    expect(summary.result).toBe("dist/server.tar")
+    expect(summary.spanNames).toEqual([])
+    expect(summary.metricNames).toEqual([])
   }))

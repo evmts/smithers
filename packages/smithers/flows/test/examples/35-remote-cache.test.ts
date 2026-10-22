@@ -53,3 +53,17 @@ it("answers 400 to a malformed key and 413 to an oversized entry without crashin
     await tier.close()
   }
 })
+
+it("rejects when the listener's port is already occupied", async () => {
+  const occupied = await startSharedTier(false)
+  try {
+    const port = Number(new URL(occupied.url).port)
+    const outcome = await startSharedTier(false, port).then(async (tier) => {
+      await tier.close()
+      return "started"
+    }, (error: NodeJS.ErrnoException) => error.code)
+    expect(outcome).toBe("EADDRINUSE")
+  } finally {
+    await occupied.close()
+  }
+})

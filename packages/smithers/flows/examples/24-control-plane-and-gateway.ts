@@ -120,12 +120,19 @@ const addressOf = (server: HttpServer.HttpServer["Service"]): string => {
   return `http://127.0.0.1:${address.port}`
 }
 
-/** Starts a launch behind the receipt latch in the executor's lifetime. */
-export const startLaunch = <A, E, R>(scope: Scope.Scope, effect: Effect.Effect<A, E, R>) =>
+/** Starts a launch behind the receipt latch and mirrors its status on every exit. */
+export const startLaunch = <A, E, R>(
+  scope: Scope.Scope,
+  effect: Effect.Effect<A, E, R>,
+  updateStatus: Effect.Effect<unknown, never, R> = Effect.void
+) =>
   Effect.gen(function*() {
     const start = yield* Deferred.make<void>()
     // forkIn registers interrupt-and-await cleanup before returning the fiber.
-    const fiber = yield* Effect.forkIn(Deferred.await(start).pipe(Effect.andThen(effect)), scope)
+    const fiber = yield* Effect.forkIn(
+      Deferred.await(start).pipe(Effect.andThen(effect.pipe(Effect.ensuring(updateStatus)))),
+      scope
+    )
     return { start, fiber }
   })
 
@@ -292,10 +299,10 @@ export const main = (root: string): Effect.Effect<Summary> =>
               const { start, fiber } = yield* startLaunch(
                 scope,
                 launch(executable, plan.decodedInput as Schema.Json, run.runId).pipe(
-                  Effect.andThen(mirror(run.runId)),
                   // Do not inherit the RPC's transaction or request scope.
                   Effect.setContext(services)
-                )
+                ),
+                mirror(run.runId).pipe(Effect.setContext(services))
               )
               driving.push({ runId: run.runId, start, fiber })
               return "accepted" as const

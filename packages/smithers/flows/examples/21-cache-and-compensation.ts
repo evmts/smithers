@@ -318,7 +318,8 @@ export const compensated = (
     yield* Effect.sync(() => {
       mkdirSync(directories.workspace, { recursive: true })
       mkdirSync(directories.snapshots, { recursive: true })
-      writeFileSync(ledger, "-- base\n")
+      // A replay reuses migrate-1: it must preserve the already-applied schema.
+      if (!existsSync(ledger)) writeFileSync(ledger, "-- base\n", { flag: "wx" })
     })
 
     /**
