@@ -37,6 +37,11 @@ run should proceed by calling `ctx.done(output)` to finish,
 `ctx.park(reason, message)` to wait durably, or neither, which continues to the
 next turn.
 
+Completion and parking seal flow dispatch even when triggered by an input or
+option accessor during `ctx.call`. The realm memory probe counts sparse array
+holes and accessor slots against its traversal budget without invoking getters;
+an incomplete reading refuses the next frame through the existing limit report.
+
 One frame of the loop is:
 
 ```text

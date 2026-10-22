@@ -170,15 +170,20 @@ const preludeCall = (guard: string): string =>
 ${guard}      var encoded = encode("ctx.call input", input === undefined ? null : input)
       var declared = declaredCheck(flow, input)
       var at = options === null || typeof options !== "object" ? undefined : options.at
-      if (at === undefined) return dispatch(flow, encoded, "", declared)
+      // Encoding input and reading options can execute cell accessors. Recheck
+      // the seal at the dispatch boundary after those accessors have returned.
+      var send = function (encodedAt) {
+${guard}        return dispatch(flow, encoded, encodedAt, declared)
+      }
+      if (at === undefined) return send("")
       // A handle the cell never awaited is a promise, and that spelling is the
       // one the ruling wrote: \`const cp = ctx.checkpoint()\`. The pin lands where
       // that line is, because the queue settles in issue order, so awaiting the
       // handle later cannot move the tree it names. Both spellings are accepted.
       if (at !== null && typeof at === "object" && typeof at.then === "function") {
-        return at.then(function (resolved) { return dispatch(flow, encoded, encodeAt(resolved), declared) })
+        return at.then(function (resolved) { return send(encodeAt(resolved)) })
       }
-      return dispatch(flow, encoded, encodeAt(at), declared)
+      return send(encodeAt(at))
     },
     checkpoint: function () {
 ${guard}      return pin().then(settleEnvelope)
@@ -703,8 +708,9 @@ const panelProbe = (baseline: string): string =>
         var count = value.length
         for (var item = 0; item < count && !partial; item++) {
           var property = descriptorOf(value, String(item))
-          if (property === undefined || !("value" in property)) sum = sum + 8
-          else sum = sum + weigh(property.value, depth + 1)
+          // Holes and accessors consume a node just like a data slot. Never
+          // invoke an accessor merely to account for its traversal cost.
+          sum = sum + weigh(property !== undefined && "value" in property ? property.value : undefined, depth + 1)
         }
         path.pop()
         return sum

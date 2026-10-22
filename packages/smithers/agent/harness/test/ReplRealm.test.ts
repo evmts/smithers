@@ -62,6 +62,33 @@ const session = (
     return frames
   }).pipe(Effect.scoped, Effect.runPromise)
 
+describe("sandbox boundary regressions", () => {
+  it("does not dispatch when an input getter completes the run", async () => {
+    const calls: Array<string> = []
+    const frames = await session([
+      `await ctx.call("echo", { get answer() { ctx.done("finished"); return 1 } })`
+    ], {
+      call: (invocation) => {
+        calls.push(invocation.flow)
+        return succeeds(invocation)
+      }
+    })
+    expect(frames[0]!.outcome).toMatchObject({
+      _tag: "settled",
+      transition: { _tag: "complete", output: "finished" }
+    })
+    expect(calls).toEqual([])
+  })
+
+  it("bounds sparse array traversal by the probe node budget", async () => {
+    const frames = await session([
+      `var sparse = new Array(200001)`,
+      `ctx.done("must be refused")`
+    ], { limits: { timeMs: 10000, steps: Number.MAX_SAFE_INTEGER } })
+    expect(frames[1]!.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+  })
+})
+
 describe("the declared verification", () => {
   // Rule 7 has a run keep its check as `verification = { flow, input }` and
   // reuse it unchanged. A call made with that very input is the run's check;
