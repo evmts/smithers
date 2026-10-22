@@ -694,3 +694,9 @@ its own, and it is a different thing. That one adapts the same engine to
 `EngineSubject` (`run` / `result` / `interrupt` / `resume` / `journal`), the
 conformance contract that library checks engine implementations against. The
 two share a backing engine and nothing else.
+
+Host `maxQuotaParks` must be a non-negative safe integer; invalid bounds fail
+when the host is constructed. Budget attribution retains the declared purpose
+when reading shares do not sum to the recorded token and USD charge. Recovery
+fails closed when duplicate step records disagree on tokens or USD, including
+missing versus known USD charges.

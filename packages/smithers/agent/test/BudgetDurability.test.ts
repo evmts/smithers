@@ -454,6 +454,32 @@ describe("budget usage durability", () => {
     ))
   })
 
+  it.each([[0.1, 0.2], [undefined, 0.2], [0.2, undefined]])(
+    "refuses duplicate step USD charges %s and %s",
+    async (first, second) => {
+      await run(inRun(
+        "usd-conflict",
+        Effect.gen(function*() {
+          const journal = yield* Journal.Journal
+          for (const [index, costUsd] of [first, second].entries()) {
+            yield* journal.emitDurableUnfenced(
+              new JournalEvent.Input({
+                runId: JournalEvent.RunId.make("usd-conflict"),
+                sourceId: JournalEvent.SourceId.make(`charge-${index}`),
+                eventType: Budget.usageEvent,
+                payload: { stepKey: "paid", spent: 100, ...(costUsd === undefined ? {} : { costUsd }) }
+              })
+            )
+          }
+          const budget = yield* Budget.make({})
+          const exit = yield* budget.check("next").pipe(Effect.exit)
+          expect(exit._tag).toBe("Failure")
+          expect(JSON.stringify(exit)).toContain("its usage records disagree about one model step")
+        })
+      ))
+    }
+  )
+
   it("refuses a recovered ledger with conflicting records for one model step", async () => {
     await run(inRun(
       "conflicting-ledger",

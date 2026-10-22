@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ImportRules,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode
+} from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 
@@ -48,6 +53,17 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/
  * `vitest.faults.config.ts`.
  */
 const faults = Smithers.FaultSuite({ cwd: "packages/smithers/agent" })
+
+/** Quota and accounting regressions wait on conditions or Effect TestClock. */
+const importRules = ImportRules({
+  cwd: "packages/smithers/agent",
+  rules: [{
+    kind: "forbidCalls",
+    files: ["test/AgentAction.test.ts", "test/Budget.test.ts", "test/BudgetDurability.test.ts"],
+    callees: ["setTimeout", "*.waitForTimeout"],
+    because: "test.behavioral: wait on a condition or TestClock, never a fixed sleep."
+  }]
+})
 
 /**
  * Security review: `security` reviews the diff against origin/main and
@@ -278,6 +294,7 @@ export const Package = Smithers.Package({
     docsFiles,
     faults,
     fmt,
+    importRules,
     lib,
     lint,
     reviewDocsAgainstCode,

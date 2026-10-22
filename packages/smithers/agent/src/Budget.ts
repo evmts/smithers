@@ -738,7 +738,8 @@ const attributed = (
   label: EngineLike.Spend | undefined,
   usage: ModelEvent.Usage,
   modelId: string | undefined,
-  share: (usage: ModelEvent.Usage) => Charge
+  share: (usage: ModelEvent.Usage) => Charge,
+  total: Charge
 ): Pick<typeof UsageRecord.Type, "purpose" | "frame" | "parts"> => {
   if (label === undefined) return {}
   const declared = { purpose: label.purpose as string, frame: label.frame }
@@ -755,10 +756,22 @@ const attributed = (
   const adds = (counter: "inputTokens" | "outputTokens"): boolean =>
     purposes.reduce((sum, [, held]) => sum + held[counter], 0) === usage[counter]
   if (purposes.length === 0 || !adds("inputTokens") || !adds("outputTokens")) return declared
+  const parts = purposes.map(([purpose, held]) => ({ purpose, ...share(held) }))
+  // Input/output counts alone do not determine a charge: reported totals,
+  // cache counters and reported USD can all change it. Refuse a misleading
+  // split and keep the declared purpose when those details are unavailable.
+  const usd = parts.reduce((sum, part) => sum + (part.costUsd ?? 0), 0)
+  if (
+    parts.reduce((sum, part) => sum + part.spent, 0) !== total.spent ||
+    (total.costUsd === undefined
+      ? parts.some((part) => part.costUsd !== undefined)
+      : parts.some((part) => part.costUsd === undefined) ||
+        Math.abs(usd - total.costUsd) > Number.EPSILON * Math.max(usd, total.costUsd) * parts.length)
+  ) return declared
   const [sole] = purposes
   return purposes.length === 1
     ? { ...declared, purpose: sole![0] }
-    : { ...declared, parts: purposes.map(([purpose, held]) => ({ purpose, ...share(held) })) }
+    : { ...declared, parts }
 }
 
 /**
@@ -1126,7 +1139,7 @@ const recoverUsage = (
             Effect.mapError(() => undecodable(entry, "usage"))
           )
           const previous = recovered.get(payload.stepKey)
-          if (previous !== undefined && previous.spent !== payload.spent) {
+          if (previous !== undefined && (previous.spent !== payload.spent || previous.costUsd !== payload.costUsd)) {
             return yield* Effect.fail(unavailable("recover", runId, "its usage records disagree about one model step"))
           }
           if (previous === undefined) {
@@ -1826,7 +1839,7 @@ export const make = (
             const charge: Charge = { spent, ...(priced === undefined ? {} : { costUsd: priced.costUsd }) }
             // What the controller said this call was for, read where the call
             // is made. It labels the record and decides nothing.
-            const labelled = attributed(yield* EngineLike.Spend, usage, modelId, charged)
+            const labelled = attributed(yield* EngineLike.Spend, usage, modelId, charged, charge)
             // A malformed cost must not poison the numeric accumulator. Keep the
             // ledger unavailable until that step supplies a valid record.
             const payload = yield* Schema.encodeEffect(UsageRecord)({ stepKey, spent, ...priced, ...labelled }).pipe(

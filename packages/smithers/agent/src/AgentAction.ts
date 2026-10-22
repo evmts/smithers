@@ -167,7 +167,7 @@ export interface Host {
   readonly modelRetryPolicy?: Schedule.Schedule<unknown, Model.ModelFailure> | undefined
   /**
    * How many times one ask may park on a quota refusal before the refusal is
-   * reported.
+   * reported. Must be a non-negative safe integer.
    *
    * Defaults to {@link module:QuotaPolicy.defaultMaxParks}. The bound is per
    * ask: a step that parks, answers, and is then corrected starts its next ask
@@ -207,7 +207,7 @@ export const Host: Context.Service<Host, Host> = Context.Service(
  * cheapest place to say so is where the number was written.
  *
  * @throws {InvalidCorrectionBudget} When `defaultCorrections` is not a non-negative safe integer.
- * @throws {TypeError} When `claimCap` is not a non-negative safe integer.
+ * @throws {TypeError} When `claimCap` or `maxQuotaParks` is not a non-negative safe integer.
  * @category constructors
  * @since 0.1.0
  */
@@ -216,6 +216,9 @@ export const makeHost = (host: Host): Host => {
     checkCorrections(host.defaultCorrections, "AgentAction.Host defaultCorrections")
   }
   if (host.claimCap !== undefined) checkClaimCap(host.claimCap, "AgentAction.Host claimCap")
+  if (host.maxQuotaParks !== undefined && (!Number.isSafeInteger(host.maxQuotaParks) || host.maxQuotaParks < 0)) {
+    throw new TypeError("AgentAction.Host maxQuotaParks must be a non-negative safe integer")
+  }
   return Host.of(host)
 }
 

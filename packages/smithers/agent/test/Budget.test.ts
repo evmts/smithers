@@ -366,6 +366,29 @@ describe("what a spend was for", () => {
     ))
   })
 
+  it.each([
+    { inputTokens: 10, outputTokens: 10, totalTokens: 100 },
+    { inputTokens: 10, outputTokens: 10, costUsd: 1 },
+    { inputTokens: 10, outputTokens: 10, cachedInputTokens: 10 }
+  ])("keeps the declared purpose when reading charges disagree with %j", async (usage) => {
+    await journaled(inRun(
+      "split-mismatch",
+      Effect.gen(function*() {
+        const budget = yield* Budget.make({ prices: { [jev]: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 } } })
+        yield* budget.record("paid", usage, jev).pipe(as({
+          purpose: "judge",
+          frame: 1,
+          readings: () => [
+            { purpose: "judge", modelId: jev, usage: { inputTokens: 5, outputTokens: 5 } },
+            { purpose: "marks", modelId: jev, usage: { inputTokens: 5, outputTokens: 5 } }
+          ]
+        }))
+        expect((yield* payloads("split-mismatch"))[0]).toMatchObject({ purpose: "judge", frame: 1 })
+        expect((yield* payloads("split-mismatch"))[0]).not.toHaveProperty("parts")
+      })
+    ))
+  })
+
   it("splits one charge among the purposes of the readings it covers, and the parts add up to it", async () => {
     await journaled(inRun(
       "split",

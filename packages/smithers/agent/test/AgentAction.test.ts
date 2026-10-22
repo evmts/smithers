@@ -671,6 +671,18 @@ describe("AgentAction completion claim brake", () => {
     for (const claimCap of [Number.NaN, 1.5, -1]) expect(() => answerer("BadCap", claimCap)).toThrow()
   })
 
+  it.each([NaN, Infinity, -Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid maxQuotaParks %s before a host can retry quota refusals",
+    (maxQuotaParks) => {
+      expect(() => AgentAction.makeHost({ ...host, maxQuotaParks })).toThrow(TypeError)
+      expect(() => AgentAction.layerHost({ ...host, maxQuotaParks })).toThrow(TypeError)
+    }
+  )
+
+  it.each([0, 1, Number.MAX_SAFE_INTEGER])("accepts bounded maxQuotaParks %s", (maxQuotaParks) => {
+    expect(AgentAction.makeHost({ ...host, maxQuotaParks }).maxQuotaParks).toBe(maxQuotaParks)
+  })
+
   it("rejects a bad claim cap given to implement or to the host, not only to make", () => {
     const declared = Action.make("agent/test/ImplementedBadCap", {
       payload: { diff: Schema.String },
