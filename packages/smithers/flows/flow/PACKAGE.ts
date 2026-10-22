@@ -6,7 +6,7 @@
  * `BuildAndCheckTypeScriptPackage({ cwd: "packages/smithers/flows/flow", deps: [plan, crypto, keys, canonical, capability] })`
  * emits; the file exists to show the expansion, not to diverge from it.
  */
-import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode, ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
+import { ImportRules, ReviewDocsAgainstCode, ReviewJsdocAgainstCode, ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 import { Package as canonicalPackage } from "../canonical/PACKAGE.ts"
@@ -25,6 +25,16 @@ const cwd = "packages/smithers/flows/flow"
 const sources = Smithers.glob("src/**/*.ts")
 const tests = Smithers.glob("test/**/*.test.ts")
 const examples = Smithers.glob("examples/**/*.ts")
+
+const importRules = ImportRules({
+  cwd,
+  rules: [{
+    kind: "rootImportsOnly",
+    files: ["src/Graph.ts"],
+    packages: ["@smthrs/*"],
+    because: "SDK-5: Graph consumes Smithers libraries through their public root entries."
+  }]
+})
 
 const lib = Smithers.TsBuild({
   srcs: [sources],
@@ -292,6 +302,7 @@ const securityReview = Smithers.SecurityReview({
 
 export const Package = Smithers.Package({
   targets: {
+    importRules,
     bunTest,
     check,
     circular,

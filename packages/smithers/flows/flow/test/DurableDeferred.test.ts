@@ -116,6 +116,15 @@ describe("DurableDeferred", () => {
       expect(failure.message).not.toContain(malformed)
     }).pipe(Effect.provide(layerWired(Layer.empty))))
 
+  effect("malformed token diagnostics escape control characters", () =>
+    Effect.gen(function*() {
+      for (const token of ["bad\n\r\t\u001b\u0000\u0085", "*".repeat(70) + "\n"]) {
+        const failure = yield* DurableDeferred.TokenParsed.parse(token).pipe(Effect.flip)
+        expect(failure.message).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/)
+        expect(failure.message.length).toBeLessThan(1024)
+      }
+    }))
+
   effect("completion tokens are bound to the deferred they name", () => {
     const A = DurableDeferred.make("DurableDeferred/Bound/A", {
       success: Schema.String,

@@ -469,7 +469,9 @@ export class TokenParsed extends Schema.Class<TokenParsed>(
       Schema.decodeEffect(TokenParsed.FromString)(token),
       (issue) =>
         new TokenInvalid({
-          message: `The supplied token "${tokenExcerpt(token)}" is not a durable deferred token: ${issue.message}`
+          message: `The supplied token "${tokenExcerpt(token)}" is not a durable deferred token: ${
+            tokenExcerpt(issue.message, 512)
+          }`
         })
     )
 }
@@ -477,10 +479,15 @@ export class TokenParsed extends Schema.Class<TokenParsed>(
 const maxTokenExcerptChars = 64
 
 /** Renders a bounded excerpt of untrusted token content for a diagnostic. */
-const tokenExcerpt = (token: string): string =>
-  token.length <= maxTokenExcerptChars
+const tokenExcerpt = (token: string, maxChars = maxTokenExcerptChars): string => {
+  const bounded = token.length <= maxChars
     ? token
-    : `${token.slice(0, maxTokenExcerptChars)} [${token.length - maxTokenExcerptChars} characters dropped]`
+    : `${token.slice(0, maxChars)} [${token.length - maxChars} characters dropped]`
+  return JSON.stringify(bounded).slice(1, -1).replace(
+    /[\u007f-\u009f]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`
+  )
+}
 
 /**
  * Creates a token for a durable deferred using the current flow instance's

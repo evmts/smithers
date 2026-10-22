@@ -529,14 +529,13 @@ const makeWorkerEffect = Effect.fnUntraced(
         }
       )
     }).pipe(
-      // A take whose store is unavailable would otherwise consume a core in a tight loop. The item itself is
-      // redelivered by the persisted queue's own attempt-counted schedule.
-      Effect.catchCause((cause) =>
-        Effect.logWarning("DurableQueue worker failed; retrying").pipe(
-          Effect.annotateLogs({ interrupted: Cause.hasInterrupts(cause) }),
-          Effect.andThen(Effect.sleep(500))
+      // Store failures terminate this worker; its host owns recovery. Item completion retries belong to the engine.
+      Effect.tapCause((cause) =>
+        Effect.logWarning("DurableQueue worker stopped after a take failure").pipe(
+          Effect.annotateLogs({ interrupted: Cause.hasInterrupts(cause) })
         )
       ),
+      Effect.orDie,
       Effect.forever,
       Effect.annotateLogs({
         package: "@smthrs/flow",
@@ -569,6 +568,7 @@ const makeWorkerEffect = Effect.fnUntraced(
 /**
  * Create a worker effect that processes items from the durable queue.
  *
+ * A store take failure terminates the worker as a defect for its host to recover.
  * Each item runs as a durable execution named by its completion address: the
  * handler's exit is recorded as a step, then recorded against the caller's
  * deferred as a second step that the engine retries without a limit. A failure

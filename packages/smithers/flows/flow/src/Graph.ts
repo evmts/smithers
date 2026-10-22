@@ -55,13 +55,9 @@
  * @since 0.1.0
  */
 
-import * as Capability from "@smthrs/capability/Capability"
-import * as Effects from "@smthrs/plan/Effects"
-import { GraphBuildError, isFatalDiagnostic } from "@smthrs/plan/GraphBuildError"
-import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
-import * as Node from "@smthrs/plan/Node"
-import type * as Plan from "@smthrs/plan/Plan"
-import * as Planned from "@smthrs/plan/Planned"
+import { Capability } from "@smthrs/capability"
+import { Effects, GraphBuildError as GraphErrors, KeyMaterial, Node, type Plan, Planned } from "@smthrs/plan"
+
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import * as Predicate from "effect/Predicate"
@@ -74,6 +70,9 @@ import type * as Flow from "./Flow/Flow.ts"
 import { TypeId as FlowTypeId } from "./Flow/TypeId.ts"
 import * as DeclarationSite from "./internal/DeclarationSite.ts"
 import { OutcomeNodeTypeId, OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
+
+const { GraphBuildError, isFatalDiagnostic } = GraphErrors
+type GraphBuildError = GraphErrors.GraphBuildError
 
 type OutcomeTag = "Done" | "To" | "Park"
 
@@ -1921,10 +1920,10 @@ export const drafts = (graph: Graph): ReadonlyArray<Plan.NodeDraft> => {
 }
 
 /**
- * Recoverable topology issues recorded during the build, such as a missing
- * continuation builder or a continuation that did not produce a node. Fatal
- * refusals, including computing on a planned value and recursive inline
- * `.call()`, throw from {@link build} and never appear here.
+ * Topology issues recorded during the build, including a missing continuation
+ * builder or a continuation that did not produce a node. Fatal diagnostics remain inspectable
+ * in this collection, but refuse draft access. Refusals thrown while expanding,
+ * such as computing on a planned value or recursive inline `.call()`, propagate from {@link build}.
  *
  * @since 0.1.0
  * @category accessors

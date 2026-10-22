@@ -188,7 +188,7 @@ describe("DurableQueue", () => {
         { startImmediately: true }
       )
       yield* queue.offer({
-        token: "*".repeat(100) as DurableDeferred.Token,
+        token: ("\n\r\t\u001b\u0085" + "*".repeat(100)) as DurableDeferred.Token,
         payload: { id: "bad", value: 1 },
         traceId: "0".repeat(32),
         spanId: "0".repeat(16),
@@ -221,6 +221,7 @@ describe("DurableQueue", () => {
       expect(reported?.message).toContain(WorkerQueue.name)
       expect(reported?.message).toContain("64")
       expect(reported?.message).toContain("characters dropped")
+      expect(reported?.message).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/)
     }).pipe(
       Effect.provide(Logger.layer([capture])),
       Effect.provide(layerMemory),
@@ -381,37 +382,32 @@ describe("DurableQueue", () => {
     )
   })
 
-  effect("backs off before retrying a persistently failing take", () => {
-    const logs: Array<{ readonly level: string; readonly message: string }> = []
-    const capture = Logger.make((entry) => {
-      logs.push({ level: entry.logLevel, message: String(entry.message) })
-    })
+  effect("a failed take terminates the worker without an in-memory retry", () => {
+    let takes = 0
     const store = PersistedQueue.PersistedQueueStore.of({
       cleanup: () => Effect.void,
       offer: () => Effect.void,
-      take: () => Effect.fail(new PersistedQueue.PersistedQueueError({ message: "take unavailable" }))
+      take: () =>
+        Effect.suspend(() => {
+          takes++
+          return Effect.fail(new PersistedQueue.PersistedQueueError({ message: "take unavailable" }))
+        })
     })
-    const failingQueueLayer = PersistedQueue.layer.pipe(
-      Layer.provide(Layer.succeed(PersistedQueue.PersistedQueueStore)(store))
-    )
-
     return Effect.gen(function*() {
-      yield* Effect.forkChild(
-        DurableQueue.makeWorker(Queue, () => Effect.succeed(0)),
+      const fiber = yield* Effect.forkChild(
+        DurableQueue.makeWorker(Queue, () => Effect.succeed(0)).pipe(Effect.exit),
         { startImmediately: true }
       )
-      for (let turn = 0; turn < 50 && logs.length === 0; turn++) yield* Effect.yieldNow
-      expect(logs.filter((entry) => entry.level === "Warn")).toHaveLength(1)
-
-      yield* TestClock.adjust("499 millis")
-      expect(logs.filter((entry) => entry.level === "Warn")).toHaveLength(1)
-      yield* TestClock.adjust("1 milli")
-      for (let turn = 0; turn < 50 && logs.length === 1; turn++) yield* Effect.yieldNow
-      expect(logs.filter((entry) => entry.level === "Warn")).toHaveLength(2)
+      for (let turn = 0; turn < 100 && fiber.pollUnsafe() === undefined; turn++) yield* Effect.yieldNow
+      expect(fiber.pollUnsafe()).toBeDefined()
+      const exit = yield* Fiber.join(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(takes).toBe(1)
     }).pipe(
-      Effect.provide(Logger.layer([capture])),
       Effect.provide(layerMemory),
-      Effect.provide(failingQueueLayer)
+      Effect.provide(PersistedQueue.layer.pipe(
+        Layer.provide(Layer.succeed(PersistedQueue.PersistedQueueStore)(store))
+      ))
     )
   })
 
