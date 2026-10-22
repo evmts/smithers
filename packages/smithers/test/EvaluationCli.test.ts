@@ -141,6 +141,8 @@ describe("evaluation CLI", () => {
       [
         `import * as Effect from "${effectPath}"`,
         `import * as CaseExecutor from "${base}/packages/smithers/agent/evals/src/CaseExecutor.ts"`,
+        `import { writeFileSync } from "node:fs"`,
+        `writeFileSync(${JSON.stringify(join(root, "imported"))}, "imported")`,
         "export const suite = { name: 'collision', concurrency: 1, cases: [{ name: 'one', input: 1 }], bindings: [] }",
         "export const executor = CaseExecutor.make(() => Effect.succeed({ output: 1, stepKey: 'step', latencyMs: 0, target: { name: 'target' } }))"
       ].join("\n")
@@ -155,6 +157,7 @@ describe("evaluation CLI", () => {
       code: "eval_run_exists",
       message: `${file} already exists; pass another --${collision} or remove it`
     })
+    if (collision === "run-id") expect(await readdir(root)).not.toContain("imported")
     expect(refused.output).not.toContain("Not your fault")
     expect(await readFile(file, "utf8")).toBe("original")
     // A blocked parent is an unexpected write failure, not an existing destination.
@@ -208,6 +211,21 @@ describe("evaluation CLI", () => {
     const refusal = await serve(root, ["baseline", bad.runId])
     expect(refusal.code).toBe(1)
     expect((await serve(root, ["compare", good.runId])).code).toBe(0)
+  })
+
+  it("roundtrips a .json run identity even when a root JSON file has the same name", async () => {
+    const root = await fixture()
+    const run = { ...await result(1), runId: "accepted.json" }
+    await Evaluation.writeJson(Evaluation.runPath(root, run.runId), JSON.stringify(run))
+    expect(await Evaluation.readRun(root, run.runId)).toEqual(run)
+    const other = await result(0)
+    await writeFile(join(root, run.runId), JSON.stringify(other))
+    expect(await Evaluation.readRun(root, run.runId)).toEqual(run)
+    expect(await Evaluation.readRun(root, `./${run.runId}`)).toEqual(other)
+    await writeFile(join(root, "saved run.json"), JSON.stringify(other))
+    expect(await Evaluation.readRun(root, "saved run.json")).toEqual(other)
+    expect((await serve(root, ["baseline", run.runId])).code).toBe(0)
+    expect((await serve(root, ["compare", run.runId])).code).toBe(0)
   })
 
   it("does not turn missing observations or failed cases into a passing baseline", async () => {

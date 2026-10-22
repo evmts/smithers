@@ -157,3 +157,11 @@ verbatim `--help` text, is on smithers.sh under `/cli/<verb>`: for example
 executable runs, so they describe the binary you installed.
 
 See [the CLI reference index](../reference/cli/README.md).
+
+## Evaluation identities
+
+`eval run --run-id` refuses an existing saved identity before importing its suite.
+Publication also refuses replacement if another writer creates the artifact during execution.
+`eval baseline` and `eval compare` resolve bare selectors as saved identities first,
+including IDs ending in `.json`. A bare JSON filename remains valid when no saved
+identity matches; use `./file.json` to select a project file explicitly.

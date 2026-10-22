@@ -7,6 +7,7 @@
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
 import { Cli, z } from "incur"
 import { randomUUID } from "node:crypto"
+import { lstat } from "node:fs/promises"
 import { resolve } from "node:path"
 import * as Presentation from "../cli/Presentation.ts"
 import * as CliError from "../CliError.ts"
@@ -21,17 +22,20 @@ const localOptions = {
 const runArgument = z.object({ run: z.string().describe("Evaluation run ID or saved run JSON file") })
 const next = [{ command: "eval compare --help", description: "Compare results with a baseline" }]
 
+const runExists = (file: string, option: string) =>
+  new CliError.Refused({
+    fault: "user",
+    code: "eval_run_exists",
+    message: `${file} already exists; pass another --${option} or remove it`
+  })
+
 const writeRunJson = async (file: string, source: string, option: string, signal?: AbortSignal) => {
   try {
     await Evaluation.writeJson(file, source, false, signal)
   } catch (cause) {
     const error = cause as NodeJS.ErrnoException | undefined
     if (error?.code === "EEXIST" && error.syscall === "link") {
-      throw new CliError.Refused({
-        fault: "user",
-        code: "eval_run_exists",
-        message: `${file} already exists; pass another --${option} or remove it`
-      })
+      throw runExists(file, option)
     }
     throw cause
   }
@@ -76,6 +80,13 @@ export const createEvalCli = (runtime: RuntimeConfig = {}) =>
           const root = Project.localRoot(context.options, runtime.environment ?? process.env)
           const runId = context.options.runId ?? randomUUID()
           file = Evaluation.runPath(root, runId)
+          // Refuse an occupied identity before importing or executing project code.
+          // Publication still uses link's atomic no-replace check for racing writers.
+          const existing = await lstat(file).catch((cause: NodeJS.ErrnoException) => {
+            if (cause.code !== "ENOENT") throw cause
+            return undefined
+          })
+          if (existing !== undefined) throw runExists(file, "run-id")
           const loaded = await Evaluation.load(root, context.args.suite, runtime)
           result = await Evaluation.execute(loaded.suite, loaded.executor, {
             root,

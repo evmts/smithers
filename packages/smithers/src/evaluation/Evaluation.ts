@@ -382,12 +382,18 @@ export const execute = async (
  * @since 1.0.0
  */
 export const readRun = async (root: string, selector: string): Promise<RunArtifact> => {
-  const file = isAbsolute(selector) || selector.includes("/") || selector.endsWith(".json")
-    ? resolve(root, selector)
-    : runPath(root, selector)
+  const explicitPath = isAbsolute(selector) || selector.includes("/") ||
+    (selector.endsWith(".json") && !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(selector))
+  let file = explicitPath ? resolve(root, selector) : runPath(root, selector)
   let source: string
   try {
-    source = await readFile(file, "utf8")
+    // Bare selectors are identities first, including IDs ending in .json.
+    // Preserve JSON filename shorthand when no canonical identity exists.
+    source = await readFile(file, "utf8").catch(async (cause: NodeJS.ErrnoException) => {
+      if (explicitPath || !selector.endsWith(".json") || cause.code !== "ENOENT") throw cause
+      file = resolve(root, selector)
+      return readFile(file, "utf8")
+    })
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause
     throw new CliError.Refused({
