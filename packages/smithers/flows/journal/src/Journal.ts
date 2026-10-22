@@ -505,9 +505,38 @@ export interface Service {
    * follows before anything outside the run depends on them, such as a
    * scheduler's records before the attempt that acts on them.
    *
+   * An entry the journal knows is committed with the same content (see
+   * `recorded`) is dropped rather than queued: the write would only collide
+   * with it. A resumed walk re-emits every record it already wrote, so this
+   * keeps a replay from writing at all.
+   *
    * Optional: a journal without it is used through `emitDurable`.
    */
   readonly emitDeferred?: ((input: Input, owner: OwnerId) => Effect.Effect<void, JournalError>) | undefined
+  /**
+   * Reads the run's committed entries, its latest ones up to what this
+   * journal keeps in memory, so that a re-emission of one is answered without
+   * a write: `emitDeferred` drops an identical one, and `recorded` reports
+   * it. A resumed run calls it once before it replays.
+   *
+   * Optional: a journal without it answers every re-emission with a write.
+   */
+  readonly recall?: ((runId: RunId) => Effect.Effect<void, JournalError>) | undefined
+  /**
+   * Whether this journal knows `input` is committed: an entry with its
+   * producer identity (`sourceId` and `sourceSeq`) and its content, from its
+   * own commits, its startup read or `recall`. It reads nothing. `false` means
+   * not known, never absent: an entry with no `sourceSeq` is a new entry every
+   * time, and an input the journal refuses is reported by its emit.
+   *
+   * A caller that knows an entry is committed may skip re-emitting it. The
+   * skip is not a fenced write: the owner that skips learns of a lost run from
+   * its next write, so skip only an emit whose caller then does nothing the
+   * fence guards, such as a replay answered from a recorded attempt.
+   *
+   * Optional: a journal without it knows nothing.
+   */
+  readonly recorded?: ((input: Input) => Effect.Effect<boolean>) | undefined
   /**
    * Runs `effect`, a state projection plus the `emitDurable` calls describing
    * it, inside ONE write transaction.

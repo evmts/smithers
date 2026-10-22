@@ -55,6 +55,8 @@ Fallible journal operations use `JournalError` with a stable `code`.
 | `emitDurable`         | `(input: Input, owner: OwnerId) => Effect<DurableReceipt, JournalError>`                           | allocates and commits inside the write transaction, fenced on `owner`                                                                                                       |
 | `emitDurableUnfenced` | `(input: Input) => Effect<DurableReceipt, JournalError>`                                           | the same commit with no fence, for a genuinely ownerless admission                                                                                                          |
 | `emitDeferred?`       | `(input: Input, owner: OwnerId) => Effect<void, JournalError>`                                     | queues a fenced entry to commit with its run's next durable write                                                                                                           |
+| `recall?`             | `(runId: RunId) => Effect<void, JournalError>`                                                     | reads the run's latest committed entries into memory in one read, so their re-emissions are answered without a write                                                        |
+| `recorded?`           | `(input: Input) => Effect<boolean>`                                                                | whether the journal knows `input` is committed, by identity and content, without a read; `false` means not known                                                            |
 | `transact`            | `<A, E, R>(effect: Effect<A, E, R>, options?: WriteOptions) => Effect<A, E \| JournalError, R>`    | runs a state projection and its `emitDurable` calls in one transaction; `options.partition` names the run it writes                                                         |
 | `whenCommitted`       | `(update: Effect<void>) => Effect<boolean>`                                                        | accepts a short, non-failing update after managed commit, or runs it immediately outside a transaction; returns `false` without publishing when commit ownership is unknown |
 | `stream`              | `(options: StreamOptions) => Stream<Entry, JournalError>`                                          | durable history, then committed changes; never completes                                                                                                                    |
@@ -81,6 +83,23 @@ the run meanwhile loses what it queued and learns so from its own next fenced
 write. The flow engine queues its node records this way, so a drive writes a
 handful of transactions instead of one per record. Optional on the service: a
 journal without it is used through `emitDurable`.
+
+An entry the journal knows is committed with the same content is dropped
+rather than queued. The journal knows what it committed itself, what its
+startup read retained (the latest `sourceEventCache` entries), and what
+`recall(runId)` read: the run's latest committed entries, in one statement. A
+resumed run recalls its journal once and then re-emits every node record its
+first walk wrote; none of them reaches the database.
+
+`recorded(input)` answers the same question for a caller that would emit
+durably: `true` when an entry with the producer identity (`sourceId` and
+`sourceSeq`) and content of `input` is committed. It reads nothing, and `false`
+means not known, never absent: an entry without a `sourceSeq` is new every
+time, and an input the journal refuses is reported by its emit instead. Skipping
+an emit because it is recorded is not a fenced write, so skip only an emit whose
+caller then does nothing the fence guards. The engine store skips the records a
+replay answered from a recorded attempt re-emits. Both are optional on the
+service.
 
 Every append, checkpoint and compaction writes its run's partition
 (`DurableWriter.WriteOptions`), so on PostgreSQL it waits only for that run's

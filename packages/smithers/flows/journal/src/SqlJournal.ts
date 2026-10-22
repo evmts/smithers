@@ -1188,6 +1188,21 @@ export const make = (
     }
 
     /**
+     * Whether the index holds `prepared` as committed: its producer identity
+     * with the same content (or any content, for an `identity` dedupe). A
+     * pending entry is not committed yet, and an entry without a producer
+     * sequence names no identity.
+     */
+    const committedDuplicate = (prepared: Prepared): boolean => {
+      const sourceSeq = prepared.validated.sourceSeq
+      if (sourceSeq === undefined) return false
+      const cached = state.sourceEvents.get(
+        sourceEventKey(prepared.validated.runId, prepared.validated.sourceId, sourceSeq)
+      )
+      return cached?.status === "committed" && Result.isSuccess(compareSourceEvent(prepared, sourceSeq, cached))
+    }
+
+    /**
      * The in-memory half of a lossy admission: the identity check, the
      * allocation, and the queue offer. It runs under the run permit and
      * performs no I/O there; `admitFromIndex` documents the lock order that
@@ -2285,6 +2300,10 @@ export const make = (
         }
         const emittedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
         const prepared = yield* Effect.fromResult(prepare(input, emittedAtMs))
+        // Already where it would go: the write would only collide with it.
+        if (committedDuplicate(prepared)) {
+          return yield* Metric.update(JournalMetrics.durable.Duplicate, 1)
+        }
         const runId = prepared.validated.runId
         deferred.set(runId, [...deferred.get(runId) ?? [], {
           prepared,
@@ -2293,6 +2312,47 @@ export const make = (
         }])
       })
     )
+
+    /**
+     * Retains the run's latest committed entries, as many as the index keeps,
+     * oldest first so they leave it in the order the startup read's would.
+     */
+    const recall: NonNullable<Service["recall"]> = Effect.fn("Journal.recall")((runId: RunId) =>
+      Effect.gen(function*() {
+        const id = yield* Effect.fromResult(Result.mapError(
+          decodeRunId(runId),
+          (cause) => error("invalid_event", "run id violates the journal contract", cause)
+        ))
+        yield* Effect.annotateCurrentSpan({ runId: id })
+        const rows = yield* sql<JournalRow>`
+            SELECT run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+              event_type, payload_json, meta_json
+            FROM flows_journal_events
+            WHERE run_id = ${id}
+            ORDER BY seq DESC
+            LIMIT ${sourceEventCache}
+          `.pipe(Effect.mapError((cause) => error("read_failed", "could not recall the run's journal entries", cause)))
+        const entries = yield* Effect.forEach(rows, decodeRow)
+        for (const entry of entries.reverse()) {
+          retain(sourceEventKey(entry.runId, entry.sourceId, entry.sourceSeq), {
+            seq: entry.seq,
+            eventType: entry.eventType,
+            payloadJson: yield* Effect.fromResult(encodeFingerprint(entry.payload, "payload")),
+            metaJson: yield* Effect.fromResult(encodeFingerprint(entry.meta, "meta")),
+            status: "committed"
+          })
+        }
+        yield* Effect.annotateCurrentSpan({ recalled: entries.length })
+      })
+    )
+
+    const recorded: NonNullable<Service["recorded"]> = (input) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.map((now) => {
+          const prepared = prepare(input, Math.floor(now))
+          return Result.isSuccess(prepared) && committedDuplicate(prepared.success)
+        })
+      )
 
     const checkpointInternal = (
       checkpointOptions: CheckpointOptions,
@@ -2870,6 +2930,8 @@ export const make = (
       emitDurable,
       emitDurableUnfenced,
       emitDeferred,
+      recall,
+      recorded,
       transact,
       whenCommitted: (update) =>
         Effect.flatMap(
