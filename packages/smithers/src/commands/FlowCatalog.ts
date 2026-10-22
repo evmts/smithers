@@ -134,7 +134,14 @@ export const listing = (
       FeaturedFlows.read(projectRoot)
     ),
     // Discovery warnings ride the page as the control plane's listing carries them.
-    ...(warnings.length === 0 ? {} : { warnings }),
+    ...(warnings.length === 0 ? {} : {
+      warnings: warnings.map((warning) => ({
+        code: warning.code,
+        path: warning.path,
+        ...(warning.name === undefined ? {} : { name: warning.name }),
+        message: warning.message
+      }))
+    }),
     // The homepage's apps ride the listing when the project declares any (PRODUCT.md D-18).
     ...(apps.length === 0 ? {} : { apps })
   }
