@@ -81,3 +81,14 @@ pnpm exec tsc -p evals/tsconfig.json --noEmit
 
 The focused eval command does not claim full-app coverage. The repository's
 normal coverage gate remains unchanged.
+
+Workers use structured Effect concurrency: failure interrupts and joins siblings
+before final evidence is written or the campaign lock is released. The CLI
+cancels its own durable probe executions when their waiters are interrupted;
+the provider observation context joins nested cleanup. Interrupted requests
+retain their durable upper-bound reservation. Refused configuration creates no
+result directory. Reports record the selected phase and its ceiling, and decode
+throughput excludes successes without finite, ordered first-token timing.
+
+Offline lifecycle integration checks use the real Node durable engine and
+filesystem ledger; no paid provider request is made.

@@ -44,3 +44,14 @@ test('a stream that fails after partial usage retains its full reservation',asyn
   assert.equal(row.status,'reserved');assert.equal(row.chargedUsd,row.reservedUsd)
  }finally{f.close()}
 })
+test('admission programming errors remain defects rather than quota errors',async()=>{
+ const f=fixture();try{
+  const model=guardedModel(host(()=>Stream.empty),f.budget)
+  const exit=await Effect.runPromise(Effect.exit(Stream.runDrain(model.model.stream(request()))))
+  assert.equal(exit._tag,'Failure')
+  if(exit._tag==='Failure') {
+   const { Cause } = await import('effect')
+   assert.equal(Cause.hasDies(exit.cause),true)
+  }
+ }finally{f.close()}
+})

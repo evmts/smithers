@@ -11,15 +11,10 @@ import { summarize } from './stats.ts'
 import { provider, estimate } from './providers.ts'
 import { openBudget } from './budget.ts'
 import { report } from './report.ts'
+import { executeProbe, inContext, workers } from './lifecycle.ts'
 import Call, { Probe } from '../../../../.smithers/flows/cerebras-load/flow.ts'
 
 const directory = fileURLToPath(new URL(`./results/${new Date().toISOString().replaceAll(':','-')}/`, import.meta.url))
-mkdirSync(directory, { recursive: true })
-writeFileSync(`${directory}/source-sha256.json`, JSON.stringify({
-  node: process.version, platform: process.platform, arch: process.arch,
-  files: Object.fromEntries(['run.ts','stats.ts','providers.ts','budget.ts','report.ts','../../../../.smithers/flows/cerebras-load/flow.ts'].map(path=>
-    [path,createHash('sha256').update(readFileSync(new URL(path,import.meta.url))).digest('hex')])),
-},null,2))
 const rows: any[] = []
 const pending = new Map<number, any>()
 const context = new AsyncLocalStorage<any>()
@@ -58,29 +53,36 @@ const tokenCap = Number(process.env.CEREBRAS_LOAD_TOKEN_CAP ?? (providerName ===
 if (!Number.isInteger(tokenCap) || tokenCap <= 0 || tokenCap > 20_000_000) throw new Error('Invalid lower token cap')
 const seconds = Number(process.env.CEREBRAS_LOAD_SECONDS ?? 60)
 if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 60) throw new Error('seconds must be in (0,60]')
-const budget = openBudget(process.env.INFERENCE_LEDGER, providerName, candidate, phase, Number(process.env.INFERENCE_PHASE_CAP ?? 2))
+const phaseCapUsd = Number(process.env.INFERENCE_PHASE_CAP ?? 2)
+const budget = openBudget(process.env.INFERENCE_LEDGER, providerName, candidate, phase, phaseCapUsd)
+try {
+mkdirSync(directory, { recursive: true })
+writeFileSync(`${directory}/source-sha256.json`, JSON.stringify({
+  node: process.version, platform: process.platform, arch: process.arch,
+  files: Object.fromEntries(['run.ts','lifecycle.ts','guard.ts','stats.ts','providers.ts','budget.ts','report.ts','../../../../.smithers/flows/cerebras-load/flow.ts'].map(path=>
+    [path,createHash('sha256').update(readFileSync(new URL(path,import.meta.url))).digest('hex')])),
+},null,2))
+} catch (error) { budget.close(); throw error }
 const steps: any[] = []
 const program = Effect.gen(function* () {
   const host = yield* HostModel
-  const implementation = Probe.toLayer(({ id }) => Effect.tryPromise(() => context.run(pending.get(id), async () => {
+  const implementation = Probe.toLayer(({ id }) => inContext(context, pending.get(id), Effect.gen(function* () {
     const row = pending.get(id)
     const started = performance.now()
-    await Effect.runPromise(Stream.runForEach(host.model.stream(ModelRequest.ModelRequest.make({
+    yield* Stream.runForEach(host.model.stream(ModelRequest.ModelRequest.make({
       modelId: host.modelId, system: [], messages: [ModelRequest.Message.user(prompt(row.long, id))], tools: [], params: ModelRequest.GenerationParams.make({ maxTokens: 256, reasoningEffort: "none" })
     })).pipe(Stream.provideService(RequestExecutor.Retries, 0)), event => Effect.sync(() => {
       if ((event.type === 'text-delta' || event.type === 'thinking-delta') && event.text && row.ttftMs === null) row.ttftMs = performance.now() - started
       if (event.type === 'settle') row.stopReason = event.stopReason
       if (event.type === 'usage') { row.inputTokens = event.inputTokens ?? row.inputTokens; row.outputTokens = event.outputTokens ?? row.outputTokens; row.cachedInputTokens = event.cachedInputTokens ?? null }
-    })).pipe(Effect.timeout('45 seconds'), Effect.catch(e => Effect.sync(() => { row.error = typeof e?.code === 'string' ? e.code : 'timeout_or_transport'; if (e?.timing) row.timing = e.timing }))))
+    })).pipe(Effect.timeout('45 seconds'), Effect.catch(e => Effect.sync(() => { row.error = typeof e?.code === 'string' ? e.code : 'timeout_or_transport'; if (e?.timing) row.timing = e.timing })))
     row.totalMs = performance.now() - started
     row.success = !row.error && row.status === 200 && row.inputTokens !== null && row.outputTokens !== null
-  })).pipe(Effect.catch(() => Effect.sync(() => { const row = pending.get(id); row.error = 'client_failure'; row.success = false }))))
+  })))
   const runner = Effect.gen(function* () {
-    const run = yield* Effect.context()
     for (const concurrency of concurrencySteps) {
       const start = performance.now(), startIndex = rows.length
-      yield* Effect.promise(async () => {
-        await Promise.all(Array.from({length: concurrency}, async () => {
+      yield* workers(Array.from({length: concurrency}, () => Effect.gen(function* () {
           while (performance.now() - start < seconds * 1000 && reason === 'ramp_complete' && nextId < maxRequests) {
             const id = nextId++, long = id % 20 === 19
             const text = prompt(long, id)
@@ -92,7 +94,7 @@ const program = Effect.gen(function* () {
             charged += reservedTokens; cost += reservedUsd
             const row: any = { id, concurrency, long, startedAt: new Date().toISOString(), status: null, headers: {}, ttftMs: null, totalMs: null, inputTokens: null, outputTokens: null, success: false }
             pending.set(id, row)
-            await context.run(row, () => Effect.runPromiseWith(run)(Call.execute({id}, {executionId: `probe-${id}`})))
+            yield* executeProbe(id)
             const known = row.inputTokens !== null && row.outputTokens !== null
             const cleanRefusal = row.httpRequests === 1 && row.status >= 400 && row.status < 500 && row.ttftMs === null
             row.chargedTokens = known ? row.inputTokens + row.outputTokens : cleanRefusal ? 0 : reservedTokens
@@ -102,11 +104,10 @@ const program = Effect.gen(function* () {
             pending.delete(id)
             rows.push(row); appendFileSync(`${directory}/requests.jsonl`, JSON.stringify(row)+'\n')
           }
-        }))
-      })
+      })))
       const summary = summarize(rows.slice(startIndex), (performance.now()-start)/1000)
       steps.push({concurrency, ...summary}); console.log(JSON.stringify(steps.at(-1)))
-      writeFileSync(`${directory}/raw.json`, JSON.stringify({startedAt: directory.split('/').at(-2), model: record, provider: providerName, context: process.env.INFERENCE_CONTEXT ?? 'mixed', cache: process.env.INFERENCE_CACHE ?? 'cold', campaignEstimatedUsd: budget.total(), seconds, tokenCap, chargedTokens: charged, estimatedUsd: cost, stopReason: reason, steps, requests: rows}, null, 2))
+      writeFileSync(`${directory}/raw.json`, JSON.stringify({startedAt: directory.split('/').at(-2), model: record, provider: providerName, context: process.env.INFERENCE_CONTEXT ?? 'mixed', cache: process.env.INFERENCE_CACHE ?? 'cold', campaignEstimatedUsd: budget.total(), seconds, phase, phaseCapUsd, campaignCapUsd: 5, tokenCap, chargedTokens: charged, estimatedUsd: cost, stopReason: reason, steps, requests: rows}, null, 2))
       if (reason !== 'ramp_complete') break
       if (nextId >= maxRequests) { reason = 'request_ceiling'; break }
       if (summary.errorFraction > .2) { reason = 'errors_above_20_percent'; break }
@@ -118,9 +119,10 @@ const program = Effect.gen(function* () {
   return HostModel.layerConfig('CHAT_MODEL', record, {fetch: observedFetch})
 }))), Effect.scoped)
 try { await Effect.runPromise(program) } catch (e) { console.error(String(e?.stack).split('\n').filter(l => l.trim().startsWith('at ')).join('\n')); reason = 'runtime_failure'; console.error('Benchmark runtime failed; no credential or provider body logged.') }
-writeFileSync(`${directory}/raw.json`, JSON.stringify({model: record, provider: providerName, context: process.env.INFERENCE_CONTEXT ?? 'mixed', cache: process.env.INFERENCE_CACHE ?? 'cold', campaignEstimatedUsd: budget.total(), seconds, tokenCap, chargedTokens: charged, estimatedUsd: cost, stopReason: reason, steps, requests: rows}, null, 2))
+try {
+writeFileSync(`${directory}/raw.json`, JSON.stringify({model: record, provider: providerName, context: process.env.INFERENCE_CONTEXT ?? 'mixed', cache: process.env.INFERENCE_CACHE ?? 'cold', campaignEstimatedUsd: budget.total(), seconds, phase, phaseCapUsd, campaignCapUsd: 5, tokenCap, chargedTokens: charged, estimatedUsd: cost, stopReason: reason, steps, requests: rows}, null, 2))
 console.log(JSON.stringify({directory, stopReason: reason, chargedTokens: charged, estimatedUsd: cost}))
 
-budget.close()
 report(directory)
+} finally { budget.close() }
 if (reason === 'runtime_failure') process.exitCode = 1
