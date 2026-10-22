@@ -1,10 +1,12 @@
 import { outboxPrincipal } from "../../device/identity"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
-import { WebLock } from "@smthrs/platform-browser"
+import { BrowserEngine, WebLock } from "@smthrs/platform-browser"
 import { Effect, Exit, Fiber, ManagedRuntime, Metric, Option, Scope, Stream } from "effect"
+import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { dispatches } from "../../flows/dispatch"
+import { AnswerReference } from "../agent/reference"
+import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import { TabRequests } from "../../flows/requests"
 import {
   type Busy,
@@ -321,6 +323,40 @@ describe("the agent", () => {
     reply.done()
     await until(() => expect(second.shown()).toEqual(["user done hello", "assistant done Hi"]), agentWithin)
   })
+
+  test("a confirmed engine cancellation settles the answer and its Working notice", async () => {
+    const tab = await openChat(quick)
+    const { answerId } = asked(tab.actions.ask("Use the sandbox tools on this branch"))
+    await tab.onApi(tab.api.answerTo("Use the sandbox tools on this branch"))
+    const engine = await tab.runtime.runPromise(Effect.service(BrowserEngine.BrowserEngine))
+    const live = await tab.runtime.runPromise(engine.inspect(answerId, { limit: 1 }))
+    expect(live.run.status).toBe("running")
+    await tab.runtime.runPromise(engine.cancel(AnswerReference, answerId))
+    await until(() => expect(tab.shown()).toEqual([
+      "user done Use the sandbox tools on this branch", `assistant failed ${COULDNT_ANSWER}`,
+    ]), 10_000)
+    const closed = Metric.withAttributes(dispatches, { flow: "chat/Close", door: "composer", outcome: "done" })
+    await until(() => expect(tab.count(closed)).toBe(1))
+  }, 120_000)
+
+  test("a reloaded tab settles a stopped persisted answer without its original launch observer", async () => {
+    const { api, onApi } = await openChat({ answers: false })
+    const device = nodeDevice({ agent: api })
+    const first = await tabOn(openTab(api, { ...quick, host: device }))
+    const { answerId } = asked(first.actions.ask("Use the sandbox tools on this branch after reload"))
+    await onApi(api.answerTo("Use the sandbox tools on this branch after reload"))
+    await until(() => expect(first.synced(answerId)).toBe(true))
+    await first.close()
+    const next = await tabOn(openTab(api, { ...quick, host: device }))
+    const engine = await next.runtime.runPromise(Effect.service(BrowserEngine.BrowserEngine))
+    const live = await next.runtime.runPromise(engine.inspect(answerId, { limit: 1 }))
+    await next.runtime.runPromise(Effect.flatMap(FlowDispatch, (flows) =>
+      flows.dispatch("run/cancel", { runId: answerId, seq: live.run.lastSeq }, { door: "button" })))
+    await until(() => expect(next.store.messages.tanstack.get(answerId)).toMatchObject({ status: "failed" }), 15_000)
+    const notices = await onApi(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT state FROM notifications WHERE run_id = ${answerId}`)))
+    expect(notices).toEqual([{ state: "failed" }])
+  }, 120_000)
 
   test.each(["plan_changed", "payload_changed"] as const)("a run the engine refused because the app changed under it (%s) has its answer closed, failed", async (code) => {
     const tab = await openFaulty(quick)

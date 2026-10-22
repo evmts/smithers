@@ -120,6 +120,39 @@ interface Existing {
   readonly version: number
 }
 
+/** Repair only existing live notices when the run index is gone, from a terminal answer or its missing record.
+ * A streaming answer is still live. No recipient or scope is invented, and settled notices never change again. */
+const foldMissingRun = (runId: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const existing = yield* sql<{ readonly recipient: string; readonly mine: boolean; readonly conversationId: string | null }>`
+    SELECT recipient, mine, conversation_id AS "conversationId" FROM notifications
+    WHERE run_id = ${runId} AND state IN ('working', 'waiting', 'needs_you') FOR UPDATE`
+  const allowed = yield* Effect.filter(existing, (row) => row.conversationId === null
+    ? Effect.succeed(row.mine)
+    : branchAccess(Option.some({ subject: { kind: "person", id: row.recipient }, role: "member" }), row.conversationId, "conversation").pipe(
+      Effect.map((branch) => branch !== undefined && canView(branch.access)),
+    ))
+  yield* Effect.annotateCurrentSpan({ "smithers.run.id": runId, "smithers.run.missing": true,
+    "smithers.notifications.eligible": allowed.length, "smithers.notifications.written": 0 })
+  if (allowed.length === 0) return 0
+  const rows = yield* sql<{ readonly state: "done" | "failed" }>`
+    WITH outcome AS (
+      SELECT CASE WHEN a.status = 'done' THEN 'done' ELSE 'failed' END AS state
+      FROM (SELECT 1) seed LEFT JOIN messages a ON a.id = ${runId}
+      WHERE a.id IS NULL OR a.status IN ('done', 'failed')
+    )
+    UPDATE notifications n SET state = o.state, version = n.version + 1, occurred_at = now(), updated_at = now()
+    FROM outcome o WHERE n.run_id = ${runId} AND ${sql.in("n.recipient", allowed.map((row) => row.recipient))}
+      AND n.state IN ('working', 'waiting', 'needs_you')
+    RETURNING n.state`
+  for (const row of rows) yield* Metric.update(Metric.withAttributes(routed, { kind: "run", state: row.state }), 1)
+  yield* Effect.annotateCurrentSpan({ "smithers.run.missing": true, "smithers.notifications.written": rows.length })
+  if (rows.length > 0) yield* Effect.logWarning("notifications.run_missing").pipe(
+    Effect.annotateLogs({ runId, written: rows.length }),
+  )
+  return rows.length
+})
+
 /**
  * Routes run `runId`'s current state to its recipients, inside the caller's transaction (worker/Runs.ts writes the
  * run's row first; worker/Answers.ts and `chat/Expire` settle its answer first): its launcher, branch watchers
@@ -140,7 +173,7 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
       LEFT JOIN messages q ON q.id = a.question_id
       LEFT JOIN branches b ON b.id = r.branch_id
       WHERE r.id = ${runId}`
-    if (run === undefined) return 0
+    if (run === undefined) return yield* foldMissingRun(runId)
     const state = runState(run.status, run.answered, run.answer)
     const subject = runSubject(runId)
     const watchers = run.branchId === null

@@ -1,7 +1,7 @@
 import { digestSync } from "@smthrs/crypto"
 import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
 import { expect, test } from "./devices"
-import { requires } from "./target"
+import { requires, scriptedAgent } from "./target"
 
 requires("member", "localServer")
 
@@ -70,3 +70,28 @@ for (const width of [1280, 390]) {
   })
 }
 
+test("stopped work: its live notice settles from the engine cancellation", async ({ devices }) => {
+  requires("scriptedAgent")
+  const [a] = await devices.open("Worker")
+  await a.page.goto(scriptedAgent("needs-you"))
+  await a.ready()
+  const question = `Use the sandbox tools on this branch ${devices.word}`
+  await a.askAndWaitTaken(question)
+  const answerId = a.asked.find((row) => row.text === question)!.answerId
+  try {
+    await a.page.reload()
+    await a.ready()
+    await a.page.getByRole("navigation", { name: "Pages" }).getByRole("link", { name: "Runs", exact: true }).click()
+    await a.page.locator(`a[href="/app/runs/${answerId}"]`).click()
+    const notice = a.page.locator(`[data-slot="toast"][data-run="${answerId}"]`)
+    await expect(notice).toBeVisible({ timeout: 60_000 })
+    await a.page.getByRole("button", { name: "Stop", exact: true }).click()
+    await expect(a.page.locator('[data-slot="run-header"] [role="status"]')).toContainText("Stopped", { timeout: 60_000 })
+    await expect(notice).toHaveCount(0, { timeout: 30_000 })
+    await a.page.goto("/app")
+    await expect(a.page.locator(`[id="${answerId}"]`)).toContainText("Couldn't answer")
+  } finally {
+    await a.page.request.post(`/api/answers/${answerId}`, { data: { status: "failed", failure: "unfinished" } })
+    await a.page.request.post("/api/notifications/ack", { data: { subject: `run:${answerId}`, version: 3, act: "dismiss" } })
+  }
+})

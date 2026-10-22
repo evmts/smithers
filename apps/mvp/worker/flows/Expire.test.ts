@@ -108,6 +108,20 @@ describe("chat/Expire", () => {
     expect(notices).toEqual([{ state: "failed", version: 2 }])
   })
 
+  test.each(["run", "answer", "both"] as const)("settles a stale Working notice when the %s record is gone", async (missing) => {
+    const agent = await openAgent(runtime, answering("Never sent."))
+    const answerId = await agent.ask("Use the sandbox tools on this branch")
+    expect((await agent.fetch(`http://chat.test/api/runs/${answerId}`, {
+      method: "POST", body: JSON.stringify({ status: "working" }),
+    })).status).toBe(200)
+    if (missing !== "answer") await sql(`DELETE FROM runs WHERE id = '${answerId}'`)
+    if (missing !== "run") await sql(`DELETE FROM messages WHERE id = '${answerId}'`)
+    expect(await runtime.runPromise(Expire.abandon(answerId, Duration.zero)))
+      .toEqual({ outcome: missing === "run" ? "abandoned" : "missing" })
+    expect(await sql(`SELECT state, version FROM notifications WHERE subject = 'run:${answerId}'`))
+      .toEqual([{ state: "failed", version: 2 }])
+  })
+
   test("waits on a durable timer until the answer is the expiry old, counted from when it was asked", async () => {
     const agent = await openAgent(runtime, answering("Never sent."))
     const answerId = await agent.ask("Asked")

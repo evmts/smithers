@@ -115,8 +115,8 @@ const acting = (
   })
 
 /** What a dispatched act answers: nothing when it was done, its refusal's code when it was refused. */
-const refusalOf = (dispatched: { readonly _tag: "Done" } | { readonly _tag: "Failed"; readonly error: { readonly code: string } }) =>
-  dispatched._tag === "Done" ? Option.none() : Option.some(dispatched.error.code)
+const refusalOf = (dispatched: { readonly _tag: "Done" } | { readonly _tag: "Failed"; readonly error: { readonly code: string } | { readonly _tag: string } }) =>
+  dispatched._tag === "Done" ? Option.none() : Option.some("code" in dispatched.error ? dispatched.error.code : "unavailable")
 
 /** Stop: `run/cancel` on the open run. */
 export const stop = acting("stop", (inspection) =>

@@ -183,10 +183,12 @@ export const abandon = (answerId: string, after: Duration.Duration) =>
         (SELECT count(*) FROM target WHERE status = 'streaming')::int AS streaming`
     // The run index agrees, and the people who hear of the run see it fail (worker/Notifications.ts), in this
     // transaction.
-    if (row!.abandoned > 0) {
+    if (row!.abandoned > 0 || row!.found === 0) {
       yield* sql`
         UPDATE runs SET status = 'failed', waiting = NULL, updated_at = now()
         WHERE id = ${answerId} AND status NOT IN ('done', 'failed')`
+    }
+    if (row!.abandoned > 0 || row!.found === 0 || row!.streaming === 0) {
       yield* Notifications.foldRun(answerId, undefined)
     }
     const outcome: Expired["outcome"] = row!.abandoned > 0

@@ -166,3 +166,7 @@ No record carries a title, a question, a commit message or who pushed (the tests
 | `e2e/notifications.spec.ts` | In real browsers: Ann on two devices, Ben on one; Ben sees Ann's run on `main` from the Runs page and clicks its toast to her run; Alt+T and H hide her toast on both her devices; she expands it in the panel and answers there with A; Alt+N, R, E and O on her second device; `+1` and Dismiss; `main` and a release reach both people, expanded with who pushed (needs `E2E_GITHUB_WEBHOOK_SECRET`) |
 
 Two people locally: `worker/DevChatApi.ts` signs in a browser with the cookie `smithers_dev_person=teammate` as `local-teammate`, a Member (`devices.openTeammate`).
+
+## Missing run records
+
+A terminal answer settles its existing live notification even if its run-index row is gone. The terminal state wins; a streaming answer stays live. The existing durable expiry folds missing answers and repairs missed terminal projections. A confirmed engine cancellation starts `chat/Close`; Stop waits for the terminal engine receipt and closes the answer in its durable step, including after reload or on a branch’s run page. Losing a tab or its network does not close a run. Repairs recheck each recipient’s current branch access. `notifications.run_missing` records only `runId` and `written`; the existing `runs.fold` span records `smithers.run.missing` and the write count, and `smithers_notifications_routed` counts the resulting states. See [0034](../decisions/0034-toasts-reserve-page-space.md).

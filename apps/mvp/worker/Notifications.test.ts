@@ -123,6 +123,21 @@ describe("a run's reports route to its launcher and the people on its branch", (
     expect(await rows(subject)).toEqual(before)
   })
 
+  test("missing run metadata never bypasses a recipient's revoked branch access", async () => {
+    const a = await open(ann)
+    const { branchId, conversationId } = await branch()
+    await sql(`INSERT INTO watches (principal_id, subject, level) VALUES ('person-ben', $1, 'attention')`, `branch:${branchId}`)
+    const runId = await asked(a, conversationId)
+    await report(a, runId, { status: "working" })
+    const subject = Notifications.runSubject(runId)
+    const before = await rows(subject)
+    await sql(`DELETE FROM runs WHERE id = $1`, runId)
+    await sql(`DELETE FROM branch_shares WHERE branch_id = $1`, branchId)
+    await sql(`UPDATE messages SET status = 'done' WHERE id = $1`, runId)
+    expect(await runtime.runPromise(Notifications.foldRun(runId, undefined))).toBe(0)
+    expect(await rows(subject)).toEqual(before)
+  })
+
   test("a quiet-only needs_you change preserves the attention version", async () => {
     const a = await open(ann)
     const runId = await asked(a)
@@ -239,6 +254,53 @@ describe("a run's reports route to its launcher and the people on its branch", (
     }
   })
 
+  test.each([{ status: "done", text: "Finished." }, { status: "failed", failure: "unfinished" }] as const)(
+    "a settled answer repairs its Working notice when the run row is gone ($status)", async (ending) => {
+      const a = await open(ann)
+      const runId = await asked(a)
+      await report(a, runId, { status: "working" })
+      await sql(`DELETE FROM runs WHERE id = $1`, runId)
+      // Missing run metadata alone is not a terminal outcome while the answer still streams.
+      expect(await runtime.runPromise(Notifications.foldRun(runId, undefined))).toBe(0)
+      expect(await rowOf(Notifications.runSubject(runId), "person-ann")).toMatchObject({ state: "working" })
+      expect((await post(a, `/api/answers/${runId}`, ending)).status).toBe(200)
+      expect(await rowOf(Notifications.runSubject(runId), "person-ann"))
+        .toMatchObject({ state: ending.status, version: 2, title: "Deploy the docs preview sentinel-7c1d" })
+      expect(a.count(Notifications.routed, { kind: "run", state: ending.status })).toBe(1)
+      expect(recorded(a)).not.toContain("sentinel-7c1d")
+      expect(a.only("notifications.run_missing").annotations).toMatchObject({ runId, written: 1 })
+      expect(await runtime.runPromise(Notifications.foldRun(runId, undefined))).toBe(0)
+    },
+  )
+
+  test("a missing legacy unscoped run settles only its launcher", async () => {
+    const runId = crypto.randomUUID()
+    await sql(`INSERT INTO runs (id, flow, status, launched_by) VALUES ($1, 'chat/Answer', 'working', 'person-ann')`, runId)
+    await runtime.runPromise(Notifications.foldRun(runId, undefined))
+    const subject = Notifications.runSubject(runId)
+    await sql(`INSERT INTO notifications (recipient, subject, kind, state, mine, quiet, run_id, href)
+      VALUES ('person-ben', $1, 'run', 'working', false, true, $2, '/app')`, subject, runId)
+    await sql(`DELETE FROM runs WHERE id = $1`, runId)
+    expect(await runtime.runPromise(Notifications.foldRun(runId, undefined))).toBe(1)
+    expect(await rows(subject)).toEqual([
+      expect.objectContaining({ recipient: "person-ann", state: "failed", version: 2 }),
+      expect.objectContaining({ recipient: "person-ben", state: "working", version: 1 }),
+    ])
+  })
+
+  test("a missing run with an unverifiable conversation scope fails closed", async () => {
+    const a = await open(ann)
+    const runId = await asked(a)
+    await report(a, runId, { status: "working" })
+    const subject = Notifications.runSubject(runId)
+    await sql(`DELETE FROM runs WHERE id = $1`, runId)
+    await sql(`UPDATE notifications SET conversation_id = $2 WHERE subject = $1`, subject, crypto.randomUUID())
+    await sql(`UPDATE messages SET status = 'done' WHERE id = $1`, runId)
+    const before = await rows(subject)
+    expect(await runtime.runPromise(Notifications.foldRun(runId, undefined))).toBe(0)
+    expect(await rows(subject)).toEqual(before)
+  })
+
   test("a run with no scope, from before scopes, reaches its launcher alone and opens home", async () => {
     const runId = crypto.randomUUID()
     await sql(`INSERT INTO runs (id, flow, status, launched_by) VALUES ($1, 'chat/Answer', 'working', 'person-ann')`, runId)
@@ -325,6 +387,15 @@ describe("POST /api/notifications/ack", () => {
 
   const ack = (h: Harness, subject: string, act: string, version: number) =>
     post(h, ACK_ROUTE, { subject, act, version })
+
+  test("an agent cannot acknowledge the person's notification", async () => {
+    const a = await open(ann)
+    const subject = await settledRun(a)
+    const before = await rows(subject)
+    const agent = await open({ ...ann, act: { kind: "agent", id: "agent-1" } })
+    expect(await json(await ack(agent, subject, "dismiss", 2))).toEqual([403, { code: "person_only" }])
+    expect(await rows(subject)).toEqual(before)
+  })
 
   test("Read, Dismiss and Hide each move their own version, merged with greatest() and never past the row's", async () => {
     const a = await open(ann)

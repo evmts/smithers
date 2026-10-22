@@ -3,6 +3,7 @@ import * as Timeline from "../features/timeline/steps"
 import { Action } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Layer } from "effect"
+import { AnswerApi } from "../features/agent/answers"
 import * as AgentHost from "../features/agent/host"
 import * as Attention from "../features/attention/steps"
 import * as BranchSteps from "../features/branch/steps"
@@ -83,7 +84,7 @@ export const registrations = (options: HostOptions) =>
     jev(options.origin),
     Status.registration,
     PersonalFlows.layer(options.origin),
-    Runs.registration,
+    Runs.registration.pipe(Layer.provide(AnswerApi.layerHttp(options.origin))),
     BranchSteps.registrationAt(options.origin),
     SharingSteps.registrationAt(options.origin),
     TerminalSteps.registrationAt(options.origin),

@@ -1,4 +1,5 @@
 import { makeLane, makeSummaries, followSummaries, summaryQuery } from "../timeline/store"
+import { answerCannotFinish } from "./answerEnd"
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
@@ -322,7 +323,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   // run goes on in the background. The engine starts an execution once, so a resend that dispatches it again starts no
   // second run. A start that fails (no engine in this tab, refused, the tab closing) is sent again; the dispatch has
   // logged and counted it. A run refused because the app changed under it (parked under one build, resumed under the
-  // next: `plan_changed`, or `payload_changed` when its recorded payload no longer decodes) can't finish, so
+  // next: `plan_changed`, or `payload_changed` when its recorded payload no longer decodes), or confirmed cancelled,
+  // cannot finish, so
   // `chat/Close` settles its answer failed, under its own execution id; a resend finds a run refused before, so it
   // closes answers left streaming by an earlier build too.
   const answer = (row: Asking) =>
@@ -334,12 +336,10 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         admitted,
       }).pipe(
         Effect.catchIf(
-          (error) => error.refusal === "plan_changed" || error.refusal === "payload_changed",
-          () =>
-            flows.dispatch("chat/Close", { answerId: row.answerId }, {
-              door: "composer",
-              executionId: `${row.answerId}/close`,
-            }),
+          answerCannotFinish,
+          () => flows.dispatch("chat/Close", { answerId: row.answerId }, {
+            door: "composer", executionId: `${row.answerId}/close`,
+          }),
         ),
         Effect.ignore,
         Effect.forkIn(scope),

@@ -2,11 +2,12 @@ import { InspectionJournal } from "@smthrs/gateway"
 // The acts on runs and the run reads (src/features/runs, decision 0014 §2 and §6, docs/features/runs.md#acts), on this
 // device's engine as the browser's engine worker registers them, over the compose Postgres, against ChatApi's real
 // handler. A person's flow is the run they act on; the model is the only scripted seam.
-import { Effect, Exit, Stream } from "effect"
+import { Deferred, Effect, Exit, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { tracked } from "../../../worker/test/branch.ts"
 import { contents, stop, testFile, usage } from "../../../worker/test/harness.ts"
-import { cell, member, openAgent } from "../../test/agent"
+import { answerRow, cell, member, openAgent } from "../../test/agent"
 import { FlowNew, FlowRun, FlowSave } from "../flows-ui/flows"
 import { roundExecutionId } from "../flows-ui/round"
 import { listed, retriedRunId, retryActId, runPath, settled } from "./contract"
@@ -155,6 +156,58 @@ describe("run/list and run/inspect", () => {
 })
 
 describe("run/cancel", () => {
+  test("Stop settles an unobserved chat only after terminal cleanup, retrying an unavailable answer route", async () => {
+    const started = Effect.runSync(Deferred.make<void>())
+    const cleanup = Effect.runSync(Deferred.make<void>())
+    const agent = await openAgent(runtime, () => Stream.concat(
+      Stream.drain(Stream.fromEffect(Deferred.succeed(started, undefined))), Stream.never,
+    ).pipe(Stream.ensuring(Deferred.await(cleanup))))
+    let writes = 0
+    const engine = await agent.engine(undefined, { fetch: async (input, init) => {
+      const request = new Request(input, init)
+      if (new URL(request.url).pathname.startsWith("/api/answers/") && request.method === "POST" &&
+        (await request.clone().json() as { status: string }).status === "failed" && ++writes === 1) return new Response("", { status: 503 })
+      return agent.fetch(request)
+    } })
+    opened.push(engine.kill)
+    const branch = await tracked(runtime, "github/octocat/spoon-knife", `toast-${crypto.randomUUID()}`, "open", "person-member")
+    const answerId = crypto.randomUUID()
+    expect((await agent.h.ask({ id: crypto.randomUUID(), answerId, conversationId: branch.conversationId,
+      text: "Use the sandbox tools on this branch" })).status).toBe(202)
+    agent.start(engine, answerId)
+    try {
+      await Effect.runPromise(Deferred.await(started))
+      const live = await Effect.runPromise(engine.inspection.inspect(answerId, { limit: 1 }))
+      const stopping = Effect.runPromise(engine.flows.execute(Cancel, {
+        executionId: crypto.randomUUID(), payload: { runId: answerId, seq: live.run.lastSeq },
+      }))
+      await vi.waitFor(async () => expect((await Effect.runPromise(engine.inspection.inspect(answerId, { limit: 1 })))
+        .run.cancelRequestedAtMs).not.toBeNull(), { timeout: 30_000 })
+      expect(await answerRow(runtime, answerId)).toMatchObject({ status: "streaming" })
+      await Effect.runPromise(Deferred.succeed(cleanup, undefined))
+      await stopping
+      expect(await answerRow(runtime, answerId)).toMatchObject({ status: "failed", failure: "unfinished" })
+      expect(writes).toBe(2)
+      expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`SELECT state FROM notifications WHERE run_id = ${answerId}`))).toEqual([{ state: "failed" }])
+    } finally { await Effect.runPromise(Deferred.succeed(cleanup, undefined)) }
+  }, SLOW)
+
+  test("Stop racing a successful chat preserves its answer and notification", async () => {
+    const agent = await openAgent(runtime, () => answer('ctx.done("Ready.")'))
+    const engine = await agent.engine()
+    opened.push(engine.kill)
+    const answerId = await agent.ask("Finish before Stop")
+    expect(await agent.answer(engine, answerId)).toEqual(Exit.succeed({ status: "done" }))
+    const live = await Effect.runPromise(engine.inspection.inspect(answerId, { limit: 1 }))
+    expect(await Effect.runPromise(engine.flows.execute(Cancel, {
+      executionId: crypto.randomUUID(), payload: { runId: answerId, seq: live.run.lastSeq },
+    }))).toEqual({ outcome: "settled", status: "completed" })
+    expect(await answerRow(runtime, answerId)).toMatchObject({ status: "done", text: "Ready." })
+    expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT state FROM notifications WHERE run_id = ${answerId}`))).toEqual([{ state: "done" }])
+  }, SLOW)
+
   test("Stop on a live run records it, and the run ends cancelled; Stop again answers its final status", async () => {
     const d = await device(1)
     const runId = await startHello(d)
