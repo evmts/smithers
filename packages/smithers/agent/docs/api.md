@@ -1199,7 +1199,8 @@ const maxWaitMillis = 3_600_000
 
 `defaultWaitMillis` is how long a refusal that names no deadline parks for.
 `maxWaitMillis` is the longest wait a refusal may buy before it stays a
-failure.
+failure. A non-finite deadline or a NaN maximum refuses parking. An invalid
+fallback does not prevent parking on an explicit finite provider deadline.
 
 ### QuotaPolicy.makeUnclassified, QuotaPolicy.layerUnclassified
 
@@ -2249,7 +2250,9 @@ interface Ports {
 ```
 
 The host's own run path. Each port returns data or a promise of it; the flow
-returns it as plain JSON. A thrown error becomes the call's failure text.
+returns it as plain JSON. Ports retain their receiver. Thrown errors, rejected
+promises, and serialization failures become opaque call failures; host exception
+text never enters the model-visible result or the flow-call failure record.
 The model chooses every `id` and `flow`, so the host scopes them: `inspect`
 answers only runs this session may read, and `run` refuses flows that are not
 model-invocable and routes the launch through the host's own approval.

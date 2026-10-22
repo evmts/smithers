@@ -344,6 +344,29 @@ describe("the default classifier", () => {
     ).toEqual({ wakeAt: 31_000, source: "default" })
   })
 
+  it("refuses a NaN default wait instead of accepting an unreachable deadline", () => {
+    const classifier = QuotaPolicy.makeDefault({ defaultWaitMillis: Number.NaN })
+    const park = classifier.classify(new ModelError({ code: "rate_limited", message: "slow down" }), 1_000)
+
+    expect(Option.isNone(park)).toBe(true)
+    // An explicit provider deadline does not depend on the invalid fallback.
+    expect(Option.getOrUndefined(classifier.classify(rateLimited, 1_000))).toEqual({
+      wakeAt: 4_000,
+      source: "retry-after"
+    })
+  })
+
+  it("refuses a NaN maximum wait instead of disabling the ceiling", () => {
+    const classifier = QuotaPolicy.makeDefault({ maxWaitMillis: Number.NaN })
+    const park = classifier.classify(
+      new ModelError({ code: "quota_exceeded", message: "back tomorrow", retryAfterMillis: 86_400_000 }),
+      1_000
+    )
+
+    expect(Option.isNone(park)).toBe(true)
+    expect(Option.isNone(classifier.classify(rateLimited, 1_000))).toBe(true)
+  })
+
   it("reads a reset out of the message when the provider sent no field", () => {
     const park = classify(
       new ModelError({ code: "rate_limited", message: "Rate limit reached. Try again in 45 seconds." }),

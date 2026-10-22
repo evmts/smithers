@@ -37,13 +37,24 @@ const compose = (plugin: ReturnType<typeof SmithersPlugin.make>, existing: Reado
     return yield* CellPlugin.flows(kernel.plugins, existing)
   })
 
-const call = async (bindings: ReadonlyArray<FlowBinding.Binding>, name: string, input: Schema.Json) => {
+const call = async (
+  bindings: ReadonlyArray<FlowBinding.Binding>,
+  name: string,
+  input: Schema.Json,
+  failures: Array<Cell.FailureKind> = []
+) => {
   const catalog = Result.getOrThrow(FlowBinding.catalogResult(bindings))
   const binding = bindings.find((each) => each.descriptor.name === name)!
   return Effect.runPromise(
     CellCalls.make({ registry: FlowBinding.registry(Registry.makeNoop({}), catalog), catalog })
       .run(callOf(binding.descriptor, input))
-      .pipe(Effect.orDie)
+      .pipe(
+        Effect.provideService(Cell.Failures, (kind) =>
+          Effect.sync(() => {
+            failures.push(kind)
+          })),
+        Effect.orDie
+      )
   )
 }
 
@@ -90,7 +101,65 @@ describe("SmithersPlugin", () => {
     expect("answer" in (inspected as { value: object }).value).toBe(false)
   })
 
-  it("returns a refused host port as the call's failure text", async () => {
+  it("preserves the receiver of a stateful list port", async () => {
+    class ProjectPorts implements SmithersPlugin.Ports {
+      readonly projectFlows = [{ name: "review", description: "Review a change." }]
+      list() {
+        return this.projectFlows
+      }
+      run(request: Parameters<SmithersPlugin.Ports["run"]>[0]) {
+        return { id: request.id, status: "requested" }
+      }
+      inspect(id: string) {
+        return { id, status: "running" }
+      }
+    }
+    const ports = new ProjectPorts()
+    const bindings = await Effect.runPromise(compose(SmithersPlugin.make(ports)))
+    expect(await call(bindings, "smithers.flows", {})).toMatchObject({
+      outcome: "success",
+      value: ports.projectFlows
+    })
+  })
+
+  it.each(["throw error", "throw string", "reject error", "reject string", "serialization"])(
+    "keeps arbitrary host exception details opaque: %s",
+    async (failure) => {
+      const secret = "Authorization: Bearer private-host-credential https://user:password@internal.invalid"
+      const faultyPort = () => {
+        if (failure === "throw error") throw new Error(secret)
+        if (failure === "throw string") throw secret
+        if (failure === "reject error") return Promise.reject(new Error(secret))
+        if (failure === "reject string") return Promise.reject(secret)
+        return {
+          toJSON: () => {
+            throw new Error(secret)
+          }
+        }
+      }
+      const bindings = await Effect.runPromise(compose(SmithersPlugin.make({
+        list: faultyPort,
+        run: faultyPort,
+        inspect: faultyPort
+      })))
+      for (
+        const [name, input] of [
+          ["smithers.flows", {}],
+          ["smithers.run", { id: "r1", flow: "review" }],
+          ["smithers.inspect", { id: "r1" }]
+        ] as const
+      ) {
+        const failures: Array<Cell.FailureKind> = []
+        const result = await call(bindings, name, input, failures)
+        expect(result).toMatchObject({ outcome: "failure", message: `Flow ${name} failed.` })
+        expect(JSON.stringify(result)).not.toContain(secret)
+        expect(failures).toEqual([{}])
+        expect(JSON.stringify(failures)).not.toContain(secret)
+      }
+    }
+  )
+
+  it("returns an opaque failure for a refused host port", async () => {
     const bindings = await Effect.runPromise(compose(SmithersPlugin.make({
       list: () => [],
       run: () => {
@@ -102,11 +171,11 @@ describe("SmithersPlugin", () => {
     })))
     expect(await call(bindings, "smithers.run", { id: "r1", flow: "review" })).toMatchObject({
       outcome: "failure",
-      message: expect.stringContaining("Three flow runs are active")
+      message: "Flow smithers.run failed."
     })
   })
 
-  it("answers null for a missing value and keeps a thrown string's text", async () => {
+  it("answers null for a missing value and keeps a rejected string opaque", async () => {
     const bindings = await Effect.runPromise(compose(SmithersPlugin.make({
       list: () => undefined,
       run: () => ({}),
@@ -115,7 +184,7 @@ describe("SmithersPlugin", () => {
     expect(await call(bindings, "smithers.flows", {})).toMatchObject({ outcome: "success", value: null })
     expect(await call(bindings, "smithers.inspect", { id: "gone" })).toMatchObject({
       outcome: "failure",
-      message: expect.stringContaining("Unknown run")
+      message: "Flow smithers.inspect failed."
     })
   })
 

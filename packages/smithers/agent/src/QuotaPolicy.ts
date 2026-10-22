@@ -145,7 +145,9 @@ export const maxWaitMillis = 3_600_000
  * @since 0.1.0
  */
 export interface Config {
+  /** A non-finite fallback deadline cannot park. */
   readonly defaultWaitMillis?: number | undefined
+  /** NaN refuses parking because no maximum can be enforced. */
   readonly maxWaitMillis?: number | undefined
 }
 
@@ -329,7 +331,9 @@ export const makeDefault = (config: Config = {}): Service => {
       // A deadline already past is a park of zero, not a refusal to park: the
       // provider said the window has reopened.
       const wait = Math.max(0, park.wakeAt - nowMillis)
-      return wait > ceiling ? Option.none() : Option.some(park)
+      // Both the deadline and the comparison must be valid: NaN satisfies
+      // neither a reachable wake nor an enforceable maximum wait.
+      return Number.isFinite(park.wakeAt) && wait <= ceiling ? Option.some(park) : Option.none()
     }
   })
 }

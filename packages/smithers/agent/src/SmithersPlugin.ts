@@ -164,7 +164,7 @@ export const brief = [
 
 /**
  * Host operations behind the run flows. Each returns JSON-shaped data or a
- * promise of it; a thrown error reaches the cell as the call's failure text.
+ * promise of it; host exceptions become opaque call failures.
  *
  * The model chooses every `id` and `flow` these receive, and this plugin
  * passes them through unchanged, so the host is the authority: `inspect`
@@ -193,21 +193,16 @@ const sealed = { reads: [], writes: [], mode: "expected", onConflict: "serialize
 /** Run state moves between calls, so nothing but the guide may replay a sealed answer. */
 const live = { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" } as const
 
-class PortError extends Schema.TaggedError<PortError>()("@smthrs/agent/SmithersPlugin/PortError", {
-  message: Schema.String
-}) {}
+class PortError extends Schema.TaggedError<PortError>()("@smthrs/agent/SmithersPlugin/PortError", {}) {}
 Fault.register("@smthrs/agent/SmithersPlugin/PortError", "bug")
 
 /** The host's value as plain JSON; `undefined` fields drop and a missing value is null. */
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value) ?? "null") as Schema.Json
 
-/** Host port failures are the host's own model-facing refusals. */
-const publicError = (error: PortError): string => error.message
-
 const port = <A>(call: () => A) =>
   Effect.tryPromise({
     try: async () => json(await call()),
-    catch: (cause) => new PortError({ message: cause instanceof Error ? cause.message : String(cause) })
+    catch: () => new PortError({})
   })
 
 /**
@@ -240,8 +235,7 @@ const bindings = (ports: Ports): ReadonlyArray<FlowBinding.Binding> => [
       output: Schema.Json,
       effects: live
     } as const),
-    handler: () => port(ports.list),
-    publicError
+    handler: () => port(() => ports.list())
   }),
   FlowBinding.make({
     flow: ({
@@ -257,8 +251,7 @@ const bindings = (ports: Ports): ReadonlyArray<FlowBinding.Binding> => [
       output: Schema.Json,
       effects: live
     } as const),
-    handler: (request) => port(() => ports.run(request)),
-    publicError
+    handler: (request) => port(() => ports.run(request))
   }),
   FlowBinding.make({
     flow: ({
@@ -269,8 +262,7 @@ const bindings = (ports: Ports): ReadonlyArray<FlowBinding.Binding> => [
       output: Schema.Json,
       effects: live
     } as const),
-    handler: ({ id }) => port(() => ports.inspect(id)),
-    publicError
+    handler: ({ id }) => port(() => ports.inspect(id))
   })
 ]
 
