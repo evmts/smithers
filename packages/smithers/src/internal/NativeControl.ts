@@ -45,6 +45,7 @@ import type { JjError } from "@smthrs/jj"
 import { EngineEvent, SqlJournal } from "@smthrs/journal"
 import * as Journal from "@smthrs/journal/Journal"
 import * as Redaction from "@smthrs/journal/Redaction"
+import { CapabilitySet } from "@smthrs/kernel"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -1795,7 +1796,12 @@ export const make = (
         // The startup self-check: the offered list is read back from the
         // composed sources, so a source that regresses into offering a tool
         // without its provider stops the host instead of failing every call.
-        const offered = (yield* Effect.forEach(sources, (source) => source.bindings()).pipe(Effect.orDie))
+        const offered = (yield* Effect.forEach(sources, (source) => source.bindings()).pipe(
+          // Startup enumerates providers before a run supplies any approved
+          // authority. In particular it must not read workspace calibration.
+          CapabilitySet.attenuate([]),
+          Effect.orDie
+        ))
           .flatMap((bindings) => bindings.map((binding) => binding.descriptor.name))
         const unprovided = offeredWithoutProvider(offered, {
           fileMutations: sealedTo !== undefined || fileMutations,
