@@ -8846,10 +8846,6 @@
       },
       {
         "kind": "file",
-        "path": "packages/smithers/ui/docs/api.md.orig"
-      },
-      {
-        "kind": "file",
         "path": "packages/smithers/ui/docs/chat-timeline.md"
       },
       {
@@ -46172,6 +46168,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+      },
+      {
+        "kind": "file",
         "path": "packages/effect-code-storage/tsconfig.test.json"
       }
     ],
@@ -46616,6 +46616,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -46662,6 +46674,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -47112,6 +47128,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -47159,6 +47187,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -47522,6 +47554,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -47568,6 +47612,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -47891,6 +47939,18 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
       },
       {
         "kind": "file",
@@ -52544,6 +52604,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/chain/tsconfig.test.json"
       }
     ],
@@ -52944,6 +53008,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -52990,6 +53066,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -53407,6 +53487,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -53453,6 +53545,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -53873,6 +53969,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -53919,6 +54027,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -54215,6 +54327,18 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
       },
       {
         "kind": "file",
@@ -54823,6 +54947,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/agent/harness/tsconfig.test.json"
       }
     ],
@@ -55237,6 +55365,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -55288,6 +55428,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -55743,6 +55887,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -55801,6 +55957,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -56258,6 +56418,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -56300,6 +56472,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -56679,7 +56855,7 @@
     "package": "packages/smithers/agent/model-host",
     "name": "security",
     "rule": "LlmLint",
-    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"origin/main\",\"paths\":[\"packages/smithers/agent/model-host/src/**\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//packages/smithers/agent/model-host/src/**\",\"exclude\":[]}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[host-bearer-auth] Every turn and stream request presents the host bearer before any body is read or model is called\\nThreat: An unauthenticated network caller spends the owner's provider credential or drives turns on the host.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts\\nLook for:\\n- A path other than /health in createModelTurnHandler that reaches boundedJson, resolve or runModelTurn before authorized().\\n- An authorization comparison that is not constant time or accepts an empty or whitespace-only configured secret.\\n- A body size check that trusts content-length alone instead of the decoded byte count.\\n\\n[grant-wire-validation] A durable turn grant is strictly decoded, unexpired and pinned to the configured callback origin\\nThreat: A caller holding the host bearer makes the host send grant tokens or frames to an origin they control, or commit to another run's journal.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- decodeGrant accepting a producerBaseUrl that differs from the normalized callbackBaseUrl, or with userinfo, query or fragment.\\n- A grant whose request.runId, cursor.runId or cursor.legId is not checked against the grant's runId and legId.\\n- An expired or unparseable expiresAt that still yields a grant.\\n\\n[stream-path-owner-trust] The sealed stream endpoint never takes owner identity or model binding from the request body\\nThreat: A caller with the shared host bearer runs a turn as another owner or against a model and credential that owner did not configure.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/EnvironmentResolver.ts\\nLook for:\\n- The MODEL_HOST_STREAM_PATH branch reading ownerId from the JSON body and passing it into the resolver grant.\\n- environmentModelResolver preferring grant.request.model over the configured binding without the planner pinning origin and credential.\\n- A fixed placeholder grant token or cursor on the stream path that a resolver could treat as a real durable grant.\\n\\n[credential-egress-pinning] A provider credential is read by one planned name and sent only to its planned origin with redirects refused\\nThreat: A crafted model binding exfiltrates the owner's provider API key to an attacker-chosen URL.\\nFocus: packages/smithers/agent/model-host/src/EnvironmentResolver.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/ConfiguredModelRoute.ts, packages/smithers/agent/model-host/src/ModelProbe.ts\\nLook for:\\n- A credential read from env or ModelCredentials before planModelBinding succeeds, or under a name other than plan.credential.\\n- A fetch used for a provider call that does not set redirect: 'manual', letting a 3xx carry the key header to another origin.\\n- A Route or Endpoint built from a baseUrl or path that did not come from the validated ModelPlan.\\n\\n[credential-output-redaction] Model output, tool calls, samples and errors never echo the provider credential or provider text\\nThreat: A prompt-injected or malicious provider reflects the owner's API key into frames, logs or HTTP responses the renderer and other users see.\\nFocus: packages/smithers/agent/model-host/src/ModelTurnHost.ts, packages/smithers/agent/model-host/src/ModelProbe.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/ModelHostError.ts\\nLook for:\\n- A text, reasoning, tool name or tool argument emission that bypasses StreamingCredentialCutter or cutModelCredential.\\n- StreamingCredentialCutter emitting a secret prefix split across chunks, or finish() skipping the cut.\\n- A log annotation, ModelHostError message or HTTP error body that includes a cause, provider message or URL.\\n\\n[probe-egress-policy] A model Test dials only the planned origin, and only loopback when the host has no egress\\nThreat: A caller of the model Test endpoint makes the host send an owner credential to, or probe, an internal or attacker-chosen URL.\\nFocus: packages/smithers/agent/model-host/src/ModelProbe.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/ConfiguredModelRoute.ts\\nLook for:\\n- createModelProbe planning with options other than { egress: false } when options.egress is false, so the offline host reaches a non-loopback origin.\\n- A decision or generation call in ModelProbe that runs outside providerTransport, or returns success after it refused a redirect.\\n- Caller-composed ModelCallInput (prompt, system, questions, maxTokens) reaching the provider without the rpc schema's size and count bounds.\\n\\n[journal-receipt-fencing] Each committed frame is hash-checked against the expected cursor before the producer advances\\nThreat: A compromised or confused producer endpoint forks or rewrites a user's durable chat transcript without detection.\\nFocus: packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- DurableChatProducer.write advancing this.cursor when the reply batch, from, previousHash or hash does not match the locally computed digest.\\n- A retry that re-sends a frame under a stale cursor after a CommitRefused fence loss.\\n\\n[untrusted-turn-shape] Renderer-supplied messages and tools are shape-checked before becoming a provider request\\nThreat: A caller injects system-role content or malformed tool schemas that crash the host or override owner instructions.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/ModelTurnHost.ts, packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- turnRequest or streamRequest casting a body to StartAgentTurnRequest without checking message roles, tool names or parameter objects.\\n- appendWireMessage mapping an unknown role or item type to a system or tool message.\\n- Frame buffering nothing bounds in bytes or in time. The stream path's accumulator is bounded by MAX_STREAM_BYTES. `runModelTurn`'s drain buffer is deliberately unbounded in capacity — a finite one suspends the provider and re-creates the journal stall (#3812) — so what bounds its growth is the journal callback deadline in DurableChatProducer: a consumer that cannot finish ends the turn in seconds. Either bound removed is the finding.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":4,\"failOn\":\"error\",\"securityChecks\":[\"host-bearer-auth\",\"grant-wire-validation\",\"stream-path-owner-trust\",\"credential-egress-pinning\",\"credential-output-redaction\",\"probe-egress-policy\",\"journal-receipt-fencing\",\"untrusted-turn-shape\",\"general\"],\"scope\":\"changed\",\"manual\":false}",
+    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"origin/main\",\"paths\":[\"packages/smithers/agent/model-host/src/**\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//packages/smithers/agent/model-host/src/**\",\"exclude\":[]}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[host-bearer-auth] Every turn and stream request presents the host bearer before any body is read or model is called\\nThreat: An unauthenticated network caller spends the owner's provider credential or drives turns on the host.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts\\nLook for:\\n- A path other than /health in createModelTurnHandler that reaches boundedJson, resolve or runModelTurn before authorized().\\n- An authorization comparison that is not constant time or accepts an empty or whitespace-only configured secret.\\n- A body size check that trusts content-length alone instead of the decoded byte count.\\n\\n[grant-wire-validation] A durable turn grant is strictly decoded, unexpired and pinned to the configured callback origin\\nThreat: A caller holding the host bearer makes the host send grant tokens or frames to an origin they control, or commit to another run's journal.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- decodeGrant accepting a producerBaseUrl that differs from the normalized callbackBaseUrl, or with userinfo, query or fragment.\\n- A grant whose request.runId, cursor.runId or cursor.legId is not checked against the grant's runId and legId.\\n- An expired or unparseable expiresAt that still yields a grant.\\n\\n[stream-path-owner-trust] The sealed stream endpoint never takes owner identity or model binding from the request body\\nThreat: A caller with the shared host bearer runs a turn as another owner or against a model and credential that owner did not configure.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/EnvironmentResolver.ts\\nLook for:\\n- The MODEL_HOST_STREAM_PATH branch reading ownerId from the JSON body and passing it into the resolver grant.\\n- environmentModelResolver preferring grant.request.model over the configured binding without the planner pinning origin and credential.\\n- A fixed placeholder grant token or cursor on the stream path that a resolver could treat as a real durable grant.\\n\\n[credential-egress-pinning] A provider credential is read by one planned name and sent only to its planned origin with redirects refused\\nThreat: A crafted model binding exfiltrates the owner's provider API key to an attacker-chosen URL.\\nFocus: packages/smithers/agent/model-host/src/EnvironmentResolver.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/ConfiguredModelRoute.ts, packages/smithers/agent/model-host/src/ModelProbe.ts\\nLook for:\\n- A credential read from env or ModelCredentials before planModelBinding succeeds, or under a name other than plan.credential.\\n- A fetch used for a provider call that does not set redirect: 'manual', letting a 3xx carry the key header to another origin.\\n- A Route or Endpoint built from a baseUrl or path that did not come from the validated ModelPlan.\\n\\n[credential-output-redaction] Model output, tool calls, samples and errors never echo the provider credential or provider text\\nThreat: A prompt-injected or malicious provider reflects the owner's API key into frames, logs or HTTP responses the renderer and other users see.\\nFocus: packages/smithers/agent/model-host/src/ModelTurnHost.ts, packages/smithers/agent/model-host/src/ModelProbe.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/ModelHostError.ts\\nLook for:\\n- A text, reasoning, tool name or tool argument emission that bypasses StreamingCredentialCutter or cutModelCredential.\\n- StreamingCredentialCutter emitting a secret prefix split across chunks, or finish() skipping the cut.\\n- A log annotation, ModelHostError message or HTTP error body that includes a cause, provider message or URL.\\n\\n[probe-egress-policy] A model Test dials only the planned origin, and only loopback when the host has no egress\\nThreat: A caller of the model Test endpoint makes the host send an owner credential to, or probe, an internal or attacker-chosen URL.\\nFocus: packages/smithers/agent/model-host/src/ModelProbe.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/ConfiguredModelRoute.ts\\nLook for:\\n- createModelProbe planning with options other than { egress: false } when options.egress is false, so the offline host reaches a non-loopback origin.\\n- A decision or generation call in ModelProbe that runs outside providerTransport, or returns success after it refused a redirect.\\n- Caller-composed ModelCallInput (prompt, system, questions, maxTokens) reaching the provider without the rpc schema's size and count bounds.\\n\\n[journal-receipt-fencing] Each committed frame is hash-checked against the expected cursor before the producer advances\\nThreat: A compromised or confused producer endpoint forks or rewrites a user's durable chat transcript without detection.\\nFocus: packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- DurableChatProducer.write advancing this.cursor when the reply batch, from, previousHash or hash does not match the locally computed digest.\\n- A retry that re-sends a frame under a stale cursor after a CommitRefused fence loss.\\n\\n[untrusted-turn-shape] Renderer-supplied messages and tools are shape-checked before becoming a provider request\\nThreat: A caller injects system-role content or malformed tool schemas that crash the host or override owner instructions.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/ModelTurnHost.ts, packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- turnRequest or streamRequest casting a body to StartAgentTurnRequest without checking message roles, tool names or parameter objects.\\n- appendWireMessage mapping an unknown role or item type to a system or tool message.\\n- Frame buffering nothing bounds in bytes or in time. The stream path's accumulator is bounded by MAX_STREAM_BYTES. `runModelTurn`'s drain buffer is deliberately unbounded in capacity \u2014 a finite one suspends the provider and re-creates the journal stall (#3812) \u2014 so what bounds its growth is the journal callback deadline in DurableChatProducer: a consumer that cannot finish ends the turn in seconds. Either bound removed is the finding.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":4,\"failOn\":\"error\",\"securityChecks\":[\"host-bearer-auth\",\"grant-wire-validation\",\"stream-path-owner-trust\",\"credential-egress-pinning\",\"credential-output-redaction\",\"probe-egress-policy\",\"journal-receipt-fencing\",\"untrusted-turn-shape\",\"general\"],\"scope\":\"changed\",\"manual\":false}",
     "kinds": [
       "review"
     ],
@@ -56710,7 +56886,7 @@
     "package": "packages/smithers/agent/model-host",
     "name": "securityAudit",
     "rule": "LlmLint",
-    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"HEAD\",\"paths\":[\"packages/smithers/agent/model-host/src/**\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//packages/smithers/agent/model-host/src/**\",\"exclude\":[]}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[host-bearer-auth] Every turn and stream request presents the host bearer before any body is read or model is called\\nThreat: An unauthenticated network caller spends the owner's provider credential or drives turns on the host.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts\\nLook for:\\n- A path other than /health in createModelTurnHandler that reaches boundedJson, resolve or runModelTurn before authorized().\\n- An authorization comparison that is not constant time or accepts an empty or whitespace-only configured secret.\\n- A body size check that trusts content-length alone instead of the decoded byte count.\\n\\n[grant-wire-validation] A durable turn grant is strictly decoded, unexpired and pinned to the configured callback origin\\nThreat: A caller holding the host bearer makes the host send grant tokens or frames to an origin they control, or commit to another run's journal.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- decodeGrant accepting a producerBaseUrl that differs from the normalized callbackBaseUrl, or with userinfo, query or fragment.\\n- A grant whose request.runId, cursor.runId or cursor.legId is not checked against the grant's runId and legId.\\n- An expired or unparseable expiresAt that still yields a grant.\\n\\n[stream-path-owner-trust] The sealed stream endpoint never takes owner identity or model binding from the request body\\nThreat: A caller with the shared host bearer runs a turn as another owner or against a model and credential that owner did not configure.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/EnvironmentResolver.ts\\nLook for:\\n- The MODEL_HOST_STREAM_PATH branch reading ownerId from the JSON body and passing it into the resolver grant.\\n- environmentModelResolver preferring grant.request.model over the configured binding without the planner pinning origin and credential.\\n- A fixed placeholder grant token or cursor on the stream path that a resolver could treat as a real durable grant.\\n\\n[credential-egress-pinning] A provider credential is read by one planned name and sent only to its planned origin with redirects refused\\nThreat: A crafted model binding exfiltrates the owner's provider API key to an attacker-chosen URL.\\nFocus: packages/smithers/agent/model-host/src/EnvironmentResolver.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/ConfiguredModelRoute.ts, packages/smithers/agent/model-host/src/ModelProbe.ts\\nLook for:\\n- A credential read from env or ModelCredentials before planModelBinding succeeds, or under a name other than plan.credential.\\n- A fetch used for a provider call that does not set redirect: 'manual', letting a 3xx carry the key header to another origin.\\n- A Route or Endpoint built from a baseUrl or path that did not come from the validated ModelPlan.\\n\\n[credential-output-redaction] Model output, tool calls, samples and errors never echo the provider credential or provider text\\nThreat: A prompt-injected or malicious provider reflects the owner's API key into frames, logs or HTTP responses the renderer and other users see.\\nFocus: packages/smithers/agent/model-host/src/ModelTurnHost.ts, packages/smithers/agent/model-host/src/ModelProbe.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/ModelHostError.ts\\nLook for:\\n- A text, reasoning, tool name or tool argument emission that bypasses StreamingCredentialCutter or cutModelCredential.\\n- StreamingCredentialCutter emitting a secret prefix split across chunks, or finish() skipping the cut.\\n- A log annotation, ModelHostError message or HTTP error body that includes a cause, provider message or URL.\\n\\n[probe-egress-policy] A model Test dials only the planned origin, and only loopback when the host has no egress\\nThreat: A caller of the model Test endpoint makes the host send an owner credential to, or probe, an internal or attacker-chosen URL.\\nFocus: packages/smithers/agent/model-host/src/ModelProbe.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/ConfiguredModelRoute.ts\\nLook for:\\n- createModelProbe planning with options other than { egress: false } when options.egress is false, so the offline host reaches a non-loopback origin.\\n- A decision or generation call in ModelProbe that runs outside providerTransport, or returns success after it refused a redirect.\\n- Caller-composed ModelCallInput (prompt, system, questions, maxTokens) reaching the provider without the rpc schema's size and count bounds.\\n\\n[journal-receipt-fencing] Each committed frame is hash-checked against the expected cursor before the producer advances\\nThreat: A compromised or confused producer endpoint forks or rewrites a user's durable chat transcript without detection.\\nFocus: packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- DurableChatProducer.write advancing this.cursor when the reply batch, from, previousHash or hash does not match the locally computed digest.\\n- A retry that re-sends a frame under a stale cursor after a CommitRefused fence loss.\\n\\n[untrusted-turn-shape] Renderer-supplied messages and tools are shape-checked before becoming a provider request\\nThreat: A caller injects system-role content or malformed tool schemas that crash the host or override owner instructions.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/ModelTurnHost.ts, packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- turnRequest or streamRequest casting a body to StartAgentTurnRequest without checking message roles, tool names or parameter objects.\\n- appendWireMessage mapping an unknown role or item type to a system or tool message.\\n- Frame buffering nothing bounds in bytes or in time. The stream path's accumulator is bounded by MAX_STREAM_BYTES. `runModelTurn`'s drain buffer is deliberately unbounded in capacity — a finite one suspends the provider and re-creates the journal stall (#3812) — so what bounds its growth is the journal callback deadline in DurableChatProducer: a consumer that cannot finish ends the turn in seconds. Either bound removed is the finding.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":8,\"failOn\":\"error\",\"securityChecks\":[\"host-bearer-auth\",\"grant-wire-validation\",\"stream-path-owner-trust\",\"credential-egress-pinning\",\"credential-output-redaction\",\"probe-egress-policy\",\"journal-receipt-fencing\",\"untrusted-turn-shape\",\"general\"],\"scope\":\"all\",\"manual\":true}",
+    "reviewPolicy": "{\"changes\":{\"_tag\":\"GitDiff\",\"base\":\"HEAD\",\"paths\":[\"packages/smithers/agent/model-host/src/**\"]},\"include\":[{\"_tag\":\"Glob\",\"pattern\":\"//packages/smithers/agent/model-host/src/**\",\"exclude\":[]}],\"context\":[],\"deps\":[],\"prompt\":\"You are the security engineer for this repository, performing an authorized defensive security review commissioned by the repository owner. The owner wants weaknesses in their own code found and fixed before anyone can abuse them; this is the routine application-security review a code owner runs before a release. Read the files as an attacker would, then report each weakness precisely enough for the owner to fix it: the vulnerable location, the attacker's precondition, the impact, and the fix. Do not write exploit code for attacking live systems. Safe local regression tests using synthetic data are permitted; a trusted host can run them in an isolated checkout. This reviewer cannot attest execution; prefer one well-evidenced finding over several speculative ones.\",\"rubric\":\"Checks. Every finding names exactly one check id below.\\n\\n[host-bearer-auth] Every turn and stream request presents the host bearer before any body is read or model is called\\nThreat: An unauthenticated network caller spends the owner's provider credential or drives turns on the host.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts\\nLook for:\\n- A path other than /health in createModelTurnHandler that reaches boundedJson, resolve or runModelTurn before authorized().\\n- An authorization comparison that is not constant time or accepts an empty or whitespace-only configured secret.\\n- A body size check that trusts content-length alone instead of the decoded byte count.\\n\\n[grant-wire-validation] A durable turn grant is strictly decoded, unexpired and pinned to the configured callback origin\\nThreat: A caller holding the host bearer makes the host send grant tokens or frames to an origin they control, or commit to another run's journal.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- decodeGrant accepting a producerBaseUrl that differs from the normalized callbackBaseUrl, or with userinfo, query or fragment.\\n- A grant whose request.runId, cursor.runId or cursor.legId is not checked against the grant's runId and legId.\\n- An expired or unparseable expiresAt that still yields a grant.\\n\\n[stream-path-owner-trust] The sealed stream endpoint never takes owner identity or model binding from the request body\\nThreat: A caller with the shared host bearer runs a turn as another owner or against a model and credential that owner did not configure.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/EnvironmentResolver.ts\\nLook for:\\n- The MODEL_HOST_STREAM_PATH branch reading ownerId from the JSON body and passing it into the resolver grant.\\n- environmentModelResolver preferring grant.request.model over the configured binding without the planner pinning origin and credential.\\n- A fixed placeholder grant token or cursor on the stream path that a resolver could treat as a real durable grant.\\n\\n[credential-egress-pinning] A provider credential is read by one planned name and sent only to its planned origin with redirects refused\\nThreat: A crafted model binding exfiltrates the owner's provider API key to an attacker-chosen URL.\\nFocus: packages/smithers/agent/model-host/src/EnvironmentResolver.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/ConfiguredModelRoute.ts, packages/smithers/agent/model-host/src/ModelProbe.ts\\nLook for:\\n- A credential read from env or ModelCredentials before planModelBinding succeeds, or under a name other than plan.credential.\\n- A fetch used for a provider call that does not set redirect: 'manual', letting a 3xx carry the key header to another origin.\\n- A Route or Endpoint built from a baseUrl or path that did not come from the validated ModelPlan.\\n\\n[credential-output-redaction] Model output, tool calls, samples and errors never echo the provider credential or provider text\\nThreat: A prompt-injected or malicious provider reflects the owner's API key into frames, logs or HTTP responses the renderer and other users see.\\nFocus: packages/smithers/agent/model-host/src/ModelTurnHost.ts, packages/smithers/agent/model-host/src/ModelProbe.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/ModelHostError.ts\\nLook for:\\n- A text, reasoning, tool name or tool argument emission that bypasses StreamingCredentialCutter or cutModelCredential.\\n- StreamingCredentialCutter emitting a secret prefix split across chunks, or finish() skipping the cut.\\n- A log annotation, ModelHostError message or HTTP error body that includes a cause, provider message or URL.\\n\\n[probe-egress-policy] A model Test dials only the planned origin, and only loopback when the host has no egress\\nThreat: A caller of the model Test endpoint makes the host send an owner credential to, or probe, an internal or attacker-chosen URL.\\nFocus: packages/smithers/agent/model-host/src/ModelProbe.ts, packages/smithers/agent/model-host/src/LocalModel.ts, packages/smithers/agent/model-host/src/ConfiguredModelRoute.ts\\nLook for:\\n- createModelProbe planning with options other than { egress: false } when options.egress is false, so the offline host reaches a non-loopback origin.\\n- A decision or generation call in ModelProbe that runs outside providerTransport, or returns success after it refused a redirect.\\n- Caller-composed ModelCallInput (prompt, system, questions, maxTokens) reaching the provider without the rpc schema's size and count bounds.\\n\\n[journal-receipt-fencing] Each committed frame is hash-checked against the expected cursor before the producer advances\\nThreat: A compromised or confused producer endpoint forks or rewrites a user's durable chat transcript without detection.\\nFocus: packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- DurableChatProducer.write advancing this.cursor when the reply batch, from, previousHash or hash does not match the locally computed digest.\\n- A retry that re-sends a frame under a stale cursor after a CommitRefused fence loss.\\n\\n[untrusted-turn-shape] Renderer-supplied messages and tools are shape-checked before becoming a provider request\\nThreat: A caller injects system-role content or malformed tool schemas that crash the host or override owner instructions.\\nFocus: packages/smithers/agent/model-host/src/HostServer.ts, packages/smithers/agent/model-host/src/ModelTurnHost.ts, packages/smithers/agent/model-host/src/DurableChatProducer.ts\\nLook for:\\n- turnRequest or streamRequest casting a body to StartAgentTurnRequest without checking message roles, tool names or parameter objects.\\n- appendWireMessage mapping an unknown role or item type to a system or tool message.\\n- Frame buffering nothing bounds in bytes or in time. The stream path's accumulator is bounded by MAX_STREAM_BYTES. `runModelTurn`'s drain buffer is deliberately unbounded in capacity \u2014 a finite one suspends the provider and re-creates the journal stall (#3812) \u2014 so what bounds its growth is the journal callback deadline in DurableChatProducer: a consumer that cannot finish ends the turn in seconds. Either bound removed is the finding.\\n\\n[general] Any other vulnerability\\nThreat: Any attacker who controls an input this code reads (a network request, a file, an environment variable, a model or tool output, a dependency) makes it act outside what its caller authorized.\\nFocus: every reviewed file\\nLook for:\\n- Injection: untrusted text reaching a shell, SQL, a template, a regex, HTML, a log line, or an eval.\\n- Authorization: an action or read that skips the ownership, tenancy, or role check its siblings perform.\\n- Secrets: credentials, tokens, or keys hardcoded, logged, returned to a client, or passed to a child process that does not need them.\\n- Path traversal: a caller-controlled path or archive entry that can escape its intended root, including via symlinks.\\n- SSRF: a caller-controlled URL, host, or redirect fetched by the server.\\n- Unsafe deserialization: untrusted bytes decoded into code, prototypes, or unchecked types.\\n- Command execution: a spawn, exec, or shell whose argv or environment an untrusted input shapes.\\n- Crypto misuse: weak or homemade primitives, predictable randomness for secrets, missing constant-time comparison, disabled TLS verification.\\n- Prompt injection: untrusted content placed in an agent prompt or tool result that can steer tool calls, approvals, or data egress.\\n- Supply chain: install scripts, unpinned downloads, or unverified artifacts executed at build or run time.\\n- Denial of service: unbounded reads, allocations, loops, recursion, retries, or regex backtracking on untrusted input.\\n- Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses.\\n\\nReporting rules:\\n- Include structured security fields: checkId, impact, verification, releaseRecommendation, attackerPreconditions, evidence, and nextConfirmationStep. Message describes the cause and concrete fix.\\n- Impact is low, medium, high, or critical; verification is suspected for every model finding. Only a trusted host receipt of controlled reproduction at an immutable revision can confirm a finding.\\n- Release recommendation is allow, review, or block. High and critical impact always block release, even when suspected. Severity is derived from release recommendation, never verification.\\n- file and line point at the vulnerable operation (the sink or the missing check), not an import.\\n- Report each distinct flaw once; name at most three call sites of the same flaw.\\n- Style, correctness bugs without a security consequence, and missing tests are not findings.\\n- Return the completion envelope requested by the review host, including coverage for every declared check.\",\"engine\":\"claude\",\"model\":\"claude-opus-5-5\",\"batchSize\":8,\"failOn\":\"error\",\"securityChecks\":[\"host-bearer-auth\",\"grant-wire-validation\",\"stream-path-owner-trust\",\"credential-egress-pinning\",\"credential-output-redaction\",\"probe-egress-policy\",\"journal-receipt-fencing\",\"untrusted-turn-shape\",\"general\"],\"scope\":\"all\",\"manual\":true}",
     "kinds": [
       "review"
     ],
@@ -56767,6 +56943,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -56818,6 +57006,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -57399,6 +57591,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -57445,6 +57649,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -57824,6 +58032,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -57885,6 +58105,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -58211,6 +58435,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -58472,6 +58708,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -58783,6 +59023,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -58825,6 +59077,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -59235,6 +59491,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -59281,6 +59549,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -59592,6 +59864,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -59634,6 +59918,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -60123,6 +60411,18 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
       },
       {
         "kind": "file",
@@ -61975,6 +62275,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/build/tsconfig.test.json"
       }
     ],
@@ -62548,6 +62852,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/control/tsconfig.test.json"
       }
     ],
@@ -62941,6 +63249,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -63014,6 +63334,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -63461,6 +63785,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -63538,6 +63874,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -63976,6 +64316,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -64053,6 +64405,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -64432,6 +64788,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -64509,6 +64877,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -65036,6 +65408,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -65113,6 +65497,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -65439,6 +65827,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -65501,6 +65901,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -65982,6 +66386,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -66028,6 +66444,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -66493,6 +66913,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -66566,6 +66998,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -67113,6 +67549,18 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
       },
       {
         "kind": "file",
@@ -68104,6 +68552,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/jj/tsconfig.test.json"
       }
     ],
@@ -68529,6 +68981,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -68669,6 +69133,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -69098,6 +69566,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -69140,6 +69620,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -69444,6 +69928,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -69521,6 +70017,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -69869,6 +70369,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -69915,6 +70427,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -70362,6 +70878,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -70408,6 +70936,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -70787,6 +71319,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -70833,6 +71377,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -71144,6 +71692,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -71186,6 +71746,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -71596,6 +72160,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -71710,6 +72286,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -72089,6 +72669,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -72170,6 +72762,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -72508,6 +73104,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -72554,6 +73162,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -73083,6 +73695,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/flows/platform-node/tsconfig.test.json"
       }
     ],
@@ -73459,6 +74075,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -73505,6 +74133,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -73922,6 +74554,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -73995,6 +74639,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -74479,6 +75127,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -74525,6 +75185,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -74972,6 +75636,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -75018,6 +75694,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -75382,6 +76062,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -75424,6 +76116,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -75803,6 +76499,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -75849,6 +76557,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -76191,6 +76903,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       }
     ],
@@ -76233,6 +76957,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -76698,6 +77426,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -76749,6 +77489,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -77358,6 +78102,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -77404,6 +78160,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -77754,6 +78514,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -77805,6 +78577,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -78184,6 +78960,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -78230,6 +79018,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -78652,6 +79444,18 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
       },
       {
         "kind": "file",
@@ -79484,6 +80288,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/ui/views/tsconfig.test.json"
       }
     ],
@@ -80026,6 +80834,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -80398,6 +81218,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -81076,6 +81900,22 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/test/temporaryEnvironment.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.mjs"
       },
       {
@@ -81156,6 +81996,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -81494,6 +82338,18 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
       },
       {
@@ -81540,6 +82396,10 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
       },
       {
         "kind": "file",
@@ -81882,6 +82742,18 @@
       {
         "kind": "file",
         "path": "packages/repo-targets/test-utils/effect-property.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
       },
       {
         "kind": "file",
