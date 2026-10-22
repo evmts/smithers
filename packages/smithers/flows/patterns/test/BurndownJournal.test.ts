@@ -135,6 +135,66 @@ const isSettled = (step: Step, nodeId: string) =>
   step.eventType === "flows.engine.node-settled" && step.nodeId === nodeId
 
 describe("Burndown journal", () => {
+  for (const stage of ["land", "release"] as const) {
+    for (const phase of ["schedule", "execution", "settlement"] as const) {
+      it(`settles ${stage} once and preserves the original ${phase} failure`, async () => {
+        const settlements: Array<FlowRuntime.NodeRecord> = []
+        const original = new Burndown.Stop({ message: "original step failure" })
+        const released: Array<string> = []
+        const options: Burndown.RoundOptions<unknown, Issue, string, Burndown.Stop, never, string> = {
+          key: "sweep",
+          concurrency: 1,
+          claim: () => Effect.void,
+          work: () => Effect.succeed("fixed"),
+          ...(stage === "land"
+            ? { land: () => phase === "execution" ? Effect.fail(original) : Effect.succeed("commit") }
+            : {}),
+          release: ({ item }) =>
+            Effect.suspend(() => {
+              released.push(item.id)
+              return stage === "release" && phase === "execution" ? Effect.fail(original) : Effect.void
+            })
+        }
+        const dispatch = Dispatch.toLayer(({ input, round }) =>
+          Burndown.round({ input, round, items: [{ id: "a" }] }, options).pipe(
+            Effect.updateService(FlowRuntime.FlowRuntime, (runtime) => ({
+              ...runtime,
+              recordNode: (record) =>
+                Effect.suspend(() => {
+                  if (!("nodeId" in record) || record.nodeId !== `sweep/a/${stage}`) return runtime.recordNode!(record)
+                  if (record._tag === "NodeSettled") settlements.push(record)
+                  if ((phase === "schedule" && record._tag === "NodeScheduled") || record._tag === "NodeSettled") {
+                    return Effect.fail(
+                      new Interpreter.InterpreterError({
+                        code: "plan_changed",
+                        flow: Round._tag,
+                        node: record.nodeId,
+                        message: settlements.length > 1 ? "replacement journal failure" : "original journal failure"
+                      })
+                    )
+                  }
+                  return runtime.recordNode!(record)
+                })
+            }))
+          )
+        )
+        const exit = await durable(Effect.gen(function*() {
+          const context = yield* incarnation(yield* Effect.scope, dispatch)
+          return yield* Effect.exit(
+            Round.execute({}, { executionId: `fault-${stage}-${phase}` }).pipe(Effect.provideContext(context))
+          )
+        }))
+        expect(Exit.isFailure(exit)).toBe(true)
+        const error = Exit.isFailure(exit) ? exit.cause.reasons.find((reason) => reason._tag === "Fail") : undefined
+        expect(error?._tag === "Fail" ? (error.error as Burndown.Stop).message : undefined).toBe(
+          phase === "execution" ? original.message : "original journal failure"
+        )
+        expect(settlements).toHaveLength(phase === "schedule" ? 0 : 1)
+        expect(released.filter((id) => id === "a")).toHaveLength(1)
+      })
+    }
+  }
+
   it("stops before landing when the runtime refuses its record and releases every claim", async () => {
     const claimed: Array<string> = []
     const released: Array<string> = []

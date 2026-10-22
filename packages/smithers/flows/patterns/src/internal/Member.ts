@@ -27,11 +27,11 @@ import type * as Node from "@smthrs/plan/Node"
  * @since 1.0.0
  * @private
  */
-export interface Member<R = never> {
+export interface Member<R = never, P = never, A = unknown> {
   readonly _tag?: string | undefined
   readonly name?: string | undefined
   readonly description?: string | undefined
-  readonly call: (payload: never) => Node.Node<unknown, unknown, R>
+  readonly call: (payload: P) => Node.Node<A, unknown, R>
 }
 
 /**

@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, DurableDeferred, Fault, Flow, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
+import { Action, DurableDeferred, Fault, Flow, Graph, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -62,6 +62,78 @@ const refusedRound = (input: Record<string, unknown>, options: Record<string, un
 }
 
 describe("Burndown.round", () => {
+  it("bounds duplicate item ids in validation errors before invoking members", async () => {
+    const id = "a".repeat(100_000)
+    const { note, tape } = recorder()
+    const error = await Effect.runPromise(
+      Effect.flip(Burndown.round({ input: null, round: 0, items: items(id, id) }, baseOptions(note)))
+    )
+    expect(error).toMatchObject({ code: "invalid_input" })
+    expect(error.message.length).toBeLessThan(200)
+    expect(error.message).toContain(id.slice(0, 64))
+    expect(error.message).toContain(String(id.length))
+    expect(tape).toEqual([])
+  })
+
+  it("starts with fresh requeue counts on each execution of the same round Effect", async () => {
+    Fault.register("BurndownTestInfra", "infra")
+    const { note } = recorder()
+    let attempts = 0
+    const round = Burndown.round({ input: null, round: 0, items: items("a") }, {
+      ...baseOptions(note),
+      work: () =>
+        Effect.suspend(() =>
+          attempts++ === 0 ? Effect.fail({ _tag: "BurndownTestInfra", message: "offline" }) : Effect.succeed("ok")
+        )
+    })
+    const results = await Effect.runPromise(Effect.all([round, round], { concurrency: 1 }))
+    expect(results[0]!.rows[0]).toMatchObject({ status: "requeued", requeues: 1 })
+    expect(results[1]!.rows[0]).toEqual({ id: "a", status: "landed", detail: "" })
+  })
+
+  it("reads carried requeue counts when the round is built, not when it runs", async () => {
+    Fault.register("BurndownTestInfra", "infra")
+    const { note } = recorder()
+    const rows: Array<{ id: string; status: "requeued"; detail: string; requeues: number }> = [
+      { id: "a", status: "requeued", detail: "offline", requeues: 2 }
+    ]
+    const round = Burndown.round({ input: null, round: 1, items: items("a"), rows }, {
+      ...baseOptions(note),
+      maxRequeues: 3,
+      work: () => Effect.fail({ _tag: "BurndownTestInfra", message: "offline" })
+    })
+    // An edit to the caller's row after the round was built does not reach it.
+    rows[0]!.requeues = 3
+    const result = await Effect.runPromise(round)
+    expect(result.rows[0]).toMatchObject({ status: "requeued", requeues: 3 })
+  })
+
+  it("releases a claim when interruption arrives as acquisition succeeds", async () => {
+    const held = new Set<string>()
+    const released: Array<string> = []
+    const { note, tape } = recorder()
+    const exit = await Effect.runPromiseExit(Burndown.round({ input: null, round: 0, items: items("a") }, {
+      ...baseOptions(note),
+      claim: ({ item }) =>
+        Effect.uninterruptible(Effect.withFiber((fiber) =>
+          Effect.sync(() => {
+            held.add(item.id)
+            // Deliver cancellation at the successful acquisition boundary.
+            fiber.interruptUnsafe()
+          })
+        )),
+      release: ({ item }) =>
+        Effect.sync(() => {
+          held.delete(item.id)
+          released.push(item.id)
+        })
+    }))
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(released).toEqual(["a"])
+    expect([...held]).toEqual([])
+    expect(tape).toEqual([])
+  })
+
   it("claims, works, and releases only the items selection calls ours", async () => {
     const { note, tape } = recorder()
     const result = await runRound({ items: [{ id: "a" }, { id: "b", owner: "mac-mini" }, { id: "c" }] }, {
@@ -665,7 +737,12 @@ describe("Burndown.round", () => {
         "invalid_input",
         "Burndown items must each have a nonblank string id"
       ],
-      [{ items: [{ id: "a" }, { id: "a" }] }, {}, "invalid_input", "Burndown item ids must be unique, \"a\" repeats"]
+      [
+        { items: [{ id: "a" }, { id: "a" }] },
+        {},
+        "invalid_input",
+        "Burndown item ids must be unique, \"a\" (length 1) repeats"
+      ]
     ] as const
     for (const [input, options, code, message] of refusals) {
       const error = await refusedRound(input, options)
@@ -739,19 +816,19 @@ describe("Burndown.child", () => {
 // because a body builds once and cannot see a run-time answer.
 const Discover = Action.make("burndown-test/discover", {
   payload: { input: Schema.Unknown, round: Schema.Number },
-  success: Schema.Unknown
+  success: Schema.Array(Schema.Struct({ id: Schema.String, owner: Schema.optional(Schema.String) }))
 })
 
 const Capacity = Action.make("burndown-test/capacity", {
   payload: { input: Schema.Unknown, round: Schema.Number },
-  success: Schema.Unknown
+  success: Burndown.Capacity
 })
 
 const Dispatch = Burndown.dispatch("burndown-test/dispatch")
 
 interface Script {
   readonly discover: (round: number) => ReadonlyArray<Issue>
-  readonly capacity?: (call: number) => unknown
+  readonly capacity?: (call: number) => Burndown.Capacity
   readonly work?: (item: Issue) => Effect.Effect<string, string>
   readonly claim?: (item: Issue) => Effect.Effect<void, string | Burndown.Held>
   readonly select?: (item: Issue, round: number) => Burndown.Selection
@@ -763,7 +840,10 @@ const scripted = (script: Script) => {
   const layers = [
     Discover.toLayer(({ round }) => Effect.as(note(`discover:${round}`), script.discover(round))),
     Capacity.toLayer(({ round }) =>
-      Effect.as(note(`capacity:${round}`), script.capacity === undefined ? undefined : script.capacity(capacityCalls++))
+      Effect.as(
+        note(`capacity:${round}`),
+        script.capacity === undefined ? Burndown.available(1) : script.capacity(capacityCalls++)
+      )
     ),
     Burndown.layer(Dispatch, {
       key: "test",
@@ -803,11 +883,109 @@ const settleExit = (
   )
 
 describe("Burndown.make", () => {
+  it("checks member payload and result contracts for actions and flows", () => {
+    const wrongPayload = { unrelated: Schema.String }
+    const roundPayload = { input: Schema.Unknown, round: Schema.Number }
+    const WrongDiscover = Action.make("burndown-types/discover-payload", {
+      payload: wrongPayload,
+      success: Discover.successSchema
+    })
+    const WrongDispatch = Action.make("burndown-types/dispatch-payload", {
+      payload: wrongPayload,
+      success: Burndown.RoundResult
+    })
+    const WrongCapacity = Action.make("burndown-types/capacity-payload", {
+      payload: wrongPayload,
+      success: Burndown.Capacity
+    })
+    const WrongDiscoverResult = Flow.make("burndown-types/discover-result", {
+      payload: roundPayload,
+      success: Schema.Number,
+      body: () => Node.succeed(0)
+    })
+    const WrongDispatchResult = Action.make("burndown-types/dispatch-result", {
+      payload: Burndown.DispatchPayload,
+      success: Schema.String
+    })
+    const WrongCapacityResult = Flow.make("burndown-types/capacity-result", {
+      payload: roundPayload,
+      success: Schema.String,
+      body: () => Node.succeed("available")
+    })
+    // @ts-expect-error Discovery must accept input and round.
+    Burndown.make({ discover: WrongDiscover, dispatch: Dispatch, maxRounds: 1 })
+    // @ts-expect-error Dispatch must accept the payload the lineage sends.
+    Burndown.make({ discover: Discover, dispatch: WrongDispatch, maxRounds: 1 })
+    // @ts-expect-error Capacity must accept input and round.
+    Burndown.make({ discover: Discover, dispatch: Dispatch, capacity: WrongCapacity, maxRounds: 1 })
+    // @ts-expect-error Discovery must return items.
+    Burndown.make({ discover: WrongDiscoverResult, dispatch: Dispatch, maxRounds: 1 })
+    // @ts-expect-error Dispatch must return RoundResult.
+    Burndown.make({ discover: Discover, dispatch: WrongDispatchResult, maxRounds: 1 })
+    // @ts-expect-error Capacity must return Capacity.
+    Burndown.make({ discover: Discover, dispatch: Dispatch, capacity: WrongCapacityResult, maxRounds: 1 })
+    const TypedDiscovery = Flow.make("burndown-types/typed-discovery", {
+      payload: { input: Schema.Struct({ repo: Schema.String }), round: Schema.Number },
+      success: Discover.successSchema,
+      body: () => Node.succeed(items("a"))
+    })
+    expect(Burndown.make({ discover: TypedDiscovery, dispatch: Dispatch, capacity: Capacity, maxRounds: 1 })._tag)
+      .toBeDefined()
+  })
+
+  it("rediscovers deferred-only work and respects the round budget", async () => {
+    for (const maxRounds of [1, 3]) {
+      const rounds: Array<number> = []
+      const burndown = Burndown.make({ discover: Discover, dispatch: Dispatch, maxRounds })
+      const result = await settle(burndown, { input: null }, [
+        Discover.toLayer(() => Effect.succeed(items("a"))),
+        Dispatch.toLayer(({ round }) =>
+          Effect.sync(() => {
+            rounds.push(round)
+            return round === 0
+              ? { launched: 0, deferred: 1, rows: [] }
+              : { launched: 0, deferred: 0, rows: [] }
+          })
+        )
+      ])
+      expect(result).toEqual({
+        rows: [],
+        rounds: Math.min(maxRounds, 2),
+        stopped: maxRounds === 1 ? "max_rounds" : "drained"
+      })
+      expect(rounds).toEqual(maxRounds === 1 ? [0] : [0, 1])
+    }
+  })
+
+  it("keys the fold by every carried row field that affects its output", () => {
+    const burndown = Burndown.make({ discover: Discover, dispatch: Dispatch, maxRounds: 3 })
+    const foldFor = (rows: ReadonlyArray<Burndown.Row>) => {
+      const node = Graph.nodes(Graph.build(burndown, { input: null, rows })).find((node) => node.kind === "Map")
+      expect(node).toBeDefined()
+      const mapper = Node.mapper(node!.ast)!
+      return { material: node!.draft.material.body, result: mapper({ launched: 0, deferred: 0, rows: [] }) }
+    }
+    const original: Burndown.Row = { id: "a", status: "requeued", detail: "old", requeues: 1 }
+    const first = foldFor([original])
+    expect(foldFor([{ ...original }]).material).toEqual(first.material)
+    for (
+      const row of [
+        { ...original, detail: "changed" },
+        { ...original, requeues: 2 },
+        { ...original, status: "skipped" as const }
+      ]
+    ) {
+      const changed = foldFor([row])
+      expect(changed.result).not.toEqual(first.result)
+      expect(changed.material).not.toEqual(first.material)
+    }
+  })
+
   it("keeps the default Unknown codec and settles plain discovery failures", async () => {
     const PlainFailure = Schema.Struct({ message: Schema.String })
     const FailedDiscovery = Action.make("burndown-test/plain-failure-discovery", {
       payload: { input: Schema.Unknown, round: Schema.Number },
-      success: Schema.Unknown,
+      success: Discover.successSchema,
       error: PlainFailure
     })
     const failure = { message: "discovery refused" }
@@ -832,7 +1010,7 @@ describe("Burndown.make", () => {
     const Failure = Schema.Union([DiscoveryFailed, Burndown.Stop])
     const FailedDiscovery = Action.make("burndown-test/typed-failure-discovery", {
       payload: { input: Schema.Unknown, round: Schema.Number },
-      success: Schema.Unknown,
+      success: Discover.successSchema,
       error: DiscoveryFailed
     })
     const failure = new DiscoveryFailed({ message: "provider refused discovery" })
@@ -1130,6 +1308,7 @@ describe("Burndown.make", () => {
       success: Schema.Unknown
     })
     const { layers } = scripted({ discover: () => items("a") })
+    // @ts-expect-error Exercise a dispatch that breaks the result contract at runtime.
     const burndown = Burndown.make({ discover: Discover, dispatch: Broken, maxRounds: 2 })
 
     await expect(

@@ -95,7 +95,13 @@ const recorded = (
 // The sweep's lineage over test discovery: a round per handoff, as in flow.ts.
 const Discover = Action.make("issue-sweep-test/discover", {
   payload: { input: Schema.Unknown, round: Schema.Number },
-  success: Schema.Unknown
+  success: Schema.Array(Schema.Struct({
+    id: Schema.String,
+    number: Schema.Number,
+    title: Schema.String,
+    labels: Schema.Array(Schema.String),
+    updatedAt: Schema.optional(Schema.String)
+  }))
 })
 const Dispatch = Burndown.dispatch("issue-sweep-test/dispatch")
 const Rounds = Burndown.make({ name: "issue-sweep-test/rounds", discover: Discover, dispatch: Dispatch, maxRounds: 5 })

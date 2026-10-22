@@ -13,8 +13,8 @@ four provider calls change.
 ## The shape
 
 ```text
-round N:  capacity? ─┬─ Available(slots) ─▶ discover ─▶ dispatch ─┬─ launched > 0 ─▶ Flow.to(round N+1)
-                     ├─ WaitUntil(at) ───▶ Sleep ──▶ Flow.to(N+1)  └─ launched = 0 ─▶ drained, or Stop if select erred
+round N:  capacity? ─┬─ Available(slots) ─▶ discover ─▶ dispatch ─┬─ launched, deferred or requeued ─▶ Flow.to(round N+1)
+                     ├─ WaitUntil(at) ───▶ Sleep ──▶ Flow.to(N+1)  └─ none ─▶ drained, or Stop if select erred
                      └─ Exhausted ───────▶ WaitFor(signal) ──▶ Flow.to(N+1)
 
 dispatch: select ─▶ slot: claim ─▶ work (child: key/id) ─┬─▶ land (queue)  ─▶ release
@@ -78,10 +78,20 @@ export default Burndown.make({
 ```
 
 Start it with `{ input: { repo: "smithersai/smithers" } }`. The lineage ends
-`drained` when a round launches nothing because nothing is eligible, or
+`drained` when a round launches, defers and requeues nothing, or
 `max_rounds` when the budget runs out. A round spent parked counts against
 `maxRounds`. A round that launches nothing because `select` failed does not
 drain: the lineage fails with `Burndown.Stop` naming the cause.
+
+Deferred items are ours but lacked capacity. The next round rediscovers them,
+even when the current round launched nothing. If deferred work spends the
+last round, the lineage settles as `max_rounds`.
+
+`MakeOptions<E, I>` checks each member's payload and result. Discovery and
+capacity accept `{ input: I, round: number }` and return an item array and
+`Capacity`, respectively. Dispatch accepts `DispatchPayload` and returns
+`RoundResult`. `make` infers `I` from the members. Declare their success
+schemas with these results instead of `Schema.Unknown`.
 
 Declare `error` on `Burndown.make` when provider steps raise tagged errors.
 Use a union of the discovery, capacity and dispatch errors plus
@@ -206,6 +216,11 @@ settles.
 A round run outside a flow, as a plain Effect, journals nothing. A runtime
 that keeps no journal, such as the in-memory engine, skips the records.
 
+Each scheduled step attempts settlement once. A scheduling failure stops the
+round without settlement. A settlement failure stops the round without a second
+attempt. If the step itself failed, a recording failure preserves the original
+step error.
+
 ## Restart without duplicates
 
 `work` receives `executionId` `${key}/${item.id}`, here
@@ -221,6 +236,15 @@ time. A landing that was still running when the process died runs again,
 because nothing recorded how it ended; make `land` safe to repeat. `claim`
 and `release` always run again on a rerun, since the rerun claims again. A
 new burndown with the same `key` is a new run and lands again.
+
+The fold includes the full carried rows in its capture, so changing a carried
+status, detail or requeue count changes its plan identity. Each execution of a
+round Effect starts its requeue counts from the input rows. Reusing that Effect
+does not carry counts from its previous execution.
+
+Claim acquisition and registration for cleanup run together without
+interruption. A cancellation that arrives during acquisition waits for the
+claim to finish, then releases a successful claim once.
 
 ## Resume after capacity runs out
 
@@ -248,6 +272,8 @@ The parked round's waiting row also carries this token.
   select an item. The claim is the arbiter: the loser gets `Held`.
 - A `discover` call that answers a malformed backlog fails the dispatch with
   an `invalid_input` `PatternError` before any claim.
+- A duplicate item error includes at most the first 64 UTF-16 code units of
+  the id and its full length.
 
 The reference for every export is in [the API reference](./api.md#burndown).
 
