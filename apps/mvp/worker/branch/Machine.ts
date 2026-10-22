@@ -2,7 +2,7 @@ import { type Sandbox, SandboxTools } from "@smthrs/sandbox"
 import { Cause, Clock, Effect, Metric } from "effect"
 import { SANDBOX_USER } from "../../src/features/terminal/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
-import type { SleepOutcome, ToolOutcome } from "./Machines.ts"
+import type { CommandOutcome, CommandRequest, SleepOutcome, ToolOutcome } from "./Machines.ts"
 import { provisionArgv, userOf } from "./Users.ts"
 
 // What a branch's machine does for its tools and its lifecycle, over any host (decision 0005 §2-§3,
@@ -274,6 +274,91 @@ export const tool = <R>(
       )
     ),
     Effect.withSpan("sandbox.object.tool", { attributes: { "smithers.sandbox.tool": options.call.tool } }),
+  )
+
+/** A tool's failure as the plain data a command operation answers. */
+const failedCommand = (error: SandboxTools.ToolFailure): CommandOutcome =>
+  error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused"
+    ? { _tag: "Refused", reason: error.reason }
+    : error._tag === "@smthrs/sandbox/SandboxTools/ToolLost"
+    ? { _tag: "Lost" }
+    : { _tag: "ToolUnavailable", code: error.code, ...(error.exitCode === undefined ? {} : { exitCode: error.exitCode }) }
+
+/**
+ * Runs one operation on a command person `ownerId` starts detached in the machine (`SandboxTools.start`, `observe`,
+ * `collect`, `cancel`), as their own user, with the command's pid, exit and output kept in their home
+ * (`callsDirectory`) under its key.
+ *
+ * `generation` is the machine's running generation: the one the wake answered for a `start`, which the object
+ * remembers for the key as it remembers a tool's command (`run:<key>`, for RUN_RECORD_MS); for the rest, the one
+ * running now, or `undefined` when the machine isn't. A key started on another generation is gone with that machine:
+ * its `start` answers `Lost` and never starts it again, it observes `lost`, it collects `Lost`, and cancelling it has
+ * nothing to stop. A key cancelled before any start reached the object is remembered as gone, so a start still on its
+ * way never starts it. A start that names the tool call it is for (`callId`) finds that call's own command record too:
+ * a command an earlier attempt ran as a tool call (`tool`) is `Lost`, never started again as a job. Every operation is
+ * use of the machine (`touch`), so one whose command still runs isn't put to sleep, and a collected command's working
+ * copy is saved, as a tool call's is.
+ */
+export const command = <R>(
+  box: Box<R>,
+  options: { readonly ownerId: string; readonly request: CommandRequest; readonly generation: number | undefined },
+): Effect.Effect<CommandOutcome, never, R> =>
+  Effect.gen(function* () {
+    const { generation, request } = options
+    const user = userOf(options.ownerId)
+    let started = startedOf(yield* box.storage.get<RunStarted | number>(`run:${request.key}`))
+    if (request.op === "start" && generation !== undefined) {
+      if (
+        started === undefined && request.callId !== undefined &&
+        (yield* box.storage.get<RunStarted | number>(`run:${request.callId}`)) !== undefined
+      ) {
+        return { _tag: "Lost" } as const
+      }
+      if ((yield* box.run(provisionArgv(user), "root")) !== 0) return { _tag: "Unavailable" } as const
+      if (started === undefined) {
+        started = { generation, at: yield* Clock.currentTimeMillis }
+        yield* dropOldRuns(box, started.at)
+        yield* box.storage.put(`run:${request.key}`, started)
+      }
+    }
+    if (generation === undefined || started?.generation !== generation) {
+      // Generation 0 is none: a key cancelled before it started stays gone.
+      if (request.op === "cancel" && started === undefined) {
+        yield* box.storage.put(`run:${request.key}`, { generation: 0, at: yield* Clock.currentTimeMillis } satisfies RunStarted)
+      }
+      return request.op === "observe"
+        ? { _tag: "Observed", observed: { state: "lost" } } as const
+        : request.op === "cancel"
+        ? { _tag: "Cancelled" } as const
+        : { _tag: "Lost" } as const
+    }
+    const session = yield* box.sessionAs(user)
+    const at = { key: request.key, callsDirectory: callsDirectory(user) }
+    yield* touch(box)
+    const ran = yield* Effect.result(
+      request.op === "start"
+        ? Effect.map(SandboxTools.start(session, request.call, at), (value): CommandOutcome => ({
+          _tag: "Started",
+          started: value,
+          generation,
+        }))
+        : request.op === "observe"
+        ? Effect.map(SandboxTools.observe(session, at), (observed): CommandOutcome => ({ _tag: "Observed", observed }))
+        : request.op === "collect"
+        ? Effect.map(SandboxTools.collect(session, at), (result): CommandOutcome => ({ _tag: "Collected", result }))
+        : Effect.as(SandboxTools.cancel(session, at), { _tag: "Cancelled" } as const),
+    )
+    if (ran._tag === "Failure") return failedCommand(ran.failure)
+    if (request.op === "collect") yield* save(box, generation)
+    return ran.success
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.as(
+        Effect.logWarning("sandbox.object.command").pipe(Effect.annotateLogs({ errorCode: codeOf(Cause.squash(cause)) })),
+        { _tag: "Unavailable" } as const,
+      )
+    ),
+    Effect.withSpan("sandbox.object.command", { attributes: { "smithers.sandbox.command.op": options.request.op } }),
   )
 
 /**

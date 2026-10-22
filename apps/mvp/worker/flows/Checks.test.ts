@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { checkExecutionId } from "../../src/features/pulls/contract.ts"
 import { Machines } from "../branch/Machines.ts"
+import { noCommands } from "../test/commands.ts"
 import { CheckoutFailed, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { judgeSeat, REPOSITORY, reset, services as githubServices, signedIn, sql } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
@@ -28,6 +29,7 @@ const machine = (files: Readonly<Record<string, string>>, exits: Readonly<Record
   const branches = new Set<string>()
   const sleeps: Array<{ readonly branchId: string; readonly generation: number; readonly idleMs: number }> = []
   const service = Machines.of({
+    commands: () => noCommands,
     tool: (branch, _owner, _callId, call) => {
       branches.add(JSON.stringify(branch))
       const done = (result: SandboxTools.Result) => Effect.succeed({ result, generation: 1 })
@@ -258,6 +260,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     // A clone the forge refused fails the checkout the same way.
     await sql(runtime, "TRUNCATE runs")
     const refused = Machines.of({
+      commands: () => noCommands,
       tool: () => Effect.fail(new CheckoutFailed()),
       sleepIfIdle: () => Effect.die("a job that never checked out never sleeps"),
     })
@@ -274,6 +277,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const request = await opened(github, { personId: crypto.randomUUID() })
     const commands: Array<string> = []
     const box = Machines.of({
+      commands: () => noCommands,
       tool: (_branch, _owner, _callId, call) => {
         const done = (result: SandboxTools.Result) => Effect.succeed({ result, generation: 1 })
         if (call.tool === "list") {
@@ -304,6 +308,7 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     const request = await opened(github, maya)
     const sleeps: Array<string> = []
     const down = Machines.of({
+      commands: () => noCommands,
       tool: () => Effect.fail(new SandboxUnavailable({ reason: "start" })),
       sleepIfIdle: (branchId) => Effect.sync(() => (sleeps.push(branchId), "slept" as const)),
     })

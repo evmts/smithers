@@ -58,10 +58,29 @@ sandbox/<tool>/start: POST /api/sandbox/calls { callId, call, conversationId | a
 
 ```
 sandbox/Tool (wake the machine, run the tool as the person's user) ─▶ sandbox/Settle (done, with the result)
+a run: sandbox/Command (its own job, below) ───────────────────────┘
      └ refused, lost, no machine, no checkout ─▶ sandbox/ToolFailed ─▶ sandbox/Settle (failed, with why)
 ```
 
-The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it and never runs the tool again. A step tried again after an interrupted attempt finds the command's fence and answers what the first attempt recorded, or settles `lost` when that attempt never finished or its machine restarted since: a command never runs twice. Refusals, `lost`, a refused checkout and a start that ran past `SANDBOX_START_TIMEOUT_SECONDS` (`start_timeout`) aren't retried; an unreachable machine is, for 2 minutes.
+The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it and never runs the tool again. Refusals, a refused checkout and a start that ran past `SANDBOX_START_TIMEOUT_SECONDS` (`start_timeout`) aren't retried; an unreachable machine is, for 2 minutes. A `run` is a [long command](#long-commands): its child `sandbox/Command` job settles the call with the command's result, or `lost`. A command settles with no `generation`.
+
+## Long commands
+
+A command can run for minutes (`pnpm install` of a monorepo) and a host's drive can't: Cloudflare ends a Durable Object alarm at 15 minutes of wall time, and a host can stop at any moment. On 2026-10-22 a TODO's `pnpm install` failed twice in production with `ToolLost`, because the alarm driving the run ended while the command held one of its steps. So a command holds no step: it is its own `sandbox/Command` job (`worker/flows/SandboxCommand.ts`), `@smthrs/sandbox`'s `SandboxCommand` over `@smthrs/flow`'s `ExternalJob`.
+
+```
+sandbox/Command { target: { branch, ownerId }, call }
+  start   wake the machine; start the command detached as the person's user, once per key ─▶ its pid
+  probe   its runner alive, or its exit ─▶ park on a durable timer: 1 s, doubling to 20 s ─▶ probe ...
+  collect the RunResult; the working copy is saved, as after a tool call
+     └ lost (the machine stopped, or the runner died) or past the deadline: cancel, then fail
+```
+
+- **Who runs it:** the TODO agent's `sandbox/run` tool (`worker/flows/TodoAgent.ts`) runs the job as a child of the `todo` run, named for the call (`sandbox-command:<call id>`), and `sandbox/Call` runs it as a child boundary. The parent parks while the command runs; asked again after its host died, it joins the same job.
+- **Once:** the job's key is `<job execution id>#g1`. The machine starts a key once (`SandboxTools.start`: its fence in `~/.smithers/calls/command-<key>`), and the object records the generation that started it (`run:<key>`, as for a tool's command). A key an earlier generation started is `lost`; it never starts again, and the job fails `ExternalJobLost`, which the call settles as `lost` and the agent reads as `ToolLost`. No replacement is started (`restarts` 0).
+- **Never wakes for a probe:** only `start` wakes the machine. A probe, a collect and a cancel answer for the generation running now, and a machine that stopped answers its command `lost`. Every operation is use of the machine, so a machine whose command runs isn't put to sleep.
+- **Bounded:** the command stops at its own `timeoutSeconds` (600 at most); the job's deadline, 15 minutes, cancels it after that.
+- **Records:** `sandbox.object.command` spans with the operation, and a warning by error code when the machine couldn't answer; `sandbox.command` spans in the SDK with the operation and its outcome. Never the command or its output.
 
 `sandbox_calls` (`db/migrations/0024_sandbox_calls.ts`) keeps one row per call: the branch, the person, the answer for the agent's calls, the tool, `running`, `done` with the result, or `failed` with why. The result is content for the person who asked; nothing logs it, and it isn't synced.
 

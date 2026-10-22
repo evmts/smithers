@@ -10,6 +10,7 @@ import { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Option } from "effect"
 import * as AgentSandbox from "../../AgentSandbox.ts"
 import { Machines } from "../../branch/Machines.ts"
+import { noCommands } from "../commands.ts"
 import * as TodoAgent from "../../flows/TodoAgent.ts"
 import * as TodoMachine from "../../flows/TodoMachine.ts"
 
@@ -51,6 +52,7 @@ const checkout = () => {
     }
   }
   const machines = Machines.of({
+    commands: () => noCommands,
     tool: (branch, ownerId, _callId, call) =>
       Effect.sync(() => {
         calls.push(`${branch.branch} ${ownerId} ${call.tool}`)

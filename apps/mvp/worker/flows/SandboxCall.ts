@@ -1,4 +1,4 @@
-import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Action, ExternalJob, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
 import { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric, Schema } from "effect"
@@ -7,6 +7,7 @@ import { CALL_FAILURES } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
+import { Command } from "./SandboxCommand.ts"
 
 // `sandbox/Call { callId, ownerId, branch, call }` (decision 0005 §3 and §5, docs/features/sandbox-tools.md#the-remote-flow):
 // runs one sandbox tool on a branch's machine, as the person who asked. `POST /api/sandbox/calls` admits it (signed
@@ -14,12 +15,14 @@ import { codeOf } from "../ErrorCode.ts"
 // execution per call (`sandbox-call:<id>`).
 //
 //   sandbox/Tool (wake the machine, run the tool as the person's user) ─▶ sandbox/Settle (done, with the result)
+//   a `run`: sandbox/Command (its own job: start, park between probes, collect; worker/flows/SandboxCommand.ts) ─┘
 //        └ failed: refused, lost, no machine, no checkout ─▶ sandbox/ToolFailed ─▶ sandbox/Settle (failed, with why)
 //
 // It runs remotely because it needs a machine (decision 0011 §2). The host injects the machine (`Machines`: on
 // Cloudflare, the branch's `SandboxObject` and its container) and Postgres. The tool's result is the step's journaled
-// success, so a replay reads it and never runs the tool again; a step tried again after an interrupted attempt finds
-// the command's fence in the machine and answers what that attempt recorded, or `lost` (SandboxTools.execute).
+// success, so a replay reads it and never runs the tool again. A command holds no step while it runs: it is the child
+// `sandbox/Command` job, which starts it detached once and parks between probes, so a long one (a 10-minute install)
+// outlives any one host's drive and settles once.
 
 /** Postgres couldn't record the outcome. Retried. */
 export class SettleUnavailable extends Schema.TaggedError<SettleUnavailable>()(
@@ -60,7 +63,7 @@ const payload = { callId: CallId, ownerId: Schema.String, branch: SandboxBranch,
 
 /** How a call ended: done with the tool's result on a generation of the machine, or failed and why. */
 export const Outcome = Schema.Union([
-  Schema.Struct({ status: Schema.Literal("done"), result: SandboxTools.Result, generation: Schema.Number }),
+  Schema.Struct({ status: Schema.Literal("done"), result: SandboxTools.Result, generation: Schema.optional(Schema.Number) }),
   Schema.Struct({ status: Schema.Literal("failed"), failure: Schema.Literals(CALL_FAILURES) }),
 ])
 export type Outcome = typeof Outcome.Type
@@ -73,7 +76,16 @@ const ToolError = Schema.Union([
   SandboxStartTimedOut,
   CheckoutFailed,
 ])
-type ToolError = typeof ToolError.Type
+
+/** What running a call can fail with: the tool step's failures, and a command job's (`sandbox/Command`). */
+const CallError = Schema.Union([
+  ...ToolError.members,
+  SandboxTools.ToolUnavailable,
+  ExternalJob.ExternalJobLost,
+  ExternalJob.ExternalJobTimedOut,
+  Sleep.SleepRequestInvalid,
+])
+type CallError = typeof CallError.Type
 
 /** Wakes the branch's machine and runs the tool in it as the person's own user: the done outcome. */
 export const Tool = Action.make("sandbox/Tool", {
@@ -86,7 +98,7 @@ export const Tool = Action.make("sandbox/Tool", {
 
 /** What a failure means to the call. */
 export const ToolFailed = Action.make("sandbox/ToolFailed", {
-  payload: { error: ToolError },
+  payload: { error: CallError },
   success: Outcome,
   tier: "sealed",
 })
@@ -108,13 +120,20 @@ export const SandboxCall = Flow.make("sandbox/Call", {
   payload,
   success: Settle.successSchema,
   // The tool's failures are recorded on the row and never escape; the union says what the steps may fail with.
-  error: Schema.Union([SettleUnavailable, ToolError]),
+  error: Schema.Union([SettleUnavailable, CallError]),
   body: Node.capture(
-    { tool: Tool.name, failed: ToolFailed.name, settle: Settle.name },
+    { tool: Tool.name, command: Command._tag, failed: ToolFailed.name, settle: Settle.name },
     ({ callId, ownerId, branch, call }) =>
-      Tool.call({ branch, ownerId, callId, call }).pipe(
+      Node.succeed(call).pipe(
+        Node.branch({
+          if: Node.capture({ tool: "run" }, (asked: SandboxTools.Call) => asked.tool === "run"),
+          then: (run) =>
+            Command.call({ target: { branch, ownerId, callId }, call: run as Planned.Planned<typeof SandboxTools.Run.Type> })
+              .pipe(Node.map(Node.capture({ outcome: "done" }, ranOf))),
+          else: () => Tool.call({ branch, ownerId, callId, call }),
+        }),
         Node.catch({
-          onFailure: Node.capture({ failed: ToolFailed.name }, (error: Planned.Planned<ToolError>) =>
+          onFailure: Node.capture({ failed: ToolFailed.name }, (error: Planned.Planned<CallError>) =>
             ToolFailed.call({ error })),
         }),
         Node.bindPlanned(Node.capture({ settle: Settle.name }, (outcome: Planned.Planned<Outcome>) =>
@@ -123,12 +142,15 @@ export const SandboxCall = Flow.make("sandbox/Call", {
   ),
 })
 
+/** A command job's result as the call's done outcome. The job records no machine generation. */
+const ranOf = (result: typeof SandboxTools.RunResult.Type): Outcome => ({ status: "done", result })
+
 /** The failure a tool's error records. */
-export const failureOf = (error: ToolError): Outcome => ({
+export const failureOf = (error: CallError): Outcome => ({
   status: "failed",
   failure: error._tag === "@smthrs/sandbox/SandboxTools/ToolRefused"
     ? error.reason
-    : error._tag === "@smthrs/sandbox/SandboxTools/ToolLost"
+    : error._tag === "@smthrs/sandbox/SandboxTools/ToolLost" || error._tag === "@smthrs/flow/ExternalJobLost"
     ? "lost"
     : error._tag === "@smthrs/mvp/branch/CheckoutFailed"
     ? "checkout"
@@ -147,7 +169,7 @@ export const settle = (callId: string, outcome: Outcome) =>
     const rows = outcome.status === "done"
       ? yield* sql`
         UPDATE sandbox_calls SET status = 'done', result = ${JSON.stringify(outcome.result)}::jsonb,
-          generation = ${outcome.generation}, settled_at = now()
+          generation = ${outcome.generation ?? null}, settled_at = now()
         WHERE id = ${callId} AND status = 'running' RETURNING id`
       : yield* sql`
         UPDATE sandbox_calls SET status = 'failed', failure = ${outcome.failure}, settled_at = now()
@@ -199,7 +221,10 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   return { tool, failed, record }
 }
 
-/** Registers `sandbox/Call` with its steps over `database` and the host's `Machines`. */
+/**
+ * Registers `sandbox/Call` with its steps over `database` and the host's `Machines`. A `run` call's `sandbox/Command` is
+ * registered beside it, by `SandboxCommand.registration` (worker/ExecutionHost.ts `withSandboxTools`).
+ */
 export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
   const implementation = steps(database)
   return Interpreter.layerWithImplementations(

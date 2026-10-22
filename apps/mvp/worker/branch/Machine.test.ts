@@ -6,22 +6,19 @@
 // root commands, provisioning a person's user and the idle probe, from the test, because they need root, tmux and
 // Linux's /proc; this host has none of them.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
-import { Effect, Exit, Logger, Metric, Stream } from "effect"
-import { execFileSync, spawn } from "node:child_process"
+import { Effect, Exit, Logger, Metric } from "effect"
+import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Readable } from "node:stream"
 import { afterAll, describe, expect, test } from "vitest"
 import { SANDBOX_USER } from "../../src/features/terminal/contract.ts"
+import * as Box from "../test/box.ts"
 import * as Machine from "./Machine.ts"
 import { provisionArgv, userOf } from "./Users.ts"
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-machine-")))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
-
-const { ProviderError } = RemoteChildProcessSpawner
 
 const git = (cwd: string, ...args: Array<string>) =>
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", ...args], {
@@ -47,107 +44,17 @@ const checkout = (clone = true) => {
   return workdir
 }
 
-const fromReadable = (readable: Readable) =>
-  Stream.fromAsyncIterable(
-    readable as AsyncIterable<Uint8Array>,
-    (cause) => new ProviderError({ code: "unknown", message: String(cause) }),
-  ).pipe(Stream.map((chunk) => new Uint8Array(chunk)))
-
-// Only guest users' homes are virtual. The host TMPDIR may itself be under /home/lane;
-// rewriting that checkout path makes real git report not_a_repository.
-const guestCommand = (command: string, homes: string) =>
-  command.replaceAll(/'\/home\/(?=p[0-9a-f]{16}\/|smithers\/)/g, `'${homes}/`)
-
-test("guest home mapping preserves host checkout paths under /home", () => {
-  const command = "'/home/lane/tmp/checkout' '/home/smithers/.smithers/calls' '/home/p0123456789abcdef/.smithers/calls'"
-  expect(guestCommand(command, "/home/lane/tmp/homes")).toBe(
-    "'/home/lane/tmp/checkout' '/home/lane/tmp/homes/smithers/.smithers/calls' '/home/lane/tmp/homes/p0123456789abcdef/.smithers/calls'",
-  )
-})
-
-/** A session on the machine: `sh -c` in its checkout, with the container's `/home` at `homes`. */
-const sessionAt = (workdir: string, homes: string): Sandbox.Session => ({
-  id: "machine",
-  remoteId: "machine",
-  workdir,
-  spawn: (command, options) =>
-    Effect.acquireRelease(
-      Effect.sync(() =>
-        spawn("sh", ["-c", guestCommand(command, homes)], {
-          cwd: options.cwd ?? workdir,
-          stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-        })
-      ),
-      (child) => Effect.sync(() => child.exitCode === null && child.kill("SIGKILL")),
-    ).pipe(Effect.map((child) => {
-      const exited = new Promise<number>((resolve) => child.once("close", (code) => resolve(code ?? 137)))
-      if (options.stdin !== undefined) child.stdin!.end(options.stdin)
-      return {
-        stdout: fromReadable(child.stdout!),
-        stderr: fromReadable(child.stderr!),
-        exitCode: Effect.promise(() => exited),
-      }
-    })),
-  readFile: () => Effect.die("the tools read through commands"),
-  writeFile: () => Effect.die("the tools write through commands"),
-})
-
-/** A session whose machine can't run anything. */
-const down = (workdir: string): Sandbox.Session => ({
-  ...sessionAt(workdir, root),
-  spawn: () => Effect.fail(new ProviderError({ code: "unavailable", message: "down" })),
-})
-
-/** The object's storage, in memory. */
-const memory = (entries: Record<string, unknown> = {}) => {
-  const map = new Map<string, unknown>(Object.entries(entries))
-  const store: Machine.Store<never> = {
-    get: <A>(key: string) => Effect.sync(() => map.get(key) as A | undefined),
-    put: (key, value) => Effect.sync(() => void map.set(key, value)),
-    delete: (key) => Effect.sync(() => map.delete(key)),
-    list: <A>(prefix: string) =>
-      Effect.sync(() => new Map([...map].filter(([key]) => key.startsWith(prefix))) as ReadonlyMap<string, A>),
-  }
-  return { map, store }
-}
-
-interface BoxOptions {
+interface BoxOptions extends Omit<Box.BoxOptions, "workdir" | "homes"> {
   readonly workdir?: string
-  readonly store?: ReturnType<typeof memory>
-  /** What a root command answers: `provision` and `probe` by their argv. 0 unless set. */
-  readonly root?: (argv: ReadonlyArray<string>) => Effect.Effect<number, unknown>
-  /** The users whose sessions can't run anything. */
-  readonly downFor?: ReadonlyArray<string>
 }
 
-/** A machine's box over its checkout, recording every root command, session and stop. */
+/** A machine's box over its checkout (a fresh clone unless given), recording every root command, session and stop. */
 const boxOf = (options: BoxOptions = {}) => {
   const workdir = options.workdir ?? checkout()
-  const homes = join(root, `homes-${machines}`)
-  const { map, store } = options.store ?? memory()
-  const runs: Array<{ readonly argv: ReadonlyArray<string>; readonly user: string }> = []
-  const sessions: Array<string> = []
-  const state = { running: true, destroyed: 0 }
-  const box: Machine.Box<never> = {
-    sessionAs: (user) =>
-      Effect.sync(() => {
-        sessions.push(user)
-        return options.downFor?.includes(user) === true ? down(workdir) : sessionAt(workdir, homes)
-      }),
-    run: (argv, user) =>
-      Effect.suspend(() => {
-        runs.push({ argv, user })
-        return options.root?.(argv) ?? Effect.succeed(0)
-      }),
-    running: Effect.sync(() => state.running),
-    destroy: Effect.sync(() => {
-      state.destroyed++
-      state.running = false
-    }),
-    storage: store,
-  }
-  return { box, workdir, homes, map, store: { map, store }, runs, sessions, state }
+  return Box.boxAt({ ...options, workdir, homes: join(root, `homes-${machines}`) })
 }
+
+const { memory } = Box
 
 /** Runs `effect` with a logger and metric registry of its own: its result, log lines and the checkpoints it counted. */
 const observed = async <A, E>(effect: Effect.Effect<A, E>) => {
@@ -228,6 +135,138 @@ describe("tool", () => {
     const logged = await observed(tool(broken.box, { tool: "status" }))
     expect(logged.value).toEqual({ _tag: "Unavailable" })
     expect(logged.lines).toMatchObject([{ message: "sandbox.object.tool", level: "WARN" }])
+    expect(logged.lines[0]!.annotations).toHaveProperty("errorCode")
+  })
+})
+
+/** Runs one command operation on `box` as `PERSON`, on generation `generation` (`null`: the machine isn't running). */
+const command = (box: Machine.Box<never>, request: Parameters<typeof Machine.command>[1]["request"], generation: number | null = 1) =>
+  Machine.command(box, { ownerId: PERSON, request, generation: generation ?? undefined })
+
+/** Observes `key` until its command finished. */
+const finished = async (box: Machine.Box<never>, key: string) => {
+  for (let tries = 0; tries < 400; tries++) {
+    const outcome = await Effect.runPromise(command(box, { op: "observe", key }))
+    if (outcome._tag !== "Observed" || outcome.observed.state !== "running") return outcome
+    await Effect.runPromise(Effect.sleep("25 millis"))
+  }
+  throw new Error("the command never finished")
+}
+
+describe("command", () => {
+  test("starts a command detached as the person's own user, once per key, then observes, collects and cancels it", async () => {
+    const machine = boxOf()
+    await Effect.runPromise(Machine.restore(machine.box, 1))
+    const call = { tool: "run", command: "echo ran >> runs.log; sleep 1; echo done" } as const
+    const started = await Effect.runPromise(command(machine.box, { op: "start", key: "job#g1", call }))
+    expect(started).toEqual({
+      _tag: "Started",
+      started: { pid: expect.any(Number), startedAt: expect.any(Number) },
+      generation: 1,
+    })
+    expect(machine.runs).toEqual([{ argv: provisionArgv(USER), user: "root" }])
+    expect(machine.map.get("run:job#g1")).toEqual({ generation: 1, at: expect.any(Number) })
+    expect(machine.map.get("activeAt")).toEqual(expect.any(Number))
+    // Asked again, the same key answers the same handle and starts nothing.
+    expect(await Effect.runPromise(command(machine.box, { op: "start", key: "job#g1", call }))).toEqual(started)
+    expect(await finished(machine.box, "job#g1")).toEqual({
+      _tag: "Observed",
+      observed: { state: "finished", exitCode: 0, timedOut: false },
+    })
+    const collected = await observed(command(machine.box, { op: "collect", key: "job#g1" }))
+    expect(collected.value).toMatchObject({ _tag: "Collected", result: { exitCode: 0, stdout: "done\n" } })
+    // A collected command changed the working copy, which is saved as a tool call's is.
+    expect(collected.counted("save", "saved")).toBe(1)
+    expect(await Effect.runPromise(command(machine.box, { op: "cancel", key: "job#g1" }))).toEqual({ _tag: "Cancelled" })
+    expect(readFileSync(join(machine.workdir, "runs.log"), "utf8")).toBe("ran\n")
+    // Its pid, exit and output are in the person's own home, outside the checkout.
+    expect(existsSync(join(machine.homes, USER, ".smithers", "calls", "command-job_23g1", "exit"))).toBe(true)
+  })
+
+  test("a command another generation started, or one whose machine stopped, is gone, and never starts again", async () => {
+    const store = memory()
+    const first = boxOf({ store })
+    const call = { tool: "run", command: "echo ran >> runs.log" } as const
+    await Effect.runPromise(command(first.box, { op: "start", key: "gone#g1", call }))
+    // A new machine under the same object: the command is gone with the first.
+    const second = boxOf({ store })
+    expect(await Effect.runPromise(command(second.box, { op: "start", key: "gone#g1", call }, 2))).toEqual({ _tag: "Lost" })
+    expect(await Effect.runPromise(command(second.box, { op: "observe", key: "gone#g1" }, 2))).toEqual({
+      _tag: "Observed",
+      observed: { state: "lost" },
+    })
+    // A stopped machine (no generation running) answers every command gone, and a key it never started too.
+    expect(await Effect.runPromise(command(second.box, { op: "collect", key: "gone#g1" }, null))).toEqual({
+      _tag: "Lost",
+    })
+    expect(await Effect.runPromise(command(second.box, { op: "cancel", key: "never#g1" }, null))).toEqual({
+      _tag: "Cancelled",
+    })
+    expect(await Effect.runPromise(command(second.box, { op: "start", key: "never#g1", call }, null))).toEqual({
+      _tag: "Lost",
+    })
+    expect(existsSync(join(second.workdir, "runs.log"))).toBe(false)
+    expect(second.sessions).toEqual([])
+  })
+
+  test("a key cancelled before its start reached the machine never starts; nor does a command its call ran as a tool", async () => {
+    const machine = boxOf()
+    const call = { tool: "run", command: "echo ran >> runs.log" } as const
+    // An abandon that came first: the start still on its way finds the key gone.
+    expect(await Effect.runPromise(command(machine.box, { op: "cancel", key: "abandoned#g1" }))).toEqual({
+      _tag: "Cancelled",
+    })
+    expect(machine.map.get("run:abandoned#g1")).toEqual({ generation: 0, at: expect.any(Number) })
+    expect(await Effect.runPromise(command(machine.box, { op: "start", key: "abandoned#g1", call }))).toEqual({
+      _tag: "Lost",
+    })
+    // A tool call whose command an earlier attempt ran as a tool call: its job never runs it again.
+    await Effect.runPromise(tool(machine.box, call, 1, "call-1"))
+    expect(await Effect.runPromise(command(machine.box, { op: "start", key: "job#g1", call, callId: "call-1" }))).toEqual({
+      _tag: "Lost",
+    })
+    // A call that never ran as a tool call starts its job.
+    expect(await Effect.runPromise(command(machine.box, { op: "start", key: "job-2#g1", call, callId: "call-2" })))
+      .toMatchObject({ _tag: "Started" })
+    expect(await finished(machine.box, "job-2#g1")).toMatchObject({ observed: { state: "finished" } })
+    expect(readFileSync(join(machine.workdir, "runs.log"), "utf8")).toBe("ran\nran\n")
+  })
+
+  test("a refusal, a lost command, a failed provision and a failing session are their outcomes; a broken host is logged", async () => {
+    const machine = boxOf()
+    const run = { tool: "run", command: "touch ran" } as const
+    expect(await Effect.runPromise(command(machine.box, { op: "start", key: "out#g1", call: { ...run, cwd: "../x" } })))
+      .toEqual({ _tag: "Refused", reason: "path" })
+    // Started on this generation, but nothing recorded how it ended.
+    machine.map.set("run:silent#g1", { generation: 1, at: Date.now() })
+    expect(await Effect.runPromise(command(machine.box, { op: "collect", key: "silent#g1" }))).toEqual({ _tag: "Lost" })
+
+    const unprovisioned = boxOf({ root: () => Effect.succeed(1) })
+    expect(await Effect.runPromise(command(unprovisioned.box, { op: "start", key: "k#g1", call: run }))).toEqual({
+      _tag: "Unavailable",
+    })
+    expect(unprovisioned.sessions).toEqual([])
+
+    // The person's session fails: the provider's code, so the engine knows whether trying again can help.
+    const failing = boxOf({ downFor: [USER] })
+    expect(await Effect.runPromise(command(failing.box, { op: "start", key: "k#g1", call: run }))).toEqual({
+      _tag: "ToolUnavailable",
+      code: "unavailable",
+    })
+    // A script step that failed names its exit code: the calls directory is a file.
+    const blocked = boxOf()
+    mkdirSync(join(blocked.homes, USER, ".smithers"), { recursive: true })
+    writeFileSync(join(blocked.homes, USER, ".smithers", "calls"), "")
+    expect(await Effect.runPromise(command(blocked.box, { op: "start", key: "k#g1", call: run }))).toEqual({
+      _tag: "ToolUnavailable",
+      code: "unknown",
+      exitCode: 125,
+    })
+
+    const broken = boxOf({ root: () => Effect.fail(new Error("container gone")) })
+    const logged = await observed(command(broken.box, { op: "start", key: "k#g1", call: run }))
+    expect(logged.value).toEqual({ _tag: "Unavailable" })
+    expect(logged.lines).toMatchObject([{ message: "sandbox.object.command", level: "WARN" }])
     expect(logged.lines[0]!.annotations).toHaveProperty("errorCode")
   })
 })

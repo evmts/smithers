@@ -1,3 +1,4 @@
+import { Fault } from "@smthrs/flow"
 import { Context, type Effect, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Role } from "../Actor.ts"
@@ -40,6 +41,12 @@ export class SandboxStartTimedOut extends Schema.TaggedError<SandboxStartTimedOu
 
 /** The branch couldn't be checked out in the machine: its forge refused the clone. Not retried. */
 export class CheckoutFailed extends Schema.TaggedError<CheckoutFailed>()("@smthrs/mvp/branch/CheckoutFailed", {}) {}
+
+// What each failure is to the flow engine: a machine that couldn't answer is retried, as infrastructure; a start that ran
+// out of time or a refused checkout isn't, as the steps above say (`Fault`, the engine's default retry of a keyed step).
+Fault.register("@smthrs/mvp/branch/SandboxUnavailable", "infra")
+Fault.register("@smthrs/mvp/branch/SandboxStartTimedOut", "dependency")
+Fault.register("@smthrs/mvp/branch/CheckoutFailed", "dependency")
 
 /**
  * Who a socket attaches as: anyone who may edit the branch types (`write`), the terminal's owner and the people it is

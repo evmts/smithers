@@ -3,9 +3,20 @@ title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
 owner: sandboxes builder (Opus, from 20:40 on 2026-10-21)
-updated: 2026-10-22 01:20 PDT
+updated: 2026-10-22 04:15 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
+
+## A command no longer holds a host: `sandbox/Command` — 2026-10-22 04:15 PDT
+
+**State:** built and tested; not deployed yet. A TODO's `pnpm install` failed twice in production on 2026-10-22 with
+`ToolLost`: the alarm driving the run hit Cloudflare's 15-minute limit while the command held one of its steps, and the
+next alarm found the command's fence with no exit. A `run` (the TODO agent's tool, and `sandbox/Call` for a person or the
+branch agent) is now its own `sandbox/Command` job (`worker/flows/SandboxCommand.ts`), `@smthrs/sandbox`'s new
+`SandboxCommand` over `ExternalJob`: start detached once per key, park between probes, collect once
+([long commands](../features/sandbox-tools.md#long-commands)). Regression tests kill the host mid-command on the Durable
+Object handlers and on the Node engine; the command runs once and its result arrives. `e2e/sandbox-tools.spec.ts`
+"long command" runs a 9.5-minute command end to end; it runs in production after the deploy.
 
 ## Works in production on the new image — 2026-10-22 01:20 PDT
 

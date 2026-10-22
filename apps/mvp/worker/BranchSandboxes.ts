@@ -1,7 +1,7 @@
 import { GitProxy } from "@smthrs/effect-code-storage"
 import { Logger } from "@smthrs/observability"
 import { ContainerSession, ContainerTerminal, SandboxObject as SandboxHost } from "@smthrs/platform-cloudflare"
-import { SandboxTools } from "@smthrs/sandbox"
+import type { SandboxTools } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Clock, Config, Effect, Fiber, Layer, Schema, Scope } from "effect"
@@ -14,7 +14,15 @@ import type { Role } from "./Actor.ts"
 import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
 import * as Machine from "./branch/Machine.ts"
-import { Machines, type SleepOutcome, type ToolOutcome } from "./branch/Machines.ts"
+import {
+  type CommandOutcome,
+  type CommandRequest,
+  commandsOver,
+  Machines,
+  ranOf,
+  type SleepOutcome,
+  type ToolOutcome,
+} from "./branch/Machines.ts"
 import { userOf } from "./branch/Users.ts"
 import { asUser, configuredSessionOn, failureFields, runOn } from "./branch/Session.ts"
 import { Forge, forgeOf } from "./branch/Forge.ts"
@@ -24,7 +32,6 @@ import {
   type Revoked,
   SandboxBranch,
   Sandboxes,
-  SandboxStartTimedOut,
   SandboxUnavailable,
   TerminalSockets,
 } from "./branch/Sandboxes.ts"
@@ -152,6 +159,11 @@ export interface SandboxObjectShape {
     callId: string,
     call: SandboxTools.Call,
   ) => Effect.Effect<ToolOutcome, never, RuntimeContext>
+  readonly command: (
+    branch: SandboxBranch,
+    ownerId: string,
+    request: CommandRequest,
+  ) => Effect.Effect<CommandOutcome, never, RuntimeContext>
   readonly sleepIfIdle: (
     generation: number,
     idleMs: number,
@@ -376,6 +388,30 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           return yield* Machine.tool(machine, { ownerId, callId, call, generation: woken.generation })
         })
 
+      /**
+       * Runs one operation on a command started detached in the branch's machine (worker/branch/Machine.ts): a start
+       * wakes the machine first; the rest re-arm a running box's inactivity timeout and answer for the generation
+       * running now, none when it stopped, so a command whose machine went observes `lost`.
+       */
+      const command = (branch: SandboxBranch, ownerId: string, request: CommandRequest) =>
+        Effect.gen(function* () {
+          if (request.op === "start") {
+            const woken = yield* wake(branch)
+            if (woken._tag !== "Woken") return woken
+            return yield* Machine.command(machine, { ownerId, request, generation: woken.generation })
+          }
+          yield* rearm
+          const generation = (yield* box.running) ? yield* state.storage.get<number>("generation") : undefined
+          return yield* Machine.command(machine, { ownerId, request, generation })
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.as(
+              Effect.logWarning("sandbox.object.command").pipe(Effect.annotateLogs(failureFields(cause))),
+              { _tag: "Unavailable" } as const,
+            )
+          ),
+        )
+
       // Each ask re-arms the inactivity timeout first, so a box this object restarted under (a deploy) keeps its backstop
       // while `sandbox/Keep` decides.
       const sleepIfIdle = (generation: number, idleMs: number) =>
@@ -510,6 +546,8 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         enforce: (policy: Policy, revoked: ReadonlyArray<Revoked>) => logged(enforce(policy, revoked)),
         tool: (branch: SandboxBranch, ownerId: string, callId: string, call: SandboxTools.Call) =>
           logged(tool(branch, ownerId, callId, call)),
+        command: (branch: SandboxBranch, ownerId: string, request: CommandRequest) =>
+          logged(command(branch, ownerId, request)),
         sleepIfIdle: (generation: number, idleMs: number) => logged(sleepIfIdle(generation, idleMs)),
         ticket: () =>
           Effect.sync(() => {
@@ -633,32 +671,32 @@ export const sandboxesLayer = (objects: Objects, keep: Keep = noKeep) =>
 
 /**
  * The flow host's `Machines` over the bound namespace (docs/features/sandbox-tools.md): a tool call runs on the
- * branch's object, which wakes the machine; the generation it ran on gets its `sandbox/Keep` through `keep`.
+ * branch's object, which wakes the machine; the generation it ran on gets its `sandbox/Keep` through `keep`. A
+ * command's start does the same; its other operations never wake the machine.
  */
 export const machinesOver = (objects: Objects, keep: Keep = noKeep) => Effect.gen(function* () {
   const runtime = yield* RuntimeContext
   return Machines.of({
+    commands: (branch, ownerId, callId) =>
+      commandsOver(
+        (request) =>
+          objects.getByName(branch.branchId).command(branch, ownerId, request).pipe(
+            Effect.provideService(RuntimeContext, runtime),
+            Effect.orElseSucceed((): CommandOutcome => ({ _tag: "Unavailable" })),
+          ),
+        (generation) => keep(branch.branchId, generation).pipe(Effect.provideService(RuntimeContext, runtime)),
+        callId,
+      ),
     tool: (branch, ownerId, callId, call) =>
       Effect.gen(function* () {
         const outcome: ToolOutcome = yield* objects.getByName(branch.branchId).tool(branch, ownerId, callId, call).pipe(
           Effect.provideService(RuntimeContext, runtime),
           Effect.orElseSucceed((): ToolOutcome => ({ _tag: "Unavailable" })),
         )
-        switch (outcome._tag) {
-          case "Done":
-            yield* keep(branch.branchId, outcome.generation).pipe(Effect.provideService(RuntimeContext, runtime))
-            return { result: outcome.result, generation: outcome.generation }
-          case "Refused":
-            return yield* new SandboxTools.ToolRefused({ reason: outcome.reason })
-          case "Lost":
-            return yield* new SandboxTools.ToolLost()
-          case "CheckoutFailed":
-            return yield* new CheckoutFailed()
-          case "Unavailable":
-            return yield* outcome.reason === "start_timeout"
-              ? new SandboxStartTimedOut()
-              : new SandboxUnavailable({ reason: "exec" })
+        if (outcome._tag === "Done") {
+          yield* keep(branch.branchId, outcome.generation).pipe(Effect.provideService(RuntimeContext, runtime))
         }
+        return yield* ranOf(outcome)
       }),
     sleepIfIdle: (branchId, generation, idleMs) =>
       objects.getByName(branchId).sleepIfIdle(generation, idleMs).pipe(

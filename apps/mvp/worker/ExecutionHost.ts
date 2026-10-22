@@ -12,6 +12,7 @@ import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SandboxCall from "./flows/SandboxCall.ts"
+import * as SandboxCommand from "./flows/SandboxCommand.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import * as SecretFlows from "./secrets/SecretFlows.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
@@ -102,7 +103,8 @@ export const withGitHub = <ROut, E, R, GE, GR, SE, SR>(
  * `flows`, plus the coding factory's `todo` run and a pull request head's `checks/Run` (decision 0016, the factory
  * simplified; docs/features/todos.md#the-run) over `services`, the branches' machines (`machines`) and the agent's
  * `implement` (worker/flows/TodoAgent.ts `registration`), when this deployment has the GitHub App. `services` is built
- * when each execution's registration is, as `withGitHub`'s is.
+ * when each execution's registration is, as `withGitHub`'s is. The agent's commands run as `sandbox/Command` jobs,
+ * which `withSandboxTools` registers, so `flows` comes from it.
  */
 export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
   flows: Flows<ROut, E, R>,
@@ -134,20 +136,22 @@ export const withTerminals = <ROut, E, R, DE, DR, SE, SR>(
 })
 
 /**
- * `flows`, plus the sandbox tools' `sandbox/Call` and the machines' `sandbox/Keep` over the app's tables and the
- * branches' machines (`machines`: on Cloudflare, the `SandboxObject` namespace, worker/BranchSandboxes.ts),
- * docs/features/sandbox-tools.md.
+ * `flows`, plus the sandbox tools' `sandbox/Call`, the machines' `sandbox/Keep` and the commands' `sandbox/Command` job
+ * (its three declarations) over the app's tables and the branches' machines (`machines`: on Cloudflare, the
+ * `SandboxObject` namespace, worker/BranchSandboxes.ts), docs/features/sandbox-tools.md. The `todo` run's agent
+ * (`withTodos`) runs its commands as the same job, so a host with TODOs composes this too.
  */
 export const withSandboxTools = <ROut, E, R, DE, DR, ME, MR>(
   flows: Flows<ROut, E, R>,
   database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
   machines: Layer.Layer<Machines, ME, MR>,
 ) => ({
-  flows: [...flows.flows, SandboxCall.SandboxCall, SandboxKeep.Keep],
+  flows: [...flows.flows, SandboxCall.SandboxCall, SandboxKeep.Keep, ...SandboxCommand.Command.flows],
   registration: Layer.mergeAll(
     flows.registration,
     SandboxCall.registration(database).pipe(Layer.provide(machines)),
     SandboxKeep.registration(database).pipe(Layer.provide(machines)),
+    SandboxCommand.registration.pipe(Layer.provide(machines)),
   ),
 })
 

@@ -3,17 +3,20 @@
 // branch's machine is a test `Machines`, standing in for the Cloudflare `SandboxObject` (worker/BranchSandboxes.ts),
 // whose real container the e2e suite drives; the tools themselves run on real processes in @smthrs/sandbox's tests.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { SandboxTools } from "@smthrs/sandbox"
+import { ExternalJob, Sleep } from "@smthrs/flow"
+import { type SandboxCommand, SandboxTools } from "@smthrs/sandbox"
 import { Cause, Effect, Exit, Layer, Logger, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { Machines } from "../branch/Machines.ts"
+import { type MachineFailure, Machines } from "../branch/Machines.ts"
 import { CheckoutFailed, type SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { resetBranches, tracked } from "../test/branch.ts"
+import { instantCommands } from "../test/commands.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as SandboxCall from "./SandboxCall.ts"
+import * as SandboxCommandJob from "./SandboxCommand.ts"
 
 const runtime = testFile("sandbox_call")
 beforeEach(() => resetBranches(runtime))
@@ -35,11 +38,18 @@ const ran = {
   truncated: false,
 } as const
 
-/** A branch's machine that answers each tool call from its script, in order, recording every call. */
-const machine = (answers: ReadonlyArray<ReturnType<Tool>>) => {
+/**
+ * A branch's machine that answers each tool call from its script, in order, recording every call. Its commands finish
+ * as they start, with exit code `exitCode`, unless `commands` is set.
+ */
+const machine = (
+  answers: ReadonlyArray<ReturnType<Tool>>,
+  commands: SandboxCommand.Commands<MachineFailure> = instantCommands(() => 0),
+) => {
   const calls: Array<string> = []
   let called = 0
   const service = Machines.of({
+    commands: () => commands,
     tool: (branch, ownerId, callId, call) =>
       Effect.suspend(() => {
         calls.push(`${branch.branchId} ${branch.owner}/${branch.name}@${branch.branch} ${ownerId} ${callId} ${call.tool}`)
@@ -75,42 +85,83 @@ const row = (callId: string) =>
 
 const database = () => runtime.runPromise(Effect.map(Effect.service(TestDatabase.Scratch), (scratch) => scratch.database))
 
+const read = { tool: "read", path: "README.md" } as const
+const readResult = { tool: "read", path: "README.md", content: SENTINEL, bytes: SENTINEL.length, truncated: false } as const
+
 const run = async (
   started: Awaited<ReturnType<typeof running>>,
   machines: ReturnType<typeof machine>,
-  call: SandboxTools.Call = { tool: "run", command: `echo ${SENTINEL}` },
+  call: SandboxTools.Call = read,
 ) =>
   runFlow(
     SandboxCall.SandboxCall,
     { callId: started.callId, ownerId: OWNER, branch: started.branch, call },
-    SandboxCall.registration(await database()).pipe(Layer.provide(machines.layer)),
+    Layer.mergeAll(SandboxCall.registration(await database()), SandboxCommandJob.registration).pipe(
+      Layer.provide(machines.layer),
+    ),
   )
 
 describe("sandbox/Call on the Node host", () => {
   test("runs the tool on the branch's machine as its owner and settles the call done with the result", async () => {
-    const started = await running()
-    const machines = machine([Effect.succeed({ result: ran, generation: 3 })])
+    const started = await running("read")
+    const machines = machine([Effect.succeed({ result: readResult, generation: 3 })])
     const exit = await run(started, machines)
 
     expect(exit.exit).toEqual(Exit.succeed({ settled: true }))
     expect(exit.status).toBe("completed")
     expect(machines.calls).toEqual([
-      `${started.branchId} octocat/Spoon-Knife@test-branch ${OWNER} ${started.callId} run`,
+      `${started.branchId} octocat/Spoon-Knife@test-branch ${OWNER} ${started.callId} read`,
     ])
     expect(await row(started.callId)).toEqual({
       status: "done",
       failure: null,
-      result: ran,
+      result: readResult,
       generation: "3",
       settled: true,
     })
   })
 
-  test("a machine that can't answer yet is asked again, and the call runs once it does", async () => {
+  test("a command runs as its own sandbox/Command job: started once, collected, and the call settles done", async () => {
     const started = await running()
+    const commands: Array<string> = []
+    const machines = machine([], instantCommands(() => 1, (key, call) => void commands.push(`${key} ${call.command}`)))
+    const exit = await run(started, machines, { tool: "run", command: `echo ${SENTINEL}` })
+
+    expect(exit.exit).toEqual(Exit.succeed({ settled: true }))
+    // No tool step ran the command; its job started it once, by the job's key.
+    expect(machines.calls).toEqual([])
+    expect(commands).toEqual([expect.stringMatching(new RegExp(`#g1 echo ${SENTINEL}$`))])
+    expect(await row(started.callId)).toEqual({
+      status: "done",
+      failure: null,
+      result: { ...ran, stdout: "", stdoutBytes: 0 },
+      generation: null,
+      settled: true,
+    })
+  })
+
+  test("a command its machine lost settles lost; one the machine refused settles with why", async () => {
+    const lostCall = await running()
+    const lost = machine([], { ...instantCommands(() => 0), observe: () => Effect.succeed({ state: "lost" }) })
+    expect((await run(lostCall, lost, { tool: "run", command: "true" })).exit).toEqual(Exit.succeed({ settled: true }))
+    expect(await row(lostCall.callId)).toMatchObject({ status: "failed", failure: "lost" })
+
+    const refusedCall = await running()
+    const refused = machine([], {
+      ...instantCommands(() => 0),
+      start: () => Effect.fail(new SandboxTools.ToolRefused({ reason: "path" })),
+    })
+    expect((await run(refusedCall, refused, { tool: "run", command: "true" })).exit).toEqual(
+      Exit.succeed({ settled: true }),
+    )
+    expect(await row(refusedCall.callId)).toMatchObject({ status: "failed", failure: "path" })
+  }, 30_000)
+
+  test("a machine that can't answer yet is asked again, and the call runs once it does", async () => {
+    const started = await running("read")
     const machines = machine([
       Effect.fail(new SandboxUnavailable({ reason: "exec" })),
-      Effect.succeed({ result: ran, generation: 1 }),
+      Effect.succeed({ result: readResult, generation: 1 }),
     ])
     const exit = await run(started, machines)
 
@@ -138,9 +189,9 @@ describe("sandbox/Call on the Node host", () => {
   })
 
   test("a call no longer running is left as it is", async () => {
-    const started = await running()
+    const started = await running("read")
     await runtime.runPromise(SandboxCall.settle(started.callId, { status: "failed", failure: "lost" }))
-    const exit = await run(started, machine([Effect.succeed({ result: ran, generation: 9 })]))
+    const exit = await run(started, machine([Effect.succeed({ result: readResult, generation: 9 })]))
 
     expect(exit.exit).toEqual(Exit.succeed({ settled: false }))
     expect(await row(started.callId)).toMatchObject({ status: "failed", failure: "lost", result: null })
@@ -208,6 +259,20 @@ describe("the steps", () => {
     expect(await failed(new SandboxStartTimedOut())).toEqual({ status: "failed", failure: "start_timeout" })
     for (const reason of ["start", "exec"] as const) {
       expect(await failed(new SandboxUnavailable({ reason }))).toEqual({ status: "failed", failure: "unavailable" })
+    }
+    // A command job's own failures: lost once its replacements are spent, else unavailable.
+    expect(await failed(new ExternalJob.ExternalJobLost({ key: "k", message: "m" }))).toEqual({
+      status: "failed",
+      failure: "lost",
+    })
+    for (
+      const error of [
+        new ExternalJob.ExternalJobTimedOut({ key: "k", message: "m" }),
+        new SandboxTools.ToolUnavailable({ code: "unknown" }),
+        new Sleep.SleepRequestInvalid({ code: "missing_deadline", message: "m" }),
+      ]
+    ) {
+      expect(await failed(error)).toEqual({ status: "failed", failure: "unavailable" })
     }
   })
 

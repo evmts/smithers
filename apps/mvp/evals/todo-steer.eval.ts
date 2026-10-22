@@ -22,6 +22,7 @@ import { todoExecutionId } from "../src/features/pulls/contract.ts"
 import * as ExecutionHost from "../worker/ExecutionHost.ts"
 import * as Todo from "../worker/flows/Todo.ts"
 import * as TodoAgent from "../worker/flows/TodoAgent.ts"
+import * as SandboxCommand from "../worker/flows/SandboxCommand.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../worker/github/test/fixtures.ts"
 import { scriptedGitHub } from "../worker/github/test/scriptedGitHub.ts"
 import * as ModelEndpoint from "../worker/ModelEndpoint.ts"
@@ -105,15 +106,19 @@ const trial = async (real: HostModel["Service"]): Promise<Trial> => {
       Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
     ),
   )
-  const registration = Todo.registration(
-    {
-      database: services.database,
-      tokens: services.tokens,
-      http: services.http,
-      apiBaseUrl: services.apiBaseUrl,
-      start: () => Effect.void,
-    },
-    TodoAgent.registration(seat("agent"), database, Agent.layerSandbox),
+  // The agent's commands run as `sandbox/Command` jobs, which the deployed host registers beside the sandbox tools.
+  const registration = Layer.mergeAll(
+    Todo.registration(
+      {
+        database: services.database,
+        tokens: services.tokens,
+        http: services.http,
+        apiBaseUrl: services.apiBaseUrl,
+        start: () => Effect.void,
+      },
+      TodoAgent.registration(seat("agent"), database, Agent.layerSandbox),
+    ),
+    SandboxCommand.registration,
   ).pipe(Layer.provide(machine.layer))
   const start = await runtime.runPromise(
     Effect.map(

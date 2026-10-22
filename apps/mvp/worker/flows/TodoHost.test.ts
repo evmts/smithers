@@ -9,6 +9,7 @@ import { beforeEach, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { checkExecutionId } from "../../src/features/pulls/contract.ts"
 import { Machines } from "../branch/Machines.ts"
+import { noCommands } from "../test/commands.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Expire from "./Expire.ts"
 import { judgeSeat, judging, REPOSITORY, reset, services as githubServices, signedIn, sql } from "../github/test/fixtures.ts"
@@ -33,6 +34,7 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
   // fails and no script runs.
   github.installed = false
   const machines = Layer.succeed(Machines, Machines.of({
+    commands: () => noCommands,
     tool: () => Effect.fail({ _tag: "@smthrs/sandbox/SandboxTools/ToolRefused", reason: "not_found" } as never),
     sleepIfIdle: () => Effect.die("unused"),
   }))

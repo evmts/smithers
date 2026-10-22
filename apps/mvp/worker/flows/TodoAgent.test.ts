@@ -9,6 +9,7 @@ import type { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Option, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { Machines } from "../branch/Machines.ts"
+import { noCommands } from "../test/commands.ts"
 import type { Seat } from "../ModelEndpoint.ts"
 import * as TodoAgent from "./TodoAgent.ts"
 import * as TodoMachine from "./TodoMachine.ts"
@@ -21,6 +22,7 @@ const MACHINE = TodoMachine.machineOf({ attemptId: ATTEMPT, repoId: "github/octo
 const machine = (answer: (call: SandboxTools.Call) => ReturnType<Machines["Service"]["tool"]>) => {
   const calls: Array<{ readonly branch: string; readonly ownerId: string; readonly callId: string; readonly call: SandboxTools.Call }> = []
   const service = Machines.of({
+    commands: () => noCommands,
     tool: (branch, ownerId, callId, call) =>
       Effect.suspend(() => {
         calls.push({ branch: branch.branch, ownerId, callId, call })
@@ -147,9 +149,30 @@ describe("the sandbox tools on the attempt's machine", () => {
       message: "Flow sandbox/read failed: not_found",
     })
     const down = machine(() => Effect.fail({ _tag: "@smthrs/mvp/branch/SandboxUnavailable" } as never))
-    expect(await call(down.service, found, "sandbox/run", { command: "true" })).toMatchObject({
+    expect(await call(down.service, found, "sandbox/status", {})).toMatchObject({
       outcome: "failure",
-      message: "Flow sandbox/run failed: @smthrs/mvp/branch/SandboxUnavailable",
+      message: "Flow sandbox/status failed: @smthrs/mvp/branch/SandboxUnavailable",
     })
+  })
+
+  test("the agent reads a failure as a refusal's reason, a lost command as ToolLost however it was lost, else its tag", () => {
+    expect(TodoAgent.failedAs({ _tag: "@smthrs/sandbox/SandboxTools/ToolRefused", reason: "path" } as never)).toEqual(
+      new TodoAgent.ToolFailed({ reason: "path" }),
+    )
+    expect(TodoAgent.failedAs({ _tag: "@smthrs/flow/ExternalJobLost" })).toEqual(
+      new TodoAgent.ToolFailed({ reason: "@smthrs/sandbox/SandboxTools/ToolLost" }),
+    )
+    expect(TodoAgent.failedAs({ _tag: "@smthrs/flow/ExternalJobTimedOut" })).toEqual(
+      new TodoAgent.ToolFailed({ reason: "@smthrs/flow/ExternalJobTimedOut" }),
+    )
+  })
+
+  test("a command runs as its own job of the run that asks: with no flow runtime to run it in, nothing runs", async () => {
+    const box = machine(() => Effect.die("a command never runs as a tool call"))
+    expect(await call(box.service, found, "sandbox/run", { command: "true" })).toMatchObject({
+      outcome: "failure",
+      message: "Flow sandbox/run failed: @smthrs/mvp/sandbox/NoRun",
+    })
+    expect(box.calls).toEqual([])
   })
 })

@@ -26,6 +26,7 @@ import { resetBranches, terminal, terminalRows, tracked } from "./test/branch.ts
 import { Sandboxes } from "./branch/Sandboxes.ts"
 import { Machines } from "./branch/Machines.ts"
 import * as SandboxCall from "./flows/SandboxCall.ts"
+import * as SandboxCommand from "./flows/SandboxCommand.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import * as SecretFlows from "./secrets/SecretFlows.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
@@ -519,6 +520,7 @@ describe("ExecutionHost over the compose Postgres", () => {
       SpendAlert.SpendAlert,
       SandboxCall.SandboxCall,
       SandboxKeep.Keep,
+      ...SandboxCommand.Command.flows,
       SecretFlows.Put,
       SecretFlows.Delete,
     ])

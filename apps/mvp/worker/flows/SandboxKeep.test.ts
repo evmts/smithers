@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { DEFAULT_IDLE_SECONDS, keepExecutionId } from "../../src/features/sandbox/contract.ts"
 import { Machines, type SleepOutcome } from "../branch/Machines.ts"
+import { noCommands } from "../test/commands.ts"
 import { SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { resetBranches, tracked } from "../test/branch.ts"
 import { runFlow } from "../test/flowHost.ts"
@@ -25,6 +26,7 @@ const REPO = "github/octocat/spoon-knife"
 const machine = (answers: ReadonlyArray<Effect.Effect<SleepOutcome, SandboxUnavailable>>) => {
   const asked: Array<{ readonly branchId: string; readonly generation: number; readonly idleMs: number }> = []
   const service = Machines.of({
+    commands: () => noCommands,
     tool: () => Effect.die("sandbox/Keep never runs a tool"),
     sleepIfIdle: (branchId, generation, idleMs) =>
       Effect.suspend(() => {

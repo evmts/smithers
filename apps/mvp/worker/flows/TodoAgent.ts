@@ -11,13 +11,15 @@ import type { SqlClient } from "effect/sql"
 import { CHECKS_DIRECTORY } from "../../src/features/pulls/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import type { Seat as EndpointSeat } from "../ModelEndpoint.ts"
+import * as SandboxCommand from "./SandboxCommand.ts"
 import * as Machine from "./TodoMachine.ts"
 
 // The `todo` run's implement step (decision 0016, the factory simplified): the agent (`AgentAction` from
 // `@smthrs/agent`, the library catalog's "Run an agent loop with tools") writes the TODO's change on its branch's machine.
 // Its tools are the sandbox tools (`@smthrs/sandbox`'s `SandboxTools`), bound in process to the attempt's machine
 // (`Machines`), so each call runs on the branch's checkout as the person who committed the TODO, and a command runs once
-// per call even when the run resumes (the call's id is its replay-stable identity). The model is the `coding` role
+// per call even when the run resumes (the call's id is its replay-stable identity). A command runs as the call's own
+// `sandbox/Command` job (worker/flows/SandboxCommand.ts), so the run parks while it runs and no host's drive holds it. The model is the `coding` role
 // (the `agent` role's model until an admin sets it, decision 0033), admitted and metered in process as the model
 // endpoint's calls are (`ModelEndpoint.local`).
 
@@ -90,6 +92,19 @@ export const Implement = AgentAction.make("todo/Implement", {
 export class ToolFailed extends Schema.TaggedError<ToolFailed>()("@smthrs/mvp/todo/ToolFailed", {
   reason: Schema.String,
 }) {}
+
+/**
+ * What the agent is told of a failed tool: a refusal's reason, a lost command (`ToolLost`, however the command was
+ * lost), else the failure's tag.
+ */
+export const failedAs = (error: { readonly _tag: string }): ToolFailed =>
+  new ToolFailed({
+    reason: "reason" in error
+      ? String(error.reason)
+      : error._tag === "@smthrs/flow/ExternalJobLost"
+      ? "@smthrs/sandbox/SandboxTools/ToolLost"
+      : error._tag,
+  })
 
 const empty = Schema.Struct({})
 
@@ -176,13 +191,12 @@ export const machineBindings = <E, R>(
           if (Option.isNone(machine)) return yield* new ToolFailed({ reason: "no_machine" })
           // SHA-1 over a few bytes failing is the platform's defect, not the call's.
           const callId = yield* Effect.orDie(callIdOf(call.identity))
-          const ran = yield* machines.tool(machine.value.branch, machine.value.ownerId, callId, {
-            ...input,
-            tool: entry.tool,
-          } as SandboxTools.Call).pipe(
-            Effect.mapError((error) => new ToolFailed({ reason: "reason" in error ? String(error.reason) : error._tag })),
-          )
-          return ran.result as never
+          const tool = { ...input, tool: entry.tool } as SandboxTools.Call
+          // A command runs as the call's own `sandbox/Command` job, so it holds no step of this run while it runs.
+          const ran = tool.tool === "run"
+            ? SandboxCommand.run({ branch: machine.value.branch, ownerId: machine.value.ownerId }, callId, tool)
+            : Effect.map(machines.tool(machine.value.branch, machine.value.ownerId, callId, tool), (done) => done.result)
+          return (yield* ran.pipe(Effect.mapError(failedAs))) as never
         }),
       // The agent sees why a tool failed as its kind only.
       publicError: (error) => error.reason,

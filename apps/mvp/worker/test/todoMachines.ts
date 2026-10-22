@@ -5,16 +5,28 @@
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer } from "effect"
 import { Machines } from "../branch/Machines.ts"
+import { instantCommands } from "./commands.ts"
 import type { ScriptedGitHub } from "../github/test/scriptedGitHub.ts"
 
-/** The machine: one in-memory working copy per branch machine, cloned from the branch's head on GitHub on first use. */
-export const machines = (github: ScriptedGitHub, run: (command: string) => number = () => 0) => {
+/**
+ * The machine: one in-memory working copy per branch machine, cloned from the branch's head on GitHub on first use.
+ * With `commands` set (a machine over real processes, worker/test/box.ts `machinesOn`), every command runs there instead,
+ * as a tool call and as a job alike; the files stay in memory.
+ */
+export const machines = (
+  github: ScriptedGitHub,
+  run: (command: string) => number = () => 0,
+  options: { readonly commands?: Machines["Service"] } = {},
+) => {
   const copies = new Map<string, { readonly initial: Map<string, string>; readonly files: Map<string, string> }>()
   const calls: Array<{ readonly branchId: string; readonly branch: string; readonly ownerId: string; readonly callId: string; readonly tool: string }> = []
+  const commands = new Map<string, typeof SandboxTools.RunResult.Type>()
+  const real = options.commands
   const service = Machines.of({
     tool: (branch, ownerId, callId, call) =>
       Effect.suspend(() => {
         calls.push({ branchId: branch.branchId, branch: branch.branch, ownerId, callId, tool: call.tool })
+        if (call.tool === "run" && real !== undefined) return real.tool(branch, ownerId, callId, call)
         let copy = copies.get(branch.branchId)
         if (copy === undefined) {
           const files = new Map(github.tree(branch.branch))
@@ -74,6 +86,13 @@ export const machines = (github: ScriptedGitHub, run: (command: string) => numbe
             return done({ tool: "diff", diff: "", bytes: 0, truncated: false })
         }
       }),
+    // The agent's commands run as `sandbox/Command` jobs: each starts once per key and finishes at once.
+    commands: (branch, ownerId, callId) =>
+      real?.commands(branch, ownerId, callId) ?? instantCommands(
+        run,
+        (key) => calls.push({ branchId: branch.branchId, branch: branch.branch, ownerId, callId: key, tool: "run" }),
+        commands,
+      ),
     sleepIfIdle: () => Effect.die("the todo run never puts a machine to sleep"),
   })
   return { calls, copies, layer: Layer.succeed(Machines, service) }

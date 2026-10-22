@@ -14,25 +14,33 @@ import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notificat
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
-import { beforeEach, describe, expect, test } from "vitest"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { Machines } from "../branch/Machines.ts"
+import { noCommands } from "../test/commands.ts"
 import { REPOSITORY, reset, services as githubServices, sql } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
 import * as Stack from "../stack/Stack.ts"
 import { build, runFlow } from "../test/flowHost.ts"
+import * as Box from "../test/box.ts"
 import { machines } from "../test/todoMachines.ts"
 import { testFile } from "../test/harness.ts"
 import { ChecksRun } from "./Checks.ts"
+import * as SandboxCommand from "./SandboxCommand.ts"
 import * as Todo from "./Todo.ts"
 import * as TodoAgent from "./TodoAgent.ts"
 import * as TodoMachine from "./TodoMachine.ts"
 
 const runtime = testFile("todo_run")
+const boxes = realpathSync(mkdtempSync(join(tmpdir(), "smthrs-todo-box-")))
+afterAll(() => rmSync(boxes, { recursive: true, force: true }))
 beforeEach(async () => {
   await reset(runtime)
   await sql(runtime, "TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, pulls, pull_commits, reviews, runs")
@@ -142,9 +150,10 @@ const setup = async (
   }
   const agent = cells(...(options.agent ?? [WRITES_README]))
   const seat = await agentSeat(options.model ?? agent.model)
-  const registration = Todo.registration(
-    todoServices,
-    TodoAgent.registration(seat, await database(), Agent.layerSandbox),
+  // The agent's commands run as `sandbox/Command` jobs, which the deployed host registers beside the sandbox tools.
+  const registration = Layer.mergeAll(
+    Todo.registration(todoServices, TodoAgent.registration(seat, await database(), Agent.layerSandbox)),
+    SandboxCommand.registration,
   ).pipe(Layer.provide(machine.layer))
   const run = (start: Stack.AttemptStart) =>
     runFlow(Todo.Todo, start, registration, {
@@ -415,9 +424,12 @@ describe("the todo run on a host that dies mid-implement", { timeout: 180_000 },
       start: () => Effect.void,
     }
     const agent = frames()
-    const registration = Todo.registration(
-      todoServices,
-      TodoAgent.registration(await agentSeat(agent.model), await database(), Agent.layerSandbox),
+    const registration = Layer.mergeAll(
+      Todo.registration(
+        todoServices,
+        TodoAgent.registration(await agentSeat(agent.model), await database(), Agent.layerSandbox),
+      ),
+      SandboxCommand.registration,
     ).pipe(Layer.provide(machine.layer))
     const start = (await commit("Add a line to README", "Add a line to the README."))!
     const executionId = todoExecutionId(start.attemptId)
@@ -466,6 +478,85 @@ describe("the todo run on a host that dies mid-implement", { timeout: 180_000 },
     )
     expect(github.tree("main").get("README.md")).toBe("# Widgets\n\nA line\n")
     expect(await todo(1)).toMatchObject({ state: "merged" })
+  })
+
+  test("a command the agent runs outlives the engine that started it: it runs once, and the agent reads its result", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    github.onPullOpened = (number) => void github.merge(number, "maya")
+    // The attempt's commands run on a real box (a scratch checkout, real processes); its files stay in memory.
+    const workdir = join(boxes, `todo-${crypto.randomUUID()}`)
+    mkdirSync(workdir)
+    const box = Box.boxAt({ workdir, homes: `${workdir}-homes` })
+    const machine = machines(github, undefined, { commands: Box.machinesOn(box.box) })
+    const { services } = await githubServices(runtime, github)
+    const todoServices: Todo.Services<unknown, never> = {
+      database: services.database,
+      tokens: services.tokens,
+      http: services.http,
+      apiBaseUrl: services.apiBaseUrl,
+      start: () => Effect.void,
+    }
+    // Frame 1 runs a command that takes a while and writes what it printed; frame 2 answers.
+    const command = "echo ran >> runs.log; touch started; sleep 2; touch finished; echo done-$((2+3))"
+    const FRAMES = [
+      `const r = await ctx.call("sandbox/run", { command: ${JSON.stringify(command)} })\n` +
+      `await ctx.call("sandbox/write", { path: "README.md", content: "# Widgets\\n\\n" + r.stdout })`,
+      `ctx.done({ summary: "Ran it." })`,
+    ]
+    const model = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          const frame = request.messages.filter((message) => message.role === "assistant").length
+          return Stream.fromIterable<ModelEvent.ModelEvent>([
+            { type: "text-delta", id: "t", text: "```cell\n" + FRAMES[Math.min(frame, FRAMES.length - 1)]! + "\n```" },
+            { type: "usage", inputTokens: 10, outputTokens: 10 },
+            { type: "settle", stopReason: "stop" },
+          ])
+        }),
+    })
+    const registration = Layer.mergeAll(
+      Todo.registration(todoServices, TodoAgent.registration(await agentSeat(model), await database(), Agent.layerSandbox)),
+      SandboxCommand.registration,
+    ).pipe(Layer.provide(machine.layer))
+    const start = (await commit("Run it", "Run the command."))!
+    const executionId = todoExecutionId(start.attemptId)
+    const engine = async (schema?: string) => {
+      const scope = Effect.runSync(Scope.make())
+      const built = await Effect.runPromise(
+        Scope.provide(scope)(
+          build(registration, {
+            hostId: "durable-object",
+            isAlive: RunStore.Ownership.singleIncarnationLiveness,
+            maxConnections: 3,
+            ...(schema === undefined ? {} : { schema }),
+          }),
+        ),
+      )
+      const execute = Context.get(built.context, FlowRuntime.FlowRuntime).execute(Todo.Todo, { executionId, payload: start })
+        .pipe(Effect.provide(built.context)) as Effect.Effect<unknown, unknown>
+      return { built, execute, close: () => Effect.runPromise(Scope.close(scope, Exit.void)) }
+    }
+
+    const first = await engine()
+    const running = Effect.runFork(Effect.exit(first.execute))
+    // The host dies while the command runs: its connections cut, its fibers stopped, its exec sessions closed.
+    await expect.poll(() => existsSync(join(workdir, "started")), { interval: 10, timeout: 60_000 }).toBe(true)
+    expect(existsSync(join(workdir, "finished"))).toBe(false)
+    await runtime.runPromise(
+      Effect.flatMap(SqlClient.SqlClient, (client) =>
+        client`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+          WHERE pid <> pg_backend_pid() AND query LIKE ${`%${first.built.engine.schema}%`}`),
+    )
+    await Effect.runPromise(Fiber.interrupt(running))
+    await first.close()
+    const second = await engine(first.built.engine.schema)
+    const resumed = await Effect.runPromise(Effect.exit(second.execute))
+    await second.close()
+
+    expect(resumed).toEqual(Exit.succeed({ state: "merged" }))
+    // The command ran once, and the agent read what it printed after the engine that started it was gone.
+    expect(readFileSync(join(workdir, "runs.log"), "utf8")).toBe("ran\n")
+    expect(github.tree("main").get("README.md")).toBe("# Widgets\n\ndone-5\n")
   })
 })
 
@@ -708,7 +799,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
         ...ctx.machine,
         layer: Layer.succeed(
           Machines,
-          Machines.of({ tool: (_branch, _owner, _id, call) => answer(call), sleepIfIdle: () => Effect.die("unused") }),
+          Machines.of({ commands: () => noCommands, tool: (_branch, _owner, _id, call) => answer(call), sleepIfIdle: () => Effect.die("unused") }),
         ),
       },
     })
