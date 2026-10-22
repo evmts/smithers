@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync
@@ -23,7 +24,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 const fixture = () => {
-  const root = mkdtempSync(join(tmpdir(), "smithers-host-"))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-host-")))
   roots.push(root)
   const bundle = join(root, "bundle & <dir>")
   mkdirSync(join(bundle, "bin"), { recursive: true })
@@ -197,12 +198,16 @@ describe("restored launchd service", () => {
       f.calls.splice(0)
       f.system.launchctl = (args) => {
         f.calls.push([...args])
+        if (failure === "still loaded" && args[0] === "bootout") {
+          vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(30_000)
+        }
         return { status: 0, stdout: failure === "cannot observe launcher" ? "pid = 123" : "", stderr: "" }
       }
-      if (failure === "still loaded") vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(30_000)
-      else {vi.spyOn(process, "kill").mockImplementation(() => {
+      if (failure === "cannot observe launcher") {
+        vi.spyOn(process, "kill").mockImplementation(() => {
           throw Object.assign(new Error("cannot observe launcher"), { code: "EPERM" })
-        })}
+        })
+      }
       await expect(Host.install({ ...f.options, bundle: other.bundle }, f.system)).rejects.toThrow(
         failure === "still loaded" ? "did not stop" : "cannot observe launcher"
       )

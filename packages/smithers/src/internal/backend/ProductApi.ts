@@ -7,6 +7,9 @@
 //   post_api_auth_github_cli_consent (application/x-www-form-urlencoded)
 //   post_api_fast_model_sign_in (application/x-www-form-urlencoded)
 
+import type { ControlRpcs } from "@smthrs/control"
+import type { GatewayRpcs } from "@smthrs/gateway"
+import type { Rpc, RpcGroup } from "effect/rpc"
 import { pathSegment as segment } from "./PathSegment.ts"
 
 /** Per-request headers and, for signed webhooks, the original JSON bytes. */
@@ -7748,14 +7751,29 @@ export interface PostApiWorkflowProvisionInput {
 export const postApiWorkflowProvision = (transport: Transport, input?: PostApiWorkflowProvisionInput): Promise<PostApiWorkflowProvisionResponse> =>
   transport.request("POST", `/api/workflow/provision`, input?.body) as Promise<PostApiWorkflowProvisionResponse>
 
-export type PostApiWorkflowRpcBody = AnyJSON
+/** The relay's non-streaming allowlist, using the gateway's public wire contracts. */
+type WorkflowRpc = Extract<
+  RpcGroup.Rpcs<typeof ControlRpcs.ControlRpcs> | RpcGroup.Rpcs<typeof GatewayRpcs.GatewayRpcs>,
+  { readonly _tag: "Plan" | "Run" | "Cancel" | "Resume" | "Steer" | "Signal" | "List" | "Projection.Snapshot" | "Approval.Submit" }
+>
 
-export type PostApiWorkflowRpcResponse = AnyJSON
+export type PostApiWorkflowRpcBody<P extends WorkflowRpc["_tag"] = WorkflowRpc["_tag"]> = {
+  [K in P]: {
+    readonly repo: string
+    readonly workspaceId: string
+    readonly procedure: K
+    readonly payload: Extract<WorkflowRpc, { readonly _tag: K }>["payloadSchema"]["Encoded"]
+  }
+}[P]
 
-export interface PostApiWorkflowRpcInput {
-  readonly body?: PostApiWorkflowRpcBody
+export type PostApiWorkflowRpcResponse<P extends WorkflowRpc["_tag"] = WorkflowRpc["_tag"]> =
+  | { readonly ok: true; readonly payload: Rpc.SuccessEncoded<Extract<WorkflowRpc, { readonly _tag: P }>> }
+  | { readonly ok: false; readonly error: Extract<WorkflowRpc, { readonly _tag: P }>["errorSchema"]["Encoded"] }
+
+export interface PostApiWorkflowRpcInput<P extends WorkflowRpc["_tag"] = WorkflowRpc["_tag"]> {
+  readonly body: PostApiWorkflowRpcBody<P>
 }
 
 /** POST /api/workflow/rpc */
-export const postApiWorkflowRpc = (transport: Transport, input?: PostApiWorkflowRpcInput): Promise<PostApiWorkflowRpcResponse> =>
-  transport.request("POST", `/api/workflow/rpc`, input?.body) as Promise<PostApiWorkflowRpcResponse>
+export const postApiWorkflowRpc = <const I extends PostApiWorkflowRpcInput>(transport: Transport, input: I): Promise<PostApiWorkflowRpcResponse<I["body"]["procedure"]>> =>
+  transport.request("POST", `/api/workflow/rpc`, input.body) as Promise<PostApiWorkflowRpcResponse<I["body"]["procedure"]>>

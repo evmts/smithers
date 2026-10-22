@@ -138,13 +138,13 @@ for (const kind of ["secret", "variable"]) {
   })
 }
 add("secret set", async (c, a, o) => {
+  if (o.path !== undefined) throw new UsageError({ message: "Secret values cannot be written to branch files" })
   if (!o["body-stdin"]) throw new UsageError({ message: "Secret values require --body-stdin" })
   const value = await c.stdin("Secret")
   return c.request("POST", repo(c, o, "/secrets"), {
     name: a.name,
     value,
     ...(o["main-only"] ? { main_only: true } : {}),
-    ...(typeof o.path === "string" ? { path: o.path } : {}),
     ...(list(o.host).length > 0 || list(o.header).length > 0
       ? { hosts: list(o.host), match_headers: list(o.header) }
       : {})

@@ -171,6 +171,13 @@ Backend commands detect the repository from git or jj when
 `--repo` is omitted. Use `--json` for structured output and `--help` or `--schema`
 for each command's complete arguments.
 
+`secret set NAME --body-stdin` stores a secret for scoped egress bindings. Secret
+values cannot be exported to branch files; `--path` is unsupported.
+
+`history watch ISSUE` reads the item, subscribes to its event stream, and reads
+again when an event arrives. A refused, failed or closed stream ends the command
+with an error. Watching does not poll or reconnect automatically.
+
 `smthrs repo home OWNER/REPO` reads the remote homepage on `main`. Omit the
 argument to detect the repository as `repo view` does, or use `--repo OWNER/REPO`.
 It prints each block's type and title/name in server order; `--json` preserves the
@@ -498,6 +505,11 @@ Changing bundles restarts once; a restart before owner claim rotates the token.
 or 4 with `setup_mint_failed`. Readiness and socket failures exit 1.
 `host status` reports launchd, readiness, bundled microVM doctor, bundle and
 version. `host stop` unloads the agent and retains all data under
-`~/Library/Application Support/Smithers`. The agent starts at login and
+`~/Library/Application Support/Smithers`. It keeps the installed bundle's plist
+as a `.plist.stopped` recovery receipt outside launchd's discovery path, so
+restore uses the same custom bundle. Service changes take an exclusive
+`.plist.lock` directory and refuse overlapping operations with `host_service_busy`.
+If a process crashes while holding it, confirm no service operation is running
+before removing that lock directory. Active agents start at login and
 restarts after a crash. These commands require an unprivileged macOS user;
 never run them with sudo.

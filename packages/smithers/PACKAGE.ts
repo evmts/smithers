@@ -67,6 +67,23 @@ const importRules = ImportRules({
       files: ["test/ClaudeCode.test.ts", "test/CodexLogin*.test.ts", "test/fixtures/codex-login-lock-race-child.ts"],
       callees: ["setTimeout", "setInterval", "globalThis.setTimeout", "globalThis.setInterval"],
       because: "test.behavioral: provider regressions wait on a condition or TestClock, never a fixed wall-clock delay."
+    },
+    {
+      kind: "forbidCalls",
+      files: [
+        "src/internal/backend/History.ts",
+        "test/BackendHistory.test.ts",
+        "test/BackendContracts.test.ts",
+        "test/HostServiceRecovery.test.ts"
+      ],
+      callees: ["setTimeout", "setInterval"],
+      because: "DUR-2: history subscribes without timer polling; TEST-2: tests synchronize on conditions."
+    },
+    {
+      kind: "rootImportsOnly",
+      files: ["src/internal/backend/ProductApi.ts", "test/fixtures/workflow-rpc-types.ts"],
+      packages: ["@smthrs/*"],
+      because: "SDK-5: the relay uses the public control and gateway contracts."
     }
   ]
 })

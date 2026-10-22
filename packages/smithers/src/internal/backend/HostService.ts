@@ -4,13 +4,16 @@
  * @since 1.0.0
  */
 
+import { SpanFailure } from "@smthrs/flow"
 import * as Environment from "@smthrs/integrations/Environment"
+import { Cause, Effect, Exit, Metric } from "effect"
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   readlinkSync,
@@ -198,6 +201,45 @@ export const loaded = (system: Launchd) => system.launchctl(["print", `${system.
  */
 export const plistFile = (system: Launchd) => join(system.agentsDir, `${label}.plist`)
 
+/** Fail closed while another process owns service replacement, including shutdown. */
+const serviceLock = async <A>(system: Launchd, operation: "install" | "stop", use: () => Promise<A>): Promise<A> => {
+  const lock = `${plistFile(system)}.lock`
+  const result = await Effect.runPromiseExit(
+    Effect.acquireUseRelease(
+      Effect.try({
+        try: () => {
+          mkdirSync(system.agentsDir, { recursive: true })
+          try {
+            mkdirSync(lock, { mode: 0o700 })
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+            throw new Refused({
+              fault: "infra",
+              code: "host_service_busy",
+              message: "Another host service operation holds the installation lock"
+            })
+          }
+        },
+        catch: (error) => error
+      }),
+      () => Effect.tryPromise({ try: use, catch: (error) => error }),
+      () => Effect.sync(() => rmSync(lock, { recursive: true }))
+    ).pipe(
+      Effect.tap(() => Metric.update(Metric.counter(`cli.host.${operation}.completed`), 1)),
+      Effect.tap(() => Effect.logDebug("Host service operation completed", { operation })),
+      Effect.tapError(() =>
+        Effect.andThen(
+          Metric.update(Metric.counter(`cli.host.${operation}.failed`), 1),
+          Effect.logDebug("Host service operation failed", { operation })
+        )
+      ),
+      SpanFailure.withSpan(`cli.host.${operation}`)
+    )
+  )
+  if (Exit.isSuccess(result)) return result.value
+  throw Cause.squash(result.cause)
+}
+
 /**
  * Verify every bundle byte before changing launchd state. No PATH lookup or shell.
  *
@@ -314,56 +356,66 @@ export const install = async (
   system: Launchd
 ): Promise<"installed" | "reloaded" | "unchanged"> => {
   verifyBundle(options.bundle)
-  const file = plistFile(system), content = hostPlist(options)
-  const previous = existsSync(file) ? readFileSync(file, "utf8") : undefined
-  const job = system.launchctl(["print", `${system.domain}/${label}`])
-  const isLoaded = job.status === 0
-  if (previous === content && isLoaded) return "unchanged"
-  mkdirSync(options.stateDir, { recursive: true, mode: 0o700 })
-  mkdirSync(join(options.stateDir, "logs"), { recursive: true, mode: 0o700 })
-  mkdirSync(system.agentsDir, { recursive: true })
-  if (isLoaded) {
-    const out = system.launchctl(["bootout", `${system.domain}/${label}`])
-    if (out.status !== 0) {
+  return serviceLock(system, "install", async () => {
+    const file = plistFile(system), content = hostPlist(options)
+    const previous = existsSync(file) ? readFileSync(file, "utf8") : undefined
+    const job = system.launchctl(["print", `${system.domain}/${label}`])
+    const isLoaded = job.status === 0
+    if (previous === content && isLoaded) return "unchanged"
+    mkdirSync(options.stateDir, { recursive: true, mode: 0o700 })
+    mkdirSync(join(options.stateDir, "logs"), { recursive: true, mode: 0o700 })
+    mkdirSync(system.agentsDir, { recursive: true })
+    if (isLoaded) {
+      const out = system.launchctl(["bootout", `${system.domain}/${label}`])
+      if (out.status !== 0) {
+        throw new Refused({
+          fault: "infra",
+          code: "host_stop_failed",
+          message: "launchctl bootout failed; bundle unchanged"
+        })
+      }
+      await waitStopped(system, job.stdout)
+    }
+    const temporary = mkdtempSync(`${file}.`)
+    try {
+      writeFileSync(join(temporary, "agent.plist"), content, { mode: 0o600, flag: "wx" })
+      renameSync(join(temporary, "agent.plist"), file)
+      rmSync(`${file}.stopped`, { force: true })
+    } finally {
+      rmSync(temporary, { recursive: true, force: true })
+    }
+    const result = system.launchctl(["bootstrap", system.domain, file])
+    if (result.status !== 0) {
       throw new Refused({
         fault: "infra",
-        code: "host_stop_failed",
-        message: "launchctl bootout failed; bundle unchanged"
+        code: "host_start_failed",
+        message: `launchctl bootstrap failed: ${result.stderr.trim()}`
       })
     }
-    await waitStopped(system, job.stdout)
-  }
-  writeFileSync(`${file}.tmp`, content, { mode: 0o600 })
-  renameSync(`${file}.tmp`, file)
-  const result = system.launchctl(["bootstrap", system.domain, file])
-  if (result.status !== 0) {
-    throw new Refused({
-      fault: "infra",
-      code: "host_start_failed",
-      message: `launchctl bootstrap failed: ${result.stderr.trim()}`
-    })
-  }
-  return isLoaded ? "reloaded" : "installed"
+    return isLoaded ? "reloaded" : "installed"
+  })
 }
 /**
- * Unloads the host agent, waits for it and its backend to stop, and removes its
- * property list.
+ * Unloads the host agent and waits for it and its backend to stop. Its property
+ * list is moved out of launchd's discovery path and retained for recovery.
  *
  * @since 1.0.0
  * @private
  */
-export const stop = async (system: Launchd): Promise<{ state: "stopped" }> => {
-  const job = system.launchctl(["print", `${system.domain}/${label}`])
-  if (job.status === 0) {
-    const out = system.launchctl(["bootout", `${system.domain}/${label}`])
-    if (out.status !== 0 && loaded(system)) {
-      throw new Refused({ fault: "infra", code: "host_stop_failed", message: "launchctl bootout failed" })
+export const stop = async (system: Launchd): Promise<{ state: "stopped" }> =>
+  serviceLock(system, "stop", async () => {
+    const job = system.launchctl(["print", `${system.domain}/${label}`])
+    if (job.status === 0) {
+      const out = system.launchctl(["bootout", `${system.domain}/${label}`])
+      if (out.status !== 0 && loaded(system)) {
+        throw new Refused({ fault: "infra", code: "host_stop_failed", message: "launchctl bootout failed" })
+      }
+      await waitStopped(system, job.stdout)
     }
-    await waitStopped(system, job.stdout)
-  }
-  rmSync(plistFile(system), { force: true })
-  return { state: "stopped" }
-}
+    const file = plistFile(system)
+    if (existsSync(file)) renameSync(file, `${file}.stopped`)
+    return { state: "stopped" }
+  })
 /**
  * The bundle directory named by the installed property list's program path.
  *
@@ -371,7 +423,8 @@ export const stop = async (system: Launchd): Promise<{ state: "stopped" }> => {
  * @private
  */
 export const installedBundle = (system: Launchd): string => {
-  const text = readFileSync(plistFile(system), "utf8")
+  const file = plistFile(system)
+  const text = readFileSync(existsSync(file) ? file : `${file}.stopped`, "utf8")
   const executable = text.match(/<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]+)<\/string>/)?.[1]
   if (!executable) {
     throw new Refused({
@@ -409,8 +462,10 @@ export const maintenance = (
   if (operation === "restore" && !directory?.trim()) {
     throw new Refused({ fault: "user", code: "invalid_backup", message: "Backup directory is required" })
   }
-  // stop removes the plist. Recovery must still find the current Homebrew keg.
-  const bundle = verifyBundle(existsSync(plistFile(system)) ? installedBundle(system) : resolveBundle()).bundle
+  // A stopped installation retains its exact bundle; only an absent install uses the keg.
+  const file = plistFile(system)
+  const bundle =
+    verifyBundle(existsSync(file) || existsSync(`${file}.stopped`) ? installedBundle(system) : resolveBundle()).bundle
   const result = run(join(bundle, "bin/smithers-backend"), [
     "host-maintenance",
     operation,

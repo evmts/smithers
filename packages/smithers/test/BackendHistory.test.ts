@@ -1,3 +1,4 @@
+import { Effect, Metric } from "effect"
 import { EventEmitter } from "node:events"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
@@ -412,6 +413,26 @@ const items = (req: IncomingMessage, res: ServerResponse, rows: Array<ReturnType
 }
 
 describe("the factory from the terminal, over a local HTTP server", () => {
+  it.each([403, 422])("reports a permanent HTTP %s stream refusal without reconnecting or polling", async (status) => {
+    let reads = 0
+    const f = await serve((req, res) => {
+      if (req.url?.endsWith("/mythical/events")) return json(res, { message: "watch refused" }, status)
+      items(req, res, [item(++reads === 1 ? "running" : "landed")])
+    })
+    try {
+      const failed = Metric.counter("cli.history.watch.failed")
+      const failures = Effect.runSync(Metric.value(failed)).count
+      const watched = await f.run(["history", "watch", "12"])
+      expect(watched.code).not.toBe(0)
+      expect(Effect.runSync(Metric.value(failed)).count).toBe(failures + 1)
+      expect(watched.output + watched.error).toContain("watch refused")
+      expect(reads).toBe(1)
+      expect(f.requests.filter((request) => request.url?.endsWith("/events"))).toHaveLength(1)
+    } finally {
+      await f.close()
+    }
+  })
+
   it("files an issue, then watches the factory take it to an open pull request with its check receipt", async () => {
     const moves: Array<Array<ReturnType<typeof item>>> = [
       [],
@@ -446,13 +467,10 @@ describe("the factory from the terminal, over a local HTTP server", () => {
     const f = await serve((req, res) => {
       if (req.method === "POST" && req.url === "/api/repos/owner/repo/issues") return json(res, { number: 12 }, 201)
       if (req.url === "/api/repos/owner/repo/mythical/events") {
-        // Exercise an actual stream connection that takes longer than the hint delay.
-        setTimeout(() => {
-          res.writeHead(200, { "content-type": "text/event-stream" })
-          res.write(": connected\n\n")
-          events = res
-          connected()
-        }, 100)
+        res.writeHead(200, { "content-type": "text/event-stream" })
+        res.write(": connected\n\n")
+        events = res
+        connected()
         return
       }
       const rows = moves[Math.min(read, moves.length - 1)]!
@@ -463,7 +481,7 @@ describe("the factory from the terminal, over a local HTTP server", () => {
         // Each read is followed by the stack's next move and its hint.
         // Two hints in one write: the second waits as pending for the next wait.
         const hint = `event: mythical\ndata: {"generation":${read},"kind":"item"}\n\n`
-        setTimeout(() => void streamReady.then(() => events!.write(hint + hint)), 20)
+        void streamReady.then(() => events!.write(hint + hint))
         return
       }
       json(res, { message: "unexpected" }, 404)
@@ -474,7 +492,7 @@ describe("the factory from the terminal, over a local HTTP server", () => {
       const started = Date.now()
       const watched = await f.run(["history", "watch", "12"])
       expect(watched.code, watched.output + watched.error).toBe(0)
-      // Hints, not the 10 s poll, drove every read.
+      // Every read follows connection establishment or a real event.
       expect(Date.now() - started).toBeLessThan(5_000)
       expect(watched.error.trim().split("\n")).toEqual([
         "#12 · not in the history yet",
@@ -493,7 +511,7 @@ describe("the factory from the terminal, over a local HTTP server", () => {
     }
   })
 
-  it("exits non-zero when the watched issue stops, and keeps reading when the hint stream is unavailable", async () => {
+  it("exits non-zero for a settled issue without needing the hint stream", async () => {
     const f = await serve((req, res) => {
       if (req.url?.endsWith("/mythical/events")) return json(res, { message: "event streaming is not configured" }, 500)
       items(req, res, [
@@ -540,17 +558,24 @@ describe("the factory from the terminal, over a local HTTP server", () => {
   })
 
   it("stops watching on an interrupt", async () => {
+    let interrupt: (() => void) | undefined
     const f = await serve((req, res) => {
       if (req.url?.endsWith("/mythical/events")) {
         res.writeHead(200, { "content-type": "text/event-stream" })
-        return void res.write(": connected\n\n")
+        res.write(": connected\n\n")
+        interrupt?.()
+        return
       }
       items(req, res, [item("running", { lane: 0 })])
     })
     try {
       const watched = await f.run(
         ["history", "watch", ID],
-        (signals) => setTimeout(() => signals.emit("SIGINT", "SIGINT"), 300)
+        (signals) => {
+          interrupt = () => {
+            signals.emit("SIGINT", "SIGINT")
+          }
+        }
       )
       expect(watched.code).not.toBe(0)
       expect(watched.error).toContain("#12 Fix login · implementing")

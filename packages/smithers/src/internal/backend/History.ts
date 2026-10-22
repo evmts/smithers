@@ -4,7 +4,7 @@
  * filed for the factory, and a watch that follows one issue through the
  * lanes. The watch reads the one item (`GET …/mythical/items/{id|issue}`,
  * which finds it however many items the snapshot's bound leaves out) on
- * every hint from `…/mythical/events`, or on a poll without one. Writes are
+ * every hint from `…/mythical/events`. Writes are
  * acknowledged at once; the stack does the work.
  *
  * The words and groups mirror `@smthrs/rpc/StackView` and
@@ -13,9 +13,11 @@
  * @since 1.0.0
  */
 
+import { SpanFailure } from "@smthrs/flow"
+import { Cause, Effect, Exit, Metric, Stream } from "effect"
 import { clean } from "../../cli/Presentation.ts"
 import { Refused, UsageError } from "../../CliError.ts"
-import { APIError, chunksOf, type Client, esc, list, object, str, type Values } from "./Client.ts"
+import { APIError, type Client, esc, list, object, str, type Values } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 
 /** Nothing more happens without a person or a new issue event (`isSettledItemState`). */
@@ -24,12 +26,6 @@ const NEEDS_YOU = new Set(["blocked", "rejected", "proposed"])
 /** The request ids the backend accepts. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DAY_MS = 86_400_000
-/**
- * How long a watch waits for a hint before it reads the snapshot anyway.
- * @private
- * @since 1.0.0
- */
-export const POLL_MS = 10_000
 
 /**
  * The owner's word for where an item is (`itemStateLabel`).
@@ -294,61 +290,86 @@ const one = async (c: Client, o: Values, ref: string): Promise<Values | undefine
   }
 }
 
-/**
- * Hints from `…/mythical/events`: `next` resolves on the next event, or after
- * `ms` when none arrives. A lost stream is reopened at the next wait.
- */
-const hints = (c: Client, path: string) => {
-  const stop = new AbortController()
-  const signal = c.runtime.signal ? AbortSignal.any([stop.signal, c.runtime.signal]) : stop.signal
-  let pending = false, open = false, wake: (() => void) | undefined
-  const listen = async () => {
-    open = true
-    try {
-      const response = await c.response("GET", path, undefined, { stream: true, signal })
-      let buffer = ""
-      for await (const chunk of chunksOf(response.body!)) {
-        buffer = (buffer + Buffer.from(chunk).toString("utf8")).replaceAll("\r\n", "\n")
-        let end: number
-        while ((end = buffer.indexOf("\n\n")) >= 0) {
-          const frame = buffer.slice(0, end)
-          buffer = buffer.slice(end + 2)
-          if (frame.split("\n").some((line) => line.startsWith("data:"))) {
-            pending = true
-            wake?.()
-          }
-        }
-        if (buffer.length > 64 * 1024) buffer = ""
-      }
-    } catch {
-      /* the next wait polls the snapshot and reopens the stream */
-    } finally {
-      open = false
+/** A terminal subscription owns its connection; failure is returned to the caller. */
+const watch = (c: Client, o: Values, ref: string) =>
+  Effect.gen(function*() {
+    let last = ""
+    const readItem = Effect.tryPromise({ try: () => one(c, o, ref), catch: (error) => error }).pipe(
+      Effect.tap((item) =>
+        Effect.sync(() => {
+          const line = item === undefined
+            ? `${named(ref)} · not in the history yet`
+            : [itemLine(item), ...[receiptLine(item), workerLine(item)].filter(Boolean).map((row) => `  ${row}`)]
+              .join("\n")
+          if (line !== last) c.write(`${line}\n`)
+          last = line
+        })
+      )
+    )
+    const settled = (item: Values | undefined): item is Values => item !== undefined && outOfLanes(item)
+    let item = yield* readItem
+    if (!settled(item)) {
+      item = yield* Effect.acquireUseRelease(
+        Effect.sync(() => new AbortController()),
+        (stop) =>
+          Effect.gen(function*() {
+            const signal = c.runtime.signal ? AbortSignal.any([stop.signal, c.runtime.signal]) : stop.signal
+            const response = yield* Effect.tryPromise({
+              try: () => c.response("GET", stackPath(c, o, "/events"), undefined, { stream: true, signal }),
+              catch: (error) => error
+            })
+            if (!response.body) {
+              return yield* Effect.fail(
+                new Refused({
+                  fault: "infra",
+                  code: "history_stream_missing",
+                  message: "History event stream is missing"
+                })
+              )
+            }
+            const hints = Stream.fromReadableStream({ evaluate: () => response.body!, onError: (error) => error }).pipe(
+              Stream.decodeText,
+              Stream.splitLines,
+              Stream.filter((line) => line.startsWith("data:"))
+            )
+            // Subscribe before the second read, closing the gap after the initial snapshot.
+            let latest = yield* readItem
+            if (settled(latest)) return latest
+            yield* hints.pipe(
+              Stream.mapEffect(() => readItem),
+              Stream.tap((next) =>
+                Effect.sync(() => {
+                  latest = next
+                })
+              ),
+              Stream.takeUntil(settled),
+              Stream.runDrain
+            )
+            if (settled(latest)) return latest
+            return yield* Effect.fail(
+              new Refused({
+                fault: "dependency",
+                code: "history_stream_closed",
+                message: "History event stream closed before completion"
+              })
+            )
+          }),
+        (stop) => Effect.sync(() => stop.abort())
+      )
     }
-  }
-  return {
-    next: (ms: number) => {
-      if (!open && !signal.aborted) void listen()
-      if (pending) {
-        pending = false
-        return Promise.resolve()
-      }
-      return new Promise<void>((resolve) => {
-        const done = () => {
-          clearTimeout(timer)
-          signal.removeEventListener("abort", done)
-          wake = undefined
-          pending = false
-          resolve()
-        }
-        const timer = setTimeout(done, ms)
-        signal.addEventListener("abort", done, { once: true })
-        wake = done
-      })
-    },
-    close: () => stop.abort()
-  }
-}
+    if (item && !["landed", "proposed"].includes(str(item.state))) c.runtime.exit?.(1)
+    return item
+  }).pipe(
+    Effect.tap(() => Metric.update(Metric.counter("cli.history.watch.completed"), 1)),
+    Effect.tap(() => Effect.logDebug("History watch completed")),
+    Effect.tapError(() =>
+      Effect.andThen(
+        Metric.update(Metric.counter("cli.history.watch.failed"), 1),
+        Effect.logDebug("History watch failed")
+      )
+    ),
+    SpanFailure.withSpan("cli.history.watch")
+  )
 
 /**
  * @private
@@ -356,30 +377,12 @@ const hints = (c: Client, path: string) => {
  */
 export const history: Record<string, Handler> = {
   "history watch": async (c, a, o) => {
-    const ref = target(a.issue)
-    const stream = hints(c, stackPath(c, o, "/events"))
-    let last = ""
-    try {
-      for (;;) {
-        const item = await one(c, o, ref)
-        const line = item === undefined
-          ? `${named(ref)} · not in the history yet`
-          : [itemLine(item), ...[receiptLine(item), workerLine(item)].filter(Boolean).map((row) => `  ${row}`)]
-            .join("\n")
-        if (line !== last) c.write(`${line}\n`)
-        last = line
-        if (item !== undefined && outOfLanes(item)) {
-          if (!["landed", "proposed"].includes(str(item.state))) c.runtime.exit?.(1)
-          return item
-        }
-        if (c.runtime.signal?.aborted) {
-          throw new Refused({ fault: "user", code: "cancelled", message: "Watch cancelled" })
-        }
-        await stream.next(POLL_MS)
-      }
-    } finally {
-      stream.close()
+    const result = await Effect.runPromiseExit(watch(c, o, target(a.issue)), { signal: c.runtime.signal })
+    if (Exit.isSuccess(result)) return result.value
+    if (c.runtime.signal?.aborted) {
+      throw new Refused({ fault: "user", code: "cancelled", message: "Watch cancelled" })
     }
+    throw Cause.squash(result.cause)
   },
   "history bootstrap": (c, _a, o) => c.request("POST", stackPath(c, o, "/bootstrap"), {}),
   "history parallel": (c, a, o) => {

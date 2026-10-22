@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -12,7 +12,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 const fixture = () => {
-  const root = mkdtempSync(join(tmpdir(), "smithers-host-"))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-host-")))
   roots.push(root)
   const bundle = join(root, "bundle & <dir>")
   mkdirSync(join(bundle, "bin"), { recursive: true })
