@@ -42,15 +42,15 @@ test("native host records the verified catalog source independently of the moved
       ...args
     ], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()
   try {
-    await mkdir(join(pinned, "flows", "pinned"), { recursive: true })
+    await mkdir(join(pinned, ".smithers", "flows", "pinned"), { recursive: true })
     await writeFile(join(pinned, ".gitignore"), ".flows/\n")
-    await writeFile(join(pinned, "flows", "pinned", "flow.ts"), source)
+    await writeFile(join(pinned, ".smithers", "flows", "pinned", "flow.ts"), source)
     git(pinned, "init", "--quiet")
     git(pinned, "add", "-A")
     git(pinned, "commit", "--quiet", "-m", "pinned source")
     const revision = git(pinned, "rev-parse", "HEAD")
     git(temporary, "clone", "--quiet", pinned, branch)
-    await writeFile(join(branch, "flows", "pinned", "flow.ts"), "throw 'BRANCH_IMPORT_CANARY'")
+    await writeFile(join(branch, ".smithers", "flows", "pinned", "flow.ts"), "throw 'BRANCH_IMPORT_CANARY'")
     await writeFile(join(branch, "pnpm-lock.yaml"), "edited branch lockfile")
     git(branch, "add", "-A")
     git(branch, "commit", "--quiet", "-m", "branch moved")
