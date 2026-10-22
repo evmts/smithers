@@ -70,16 +70,29 @@ const account = (options: {
   })
 
 describe("account", () => {
-  it("lets a complete measurement that held still overrule a failed write's declaration", () => {
+  it("retains failed writes outside a complete local observation and invalidates earlier checks", () => {
+    const result = account({
+      state: state({ readOnlyFrames: 2, repeatFrames: 1, callSignatures: ["pytest tests"] }),
+      calls: [call(), call({ ok: false, mutates: true, passing: false, input: { path: "../outside.txt" } })],
+      opened: tree("t0"),
+      closed: tree("t0")
+    })
+    expect(result.mutated).toBe(true)
+    expect(result.facts).toMatchObject({ readOnlyFrames: 0, repeatFrames: 0, mutations: 1 })
+    expect(result.observed).toMatchObject({ mutated: true, declaredWrites: 1 })
+    expect(result.frameChecks[0]?.stable).toBe(false)
+  })
+
+  it("keeps a failed write's declaration despite an unchanged complete local measurement", () => {
     const held = account({
       state: state({ readOnlyFrames: 2 }),
       calls: [call({ ok: false, mutates: true, passing: false })],
       opened: tree("t0"),
       closed: tree("t0")
     })
-    expect(held.mutated).toBe(false)
-    expect(held.facts.readOnlyFrames).toBe(3)
-    expect(held.observed).toMatchObject({ basis: "observed", mutated: false, declaredWrites: 1 })
+    expect(held.mutated).toBe(true)
+    expect(held.facts.readOnlyFrames).toBe(0)
+    expect(held.observed).toMatchObject({ basis: "observed", mutated: true, declaredWrites: 1 })
   })
 
   it("keeps a failed write's declaration when the measurement cannot contradict it", () => {
@@ -113,14 +126,13 @@ describe("account", () => {
     expect(written.facts.mutations).toBe(1)
     expect(written.facts.remoteMutations).toBe(2)
     expect(written.observed).toMatchObject({ basis: "observed", mutated: true, declaredWrites: 1 })
-    // The host measurement holding still does not contradict a remote write
-    // the way it contradicts a failed host write: it never covered that tree.
+    // Failure retains the declaration but supplies no measured remote write.
     const failed = account({
       calls: [call({ ok: false, mutates: true, remote: true })],
       opened: tree("t0"),
       closed: tree("t0")
     })
-    expect(failed.mutated).toBe(false)
+    expect(failed.mutated).toBe(true)
     expect(failed.facts.remoteMutations).toBe(0)
   })
 

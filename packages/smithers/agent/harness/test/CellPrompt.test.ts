@@ -397,7 +397,9 @@ describe("cellPrompt", () => {
     // #4284, 2026-10-18: the requested yield-after-inspection sentence adds
     // 67 characters and 15 estimated tokens. Scripted evals cover recovery;
     // this does not claim a live-model quality measurement.
-    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(1_465)
+    // Failure and missing-hit guards add 82 estimated tokens. Executed in
+    // CellPromptExample.test.ts; this is a correctness fix, not a live-model eval.
+    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(1_547)
     expect(Tokens.estimate(sectionOf("cell-environment", {}, { locale: "C.UTF-8", absentTools: ["rg", "ruff"] })))
       .toBeLessThanOrEqual(200)
   })
@@ -466,9 +468,9 @@ describe("the contract", () => {
     // the example completes in one sentence instead of pasting the hunk.
     // #4284 adds the short inspection-yield instruction (QA & Release, 2026-10-18).
     expect(replText()).toContain("Yield after inspection when later decisions depend on tool output.")
-    expect(replText()).toHaveLength(5_638)
+    expect(replText()).toHaveLength(5_922)
     expect(Digest.digest(replText()))
-      .toBe("bfeb799dcaba31de4a99a86e6793aed70e19daa014e48097dc760d77d6960f2b")
+      .toBe("137a8ce54371f265bc56b562080a7ca4ff937499df82a43055509221dcce2ea4")
   })
 
   it("encourages the guard shape and leaves the unguarded completion legal", () => {
@@ -519,7 +521,9 @@ describe("the contract", () => {
     expect(fix.indexOf("const before")).toBeLessThan(fix.indexOf("const after"))
     expect(fix.indexOf("const after")).toBeLessThan(fix.indexOf("ctx.done("))
     expect(fix).toContain("{ at: ctx.base }")
-    expect(fix).toContain("if (before.exitCode !== 0 && after.exitCode === 0) ctx.done(")
+    expect(fix).toContain(
+      "if (Number.isInteger(before.exitCode) && before.exitCode !== 0 && after.exitCode === 0) ctx.done("
+    )
   })
 
   it("teaches none of the deleted surface's mechanics", () => {
@@ -548,7 +552,9 @@ describe("the contract", () => {
     expect(rule).toContain("say what is unverified")
     expect(rule).not.toContain("exact command and output")
     // The example answers in one sentence and leaves the hunk in the tree.
-    const done = replText().split("\n").find((line) => line.includes("ctx.done(") && line.startsWith("if ("))!
+    const done = replText().split("\n").find((line) =>
+      line.includes("ctx.done(") && line.trimStart().startsWith("if (")
+    )!
     expect(done).not.toContain("hunk")
     expect(done).toContain("verification.input.command")
   })

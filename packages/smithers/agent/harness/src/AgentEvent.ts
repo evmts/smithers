@@ -1637,16 +1637,10 @@ export class VacuousVerificationObserved extends Schema.TaggedClass<VacuousVerif
  * themselves — which is exactly the signal that missed a shell redirect over a
  * tracked source file.
  *
- * `mutated` is the union of the two signals, with one exception. A declaration
- * by a call that *succeeded* stands even where the measurement cannot see the
- * path it touched, because the alternative is failing a run that has been
- * editing all along on the strength of a walk that never looked at its files.
- * A declaration by a call that *failed* is a claim about what it would have
- * written, and where `basis` is `observed` and the digest did not move, the
- * tree has answered that claim: nothing was written, and the frame is not
- * counted as a write. So `declaredWrites: 1` beside `mutated: false` under
- * `observed` is a declaration the measurement vetoed, and both numbers stay in
- * the record.
+ * `mutated` is the union of declarations and complete measurements. A failed
+ * call may have written before failing, including outside this workspace, so
+ * an unchanged local digest cannot retract its declaration. Boundary-refused
+ * calls declare no mutation. The record preserves both signals for an audit.
  *
  * @category events
  * @since 0.1.0
@@ -1666,12 +1660,10 @@ export class MutationObserved extends Schema.TaggedClass<MutationObserved>(
   /**
    * Calls this frame made that DECLARED a write, whether or not they landed.
    *
-   * Journaled beside the observed answer rather than instead of it, because
-   * the gap between the two numbers is the accounting defect itself: a frame
-   * with `declaredWrites: 0` and `mutated: true` is a shell mutation nothing
-   * else in the run can see, and a frame with `declaredWrites: 1` and
-   * `mutated: false` under `observed` is a failed call whose declaration the
-   * measurement contradicted.
+   * Journaled beside the union so an audit can distinguish declared writes
+   * from measured-only writes: `declaredWrites: 0` and `mutated: true` means
+   * a complete measurement found a mutation no call declared. A positive
+   * declaration count always makes the frame a mutation, even after failure.
    */
   declaredWrites: Schema.Int
 }) {}

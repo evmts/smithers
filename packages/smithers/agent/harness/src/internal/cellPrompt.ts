@@ -142,19 +142,28 @@ const bugFixExample = `Example bug fix, two cells. Names illustrative; call what
 
 \`\`\`cell
 const found = await ctx.call("grep", { pattern: "return value", root: "src/units", limit: 5 })
-const hit = found.ok === false ? undefined : found.matches[0]   // failed calls resolve, never throw
-const region = await ctx.call("read", { path: hit.file, offset: Math.max(1, hit.line - 20), limit: 40 })
-console.log(region.content)
+const hit = found.ok === false ? undefined : found.matches[0]
+const region = hit === undefined ? undefined : await ctx.call("read", { path: hit.file, offset: Math.max(1, hit.line - 20), limit: 40 })
+console.log(found.ok === false ? found.error.message : hit === undefined ? "No matches" : region.ok === false ? region.error.message : region.content)
 \`\`\`
 
 \`\`\`cell
 const verification = { flow: "bash", input: { command: "run-tests tests/test_widen.py::test_keeps_unit" } }
-const anchor = hit.text                                         // text a call returned, never typed from memory
-const applied = await ctx.call("edit", { path: hit.file, oldString: anchor, newString: anchor.replace("return value", "return widen(value)") })
-const before = await ctx.call(verification.flow, verification.input, { at: ctx.base })  // opening tree; edit stays
-const after = await ctx.call(verification.flow, verification.input)
-console.log(applied.ok === false ? applied.error.message : applied.hunk, before.exitCode, after.exitCode, after.stdout)
-if (before.exitCode !== 0 && after.exitCode === 0) ctx.done("Widened " + hit.file + "; " + verification.input.command + " failed before, passes after.")
+if (hit !== undefined && region.ok !== false) {
+  const anchor = hit.text
+  const applied = await ctx.call("edit", { path: hit.file, oldString: anchor, newString: anchor.replace("return value", "return widen(value)") })
+  if (applied.ok === false) console.log(applied.error.message)
+  else {
+    const before = await ctx.call(verification.flow, verification.input, { at: ctx.base })
+    const after = await ctx.call(verification.flow, verification.input)
+    if (before.ok === false) console.log(before.error.message)
+    else if (after.ok === false) console.log(after.error.message)
+    else {
+      console.log(applied.hunk, before.exitCode, after.exitCode, after.stdout)
+      if (Number.isInteger(before.exitCode) && before.exitCode !== 0 && after.exitCode === 0) ctx.done("Widened " + hit.file + "; " + verification.input.command + " failed before, passes after.")
+    }
+  }
+}
 \`\`\``
 
 /**

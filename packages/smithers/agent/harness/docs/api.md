@@ -295,7 +295,9 @@ Above it, each supervisor reading of a judged run also asks
 `compaction/marks` about the transcript segments not yet marked, the person's
 excepted, and the next boundary stores the answers, by segment digest, on
 `State.segmentFacts` inside its recorded drain
-(`Steering.DrainRecord.marks`). The first such reading is asked about every
+(`Steering.DrainRecord.marks`), even when that drain disables message delivery.
+Marks are consumed once; disabling delivery drops messages, not mark evidence.
+The first such reading is asked about every
 segment so far. Marking changes nothing the model is sent: the prefix a
 request is sent stays byte-stable until a compaction.
 
@@ -763,7 +765,10 @@ export interface EngineLike {
   digest, paths, complete }`). `complete: false` means the measurement covered
   a bounded prefix, and a prefix cannot say the rest of the tree held still.
   After a partial walk, measurement stops for the rest of that run; mutation
-  evidence falls back to flow declarations.
+  evidence falls back to flow declarations. Even a complete walk covers only
+  the workspace: failed calls retain their mutation declarations, since they
+  may have written elsewhere before failing. Such writes also invalidate
+  earlier checks in the frame. Boundary-refused calls declare no mutation.
 - `capture` pins the workspace under the id in the `CaptureRequest` and
   returns a `Snapshot` (`{ id, ref }`), where `ref` is the host's own name for
   what it pinned.
@@ -1694,7 +1699,9 @@ completion itself (`if (after.exitCode === 0) ctx.done(…)`,
 `ctx.done((await ctx.call(…)).stdout)`), a cell that hands a result to
 anything the parse cannot see through (a function of its own, a `.then`
 callback, an alias), and a cell whose calls are effects with discarded
-results, are spared. `FailedCallDemanded` takes precedence, and with no frame
+results, are spared. Calls and completions evaluated inside `console.*`
+arguments still count as program actions; merely formatting a printed result
+does not. `FailedCallDemanded` takes precedence, and with no frame
 left the answer stands; a refused answer is also what the run ends on when
 the budget runs out before it completes again.
 

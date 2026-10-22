@@ -39,9 +39,16 @@ const importRules = ImportRules({
     },
     {
       kind: "forbidCalls",
-      files: ["test/QuickJSMemoryAdmission.test.ts", "test/QuickJSSandbox.test.ts", "test/ReplRealm.test.ts"],
+      files: [
+        "test/QuickJSMemoryAdmission.test.ts",
+        "test/QuickJSSandbox.test.ts",
+        "test/ReplRealm.test.ts",
+        "test/Frame.test.ts",
+        "test/UnobservedCall.test.ts",
+        "test/CellPromptExample.test.ts"
+      ],
       callees: ["setTimeout", "*.sleep", "*.waitForTimeout"],
-      because: "test.behavioral: memory admission regressions wait on execution, never a fixed sleep."
+      because: "test.behavioral: wait on execution or TestClock, never a fixed sleep."
     }
   ]
 })

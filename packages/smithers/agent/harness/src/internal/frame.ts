@@ -290,30 +290,15 @@ export const account = (options: {
 }): Accounting => {
   const { calls, closed, opened, state } = options
 
-  // `declaredWrites` is what the frame's calls said about themselves and the
-  // measurement is what the workspace says. A measurement adds a mutation
-  // nothing declared — the shell redirect this exists for — and it does not
-  // take away a declaration made by a call that *succeeded*, because it does
-  // not cover the whole world: it stops at a bound, it prunes directories,
-  // and it is rooted at one path, so a real edit outside what it covers
-  // would read as an idle frame and twice the cap later the run would fail
-  // as `read_only_cap` having edited files the whole time.
-  //
-  // A declaration made by a call that *failed* is a different claim. It says
-  // what the call would have written, and a complete measurement that saw
-  // the workspace hold still contradicts it directly rather than merely
-  // failing to confirm it: nothing was written, so nothing was written
-  // outside the bound either. Wave 7 recorded two such frames on one
-  // instance — an anchor miss reporting `Failed to find expected lines`, and
-  // an edit reporting `oldString does not occur` — each of which cleared a
-  // read-only streak the run had not broken. Where the measurement is
-  // partial or absent the old rule stands, because then the digest holding
-  // still is not evidence of anything.
+  // A complete observation covers only this workspace. A call may write
+  // elsewhere, or write before failing, so neither an unchanged digest nor
+  // a failure retracts its mutation declaration. Boundary-refused calls have
+  // `mutates: false` already. Keep the same standing writes for streaks and
+  // for deciding whether an earlier check still describes the closing tree.
   const declaredWrites = calls.filter((call) => call.mutates).length
   const measured = Option.isSome(opened) && Option.isSome(closed)
   const covered = measured && opened.value.complete && closed.value.complete
-  const standingWrites = calls.filter((call) => call.mutates && (call.ok || !covered)).length
-  const mutated = standingWrites > 0 || (covered && opened.value.digest !== closed.value.digest)
+  const mutated = declaredWrites > 0 || (covered && opened.value.digest !== closed.value.digest)
   // Writes the host measurement could not have seen. A failed call measured
   // nothing, so only a settled one counts; see `ObservedCall.remote`.
   const remoteWrites = calls.filter((call) => call.ok && call.mutates && call.remote).length
@@ -349,7 +334,7 @@ export const account = (options: {
   // and the closing digest would be somebody else's answer. A measurement
   // that moved with nothing declaring it cannot be placed among the calls at
   // all, so that frame stamps nothing as read.
-  const standingAt = calls.map((call) => call.mutates && (call.ok || !covered))
+  const standingAt = calls.map((call) => call.mutates)
   const lastStandingWrite = standingAt.lastIndexOf(true)
   const unattributedMutation = mutated && lastStandingWrite === -1
   const readings = (checkpointed: boolean) =>

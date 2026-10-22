@@ -291,6 +291,51 @@ const journaled = (fixture: ScriptedEngine.Fixture, records: Map<string, unknown
 describe("UnobservedCall", () => {
   const blind = UnobservedCall.blind
 
+  it("sees guards that decide whether a console argument dispatches a call", () => {
+    const probe = `const r = await ctx.call("bash", {});\n`
+    for (
+      const action of [
+        `console.log(r.ok ? await ctx.call("save", {}) : null)`,
+        `console.log(r.ok && await ctx.call("save", {}))`,
+        `if (r.ok) console.log(await ctx.call("save", {}))`,
+        `switch (r.ok) { case true: console.log(await ctx.call("save", {})); break }`
+      ]
+    ) expect(UnobservedCall.blind(probe + action + `; ctx.done("saved")`), action).toBe(false)
+    for (
+      const formatting of [
+        `console.log(r.ok ? r.stdout.trim() : JSON.stringify(r.stderr))`,
+        `console.log(JSON.stringify(r.ok ? r.stdout : r.stderr))`,
+        `console.log(String(r.ok && r.stdout))`,
+        `console.log([r.ok ? r.stdout : r.stderr])`,
+        `if (r.ok) console.log(r.stdout.trim())`
+      ]
+    ) expect(UnobservedCall.blind(probe + formatting + `; ctx.done("literal")`), formatting).toBe(true)
+  })
+
+  it("sees actions and completions nested in console arguments", () => {
+    const probe = `const r = await ctx.call("bash", {});\n`
+    for (
+      const action of [
+        `console.log(ctx.done(r.stdout))`,
+        `console.log(await ctx.call("save", { text: r.stdout })); ctx.done("saved")`,
+        `console.info(finish(r)); ctx.done("saved")`,
+        `console.log(r.ok ? ctx.done("yes") : ctx.done("no"))`,
+        `console.log(JSON.stringify(ctx.done(r.stdout)))`,
+        `console.log(() => ctx.done(r.stdout))`,
+        `console.log(() => save(r)); ctx.done("saved")`
+      ]
+    ) expect(blind(probe + action), action).toBe(false)
+    for (
+      const printed of [
+        `console.log(r.stdout)`,
+        `console.log(r.ok ? r.stdout : r.stderr)`,
+        `console.log(JSON.stringify(r))`,
+        `console.log(r.stdout.trim())`,
+        `console.log(await ctx.call("read", {}))`
+      ]
+    ) expect(blind(probe + printed + `; ctx.done("literal")`), printed).toBe(true)
+  })
+
   it("reads the qualification replies the way the evidence reads them", () => {
     // Builder frame 417 and checker frame 1106: a probe, printed, then a
     // completion built from a literal.
@@ -345,6 +390,8 @@ describe("UnobservedCall", () => {
     for (
       const acting of [
         `if (r.ok) ctx.done("a"); else ctx.done("b")`,
+        `r.ok && save(); ctx.done("saved")`,
+        `switch (1) { case r.exitCode: save(); break; default: break } ctx.done("saved")`,
         `r.exitCode === 0 ? ctx.done("a") : console.log(r)`,
         `r.exitCode === 0 && ctx.done("a")`,
         `while (r.exitCode === 0) { ctx.done("a"); break }`,

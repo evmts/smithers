@@ -1515,6 +1515,25 @@ describe("Supervisor", () => {
       })))
     })
 
+    it("takes pending compaction marks even when message delivery is disabled", async () => {
+      const { layer, marks } = scripted(() => calm())
+      const segment = { digest: "a", item: { tokens: 10, cell: "cell a", prose: "", observed: "" } }
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const { events, handle } = yield* open(layer)
+        yield* handle.offer(offer(0, [], [segment]))
+        while (!events.some((event) => event._tag === "supervisor-settled")) yield* Effect.yieldNow
+        expect(yield* handle.take(0, { ...delivering, deliver: false })).toEqual({
+          ...empty,
+          marks: [{ digest: "a", remove: 0.1, keep: 0.1 }]
+        })
+        expect(yield* handle.take(0, delivering)).toEqual(empty)
+        yield* handle.offer(offer(1, [], [segment]))
+        while (events.filter((event) => event._tag === "supervisor-settled").length < 2) yield* Effect.yieldNow
+        expect((yield* handle.take(1, delivering)).marks).toEqual([])
+        expect(marks).toHaveLength(1)
+      })))
+    })
+
     it("marks each segment once, keeps marks a later reading posts, and hands them to a stale boundary", async () => {
       const { layer, marks } = scripted(() => calm())
       const segment = (digest: string) => ({

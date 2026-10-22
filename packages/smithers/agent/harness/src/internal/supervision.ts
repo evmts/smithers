@@ -659,9 +659,9 @@ export const open = (input: {
         }),
       take: (frame, { deliver, ledger, shown }) =>
         Ref.modify(mailbox, (held): readonly [Taken, Option.Option<Mailbox>] => {
-          if (Option.isNone(held) || !deliver) return [nothing, Option.none()]
+          if (Option.isNone(held)) return [nothing, Option.none()]
           const { marks } = held.value
-          if (held.value.frame < frame - 1) return [{ ...nothing, marks }, Option.none()]
+          if (!deliver || held.value.frame < frame - 1) return [{ ...nothing, marks }, Option.none()]
           const rows = held.value.rows.filter((row) => !shown.includes(row.key))
           const gated = held.value.monitors === undefined
             ? undefined

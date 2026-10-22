@@ -19,10 +19,10 @@
  * Every armed control let that through, and each for a reason that was correct
  * about its own subject: the read-only cap is a stall detector and the run
  * finished below it, the narrowing demand judges the shape of a check and there
- * was no check to narrow, and the phantom-write veto vetoes a write that was
- * declared and did not happen — this run declared none. The harness held the
- * fact that decides it the whole time, in seven `mutation-observed` events on
- * one digest, and never consulted it at the `complete` transition.
+ * was no check to narrow, and mutation accounting saw no declaration to count.
+ * The harness held the fact that decides it the whole time, in seven
+ * `mutation-observed` events on one digest, and never consulted it at the
+ * `complete` transition.
  *
  * The comparison is between two measurements the harness already took: the
  * digest of the tree the run opened on, and the digest the completing frame

@@ -2097,8 +2097,8 @@ describe("CellTurn observed mutation", () => {
     `try { await ctx.call("edit", { path: "a.py", text: ${JSON.stringify(text)} }) } catch (error) {}
      `
 
-  it("lets a complete measurement veto the declaration of a call that failed", async () => {
-    const { events, model } = await shell(
+  it("retains failed declarations even when the complete local measurement holds still", async () => {
+    const { events } = await shell(
       [attempt("one"), attempt("two"), attempt("three"), `ctx.done("done")`],
       [
         { _tag: "Failure", message: "oldString does not occur" },
@@ -2108,28 +2108,13 @@ describe("CellTurn observed mutation", () => {
       { cap: 2, tree: "a.py=same", maxFrames: 4 }
     )
 
-    // A failed call declared what it *would* have written. The workspace was
-    // measured whole on both sides of the frame and did not move, so the
-    // declaration is contradicted rather than merely unconfirmed, and the
-    // frame is not a write. Wave 7 recorded two frames of exactly this shape,
-    // each clearing a read-only streak the run had not broken.
-    const observed = of(events, "mutation-observed")
-    expect(observed.slice(0, 2)).toEqual([
-      expect.objectContaining({ basis: "observed", mutated: false, declaredWrites: 1 }),
-      expect.objectContaining({ basis: "observed", mutated: false, declaredWrites: 1 })
+    // A failure is not a guarantee that a call wrote nothing elsewhere.
+    expect(of(events, "mutation-observed").slice(0, 3)).toEqual([
+      expect.objectContaining({ basis: "observed", mutated: true, declaredWrites: 1 }),
+      expect.objectContaining({ basis: "observed", mutated: true, declaredWrites: 1 }),
+      expect.objectContaining({ basis: "observed", mutated: true, declaredWrites: 1 })
     ])
-    // The successful edit still counts on the same unchanged digest: the
-    // measurement is rooted, pruned and bounded, so it may contradict a call
-    // that reported failure and never a call that reported success.
-    expect(observed[2]).toMatchObject({ basis: "observed", mutated: true, declaredWrites: 1 })
-
-    // Two vetoed frames make a streak of two, which is the cap, and the frame
-    // that finally edits answers the demand. Under the union rule the run
-    // spent both frames looking like it was writing and was never demanded.
-    expect(of(events, "read-only-demanded")).toEqual([
-      expect.objectContaining({ streak: 2, cap: 2, nextFrame: 2, nextAction: "write" })
-    ])
-    expect(JSON.stringify(model.recorder.requests[2]?.messages)).toContain("Read-only discipline")
+    expect(of(events, "read-only-demanded")).toEqual([])
   })
 
   it("keeps a failed call's declaration where the measurement covered only a prefix", async () => {
@@ -2144,9 +2129,8 @@ describe("CellTurn observed mutation", () => {
     )
 
     // A bounded walk that saw a prefix hold still says nothing about the path
-    // the call named, so it cannot contradict anything. The veto needs a
-    // measurement that covered the tree; short of that the declaration stands
-    // and the run is not stopped on the absence of evidence.
+    // the call named, so it cannot contradict anything. The declaration
+    // stands and the run is not stopped on the absence of evidence.
     expect(of(events, "mutation-observed").map((event) => event.mutated)).toEqual([true, true, true])
     expect(of(events, "read-only-demanded")).toEqual([])
   })

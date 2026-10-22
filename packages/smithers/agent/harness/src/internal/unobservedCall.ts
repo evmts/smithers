@@ -313,19 +313,37 @@ const functionParts = (node: Node): ReadonlyArray<Node> | undefined => {
 
 const functionLike = (node: Node): boolean => functionParts(node) !== undefined
 
-const consoleCall = (node: Node): boolean => {
+/** Whether evaluating a printed value only formats or moves data. */
+const printingValue = (node: Node, results: ReadonlySet<string>): boolean => {
+  if (functionLike(node)) return false
+  if (node.type === "CallExpression" || node.type === "OptionalCallExpression" || node.type === "NewExpression") {
+    const callee = node.callee
+    const member = memberName(callee)
+    const formatting = (callee.type === "Identifier" && pureFunctions.has(callee.name)) ||
+      (member !== undefined && (
+        (member[0].type === "Identifier" &&
+          (member[0].name === "console" || pure.get(member[0].name)?.has(member[1]) === true)) ||
+        reads(callee, results)
+      ))
+    if (!formatting) return false
+  }
+  return referencing(node).every((child) => printingValue(child, results))
+}
+
+const consoleCall = (node: Node, results: ReadonlySet<string>): boolean => {
   if (node.type !== "CallExpression" && node.type !== "OptionalCallExpression") return false
   const member = memberName(node.callee)
   return member !== undefined && member[0].type === "Identifier" && member[0].name === "console" &&
-    !node.arguments.some(functionLike)
+    node.arguments.every((argument) => printingValue(argument, results))
 }
 
 /** An expression that only prints, or yields nothing: a `console.log` of `r`, `null`, `void 0`. */
-const logging = (node: Node): boolean =>
-  consoleCall(node) || node.type === "NullLiteral" || (node.type === "Identifier" && node.name === "undefined") ||
+const logging = (node: Node, results: ReadonlySet<string>): boolean =>
+  consoleCall(node, results) || node.type === "NullLiteral" ||
+  (node.type === "Identifier" && node.name === "undefined") ||
   (node.type === "UnaryExpression" && node.operator === "void" && node.argument.type === "NumericLiteral") ||
-  (node.type === "ConditionalExpression" && logging(node.consequent) && logging(node.alternate)) ||
-  (node.type === "LogicalExpression" && logging(node.right))
+  (node.type === "ConditionalExpression" && logging(node.consequent, results) && logging(node.alternate, results)) ||
+  (node.type === "LogicalExpression" && logging(node.right, results))
 
 /**
  * A statement that only prints, whatever it prints under: a guard such as
@@ -334,21 +352,21 @@ const logging = (node: Node): boolean =>
  * `return`, `throw`, `break` out of a loop, or any other statement is control
  * flow or an effect and is not logging.
  */
-const loggingOnly = (node: Node | null | undefined): boolean => {
+const loggingOnly = (node: Node | null | undefined, results: ReadonlySet<string>): boolean => {
   if (node === null || node === undefined) return true
   switch (node.type) {
     case "EmptyStatement":
       return true
     case "BlockStatement":
-      return node.body.every(loggingOnly)
+      return node.body.every((statement) => loggingOnly(statement, results))
     case "ExpressionStatement":
-      return logging(node.expression)
+      return logging(node.expression, results)
     case "IfStatement":
-      return loggingOnly(node.consequent) && loggingOnly(node.alternate)
+      return loggingOnly(node.consequent, results) && loggingOnly(node.alternate, results)
     case "SwitchStatement":
       return node.cases.every((entry) =>
         entry.consequent.every((statement) =>
-          (statement.type === "BreakStatement" && statement.label === null) || loggingOnly(statement)
+          (statement.type === "BreakStatement" && statement.label === null) || loggingOnly(statement, results)
         )
       )
     default:
@@ -392,7 +410,11 @@ const actsOn = (root: Node, results: ReadonlySet<string>, calls = true): boolean
     if (node.type === "CallExpression" || node.type === "OptionalCallExpression" || node.type === "NewExpression") {
       const callee = node.callee
       const member = memberName(callee)
-      if (member !== undefined && member[0].type === "Identifier" && member[0].name === "console") return false
+      if (member !== undefined && member[0].type === "Identifier" && member[0].name === "console") {
+        // Printing a value is not acting on it, but evaluating a print's
+        // arguments can dispatch another call or complete the run.
+        return node.arguments.some(quietly)
+      }
       if (ctxCall(node, "call")) {
         return (calls && acting) || node.arguments.some((argument) => visit(argument, true))
       }
@@ -415,17 +437,17 @@ const actsOn = (root: Node, results: ReadonlySet<string>, calls = true): boolean
     // A guard around printing alone reads its test for the model, not the
     // program; only as a statement of its own, since `ctx.done(r.ok || null)`
     // reads `r`.
-    if (node.type === "IfStatement" && loggingOnly(node)) {
+    if (node.type === "IfStatement" && loggingOnly(node, results)) {
       return quietly(node.test) || visit(node.consequent, false) ||
         (node.alternate != null && visit(node.alternate, false))
     }
-    if (node.type === "SwitchStatement" && loggingOnly(node)) {
+    if (node.type === "SwitchStatement" && loggingOnly(node, results)) {
       return quietly(node.discriminant) ||
         node.cases.some((entry) =>
           (entry.test != null && quietly(entry.test)) || entry.consequent.some((statement) => visit(statement, false))
         )
     }
-    if (node.type === "ExpressionStatement" && loggingOnly(node)) return quietly(node.expression)
+    if (node.type === "ExpressionStatement" && loggingOnly(node, results)) return quietly(node.expression)
     switch (node.type) {
       case "VariableDeclarator":
         return node.init != null && visit(node.init, false)
@@ -452,14 +474,8 @@ const actsOn = (root: Node, results: ReadonlySet<string>, calls = true): boolean
     }
     return referencing(node).some((child) => visit(child, acting))
   }
-  /** An expression whose value only decides what is printed. */
-  const quietly = (node: Node): boolean => {
-    if (node.type === "ConditionalExpression") {
-      return quietly(node.test) || quietly(node.consequent) || quietly(node.alternate)
-    }
-    if (node.type === "LogicalExpression") return quietly(node.left) || quietly(node.right)
-    return visit(node, false)
-  }
+  /** Formatting stays unread even when guards are nested inside it. */
+  const quietly = (node: Node): boolean => printingValue(node, results) ? false : visit(node, false)
   return visit(root, true)
 }
 
@@ -503,10 +519,10 @@ export const blind = (source: string): boolean => {
   }
   if (!keepsResult(program.program)) return false
   const results = resultNames(program.program)
-  if (!actsOn(program.program, results)) return true
   // A program that acted on some results but completes from none of them
   // wrote its answer blind to any result it only printed.
   if (completionReads(program.program, results)) return false
+  if (!actsOn(program.program, results)) return true
   return resultsByCall(program.program).some((held) => !actsOn(program.program, held, false))
 }
 
