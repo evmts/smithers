@@ -1017,6 +1017,11 @@ describe("the served gateway", processBudget, () => {
       scriptedHost,
       executable,
       verb,
+      // 538b5500d413 suppresses progress for piped auto-audience output.
+      "--audience",
+      "human",
+      "--ui",
+      "plain",
       "--port",
       String(port)
     ], {
