@@ -125,13 +125,14 @@ every module except `Trellis` and `DelegationChain` reports its refusals and
 exhaustions through it. Those two own their own errors because every
 rejection they report carries a plan path, and a path is what an author has
 to read to repair a plan. All three carry a `code` from a stable literal
-schema, a `message`, and an optional `cause`, and none of them carries the
-input that produced the failure.
+schema, a `message`, and an optional `cause`. Causes can preserve member
+errors and results that contain caller input; patterns do not redact them.
 
 ### `PatternError`
 
 `PatternError` carries a `code` from `PatternErrorCode`, a message, and an
 optional `cause` with the reported error or errors.
+Member errors retain their original values, including any input they hold.
 
 | Code                  | Raised when                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -198,7 +199,9 @@ default, applies the same check, and raises `missing_slot` when there is
 neither and `invalid_decorator` when the schemas do not fit.
 
 `Pattern.decorate(flow, decorator)` applies a decorator and re-declares the
-result under the wrapped flow's schemas and its authority ceiling: capabilities
+result under the wrapped flow's schemas and authority ceiling. Its payload,
+success, and error schemas must pass the compatibility check; an incompatible
+schema raises `invalid_decorator`. Capabilities
 are intersected with the wrapped flow's, and a decorator result that widens the
 wrapped flow's effect envelope is refused with `envelope_conflict`. The
 decorator call becomes part of declaration identity, so a wrapped flow and a
@@ -221,7 +224,9 @@ so a crash resumes the ladder where it stopped. See
 
 `Bounded.all(members, { concurrency, priority? })` splits a named record into
 batches of `concurrency` and sequences the batches, so the plan shows exactly
-how many calls can be in flight. `Bounded.run(members, { concurrency,
+how many calls can be in flight. Its node preserves each named member's
+success type and the union of member errors and requirements, as `Node.all` does.
+`Bounded.run(members, { concurrency,
 priority?, priorities? })` is the Effect form.
 
 Members are ordered by priority, highest first, and declaration order breaks a
@@ -244,13 +249,16 @@ interrupt siblings. `Quarantine.run` is the Effect form, and
 `Quarantine.settle` unwraps successes or returns a `quarantined` failure.
 `isSucceeded` and `isQuarantined` narrow joined entries. Typed failures are
 isolated; defects and interruptions still propagate.
+`settle` preserves member errors in its failure cause, including any caller
+input those errors contain. Quarantine first shipped in 1.0.0-rc.0; its API
+tags use 1.0.0.
 
 ## `MapReduce`
 
 `MapReduce.make({ map, reduce, concurrency, onEmpty })` declares one map call
 per shard, batched into `Node.all` groups of `concurrency` with the batches
 sequenced, then one reduce call. The flow input is `{ shards }`, and the array
-has to be a literal value available while the graph builds, because a
+must pass the `Payload` schema's array check and be available while the graph builds, because a
 declaration cannot count shards it does not hold. Members are keyed by ordinal
 (`shard-0`, `shard-1`), which makes the reduce input independent of the order
 the workers finish in.
@@ -262,6 +270,9 @@ receives `{ input, mapped }`.
 `onEmpty` decides what an empty shard list means: `"reduce"` calls the reducer
 with an empty array, `"succeed"` returns an empty array without calling it, and
 `"fail"` reports `exhausted`. `concurrency` must be a positive safe integer.
+For `"reduce"` and `"fail"`, the runtime success type is the reducer's result.
+For `"succeed"` or a policy typed as `OnEmpty`, it also permits a readonly array
+of mapped values.
 
 ## `Recursion`
 
@@ -304,7 +315,9 @@ the caller's own references. `rounds` must be a positive safe integer.
 `Panel.make({ panelists, moderator, roles?, concurrency? })` declares one call
 per panelist, then the moderator over `{ input, opinions }`. A role named in
 `roles` is passed to that panelist as `{ input, role }` and enters its key
-material, so changing a role changes the declaration. `Panel.run` keys opinions
+material, so changing a role changes the declaration. Generated labels include
+the panelist names, roles, and concurrency. An explicit `name` overrides the
+generated label. `Panel.run` keys opinions
 by panelist name whatever order they complete in.
 
 ## `ReviewLoop`
