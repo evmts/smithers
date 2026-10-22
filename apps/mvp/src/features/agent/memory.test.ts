@@ -3,7 +3,7 @@ import { Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Flows, MemoryError, MemoryStore, Opening, RecallKeyword } from "@smthrs/memory"
 import { NodeHost } from "@smthrs/platform-node"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Stream } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Logger, Metric, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
@@ -13,7 +13,7 @@ import { member, openAgent, ORIGIN } from "../../test/agent"
 import { JudgeSeat } from "../jev/steps"
 import { runFlow } from "../../../worker/test/flowHost.ts"
 import { OpeningFailed, OpeningRefused, Prepare, PreparedTurn } from "./flows"
-import { layer, prepare, recall } from "./memory"
+import { catalogUnavailable, layer, prepare, recall } from "./memory"
 
 const runtime = testFile("memory_sources")
 // The memory banks' own schema on the compose Postgres, dropped when each test's scope closes.
@@ -70,18 +70,40 @@ test("empty opening records zero counts and preserves the turn without calling t
 })
 
 
-test("production sources preserve a real signed-out refusal and an injected network failure", async () => {
+test("production sources preserve a real signed-out refusal", async () => {
   const denied = await harness(runtime, () => Stream.die("no model expected"))
   const deniedFetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
     return denied.fetch(`${url.pathname}${url.search}`, input instanceof Request ? input : init)
   }) as typeof globalThis.fetch
-  const brokenFetch = (() => Promise.reject(new Error("injected network failure"))) as typeof globalThis.fetch
-  for (const [fetch, code] of [[deniedFetch, "invalid_namespace"], [brokenFetch, "store"]] as const) {
+  for (const [fetch, code] of [[deniedFetch, "invalid_namespace"]] as const) {
     const exit = await Effect.runPromiseExit(Effect.scoped(Effect.flatMap(Opening.Sources, (sources) => sources.recall("launch")).pipe(
       Effect.provide(layer(ORIGIN)), Effect.provide(database), Effect.provide(NodeHost.NodeCrypto.layer),
       Effect.provide(http(fetch)),
     )))
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code, message: "Skill catalog unavailable" })
   }
+})
+
+
+test("catalog outage preserves recalled memory so chat can continue", async () => {
+  const logs: string[] = []
+  const before = Effect.runSync(Metric.value(catalogUnavailable)).count
+  const brokenFetch = (() => Promise.reject(new Error("injected catalog outage"))) as typeof globalThis.fetch
+  const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    yield* Flows.runRemember({ bank: "agent-chat", key: "launch", text: "launch mascot is cobalt" })
+    return yield* recall(turn)
+  }).pipe(
+    Effect.provide(layer(ORIGIN).pipe(Layer.provideMerge(MemoryStore.layer))),
+    Effect.provide(database), Effect.provide(NodeHost.NodeCrypto.layer), Effect.provide(http(brokenFetch)),
+    Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((options) => { logs.push(JSON.stringify(Logger.formatStructured.log(options))) })])),
+  )))
+  expect(Effect.runSync(Metric.value(catalogUnavailable)).count - before).toBe(1)
+  expect(logs.join("\n")).toContain("memory.catalog_unavailable")
+  expect(logs.join("\n")).not.toContain("injected catalog outage")
+  expect(logs.join("\n")).not.toContain("cobalt")
+  expect(result.question).toBe(turn.question)
+  expect(result.history).toEqual(turn.history)
+  expect(result.candidates).toContainEqual(expect.objectContaining({ kind: "memory", key: "launch", text: "launch mascot is cobalt" }))
+  expect(result.candidates.some((row) => row.kind === "skill")).toBe(false)
 })

@@ -12,6 +12,7 @@ import type { Turn } from "./schema"
 
 /** Conservative UTF-8 token ceiling, including escaped labels and fences. */
 export const OPENING_TOKENS = 4096
+export const catalogUnavailable = Metric.counter("smithers_memory_catalog_unavailable")
 export const recalled = Metric.counter("smithers_memory_recalled")
 export const inserted = Metric.counter("smithers_memory_inserted")
 export const remembered = Metric.counter("smithers_memory_remembered")
@@ -65,9 +66,15 @@ export const layer = (origin: string) => Layer.merge(
     const flows = yield* FlowsClient
     return { recall: (query: string) => Effect.gen(function*() {
       const rows = yield* recall.recall({ banks: [MEMORY_BANK], query, maxTokens: 16_384 })
-      const catalog = yield* flows.list.pipe(Effect.mapError((error) => new MemoryError.MemoryError({
-        code: error._tag === "@smthrs/mvp/flows/FlowsRefused" ? "invalid_namespace" : "store", message: "Skill catalog unavailable",
-      })))
+      const catalog = yield* flows.list.pipe(
+        Effect.catchTag("@smthrs/mvp/flows/FlowsUnavailable", () => Effect.gen(function*() {
+          yield* Metric.update(catalogUnavailable, 1)
+          yield* Effect.logWarning("memory.catalog_unavailable")
+          return { flows: [] }
+        }).pipe(Effect.withSpan("memory.catalog_unavailable"))),
+        Effect.mapError(() => new MemoryError.MemoryError({
+          code: "invalid_namespace", message: "Skill catalog unavailable",
+        })))
       return [
         ...rows.map((row): Opening.Candidate => ({ ...row, kind: "memory" })),
         ...catalog.flows.map((flow): Opening.Candidate => ({
