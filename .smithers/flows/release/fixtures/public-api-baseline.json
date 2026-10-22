@@ -299,7 +299,7 @@
       },
       "declarations": {
         "Agent.d.ts": "5788373e75eb3a39ad24bff3c27b2e9b6a9cea4d806465934d55e3d8f31a3d68",
-        "AgentAction.d.ts": "f0231bcad2d3a34c81c0256ca57d1f5a7c2a21452b7d28343ca1630bd1eeea7d",
+        "AgentAction.d.ts": "1240c4d4d845a91f392ca9dd1fc5ceaba34bc086b6d3ee6b101fa012e7652ef2",
         "AgentSession.d.ts": "beb5109ba075bc97934f8347e12cb86c77bb7023ca2907c0f3b6e5957b80bf63",
         "Budget.d.ts": "5545abc52571195b2cfaceb04e41b39d72640ecba1ea29052ef6fcf1765d24ba",
         "CellPlugin.d.ts": "318db00f2f1d0034818f1c3abe9544a2905f6bafa10d7afbd88c378c80c62ce6",
@@ -5003,7 +5003,7 @@
         "QuickJSVariant.d.ts": "dddf0cea8a7189e6b873868c9894172b7982c622bbcb9a7146eabb0843c7d341",
         "Relevance.d.ts": "7b3484fc96bf34d93876549a41786836bc8fd541b3be6300aabb12be57ac3df7",
         "Sandbox.d.ts": "107806a03c17a68030ec2627036bef5895eb67bd41f7aa4f3b410078efe70faa",
-        "Steering.d.ts": "0a9b0947e65f30086ed4989334d670ea7744492754e3c0706f4490cda4310752",
+        "Steering.d.ts": "73d2546486e858fd1f0b9f246e6c761e6bd1fef64120e411a8119a2dc8dac4da",
         "StructuredOutput.d.ts": "09623b2e84dc180fcc373b0b3ee79e918f852ac6732387372285484c4f8bd6b1",
         "Sufficiency.d.ts": "c1c142e249702d0d4578b3ee5bade16f2c296fad6014f71c44878dd5f2ca1401",
         "Supervisor.d.ts": "80d4913a99dbdf5687fedace9161a02672c3bca0537dec0931898c7347f6243c",

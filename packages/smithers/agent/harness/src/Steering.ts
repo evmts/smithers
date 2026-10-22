@@ -7,7 +7,7 @@
  */
 
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
 import type { HarnessError } from "./HarnessError.ts"
 import * as compactionMarks from "./internal/compactionMarks.ts"
@@ -118,6 +118,13 @@ export interface Drain {
   /** Personal instructions among the inserts; absent means all inserts for legacy sources. */
   readonly instructions?: ReadonlyArray<ModelRequest.Message>
   readonly inserts: ReadonlyArray<ModelRequest.Message>
+  /**
+   * The host's own notes for this boundary, such as the time the run has left
+   * ({@link withTimeLeft}). The model reads them after the supervisor's
+   * messages and before the person's inserts. They are never a person's
+   * instruction, never mark a frame as the person's, and never answer a park.
+   */
+  readonly notes?: ReadonlyArray<ModelRequest.Message>
   readonly seatChanges: ReadonlyArray<SeatChange | ThinkingChange>
   readonly remaining: Queue
   readonly queued: boolean
@@ -201,6 +208,7 @@ export const DrainRecord = Schema.Struct({
   /** Personal instructions; absent in legacy records whose inserts are personal messages. */
   instructions: Schema.optional(Schema.Array(ModelRequest.Message)),
   inserts: Schema.Array(ModelRequest.Message),
+  notes: Schema.optional(Schema.Array(ModelRequest.Message)),
   seatChanges: Schema.Array(Schema.Union([SeatChangeRecord, ThinkingChangeRecord])),
   queued: Schema.Boolean,
   /**
@@ -260,6 +268,7 @@ export type DrainRecord = typeof DrainRecord.Type
 export const drainRecord = (drain: Drain): DrainRecord => ({
   inserts: drain.inserts,
   ...(drain.instructions === undefined ? {} : { instructions: drain.instructions }),
+  ...(drain.notes === undefined || drain.notes.length === 0 ? {} : { notes: drain.notes }),
   seatChanges: drain.seatChanges,
   queued: drain.queued
 })
@@ -418,3 +427,51 @@ export const layer = (implementation: SourceInput): Layer.Layer<Source> => Layer
  */
 export const layerNoop = (overrides: Partial<Source> = {}): Layer.Layer<Source> =>
   Layer.succeed(Source)(makeNoop(overrides))
+
+/**
+ * What a run with `budgetMs` to work in is told when `leftMs` of it is left,
+ * in whole minutes rounded down.
+ *
+ * @category conversions
+ * @since 1.0.0-rc.17
+ */
+export const timeLeft = (leftMs: number, budgetMs: number): string => {
+  const total = Math.max(1, Math.round(budgetMs / 60_000))
+  const left = Math.floor(Math.max(0, leftMs) / 60_000)
+  const of = `of your ${total} ${total === 1 ? "minute" : "minutes"}`
+  return left === 0
+    ? `Time left: under a minute ${of}. Finish now, or the run ends with nothing.`
+    : `Time left: ${left} ${of}.`
+}
+
+/**
+ * `source`, with the time a run has left as a note ({@link Drain.notes}) at
+ * each boundary the run continues through, so an agent with a deadline can
+ * pace itself: `startedAt` is when its `budgetMs` began, by the `Clock`.
+ *
+ * A boundary that would idle or that parks gets no note, since nothing reads
+ * it there and a note must never answer a park. The clock is read inside the
+ * drain, which the run records at a boundary it continues through, so a
+ * replay delivers the time the first drain told.
+ *
+ * @category combinators
+ * @since 1.0.0-rc.17
+ */
+export const withTimeLeft = (
+  source: Source,
+  options: { readonly startedAt: number; readonly budgetMs: number }
+): Source =>
+  make({
+    read: source.read,
+    drain: (input) =>
+      input.wouldIdle || input.park !== undefined
+        ? source.drain(input)
+        : Effect.flatMap(source.drain(input), (drained) =>
+          Effect.map(Clock.currentTimeMillis, (now): Drain => ({
+            ...drained,
+            notes: [
+              ...(drained.notes ?? []),
+              ModelRequest.Message.user(timeLeft(options.startedAt + options.budgetMs - now, options.budgetMs))
+            ]
+          })))
+  })

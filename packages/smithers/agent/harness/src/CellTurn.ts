@@ -3708,10 +3708,11 @@ const continuing = (
 
 /**
  * Everything a drain delivers to the model, in the order it reads them: the
- * supervisor's messages, then the person's.
+ * supervisor's messages, the host's notes, then the person's.
  */
 const delivered = (drained: Steering.DrainRecord): ReadonlyArray<ModelRequest.Message> => [
   ...(drained.supervisor ?? []),
+  ...(drained.notes ?? []),
   ...drained.inserts
 ]
 

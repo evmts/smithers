@@ -1163,6 +1163,35 @@ describe("CellTurn steering boundaries", () => {
     ])
   })
 
+  it("delivers a host's notes before the person's steering, and never as the person's", async () => {
+    const model = ScriptedModel.make([
+      emits(`console.log("kept")`),
+      emits(`ctx.done("done")`)
+    ])
+    const engine = ScriptedEngine.make(model.model, [])
+    let drained = false
+    const steering = source(() => {
+      if (drained) return nothing
+      drained = true
+      return {
+        ...nothing,
+        notes: [ModelRequest.Message.user("Time left: 9 of your 10 minutes.")],
+        inserts: [ModelRequest.Message.user("steer: prefer the shorter route")]
+      }
+    })
+    const { events } = await collect({ state: state(), flows: [] }, { engine: engine.layer, steering })
+
+    expect(conversation(model, 1).slice(-3)).toEqual([
+      ModelRequest.Message.user(printsObservation("kept")),
+      ModelRequest.Message.user("Time left: 9 of your 10 minutes."),
+      ModelRequest.Message.user("steer: prefer the shorter route")
+    ])
+    // The person's messages are what the drain reports; the note is the host's.
+    expect(of(events, "steering-drained")[0]?.messages).toEqual([
+      ModelRequest.Message.user("steer: prefer the shorter route")
+    ])
+  })
+
   it("applies a thinking change without a seat change, and ignores an activated tool", async () => {
     const model = ScriptedModel.make([
       emits(`console.log("kept")`),

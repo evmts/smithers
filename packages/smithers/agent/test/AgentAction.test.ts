@@ -277,6 +277,49 @@ describe("AgentAction.make", () => {
     }
   }
 
+  for (const timed of [true, false]) {
+    it(`tells the agent the time it has left at each turn ${timed ? "under a timeout" : "only when it has one"}`, async () => {
+      const requests: Array<string> = []
+      const Paced = AgentAction.make(`agent/test/Paced-${timed}`, {
+        payload: { diff: Schema.String },
+        output: Review,
+        seat: "anthropic:test-model",
+        prompt: () => "Review this change",
+        ...(timed ? { timeout: "40 minutes" } : {})
+      })
+      const PacedFlow = Flow.make(`agent/test/PacedFlow-${timed}`, {
+        payload: { diff: Schema.String },
+        success: Review,
+        error: AgentAction.AgentFailure,
+        body: (payload) => Paced.call(payload)
+      })
+      const layers = Layer.mergeAll(Paced.layer, Interpreter.layer(PacedFlow)).pipe(
+        Layer.provideMerge(AgentAction.layerHost(host)),
+        Layer.provideMerge(seats(scripted([
+          `console.log("read it")`,
+          answering(JSON.stringify({ approved: true, issues: [] }))
+        ], requests))),
+        Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
+        Layer.provideMerge(Safety.layer),
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(FlowEngine.layerMemory),
+        Layer.provideMerge(NodeCrypto.layer)
+      )
+      const result = await Effect.runPromise(
+        PacedFlow.execute({ diff: "diff" }, { executionId: `paced-${timed}` }).pipe(
+          Effect.provide(layers),
+          Effect.provide(TestClock.layer())
+        )
+      )
+      expect(result).toEqual({ approved: true, issues: [] })
+      expect(requests).toHaveLength(2)
+      // The first turn opens on the task; the second reads its time after the first turn's output.
+      expect(requests[0]).not.toContain("Time left")
+      if (timed) expect(requests[1]).toContain("Time left: 40 of your 40 minutes.")
+      else expect(requests[1]).not.toContain("Time left")
+    })
+  }
+
   it("shares the host stance defaults and refuses unsupported settings", () => {
     expect(AgentAction.supervisorStance({})).toBe("careful")
     expect(AgentAction.supervisorStance({ SMITHERS_SUPERVISOR_STANCE: "" })).toBe("careful")

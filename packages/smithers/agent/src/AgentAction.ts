@@ -56,7 +56,7 @@ import type * as CellTurn from "@smthrs/harness/CellTurn"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
-import type * as Steering from "@smthrs/harness/Steering"
+import * as Steering from "@smthrs/harness/Steering"
 import * as StructuredOutput from "@smthrs/harness/StructuredOutput"
 import { Journal, JournalEvent, type StepFact } from "@smthrs/journal"
 import type * as MemorySnapshot from "@smthrs/memory/SnapshotRecorder"
@@ -391,7 +391,9 @@ export interface Options<
    * Accepts a constant duration or a duration callback over the decoded payload.
    * Caller cancellation remains interruption; an omitted option adds no deadline.
    * The host's model-call limits and shared budget still apply independently.
-   * Expiry interrupts the agent and returns a typed HarnessError.
+   * Expiry interrupts the agent and returns a typed HarnessError. The agent
+   * reads the time it has left at each turn it continues through
+   * (`Steering.withTimeLeft`), so it can finish before the deadline.
    */
   readonly timeout?: Duration.Input | ((payload: PayloadSchemaOf<Payload>["Type"]) => Duration.Input) | undefined
   /**
@@ -1194,6 +1196,9 @@ export const implement = <
         const expired = () => Effect.fail(new HarnessError({ code: "model_failed", message: `${tag} timed out.` }))
         if (remaining <= 0) return yield* expired()
         return yield* run.pipe(
+          // The agent reads the time it has left at each turn, so it can finish before the deadline ends it.
+          Effect.updateService(Steering.Source, (source) =>
+            Steering.withTimeLeft(source, { startedAt, budgetMs: duration })),
           Effect.interruptible,
           Effect.timeoutOrElse({ duration: remaining, orElse: expired })
         )

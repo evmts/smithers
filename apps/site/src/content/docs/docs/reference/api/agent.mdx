@@ -613,6 +613,9 @@ correction/retry work, then fails with `HarnessError` and the message
 `<action tag> timed out.` Caller cancellation remains interruption rather than
 being converted into timeout failure. Host budgets and model-call limits
 continue to apply independently; a deadline does not refund spent budget.
+Under a timeout the agent reads the time it has left at each turn it continues
+through (`Steering.withTimeLeft`, "Time left: 12 of your 40 minutes."), so it
+can finish before the deadline ends it.
 
 ### AgentAction.Repair
 

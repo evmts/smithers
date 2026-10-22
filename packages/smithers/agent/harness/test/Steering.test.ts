@@ -5,6 +5,7 @@
  */
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Cause, Effect, Exit, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import { HarnessError } from "../src/HarnessError.ts"
 import * as Steering from "../src/Steering.ts"
@@ -311,5 +312,77 @@ describe("Steering.Source", () => {
 
     expect(Exit.isFailure(readExit) ? Cause.squash(readExit.cause) : undefined).toBe(unavailable)
     expect(Exit.isFailure(drainExit) ? Cause.squash(drainExit.cause) : undefined).toBe(unavailable)
+  })
+  describe("time left", () => {
+    const steer = ModelRequest.Message.user("steer: prefer the shorter route")
+    const source = Steering.make({
+      read: () => Effect.succeed(Steering.empty()),
+      drain: () =>
+        Effect.succeed({ inserts: [steer], seatChanges: [], remaining: Steering.empty(), queued: false, duplicate: false })
+    })
+    const paced = Steering.withTimeLeft(source, { startedAt: 0, budgetMs: 40 * 60_000 })
+    const drainAt = (elapsed: string, input: Steering.BoundaryInput) =>
+      Effect.runPromise(
+        Effect.gen(function*() {
+          yield* TestClock.adjust(elapsed)
+          return yield* paced.drain(input)
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
+
+    it("says the whole minutes left of the budget, and says to finish in the last one", () => {
+      expect(Steering.timeLeft(40 * 60_000, 40 * 60_000)).toBe("Time left: 40 of your 40 minutes.")
+      expect(Steering.timeLeft(12 * 60_000 + 59_999, 40 * 60_000)).toBe("Time left: 12 of your 40 minutes.")
+      expect(Steering.timeLeft(59_999, 40 * 60_000)).toBe(
+        "Time left: under a minute of your 40 minutes. Finish now, or the run ends with nothing."
+      )
+      expect(Steering.timeLeft(-5_000, 30_000)).toBe(
+        "Time left: under a minute of your 1 minute. Finish now, or the run ends with nothing."
+      )
+    })
+
+    it("notes the time left at a boundary the run continues through, after the source's own notes", async () => {
+      const drained = await drainAt("15 minutes", { boundary: "1:close", wouldIdle: false })
+      expect(drained.inserts).toEqual([steer])
+      expect(drained.notes).toEqual([ModelRequest.Message.user("Time left: 25 of your 40 minutes.")])
+      // A note is journaled with the drain, apart from the person's inserts.
+      expect(Steering.drainRecord(drained)).toMatchObject({
+        inserts: [steer],
+        notes: [ModelRequest.Message.user("Time left: 25 of your 40 minutes.")]
+      })
+      const noted = Steering.withTimeLeft(
+        Steering.make({
+          read: source.read,
+          drain: () => Effect.map(source.drain({ boundary: "x", wouldIdle: false }), (d) => ({ ...d, notes: [steer] }))
+        }),
+        { startedAt: 0, budgetMs: 60_000 }
+      )
+      const both = await Effect.runPromise(
+        noted.drain({ boundary: "1:close", wouldIdle: false }).pipe(Effect.provide(TestClock.layer()))
+      )
+      expect(both.notes).toEqual([steer, ModelRequest.Message.user("Time left: 1 of your 1 minute.")])
+    })
+
+    it("adds nothing at a boundary that would idle or parks, so a note never answers a park", async () => {
+      const idle = await drainAt("1 minute", { boundary: "2:close", wouldIdle: true })
+      const parked = await drainAt("1 minute", {
+        boundary: "2:park:0",
+        wouldIdle: true,
+        park: { reason: "waiting-input", message: "Which branch?" }
+      })
+      const parkedLive = await drainAt("1 minute", {
+        boundary: "2:park:1",
+        wouldIdle: false,
+        park: { reason: "waiting-input", message: "Which branch?" }
+      })
+      for (const drained of [idle, parked, parkedLive]) {
+        expect(drained.notes).toBeUndefined()
+        expect(drained.inserts).toEqual([steer])
+      }
+      expect(Steering.drainRecord(idle)).not.toHaveProperty("notes")
+    })
+
+    it("reads through to the source's queue", async () => {
+      expect(await Effect.runPromise(paced.read())).toEqual(Steering.empty())
+    })
   })
 })

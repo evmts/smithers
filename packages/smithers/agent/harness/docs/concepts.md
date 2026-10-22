@@ -226,6 +226,14 @@ Interruption emits one `Aborted` event throughout the run, including realm setup
 catalog refresh, relevance readings and engine suspension. An active frame also
 closes as aborted and retains its interrupted model-call receipt.
 
+A host's notes ride a drain beside the person's inserts (`Drain.notes`): the
+model reads them after the supervisor's messages and before the person's, and
+they never count as a person's instruction, never mark a frame as the person's,
+and never answer a park. `Steering.withTimeLeft(source, { startedAt, budgetMs })`
+notes the time a run has left at each boundary it continues through, such as
+"Time left: 12 of your 40 minutes.", and in its last minute tells it to finish.
+The clock is read inside the recorded drain, so a replay tells the same time.
+
 An outside-change note names changed files as untrusted data. Re-read those files
 before editing or writing; after a `stale_read` refusal, read again before retrying.
 Outside-change delivery stays disabled until authenticated watcher ingestion,
