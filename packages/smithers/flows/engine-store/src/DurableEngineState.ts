@@ -728,7 +728,14 @@ export interface Service {
        * external boundary, returning successfully commits as usual. SQL owns
        * its commit boundary and does not need this callback.
        */
-      readonly onCommit: (commit: Effect.Effect<void>) => void
+      readonly onCommit?: ((commit: Effect.Effect<void>) => void) | undefined
+      /**
+       * The execution whose rows the transaction reads and changes, when it
+       * touches no other's: it then waits only for that execution's writers
+       * (`DurableWriter.WriteOptions`). Omitted, it waits for every writer.
+       * The memory twin serializes everything and ignores it.
+       */
+      readonly partition?: string | undefined
     }
   ) => Effect.Effect<A, E, R>
   /**
@@ -1167,7 +1174,10 @@ const consumeDeferred = (db: Database): Service["consumeDeferred"] =>
     address,
     consumedAtMs
   ) =>
-    db.writer.write(db.sql<{ readonly flowName: string }>`
+    writeRun(
+      db,
+      address.executionId,
+      db.sql<{ readonly flowName: string }>`
       UPDATE flows_deferred_completions
       SET consumed_at_ms = ${consumedAtMs}
       WHERE flow_name = ${address.flowName}
@@ -1175,7 +1185,8 @@ const consumeDeferred = (db: Database): Service["consumeDeferred"] =>
         AND deferred_name = ${address.deferredName}
         AND consumed_at_ms IS NULL
       RETURNING flow_name AS "flowName"
-    `).pipe(Effect.orDie, Effect.map((rows) => rows.length > 0))
+    `
+    ).pipe(Effect.orDie, Effect.map((rows) => rows.length > 0))
   )
 
 const completeDeferred = (db: Database): Service["completeDeferred"] =>
@@ -1187,7 +1198,9 @@ const completeDeferred = (db: Database): Service["completeDeferred"] =>
       const metadataJson = row.metadata === undefined
         ? null
         : yield* encodeJson(row.metadata, "metadata")
-      return yield* db.writer.write(
+      return yield* writeRun(
+        db,
+        row.executionId,
         Effect.gen(function*() {
           const inserted = yield* db.sql<DeferredDatabaseRow>`
             INSERT INTO flows_deferred_completions (
@@ -1249,7 +1262,9 @@ const clock = (db: Database): Service["clock"] =>
 
 const scheduleClock = (db: Database): Service["scheduleClock"] =>
   Effect.fn("DurableEngineState.scheduleClock")((row, owner) =>
-    db.writer.write(
+    writeRun(
+      db,
+      row.executionId,
       Effect.gen(function*() {
         const inserted = yield* db.sql<ClockDatabaseRow>`
           INSERT INTO flows_clock_deadlines (
@@ -1308,7 +1323,9 @@ const completeClock = (db: Database): Service["completeClock"] =>
     address,
     completedAtMs
   ) =>
-    db.writer.write(
+    writeRun(
+      db,
+      address.executionId,
       Effect.gen(function*() {
         const updated = yield* db.sql<ClockDatabaseRow>`
           UPDATE flows_clock_deadlines
@@ -1476,7 +1493,10 @@ const completeRunClocks = (db: Database): Service["completeRunClocks"] =>
   Effect.fn(
     "DurableEngineState.completeRunClocks"
   )((executionId, completedAtMs) =>
-    db.writer.write(db.sql<ClockDatabaseRow>`
+    writeRun(
+      db,
+      executionId,
+      db.sql<ClockDatabaseRow>`
       UPDATE flows_clock_deadlines
       SET completed_at_ms = ${completedAtMs}
       WHERE execution_id = ${executionId}
@@ -1488,7 +1508,8 @@ const completeRunClocks = (db: Database): Service["completeRunClocks"] =>
         deferred_name AS "deferredName",
         due_at_ms AS "dueAtMs",
         completed_at_ms AS "completedAtMs"
-    `).pipe(
+    `
+    ).pipe(
       Effect.orDie,
       Effect.flatMap((rows) => Effect.forEach(rows, decodeClockRow)),
       Effect.map((rows) =>
@@ -1514,7 +1535,9 @@ const selectWaiting = (db: Database, runId: string) =>
 
 const park = (db: Database): Service["park"] =>
   Effect.fn("DurableEngineState.park")((runId, waiting, owner) =>
-    db.writer.write(
+    writeRun(
+      db,
+      runId,
       Effect.gen(function*() {
         const updated = yield* db.sql<WaitingDatabaseRow>`
           UPDATE flows_runs
@@ -1544,7 +1567,9 @@ const park = (db: Database): Service["park"] =>
 
 const wake = (db: Database): Service["wake"] =>
   Effect.fn("DurableEngineState.wake")((runId) =>
-    db.writer.write(
+    writeRun(
+      db,
+      runId,
       Effect.gen(function*() {
         const before = yield* selectWaiting(db, runId)
         if (before[0] === undefined) {
@@ -1944,6 +1969,19 @@ const removeRunParentsForRun = (db: Database): Service["removeRunParentsForRun"]
     `).pipe(Effect.orDie, Effect.asVoid)
   )
 /**
+ * Writes `body`, which reads and changes one execution's rows only, in that
+ * execution's partition: it waits only for that execution's other writers
+ * (`packages/smithers/flows/database/docs/decisions/0001-run-writer-locks.md`).
+ * Every row this store keys by execution, its deferred completions, clock
+ * deadlines and waiting columns, is one execution's; the run-parent edges
+ * are not, and their writes name none. A waiting column's update also bumps
+ * the shared `flows_run_source` revision through the run row's trigger, an
+ * atomic increment its row lock keeps correct.
+ */
+const writeRun = <A, E, R>(db: Database, executionId: string, body: Effect.Effect<A, E, R>) =>
+  db.writer.write(body, { partition: executionId })
+
+/**
  * Writes `body` through the shared writer, dying on a sole storage failure.
  *
  * Only a sole storage failure is normalized. A composite keeps every
@@ -1953,8 +1991,12 @@ const removeRunParentsForRun = (db: Database): Service["removeRunParentsForRun"]
  * so a `DatabaseError` arriving as a typed failure would be a lie
  * the compiler could not catch. Defect identity is unchanged.
  */
-const writeBody = <A, E, R>(db: Database, body: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  db.writer.write(body).pipe(
+const writeBody = <A, E, R>(
+  db: Database,
+  body: Effect.Effect<A, E, R>,
+  partition?: string | undefined
+): Effect.Effect<A, E, R> =>
+  db.writer.write(body, { partition }).pipe(
     Effect.catchCause((cause) => {
       if (cause.reasons.length === 1) {
         const reason = cause.reasons[0]!
@@ -1967,7 +2009,11 @@ const writeBody = <A, E, R>(db: Database, body: Effect.Effect<A, E, R>): Effect.
   )
 
 /** Takes the store's transaction gate, then writes `effect`, releasing the gate at COMMIT. */
-const gatedWrite = <A, E, R>(db: Database, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+const gatedWrite = <A, E, R>(
+  db: Database,
+  effect: Effect.Effect<A, E, R>,
+  partition?: string | undefined
+): Effect.Effect<A, E, R> =>
   Effect.uninterruptibleMask((restore) =>
     Effect.gen(function*() {
       yield* restore(db.transactionGate.take(1))
@@ -1984,16 +2030,20 @@ const gatedWrite = <A, E, R>(db: Database, effect: Effect.Effect<A, E, R>): Effe
           // transaction. A failed write instead releases in ensuring below.
           yield* afterCommit(release, db.sql)
           return yield* effect
-        })
+        }),
+        partition
       )).pipe(Effect.ensuring(release))
     })
   )
 
 /** Runs `effect` in one write transaction; a nested one joins the enclosing transaction. */
-const transaction = (db: Database): Service["transaction"] => (effect) =>
+const transaction = (db: Database): Service["transaction"] => (effect, options) =>
   Effect.flatMap(
     Effect.serviceOption(db.sql.transactionService),
-    (enclosing) => Option.isSome(enclosing) ? writeBody(db, effect) : gatedWrite(db, effect)
+    (enclosing) =>
+      Option.isSome(enclosing)
+        ? writeBody(db, effect, options?.partition)
+        : gatedWrite(db, effect, options?.partition)
   )
 
 const readTransaction = (db: Database): Service["readTransaction"] => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -2787,7 +2837,7 @@ const memoryTransaction = (memory: Memory): Service["transaction"] => (effect, o
         const commit = Effect.sync(() => {
           committed = true
         }).pipe(Effect.andThen(close))
-        return yield* Effect.sync(() => options?.onCommit(commit)).pipe(
+        return yield* Effect.sync(() => options?.onCommit?.(commit)).pipe(
           Effect.andThen(restore(effect)),
           Effect.catchCause((cause) =>
             Effect.sync(() => {

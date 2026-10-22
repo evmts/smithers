@@ -973,7 +973,8 @@ const emitCallSettled = (dispatch: Dispatch, outcome: unknown) =>
  * the Jj snapshot, and the boundary prepare/settle all stay outside so
  * the write transaction is never held across a host call.
  */
-const atomically = <A, E, R>(dispatch: Dispatch, effect: Effect.Effect<A, E, R>) => dispatch.journal.transact(effect)
+const atomically = <A, E, R>(dispatch: Dispatch, effect: Effect.Effect<A, E, R>) =>
+  dispatch.journal.transact(effect, { partition: dispatch.deps.runId })
 
 /**
  * Commits an attempt's terminal row and the lifecycle records describing

@@ -87,6 +87,25 @@ export const apply = (sql: SqlClient.SqlClient, writer: WriterService): Effect.E
   // A read-only observer reads the schema it finds and installs nothing.
   isReadOnly(sql) ? Effect.void : Effect.forEach(
     statements,
-    (statement) => writer.write(sql.unsafe(statement.ddl)).pipe(Effect.orDie),
+    (statement) =>
+      Effect.flatMap(installed(sql, statement), (found) =>
+        found ? Effect.void : writer.write(sql.unsafe(statement.ddl)).pipe(Effect.orDie)),
     { discard: true }
   )
+
+/**
+ * Whether PostgreSQL already has `statement`'s object, read without a write
+ * transaction: a Durable Object builds this service at every alarm, and the
+ * write would take the schema's writer lock, which holds up every other
+ * execution's writes. SQLite answers `false` and runs the idempotent
+ * statement, as before.
+ */
+const installed = (sql: SqlClient.SqlClient, statement: Statement): Effect.Effect<boolean> =>
+  sql.onDialectOrElse({
+    pg: () =>
+      sql<{ readonly found: boolean }>`SELECT to_regclass(${statement.name}) IS NOT NULL AS found`.pipe(
+        Effect.map(([row]) => row?.found === true),
+        Effect.orDie
+      ),
+    orElse: () => Effect.succeed(false)
+  })

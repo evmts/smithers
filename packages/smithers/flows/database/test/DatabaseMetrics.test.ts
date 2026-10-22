@@ -80,6 +80,6 @@ describe("DatabaseMetrics", () => {
       const writer = DurableWriter.make(retrySql)
       const [tally, value] = yield* DatabaseMetrics.tally(writer.write(Effect.succeed("written")))
       expect(value).toBe("written")
-      expect(tally).toEqual({ transactions: 0, lockWait: Duration.zero })
+      expect(tally).toEqual({ transactions: 0, schemaWide: 0, lockWait: Duration.zero })
     }))
 })

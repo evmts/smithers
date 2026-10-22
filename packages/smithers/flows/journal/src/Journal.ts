@@ -8,6 +8,7 @@
  * @since 0.1.0
  */
 
+import type { WriteOptions } from "@smthrs/database/DurableWriter"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -515,8 +516,15 @@ export interface Service {
    *
    * Nesting is safe: an inner `transact` becomes a savepoint of the outer
    * one and defers its publication to the outermost commit.
+   *
+   * `options.partition` names the partition the transaction writes, such as
+   * the run it advances (`DurableWriter.WriteOptions`): it then serializes
+   * only with that run's writers. Omitted, it serializes with every writer.
    */
-  readonly transact: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | JournalError, R>
+  readonly transact: <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+    options?: WriteOptions | undefined
+  ) => Effect.Effect<A, E | JournalError, R>
   /**
    * Publishes a short, non-failing process-local update after the current
    * transaction commits, or immediately when no transaction is open.

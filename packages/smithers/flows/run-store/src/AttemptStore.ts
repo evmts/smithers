@@ -812,6 +812,11 @@ export const makeWith = (
   Effect.gen(function*() {
     const sql = yield* Effect.service(SqlClient.SqlClient)
     const writer = yield* DurableWriter
+    // Every write reads and changes one run's attempt rows and reads that run's
+    // row for the fence, so it writes the run's partition
+    // (`packages/smithers/flows/database/docs/decisions/0001-run-writer-locks.md`).
+    const writeRun = <A, E, R>(runId: string, effect: Effect.Effect<A, E, R>) =>
+      writer.write(effect, { partition: runId })
 
     const configured = yield* snapshotOptions("makeWith", options)
     const inProgressStates = configured.inProgressStates
@@ -839,7 +844,8 @@ export const makeWith = (
         const attemptError = yield* putEncodeOptional(attempt.error, "error")
         const outcome = yield* putEncodeOptional(attempt.outcome, "outcome")
         const meta = yield* encode("put", attempt.meta, "meta")
-        return yield* writer.write(
+        return yield* writeRun(
+          attempt.runId,
           Effect.gen(function*() {
             const inserted = yield* sql<{ readonly attempt: number }>`
             INSERT INTO flows_attempts (
@@ -964,7 +970,8 @@ export const makeWith = (
         }
         yield* Effect.annotateCurrentSpan({ runId, stepKeyDigest, attempt, ownerHostId: owner.hostId })
         const checkpoint = yield* heartbeatEncodeCheckpoint(checkpointValue)
-        return yield* writer.write(
+        return yield* writeRun(
+          runId,
           Effect.gen(function*() {
             const updated = yield* sql<{ readonly attempt: number }>`
             UPDATE flows_attempts
@@ -1029,7 +1036,8 @@ export const makeWith = (
         const attemptError = yield* finishEncodeOptional(attempt.error, "error")
         const outcome = yield* finishEncodeOptional(attempt.outcome, "outcome")
         const meta = yield* finishEncodeOptional(attempt.meta, "meta")
-        return yield* writer.write(
+        return yield* writeRun(
+          attempt.runId,
           Effect.gen(function*() {
             const updated = yield* sql<{ readonly attempt: number }>`
             UPDATE flows_attempts
@@ -1093,7 +1101,8 @@ export const makeWith = (
         const attemptError = yield* patchEncodeOptional(fields.error, "error")
         const outcome = yield* patchEncodeOptional(fields.outcome, "outcome")
         const meta = yield* patchEncodeOptional(fields.meta, "meta")
-        return yield* writer.write(
+        return yield* writeRun(
+          id.runId,
           Effect.gen(function*() {
             // Unlike `heartbeat`/`finish` there is no state predicate: a patch
             // may touch a terminal row (evidence quarantine does), so the run

@@ -16,6 +16,7 @@ import { Cause, Context, Effect, Exit, Layer, Option, Schema, Semaphore } from "
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import * as CommitScope from "./internal/CommitScope.ts"
+import * as WriteLock from "./internal/WriteLock.ts"
 import * as WriteRetry from "./internal/WriteRetry.ts"
 
 /**
@@ -66,8 +67,36 @@ export class DatabaseError extends Schema.TaggedError<DatabaseError>()("@smthrs/
  */
 export interface Service {
   readonly write: <A, E, R>(
-    effect: Effect.Effect<A, E, R>
+    effect: Effect.Effect<A, E, R>,
+    options?: WriteOptions | undefined
   ) => Effect.Effect<A, Exclude<E, SqlError.SqlError> | DatabaseError, R>
+}
+
+/**
+ * How one `write` serializes against the others.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface WriteOptions {
+  /**
+   * The partition every row this write reads for a decision or changes
+   * belongs to, such as one run's id. Writes to one partition commit one at a
+   * time; writes to different partitions may commit concurrently; a write
+   * that names no partition commits alone, as every write did before
+   * partitions. Name one only when the write touches no row another
+   * partition's writes change: a write that reads or changes rows across
+   * runs, such as a global sequence or a graph walk, names none. One kind
+   * of shared row is the exception: a row every partition's writes change
+   * only through one self-contained statement, such as a counter a trigger
+   * increments. Its row lock keeps it correct, and orders those writes from
+   * that statement to COMMIT.
+   *
+   * A nested write names its own partition and does not inherit its
+   * parent's. On PostgreSQL it takes whatever lock its parent transaction
+   * lacks; SQLite and other single-writer clients ignore it.
+   */
+  readonly partition?: string | undefined
 }
 
 /**
@@ -88,6 +117,16 @@ export interface Service {
  * implementation must serialize them with a transaction-scoped advisory lock
  * before reads, or use `SERIALIZABLE` and retry `40001`. Plain READ COMMITTED
  * without that locking does not satisfy this contract.
+ *
+ * **Partitions.** A write that names a `partition` (`WriteOptions`) is
+ * serialized only against writes to the same partition and writes that name
+ * none; writes to two different partitions may commit concurrently. Naming
+ * one is the caller's claim that the write reads for its decisions and
+ * changes only rows its partition owns, so the guarantee above holds within
+ * the partition. A write that names none is serialized against every write,
+ * which is always correct. `PostgresDatabase` implements partitions with a
+ * shared schema lock and an exclusive partition lock; see
+ * `docs/decisions/0001-run-writer-locks.md`.
  *
  * **Acquisition.** Outermost writes sharing this service queue for one permit
  * BEFORE entering Effect SQL's masked connection acquisition, and they queue at
@@ -235,26 +274,31 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
   const gate = Semaphore.makeUnsafe(1)
   return DurableWriter.of({
     write: Effect.fn("DurableWriter.write")(<A, E, R>(
-      effect: Effect.Effect<A, E, R>
+      effect: Effect.Effect<A, E, R>,
+      writeOptions?: WriteOptions | undefined
     ): Effect.Effect<A, Exclude<E, SqlError.SqlError> | DatabaseError, R> =>
       Effect.gen(function*() {
+        const partition = writeOptions?.partition
         const enclosing = yield* Effect.serviceOption(sql.transactionService)
         const parent = yield* CommitScope.Current
         const nested = Option.isSome(enclosing)
         const managed = !nested || CommitScope.matches(parent, sql.transactionService, enclosing.value)
-        yield* Effect.annotateCurrentSpan({ nested })
+        yield* Effect.annotateCurrentSpan({ nested, partitioned: partition !== undefined })
         // Allocate inside the retry boundary. Each savepoint also owns a fresh
         // list so a failure caught by its parent cannot publish rolled-back data.
         const attempt = Effect.suspend(() => {
           const effects: Array<Effect.Effect<void>> = []
           let scope: CommitScope.CommitScope | undefined
           let bodySucceeded = false
+          // The driver reads this write's partition when it opens the
+          // transaction or savepoint; the body asks for its own.
           return sql.withTransaction(
             Effect.flatMap(Effect.serviceOption(sql.transactionService), (transaction) => {
               scope = managed && Option.isSome(transaction)
                 ? { key: sql.transactionService, transaction: transaction.value, effects, open: true }
                 : undefined
               return Effect.provideService(effect, CommitScope.Current, scope).pipe(
+                Effect.provideService(WriteLock.Requested, undefined),
                 Effect.tap(() =>
                   Effect.sync(() => {
                     bodySucceeded = true
@@ -263,6 +307,7 @@ export const make = (sql: SqlClient.SqlClient, options?: WriteRetryOptions | und
               )
             })
           ).pipe(
+            Effect.provideService(WriteLock.Requested, partition),
             // Effect SQL fails a rejected COMMIT with a typed `SqlError`, and
             // with defects when the rollback that follows it fails too. Both
             // are this write's SQL failure, so the defects return to the typed

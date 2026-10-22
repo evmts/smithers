@@ -44,6 +44,7 @@
     "./index": "./src/index.ts",
     "./node/NodeDatabase": "./src/node/NodeDatabase.ts",
     "./test/TestDatabase": "./src/test/TestDatabase.ts",
+    "./test/SlowNetwork": "./src/test/SlowNetwork.ts",
     "./bun/BunDatabase": "./src/bun/BunDatabase.ts",
     "./Dialect": "./src/Dialect.ts",
     "./postgres/PostgresDatabase": "./src/postgres/PostgresDatabase.ts"
@@ -146,6 +147,16 @@
         "require": {
           "types": "./dist/cjs/test/TestDatabase.d.ts",
           "default": "./dist/cjs/test/TestDatabase.js"
+        }
+      },
+      "./test/SlowNetwork": {
+        "import": {
+          "types": "./dist/esm/test/SlowNetwork.d.ts",
+          "default": "./dist/esm/test/SlowNetwork.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/SlowNetwork.d.ts",
+          "default": "./dist/cjs/test/SlowNetwork.js"
         }
       },
       "./bun/BunDatabase": {

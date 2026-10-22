@@ -36,7 +36,19 @@ export const initialize = Effect.gen(function*() {
   // a transaction, which takes the schema's writer lock first: two bare
   // CREATE TABLE IF NOT EXISTS statements race in the catalog, and the loser
   // fails on `pg_type_typname_nsp_index`.
-  yield* sql.onDialectOrElse({ pg: () => sql.withTransaction(create), orElse: () => create })
+  // An installed table costs no writer lock: every Durable Object alarm builds
+  // the journal, and the schema's lock would hold up every other writer.
+  const installed = sql<{ readonly found: boolean }>`
+    SELECT to_regclass('flows_journal_generations') IS NOT NULL AS found
+  `
+  yield* sql.onDialectOrElse({
+    pg: () =>
+      Effect.flatMap(
+        installed,
+        ([row]) => row?.found === true ? Effect.void : Effect.asVoid(sql.withTransaction(create))
+      ),
+    orElse: () => Effect.asVoid(create)
+  })
 })
 
 const journals = new WeakMap<SqlClient.SqlClient, Set<(runIds: ReadonlyArray<string>) => void>>()

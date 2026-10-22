@@ -59,7 +59,7 @@ const withBarriers = (
     ...real,
     transaction: <A, E, R>(
       effect: Effect.Effect<A, E, R>,
-      options?: { readonly onCommit: (commit: Effect.Effect<void>) => void }
+      options?: Parameters<DurableEngineState.Service["transaction"]>[1]
     ): Effect.Effect<A, E, R> =>
       Effect.flatMap(Role, (role) =>
         role === "persist"

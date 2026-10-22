@@ -119,7 +119,9 @@ runtime's `caches` has no `default`, as in a browser. In Node, inject a
 
 Read the `cloudflare.execution.alarm` lines of its execution id. Each says how
 long the alarm took (`durationMs`), how many journal entries it committed
-(`events`), how many write transactions it ran (`transactions`) and how long
-they waited, in total, for the database's writer lock (`lockWaitMs`). A
-`lockWaitMs` near `durationMs` means the alarm spent its time queued behind
-other writers, not running steps.
+(`events`), how many write transactions it ran (`transactions`), how many of
+those held the whole schema's writer lock (`schemaWide`), and how long they
+waited, in total, for their locks (`lockWaitMs`). A `lockWaitMs` near
+`durationMs` means the alarm spent its time queued behind other writers, not
+running steps. Schema-wide transactions wait for every other execution's
+writes, so a drive should have none once the schema is installed.

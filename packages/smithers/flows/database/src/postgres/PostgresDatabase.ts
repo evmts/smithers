@@ -57,6 +57,7 @@ import * as DatabaseMetrics from "../DatabaseMetrics.ts"
 import * as ReadOnly from "../internal/ReadOnly.ts"
 import * as ReadTransaction from "../internal/ReadTransaction.ts"
 import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.ts"
+import * as WriteLock from "../internal/WriteLock.ts"
 import * as WriteTally from "../internal/WriteTally.ts"
 
 export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.ts"
@@ -155,6 +156,28 @@ const isLockTimeout = (cause: Cause.Cause<SqlError>): boolean => {
   const error = Cause.squash(cause)
   return isSqlError(error) && error.reason._tag === "LockTimeoutError"
 }
+// A write to one partition holds the schema's lock shared and its partition's
+// exclusively (docs/decisions/0001-run-writer-locks.md). The partition lock is
+// the two-key form, whose key space never meets the schema lock's one-key form.
+// The target list runs left to right, so the schema lock always comes first.
+const partitionStatement = "SELECT set_config('search_path', quote_ident($1), true), " +
+  "set_config('lock_timeout', $3, true), pg_advisory_xact_lock_shared(hashtextextended($1, 2099)), pg_advisory_xact_lock(hashtext($1), hashtext($2))"
+// What a savepoint adds to a partitioned transaction: the whole schema, or
+// one more partition.
+const widenStatement = "SELECT pg_advisory_xact_lock(hashtextextended($1, 2099))"
+const joinStatement = "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))"
+
+/**
+ * The writer locks one open write transaction holds: the whole schema, or its
+ * partitions. Each records the savepoint depth it was taken at, because
+ * rolling back to a savepoint releases the locks taken inside it.
+ */
+interface Held {
+  schema: number | undefined
+  readonly partitions: Map<string, number>
+  /** Whether the transaction has held the schema's lock at all, so a tally counts it schema-wide once. */
+  wide: boolean
+}
 
 /** Provides PostgreSQL with serialized transactions and exact safe-number reads.
  * A dedicated schema keeps flow state separate from backend product tables.
@@ -191,7 +214,13 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
   // can hand over another client's `default_transaction_read_only`.
   const readBegin = "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
   const begin = readOnly ? readBegin : "BEGIN ISOLATION LEVEL READ COMMITTED READ WRITE"
-  const rollback = (conn: Connection) => conn.executeUnprepared("ROLLBACK", [], undefined)
+  const held = new WeakMap<Connection, Held>()
+  const settled = (conn: Connection) =>
+    Effect.sync(() => {
+      held.delete(conn)
+    })
+  const rollback = (conn: Connection) =>
+    conn.executeUnprepared("ROLLBACK", [], undefined).pipe(Effect.ensuring(settled(conn)))
   const open = (conn: Connection, scope: Effect.Effect<unknown, SqlError>, statement = begin) =>
     conn.executeUnprepared(statement, [], undefined).pipe(
       Effect.andThen(scope),
@@ -210,17 +239,35 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
       Random.nextBetween(0.5, 1),
       (jitter) => Duration.millis(Math.min(lockTimeoutMs * 4, lockTimeoutMs * 2 ** (attempt - 1) / 2) * jitter)
     )
+  const requested = Effect.gen(function*() {
+    return yield* WriteLock.Requested
+  })
+  // Times one lock statement into the metric and the open tallies.
+  const lock = (statement: Effect.Effect<unknown, SqlError>, wait: WriteTally.Wait) =>
+    Effect.flatMap(
+      Effect.timed(statement),
+      ([waited]) =>
+        Effect.andThen(Metric.update(DatabaseMetrics.writerLockWait, waited), WriteTally.record(waited, wait))
+    )
+  // BEGIN takes the lock the opening write asks for: the whole schema, or its
+  // partition beside every other partition's writers.
   const locked = (conn: Connection) =>
     Effect.gen(function*() {
+      const partition = yield* requested
       const started = yield* Clock.currentTimeMillis
       for (let attempt = 1;; attempt++) {
         const exit = yield* Effect.exit(
-          open(conn, conn.execute(lockStatement, [schema, String(lockTimeoutMs)], undefined))
+          open(conn, partition === undefined
+            ? conn.execute(lockStatement, [schema, String(lockTimeoutMs)], undefined)
+            : conn.execute(partitionStatement, [schema, partition, String(lockTimeoutMs)], undefined))
         )
         if (Exit.isSuccess(exit)) {
           const waited = Duration.millis((yield* Clock.currentTimeMillis) - started)
           yield* Metric.update(DatabaseMetrics.writerLockWait, waited)
-          return yield* WriteTally.record(waited)
+          held.set(conn, partition === undefined
+            ? { schema: 0, partitions: new Map(), wide: true }
+            : { schema: undefined, partitions: new Map([[partition, 0]]), wide: false })
+          return yield* WriteTally.record(waited, partition === undefined ? "schema" : "partition")
         }
         if (!isLockTimeout(exit.cause)) return yield* exit
         // `open` rolled the transaction back, so the server connection is free
@@ -229,6 +276,44 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
         yield* Effect.interruptible(Effect.flatMap(backoff(attempt), Effect.sleep))
       }
     })
+  // A nested write takes what its transaction lacks before its savepoint, so
+  // the lock outlives a rollback of that savepoint: the whole schema when it
+  // names no partition, or its own partition. A transaction that holds the
+  // schema, or a read transaction, which holds nothing, takes nothing.
+  const savepoint = (conn: Connection, id: number) =>
+    Effect.flatMap(requested, (partition) => {
+      const state = held.get(conn)
+      const widen = state !== undefined && state.schema === undefined && partition === undefined
+      const join = state !== undefined && state.schema === undefined && partition !== undefined &&
+        !state.partitions.has(partition)
+      const take = widen
+        ? lock(conn.execute(widenStatement, [schema], undefined), state.wide ? "more" : "widen").pipe(Effect.tap(() =>
+          Effect.sync(() => {
+            state.schema = id - 1
+            state.wide = true
+          })
+        ))
+        : join
+        ? lock(conn.execute(joinStatement, [schema, partition], undefined), "more").pipe(Effect.tap(() =>
+          Effect.sync(() => {
+            state.partitions.set(partition, id - 1)
+          })
+        ))
+        : Effect.void
+      return Effect.andThen(take, conn.executeUnprepared(`SAVEPOINT effect_sql_${id}`, [], undefined))
+    })
+  // Rolling back to savepoint `id` releases what was taken inside it.
+  const rollbackSavepoint = (conn: Connection, id: number) =>
+    conn.executeUnprepared(`ROLLBACK TO SAVEPOINT effect_sql_${id}`, [], undefined).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          const state = held.get(conn)
+          if (state === undefined) return
+          if (state.schema !== undefined && state.schema >= id) state.schema = undefined
+          for (const [partition, depth] of state.partitions) if (depth >= id) state.partitions.delete(partition)
+        })
+      )
+    )
   // PostgreSQL answers COMMIT in an aborted transaction with the tag ROLLBACK
   // and no error; that is a failed write, never a committed one.
   const commit = (conn: Connection) =>
@@ -246,7 +331,8 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
           )
           : Effect.void
       ),
-      Effect.onError(() => Effect.orDie(rollback(conn)))
+      Effect.onError(() => Effect.orDie(rollback(conn))),
+      Effect.ensuring(settled(conn))
     )
   // A statement outside `withTransaction` runs as the only statement of its own
   // transaction, which costs BEGIN, the schema and COMMIT around it.
@@ -359,22 +445,30 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
             return [reservation, conn] as const
           }),
           begin: start,
-          savepoint: (conn, id) => conn.executeUnprepared(`SAVEPOINT effect_sql_${id}`, [], undefined),
+          savepoint,
           commit,
           rollback,
-          rollbackSavepoint: (conn, id) =>
-            conn.executeUnprepared(`ROLLBACK TO SAVEPOINT effect_sql_${id}`, [], undefined)
+          rollbackSavepoint
         })
       // A transaction-scoped lock preserves SQLite's one-writer semantics across
-      // processes. READ COMMITTED takes each snapshot after the lock is acquired.
+      // processes, within each partition. READ COMMITTED takes each snapshot
+      // after the lock is acquired.
       const withTransaction = transactions(readOnly ? scoped : locked)
       Object.assign(sql, { withTransaction })
       // Every statement of `sql.reserve` runs alone, so a caller cannot open a
       // read transaction on a reserved connection; this client opens its own.
       ReadTransaction.register(sql, transactions(snapshot))
       if (readOnly) ReadOnly.mark(sql)
-      // Under the writer lock, so concurrent first opens create the schema once.
-      else yield* sql.withTransaction(sql`CREATE SCHEMA IF NOT EXISTS ${sql(schema)}`)
+      else {
+        // A schema that exists costs no writer lock: every alarm of a Durable
+        // Object builds this layer, and the schema's lock would hold up every
+        // other execution's writes. A missing one is created under the lock,
+        // so concurrent first opens create it once.
+        const [found] = yield* sql<{ readonly found: boolean }>`
+          SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = ${schema}) AS found
+        `
+        if (found?.found !== true) yield* sql.withTransaction(sql`CREATE SCHEMA IF NOT EXISTS ${sql(schema)}`)
+      }
       return sql
     })
   ).pipe(Layer.provide(Reactivity.layer), Layer.orDie)

@@ -25,10 +25,19 @@ two edges that jointly close a cycle, exactly the later one fails", holds only
 under serialized writers. Under a weaker level both inserts see a graph without
 the other's edge, both walks find no cycle, and both commit.
 
-SQLite satisfies the contract with its single-writer transaction lock. A
-PostgreSQL implementation must run write transactions at `SERIALIZABLE` and
-retry `40001`. Plain `READ COMMITTED` does not satisfy it, and adopting it
-would silently reintroduce the cycle race.
+SQLite satisfies the contract with its single-writer transaction lock.
+`PostgresDatabase` satisfies it with a transaction-scoped advisory lock taken
+before the transaction's first read; an implementation could instead run
+write transactions at `SERIALIZABLE` and retry `40001`. Plain `READ COMMITTED`
+without either does not satisfy it, and adopting it would silently
+reintroduce the cycle race.
+
+A write may name a `partition`, such as the run its rows belong to. It is then
+serialized only against writes to that partition and writes that name none,
+so two runs' writes may commit concurrently. The guarantee above holds within
+each partition, which is all a write that touches only its partition's rows
+needs. The cycle walk touches every run's edges, so it names none and still
+commits alone. See [Run writer locks](../decisions/0001-run-writer-locks.md).
 
 The contract is executable. The package ships a conformance suite that a new
 client layer has to pass, and runs it both against two `NodeDatabase`

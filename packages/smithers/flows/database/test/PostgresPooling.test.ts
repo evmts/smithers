@@ -238,37 +238,39 @@ for (const endpoint of endpoints) {
         expect((yield* timeouts).count - before).toBeGreaterThanOrEqual(writers.length)
       }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
 
-    it.live("bounds a write's wait for the writer lock and counts the waits that ran out", () =>
-      Effect.gen(function*() {
-        const name = schema()
-        const holder = yield* client(name)
-        const waiter = yield* client(name, { writerLockTimeout: "50 millis" })
-        const timeouts = Metric.value(DatabaseMetrics.writerLockTimeouts)
-        const waits = Metric.value(DatabaseMetrics.writerLockWait)
-        const timeoutsBefore = (yield* timeouts).count
-        const waitsBefore = yield* waits
-        // `lock_timeout` stays at the client's limit for the rest of the write.
-        const setting = waiter<{ readonly timeout: string }>`SELECT current_setting('lock_timeout') AS timeout`
-        const { inside } = yield* holder.withTransaction(Effect.gen(function*() {
-          const inside = yield* waiter.withTransaction(setting).pipe(Effect.forkScoped)
-          yield* TestDatabase.until(Effect.map(timeouts, (counter) => counter.count - timeoutsBefore >= 3))
-          return { inside }
-        }))
-        expect(yield* Fiber.join(inside)).toEqual([{ timeout: "50ms" }])
-        // A lone statement takes no lock and keeps the server's own limit.
-        expect(yield* setting).toEqual([{ timeout: "0" }])
-        // An infinite limit waits as long as the lock is held.
-        const unbounded = yield* client(name, { writerLockTimeout: Duration.infinity })
-        expect(
-          yield* unbounded.withTransaction(
-            unbounded<{ readonly timeout: string }>`SELECT current_setting('lock_timeout') AS timeout`
-          )
-        ).toEqual([{ timeout: "0" }])
-        const after = yield* waits
-        // The holder's write, the waiter's, and the unbounded client's schema check and write.
-        expect(after.count - waitsBefore.count).toBe(4)
-        expect(after.max).toBeGreaterThanOrEqual(150)
-      }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
+    for (const partition of [undefined, "run-a"]) {
+      it.live(`bounds a ${partition === undefined ? "schema" : "partition"} write's wait and counts the waits that ran out`, () =>
+        Effect.gen(function*() {
+          const name = schema()
+          const holder = yield* client(name)
+          const waiter = yield* client(name, { writerLockTimeout: "50 millis" })
+          const timeouts = Metric.value(DatabaseMetrics.writerLockTimeouts)
+          const waits = Metric.value(DatabaseMetrics.writerLockWait)
+          const timeoutsBefore = (yield* timeouts).count
+          const waitsBefore = yield* waits
+          // `lock_timeout` stays at the client's limit for the rest of the write.
+          const setting = waiter<{ readonly timeout: string }>`SELECT current_setting('lock_timeout') AS timeout`
+          const { inside } = yield* holder.withTransaction(Effect.gen(function*() {
+            const inside = yield* DurableWriter.make(waiter).write(setting, { partition }).pipe(Effect.forkScoped)
+            yield* TestDatabase.until(Effect.map(timeouts, (counter) => counter.count - timeoutsBefore >= 3))
+            return { inside }
+          }))
+          expect(yield* Fiber.join(inside)).toEqual([{ timeout: "50ms" }])
+          // A lone statement takes no lock and keeps the server's own limit.
+          expect(yield* setting).toEqual([{ timeout: "0" }])
+          // An infinite limit waits as long as the lock is held.
+          const unbounded = yield* client(name, { writerLockTimeout: Duration.infinity })
+          expect(
+            yield* unbounded.withTransaction(
+              unbounded<{ readonly timeout: string }>`SELECT current_setting('lock_timeout') AS timeout`
+            )
+          ).toEqual([{ timeout: "0" }])
+          const after = yield* waits
+          // The holder, waiter and unbounded writes. An existing schema check takes no writer lock.
+          expect(after.count - waitsBefore.count).toBe(3)
+          expect(after.max).toBeGreaterThanOrEqual(150)
+        }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
+    }
 
     // A step that waited on a pool logged nothing for 26 seconds on a loaded
     // stack (2026-10-22).
@@ -357,9 +359,10 @@ for (const endpoint of endpoints) {
             return held
           }))
         }))
-        expect(inner.transactions).toBe(2)
+        // None names a partition, so each holds the whole schema.
+        expect([inner.transactions, inner.schemaWide]).toEqual([2, 2])
         expect(Duration.toMillis(inner.lockWait)).toBeGreaterThanOrEqual(held)
-        expect(outer.transactions).toBe(3)
+        expect([outer.transactions, outer.schemaWide]).toEqual([3, 3])
         expect(Duration.toMillis(outer.lockWait)).toBeGreaterThanOrEqual(Duration.toMillis(inner.lockWait))
       }))
 

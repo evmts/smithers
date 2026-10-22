@@ -10,9 +10,10 @@
  *
  * Commit-time admission (R3) is exact: `guard` is a plain SELECT that joins
  * the caller's open write transaction — `DurableWriter` serializes write
- * transactions, so no reclaim can commit between the guard read and the
- * statements beside it — and every mutating operation runs through
- * `DurableWriter.write`, joining an enclosing transaction as a savepoint.
+ * transactions, and every operation here writes its key's partition, so no
+ * reclaim can commit between the guard read and the statements beside it —
+ * and every mutating operation runs through `DurableWriter.write`, joining an
+ * enclosing transaction as a savepoint.
  * Prior art: Temporal's shard `rangeID` check
  * (`reference/temporal/service/history/shard/context_impl.go`,
  * `renewRangeLocked`).
@@ -85,11 +86,17 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
 
   // The original cause is preserved through the wrapper so an enclosing
   // `DurableWriter.write`'s retry classification still sees a transient
-  // conflict raised by a savepoint-nested lease statement.
+  // conflict raised by a savepoint-nested lease statement. Every operation
+  // reads and changes one key's lease row only, so it writes that key's
+  // partition: a guard and the reclaim it must exclude serialize, and two
+  // runs' leases do not.
   const write = <A>(
+    key: string,
     body: Effect.Effect<A, unknown>
   ): Effect.Effect<A, ConsensusError> =>
-    writer.write(body).pipe(Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause)))
+    writer.write(body, { partition: key }).pipe(
+      Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause))
+    )
 
   const leaseOf = (runId: string) =>
     sql<LeaseRow>`
@@ -109,8 +116,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     claimant: OwnerId,
     nowMs: number
   ) =>
-    write(Effect.gen(function*() {
-      const rows = yield* sql<{ readonly run_id: string }>`
+    write(
+      runId,
+      Effect.gen(function*() {
+        const rows = yield* sql<{ readonly run_id: string }>`
         INSERT INTO flows_consensus_leases (run_id, claim_host_id, claim_pid, claim_nonce, claimed_at_ms)
         VALUES (${runId}, ${claimant.hostId}, ${claimant.pid}, ${claimant.nonce}, ${nowMs})
         ON CONFLICT (run_id) DO UPDATE SET
@@ -122,12 +131,13 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           AND flows_consensus_leases.owner_host_id IS NULL
         RETURNING run_id
       `
-      if (rows.length > 0) return claimed(nowMs)
-      // The upsert only misses on a conflicting row, so the lease exists and
-      // holds a claim, an owner, or both.
-      const lease = (yield* leaseOf(runId))[0]!
-      return lease.claim_host_id !== null ? rejected("already_claimed") : rejected("owner_held")
-    }))
+        if (rows.length > 0) return claimed(nowMs)
+        // The upsert only misses on a conflicting row, so the lease exists and
+        // holds a claim, an owner, or both.
+        const lease = (yield* leaseOf(runId))[0]!
+        return lease.claim_host_id !== null ? rejected("already_claimed") : rejected("owner_held")
+      })
+    )
   )
 
   const activate: Service["activate"] = Effect.fn("Consensus.activate")((
@@ -136,8 +146,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     grantedAtMs: number,
     nowMs: number
   ) =>
-    write(Effect.gen(function*() {
-      const rows = yield* sql<{ readonly run_id: string }>`
+    write(
+      runId,
+      Effect.gen(function*() {
+        const rows = yield* sql<{ readonly run_id: string }>`
         UPDATE flows_consensus_leases
         SET
           owner_host_id = ${owner.hostId},
@@ -156,8 +168,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           AND claimed_at_ms = ${grantedAtMs}
         RETURNING run_id
       `
-      return (rows.length > 0 ? activated : lost) satisfies ActivateOutcome
-    }))
+        return (rows.length > 0 ? activated : lost) satisfies ActivateOutcome
+      })
+    )
   )
 
   const heartbeat: Service["heartbeat"] = Effect.fn("Consensus.heartbeat")((
@@ -165,10 +178,12 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     owner: OwnerId,
     nowMs: number
   ) =>
-    write(Effect.gen(function*() {
-      // Monotonic: a pulse delayed past a newer one from the same owner never
-      // moves the lease backwards and never makes a live run look stale.
-      const rows = yield* sql<{ readonly heartbeat_at_ms: number }>`
+    write(
+      runId,
+      Effect.gen(function*() {
+        // Monotonic: a pulse delayed past a newer one from the same owner never
+        // moves the lease backwards and never makes a live run look stale.
+        const rows = yield* sql<{ readonly heartbeat_at_ms: number }>`
         UPDATE flows_consensus_leases
         SET heartbeat_at_ms = ${Dialect.greatest(sql)}(heartbeat_at_ms, ${nowMs})
         WHERE run_id = ${runId}
@@ -177,11 +192,12 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           AND owner_nonce = ${owner.nonce}
         RETURNING heartbeat_at_ms
       `
-      const row = rows[0]
-      return (row === undefined
-        ? lost
-        : { _tag: "Renewed", heartbeatAtMs: Number(row.heartbeat_at_ms) }) satisfies HeartbeatOutcome
-    }))
+        const row = rows[0]
+        return (row === undefined
+          ? lost
+          : { _tag: "Renewed", heartbeatAtMs: Number(row.heartbeat_at_ms) }) satisfies HeartbeatOutcome
+      })
+    )
   )
 
   const reconfirm: Service["reconfirm"] = Effect.fn("Consensus.reconfirm")((
@@ -189,10 +205,12 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     owner: OwnerId,
     nowMs: number
   ) =>
-    write(Effect.gen(function*() {
-      // A pending steal has already reserved the lease, even before activation.
-      // Compare both owner and claim in the same update as the renewal.
-      const rows = yield* sql<{ readonly heartbeat_at_ms: number }>`
+    write(
+      runId,
+      Effect.gen(function*() {
+        // A pending steal has already reserved the lease, even before activation.
+        // Compare both owner and claim in the same update as the renewal.
+        const rows = yield* sql<{ readonly heartbeat_at_ms: number }>`
         UPDATE flows_consensus_leases
         SET heartbeat_at_ms = ${Dialect.greatest(sql)}(heartbeat_at_ms, ${nowMs})
         WHERE run_id = ${runId}
@@ -202,16 +220,19 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           AND claim_host_id IS NULL
         RETURNING heartbeat_at_ms
       `
-      const row = rows[0]
-      return (row === undefined
-        ? lost
-        : { _tag: "Renewed", heartbeatAtMs: Number(row.heartbeat_at_ms) }) satisfies HeartbeatOutcome
-    }))
+        const row = rows[0]
+        return (row === undefined
+          ? lost
+          : { _tag: "Renewed", heartbeatAtMs: Number(row.heartbeat_at_ms) }) satisfies HeartbeatOutcome
+      })
+    )
   )
 
   const release: Service["release"] = Effect.fn("Consensus.release")((runId: string, owner: OwnerId) =>
-    write(Effect.gen(function*() {
-      yield* sql`
+    write(
+      runId,
+      Effect.gen(function*() {
+        yield* sql`
         UPDATE flows_consensus_leases
         SET claim_host_id = NULL, claim_pid = NULL, claim_nonce = NULL, claimed_at_ms = NULL
         WHERE run_id = ${runId}
@@ -219,7 +240,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           AND claim_pid = ${owner.pid}
           AND claim_nonce = ${owner.nonce}
       `
-      yield* sql`
+        yield* sql`
         UPDATE flows_consensus_leases
         SET owner_host_id = NULL, owner_pid = NULL, owner_nonce = NULL,
           granted_at_ms = NULL, heartbeat_at_ms = NULL
@@ -228,8 +249,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           AND owner_pid = ${owner.pid}
           AND owner_nonce = ${owner.nonce}
       `
-      yield* prune(runId)
-    }))
+        yield* prune(runId)
+      })
+    )
   )
 
   const steal: Service["steal"] = Effect.fn("Consensus.steal")((
@@ -242,8 +264,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       if (!matchesEvidence(evidence.expectedOwner, claimant, nowMs, evidence)) {
         return Effect.succeed(rejected("evidence_invalid"))
       }
-      return write(Effect.gen(function*() {
-        const rows = yield* sql<{ readonly run_id: string }>`
+      return write(
+        runId,
+        Effect.gen(function*() {
+          const rows = yield* sql<{ readonly run_id: string }>`
           UPDATE flows_consensus_leases
           SET
             claim_host_id = ${claimant.hostId},
@@ -258,21 +282,22 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             AND claim_host_id IS NULL
           RETURNING run_id
         `
-        if (rows.length > 0) return claimed(nowMs)
-        const lease = (yield* leaseOf(runId))[0]
-        if (lease !== undefined && lease.claim_host_id !== null) return rejected("already_claimed")
-        if (
-          lease === undefined ||
-          lease.owner_host_id !== evidence.expectedOwner.hostId ||
-          Number(lease.owner_pid) !== evidence.expectedOwner.pid ||
-          lease.owner_nonce !== evidence.expectedOwner.nonce
-        ) {
-          // A run nobody owns, or one owned by somebody else, has no owner
-          // this evidence could disprove.
-          return rejected("evidence_invalid")
-        }
-        return rejected("owner_live")
-      }))
+          if (rows.length > 0) return claimed(nowMs)
+          const lease = (yield* leaseOf(runId))[0]
+          if (lease !== undefined && lease.claim_host_id !== null) return rejected("already_claimed")
+          if (
+            lease === undefined ||
+            lease.owner_host_id !== evidence.expectedOwner.hostId ||
+            Number(lease.owner_pid) !== evidence.expectedOwner.pid ||
+            lease.owner_nonce !== evidence.expectedOwner.nonce
+          ) {
+            // A run nobody owns, or one owned by somebody else, has no owner
+            // this evidence could disprove.
+            return rejected("evidence_invalid")
+          }
+          return rejected("owner_live")
+        })
+      )
     })
   )
 
@@ -288,8 +313,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       if (!matchesEvidence(staleClaimant, observer, nowMs, evidence)) {
         return Effect.succeed(rejected("evidence_invalid"))
       }
-      return write(Effect.gen(function*() {
-        const rows = yield* sql<{ readonly run_id: string }>`
+      return write(
+        runId,
+        Effect.gen(function*() {
+          const rows = yield* sql<{ readonly run_id: string }>`
           UPDATE flows_consensus_leases
           SET claim_host_id = NULL, claim_pid = NULL, claim_nonce = NULL, claimed_at_ms = NULL
           WHERE run_id = ${runId}
@@ -300,11 +327,11 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             AND claimed_at_ms < ${nowMs - staleAfterMs}
           RETURNING run_id
         `
-        if (rows.length > 0) {
-          yield* prune(runId)
-          return recovered
-        }
-        const matches = yield* sql<{ readonly run_id: string }>`
+          if (rows.length > 0) {
+            yield* prune(runId)
+            return recovered
+          }
+          const matches = yield* sql<{ readonly run_id: string }>`
           SELECT run_id FROM flows_consensus_leases
           WHERE run_id = ${runId}
             AND claim_host_id = ${staleClaimant.hostId}
@@ -312,26 +339,30 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             AND claim_nonce = ${staleClaimant.nonce}
             AND claimed_at_ms = ${grantedAtMs}
         `
-        // The exact claim survived the compare-and-swap only because it is
-        // not yet stale; anything else means the claim moved on.
-        return matches.length > 0 ? rejected("claim_fresh") : rejected("claim_changed")
-      }))
+          // The exact claim survived the compare-and-swap only because it is
+          // not yet stale; anything else means the claim moved on.
+          return matches.length > 0 ? rejected("claim_fresh") : rejected("claim_changed")
+        })
+      )
     })
   )
 
   const guard: Service["guard"] = Effect.fn("Consensus.guard")((runId: string, owner: OwnerId) =>
-    write(Effect.gen(function*() {
-      const held = yield* sql<{ readonly ok: number }>`
+    write(
+      runId,
+      Effect.gen(function*() {
+        const held = yield* sql<{ readonly ok: number }>`
         SELECT 1 AS ok FROM flows_consensus_leases
         WHERE run_id = ${runId}
           AND owner_host_id = ${owner.hostId}
           AND owner_pid = ${owner.pid}
           AND owner_nonce = ${owner.nonce}
       `
-      if (held.length === 0) {
-        return yield* Effect.fail(fenceLost(runId, owner))
-      }
-    }))
+        if (held.length === 0) {
+          return yield* Effect.fail(fenceLost(runId, owner))
+        }
+      })
+    )
   )
 
   const strategy = { claim, activate, heartbeat, reconfirm, release, steal, recover, guard }

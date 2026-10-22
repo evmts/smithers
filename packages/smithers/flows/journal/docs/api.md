@@ -47,7 +47,7 @@ Fallible journal operations use `JournalError` with a stable `code`.
 | `emitLossy`           | `(input: Input) => Effect<EmitReceipt, JournalError>`                                              | bounded non-blocking queue; may return `Dropped`                                                                                                                            |
 | `emitDurable`         | `(input: Input, owner: OwnerId) => Effect<DurableReceipt, JournalError>`                           | allocates and commits inside the write transaction, fenced on `owner`                                                                                                       |
 | `emitDurableUnfenced` | `(input: Input) => Effect<DurableReceipt, JournalError>`                                           | the same commit with no fence, for a genuinely ownerless admission                                                                                                          |
-| `transact`            | `<A, E, R>(effect: Effect<A, E, R>) => Effect<A, E \| JournalError, R>`                            | runs a state projection and its `emitDurable` calls in one transaction                                                                                                      |
+| `transact`            | `<A, E, R>(effect: Effect<A, E, R>, options?: WriteOptions) => Effect<A, E \| JournalError, R>`    | runs a state projection and its `emitDurable` calls in one transaction; `options.partition` names the run it writes                                                         |
 | `whenCommitted`       | `(update: Effect<void>) => Effect<boolean>`                                                        | accepts a short, non-failing update after managed commit, or runs it immediately outside a transaction; returns `false` without publishing when commit ownership is unknown |
 | `stream`              | `(options: StreamOptions) => Stream<Entry, JournalError>`                                          | durable history, then committed changes; never completes                                                                                                                    |
 | `entries`             | `(options: EntriesOptions) => Effect<EntriesPage, JournalError>`                                   | paged read                                                                                                                                                                  |
@@ -62,6 +62,12 @@ Fallible journal operations use `JournalError` with a stable `code`.
 `whenCommitted` returning `true` means accepted, possibly deferred. Failed
 savepoints and transaction retries discard their registrations. See
 [commit state and its entry together](./guides/commit-state-and-entry.md).
+
+Every append, checkpoint and compaction writes its run's partition
+(`DurableWriter.WriteOptions`), so on PostgreSQL it waits only for that run's
+other writers; a companion stream is a partition of its own. `transact` names
+the partition its caller passes, or none, which serializes it with every
+writer.
 
 `owner` is mandatory on `emitDurable`, `checkpoint`, and `compact`. The insert,
 the checkpoint replacement, and the truncation join the `Consensus` strategy's

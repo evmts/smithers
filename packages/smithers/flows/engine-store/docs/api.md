@@ -355,7 +355,7 @@ permit deadlocks against a fiber doing the opposite.
 | `removeRunParentsForRun`  | `(runId: string) => Effect<void>`                                                                                                                                |
 | `runParents`              | `(childId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                      |
 | `runChildren`             | `(parentId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                                                                                     |
-| `transaction`             | `<A, E, R>(effect: Effect<A, E, R>) => Effect<A, E, R>`                                                                                                          |
+| `transaction`             | `<A, E, R>(effect: Effect<A, E, R>, options?: { onCommit?, partition? }) => Effect<A, E, R>`                                                                     |
 
 `scheduleClock` requires the execution's ownership token. Creation succeeds
 only while the run is running under that owner. An existing clock wins unchanged,
@@ -396,7 +396,12 @@ Serialized write transactions are a documented requirement of the
 `DurableWriter.write` contract, not a SQLite artifact. The shipped PostgreSQL
 adapter uses READ COMMITTED transactions with a transaction-scoped advisory lock
 keyed by schema, acquired before domain reads to serialize writes across pools
-and processes; nested writes use savepoints. A bare PostgreSQL READ COMMITTED
+and processes; nested writes use savepoints. The per-execution writes
+(deferred completions, clock deadlines, waiting columns) and a `transaction`
+given `options.partition` lock only that execution's partition, so two
+executions write side by side; `recordRunParent` and `removeRunParentsForRun`
+read and change edges across runs and keep the schema's lock
+([Run writer locks](../../database/docs/decisions/0001-run-writer-locks.md)). A bare PostgreSQL READ COMMITTED
 client without equivalent serialization is insufficient. The in-memory twin
 serializes every store operation behind one permit, snapshots its state on
 entry, rolls back to that snapshot when the effect fails or dies, and treats a

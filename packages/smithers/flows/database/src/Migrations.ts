@@ -36,6 +36,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
 import * as Migrator from "effect/sql/Migrator"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -298,6 +299,27 @@ const loaderFromPlan = (
   sets: ReadonlyArray<PlannedMigrationSet>,
   onLoaderApplied: (entry: readonly [id: number, name: string]) => Effect.Effect<void>
 ): Migrator.Loader<SqlClient.SqlClient> =>
+  Effect.suspend(() =>
+    Effect.flatMap(
+      resolvePlan(sets),
+      ({ previousNames, resolved, zero }) => finish(resolved, zero, previousNames, onLoaderApplied)
+    )
+  )
+
+/**
+ * Checks the sets and resolves them into one list ordered by migration id,
+ * with id zero and the previous names each id may be recorded under.
+ *
+ * @private
+ */
+const resolvePlan = (sets: ReadonlyArray<PlannedMigrationSet>): Effect.Effect<
+  {
+    readonly resolved: ReadonlyArray<PendingMigration>
+    readonly zero: ZeroMigration | undefined
+    readonly previousNames: ReadonlyMap<number, ReadonlySet<string>>
+  },
+  Migrator.MigrationError
+> =>
   Effect.suspend(() => {
     const namespaces = new Set<string>()
     const offsets = new Set<number>()
@@ -388,7 +410,7 @@ const loaderFromPlan = (
       }
     }
 
-    return finish(resolved.sort(migrationOrder), zero, previousNames, onLoaderApplied)
+    return Effect.succeed({ resolved: resolved.sort(migrationOrder), zero, previousNames })
   })
 
 /** @private */
@@ -441,6 +463,11 @@ export const run = (
   const plan = snapshotMigrationSets(sets)
   return Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
+    // On PostgreSQL every pass below takes the schema's writer lock, which
+    // holds up every other writer, and a Durable Object migrates at every
+    // alarm. A ledger that already records every planned migration needs no
+    // pass, so one lock-free read answers the common case.
+    if (sql.onDialectOrElse({ pg: () => true, orElse: () => false }) && (yield* installed(sql, plan))) return []
     // Effect's PostgreSQL migrator probes before creating its ledger. Serialize
     // that first creation as well as the migration pass on a fresh schema.
     yield* sql.onDialectOrElse({
@@ -465,6 +492,38 @@ export const run = (
     return [...appliedByLoader, ...completed]
   })
 }
+
+/**
+ * Whether the ledger records every migration `plan` names, each under its
+ * name or one of its previous names. Anything else answers `false`, and the
+ * full pass then applies, repairs or reports it: a ledger that does not exist
+ * yet, one with an id the loader would refuse, and a plan the loader would
+ * reject. Inside a caller's open transaction it answers `false` without
+ * reading, because that transaction already holds whatever lock it took and a
+ * failed read would abort it.
+ *
+ * @private
+ */
+const installed = (
+  sql: SqlClient.SqlClient,
+  plan: ReadonlyArray<PlannedMigrationSet>
+): Effect.Effect<boolean> =>
+  Effect.gen(function*() {
+    if (Option.isSome(yield* Effect.serviceOption(sql.transactionService))) return false
+    const resolution = yield* Effect.option(resolvePlan(plan))
+    if (resolution._tag === "None") return false
+    const [ledger] = yield* sql<{ readonly found: boolean }>`
+      SELECT to_regclass(${table}) IS NOT NULL AS found
+    `.pipe(Effect.orElseSucceed(() => []))
+    if (ledger?.found !== true) return false
+    const recorded = yield* Effect.option(Effect.provideService(appliedIds, SqlClient.SqlClient, sql))
+    if (recorded._tag === "None") return false
+    const { previousNames, resolved } = resolution.value
+    return resolved.every(([id, name]) => {
+      const recordedName = recorded.value.get(id)
+      return recordedName === name || (recordedName !== undefined && previousNames.get(id)?.has(recordedName) === true)
+    })
+  })
 
 /**
  * Layer that runs the given migration sets before exposing the database to

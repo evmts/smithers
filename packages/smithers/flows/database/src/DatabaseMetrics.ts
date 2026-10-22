@@ -32,14 +32,15 @@ export const writeRetries = Metric.counter("flows_db_write_retries", {
 })
 
 /**
- * Timer over how long a PostgreSQL write waited for its schema's writer
- * lock, from its first attempt to holding the lock, across every wait that
- * ran out and every backoff between them. A writable
+ * Timer over how long a PostgreSQL write waited for its writer lock, from
+ * its first attempt through timeouts and backoffs to holding the lock. A writable
  * `PostgresDatabase` client records one observation per transaction it
- * begins: each outermost `DurableWriter.write` and each `withTransaction`.
- * Writes to one schema commit one at a time, so a rising wait reads as that
- * schema's write throughput binding. Read-only clients, statements outside
- * a transaction, and SQLite record nothing here.
+ * begins, each outermost `DurableWriter.write` and each `withTransaction`,
+ * and one per savepoint that had to take a lock its transaction lacked.
+ * Writes to one partition, and writes that name none, commit one at a time,
+ * so a rising wait reads as that partition's or the schema's write throughput
+ * binding. Read-only clients, statements outside a transaction, and SQLite
+ * record nothing here.
  *
  * @category metrics
  * @since 1.0.0
@@ -101,13 +102,20 @@ export const loginFailures = Metric.counter("flows_db_login_failures", {
 export interface WriteTally {
   /** Write transactions that took a writer lock, each retry counted. */
   readonly transactions: number
-  /** Their summed {@link writerLockWait}. */
+  /**
+   * Those that held the whole schema's lock, from their start or from a
+   * nested write that named no partition: each committed alone, holding up
+   * every other writer.
+   */
+  readonly schemaWide: number
+  /** Their summed {@link writerLockWait}, savepoints' locks included. */
   readonly lockWait: Duration.Duration
 }
 
 /**
  * Runs `effect` and answers what its PostgreSQL write transactions cost: how
- * many took a writer lock, and how long they waited for it in total. It
+ * many took a writer lock, how many of those held the whole schema's, and how
+ * long they waited for their locks in total. It
  * counts the transactions {@link writerLockWait} times, begun by `effect`'s
  * fiber or by fibers it forks, in tallies nested to any depth; a transaction
  * a fiber started elsewhere began, such as a background writer's, is not
@@ -135,8 +143,11 @@ export const tally = <A, E, R>(
   effect: Effect.Effect<A, E, R>
 ): Effect.Effect<[tally: WriteTally, result: A], E, R> =>
   Effect.gen(function*() {
-    const accumulator: Tallies.Accumulator = { transactions: 0, lockWait: Duration.zero }
+    const accumulator: Tallies.Accumulator = { transactions: 0, schemaWide: 0, lockWait: Duration.zero }
     const open = yield* Tallies.Current
     const result = yield* Effect.provideService(effect, Tallies.Current, [...open, accumulator])
-    return [{ transactions: accumulator.transactions, lockWait: accumulator.lockWait }, result]
+    return [
+      { transactions: accumulator.transactions, schemaWide: accumulator.schemaWide, lockWait: accumulator.lockWait },
+      result
+    ]
   })

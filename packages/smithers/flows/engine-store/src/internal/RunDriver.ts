@@ -788,21 +788,24 @@ const recordParentResume = (driver: Driver, parentExecutionId: string, childExec
     if (Option.isSome(waiting) && waiting.value.reason === "quarantine") return
     // Persist before publishing: a remote parent's poll must see this wake,
     // including when its current round has not finished parking yet.
-    const recorded = yield* driver.transactState(Effect.gen(function*() {
-      const completed = yield* driver.engineState.completeDeferred({
-        flowName: state.flowName,
-        executionId: parentExecutionId,
-        deferredName: parentWakePrefix + childExecutionId,
-        exit: { _tag: "Success", value: null },
-        completedAtMs: yield* Clock.currentTimeMillis
-      })
-      // A settlement announced again (`reannounce`) finds its wake
-      // already recorded, and perhaps already consumed: it is not
-      // scheduled twice.
-      if (completed._tag === "Existing") return false
-      yield* emitDecision(driver, parentExecutionId, { decision: "wake-scheduled", reason: "parent" })
-      return true
-    })).pipe(Effect.orDie)
+    const recorded = yield* driver.transactState(
+      Effect.gen(function*() {
+        const completed = yield* driver.engineState.completeDeferred({
+          flowName: state.flowName,
+          executionId: parentExecutionId,
+          deferredName: parentWakePrefix + childExecutionId,
+          exit: { _tag: "Success", value: null },
+          completedAtMs: yield* Clock.currentTimeMillis
+        })
+        // A settlement announced again (`reannounce`) finds its wake
+        // already recorded, and perhaps already consumed: it is not
+        // scheduled twice.
+        if (completed._tag === "Existing") return false
+        yield* emitDecision(driver, parentExecutionId, { decision: "wake-scheduled", reason: "parent" })
+        return true
+      }),
+      { partition: parentExecutionId }
+    ).pipe(Effect.orDie)
     if (recorded) yield* recordResume(driver, parentExecutionId, Option.isSome(waiting), "parent")
   })
 
@@ -1039,7 +1042,11 @@ const transitionAndRecord = (
       // early frame silently inherited the parent's *latest* state.
       yield* emitDecision(driver, runId, { ...(decision as object), state: JSON.parse(stateJson) })
       return transitioned
-    })
+    }),
+    // The run's own rows. Ending its children (`afterTransitioned`) reads
+    // the edge table, which only schema-wide writes change, and joins each
+    // child's partition before it reads the child's rows (`lockedRounds`).
+    { partition: runId }
   ).pipe(
     Effect.catchTag("TransitionRefused", ({ outcome }) => Effect.succeed(outcome)),
     Effect.orDie
@@ -1374,7 +1381,8 @@ const activate = (
         ...(takeover.recoveredClaim === undefined ? {} : { recoveredClaim: takeover.recoveredClaim })
       })
       return activation
-    })
+    }),
+    { partition: row.runId }
   ).pipe(Effect.orDie)
 
 /**
@@ -1537,7 +1545,7 @@ const endChild = (
   exits: ChildExits
 ): Effect.Effect<ReadonlyArray<string>, RunStore.RunStoreError> =>
   Effect.gen(function*() {
-    const rounds = yield* driver.lifecycle.rounds(childId)
+    const rounds = yield* lockedRounds(driver, childId)
     for (const round of rounds) seen.add(round.runId)
     seen.add(childId)
     if (rounds.every((round) => isSettled(round.status))) return []
@@ -1553,6 +1561,28 @@ const endChild = (
       if (!isSettled(round.status)) exits.cancelled.push(round.runId)
     }
     return rounds.map((round) => round.runId)
+  })
+
+/**
+ * Reads the rounds of `runId`'s lineage after joining every round's
+ * partition, so no round's row changes under the decision the caller makes
+ * from them: a parent's transition writes its own partition, and a child's
+ * status is its own run's to change. A round that appeared meanwhile, by a
+ * handoff that committed before its predecessor was joined, is joined and the
+ * lineage read again.
+ */
+const lockedRounds = (driver: Driver, runId: string) =>
+  Effect.gen(function*() {
+    const joined = new Set<string>()
+    while (true) {
+      const rounds = yield* driver.lifecycle.rounds(runId)
+      const unjoined = rounds.filter((round) => !joined.has(round.runId))
+      if (unjoined.length === 0) return rounds
+      for (const round of unjoined) {
+        yield* driver.writer.write(Effect.void, { partition: round.runId }).pipe(Effect.orDie)
+        joined.add(round.runId)
+      }
+    }
   })
 
 /**
@@ -1763,6 +1793,8 @@ const commitCancellation = (
       ).pipe(Effect.orDie)
       return { settled: true, cascaded }
     })
+    // The cascade reads every descendant's row to decide, so a cancellation
+    // takes the schema's lock.
   ).pipe(Effect.orDie)
 
 /**
@@ -2204,60 +2236,63 @@ interface HandoffWrite {
  * when the round is no longer this driver's.
  */
 const commitHandoff = (driver: Driver, seam: HandoffSeam, advanced: Successor, write: HandoffWrite) =>
-  driver.transactState(Effect.gen(function*() {
-    // The next round's id is DERIVED from (lineage, ordinal), so a
-    // re-drive finds the exact row it already opened. Only an
-    // identical create is tolerated; a collision in flow, payload,
-    // parent, lineage, or ordinal is a defect.
-    yield* ensureCreatedRun(driver, {
-      flowName: seam.handoff.flow,
-      executionId: advanced.executionId,
-      stateJson: write.nextStateJson,
-      payload: write.payload,
-      lineageId: advanced.round.rootExecutionId,
-      roundOrdinal: advanced.round.ordinal,
-      parentRunId: seam.executionId,
-      capabilityCeilings: write.nextCeilings,
-      onCreated: emitDecision(driver, advanced.executionId, {
-        decision: "created",
-        state: JSON.parse(write.nextStateJson),
+  driver.transactState(
+    Effect.gen(function*() {
+      // The next round's id is DERIVED from (lineage, ordinal), so a
+      // re-drive finds the exact row it already opened. Only an
+      // identical create is tolerated; a collision in flow, payload,
+      // parent, lineage, or ordinal is a defect.
+      yield* ensureCreatedRun(driver, {
+        flowName: seam.handoff.flow,
+        executionId: advanced.executionId,
+        stateJson: write.nextStateJson,
+        payload: write.payload,
         lineageId: advanced.round.rootExecutionId,
         roundOrdinal: advanced.round.ordinal,
-        parentExecutionId: seam.executionId
+        parentRunId: seam.executionId,
+        capabilityCeilings: write.nextCeilings,
+        onCreated: emitDecision(driver, advanced.executionId, {
+          decision: "created",
+          state: JSON.parse(write.nextStateJson),
+          lineageId: advanced.round.rootExecutionId,
+          roundOrdinal: advanced.round.ordinal,
+          parentExecutionId: seam.executionId
+        })
       })
-    })
-    // DECIDED (2026-08-11, pending review): a handed-off round settles
-    // `completed`. The round did finish, and adding a `Continued`
-    // status would widen every status reader for a distinction the
-    // `handed-off` decision and lineage columns already record.
-    //
-    // DECIDED (2026-08-11, pending review): cancellation guards the
-    // handoff transition. If it raced the last poll, failing the outer
-    // transaction rolls successor creation back before the ordinary
-    // cancellation path closes the owned round.
-    const transitioned = yield* transitionAndRecord(
-      driver,
-      seam.executionId,
-      "completed",
-      write.settledStateJson,
-      {
-        decision: "handed-off",
-        status: "completed",
-        flow: seam.handoff.flow,
-        lineageId: advanced.round.rootExecutionId,
-        roundOrdinal: advanced.round.ordinal,
-        nextExecutionId: advanced.executionId,
-        owner: driver.dependencies.owner
-      },
-      { cancelRequested: "absent" }
-    )
-    if (transitioned._tag === "Transitioned") return
-    return yield* Effect.fail(
-      transitioned._tag === "GuardFailed"
-        ? { _tag: "HandoffCancelled" } as const
-        : { _tag: "HandoffFenceLost" } as const
-    )
-  })).pipe(Effect.catchTag("@smthrs/journal/JournalError", Effect.die))
+      // DECIDED (2026-08-11, pending review): a handed-off round settles
+      // `completed`. The round did finish, and adding a `Continued`
+      // status would widen every status reader for a distinction the
+      // `handed-off` decision and lineage columns already record.
+      //
+      // DECIDED (2026-08-11, pending review): cancellation guards the
+      // handoff transition. If it raced the last poll, failing the outer
+      // transaction rolls successor creation back before the ordinary
+      // cancellation path closes the owned round.
+      const transitioned = yield* transitionAndRecord(
+        driver,
+        seam.executionId,
+        "completed",
+        write.settledStateJson,
+        {
+          decision: "handed-off",
+          status: "completed",
+          flow: seam.handoff.flow,
+          lineageId: advanced.round.rootExecutionId,
+          roundOrdinal: advanced.round.ordinal,
+          nextExecutionId: advanced.executionId,
+          owner: driver.dependencies.owner
+        },
+        { cancelRequested: "absent" }
+      )
+      if (transitioned._tag === "Transitioned") return
+      return yield* Effect.fail(
+        transitioned._tag === "GuardFailed"
+          ? { _tag: "HandoffCancelled" } as const
+          : { _tag: "HandoffFenceLost" } as const
+      )
+    }),
+    { partition: seam.executionId }
+  ).pipe(Effect.catchTag("@smthrs/journal/JournalError", Effect.die))
 
 /**
  * Announces a committed terminal settlement: to any in-process caller
@@ -3485,53 +3520,56 @@ const admit = (
   payload: unknown,
   origin: Origin
 ): Effect.Effect<boolean, FlowCycleDetected> =>
-  driver.transactState(Effect.gen(function*() {
-    let opened = false
-    const parentRecorded = yield* recordParentEdge(driver, options)
-    const round = options.round ?? FlowEngine.Round.initial(options.executionId)
-    const previousExecutionId = options.round?.previousExecutionId
-    const state = yield* admittedState(flow, options, payload, origin)
-    const createdStateJson = yield* encodeState(state)
-    yield* ensureCreatedRun(driver, {
-      flowName: flow._tag,
-      capabilityCeilings: state.capabilityCeilings!,
-      executionId: options.executionId,
-      stateJson: createdStateJson,
-      payload,
-      lineageId: round.rootExecutionId,
-      roundOrdinal: round.ordinal,
-      ...(previousExecutionId === undefined
-        ? {}
-        : { parentRunId: previousExecutionId }),
-      onCreated: Effect.suspend(() => {
-        opened = round.ordinal === 0
-        return recordCreated(driver, flow, options, createdStateJson)
-      })
-    })
-    // The row already exists; the durable edge recorded above is the
-    // only place a diamond's second parent lives (issues #41/#48): a
-    // driver-local side table would be invisible to other owners over
-    // the same store, lost across restart, and would grow without
-    // bound for the driver's lifetime.
-    //
-    // Which is also why the parent's cancellation is inherited HERE,
-    // last and inside this same transaction: the child row must already
-    // exist for `requestCancel` to have anything to write to, and the
-    // inheritance must commit or roll back with the edge that made this
-    // run a child in the first place. The inherited request is what the
-    // activation guard reads, so the child cancels instead of executing
-    // the flow body.
-    if (options.parent !== undefined) {
-      yield* inheritParentCancellation(driver, options.parent.executionId, options.executionId)
-      if (parentRecorded) {
-        yield* emitDecision(driver, options.executionId, {
-          decision: "parent-recorded",
-          parentExecutionId: options.parent.executionId
+  driver.transactState(
+    Effect.gen(function*() {
+      let opened = false
+      const parentRecorded = yield* recordParentEdge(driver, options)
+      const round = options.round ?? FlowEngine.Round.initial(options.executionId)
+      const previousExecutionId = options.round?.previousExecutionId
+      const state = yield* admittedState(flow, options, payload, origin)
+      const createdStateJson = yield* encodeState(state)
+      yield* ensureCreatedRun(driver, {
+        flowName: flow._tag,
+        capabilityCeilings: state.capabilityCeilings!,
+        executionId: options.executionId,
+        stateJson: createdStateJson,
+        payload,
+        lineageId: round.rootExecutionId,
+        roundOrdinal: round.ordinal,
+        ...(previousExecutionId === undefined
+          ? {}
+          : { parentRunId: previousExecutionId }),
+        onCreated: Effect.suspend(() => {
+          opened = round.ordinal === 0
+          return recordCreated(driver, flow, options, createdStateJson)
         })
+      })
+      // The row already exists; the durable edge recorded above is the
+      // only place a diamond's second parent lives (issues #41/#48): a
+      // driver-local side table would be invisible to other owners over
+      // the same store, lost across restart, and would grow without
+      // bound for the driver's lifetime.
+      //
+      // Which is also why the parent's cancellation is inherited HERE,
+      // last and inside this same transaction: the child row must already
+      // exist for `requestCancel` to have anything to write to, and the
+      // inheritance must commit or roll back with the edge that made this
+      // run a child in the first place. The inherited request is what the
+      // activation guard reads, so the child cancels instead of executing
+      // the flow body.
+      if (options.parent !== undefined) {
+        yield* inheritParentCancellation(driver, options.parent.executionId, options.executionId)
+        if (parentRecorded) {
+          yield* emitDecision(driver, options.executionId, {
+            decision: "parent-recorded",
+            parentExecutionId: options.parent.executionId
+          })
+        }
       }
-    }
-    return opened
-  })).pipe(
+      return opened
+    }),
+    { partition: options.executionId }
+  ).pipe(
     Effect.catchIf((error) => error instanceof Journal.JournalError || error instanceof DatabaseError, Effect.die)
   )
 
@@ -3900,8 +3938,9 @@ const requestCancelTree = (
       return [executionId, ...yield* requestCancelDescendants(driver, executionId, nowMs)]
     }),
     // Capture the shared writer directly. SqlJournal.transact catches a
-    // selected failure and can discard the rest of a composite cause.
-    (write) => Effect.flatMap(Effect.exit(driver.writer.write(write)), (exit) => exit)
+    // selected failure and can discard the rest of a composite cause. The
+    // cascade writes every descendant's row, so it names no partition.
+    { transact: (write) => Effect.flatMap(Effect.exit(driver.writer.write(write)), (exit) => exit) }
   ).pipe(Effect.catchCause((cause) => cancelRequestFailure(executionId, cause)))
 
 /**
@@ -3979,31 +4018,34 @@ const recordWake = (
   reason: ScheduledResumeReason,
   sourceId: string | undefined
 ) =>
-  driver.transactState(Effect.gen(function*() {
-    yield* Effect.annotateCurrentSpan({ executionId, flow: flowName, reason })
-    const row = yield* findRun(driver, executionId)
-    if (row === undefined) return
-    // A settled run is not woken and then refused: it is not woken. The
-    // terminal reject used to live one layer down, in `claimAndActivate`,
-    // so a timer armed before its run was cancelled and an external
-    // trigger arriving after the run finished both wrote a
-    // `wake-scheduled` decision into the journal of a run that can never
-    // wake again — one per event, forever, on a durable channel.
-    if (isSettled(row.status)) return
-    const state = yield* decodeState(row.stateJson)
-    if (state.flowName !== flowName) return
-    if (yield* isQuarantined(driver, executionId)) {
-      if (reason !== "operator") return
-      // Recovery consent and its journal receipt commit together. A
-      // queued drive cannot consume quarantined evidence before consent.
-      yield* driver.engineState.wake(executionId)
-    }
-    yield* emitDecision(driver, executionId, {
-      decision: "wake-scheduled",
-      reason
-    }, sourceId)
-    return { parked: row.status === "suspended" }
-  }))
+  driver.transactState(
+    Effect.gen(function*() {
+      yield* Effect.annotateCurrentSpan({ executionId, flow: flowName, reason })
+      const row = yield* findRun(driver, executionId)
+      if (row === undefined) return
+      // A settled run is not woken and then refused: it is not woken. The
+      // terminal reject used to live one layer down, in `claimAndActivate`,
+      // so a timer armed before its run was cancelled and an external
+      // trigger arriving after the run finished both wrote a
+      // `wake-scheduled` decision into the journal of a run that can never
+      // wake again — one per event, forever, on a durable channel.
+      if (isSettled(row.status)) return
+      const state = yield* decodeState(row.stateJson)
+      if (state.flowName !== flowName) return
+      if (yield* isQuarantined(driver, executionId)) {
+        if (reason !== "operator") return
+        // Recovery consent and its journal receipt commit together. A
+        // queued drive cannot consume quarantined evidence before consent.
+        yield* driver.engineState.wake(executionId)
+      }
+      yield* emitDecision(driver, executionId, {
+        decision: "wake-scheduled",
+        reason
+      }, sourceId)
+      return { parked: row.status === "suspended" }
+    }),
+    { partition: executionId }
+  )
 
 /**
  * Says a run is runnable: to the host when the engine itself asked (see

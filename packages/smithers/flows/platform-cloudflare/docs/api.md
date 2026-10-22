@@ -306,6 +306,7 @@ Each `cloudflare.execution.alarm` line and span also says what the alarm cost:
 | `durationMs`   | How long the alarm took, in whole milliseconds.                                                                               |
 | `events`       | The journal entries it committed (`@smthrs/journal` `JournalMetrics.tally`).                                                  |
 | `transactions` | Its write transactions that took the database's writer lock, each retry counted (`@smthrs/database` `DatabaseMetrics.tally`). |
+| `schemaWide`   | How many of those held the whole schema's lock, so committed alone.                                                           |
 | `lockWaitMs`   | How long those transactions waited for the lock in total, in whole milliseconds.                                              |
 
 ## EdgeCache

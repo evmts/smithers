@@ -36,8 +36,12 @@ import type * as DurableEngineState from "../DurableEngineState.ts"
  * a released gate, just as it sees a committed SQL transaction. Publication
  * failures happen after both commits and cannot undo either.
  *
- * `transact` defaults to the journal's own transaction. A caller passes its
- * own only to change how the writer's Exit is read, never to change the order.
+ * `options.transact` defaults to the journal's own transaction. A caller
+ * passes its own only to change how the writer's Exit is read, never to
+ * change the order. `options.partition` names the one execution whose rows
+ * the transaction reads and changes, so it waits only for that execution's
+ * writers (`DurableWriter.WriteOptions`); a transaction that touches another
+ * execution's rows names none.
  *
  * @category constructors
  * @since 0.1.0
@@ -48,24 +52,32 @@ export const make = (
 ) =>
 <A, E, R>(
   effect: Effect.Effect<A, E, R>,
-  transact: <B, F, S>(
-    write: Effect.Effect<B, F, S>
-  ) => Effect.Effect<B, F | Journal.JournalError | DatabaseError, S> = journal.transact
+  options?: {
+    readonly transact?:
+      | (<B, F, S>(
+        write: Effect.Effect<B, F, S>
+      ) => Effect.Effect<B, F | Journal.JournalError | DatabaseError, S>)
+      | undefined
+    readonly partition?: string | undefined
+  }
 ): Effect.Effect<A, E | Journal.JournalError | DatabaseError, R> =>
   Effect.suspend(() => {
     let commit = Effect.void
     let bodyCompleted = false
+    const partition = options?.partition
+    const body = Effect.gen(function*() {
+      yield* journal.whenCommitted(Effect.suspend(() => bodyCompleted ? commit : Effect.void))
+      const value = yield* effect
+      bodyCompleted = true
+      return value
+    })
     return state.transaction(
-      transact(Effect.gen(function*() {
-        yield* journal.whenCommitted(Effect.suspend(() => bodyCompleted ? commit : Effect.void))
-        const value = yield* effect
-        bodyCompleted = true
-        return value
-      })),
+      options?.transact === undefined ? journal.transact(body, { partition }) : options.transact(body),
       {
         onCommit: (accept) => {
           commit = accept
-        }
+        },
+        partition
       }
     )
   })

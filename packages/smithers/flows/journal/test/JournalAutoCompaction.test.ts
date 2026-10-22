@@ -34,18 +34,24 @@ const committed = (runId: RunId) =>
 /** Observes the private barrier map without adding a production diagnostics API. */
 const observeBarriers = () => {
   let barriers: Map<unknown, unknown> | undefined
-  const counters = new Set<Map<unknown, unknown>>()
+  // The journal's per-run counters, told apart from a map that only ever
+  // held one run, such as the database client's per-transaction lock map.
+  const counters = new Map<Map<unknown, unknown>, Set<string>>()
   const original = Map.prototype.set
   const spy = vi.spyOn(Map.prototype, "set").mockImplementation(function(this: Map<unknown, unknown>, key, value) {
     if (value && typeof value === "object" && "compactionLock" in value && "maintenance" in value) {
       barriers = this
     }
-    if (typeof key === "string" && key.startsWith("completed-") && typeof value === "number") counters.add(this)
+    if (typeof key === "string" && key.startsWith("completed-") && typeof value === "number") {
+      const keys = counters.get(this) ?? new Set<string>()
+      counters.set(this, keys.add(key))
+    }
     return original.call(this, key, value)
   })
   return {
     size: () => barriers?.size,
-    counterSizes: () => [...counters].map((map) => map.size).sort((a, b) => a - b),
+    counterSizes: () =>
+      [...counters].filter(([, keys]) => keys.size > 1).map(([map]) => map.size).sort((a, b) => a - b),
     restore: () => spy.mockRestore()
   }
 }

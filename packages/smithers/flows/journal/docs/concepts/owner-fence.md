@@ -43,7 +43,10 @@ A fenced write joins the injected `Consensus` strategy's `guard` inside its
 own write transaction. The guard succeeds while the strategy records the
 supplied token as the run's owner and fails `fence_lost` otherwise, and
 because the durable writer serializes write transactions no reclaim can
-commit between the guard and the statements beside it.
+commit between the guard and the statements beside it. On PostgreSQL the run's
+appends and every lease operation write the run's partition (`@smthrs/database`
+[Run writer locks](../../../database/docs/decisions/0001-run-writer-locks.md)),
+so they serialize with each other while other runs write alongside.
 
 Two consequences follow:
 

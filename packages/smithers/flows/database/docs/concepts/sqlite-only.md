@@ -155,9 +155,13 @@ runs one suite through it and directly against `SMITHERS_TEST_PG_URL`.
 
 ### The writer lock
 
-Durable writes to one schema commit one at a time, matching the SQLite
-contract; different schemas write concurrently. The server holds the lock from
-granting it until it commits the write, so one schema's ceiling is
+A durable write that names no partition commits alone on its schema, matching
+the SQLite contract; different schemas write concurrently. A write that names a
+partition, such as the run its rows belong to, shares the schema's lock and
+takes its partition's, so writes to different partitions commit concurrently
+and writes to one partition one at a time
+([Run writer locks](../decisions/0001-run-writer-locks.md)). The server holds a
+lock from granting it until it commits the write, so one lock's ceiling is
 
 ```text
 writes per second ≤ 1 / ((statements in the write + 1) × round trip + commit flush)
@@ -166,9 +170,10 @@ writes per second ≤ 1 / ((statements in the write + 1) × round trip + commit 
 The `+ 1` is the lock's answer travelling to the client and the `COMMIT`
 travelling back. Adding writers, connections or processes does not
 raise it; only a shorter round trip, fewer statements per write, or more
-schemas do. A Worker far from its database pays its full round trip several
-times per write. `DatabaseMetrics.writerLockWait` times every wait for the
-lock in production, so a schema at its ceiling shows as a rising wait.
+partitions or schemas do. A Worker far from its database pays its full round
+trip several times per write. `DatabaseMetrics.writerLockWait` times every wait
+for a lock in production, so a schema or partition at its ceiling shows as a
+rising wait, and `DatabaseMetrics.tally` sums one request's or alarm's.
 
 A write waits for the lock inside its transaction, so the wait holds a server
 connection. Behind a pooler that grants a fixed number of them, such as a
@@ -186,22 +191,27 @@ lock the write waits on longer fails with `lock_not_available`, which
 `DurableWriter` retries.
 
 `test/WriterLock.bench.ts` (`pnpm --filter @smthrs/database bench`) measures
-one-row writes through the compose PgBouncer and the compose PostgreSQL behind
-it. Each writer is its own one-connection client, as separate Workers are.
-Measured on 2026-10-19 on an Apple Silicon laptop under a load average near 30,
-with Docker Desktop and Electric reading the same server:
+one-row writes through the compose PgBouncer, the compose PostgreSQL behind it,
+and that PostgreSQL behind a slow network that holds every chunk 2 ms each way,
+about what a Worker pays through Hyperdrive. Each writer is its own
+one-connection client, as separate Workers are. Measured on 2026-10-21 on the
+Latitude farm's PostgreSQL 17 and PgBouncer, load average about 19 on 48 cores:
 
-| Writers and schemas    | Through PgBouncer | PostgreSQL directly |
-| ---------------------- | ----------------- | ------------------- |
-| 1 writer, 1 schema     | 213 to 226/s      | 130 to 145/s        |
-| 16 writers, 1 schema   | 228 to 295/s      | 136 to 162/s        |
-| 16 writers, 16 schemas | 300 to 474/s      | 690 to 2176/s       |
+| Writers                   | Through PgBouncer | PostgreSQL directly | PostgreSQL, 2 ms each way |
+| ------------------------- | ----------------- | ------------------- | ------------------------- |
+| 1 writer                  | 1522/s            | 2302/s              | 57/s                      |
+| 16 writers, no partition  | 2307/s            | 2722/s              | 97/s                      |
+| 16 writers, 1 partition   | 2331/s            | 2585/s              | 103/s                     |
+| 16 writers, 16 partitions | 4362/s            | 5880/s              | 757/s                     |
+| 16 writers, 16 schemas    | 4607/s            | 5847/s              | 759/s                     |
 
-Sixteen writers on one schema barely outpace one: a queued writer has already
-sent `BEGIN` when the lock frees, and the lock caps the rest. Sixteen schemas
-scale until PgBouncer's four server connections are all busy. Read the ratios, not the absolute rates: the run shared a loaded
-machine, its round trips cross the Docker Desktop VM, and every commit waits
-for a flush to the Docker volume.
+Sixteen writers on one lock barely outpace one: a queued writer has already
+sent `BEGIN` when the lock frees, and the lock caps the rest. Sixteen
+partitions scale like sixteen schemas, until PgBouncer's four server
+connections are all busy; behind the slow network they write 7.8 times as
+fast as sixteen writers on the schema's lock. Read the ratios, not the
+absolute rates: the run shared a loaded machine, and the slow network is a
+fixed delay, not Hyperdrive.
 
 Integer-valued columns use PostgreSQL `NUMERIC` with integer/range checks where
 the SQLite schema has those checks; this rejects fractional writes rather than

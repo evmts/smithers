@@ -19,7 +19,7 @@
  */
 
 import * as Dialect from "@smthrs/database/Dialect"
-import { afterCommit, DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
+import { afterCommit, DatabaseError, DurableWriter, type WriteOptions } from "@smthrs/database/DurableWriter"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Deferred from "effect/Deferred"
@@ -578,6 +578,12 @@ export const make = (
     const readPageSize = Math.min(batchSize, maxEntriesLimit)
     const sql = yield* Effect.service(SqlClient.SqlClient)
     const writer = yield* DurableWriter
+    // Every row of a run's stream belongs to that run, so its writes name the
+    // run's partition and serialize with that run's writers only
+    // (`packages/smithers/flows/database/docs/decisions/0001-run-writer-locks.md`).
+    // A companion stream is a partition of its own.
+    const writeRun = <A, E, R>(runId: RunId, effect: Effect.Effect<A, E, R>) =>
+      writer.write(effect, { partition: runId })
     const consensus = yield* Consensus
     yield* JournalGeneration.initialize.pipe(
       Effect.mapError((cause) => error("read_failed", "could not initialize journal generations", cause))
@@ -884,7 +890,8 @@ export const make = (
           const nested = Option.isSome(enclosing)
           const attempt: Effect.Effect<A, Exclude<E, SqlError.SqlError> | DatabaseError, R> =
             (nested ? Effect.void : awaitRunDrained(runId)).pipe(
-              Effect.andThen(writer.write(
+              Effect.andThen(writeRun(
+                runId,
                 barrier.compactionLock.withPermit(Effect.uninterruptibleMask((restore) =>
                   barrier.semaphore.withPermit(Effect.sync(() => {
                     if (
@@ -1771,10 +1778,15 @@ export const make = (
     const persistBatch = (
       batch: ReadonlyArray<QueuedEntry>
     ): Effect.Effect<BatchOutcome, JournalError> =>
-      writer.write(withRunPermits(
-        batch.map((queued) => queued.runId),
-        insertBatch(batch)
-      )).pipe(
+      writer.write(
+        withRunPermits(
+          batch.map((queued) => queued.runId),
+          insertBatch(batch)
+        ),
+        // A batch of one run's entries writes that run's partition; a batch
+        // across runs serializes against every writer.
+        { partition: batch.every((queued) => queued.runId === batch[0]!.runId) ? batch[0]!.runId : undefined }
+      ).pipe(
         // Every per-entry `JournalError` is settled inside the transaction
         // above, so the only failure that escapes is the transaction itself:
         // a database outage, which is what `sink_failed` names.
@@ -1956,9 +1968,10 @@ export const make = (
      * rollbacks, and transactions opened by other stores on the same client.
      */
     const transact: Service["transact"] = <A, E, R>(
-      effect: Effect.Effect<A, E, R>
+      effect: Effect.Effect<A, E, R>,
+      options?: WriteOptions | undefined
     ): Effect.Effect<A, E | JournalError, R> =>
-      writer.write(effect).pipe(
+      writer.write(effect, options).pipe(
         Effect.catchIf(
           (cause): cause is DatabaseError => cause instanceof DatabaseError,
           (cause) => Effect.fail(error("sink_failed", "journal transaction failed", cause))
@@ -1981,73 +1994,76 @@ export const make = (
           const committed = yield* Effect.gen(function*() {
             const { metaJson, payloadJson, validated } = prepared
             return yield* Effect.uninterruptibleMask((restore) =>
-              restore(writer.write(withActiveRunWrite(
+              restore(writeRun(
                 prepared.validated.runId,
-                Effect.gen(function*() {
-                  // Read only for a producer that allocates from this floor. A
-                  // supplied sequence is not allocated, so reading the floor
-                  // for it costs a query whose answer is discarded.
-                  const durableSourceSeq = validated.sourceSeq === undefined
-                    ? yield* nextDurable("source_seq", validated.runId, validated.sourceId)
-                    : 0
-                  const durableSeq = yield* nextDurable("seq", validated.runId, undefined)
-                  const reserved = yield* allocation.withPermit(Effect.fromResult(Result.gen(function*() {
-                    const key = sourceKey(validated.runId, validated.sourceId)
-                    const sourceSeq: SourceSeq = validated.sourceSeq ??
-                      (Math.max(
-                        durableSourceSeq,
-                        state.sourceSequences.get(key) ?? 0
-                      ) as SourceSeq)
-                    if (
-                      !Number.isSafeInteger(sourceSeq) ||
-                      sourceSeq < 0 ||
-                      sourceSeq === Number.MAX_SAFE_INTEGER
-                    ) {
-                      return yield* Result.fail(
-                        error("invalid_event", "journal sequence is outside the allocatable safe integer range")
-                      )
+                withActiveRunWrite(
+                  prepared.validated.runId,
+                  Effect.gen(function*() {
+                    // Read only for a producer that allocates from this floor. A
+                    // supplied sequence is not allocated, so reading the floor
+                    // for it costs a query whose answer is discarded.
+                    const durableSourceSeq = validated.sourceSeq === undefined
+                      ? yield* nextDurable("source_seq", validated.runId, validated.sourceId)
+                      : 0
+                    const durableSeq = yield* nextDurable("seq", validated.runId, undefined)
+                    const reserved = yield* allocation.withPermit(Effect.fromResult(Result.gen(function*() {
+                      const key = sourceKey(validated.runId, validated.sourceId)
+                      const sourceSeq: SourceSeq = validated.sourceSeq ??
+                        (Math.max(
+                          durableSourceSeq,
+                          state.sourceSequences.get(key) ?? 0
+                        ) as SourceSeq)
+                      if (
+                        !Number.isSafeInteger(sourceSeq) ||
+                        sourceSeq < 0 ||
+                        sourceSeq === Number.MAX_SAFE_INTEGER
+                      ) {
+                        return yield* Result.fail(
+                          error("invalid_event", "journal sequence is outside the allocatable safe integer range")
+                        )
+                      }
+                      const seq = Math.max(
+                        durableSeq,
+                        state.sequences.get(validated.runId) ?? 0
+                      ) as Seq
+                      if (!Number.isSafeInteger(seq) || seq === Number.MAX_SAFE_INTEGER) {
+                        return yield* Result.fail(
+                          error("invalid_event", "journal sequence is outside the allocatable safe integer range")
+                        )
+                      }
+                      // Claim the seq NOW, not at commit: a concurrent `emitLossy`
+                      // allocates from this floor alone, and `settleCommit` parks
+                      // the commit-time raise until the outermost COMMIT.
+                      // Re-entering the transaction body is idempotent because the
+                      // floor only rises. An abandoned attempt leaves the number
+                      // unused, which is a gap: allocation is `MAX(seq) + 1` and
+                      // replay is `ORDER BY seq`, so neither reads a gap as anything.
+                      raiseSequenceFloor(validated.runId, seq)
+                      // Claim the producer sequence at the same allocation seam.
+                      // Without this, a lossy emit from the same producer can read
+                      // the pre-transaction source floor and reuse this identity
+                      // while an enclosing `transact` is still open.
+                      raiseSourceSequenceFloor(validated.runId, validated.sourceId, sourceSeq)
+                      return { seq, sourceSeq }
+                    })))
+                    const { seq, sourceSeq } = reserved
+                    const queued: QueuedEntry = {
+                      runId: validated.runId,
+                      seq,
+                      eventId: makeEventId(validated.runId, validated.sourceId, sourceSeq),
+                      sourceId: validated.sourceId,
+                      sourceSeq,
+                      emittedAtMs,
+                      eventType: validated.eventType,
+                      payloadJson,
+                      metaJson,
+                      dedupe: validated.dedupe ?? "content"
                     }
-                    const seq = Math.max(
-                      durableSeq,
-                      state.sequences.get(validated.runId) ?? 0
-                    ) as Seq
-                    if (!Number.isSafeInteger(seq) || seq === Number.MAX_SAFE_INTEGER) {
-                      return yield* Result.fail(
-                        error("invalid_event", "journal sequence is outside the allocatable safe integer range")
-                      )
-                    }
-                    // Claim the seq NOW, not at commit: a concurrent `emitLossy`
-                    // allocates from this floor alone, and `settleCommit` parks
-                    // the commit-time raise until the outermost COMMIT.
-                    // Re-entering the transaction body is idempotent because the
-                    // floor only rises. An abandoned attempt leaves the number
-                    // unused, which is a gap: allocation is `MAX(seq) + 1` and
-                    // replay is `ORDER BY seq`, so neither reads a gap as anything.
-                    raiseSequenceFloor(validated.runId, seq)
-                    // Claim the producer sequence at the same allocation seam.
-                    // Without this, a lossy emit from the same producer can read
-                    // the pre-transaction source floor and reuse this identity
-                    // while an enclosing `transact` is still open.
-                    raiseSourceSequenceFloor(validated.runId, validated.sourceId, sourceSeq)
-                    return { seq, sourceSeq }
-                  })))
-                  const { seq, sourceSeq } = reserved
-                  const queued: QueuedEntry = {
-                    runId: validated.runId,
-                    seq,
-                    eventId: makeEventId(validated.runId, validated.sourceId, sourceSeq),
-                    sourceId: validated.sourceId,
-                    sourceSeq,
-                    emittedAtMs,
-                    eventType: validated.eventType,
-                    payloadJson,
-                    metaJson,
-                    dedupe: validated.dedupe ?? "content"
-                  }
-                  const commit = yield* insertOne(queued, fence)
-                  return { commit, queued, sourceSeq }
-                })
-              ))).pipe(
+                    const commit = yield* insertOne(queued, fence)
+                    return { commit, queued, sourceSeq }
+                  })
+                )
+              )).pipe(
                 /**
                  * `writer.write` is a retrying transaction: its body replays on
                  * `SQLITE_BUSY(_SNAPSHOT)` and can still abort at COMMIT after the
@@ -2135,49 +2151,52 @@ export const make = (
           )
         )
         const createdAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-        return yield* writer.write(Effect.gen(function*() {
-          if (fence._tag === "Owned") {
-            yield* fenceGuard(checkpointOptions.runId, fence.owner)
-          }
-          // The target must be a committed entry: the surviving row is what
-          // keeps the run's durable `MAX(seq)` allocation floor at or above
-          // the compaction boundary, so a process restarted after
-          // compaction can never re-allocate a truncated sequence.
-          const target = yield* sql<{ readonly ok: number }>`
+        return yield* writeRun(
+          checkpointOptions.runId,
+          Effect.gen(function*() {
+            if (fence._tag === "Owned") {
+              yield* fenceGuard(checkpointOptions.runId, fence.owner)
+            }
+            // The target must be a committed entry: the surviving row is what
+            // keeps the run's durable `MAX(seq)` allocation floor at or above
+            // the compaction boundary, so a process restarted after
+            // compaction can never re-allocate a truncated sequence.
+            const target = yield* sql<{ readonly ok: number }>`
               SELECT 1 AS ok FROM flows_journal_events
               WHERE run_id = ${checkpointOptions.runId} AND seq = ${checkpointOptions.seq}
             `
-          if (target.length === 0) {
-            return yield* Effect.fail(error(
-              "checkpoint_invalid",
-              `checkpoint sequence ${checkpointOptions.seq} names no committed entry of run ${checkpointOptions.runId}`
-            ))
-          }
-          const floor = yield* compactionFloor(checkpointOptions.runId)
-          if (floor !== undefined && checkpointOptions.seq <= floor) {
-            return yield* Effect.fail(
-              new JournalError({
-                code: "checkpoint_invalid",
-                message: `run ${checkpointOptions.runId} is already compacted through sequence ${floor}`,
-                checkpointSeq: floor as Seq
-              })
-            )
-          }
-          yield* sql`
+            if (target.length === 0) {
+              return yield* Effect.fail(error(
+                "checkpoint_invalid",
+                `checkpoint sequence ${checkpointOptions.seq} names no committed entry of run ${checkpointOptions.runId}`
+              ))
+            }
+            const floor = yield* compactionFloor(checkpointOptions.runId)
+            if (floor !== undefined && checkpointOptions.seq <= floor) {
+              return yield* Effect.fail(
+                new JournalError({
+                  code: "checkpoint_invalid",
+                  message: `run ${checkpointOptions.runId} is already compacted through sequence ${floor}`,
+                  checkpointSeq: floor as Seq
+                })
+              )
+            }
+            yield* sql`
               INSERT INTO flows_journal_checkpoints (run_id, seq, state_json, created_at_ms)
               VALUES (${checkpointOptions.runId}, ${checkpointOptions.seq}, ${stateJson}, ${createdAtMs})
               ON CONFLICT (run_id, seq) DO UPDATE SET
                 state_json = excluded.state_json,
                 created_at_ms = excluded.created_at_ms
             `
-          return new Checkpoint({
-            runId: checkpointOptions.runId,
-            seq: checkpointOptions.seq,
-            state: receiptState,
-            createdAtMs,
-            compactedAtMs: null
+            return new Checkpoint({
+              runId: checkpointOptions.runId,
+              seq: checkpointOptions.seq,
+              state: receiptState,
+              createdAtMs,
+              compactedAtMs: null
+            })
           })
-        })).pipe(
+        ).pipe(
           Effect.mapError((cause) =>
             isJournalError(cause) ? cause : error("sink_failed", "durable checkpoint write failed", cause)
           )

@@ -696,8 +696,9 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  *
  * Every alarm logs `cloudflare.execution.alarm` with its outcome and what it
  * cost: `durationMs`, the journal entries it committed (`events`), its write
- * transactions (`transactions`) and their summed wait for the database's
- * writer lock (`lockWaitMs`), the same on the alarm's span.
+ * transactions (`transactions`), how many of those held the whole schema's
+ * writer lock (`schemaWide`), and their summed wait for their locks
+ * (`lockWaitMs`), the same on the alarm's span.
  *
  * `flows` lists the declarations this object may run; an intent naming
  * another flow is a failure like any other. Every object routes executions
@@ -745,6 +746,7 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
       durationMs: Math.round(Duration.toMillis(elapsed)),
       events: written.events,
       transactions: writes.transactions,
+      schemaWide: writes.schemaWide,
       lockWaitMs: Math.round(Duration.toMillis(writes.lockWait))
     }
     yield* Effect.annotateCurrentSpan({ "smithers.execution.alarm": tag, ...failure, ...drove, ...cost })

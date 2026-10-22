@@ -1297,9 +1297,22 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
 
     const write = <A, R>(
       method: string,
-      effect: Effect.Effect<A, SqlError.SqlError | RunStoreError | ConsensusError | JournalError, R>
+      effect: Effect.Effect<A, SqlError.SqlError | RunStoreError | ConsensusError | JournalError, R>,
+      partition?: string | undefined
     ): Effect.Effect<A, RunStoreError, R> =>
-      writer.write(effect).pipe(Effect.mapError((cause) => persistenceError(method, cause)))
+      writer.write(effect, { partition }).pipe(Effect.mapError((cause) => persistenceError(method, cause)))
+
+    // A write that reads and changes one run's row, lease and companion facts
+    // only writes that run's partition, so it waits only for that run's
+    // other writers (`packages/smithers/flows/database/docs/decisions/0001-run-writer-locks.md`).
+    // The run row's triggers also bump the one `flows_run_source` revision
+    // every run shares: an atomic increment, which its row lock keeps
+    // correct. A lineage-wide write names none.
+    const writeRun = <A, R>(
+      method: string,
+      runId: string,
+      effect: Effect.Effect<A, SqlError.SqlError | RunStoreError | ConsensusError | JournalError, R>
+    ): Effect.Effect<A, RunStoreError, R> => write(method, effect, runId)
 
     /** Appends an ownership transition to the run's companion stream (see {@link OwnershipTransition}). */
     const recordTransition = (
@@ -1345,8 +1358,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
           })
           yield* Effect.annotateCurrentSpan({ runId })
           const createdAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-          yield* write(
+          yield* writeRun(
             "create",
+            runId,
             sql`
             INSERT INTO flows_runs (
               run_id,
@@ -1431,8 +1445,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
         const runId = yield* snapshotRunId("requestCancel", runIdInput)
         const nowMs = yield* snapshotTimestamp("requestCancel", "nowMs", nowMsInput)
         yield* Effect.annotateCurrentSpan({ runId })
-        return yield* write(
+        return yield* writeRun(
           "requestCancel",
+          runId,
           Effect.gen(function*() {
             // The status predicate is part of the compare-and-swap rather than
             // a read-then-write check: a run that settles between a caller's
@@ -1513,8 +1528,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
           { runId }
         )
         yield* Effect.annotateCurrentSpan({ runId, claimantHostId: claimant.hostId })
-        return yield* write(
+        return yield* writeRun(
           "claim",
+          runId,
           Effect.gen(function*() {
             // `claim` never admits a running run, so it needs no staleness
             // test: `pending` and `suspended` exclude it. `claimAndOwn` is the
@@ -1595,8 +1611,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
             )
           }
 
-          return write(
+          return writeRun(
             "claimAndOwn",
+            runId,
             Effect.gen(function*() {
               const row = (yield* selectRun(sql, runId))[0]
               const admissible = row !== undefined &&
@@ -1675,8 +1692,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
         const expected = yield* snapshotExpected("activate", expectedInput)
         yield* Effect.annotateCurrentSpan({ runId, claimantHostId: claimant.hostId })
         const activatedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-        return yield* write(
+        return yield* writeRun(
           "activate",
+          runId,
           Effect.gen(function*() {
             const row = (yield* selectRun(sql, runId))[0]
             if (row === undefined || !rowMatchesClaim(row, claimant, claimedAtMs)) return claimLost
@@ -1747,8 +1765,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
         const claimant = yield* snapshotOwner("abandonClaim", "claimant", claimantInput)
         const claimedAtMs = yield* snapshotTimestamp("abandonClaim", "claimedAtMs", claimedAtMsInput)
         yield* Effect.annotateCurrentSpan({ runId, claimantHostId: claimant.hostId })
-        return yield* write(
+        return yield* writeRun(
           "abandonClaim",
+          runId,
           Effect.gen(function*() {
             const rows = yield* sql<{ readonly runId: string }>`
           UPDATE flows_runs
@@ -1800,8 +1819,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
           if (!matchesEvidence(staleClaimant, observer, nowMs, evidence)) {
             return Effect.succeed(livenessUnconfirmed)
           }
-          return write(
+          return writeRun(
             "recoverClaim",
+            runId,
             Effect.gen(function*() {
               const row = (yield* selectRun(sql, runId))[0]
               if (row === undefined) return notFound
@@ -1849,8 +1869,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
             { runId }
           )
           yield* Effect.annotateCurrentSpan({ runId, ownerHostId: owner.hostId })
-          return yield* write(
+          return yield* writeRun(
             method,
+            runId,
             Effect.gen(function*() {
               // The pulse drives the strategy's lease renewal; the row mirrors
               // the stamp the strategy recorded. The lease timestamp is
@@ -1917,8 +1938,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
         const guard = yield* snapshotGuard(guardInput)
         yield* Effect.annotateCurrentSpan({ runId, ownerHostId: owner.hostId, to: toStatus })
         const transitionedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-        const outcome = yield* write(
+        const outcome = yield* writeRun(
           "transitionOwned",
+          runId,
           Effect.gen(function*() {
             // The fence check is the strategy's guard (R3); the row check keeps
             // the mirror honest. Both run in the serialized write transaction,
@@ -2009,8 +2031,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
           if (!evidenceMatches(expected, claimant, nowMs, evidence)) {
             return Effect.succeed(livenessUnconfirmed)
           }
-          return write(
+          return writeRun(
             "steal",
+            runId,
             Effect.gen(function*() {
               const row = (yield* selectRun(sql, runId))[0]
               const admissible = row !== undefined &&
@@ -2058,8 +2081,9 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
         const observedAtMs = yield* snapshotTimestamp("acknowledgeCancel", "nowMs", time)
         yield* Effect.annotateCurrentSpan({ runId, ownerHostId: owner.hostId })
         const acknowledgement = JSON.stringify({ observedAtMs, owner })
-        return yield* write(
+        return yield* writeRun(
           "acknowledgeCancel",
+          runId,
           sql`
         UPDATE flows_runs
         SET cancel_acknowledgement_json = COALESCE(cancel_acknowledgement_json, ${acknowledgement})
