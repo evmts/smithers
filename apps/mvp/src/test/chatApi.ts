@@ -1,3 +1,4 @@
+import { tempDirectory } from "./tempDirectory"
 import { Journal as FlowJournal } from "@smthrs/flows"
 import { FLOW_DRAFTS_TABLE, FLOWS_TABLE } from "../features/flows-ui/contract"
 import { ImmutableCache } from "@smthrs/artifacts"
@@ -65,7 +66,6 @@ import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "
 import { BrowserEngine, BrowserRuntime, StoragePersistence, TabChannel, WebLock } from "@smthrs/platform-browser"
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
 import { rmSync } from "node:fs"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { type AppOptions, appLayer, type Host, realServices } from "../boot"
@@ -949,7 +949,7 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
  * Each device has its own locks, as each browser has its own Web Locks.
  */
 export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceOptions = {}): NodeDevice => {
-  const path = file ?? join(tmpdir(), `mvp-device-${crypto.randomUUID()}.sqlite`)
+  const path = file ?? join(tempDirectory("mvp-device-"), "device.sqlite")
   const entries = outboxEntries ?? new Map<string, string>()
   const storage = {
     get: async (key: string) => entries.get(key) ?? null,
