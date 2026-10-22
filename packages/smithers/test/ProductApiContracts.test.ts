@@ -1,9 +1,10 @@
 import { it } from "@effect/vitest"
 import { Effect } from "effect"
+import { spawnSync } from "node:child_process"
 import { createHmac } from "node:crypto"
 import { createServer } from "node:http"
+import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
-import ts from "typescript"
 import { expect } from "vitest"
 import { WebSocketServer } from "ws"
 import { Client } from "../src/internal/backend/Client.ts"
@@ -99,21 +100,25 @@ it.effect("GitHub webhook transmits exact signed payload bytes and per-delivery 
 it.effect("owner settings reject invalid request bodies at compile time", () =>
   Effect.sync(() => {
     const file = fileURLToPath(new URL("./fixtures/product-api-install.types.ts", import.meta.url))
-    const program = ts.createProgram([file], {
-      target: ts.ScriptTarget.ES2024,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-      noEmit: true,
-      skipLibCheck: true,
-      allowImportingTsExtensions: true
-    })
-    expect(
-      ts.getPreEmitDiagnostics(program).map((diagnostic) =>
-        ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")
-      )
-    )
-      .toEqual([])
+    // Keep the full real compiler check outside V8's instrumented test worker.
+    // It still checks every transitive implementation and all @ts-expect-error cases.
+    const compiler = createRequire(import.meta.url).resolve("typescript/lib/tsc.js")
+    const result = spawnSync(process.execPath, [
+      compiler,
+      file,
+      "--target",
+      "es2024",
+      "--module",
+      "nodenext",
+      "--moduleResolution",
+      "nodenext",
+      "--strict",
+      "--noEmit",
+      "--skipLibCheck",
+      "--allowImportingTsExtensions"
+    ], { encoding: "utf8", timeout: 25_000 })
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stdout + result.stderr).toBe(0)
   }))
 
 it.effect("live subscription returns a usable WebSocket and its projection events", () =>
