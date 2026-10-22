@@ -397,7 +397,9 @@ returns `None` when a live backup deliberately fenced the operation, which
 `ArtifactSweep.remove` reports as `false`.
 
 `failure` maps an unknown host cause into the caller's error type, which is how
-these combinators stay usable from a tool with its own error channel. See
+these combinators stay usable from a tool with its own error channel. Lease
+ownership loss and backup heartbeat expiry carry an `ArtifactStoreError`
+with code `unavailable` into that mapping. See
 [Fence a backup against the sweep](./guides/fence-a-backup.md).
 
 ## FileLease

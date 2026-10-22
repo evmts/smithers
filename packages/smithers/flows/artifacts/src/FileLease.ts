@@ -104,6 +104,8 @@ export const defaultAcquireWithin: Duration.Input = "2 minutes"
  */
 export const defaultStaleAfterMs = 60_000
 
+import { ArtifactStoreError } from "./ArtifactStoreError.ts"
+
 const isReason = (cause: unknown, tag: PlatformError.SystemErrorTag): boolean =>
   cause instanceof PlatformError.PlatformError && cause.reason._tag === tag
 
@@ -359,7 +361,9 @@ export const hold = <A, E, R, E2>(
               `${label} was reclaimed while its holder was still running`,
               { ...options.annotations, state: beat }
             )
-            return yield* Effect.fail(failure(new Error(`${label} ownership lost`)))
+            return yield* Effect.fail(
+              failure(new ArtifactStoreError({ code: "unavailable", message: `${label} ownership lost` }))
+            )
           }
         })
         return yield* effect.pipe(Effect.raceFirst(heartbeat))

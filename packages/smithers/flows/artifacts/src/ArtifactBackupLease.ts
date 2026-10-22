@@ -20,6 +20,8 @@ import * as PlatformError from "effect/PlatformError"
 import * as Random from "effect/Random"
 import * as ArtifactLocks from "./internal/ArtifactLocks.ts"
 
+import { ArtifactStoreError } from "./ArtifactStoreError.ts"
+
 const markerName = ".backup-lease"
 const gateName = ".backup-lease-gate"
 const heartbeatEvery = "10 seconds"
@@ -127,7 +129,10 @@ export const withLease = <A, E, R, E2>(
       () =>
         acquire.pipe(Effect.andThen(
           Effect.scoped(Effect.gen(function*() {
-            const expired = () => failure(new Error("Artifact backup lease heartbeat expired"))
+            const expired = () =>
+              failure(
+                new ArtifactStoreError({ code: "unavailable", message: "Artifact backup lease heartbeat expired" })
+              )
             // The marker ages during gate cleanup too. Bound protection by
             // the timestamp actually requested, not by heartbeat completion.
             if ((yield* Clock.currentTimeMillis) >= protectedUntil) return yield* Effect.fail(expired())
@@ -153,11 +158,20 @@ export const withLease = <A, E, R, E2>(
                     Effect.catch((cause) =>
                       isReason(cause, "NotFound") ? Effect.succeed(Option.none<string>()) : Effect.fail(cause)
                     ),
-                    Effect.flatMap((found) => {
+                    Effect.flatMap((found): Effect.Effect<void, PlatformError.PlatformError | ArtifactStoreError> => {
                       if (Option.getOrUndefined(found) !== owner) {
                         return Effect.logWarning(
                           "Artifact backup lease was reclaimed while its backup was still running"
-                        ).pipe(Effect.andThen(Effect.fail(new Error("Artifact backup lease ownership lost"))))
+                        ).pipe(
+                          Effect.andThen(
+                            Effect.fail(
+                              new ArtifactStoreError({
+                                code: "unavailable",
+                                message: "Artifact backup lease ownership lost"
+                              })
+                            )
+                          )
+                        )
                       }
                       return Effect.flatMap(Clock.currentTimeMillis, (now) => {
                         const timestamp = new Date(now)

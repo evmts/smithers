@@ -178,6 +178,15 @@ describe("FileLease", () => {
         yield* TestClock.adjust("1 second")
         yield* realPause
       }
+      const exit = yield* Fiber.await(holding)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.squash(exit.cause)).toMatchObject({
+          _tag: "@smthrs/artifacts/ArtifactStoreError",
+          code: "unavailable",
+          message: "Test lock ownership lost"
+        })
+      }
       yield* Fiber.interrupt(holding)
       expect(messages.flat()).toContain("Test lock was reclaimed while its holder was still running")
     })))

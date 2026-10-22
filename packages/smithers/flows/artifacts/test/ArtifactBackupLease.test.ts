@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -132,7 +133,14 @@ describe("ArtifactBackupLease", () => {
         yield* TestClock.adjust("10 seconds")
         expect(stopped).toBe(true)
         expect(running.pollUnsafe()).toBeDefined()
-        expect(Exit.isFailure(yield* Fiber.join(running))).toBe(true)
+        const exit = yield* Fiber.join(running)
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (state !== "refused" && Exit.isFailure(exit)) {
+          expect(Cause.squash(exit.cause)).toMatchObject({
+            _tag: "@smthrs/artifacts/ArtifactStoreError",
+            code: "unavailable"
+          })
+        }
         if (state === "foreign") expect(fixture.files.get(marker)).toBe("replacement")
       }))
   }
@@ -162,7 +170,15 @@ describe("ArtifactBackupLease", () => {
       yield* TestClock.adjust("50 seconds")
       expect(stopped).toBe(true)
       expect(running.pollUnsafe()).toBeDefined()
-      expect(Exit.isFailure(yield* Fiber.join(running))).toBe(true)
+      const exit = yield* Fiber.join(running)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.squash(exit.cause)).toMatchObject({
+          _tag: "@smthrs/artifacts/ArtifactStoreError",
+          code: "unavailable",
+          message: "Artifact backup lease heartbeat expired"
+        })
+      }
     }))
 
   it.effect("regression: stops the copy before waiting for failed heartbeat gate cleanup", () =>
