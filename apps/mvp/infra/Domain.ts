@@ -23,19 +23,53 @@ export class AppDomainInvalid extends Data.TaggedError("AppDomainInvalid")<{ rea
   }
 }
 
+/** An `APP_DOMAIN_REDIRECTS` entry that isn't a hostname, is `APP_DOMAIN` itself, or has no domain to go to. */
+export class AppDomainRedirectInvalid extends Data.TaggedError("AppDomainRedirectInvalid")<{ readonly value: string }> {
+  override get message() {
+    return `APP_DOMAIN_REDIRECTS lists "${this.value}": each entry must be a hostname such as www.example.com, other ` +
+      `than APP_DOMAIN, and APP_DOMAIN must name a domain, not ${WORKERS_DEV} (docs/infrastructure.md#domain).`
+  }
+}
+
+/** The app's custom domain: the hostname it serves at, and the hostnames that redirect there. */
+export interface AppHost {
+  readonly name: string
+  readonly redirects: ReadonlyArray<string>
+}
+
 /**
- * The custom domain a production deploy attaches the app to: `APP_DOMAIN`, or none when it is `workers.dev`. Fails
- * with {@link AppDomainInvalid} when it is unset or isn't a hostname.
+ * The custom domain a production deploy attaches the app to: `APP_DOMAIN`, or none when it is `workers.dev`, with the
+ * comma-separated hostnames of `APP_DOMAIN_REDIRECTS`, which answer with a 301 to it. Fails with
+ * {@link AppDomainInvalid} when `APP_DOMAIN` is unset or isn't a hostname, and {@link AppDomainRedirectInvalid} for a
+ * redirect that can't be one.
  */
-export const AppDomain: Effect.Effect<Option.Option<string>, AppDomainInvalid | Config.ConfigError> = Effect.gen(
-  function* () {
-    const value = yield* Config.option(Config.String("APP_DOMAIN"))
-    if (Option.isNone(value)) return yield* new AppDomainInvalid({ value: undefined })
-    if (value.value === WORKERS_DEV) return Option.none()
-    if (!HOSTNAME.test(value.value)) return yield* new AppDomainInvalid({ value: value.value })
-    return Option.some(value.value)
-  },
-)
+export const AppDomain: Effect.Effect<
+  Option.Option<AppHost>,
+  AppDomainInvalid | AppDomainRedirectInvalid | Config.ConfigError
+> = Effect.gen(function* () {
+  const value = yield* Config.option(Config.String("APP_DOMAIN"))
+  const listed = yield* Config.option(Config.String("APP_DOMAIN_REDIRECTS"))
+  const redirects = Option.match(listed, {
+    onNone: () => [],
+    onSome: (list) => list.split(",").map((entry) => entry.trim()).filter((entry) => entry !== ""),
+  })
+  if (Option.isNone(value)) return yield* new AppDomainInvalid({ value: undefined })
+  if (value.value === WORKERS_DEV) {
+    if (redirects.length > 0) return yield* new AppDomainRedirectInvalid({ value: redirects[0]! })
+    return Option.none()
+  }
+  if (!HOSTNAME.test(value.value)) return yield* new AppDomainInvalid({ value: value.value })
+  const wrong = redirects.find((entry) => !HOSTNAME.test(entry) || entry === value.value)
+  if (wrong !== undefined) return yield* new AppDomainRedirectInvalid({ value: wrong })
+  return Option.some({ name: value.value, redirects })
+})
+
+/**
+ * The site Worker's `domain` for Alchemy: the bare hostname without redirects, so a deployment with none never needs
+ * the zone's redirect rules, which Alchemy writes for each redirect.
+ */
+export const workerDomain = (host: AppHost) =>
+  host.redirects.length === 0 ? host.name : { name: host.name, redirects: [...host.redirects] }
 
 /**
  * The docs site's zone routes on `domain`, one for each path it serves there (infra/DocsSite.ts). Cloudflare runs a

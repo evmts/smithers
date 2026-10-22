@@ -17,7 +17,8 @@
  *   the durable flow engine over Postgres (schema smithers_flows) through the same Hyperdrive config
  *   (docs/features/remote-flows.md). Declaring ChatApi declares it.
  * - The site (Vite build + worker/index.ts): serves the app and hands /api/* to ChatApi over a service binding. In
- *   production it answers at the custom domain `APP_DOMAIN` (infra/Domain.ts), unless that is `workers.dev`.
+ *   production it answers at the custom domain `APP_DOMAIN` (infra/Domain.ts), unless that is `workers.dev`, and the
+ *   hostnames in `APP_DOMAIN_REDIRECTS` answer with a 301 to it.
  * - The docs site (apps/site, infra/DocsSite.ts): beside a custom domain, it serves its own paths there (/docs/**,
  *   /changelogs/**, llms.txt…) by zone routes, which Cloudflare runs before the site's custom domain.
  *
@@ -38,7 +39,7 @@ import type { State } from "alchemy/State"
 import { Effect, Layer, Option } from "effect"
 import { ChatDatabase } from "./infra/ChatDatabase.ts"
 import { DocsSite } from "./infra/DocsSite.ts"
-import { AppDomain } from "./infra/Domain.ts"
+import { AppDomain, type AppHost, workerDomain } from "./infra/Domain.ts"
 import * as Electric from "./infra/Electric.ts"
 import ElectricGateway, { DatabaseUrl as ElectricDatabaseUrl } from "./infra/ElectricGateway.ts"
 import { directUrl, Postgres } from "./infra/Postgres.ts"
@@ -71,7 +72,7 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     // Production's hostname, read first: a production deploy without APP_DOMAIN stops before it changes anything
     // (infra/Domain.ts).
-    const domain = (yield* Alchemy.ALCHEMY_DEV) ? Option.none<string>() : yield* AppDomain.pipe(Effect.orDie)
+    const domain = (yield* Alchemy.ALCHEMY_DEV) ? Option.none<AppHost>() : yield* AppDomain.pipe(Effect.orDie)
     // Declared before ChatApi, so ChatApi's `ChatDatabase` is this one: Neon's in production, compose's in dev.
     yield* ChatDatabase
     const endpoint = yield* electric
@@ -92,8 +93,13 @@ export default Alchemy.Stack(
       // single-page app.
       assets: { notFoundHandling: "single-page-application", runWorkerFirst: ["/api/*", ...DOCS_SITE_FOLDERS] },
       env: { CHAT_API: chatApi },
-      // Production's custom domain, or none at all with APP_DOMAIN=workers.dev; `alchemy dev` leaves it alone.
-      ...(Option.isSome(domain) ? { domain: domain.value } : (yield* Alchemy.ALCHEMY_DEV) ? {} : { domain: null }),
+      // Production's custom domain and the hostnames that redirect to it, or none at all with APP_DOMAIN=workers.dev;
+      // `alchemy dev` leaves it alone.
+      ...(Option.isSome(domain)
+        ? { domain: workerDomain(domain.value) }
+        : (yield* Alchemy.ALCHEMY_DEV)
+        ? {}
+        : { domain: null }),
       // Workers Logs and Traces for the site's requests, kept like ChatApi's.
       observability: {
         enabled: true,
@@ -101,7 +107,7 @@ export default Alchemy.Stack(
         traces: { enabled: true, persist: true },
       },
     })
-    if (Option.isSome(domain)) yield* DocsSite(domain.value)
+    if (Option.isSome(domain)) yield* DocsSite(domain.value.name)
     return { url: site.url }
   }),
 )

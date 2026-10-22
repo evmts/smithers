@@ -2,7 +2,7 @@
 import { ConfigProvider, Effect, Exit, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { DOCS_SITE } from "../src/pwa.ts"
-import { AppDomain, AppDomainInvalid, docsRoutes, WORKERS_DEV } from "./Domain.ts"
+import { AppDomain, AppDomainInvalid, AppDomainRedirectInvalid, docsRoutes, workerDomain, WORKERS_DEV } from "./Domain.ts"
 
 const provided = <A, E>(effect: Effect.Effect<A, E>, env: Record<string, string>) =>
   effect.pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))))
@@ -17,8 +17,10 @@ const refusal = (env: Record<string, string>) => {
 
 describe("APP_DOMAIN", () => {
   test("names the custom domain a production deploy attaches the app to", () => {
-    expect(read({ APP_DOMAIN: "example.com" })).toEqual(Exit.succeed(Option.some("example.com")))
-    expect(read({ APP_DOMAIN: "app.example.co.uk" })).toEqual(Exit.succeed(Option.some("app.example.co.uk")))
+    expect(read({ APP_DOMAIN: "example.com" })).toEqual(Exit.succeed(Option.some({ name: "example.com", redirects: [] })))
+    expect(read({ APP_DOMAIN: "app.example.co.uk" })).toEqual(
+      Exit.succeed(Option.some({ name: "app.example.co.uk", redirects: [] })),
+    )
   })
 
   test("workers.dev deploys with no custom domain", () => {
@@ -54,6 +56,47 @@ describe("APP_DOMAIN", () => {
           "workers.dev (docs/infrastructure.md#domain).",
       )
     }
+  })
+})
+
+describe("APP_DOMAIN_REDIRECTS", () => {
+  const redirectRefusal = (env: Record<string, string>) => {
+    const error = Effect.runSync(provided(Effect.flip(AppDomain), env))
+    if (!(error instanceof AppDomainRedirectInvalid)) throw new Error(`${JSON.stringify(env)} failed otherwise`)
+    return error
+  }
+
+  test("lists the hostnames that answer with a 301 to the domain", () => {
+    expect(read({ APP_DOMAIN: "example.com", APP_DOMAIN_REDIRECTS: "www.example.com, old.example.net,," })).toEqual(
+      Exit.succeed(Option.some({ name: "example.com", redirects: ["www.example.com", "old.example.net"] })),
+    )
+    expect(read({ APP_DOMAIN: "example.com", APP_DOMAIN_REDIRECTS: "" })).toEqual(
+      Exit.succeed(Option.some({ name: "example.com", redirects: [] })),
+    )
+  })
+
+  test("refuses an entry that isn't a hostname, the domain itself, or any entry without a domain", () => {
+    for (const [env, value] of [
+      [{ APP_DOMAIN: "example.com", APP_DOMAIN_REDIRECTS: "www.example.com,https://old.example.com" }, "https://old.example.com"],
+      [{ APP_DOMAIN: "example.com", APP_DOMAIN_REDIRECTS: "example.com" }, "example.com"],
+      [{ APP_DOMAIN: WORKERS_DEV, APP_DOMAIN_REDIRECTS: "www.example.com" }, "www.example.com"],
+    ] as const) {
+      const error = redirectRefusal(env)
+      expect(error.value).toBe(value)
+      expect(error.message).toBe(
+        `APP_DOMAIN_REDIRECTS lists "${value}": each entry must be a hostname such as www.example.com, other than ` +
+          "APP_DOMAIN, and APP_DOMAIN must name a domain, not workers.dev (docs/infrastructure.md#domain).",
+      )
+    }
+    expect(read({ APP_DOMAIN: WORKERS_DEV, APP_DOMAIN_REDIRECTS: " , " })).toEqual(Exit.succeed(Option.none()))
+  })
+
+  test("reach Alchemy as the domain's redirects, and a domain without any as its bare hostname", () => {
+    expect(workerDomain({ name: "example.com", redirects: [] })).toBe("example.com")
+    expect(workerDomain({ name: "example.com", redirects: ["www.example.com"] })).toEqual({
+      name: "example.com",
+      redirects: ["www.example.com"],
+    })
   })
 })
 
