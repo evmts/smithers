@@ -3,7 +3,7 @@
  */
 
 import { Control, Health, Monitor } from "@smthrs/control"
-import { Action, FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow"
+import { Action, type FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import type { Journal } from "@smthrs/journal"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Node } from "@smthrs/plan"
