@@ -51,6 +51,25 @@ const github = async (c: Client, o: Values, method: string, path: string, body?:
     : await c.request("POST", c.repoPath(o.repo) + "/github-proxy", { method, path: full, ...(body ? { body } : {}) })
   return Array.isArray(data) ? { items: data } : object(data)
 }
+// Both GitHub auth paths expose response bodies, so page by number rather than
+// trusting a Link destination or silently deciding from the first page.
+const githubPages = async (c: Client, o: Values, path: string, key: string): Promise<Array<Values>> => {
+  const items: Array<Values> = []
+  const perPage = 100
+  const incomplete = () =>
+    new Refused({ fault: "dependency", code: "github_protocol", message: "GitHub returned incomplete evidence" })
+  for (let page = 1; page <= 100; page++) {
+    const response = await github(c, o, "GET", path + query({ per_page: perPage, page }))
+    if (!Array.isArray(response[key])) throw incomplete()
+    const rows = list(response[key]).map(object)
+    items.push(...rows)
+    if (rows.length < perPage) {
+      if (typeof response.total_count === "number" && items.length < response.total_count) throw incomplete()
+      return items
+    }
+  }
+  throw new Refused({ fault: "dependency", code: "github_protocol", message: "GitHub evidence exceeds readable pages" })
+}
 const description = (change: Values) => {
   const [title, ...body] = str(change.description).trim().split("\n")
   return { title: title || str(change.change_id), body: body.join("\n").trim() }
@@ -177,12 +196,13 @@ const refresh = async (c: Client, o: Values, change: Values, strict: boolean) =>
     const pull = await github(c, o, "GET", `/pulls/${str(change.pr_number)}`)
     Object.assign(result, {
       mergeable: pull.mergeable === true,
+      head_sha: str(object(pull.head).sha),
       pr_state: pull.merged ? "merged" : pull.state,
       pr_url: pull.html_url || change.pr_url
     })
     const sha = object(pull.head).sha
     if (sha) {
-      result.checks = list((await github(c, o, "GET", `/commits/${esc(sha)}/check-runs`)).check_runs).map(object).map((
+      result.checks = (await githubPages(c, o, `/commits/${esc(sha)}/check-runs`, "check_runs")).map((
         run
       ) => ({
         name: run.name || "unnamed check",
@@ -204,10 +224,12 @@ const refresh = async (c: Client, o: Values, change: Values, strict: boolean) =>
     } else if (strict) result.ci_status = "pending"
     const latest = new Map<string, Values>()
     for (
-      const review of list((await github(c, o, "GET", `/pulls/${str(change.pr_number)}/reviews`)).items).map(object)
+      const review of await githubPages(c, o, `/pulls/${str(change.pr_number)}/reviews`, "items")
     ) {
       const login = str(object(review.user).login), state = normalizeReview(review.state)
-      if (login && state !== "pending") latest.set(login.toLowerCase(), { login, state })
+      if (login && (state !== "pending" || str(review.state).toLowerCase() === "dismissed")) {
+        latest.set(login.toLowerCase(), { login, state })
+      }
     }
     result.reviewers = [...latest].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value)
     result.review_status = result.reviewers.some((review) => review.state === "changes_requested")
@@ -490,7 +512,10 @@ stacks["stack land"] = async (c, _a, o) => {
     let merged = false
     for (const method of ["merge", "squash", "rebase"]) {
       try {
-        const response = await github(c, o, "PUT", `/pulls/${str(change.pr_number)}/merge`, { merge_method: method })
+        const response = await github(c, o, "PUT", `/pulls/${str(change.pr_number)}/merge`, {
+          merge_method: method,
+          sha: change.head_sha
+        })
         if (response.merged === false) throw mergeRefused("GitHub did not merge the PR")
         merged = true
         break

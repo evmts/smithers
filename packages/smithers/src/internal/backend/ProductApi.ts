@@ -7,6 +7,8 @@
 //   post_api_auth_github_cli_consent (application/x-www-form-urlencoded)
 //   post_api_fast_model_sign_in (application/x-www-form-urlencoded)
 
+import { pathSegment as segment } from "./PathSegment.ts"
+
 /** What one request adds to the transport's own: the operation's required headers. */
 export interface RequestOptions {
   readonly headers?: Record<string, string>
@@ -19,8 +21,6 @@ export interface Transport {
   /** Sends a request and resolves to the raw response, for streams and files. */
   response(method: string, path: string, body?: unknown, options?: RequestOptions): Promise<Response>
 }
-
-const segment = (value: string | number): string => encodeURIComponent(String(value))
 
 const search = (values: Record<string, string | number | boolean | undefined>): string => {
   const query = new URLSearchParams()
@@ -1758,9 +1758,13 @@ export const getApiAuthAuth0Authorize = (transport: Transport): Promise<GetApiAu
 
 export type GetApiAuthAuth0CallbackResponse = AnyJSON
 
+export interface GetApiAuthAuth0CallbackInput {
+  readonly query: { readonly code?: string; readonly state?: string; readonly error?: string; readonly error_description?: string }
+}
+
 /** GET /api/auth/auth0/callback */
-export const getApiAuthAuth0Callback = (transport: Transport): Promise<GetApiAuthAuth0CallbackResponse> =>
-  transport.request("GET", `/api/auth/auth0/callback`) as Promise<GetApiAuthAuth0CallbackResponse>
+export const getApiAuthAuth0Callback = (transport: Transport, input?: GetApiAuthAuth0CallbackInput): Promise<GetApiAuthAuth0CallbackResponse> =>
+  transport.request("GET", `/api/auth/auth0/callback${search(input?.query ?? {})}`) as Promise<GetApiAuthAuth0CallbackResponse>
 
 export type GetApiAuthGithubResponse = AnyJSON
 
@@ -1770,9 +1774,13 @@ export const getApiAuthGithub = (transport: Transport): Promise<GetApiAuthGithub
 
 export type GetApiAuthGithubCallbackResponse = AnyJSON
 
+export interface GetApiAuthGithubCallbackInput {
+  readonly query: { readonly code?: string; readonly state?: string; readonly error?: string; readonly error_description?: string }
+}
+
 /** GET /api/auth/github/callback */
-export const getApiAuthGithubCallback = (transport: Transport): Promise<GetApiAuthGithubCallbackResponse> =>
-  transport.request("GET", `/api/auth/github/callback`) as Promise<GetApiAuthGithubCallbackResponse>
+export const getApiAuthGithubCallback = (transport: Transport, input?: GetApiAuthGithubCallbackInput): Promise<GetApiAuthGithubCallbackResponse> =>
+  transport.request("GET", `/api/auth/github/callback${search(input?.query ?? {})}`) as Promise<GetApiAuthGithubCallbackResponse>
 
 export interface GetApiAuthGithubCliInput {
   readonly query: { readonly agent?: string; readonly callback_port: number; readonly callback_state?: string; readonly scopes?: string; readonly admin?: "1"; readonly ttl?: string }

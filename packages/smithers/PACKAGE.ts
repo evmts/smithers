@@ -1,4 +1,9 @@
-import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
+import {
+  BuildAndCheckTypeScriptPackage,
+  ImportRules,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode
+} from "@smthrs/repo-targets"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 import { Package as repoTargetsPackage } from "../repo-targets/PACKAGE.ts"
@@ -42,6 +47,32 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
 
 /** Changed exports against their own JSDoc. */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers" })
+
+/** Backend safety regressions wait on conditions and exercise the real transport. */
+const importRules = ImportRules({
+  cwd: "packages/smithers",
+  rules: [
+    {
+      kind: "forbidCalls",
+      files: [
+        "test/BackendSafety*.test.ts",
+        "test/BackendCommands.test.ts",
+        "test/ProductApi.test.ts",
+        "test/BackendStack.test.ts",
+        "test/BackendMutations.test.ts"
+      ],
+      callees: ["setTimeout", "*.sleep", "*.waitForTimeout"],
+      because: "test.behavioral: wait on conditions or TestClock, never fixed sleeps. See AGENTS.md."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/BackendSafety*.test.ts"],
+      callees: ["vi.mock", "vi.doMock", "vi.stubGlobal", "vi.spyOn", "jest.mock"],
+      because:
+        "Backend safety regressions use real transports and inject faults through Effect services. See AGENTS.md."
+    }
+  ]
+})
 
 /** The history suite needs a real PostgreSQL server on the Linux CI runner. */
 const historyPostgresDatabase = Smithers.Docker.Service({
@@ -405,6 +436,7 @@ export const Package = Smithers.Package({
     fmt,
     hostProcessSampler,
     cliInstall,
+    importRules,
     lib,
     lint,
     nativeSources,

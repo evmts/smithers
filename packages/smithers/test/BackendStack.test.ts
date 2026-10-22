@@ -40,10 +40,10 @@ const fixture = (
   const github = vi.fn((method: string, path: string, body?: Values): unknown => {
     const custom = config.github?.(method, path, body)
     if (custom !== undefined) return custom
-    if (path.endsWith("/check-runs")) {
+    if (path.split("?")[0]!.endsWith("/check-runs")) {
       return { check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] }
     }
-    if (path.endsWith("/reviews")) return [{ user: { login: "owner" }, state: "APPROVED" }]
+    if (path.split("?")[0]!.endsWith("/reviews")) return [{ user: { login: "owner" }, state: "APPROVED" }]
     if (path.endsWith("/merge")) return { merged: true }
     return {
       number: method === "POST" ? created++ : Number(path.split("/").at(-1)) || 1,
@@ -147,7 +147,9 @@ describe("stack synchronization and merge safety", () => {
     async (conclusion) => {
       const f = fixture({
         github: (_method, path) =>
-          path.endsWith("/check-runs") ? { check_runs: [{ status: "completed", conclusion }] } : undefined
+          path.split("?")[0]!.endsWith("/check-runs")
+            ? { check_runs: [{ status: "completed", conclusion }] }
+            : undefined
       })
       const result = object(await stacks["stack status"]!(f.c, {}, options))
       expect(object((result.changes as unknown[])[0]).ci_status).toBe(
@@ -158,7 +160,7 @@ describe("stack synchronization and merge safety", () => {
   it("uses the latest decisive review for each reviewer", async () => {
     const f = fixture({
       github: (_method, path) =>
-        path.endsWith("/reviews")
+        path.split("?")[0]!.endsWith("/reviews")
           ? [
             { user: { login: "Zoe" }, state: "APPROVED" },
             { user: { login: "alice" }, state: "APPROVED" },
@@ -179,11 +181,11 @@ describe("stack synchronization and merge safety", () => {
     async (kind) => {
       const f = fixture({
         github: (_method, path) => {
-          if (path.endsWith("/reviews") && kind === "review") return []
-          if (path.endsWith("/check-runs") && kind === "checks") {
+          if (path.split("?")[0]!.endsWith("/reviews") && kind === "review") return []
+          if (path.split("?")[0]!.endsWith("/check-runs") && kind === "checks") {
             return { check_runs: [{ status: "completed", conclusion: "failure" }] }
           }
-          if (path.endsWith("/check-runs") && kind === "empty-checks") return { check_runs: [] }
+          if (path.split("?")[0]!.endsWith("/check-runs") && kind === "empty-checks") return { check_runs: [] }
           if (path.endsWith("/1") && kind === "closed") {
             return { state: "closed", merged: true, head: { sha: "commit" } }
           }
@@ -237,7 +239,8 @@ describe("stack synchronization and merge safety", () => {
   it("rechecks gates immediately before merging", async () => {
     let checks = 0
     const f = fixture({
-      github: (_method, path) => path.endsWith("/check-runs") && ++checks > 1 ? { check_runs: [] } : undefined
+      github: (_method, path) =>
+        path.split("?")[0]!.endsWith("/check-runs") && ++checks > 1 ? { check_runs: [] } : undefined
     })
     await expect(stacks["stack land"]!(f.c, {}, options)).rejects.toThrow("Refusing")
     expect(f.github.mock.calls.some(([method]) => method === "PUT")).toBe(false)

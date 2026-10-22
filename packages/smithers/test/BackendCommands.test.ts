@@ -931,7 +931,7 @@ describe("stack lifecycle", () => {
     })
     request.mockImplementation(async (_method, path, body) => {
       if (!path.endsWith("/github-proxy")) return { id: "stack", changes }
-      const target = String(object(body).path)
+      const target = String(object(body).path).split("?")[0]!
       if (target.endsWith("check-runs")) {
         return {
           check_runs: [{
@@ -956,7 +956,7 @@ describe("stack lifecycle", () => {
     const { c, request } = await fixture()
     request.mockImplementation(async (_method, path, body) => {
       if (!path.endsWith("/github-proxy")) return { id: "stack", changes }
-      const target = String(object(body).path)
+      const target = String(object(body).path).split("?")[0]!
       if (target.endsWith("check-runs")) return { check_runs: [{ status: "completed", conclusion: "success" }] }
       if (target.endsWith("reviews")) return [{ user: { login: "owner" }, state: "APPROVED" }]
       if (target.endsWith("/merge")) return { merged: true }

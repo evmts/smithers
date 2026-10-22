@@ -1,0 +1,18 @@
+/**
+ * Encode a single path component without allowing URL dot normalization.
+ * @since 0.1.0
+ */
+
+import { UsageError } from "../../CliError.ts"
+
+/**
+ * @private
+ * @since 0.1.0
+ */
+export const pathSegment = (value: string | number): string => {
+  const segment = String(value)
+  if (segment === "." || segment === "..") {
+    throw new UsageError({ message: "Path segment must not be . or .." })
+  }
+  return encodeURIComponent(segment)
+}

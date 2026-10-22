@@ -13,6 +13,7 @@ import { type Fault, Refused, UsageError } from "../../CliError.ts"
 import { processHost, repoFromRemote, resolveRepo } from "../../commands/Open.ts"
 import { packageVersion } from "../../Version.ts"
 import * as Failure from "../Failure.ts"
+import { pathSegment } from "./PathSegment.ts"
 import { run } from "./Process.ts"
 import { normalizeOrigin, Session } from "./Session.ts"
 
@@ -51,7 +52,7 @@ export const str = (value: unknown): string => value === undefined || value === 
  * @private
  * @since 1.0.0
  */
-export const esc = (value: unknown): string => encodeURIComponent(str(value))
+export const esc = (value: unknown): string => pathSegment(str(value))
 /**
  * @private
  * @since 1.0.0

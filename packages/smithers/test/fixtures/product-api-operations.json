@@ -392,7 +392,12 @@
     "method": "get",
     "path": "/api/auth/auth0/callback",
     "operationId": "get_api_auth_auth0_callback",
-    "parameters": [],
+    "parameters": [
+      { "name": "code", "in": "query", "type": "string" },
+      { "name": "state", "in": "query", "type": "string" },
+      { "name": "error", "in": "query", "type": "string" },
+      { "name": "error_description", "in": "query", "type": "string" }
+    ],
     "body": "none",
     "success": "json"
   },
@@ -408,7 +413,12 @@
     "method": "get",
     "path": "/api/auth/github/callback",
     "operationId": "get_api_auth_github_callback",
-    "parameters": [],
+    "parameters": [
+      { "name": "code", "in": "query", "type": "string" },
+      { "name": "state", "in": "query", "type": "string" },
+      { "name": "error", "in": "query", "type": "string" },
+      { "name": "error_description", "in": "query", "type": "string" }
+    ],
     "body": "none",
     "success": "json"
   },

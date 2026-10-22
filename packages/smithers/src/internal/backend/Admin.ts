@@ -3,8 +3,9 @@
  * @since 0.1.0
  */
 
-import { mkdir, rename, rm, writeFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import * as Effect from "effect/Effect"
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
+import { dirname, join, resolve } from "node:path"
 import { UsageError } from "../../CliError.ts"
 import { chunksOf, esc, pick, query, str, type Values } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
@@ -313,7 +314,7 @@ admin["admin user erase"] = async (c, a, o) => {
   })
 }
 admin["admin user export"] = async (c, a) => {
-  const path = resolve(str(a.out)), partial = `${path}.partial`
+  const path = resolve(str(a.out))
   const response = await c.response("POST", `/api/admin/users/${esc(a.username)}/export`, undefined, {
     stream: true,
     headers: { accept: "application/gzip" }
@@ -328,14 +329,21 @@ admin["admin user export"] = async (c, a) => {
       }
     }
   }
-  // A dropped connection leaves no file at the requested path.
-  try {
-    await writeFile(partial, body())
-    await rename(partial, path)
-  } catch (error) {
-    await rm(partial, { force: true })
-    throw error
-  }
+  // Each writer owns a private directory on the destination filesystem. Never
+  // follow a pre-existing staging name, and publish only a complete archive.
+  await Effect.runPromise(Effect.acquireUseRelease(
+    Effect.tryPromise({ try: () => mkdtemp(`${path}.partial-`), catch: (cause) => cause }),
+    (directory) =>
+      Effect.tryPromise({
+        try: async () => {
+          const partial = join(directory, "archive")
+          await writeFile(partial, body(), { mode: 0o600, flag: "wx" })
+          await rename(partial, path)
+        },
+        catch: (cause) => cause
+      }),
+    (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
+  ))
   return { username: a.username, path, bytes }
 }
 admin["admin health"] = (c) => c.request("GET", "/api/admin/system/health")

@@ -23,7 +23,8 @@ interface Operation {
  * The operations the client was generated from: each one's method, path,
  * parameters and body and answer media types, extracted from the product API
  * spec (`docs/api/openapi.yaml`) before that spec was removed with the Go
- * backend on 2026-10-21.
+ * backend on 2026-10-21, with the OAuth callbacks' missing query contracts
+ * corrected alongside the wrappers.
  */
 const operations = JSON.parse(
   readFileSync(new URL("./fixtures/product-api-operations.json", import.meta.url), "utf8")
