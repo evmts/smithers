@@ -9,6 +9,8 @@ The agent asks Jev, Smithers' judge, for decisions over a list: which issues are
 | `app/jev/classify` | `question`; 1 to 50 `items` of up to 2,000 characters; optionally 2 to 10 distinct `labels` | `{ verdicts }`, one per item in order: `yes`, `no`, a label, or `unsure` |
 | `app/jev/evaluate` | one `text` of up to 16,000 characters; a rubric of 1 to 20 `criteria` | `{ verdicts }`, one per criterion in order: `yes`, `no` or `unsure` |
 
+Questions, items, labels, text and criteria must contain a non-whitespace character; their content is preserved. The label `unsure` is reserved for uncertainty and is rejected at both the flow and judge action boundaries.
+
 Each verdict is `{ verdict, confidence }`, with `confidence` from 0 to 1 as `Classifier.confidence` reads it. A yes or no stands at 0.8 (a probability of yes at or above 0.9, or at or below 0.1) and a label at 0.7, the floors the library's guide reads them at; below, the verdict is `unsure`. A judge that can't answer fails the flow with `JudgeFailed { code }`, the judge's code: `unreachable` (the endpoint refused or couldn't be reached, a signed-out person included), `refused` (rate limited or out of budget), `timeout`, `invalid_answer` (an answer the judge sent that doesn't read), `empty`, `invalid_question` or `unconfigured`. The agent's cell sees `JudgeFailed`.
 
 Both are model-invocable and in the registry, so the agent's catalog has them ([flows](flows.md#the-agents-catalog)). Neither has a slash command: a person's run would have nowhere to show its verdicts, so a person asks Smithers.

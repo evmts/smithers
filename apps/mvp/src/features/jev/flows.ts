@@ -10,6 +10,7 @@ import {
   MAX_LABELS,
   MAX_TEXT_CHARS,
   MIN_LABELS,
+  UNSURE,
 } from "./contract"
 
 // Jev, Smithers' judge, in the agent's hands (docs/features/jev.md): two model-invocable flows of one step each.
@@ -21,8 +22,8 @@ import {
 // endpoint, role `judge` (decision 0011 §3), so a resumed run never pays for a judgment twice. What the steps run on is
 // injected (src/features/jev/steps.ts), so only an engine's host imports that; the tab holds these declarations.
 
-/** Some text the judge reads, of 1 to `max` characters. */
-const text = (max: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max))
+/** Nonblank text the judge reads, of up to `max` characters, preserved as supplied. */
+const text = (max: number) => Schema.String.check(Schema.isPattern(/\S/), Schema.isMaxLength(max))
 
 /** A list of `min` to `max` texts of 1 to `chars` characters each. */
 const texts = (min: number, max: number, chars: number) =>
@@ -53,8 +54,11 @@ export const ClassifyPayload = {
     description: `The items, 1 to ${MAX_ITEMS}, each the text the judge reads for it`,
   }),
   labels: Schema.optional(
-    texts(MIN_LABELS, MAX_LABELS, MAX_LABEL_CHARS).check(Schema.isUnique()).annotate({
-      description: `${MIN_LABELS} to ${MAX_LABELS} distinct labels to pick one of for each item; without them, yes or no`,
+    texts(MIN_LABELS, MAX_LABELS, MAX_LABEL_CHARS).check(
+      Schema.isUnique(),
+      Schema.makeFilter((labels: ReadonlyArray<string>) => !labels.includes(UNSURE)),
+    ).annotate({
+      description: `${MIN_LABELS} to ${MAX_LABELS} distinct labels excluding "unsure" to pick one of for each item; without them, yes or no`,
     }),
   ),
 }
