@@ -21,6 +21,8 @@ export interface ModelTurnOptions {
   readonly outputTokenLimitSupported?: boolean
   readonly maxTokens?: number
   readonly credential?: string
+  /** Other host-resolved route credentials to remove from every output channel. */
+  readonly additionalCredentials?: ReadonlyArray<string>
 }
 /**
  * Commits one renderer-compatible frame.
@@ -97,15 +99,24 @@ export class StreamingCredentialCutter {
   private pending = ""
   /** The end of the returned text, one character shorter than the longest secret part. */
   private returned = ""
-  private readonly secret: string | undefined
-  constructor(secret: string | undefined) {
-    this.secret = secret
+  private readonly parts: ReadonlyArray<string>
+  constructor(secret: string | undefined, additional: ReadonlyArray<string> = []) {
+    this.parts = [secret ?? "", ...additional].flatMap(ConfiguredModel.modelCredentialParts)
+  }
+  private cut(value: string): string {
+    let kept = value
+    let previous: string
+    do {
+      previous = kept
+      for (const part of this.parts) kept = kept.split(part).join("")
+    } while (previous !== kept)
+    return kept
   }
   push(value: string): string {
-    if (this.secret === undefined || this.secret === "") return value
-    this.pending = ConfiguredModel.cutModelCredential(this.pending + value, this.secret)
+    if (this.parts.length === 0) return value
+    this.pending = this.cut(this.pending + value)
     let held = 0
-    for (const part of ConfiguredModel.modelCredentialParts(this.secret)) {
+    for (const part of this.parts) {
       for (let size = Math.min(this.pending.length, part.length - 1); size > held; size -= 1) {
         if (this.pending.endsWith(part.slice(0, size))) {
           held = size
@@ -115,21 +126,20 @@ export class StreamingCredentialCutter {
     }
     const emitted = this.pending.slice(0, this.pending.length - held)
     this.pending = this.pending.slice(this.pending.length - held)
-    return this.release(emitted, this.secret)
+    return this.release(emitted)
   }
   finish(): string {
-    if (this.secret === undefined) return this.pending
-    const emitted = ConfiguredModel.cutModelCredential(this.pending, this.secret)
+    const emitted = this.cut(this.pending)
     this.pending = ""
-    return this.release(emitted, this.secret)
+    return this.release(emitted)
   }
   /**
    * Drops the start of `text` while it completes a secret part begun in the
    * returned text. Both sides are already free of whole parts, so any part
    * found from one part-length before the seam straddles it.
    */
-  private release(text: string, secret: string): string {
-    const parts = ConfiguredModel.modelCredentialParts(secret)
+  private release(text: string): string {
+    const parts = this.parts
     let kept = text
     for (let joined = true; joined;) {
       joined = false
@@ -260,8 +270,12 @@ export const runModelTurn = <E>(
   host?: HostLeg,
   diagnostics: HostDiagnostics = createHostDiagnostics()
 ): Effect.Effect<HeldToolCalls | undefined, Model.ModelFailure | ModelError.ModelError | E> => {
-  const text = new StreamingCredentialCutter(options.credential)
-  const reasoning = new StreamingCredentialCutter(options.credential)
+  const text = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
+  const reasoning = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
+  const cut = (value: string): string => {
+    const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
+    return cutter.push(value) + cutter.finish()
+  }
   const tools = new Map<string, PendingToolCall>()
   const held: Array<HeldToolCall> = []
   // The terminal is built when the stream ends, not at `settle`: a Chat
@@ -282,7 +296,7 @@ export const runModelTurn = <E>(
         // The id goes back to the provider with the tool result, so it cannot
         // be cut like text: a provider that names a call with the credential
         // is refused before the id reaches a frame or the journal.
-        if (ConfiguredModel.cutModelCredential(event.id, options.credential ?? "") !== event.id) {
+        if (cut(event.id) !== event.id) {
           return Effect.fail(
             new ModelError.ModelError({
               code: "invalid_provider_output",
@@ -312,8 +326,8 @@ export const runModelTurn = <E>(
         tools.delete(event.id)
         const call = {
           id: event.id,
-          name: ConfiguredModel.cutModelCredential(pending.name, options.credential ?? ""),
-          arguments: ConfiguredModel.cutModelCredential(event.arguments ?? pending.arguments, options.credential ?? "")
+          name: cut(pending.name),
+          arguments: cut(event.arguments ?? pending.arguments)
         }
         if (host !== undefined) {
           held.push(call)

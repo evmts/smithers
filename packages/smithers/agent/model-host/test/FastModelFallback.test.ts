@@ -1,5 +1,6 @@
 import { ModelError, ModelRequest } from "@smthrs/model"
-import { Effect, Stream } from "effect"
+import { Deferred, Effect, Fiber, Metric, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
 import { fastModelFallback } from "../src/FastModelFallback.ts"
 
@@ -123,5 +124,34 @@ test("a ChatGPT fallback omits its unsupported output limit", async () => {
 test("an empty host source list refuses as a missing route", async () => {
   await expect(Effect.runPromise(Stream.runCollect(fastModelFallback([]).stream(request)))).rejects.toThrow(
     "Fast model unavailable"
+  )
+})
+
+test("an unanswered fallback notification cannot hold the next model attempt", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const metric = Metric.counter("smithers_model_host_fallback_notification_timeouts")
+      const before = yield* Metric.value(metric)
+      const entered = yield* Deferred.make<void>()
+      let cancelled = false
+      const model = fastModelFallback([
+        {
+          modelId: "primary",
+          model: { stream: () => Stream.fail(new ModelError.ModelError({ code: "rate_limited", message: "capacity" })) }
+        },
+        { modelId: "backup", model: { stream: () => Stream.succeed(answer) } }
+      ], () =>
+        Effect.andThen(Deferred.succeed(entered, undefined), Effect.never).pipe(
+          Effect.ensuring(Effect.sync(() => {
+            cancelled = true
+          }))
+        ))
+      const fiber = yield* Effect.forkChild(Stream.runCollect(model.stream(request)))
+      yield* Deferred.await(entered)
+      yield* TestClock.adjust(1000)
+      expect(cancelled).toBe(true)
+      expect((yield* Metric.value(metric)).count).toBe(before.count + 1)
+      expect(yield* Fiber.join(fiber)).toEqual([answer])
+    }).pipe(Effect.provide(TestClock.layer()))
   )
 })

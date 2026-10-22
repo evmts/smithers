@@ -66,3 +66,24 @@ A caller who goes away interrupts the body read and the model call however the h
 Turn failures are tagged errors (`ResolveFailed`, `ProducerUnreachable`, `ProviderStartRefused`, `CommitRefused`, `ReceiptMismatch`, `StreamTooLarge`) with fixed messages and status codes only. The HTTP answer carries one of `turn_failed`, `provider_quota`, `provider_auth` or `cancelled`, never provider text.
 
 See [docs/host-tools.md](docs/host-tools.md) for the host-owned tools and install origin rules.
+
+## Callback and fallback boundaries
+
+A producer reads its cursor when a write Effect executes. Refused commits and
+malformed receipts fail immediately; only a transport failure retries the
+identical batch once, including a connection lost while reading its receipt.
+
+Fallback selection notifications use the primary credential of their own role
+and are interrupted after one second. A timeout records the
+`smithers_model_host_fallback_notification_timeouts` counter, the
+`model_host.fallback_notification` span and a credential-free warning. Every
+resolved fallback credential is removed from text, reasoning, tool IDs, tool
+names, arguments and preflight reasons, including echoes split across chunks.
+Malformed message and tool entries are rejected with `400 request_invalid`
+before model resolution.
+
+The legacy callback host still cannot replay a completed context selection.
+Its journal frames contain selection metadata, and it has neither a persistent
+flow runtime nor a read/replay port. A proper migration must run selection as a
+registered flow step with a stable identity and record the complete selection
+answer on the host's injected persistent runtime.

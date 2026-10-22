@@ -93,7 +93,7 @@ export const runContextPreflight = (
             params: options.outputTokenLimitSupported === false ? {} : { maxTokens: 2048 }
           })
           let output = ""
-          const cutter = new StreamingCredentialCutter(options.credential)
+          const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
           let settled = false
           yield* Stream.runForEach(model.stream(request), (event) => {
             // A selector has no tools, and settlement ends its one response.

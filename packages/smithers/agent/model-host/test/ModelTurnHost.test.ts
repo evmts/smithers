@@ -294,3 +294,66 @@ test("never lets a cut echo join emitted text into the secret, at any pair of ch
     }
   }
 })
+
+test("cuts every fallback credential from text, reasoning and tools", async () => {
+  const primary = "primary-secret"
+  const fallback = "backup-secret"
+  const access = "subscription-token"
+  const account = "subscription-account"
+  const events: ModelEvent.ModelEvent[] = [
+    { type: "text-delta", id: "text", text: `before ${fallback.slice(0, 6)}` },
+    { type: "text-delta", id: "text", text: `${fallback.slice(6)} ${primary} after` },
+    { type: "thinking-delta", id: "reasoning", text: `${access} ${account}` },
+    { type: "tool-call-start", id: "call", name: `${fallback}inspect` },
+    { type: "tool-call-end", id: "call", arguments: JSON.stringify({ key: fallback, access, account }) },
+    { type: "settle", stopReason: "tool-calls" }
+  ]
+  const frames: NativeAgent.AgentTurnFrame[] = []
+  await Effect.runPromise(runModelTurn(Model.make({ stream: () => Stream.fromIterable(events) }), turn, {
+    modelId: "fallback",
+    credential: primary,
+    additionalCredentials: [fallback, JSON.stringify({ accessToken: access, accountId: account })]
+  }, (frame) =>
+    Effect.sync(() => {
+      frames.push(frame)
+    })))
+  const rendered = frames.filter((frame) => frame.type === "delta").map((frame) => frame.text).join("")
+  for (const secret of [primary, fallback, access, account]) {
+    expect(rendered).not.toContain(secret)
+    expect(JSON.stringify(frames)).not.toContain(secret)
+  }
+  expect(frames).toContainEqual({
+    runId: turn.runId,
+    type: "tool_call",
+    call_id: "call",
+    name: "inspect",
+    arguments: "{\"key\":\"\",\"access\":\"\",\"account\":\"\"}"
+  })
+  await expect(Effect.runPromise(runModelTurn(
+    Model.make({
+      stream: () =>
+        Stream.succeed({
+          type: "tool-call-start",
+          id: fallback,
+          name: "inspect"
+        })
+    }),
+    turn,
+    { modelId: "fallback", additionalCredentials: [fallback] },
+    () => Effect.void
+  ))).rejects.toThrow("tool call id contains the credential")
+})
+
+test("cutting a fallback cannot reassemble another credential across chunks", () => {
+  const first = "abcdef"
+  const second = "xyz"
+  const input = `before abc${second}def after`
+  for (let boundary = 0; boundary <= input.length; boundary++) {
+    const cutter = new StreamingCredentialCutter(first, [second])
+    const output = cutter.push(input.slice(0, boundary)) + cutter.push(input.slice(boundary)) + cutter.finish()
+    expect(output).not.toContain(first)
+    expect(output).not.toContain(second)
+    expect(output.startsWith("before ")).toBe(true)
+    expect(output.endsWith(" after")).toBe(true)
+  }
+})

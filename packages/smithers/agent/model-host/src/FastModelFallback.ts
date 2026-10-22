@@ -5,14 +5,17 @@
  */
 
 import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
-import { Effect, Stream } from "effect"
+import { Effect, Metric, Stream } from "effect"
+
+const notificationTimeouts = Metric.counter("smithers_model_host_fallback_notification_timeouts")
 
 /**
  * Builds one model that streams from the first host-owned source and falls back
  * to the next only when a source fails as unavailable (authentication, rate limit,
  * quota, transport, call timeout or provider fault) before emitting any output.
  * A failure after output became visible, or on the last source, is returned as is.
- * `onFallback` runs with the index of the source about to be tried. With no
+ * `onFallback` runs with the index of the source about to be tried and is
+ * interrupted after one second so a notification cannot block inference. With no
  * sources the stream fails with `no_route`.
  *
  * @since 1.0.0
@@ -52,7 +55,20 @@ export const fastModelFallback = (
               ["authentication", "rate_limited", "quota_exceeded", "transport", "call_timeout", "provider_internal"]
                 .includes(error.code)
             return !emitted && unavailable && index + 1 < sources.length
-              ? Stream.unwrap(Effect.as(onFallback?.(index + 1) ?? Effect.void, attempt(index + 1)))
+              ? Stream.unwrap(Effect.as(
+                (onFallback?.(index + 1) ?? Effect.void).pipe(
+                  Effect.timeoutOrElse({
+                    duration: 1000,
+                    orElse: () =>
+                      Effect.andThen(
+                        Metric.update(notificationTimeouts, 1),
+                        Effect.logWarning("Model fallback notification timed out")
+                      )
+                  }),
+                  Effect.withSpan("model_host.fallback_notification")
+                ),
+                attempt(index + 1)
+              ))
               : Stream.fail(error)
           })
         )

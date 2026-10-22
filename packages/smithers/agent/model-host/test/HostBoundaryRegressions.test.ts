@@ -239,7 +239,6 @@ test("fast failed receipts remain observable even when HTTP answered 200", async
       const exit = yield* Effect.exit(producer.write({ runId: "run", type: "delta", kind: "text", text: "hello" }))
       expect(Exit.isFailure(exit)).toBe(true)
       expect(lines).toEqual([
-        expect.objectContaining({ phase: "end", status: 200, failed: true }),
         expect.objectContaining({ phase: "end", status: 200, failed: true })
       ])
     })))

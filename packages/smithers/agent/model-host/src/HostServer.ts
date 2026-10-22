@@ -153,13 +153,28 @@ const normalizedBaseUrl = (raw: string): string => {
   return value.toString()
 }
 
+const MessageSchema = z.union([
+  z.object({ role: z.enum(["user", "assistant"]), content: z.string() }).strict(),
+  z.object({ type: z.literal("function_call"), call_id: z.string(), name: z.string(), arguments: z.string() }).strict(),
+  z.object({ type: z.literal("function_call_output"), call_id: z.string(), output: z.string() }).strict()
+])
+const ToolsSchema = z.array(
+  z.object({
+    type: z.literal("function"),
+    name: z.string(),
+    description: z.string(),
+    parameters: z.record(z.string(), z.unknown())
+  }).strict()
+)
+
 const turnRequest = (value: unknown): NativeAgent.StartAgentTurnRequest | undefined => {
   if (typeof value !== "object" || value === null) return undefined
   const body = value as Record<string, unknown>
   if (typeof body.runId !== "string" || typeof body.instructions !== "string" || !Array.isArray(body.messages)) {
     return undefined
   }
-  if (body.tools !== undefined && !Array.isArray(body.tools)) return undefined
+  if (!z.array(MessageSchema).safeParse(body.messages).success) return undefined
+  if (body.tools !== undefined && !ToolsSchema.safeParse(body.tools).success) return undefined
   return value as NativeAgent.StartAgentTurnRequest
 }
 
@@ -211,7 +226,8 @@ const streamRequest = (value: unknown): NativeAgent.StartAgentTurnRequest | unde
   if (typeof value !== "object" || value === null) return undefined
   const body = value as Record<string, unknown>
   if (typeof body.runId !== "string" || !Array.isArray(body.messages)) return undefined
-  if (body.tools !== undefined && !Array.isArray(body.tools)) return undefined
+  if (!z.array(MessageSchema).safeParse(body.messages).success) return undefined
+  if (body.tools !== undefined && !ToolsSchema.safeParse(body.tools).success) return undefined
   return {
     ...body,
     instructions: typeof body.instructions === "string" ? body.instructions : ""

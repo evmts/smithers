@@ -877,7 +877,7 @@ test("unavailable durable preflight writes refuse before either model or provide
   })
   const response = await handler(post(JSON.stringify(grant)))
   expect(response.status).toBeGreaterThanOrEqual(500)
-  expect(commits).toBe(2)
+  expect(commits).toBe(1)
   expect(starts).toBe(0)
   expect(calls).toBe(0)
 })

@@ -145,9 +145,13 @@ const sha256Hex = async (value: string): Promise<string> => {
 
 const invalidReceipt = () => new ReceiptMismatch({ message: "chat producer commit returned an invalid receipt" })
 
-const commitReply = (response: Response): Effect.Effect<CommitReply, CommitRefused | ReceiptMismatch> =>
+const commitReply = (
+  response: Response,
+  phase: () => HostDiagnosticFields
+): Effect.Effect<CommitReply, CommitRefused | ReceiptMismatch | ProducerUnreachable> =>
   response.ok
-    ? Effect.tryPromise({ try: () => response.json() as Promise<unknown>, catch: invalidReceipt }).pipe(
+    ? Effect.tryPromise({ try: () => response.text(), catch: unreachable("commit", phase) }).pipe(
+      Effect.flatMap((text) => Effect.try({ try: () => JSON.parse(text) as unknown, catch: invalidReceipt })),
       Effect.flatMap((body) => {
         const parsed = AgentTurnJournal.AgentTurnJournalReplySchema.safeParse(body)
         return parsed.success && (parsed.data.status === "committed" || parsed.data.status === "duplicate")
@@ -337,6 +341,10 @@ export class DurableChatProducer {
   }
 
   write(frame: NativeAgent.AgentTurnFrame): Effect.Effect<void, ProducerError> {
+    return Effect.suspend(() => this.commit(frame))
+  }
+
+  private commit(frame: NativeAgent.AgentTurnFrame): Effect.Effect<void, ProducerError> {
     const expected = this.cursor
     const body = JSON.stringify({
       turnId: this.grant.turnId,
@@ -373,7 +381,7 @@ export class DurableChatProducer {
                 status = response.status
               })
             ),
-            Effect.flatMap(commitReply)
+            Effect.flatMap((response) => commitReply(response, phase))
           ),
         "commit",
         this.deadlineMillis,
@@ -395,12 +403,14 @@ export class DurableChatProducer {
       )
     })
     return invoke.pipe(
-      // One retry, on the identical expected cursor and body: a journal that
+      // Retry only a lost transport receipt, on the identical cursor and body.
+      // Refusals and malformed receipts stop immediately; the durable owner
+      // decides whether another attempt is authorized. A journal that
       // already took this batch answers `duplicate`, so a bound that fired on
       // an answer in flight cannot write it twice. Past the retry the turn
       // fails with a named transport failure, which the host boundary turns
       // into a terminal receipt — the person sees a failure instead of silence.
-      Effect.catch(() => invoke),
+      Effect.catchTag("ProducerUnreachable", () => invoke),
       Effect.flatMap((reply) =>
         Effect.tryPromise({
           try: async () => {

@@ -142,15 +142,15 @@ test.each(
       throw "transport rejection"
     }, "chat producer request failed"]
   ] as const
-)("retries refused or malformed commits without changing their cursor", async (response, message) => {
+)("only retries transport failures without changing their cursor", async (response, message) => {
   const bodies: unknown[] = []
   const producer = new DurableChatProducer("http://host.test", grant, async (_input, init) => {
     bodies.push(JSON.parse(String(init?.body)))
     return response()
   })
   await expect(Effect.runPromise(producer.write(frame))).rejects.toThrow(message)
-  expect(bodies).toHaveLength(2)
-  expect(bodies[0]).toEqual(bodies[1])
+  expect(bodies).toHaveLength(message === "chat producer request failed" ? 2 : 1)
+  if (bodies.length === 2) expect(bodies[0]).toEqual(bodies[1])
   expect(bodies[0]).toMatchObject({ expected: cursor })
 })
 
@@ -402,8 +402,7 @@ test.each(["started", "completed"] as const)("refused later %s page stops subseq
       }
     }))
   ).rejects.toThrow("403")
-  expect(refused).toHaveLength(2)
-  expect(refused[0]).toBe(refused[1])
+  expect(refused).toHaveLength(1)
   expect(accepted.filter((frame) => frame.type === "context.preflight" && frame.phase === phase)).toHaveLength(1)
   expect(selectorCalls).toBe(phase === "started" ? 0 : 1)
   expect(starts).toBe(phase === "started" ? 0 : 1)

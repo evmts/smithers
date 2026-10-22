@@ -70,10 +70,12 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
       Effect.gen(function*() {
         const withFallback = (
           primary: Model.Model,
-          plan: ConfiguredModel.ModelPlan
+          plan: ConfiguredModel.ModelPlan,
+          primaryCredential: string
         ) =>
           Effect.gen(function*() {
-            if (plan.credential !== "SMITHERS_FAST_PROXY") return primary
+            const additionalCredentials: Array<string> = []
+            if (plan.credential !== "SMITHERS_FAST_PROXY") return { model: primary, additionalCredentials }
             let bindings: unknown
             try {
               bindings = JSON.parse(options.env.SMITHERS_FAST_FALLBACK_MODELS ?? "[]")
@@ -94,34 +96,42 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
               const key = options.env[ConfiguredModel.modelCredentialEnvName(fallback.plan.credential)]?.trim()
               if (!key) return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
               const model = yield* modelOf(fallback.plan, key, true)
+              additionalCredentials.push(key)
               sources.push({
                 model,
                 modelId: fallback.plan.modelId,
                 outputTokenLimitSupported: fallback.plan.protocol !== "openai-responses-chatgpt"
               })
             }
-            return fastModelFallback(sources, (index) =>
-              Effect.tryPromise({
-                try: async (signal) => {
-                  const endpoint = new URL(plan.baseUrl)
-                  endpoint.pathname = endpoint.pathname.replace(/\/fast$/, "/fast/selected")
-                  await refusingRedirects(options.fetchImpl ?? globalThis.fetch)(endpoint, {
-                    method: "POST",
-                    headers: { "content-type": "application/json", authorization: `Bearer ${credential}` },
-                    body: JSON.stringify({ index }),
-                    signal
-                  })
-                },
-                catch: () => undefined
-              }).pipe(Effect.ignore))
+            return {
+              additionalCredentials,
+              model: fastModelFallback(sources, (index) =>
+                Effect.tryPromise({
+                  try: async (signal) => {
+                    const endpoint = new URL(plan.baseUrl)
+                    endpoint.pathname = endpoint.pathname.replace(/\/fast$/, "/fast/selected")
+                    const response = await refusingRedirects(options.fetchImpl ?? globalThis.fetch)(endpoint, {
+                      method: "POST",
+                      headers: { "content-type": "application/json", authorization: `Bearer ${primaryCredential}` },
+                      body: JSON.stringify({ index }),
+                      signal
+                    })
+                    await response.body?.cancel()
+                  },
+                  catch: () => undefined
+                }).pipe(Effect.ignore))
+            }
           })
-        const routedModel = yield* withFallback(model, planned.plan)
+        const routedModel = yield* withFallback(model, planned.plan, credential)
         const resolved = {
-          model: routedModel,
+          model: routedModel.model,
           options: {
             modelId: planned.plan.modelId,
             ...(planned.plan.protocol === "openai-responses-chatgpt" ? { outputTokenLimitSupported: false } : {}),
             credential,
+            ...(routedModel.additionalCredentials.length === 0
+              ? {}
+              : { additionalCredentials: routedModel.additionalCredentials }),
             ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens })
           }
         }
@@ -157,16 +167,19 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
           return yield* Effect.fail(new ResolveFailed({ message: "preflight model credential is unavailable" }))
         }
         const fastModel = yield* modelOf(fast.plan, fastCredential)
-        const routedFast = yield* withFallback(fastModel, fast.plan)
+        const routedFast = yield* withFallback(fastModel, fast.plan, fastCredential)
         return {
           ...resolved,
           preflight: {
             input,
-            model: routedFast,
+            model: routedFast.model,
             options: {
               modelId: fast.plan.modelId,
               ...(fast.plan.protocol === "openai-responses-chatgpt" ? { outputTokenLimitSupported: false } : {}),
-              credential: fastCredential
+              credential: fastCredential,
+              ...(routedFast.additionalCredentials.length === 0
+                ? {}
+                : { additionalCredentials: routedFast.additionalCredentials })
             }
           }
         }
