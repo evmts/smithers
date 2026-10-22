@@ -125,6 +125,10 @@ Rules:
   | `503` | `{ "message" }` | Postgres can't be reached (for sessions or the insert), or refuses the insert for another reason; nothing is written |
   | `503` | `{ "message": "Smithers couldn't take the question. Try again." }` | the question is stored, but the remote host didn't record its expiry's start; the outbox sends it again, and the resend (`200`) starts it |
 
+  The client validates both success bodies before starting an answer: a `200` must carry
+  `{ "txid": null, "existing": true }`. Malformed or incomplete bodies are `invalid_response`;
+  the request deadline includes reading either body, so a stalled `200` is `unreachable`.
+
   `txid` is the inserting transaction's id (`pg_current_xact_id()`), the one Electric reports for both rows. A retry has no transaction to wait for: the client reconciles from the rows Electric already has, or delivers next. Ids compare case-insensitively, and the text after trimming.
 - **The browser** keeps a question refused with 400, 401, 403, 409 or 413 on the device as `Not sent`, and sends anything else again.
 

@@ -11,16 +11,16 @@ export type Question = { readonly id: string; readonly answerId: string; readonl
  */
 export type Taken = { readonly _tag: "inserted" } | { readonly _tag: "existing" }
 
-// 202's body, checked whole: the transaction id ChatApi inserted the rows in. 200's is `{ txid: null, existing: true }`;
-// its status alone says the question was already there. The device waits for the question itself, which reaches every
-// tab, so it reads no transaction id (src/features/chat/store.ts `delivered`).
+// Both success bodies are checked before the device starts the answer. The device waits for the question itself,
+// which reaches every tab, so it reads no transaction id (src/features/chat/store.ts `delivered`).
 const Inserted = Schema.Struct({ txid: Schema.Number })
+const Existing = Schema.Struct({ txid: Schema.Null, existing: Schema.Literal(true) })
 
 /**
  * ChatApi didn't take the question:
  * - `unreachable`: no whole answer within the deadline, its body included, for example offline;
  * - `refused`: an answer other than 200 or 202, such as 409 for a retry that doesn't match the stored question;
- * - `invalid_response`: 202 with a body outside the contract, or one that broke off.
+ * - `invalid_response`: 200 or 202 with a body outside the contract, or one that broke off.
  */
 export class QuestionNotTaken extends Data.TaggedError("QuestionNotTaken")<{
   readonly reason: "unreachable" | "refused" | "invalid_response"
@@ -42,7 +42,12 @@ export const postQuestion = Effect.fn("chat.question.post")(function* (
       .execute(HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(question)))
       .pipe(Effect.mapError(() => new QuestionNotTaken({ reason: "unreachable" })))
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-    if (response.status === 200) return { _tag: "existing" } satisfies Taken
+    if (response.status === 200) {
+      yield* HttpClientResponse.schemaBodyJson(Existing)(response).pipe(
+        Effect.mapError(() => new QuestionNotTaken({ reason: "invalid_response", status: 200 })),
+      )
+      return { _tag: "existing" } satisfies Taken
+    }
     if (response.status !== 202) {
       return yield* new QuestionNotTaken({ reason: "refused", status: response.status })
     }

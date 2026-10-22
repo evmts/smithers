@@ -37,18 +37,21 @@ const serve = async (respond: (request: IncomingMessage, response: ServerRespons
 const post = (url: string) =>
   Effect.runPromise(Effect.result(postQuestion(url, question, "300 millis")).pipe(Effect.provide(FetchHttpClient.layer)))
 
-test("202 headers and a body that stalls fail as unreachable at the deadline, and the request is aborted", async () => {
-  const { url, closed } = await serve((_, response) => {
-    response.writeHead(202, { "content-type": "application/json" })
-    response.write('{"txid":')
-  })
-  const started = Date.now()
-  const result = await post(url)
-  expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "QuestionNotTaken", reason: "unreachable" } })
-  expect(Date.now() - started).toBeLessThan(2_000)
-  // The server sees the browser close the connection.
-  await closed[0]
-})
+test.each([200, 202])(
+  "%i headers and a body that stalls fail as unreachable at the deadline, and the request is aborted",
+  async (status) => {
+    const { url, closed } = await serve((_, response) => {
+      response.writeHead(status, { "content-type": "application/json" })
+      response.write('{"txid":')
+    })
+    const started = Date.now()
+    const result = await post(url)
+    expect(result).toMatchObject({ _tag: "Failure", failure: { _tag: "QuestionNotTaken", reason: "unreachable" } })
+    expect(Date.now() - started).toBeLessThan(2_000)
+    // The server sees the browser close the connection.
+    await closed[0]
+  },
+)
 
 test("no answer at all fails as unreachable at the deadline, and the request is aborted", async () => {
   const { url, closed } = await serve(() => {})
@@ -69,4 +72,34 @@ test("nothing listening is unreachable at once", async () => {
   const { url } = await serve(() => {})
   await servers.splice(0)[0]!()
   expect(await post(url)).toMatchObject({ _tag: "Failure", failure: { reason: "unreachable" } })
+})
+
+test("200 with the existing-question receipt confirms the resend", async () => {
+  const { url } = await serve((_, response) => {
+    response.writeHead(200, { "content-type": "application/json" })
+    response.end(JSON.stringify({ txid: null, existing: true }))
+  })
+  expect(await post(url)).toMatchObject({ _tag: "Success", success: { _tag: "existing" } })
+})
+
+test.each([
+  ["HTML", "<html>gateway sign-in</html>"],
+  ["empty", ""],
+  ["truncated JSON", '{"txid":null,"existing":'],
+  ["null", "null"],
+  ["missing receipt", "{}"],
+  ["missing txid", '{"existing":true}'],
+  ["missing existing", '{"txid":null}'],
+  ["false existing", '{"txid":null,"existing":false}'],
+  ["string existing", '{"txid":null,"existing":"true"}'],
+  ["non-null txid", '{"txid":42,"existing":true}'],
+])("200 with %s is an invalid response", async (_, body) => {
+  const { url } = await serve((_, response) => {
+    response.writeHead(200, { "content-type": "application/json" })
+    response.end(body)
+  })
+  expect(await post(url)).toMatchObject({
+    _tag: "Failure",
+    failure: { _tag: "QuestionNotTaken", reason: "invalid_response", status: 200 },
+  })
 })
