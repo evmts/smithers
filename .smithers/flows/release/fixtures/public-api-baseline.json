@@ -8924,7 +8924,7 @@
       "declarations": {
         "AttemptStore.d.ts": "93aef402c77c8a863c6ee00ad93a88a792d6ca2dc3575c1b98cfda3048b8addc",
         "Heartbeat.d.ts": "4b8f8ea8e59d7f57d808fda7647ebd4ee0db629945fded566f1ab2d835514b3a",
-        "Migrations.d.ts": "29f88070740e2ffc6f0a9ecf9380f608c809a254dae1fed5aad77c0e76272579",
+        "Migrations.d.ts": "6df5ade5117723a27aa5bd92c5a6331efe1dca525975030fd345cb97a106608a",
         "Ownership.d.ts": "fdfffbc6ccf5fab646047f6c0f021b8112a43693dd07debca475de671e3983f6",
         "RunStore.d.ts": "6d6f5363f1eb491fbf725120b473203c9d8f5b2ffbc0f47503a9a84b30c33563",
         "RunStoreMetrics.d.ts": "206a21bc22174486c83c3cdc0c3ebc73c8094e825d0f5cd0e775f46574cb21a4",
@@ -8936,6 +8936,7 @@
         "migrations/0002_lineage.d.ts": "2a33f1751f1bcb60c8def7f8f1767e83281396a89ed068fbd165bdbad6575d8e",
         "migrations/0003_execution_revisions.d.ts": "6ee26b2732c3557a84d887688cbadc4a98c255e3bcbfff33bbd0316eafde3770",
         "migrations/0004_waiting_request.d.ts": "15236599aeb0a22054deb0fc802cf3c888e0fa40629dc504b68480f125434532",
+        "migrations/0005_run_progress.d.ts": "f6c96ad58260f9c634c9cd4391cb918c8f5d8175909aaf01c8fd6558240a1974",
         "test/TestRunStore.d.ts": "4dc4ad15967f6054a55a6f57c975fb7a63efaa35fdd6d4f58c3b7992d8a216b9"
       }
     },
