@@ -55,8 +55,8 @@ const run = (model?: Model.Model, summaryModel?: Model.Model) =>
           Effect.provide(FetchHttpClient.layer),
           Effect.provideService(FetchHttpClient.Fetch, unbound),
         ),
-        report: (owner, outcome) => {
-          receipt = { _tag: IDENTITY_MESSAGE, owner, outcome }
+        report: (owner, outcome, continuous) => {
+          receipt = { _tag: IDENTITY_MESSAGE, owner, outcome, ...(continuous ? { continuous: true } : {}) }
           self.postMessage(receipt)
           identity.postMessage(receipt)
         },

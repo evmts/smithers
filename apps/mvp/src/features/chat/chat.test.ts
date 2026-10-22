@@ -8,6 +8,7 @@ import { TabRequests } from "../../flows/requests"
 import {
   type Busy,
   type ChatApiOptions,
+  type NodeDevice,
   failingWorker,
   idleWorker,
   member,
@@ -569,6 +570,36 @@ describe("the device store", () => {
   // Whether a tab leads the outbox now.
   const leads = async (tab: { readonly store: ChatStore["Service"]; readonly runtime: ManagedRuntime.ManagedRuntime<never, unknown> }) =>
     Option.getOrThrow(await tab.runtime.runPromise(Stream.runHead(tab.store.outbox.status))).leader
+
+  test("a question queued as one person is never shown or sent as the next person on the device; the outbox keeps it", async () => {
+    // The browser evicted the device store, but not the outbox: Ann's queued question is still in it when Ben's
+    // session opens the device. It is sent only as Ann (main.tsx's `principal`, Outbox.Principal).
+    const { api, onApi } = await openChat()
+    const outboxEntries = new Map<string, string>()
+    const device = nodeDevice({ agent: api, outboxEntries })
+    const as = (person: string): NodeDevice => ({
+      ...device,
+      outbox: { ...device.outbox, principal: { now: () => person, ownsUnstamped: () => false } },
+    })
+    const ann = await faultyTabOn(api, { ...quick, host: as("ann") })
+    // Ann's send never gets through before she leaves: its retry, if it comes first, fails too.
+    ann.failNext("unreachable")
+    asked(ann.actions.ask("ann's question"))
+    await until(() => expect(ann.sentQuestions()).toHaveLength(1))
+    ann.failNext("unreachable")
+    await ann.close()
+    const kept = [...outboxEntries.keys()]
+    expect(kept).toHaveLength(1)
+
+    const ben = await tabOn(openTab(api, { ...quick, host: as("ben") }))
+    asked(ben.actions.ask("ben's question"))
+    await until(async () => expect((await onApi(api.rows)).map(({ text }) => text)).toContain("ben's question"), agentWithin)
+    expect((await onApi(api.rows)).map(({ text }) => text)).not.toContain("ann's question")
+    expect(ben.shown().filter((line) => line.includes("ann's question"))).toEqual([])
+    // Ben's own write leaves the outbox once Postgres has it; Ann's stays.
+    await until(() => expect([...outboxEntries.keys()]).toEqual(kept), agentWithin)
+    expect((await onApi(api.rows)).map(({ text }) => text)).not.toContain("ann's question")
+  })
 
   test("a question asked in a tab that doesn't lead is sent from it at once: it takes the lead, with the other tab open", async () => {
     const { api, onApi } = await openChat()

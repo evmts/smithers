@@ -133,6 +133,7 @@ export const CHAT_TELEMETRY = {
     "outbox write withdrawn",
     "outbox write failed",
     "outbox couldn't load its writes",
+    "outbox write sealed",
     "outbox lock refused",
     "outbox_attempts",
     "outbox_refused",
@@ -175,6 +176,7 @@ export const CHAT_TELEMETRY = {
     "conversation",
     "stage",
     "shared",
+    "stage",
     "role",
   ],
 } as const

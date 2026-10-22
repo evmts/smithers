@@ -30,6 +30,8 @@ const start = (options: {
   readonly leader?: Outbox.Leader | undefined
   readonly notes?: string
   readonly online?: Outbox.Online
+  readonly principal?: Outbox.Principal
+  readonly parked?: Outbox.Options<never>["parked"]
 }) =>
   Effect.gen(function*() {
     const notes = yield* Collection.local({ id: options.notes ?? id("notes"), schema: Note, getKey: (row) => row.id })
@@ -41,6 +43,8 @@ const start = (options: {
         storage: options.storage,
         ...("leader" in options ? (options.leader ? { leader: options.leader } : {}) : { leader: single }),
         online,
+        ...(options.principal === undefined ? {} : { principal: options.principal }),
+        ...(options.parked === undefined ? {} : { parked: options.parked }),
         mutations: {
           save: (params) =>
             Effect.gen(function*() {
@@ -932,5 +936,124 @@ describe("lockLeader", () => {
       return yield* Effect.promise(() => asked)
     }))
     expect(seen).toBe(false)
+  })
+})
+
+describe("principal", () => {
+  // Who a program writes as; `now` and `ownsUnstamped` are read each time the outbox asks.
+  const as = (now: string | undefined, ownsUnstamped = false) => {
+    const state = { now, ownsUnstamped }
+    return { state, principal: { now: () => state.now, ownsUnstamped: () => state.ownsUnstamped } }
+  }
+  const sent = (world: Awaited<ReturnType<typeof setup>>) => world.sent.map(({ idempotencyKey }) => idempotencyKey)
+
+  // Queues `rows` as `principal`, offline so none is sent, then lets the program go, as a tab that closes does.
+  const queue = (
+    world: Awaited<ReturnType<typeof setup>>,
+    principal: Outbox.Principal | undefined,
+    rows: Array<Note>
+  ) =>
+    scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({
+        ...world,
+        online: offline(),
+        ...(principal === undefined ? {} : { principal })
+      })
+      for (const row of rows) yield* (yield* save(outbox, notes, row)).admitted
+    }))
+
+  test("a write queued as one principal is never loaded, shown or sent as another; the storage keeps it", async () => {
+    const world = await setup(["ok", "ok"])
+    await queue(world, as("ann").principal, [note("a", 1)])
+    const stored = [...world.storage.entries.keys()]
+    const { result, logs } = await withLogs(
+      Effect.scoped(Effect.gen(function*() {
+        const { notes, outbox } = yield* start({ ...world, principal: as("ben").principal })
+        const shown = texts(yield* notes.toArray)
+        // Ben's own write goes; had Ann's loaded, it would have gone first.
+        yield* (yield* save(outbox, notes, note("b", 2))).settled
+        return { shown, ben: [...world.storage.entries.keys()] }
+      })).pipe(Effect.provide(ownMetrics()))
+    )
+    expect(result.shown).toEqual([])
+    expect(sent(world)).toEqual(["b"])
+    expect(result.ben).toEqual(stored)
+    expect(
+      logs.filter(({ message }) => (message as Array<unknown>)[0] === "outbox write sealed").map(({ annotations }) =>
+        annotations
+      )
+    ).toContainEqual(expect.objectContaining({ name: "save", stage: "load" }))
+    // Ann's comes back as hers, and leaves the storage once sent.
+    await scoped(Effect.gen(function*() {
+      yield* start({ ...world, principal: as("ann").principal })
+      yield* Effect.promise(() => until(() => expect(sent(world)).toEqual(["b", "a"])))
+      yield* Effect.promise(() => until(() => expect(world.storage.entries.size).toBe(0)))
+    }))
+  })
+
+  test("a write stored before writes were stamped is the principal's only when it owns unstamped writes", async () => {
+    const world = await setup(["ok", "ok", "ok"])
+    await queue(world, undefined, [note("a", 1)])
+    await scoped(Effect.gen(function*() {
+      const { notes, outbox } = yield* start({ ...world, principal: as("ben", false).principal })
+      yield* (yield* save(outbox, notes, note("b", 2))).settled
+    }))
+    expect(sent(world)).toEqual(["b"])
+    await scoped(Effect.gen(function*() {
+      yield* start({ ...world, principal: as("ann", true).principal })
+      yield* Effect.promise(() => until(() => expect(sent(world)).toEqual(["b", "a"])))
+    }))
+  })
+
+  test("a write whose principal changed before it was sent is sealed: its rows roll back, settled fails, the storage keeps it", async () => {
+    const world = await setup([])
+    const { state, principal } = as("visitor")
+    const seen = await scoped(Effect.gen(function*() {
+      const network = offline()
+      const { notes, outbox } = yield* start({ ...world, online: network, principal })
+      const write = yield* save(outbox, notes, note("a", 1))
+      yield* write.admitted
+      // The device is adopted by Ann before the write goes out.
+      state.now = "ann"
+      network.connect()
+      const settled = yield* Effect.exit(write.settled)
+      return {
+        settled: Exit.isFailure(settled),
+        rows: texts(yield* notes.toArray),
+        sealed: (yield* Metric.value(Metric.withAttributes(Outbox.attempts, { name: "save", outcome: "sealed" }))).count
+      }
+    }))
+    expect(seen).toEqual({ settled: true, rows: [], sealed: 1 })
+    expect(sent(world)).toEqual([])
+    expect([...world.storage.entries.keys()]).toHaveLength(1)
+  })
+
+  test("a parked write goes to its feature only for the principal that queued it", async () => {
+    const world = await setup([])
+    const parked = (id: string, principal: string) =>
+      world.storage.entries.set(
+        `parked:${id}`,
+        JSON.stringify({
+          reason: "negative",
+          name: "save",
+          write: JSON.stringify({
+            mutationFnName: "save",
+            mutations: [{ modified: note(id, -1) }],
+            metadata: { principal }
+          })
+        })
+      )
+    parked("ann-1", "ann")
+    parked("ben-1", "ben")
+    const offered: Array<string> = []
+    const listed = await scoped(Effect.gen(function*() {
+      const { outbox } = yield* start({
+        ...world,
+        principal: as("ben").principal,
+        parked: { save: (write) => Effect.sync(() => (offered.push(write.id), false)) }
+      })
+      return (yield* outbox.parked).map(({ id }) => id)
+    }))
+    expect({ offered, listed }).toEqual({ offered: ["ben-1"], listed: ["ben-1"] })
   })
 })

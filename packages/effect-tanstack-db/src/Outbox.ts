@@ -170,6 +170,31 @@ export interface Options<R> {
    * `true` took it, and the outbox deletes it; `false` leaves it parked. Each runs as the outbox starts.
    */
   readonly parked?: Readonly<Record<string, (write: Parked) => Effect.Effect<boolean, never, R>>> | undefined
+  /**
+   * Who this program writes as, so a write is sent only as who queued it. Without it, every stored write is this
+   * program's.
+   */
+  readonly principal?: Principal | undefined
+}
+
+/**
+ * Who a program writes as, read synchronously each time the outbox asks:
+ * - `now`: the principal this program writes as at this moment, such as the person whose data it opened; none when it
+ *   writes as nobody yet;
+ * - `ownsUnstamped`: whether the writes stored before writes were stamped, which name no principal, are `now`'s.
+ *
+ * Each write `transact` makes is stamped with `now`. The outbox loads, shows and sends only the stored writes that are
+ * the principal's: stamped with `now`, or unstamped when `ownsUnstamped`. Every other write stays in the storage,
+ * sealed: never loaded, parked, sent or deleted, logged as `outbox write sealed`. A write whose principal changed after
+ * it was loaded, and before it was sent, is sealed the same way as it comes up to be sent (`attempts` counts it
+ * `sealed`): its rows roll back, `settled` fails, and the storage keeps it.
+ *
+ * @category models
+ * @since 0.3.0
+ */
+export interface Principal {
+  readonly now: () => string | undefined
+  readonly ownsUnstamped: () => boolean
 }
 
 /**
@@ -263,8 +288,9 @@ export class Outbox extends Context.Service<Outbox, Service>()("@smthrs/effect-t
 
 /**
  * Each send, by `name` and `outcome`: `sent`, `retry`, `refused` or `defect`; `sent_elsewhere`, a write this
- * program queued that another program sent and deleted while this one followed, settled here without sending it; or
- * `withdrawn`, a write `withdraw` took back, settled without sending it.
+ * program queued that another program sent and deleted while this one followed, settled here without sending it;
+ * `withdrawn`, a write `withdraw` took back, settled without sending it; or `sealed`, a write another principal queued
+ * (`Options.principal`), never sent and kept in the storage.
  *
  * @category metrics
  * @since 0.2.0
@@ -380,8 +406,8 @@ const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) =>
     Effect.withSpan("outbox.carry")
   )
 
-/** The writes parked in `storage`. A storage that fails reads as none. */
-const parkedIn = (storage: StorageAdapter): Effect.Effect<ReadonlyArray<Parked>> =>
+/** The writes parked in `storage` that are `principal`'s. A storage that fails reads as none. */
+const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): Effect.Effect<ReadonlyArray<Parked>> =>
   Effect.gen(function*() {
     const keys = yield* Effect.tryPromise(() => storage.keys())
     const writes: Array<Parked> = []
@@ -389,6 +415,7 @@ const parkedIn = (storage: StorageAdapter): Effect.Effect<ReadonlyArray<Parked>>
       const stored = yield* Effect.tryPromise(() => storage.get(key))
       if (stored === null) continue
       const parked = JSON.parse(stored) as StoredParked
+      if (!owns(principal, stampOf(parked.write))) continue
       writes.push({
         id: key.slice(PARKED_PREFIX.length),
         name: parked.name,
@@ -406,6 +433,9 @@ const WITHDRAWN = "OutboxWithdrawn"
 
 const thrown = (name: string, message: string): Error => Object.assign(new Error(message), { name })
 
+// A write another principal queued, as it comes up to be sent: its mutation's `name`.
+class Sealed extends Data.TaggedError("Sealed")<{ readonly name: string }> {}
+
 /**
  * What a write carries besides its rows: when it was made, the span it was made in, and the version of each payload
  * collection when the outbox carries writes across builds (`Options.upgrade`).
@@ -414,7 +444,24 @@ interface Metadata {
   readonly queuedAt: number
   readonly trace?: { readonly traceId: string; readonly spanId: string }
   readonly versions?: Readonly<Record<string, number>>
+  /** Who queued the write (`Options.principal`); absent on a write stored before writes were stamped. */
+  readonly principal?: string
 }
+
+// The principal a stored write names in its metadata, or none: unstamped, or not a write the library stored.
+const stampOf = (stored: string): string | undefined => {
+  try {
+    const principal = (JSON.parse(stored) as { readonly metadata?: { readonly principal?: unknown } }).metadata
+      ?.principal
+    return typeof principal === "string" ? principal : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// Whether a write stamped `stamp` (none: unstamped) is `principal`'s now. Without a principal, every write is.
+const owns = (principal: Principal | undefined, stamp: string | undefined): boolean =>
+  principal === undefined || (stamp === undefined ? principal.ownsUnstamped() : stamp === principal.now())
 
 /**
  * Starts the outbox and waits until it has loaded the writes stored earlier,
@@ -450,10 +497,34 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
 
       // Admission is the storage write of the write's own key; whoever waits on a write learns of it here.
       const admissions = new Map<string, Deferred.Deferred<void, NotAdmitted>>()
+      // Another principal's stored write is sealed: the library never sees it, so it never loads, sends or deletes it.
+      const sealed = (key: string, stored: string | null) =>
+        key.startsWith(KEY_PREFIX) && stored !== null && !owns(options.principal, stampOf(stored))
+      const seal = (stored: string, stage: "load" | "send") =>
+        run(
+          Effect.logWarning("outbox write sealed").pipe(Effect.annotateLogs({ name: readWrite(stored).name, stage }))
+        )
+      const ownKeys = async () => {
+        const keys = await options.storage.keys()
+        if (options.principal === undefined) return keys
+        const own: Array<string> = []
+        for (const key of keys) {
+          const stored = key.startsWith(KEY_PREFIX) ? await options.storage.get(key) : null
+          if (!sealed(key, stored)) own.push(key)
+          else seal(stored!, "load")
+        }
+        return own
+      }
       const storage: StorageAdapter = {
-        get: options.storage.get.bind(options.storage),
-        keys: options.storage.keys.bind(options.storage),
-        delete: options.storage.delete.bind(options.storage),
+        get: options.principal === undefined ? options.storage.get.bind(options.storage) : async (key) => {
+          const stored = await options.storage.get(key)
+          return sealed(key, stored) ? null : stored
+        },
+        keys: ownKeys,
+        delete: options.principal === undefined ? options.storage.delete.bind(options.storage) : async (key) => {
+          if (sealed(key, await options.storage.get(key))) return
+          await options.storage.delete(key)
+        },
         clear: options.storage.clear.bind(options.storage),
         set: async (key, value) => {
           const id = key.slice(KEY_PREFIX.length)
@@ -518,16 +589,27 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           )
         )
         // Under the permit, so `withdraw` sees this write either taken back, and it settles here unsent, or in flight.
+        // A write queued by another principal than this program's now is never sent: it is sealed.
         const claim = permit.withPermit(Effect.gen(function*() {
           if (withdrawn.delete(id)) return "withdrawn" as const
           if (!(yield* stored)) return "sent_elsewhere" as const
+          if (!owns(options.principal, metadata.principal)) return "sealed" as const
           inFlight = { id, retry: false }
           return "sent" as const
         }))
-        // Succeeds with whether the write reached a server, which clears `failing`: a withdrawn one never did.
-        const program = Effect.flatMap(claim, (claimed) =>
+        // Succeeds with whether the write reached a server, which clears `failing`: a withdrawn one never did. A sealed
+        // one fails, so its rows roll back; the library's delete leaves it in the storage, which is another's.
+        const program = Effect.flatMap(claim, (claimed): Effect.Effect<boolean, Refused | Retry | Sealed, R> =>
           claimed === "sent"
             ? Effect.as(sending, true)
+            : claimed === "sealed"
+            ? Effect.andThen(
+              outcome("sealed"),
+              Effect.andThen(
+                Effect.logWarning("outbox write sealed").pipe(Effect.annotateLogs({ name, stage: "send" })),
+                Effect.fail(new Sealed({ name }))
+              )
+            )
             : Effect.as(outcome(claimed), claimed === "sent_elsewhere")).pipe(
             Effect.withSpan("outbox.send", {
               attributes: { name, attempt },
@@ -537,7 +619,9 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         return Effect.runPromiseExitWith(context)(program).then((exit) => {
           if (Exit.isSuccess(exit)) {
             sends.delete(id)
-            if (exit.value) setStatus({ failing: null })
+            if (exit.value) {
+              setStatus({ failing: null })
+            }
             return
           }
           const error = Cause.findErrorOption(exit.cause)
@@ -550,13 +634,17 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           sends.delete(id)
           setStatus({ failing: null })
           throw Option.isSome(error)
-            ? thrown("OutboxRefused", "The server refused the write.")
+            ? error.value._tag === "Sealed"
+              ? thrown("OutboxSealed", "Another principal queued the write; it is never sent as this one.")
+              : thrown("OutboxRefused", "The server refused the write.")
             : thrown("OutboxDefect", "The write failed with a defect.")
         })
       }
 
       // The writes an older build stored are brought forward, or parked, before the library loads any.
-      if (options.upgrade !== undefined) yield* carry(options.storage, options.upgrade)
+      if (options.upgrade !== undefined) {
+        yield* carry(options.storage, options.upgrade)
+      }
 
       const executor = yield* Effect.acquireRelease(
         Effect.sync(() =>
@@ -572,18 +660,26 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             ),
             // Only a mutation's `Retry` is sent again: the library's own rules (an `AbortError`, a message with "400")
             // never see another error.
-            shouldRetry: (error) => error.name === RETRY,
+            shouldRetry: (error) =>
+              error.name === RETRY,
             onLeadershipChange: (leader) => {
               setStatus({ leader })
               run(Metric.update(Metric.withAttributes(leaderChanges, { leader: String(leader) }), 1))
             }
           })
         ),
-        (executor) => Effect.sync(() => executor.dispose())
+        (executor) =>
+          Effect.sync(() => executor.dispose())
       )
       yield* Effect.tryPromise(() => executor.waitForInit()).pipe(
         Effect.catch(() => Effect.logWarning("outbox couldn't load its writes"))
       )
+
+      // Who a write is queued by, stamped into its metadata when the outbox has a principal.
+      const principalStamp = (): { readonly principal?: string } => {
+        const now = options.principal?.now()
+        return now === undefined ? {} : { principal: now }
+      }
 
       const transact: Service["transact"] = (name, { idempotencyKey }, mutate) =>
         Effect.gen(function*() {
@@ -594,7 +690,8 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           const metadata: Metadata = {
             queuedAt: yield* Clock.currentTimeMillis,
             ...(Option.isSome(span) ? { trace: { traceId: span.value.traceId, spanId: span.value.spanId } } : {}),
-            ...(options.upgrade === undefined ? {} : { versions: options.upgrade.stamp })
+            ...(options.upgrade === undefined ? {} : { versions: options.upgrade.stamp }),
+            ...principalStamp()
           }
           const offline = executor.createOfflineTransaction({
             mutationFnName: name,
@@ -695,7 +792,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         }).pipe(Effect.catch(() => Effect.logWarning("outbox couldn't discard a parked write")))
 
       // Each parked write goes to its feature, which shows it Not sent; one it took leaves the outbox.
-      for (const write of yield* parkedIn(options.storage)) {
+      for (const write of yield* parkedIn(options.storage, options.principal)) {
         const take = options.parked?.[write.name]
         if (take !== undefined && (yield* take(write))) yield* discard(write.id)
       }
@@ -705,7 +802,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         status: SubscriptionRef.changes(status),
         retryNow: Effect.sync(() => executor.getOnlineDetector().notifyOnline()),
         withdraw,
-        parked: parkedIn(options.storage),
+        parked: parkedIn(options.storage, options.principal),
         discard
       })
     })

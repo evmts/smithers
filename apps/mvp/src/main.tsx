@@ -66,6 +66,9 @@ const wipe = pageWipe(
 // until one comes, both wait, as they wait for a leader anyway. Otherwise it runs on memory stores, and the device's
 // data stays sealed and whole.
 let deviceOwner: string | undefined
+// Whether the owner held the device's data before this activation (`Receipt.continuous`): only then are the outbox's
+// writes stored before writes named who queued them theirs.
+let deviceContinuous = false
 // Sealed only because no one was signed in, or ChatApi couldn't say who: the owner signing in reopens this page.
 let sealedUntilSignIn = false
 let engineWorker: Worker | undefined
@@ -93,6 +96,7 @@ const accept = (message: unknown) => {
   if (receipt === undefined || activation.state() !== "pending") return
   if (receipt.owner !== undefined) {
     deviceOwner = receipt.owner
+    deviceContinuous = receipt.continuous === true
     activation.allow()
     return
   }
@@ -134,6 +138,13 @@ const host: Host = {
       clear: async () => (await outboxStorage()).clear(),
     },
     online: new WebOnlineDetector(),
+    // A queued write is sent only as who queued it: the device's owner when this page opened its data. Another
+    // owner's writes, such as an earlier owner's left in IndexedDB after the browser evicted the device store, stay
+    // sealed in the outbox (`Outbox.Principal`).
+    principal: {
+      now: () => (activation.state() === "retained" ? deviceOwner : undefined),
+      ownsUnstamped: () => deviceContinuous,
+    },
   },
   lock: WebLock.make(navigator.locks),
   isOnline: () => navigator.onLine,

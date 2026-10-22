@@ -72,11 +72,20 @@ const signedIn = (personId: string, login: string): Effect.Effect<SessionState> 
 const signedOut: Effect.Effect<SessionState> = Effect.succeed({ signedIn: false, available: true })
 const offline: Effect.Effect<SessionState, AuthUnreachable> = Effect.fail(new AuthUnreachable({}))
 
-/** One activation: its exit and what it reported. */
-const activate = async (device: Store, session: Effect.Effect<SessionState, unknown>) => {
+/** One activation: its exit and what it reported; `continuity` hears whether the owner held the data before it. */
+const activate = async (device: Store, session: Effect.Effect<SessionState, unknown>, continuity: Array<boolean> = []) => {
   const reports: Array<{ owner: string | undefined; outcome: Outcome }> = []
   const exit = await Effect.runPromise(
-    Effect.exit(authorizeDevice({ database: device.database, session, report: (owner, outcome) => reports.push({ owner, outcome }) })),
+    Effect.exit(
+      authorizeDevice({
+        database: device.database,
+        session,
+        report: (owner, outcome, continuous) => {
+          reports.push({ owner, outcome })
+          continuity.push(continuous)
+        },
+      }),
+    ),
   )
   expect(reports.length).toBeLessThanOrEqual(1)
   return { exit, ...reports[0] }
@@ -163,6 +172,33 @@ describe("a device from the deployed build 7b96f878", () => {
     }
     expect(recorded(device)).toBeUndefined()
     expect(contents(device)).toEqual(before)
+  })
+})
+
+describe("whether the owner held the data before this activation", () => {
+  // Only then are the outbox's writes stored before writes were stamped theirs (Receipt.continuous, Outbox.Principal).
+  test("an earlier build's own person, and the recorded owner, online or offline, held it; a new owner did not", async () => {
+    const continuity: Array<boolean> = []
+    const deployed = await deployedStore()
+    await activate(deployed, signedIn("person-1", LOGIN), continuity)
+    await activate(deployed, signedIn("person-1", LOGIN), continuity)
+    const device = store()
+    await activate(device, signedIn("alice", "alice"), continuity)
+    await activate(device, offline, continuity)
+    await activate(device, signedOut, continuity)
+    // legacy match, recorded owner, a new device's first person, the owner offline, sealed for a signed-out browser.
+    expect(continuity).toEqual([true, true, false, true, false])
+  })
+
+  test("a visitor's device: the visitor held it once recorded; the person who adopts it did not, until recorded", async () => {
+    const continuity: Array<boolean> = []
+    const device = store()
+    await activate(device, signedOut, continuity)
+    await activate(device, offline, continuity)
+    await activate(device, signedIn("alice", "alice"), continuity)
+    await activate(device, signedIn("alice", "alice"), continuity)
+    await activate(device, signedIn("bob", "bob"), continuity)
+    expect(continuity).toEqual([false, true, false, true, false])
   })
 })
 
@@ -321,12 +357,16 @@ describe("a tab about to follow a leader", () => {
     expect(answer(receipt("alice"), out)).toEqual(sealedFor("verified"))
     expect(answer(receipt("alice"), "malformed")).toEqual(sealedFor("verified"))
     expect(answer(sealedFor("changed"), alice)).toEqual(sealedFor("changed"))
+    // Whether the owner held the data travels with the receipt a follower gets.
+    expect(answer({ ...receipt("alice"), continuous: true }, alice)).toEqual({ ...receipt("alice"), continuous: true })
   })
 
   test("reads only well-formed receipts, and sessions that name a stable person", async () => {
     expect(readReceipt(receipt("alice"))).toEqual(receipt("alice"))
     expect(readReceipt({ ...sealedFor("verified"), reopen: true })).toEqual({ ...sealedFor("verified"), reopen: true })
     expect(readReceipt({ ...sealedFor("changed"), reopen: "yes" })).toEqual(sealedFor("changed"))
+    expect(readReceipt({ ...receipt("alice"), continuous: true })).toEqual({ ...receipt("alice"), continuous: true })
+    expect(readReceipt({ ...receipt("alice"), continuous: "yes" })).toEqual(receipt("alice"))
     for (const bad of [undefined, null, { request: true }, { _tag: IDENTITY_MESSAGE }, { _tag: IDENTITY_MESSAGE, outcome: "verified", owner: 1 }]) {
       expect(readReceipt(bad)).toBeUndefined()
     }

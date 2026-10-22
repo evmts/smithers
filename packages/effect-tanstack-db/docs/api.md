@@ -381,6 +381,12 @@ interface Options<R> {
   readonly mutations: Readonly<Record<string, Mutation<R>>>
   readonly upgrade?: Migrations.OutboxUpgrade
   readonly parked?: Readonly<Record<string, (write: Parked) => Effect.Effect<boolean, never, R>>>
+  readonly principal?: Principal
+}
+
+interface Principal {
+  readonly now: () => string | undefined
+  readonly ownsUnstamped: () => boolean
 }
 
 type Mutation<R> = (params: {
@@ -399,6 +405,19 @@ type Mutation<R> = (params: {
 | `mutations`   | The named mutations, as Effects run with the services of the fiber that builds the layer.                                                                                                                                                               |
 | `upgrade`     | How writes cross builds: `Migrations.outbox(registry)`. Each write is stamped with its payloads' versions; before the library loads the stored writes, each one an older build made is upgraded, or parked. See [Migrations](migrations.md#the-outbox). |
 | `parked`      | What takes a parked write of each mutation name as the outbox starts, such as a feature showing it Not sent: `true` when it took the write, which the outbox then deletes; `false` leaves it parked.                                                    |
+| `principal`   | Who this program writes as, so a write is sent only as who queued it; see below. Without it, every stored write is this program's.                                                                                                                      |
+
+With `principal`, read synchronously each time the outbox asks, each write is
+stamped with `now`, the principal this program writes as at that moment, such
+as the person whose data it opened. The outbox loads, shows, parks and sends
+only the stored writes that are the principal's: stamped with `now`, or, for a
+write stored before writes were stamped, when `ownsUnstamped()`. Every other
+write stays in the storage, sealed: never loaded, offered to `parked`, sent or
+deleted, and logged as `outbox write sealed` at Warn level with `name` and
+`stage: "load"`. A write whose principal changed after it was loaded is sealed
+as it comes up to be sent (`stage: "send"`, counted in `attempts` as
+`sealed`): its rows roll back, `settled` fails, and the storage keeps it, so
+it goes once a program that writes as its principal loads it.
 
 Starts the outbox and waits until it has loaded the writes stored earlier,
 restored their rows, and asked to lead; a storage it can't read at start is
@@ -581,23 +600,23 @@ offline.
 
 ### Models, errors and records
 
-| Export                 | Is                                                                                                                                                                                                                         |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Leader`               | The library's `LeaderElection`.                                                                                                                                                                                            |
-| `Online`               | The library's `OnlineDetector`.                                                                                                                                                                                            |
-| `Refused`              | `Data.TaggedError` with `status?: number`: the server refused the write for good.                                                                                                                                          |
-| `Retry`                | `Data.TaggedError` with `status?: number`: the write didn't get through (a 5xx, 408 or 429, or no status for the network or a deadline).                                                                                   |
-| `NotAdmitted`          | `Data.TaggedError` with `reason: "follower" \| "storage"`: another program leads, or the storage failed to store the write. Nothing was sent and the write's rows rolled back.                                             |
-| `NotWithdrawn`         | `Data.TaggedError` with `reason: "follower" \| "gone" \| "sending" \| "storage"`: `withdraw` didn't take the write back, and nothing changed. See [Taking a write back](#taking-a-write-back).                             |
-| `attempts`             | Counter `outbox_attempts`, by `name` and `outcome`: `sent`, `retry`, `refused`, `defect`, `sent_elsewhere` (another program sent the write while this one followed), or `withdrawn` (settled unsent after `withdraw`).     |
-| `refused`              | Counter `outbox_refused`, by `name` and `status` (`none` without one).                                                                                                                                                     |
-| `queuedMs`             | Histogram `outbox_queued_ms`, by `name`: milliseconds from a write to its mutation succeeding.                                                                                                                             |
-| `leaderChanges`        | Counter `outbox_leader_changes`, by `leader` (`true` or `false`).                                                                                                                                                          |
-| `carried`              | Counter `outbox_carried`, by `name`, `outcome` (`upgraded` or `parked`) and `reason` (`none` for an upgrade): stored writes from an older build the outbox brought forward or parked as it started.                        |
-| `Parked`               | A parked write: its `id`, mutation `name`, `reason` and the `rows` as stored.                                                                                                                                              |
-| span `outbox.carry`    | One per start with `upgrade`: the pass over the stored writes. Each upgraded write is logged as `outbox write upgraded` (Info), each parked one as `outbox write parked` (Warn), with `name` and `reason`, never its rows. |
-| span `outbox.send`     | One per send, with `name`, `attempt` and `outcome`, linked to the span the write was made in, so a send after a reload still points at the ask.                                                                            |
-| span `outbox.withdraw` | One per `withdraw`, with `outcome`: `withdrawn`, or the `NotWithdrawn` reason.                                                                                                                                             |
+| Export                 | Is                                                                                                                                                                                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Leader`               | The library's `LeaderElection`.                                                                                                                                                                                                                                                  |
+| `Online`               | The library's `OnlineDetector`.                                                                                                                                                                                                                                                  |
+| `Refused`              | `Data.TaggedError` with `status?: number`: the server refused the write for good.                                                                                                                                                                                                |
+| `Retry`                | `Data.TaggedError` with `status?: number`: the write didn't get through (a 5xx, 408 or 429, or no status for the network or a deadline).                                                                                                                                         |
+| `NotAdmitted`          | `Data.TaggedError` with `reason: "follower" \| "storage"`: another program leads, or the storage failed to store the write. Nothing was sent and the write's rows rolled back.                                                                                                   |
+| `NotWithdrawn`         | `Data.TaggedError` with `reason: "follower" \| "gone" \| "sending" \| "storage"`: `withdraw` didn't take the write back, and nothing changed. See [Taking a write back](#taking-a-write-back).                                                                                   |
+| `attempts`             | Counter `outbox_attempts`, by `name` and `outcome`: `sent`, `retry`, `refused`, `defect`, `sent_elsewhere` (another program sent the write while this one followed), `withdrawn` (settled unsent after `withdraw`), or `sealed` (another principal queued it; kept, never sent). |
+| `refused`              | Counter `outbox_refused`, by `name` and `status` (`none` without one).                                                                                                                                                                                                           |
+| `queuedMs`             | Histogram `outbox_queued_ms`, by `name`: milliseconds from a write to its mutation succeeding.                                                                                                                                                                                   |
+| `leaderChanges`        | Counter `outbox_leader_changes`, by `leader` (`true` or `false`).                                                                                                                                                                                                                |
+| `carried`              | Counter `outbox_carried`, by `name`, `outcome` (`upgraded` or `parked`) and `reason` (`none` for an upgrade): stored writes from an older build the outbox brought forward or parked as it started.                                                                              |
+| `Parked`               | A parked write: its `id`, mutation `name`, `reason` and the `rows` as stored.                                                                                                                                                                                                    |
+| span `outbox.carry`    | One per start with `upgrade`: the pass over the stored writes. Each upgraded write is logged as `outbox write upgraded` (Info), each parked one as `outbox write parked` (Warn), with `name` and `reason`, never its rows.                                                       |
+| span `outbox.send`     | One per send, with `name`, `attempt` and `outcome`, linked to the span the write was made in, so a send after a reload still points at the ask.                                                                                                                                  |
+| span `outbox.withdraw` | One per `withdraw`, with `outcome`: `withdrawn`, or the `NotWithdrawn` reason.                                                                                                                                                                                                   |
 
 ## `Migrations`
 

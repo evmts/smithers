@@ -35,13 +35,17 @@ export type Outcome = "verified" | "visitor" | "offline" | "signed_out" | "chang
 
 /**
  * What the owner receipt carries: who the opened data belongs to (absent when it may not open) and the outcome; with
- * `reopen`, every tab should load again because another person is signed in now.
+ * `reopen`, every tab should load again because another person is signed in now. With `continuous`, the owner held the
+ * data before this activation: the device recorded them as its owner, or an earlier build's confirmed session matched
+ * them. Only then are the outbox's writes stored before writes named who queued them theirs (`Outbox.Principal`); a
+ * device that came to its owner only now (an empty one, a visitor's) keeps such writes sealed.
  */
 export interface Receipt {
   readonly _tag: typeof IDENTITY_MESSAGE
   readonly owner: string | undefined
   readonly outcome: string
   readonly reopen?: true
+  readonly continuous?: true
 }
 
 const Owner = Schema.Struct({ v: Schema.Literal(1), personId: Schema.String, login: Schema.String })
@@ -115,7 +119,7 @@ const confirmedFor = (legacy: Legacy | undefined, person: { readonly personId: s
 export const authorizeDevice = (options: {
   readonly database: SharedSqlite.Service
   readonly session: Effect.Effect<State, unknown>
-  readonly report: (owner: string | undefined, outcome: Outcome) => void
+  readonly report: (owner: string | undefined, outcome: Outcome, continuous: boolean) => void
 }) => {
   let stage = "owner"
   return Effect.gen(function* () {
@@ -172,7 +176,9 @@ export const authorizeDevice = (options: {
     const fields: Record<string, string> = via === undefined ? { outcome } : { outcome, via }
     yield* Metric.update(Metric.withAttributes(checks, fields), 1)
     yield* Effect.logInfo("auth.device_identity").pipe(Effect.annotateLogs(fields))
-    yield* Effect.sync(() => options.report(owner, outcome))
+    // The owner held the data before this activation: recorded as its owner, or an earlier build's matching session.
+    const continuous = owner !== undefined && (owner === recorded || via === "legacy")
+    yield* Effect.sync(() => options.report(owner, outcome, continuous))
     if (owner === undefined) return yield* new DeviceIdentityRefused({ reason: outcome })
   }).pipe(
     Effect.tapCause((cause) => {
@@ -222,9 +228,13 @@ export const readReceipt = (value: unknown): Receipt | undefined => {
     receipt?._tag !== IDENTITY_MESSAGE || typeof receipt.outcome !== "string" ||
     (receipt.owner !== undefined && typeof receipt.owner !== "string")
   ) return undefined
-  return receipt.reopen === true
-    ? { _tag: IDENTITY_MESSAGE, owner: receipt.owner, outcome: receipt.outcome, reopen: true }
-    : { _tag: IDENTITY_MESSAGE, owner: receipt.owner, outcome: receipt.outcome }
+  return {
+    _tag: IDENTITY_MESSAGE,
+    owner: receipt.owner,
+    outcome: receipt.outcome,
+    ...(receipt.reopen === true ? { reopen: true } : {}),
+    ...(receipt.continuous === true ? { continuous: true } : {}),
+  }
 }
 
 /** How a page or worker binds its requests, and when a session answer means its activation must be made again. */
