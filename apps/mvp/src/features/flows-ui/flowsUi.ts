@@ -3,6 +3,8 @@ import type { FlowDispatch } from "../../flows/dispatch"
 import type { RunsNavigation } from "../runs/actions"
 import {
   answer,
+  deleteDraft,
+  draftAgain,
   edit,
   editCode,
   openCode,
@@ -34,6 +36,8 @@ export interface FlowsUiQueries {
   readonly draft: Store["draft"]["tanstack"]
   readonly answers: Store["answerList"]["tanstack"]
   readonly code: Store["codeRow"]["tanstack"]
+  /** The shown draft's round on this device's engine. */
+  readonly round: Store["roundRow"]["tanstack"]
 }
 
 /** What a person does, as plain functions. Each returns at once, or with a promise a route loader awaits. */
@@ -46,6 +50,8 @@ export interface FlowsUiActions {
   readonly startDraft: () => void
   readonly setAnswer: (draftId: string, questionId: string, value: string) => void
   readonly answer: () => void
+  readonly draftAgain: () => void
+  readonly deleteDraft: (draftId: string) => void
   readonly save: () => void
   readonly editCode: (text: string) => void
   readonly saveCode: () => void
@@ -76,6 +82,7 @@ export class FlowsUi extends Context.Service<
           draft: store.draft.tanstack,
           answers: store.answerList.tanstack,
           code: store.codeRow.tanstack,
+          round: store.roundRow.tanstack,
         },
         actions: {
           openNew: (name) => promise(openNew(name)),
@@ -86,6 +93,8 @@ export class FlowsUi extends Context.Service<
           startDraft: () => fork(startDraft),
           setAnswer: (draftId, questionId, value) => fork(setAnswer(draftId, questionId, value)),
           answer: () => fork(answer),
+          draftAgain: () => fork(draftAgain),
+          deleteDraft: (draftId) => fork(deleteDraft(draftId)),
           save: () => fork(save),
           editCode: (text) => fork(editCode(text)),
           saveCode: () => fork(saveCode),

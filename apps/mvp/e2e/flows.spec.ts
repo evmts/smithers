@@ -149,3 +149,23 @@ test("flows: draft a flow from a prompt, open its code, run it, relabel its step
   await page.getByRole("link", { name: `Code ${name}` }).click()
   await expect(code).toHaveValue(new RegExp(`"${name}/answer"`), { timeout: 30_000 })
 })
+
+test("flows: delete a draft while it drafts, and it leaves your drafts", async ({ devices }) => {
+  test.setTimeout(120_000)
+  const [a] = await devices.open("A")
+  const page = a.page
+  const name = `gone-${Date.now().toString(36)}`
+  await page.goto("/app/flows")
+  await page.getByRole("link", { name: "New flow" }).click()
+  await page.getByLabel("Name").fill(name)
+  await page.getByLabel("What it should do").fill("Write the numbers from one to three hundred as English words.")
+  await page.getByRole("button", { name: "Draft" }).click()
+  await expect(page).toHaveURL(/\/app\/flows\/drafts\/[0-9a-f-]{36}$/, { timeout: 30_000 })
+  // Delete on the card: the round stops on this device, the draft is gone, and the Flows page opens without it.
+  await page.locator('[data-slot="flow-draft-view"]').getByRole("button", { name: "Delete", exact: true }).click()
+  await expect(page).toHaveURL(/\/app\/flows$/, { timeout: 30_000 })
+  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0, { timeout: 30_000 })
+  await page.reload()
+  await expect(page.getByRole("link", { name: "New flow" })).toBeVisible()
+  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0)
+})

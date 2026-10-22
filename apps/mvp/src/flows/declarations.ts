@@ -19,6 +19,7 @@ import { Answer } from "../features/agent/flows"
 import {
   FlowAnswer,
   FlowDelete,
+  FlowDraftDelete,
   FlowList,
   FlowNew,
   FlowPrompt,
@@ -76,6 +77,7 @@ export const declarations = {
   "flow/run": FlowRun,
   "flow/run/prompt": FlowPrompt,
   "flow/delete": FlowDelete,
+  "flow/draft/delete": FlowDraftDelete,
   "flow/list": FlowList,
   "run/cancel": Cancel,
   "run/retry": Retry,

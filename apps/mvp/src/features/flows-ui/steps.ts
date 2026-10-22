@@ -16,6 +16,7 @@ import {
   type Drafted,
   FlowAnswer,
   FlowDelete,
+  FlowDraftDelete,
   FlowList,
   FlowNew,
   FlowPrompt,
@@ -31,6 +32,7 @@ import {
   ReadCode,
   ReadFlows,
   RecordAnswers,
+  RemoveDraft,
   RemoveFlow,
   WriteRound,
 } from "./flows"
@@ -309,6 +311,24 @@ export const writeCode = (input: typeof AdmitWrite.payloadSchema.Type) =>
 export const remove = ({ flowId }: { readonly flowId: string }) =>
   Effect.flatMap(FlowsClient, (client) => client.remove(flowId)).pipe(Effect.map((deleted) => ({ deleted })))
 
+/**
+ * `flow/draft/delete/remove`: stops the draft's round if this engine runs it (a round elsewhere is refused when it
+ * writes), then deletes the draft; `deleted` is false when it was gone already or isn't the person's.
+ */
+export const removeDraft = ({ draftId }: { readonly draftId: string }) =>
+  Effect.gen(function* () {
+    const client = yield* FlowsClient
+    // Refused (gone, or not the person's): nothing this person can delete.
+    const draft = yield* client.draft(draftId).pipe(
+      Effect.map(Option.some),
+      Effect.catchTag("@smthrs/mvp/flows/FlowsRefused", () => Effect.succeed(Option.none())),
+    )
+    if (Option.isNone(draft)) return { deleted: false }
+    // An id this engine doesn't hold is ignored; a stop the store couldn't record leaves a round whose write is refused.
+    yield* Effect.ignore((yield* FlowRuntime.FlowRuntime).interrupt(FlowNew, roundExecutionId(draftId, draft.value.round)))
+    return { deleted: yield* client.deleteDraft(draftId) }
+  })
+
 /** `flow/list/read`: the person's flows. */
 export const list = () =>
   Effect.flatMap(FlowsClient, (client) => client.list).pipe(
@@ -336,6 +356,7 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(FlowRead, ReadCode.toLayer(read)),
   Interpreter.layerWithImplementations(FlowWrite, AdmitWrite.toLayer(writeCode)),
   Interpreter.layerWithImplementations(FlowDelete, RemoveFlow.toLayer(remove)),
+  Interpreter.layerWithImplementations(FlowDraftDelete, RemoveDraft.toLayer(removeDraft)),
   Interpreter.layerWithImplementations(FlowList, ReadFlows.toLayer(list)),
 )
 

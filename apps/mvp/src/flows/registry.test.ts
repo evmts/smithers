@@ -106,6 +106,7 @@ describe("the parity law", () => {
       "flow/write",
       "flow/run",
       "flow/delete",
+      "flow/draft/delete",
       "flow/list",
       "run/cancel",
       "run/retry",
@@ -191,6 +192,7 @@ describe("names and placement", () => {
       "flow/run",
       "flow/run/prompt",
       "flow/delete",
+      "flow/draft/delete",
       "flow/list",
       "run/cancel",
       "run/retry",
@@ -259,7 +261,7 @@ describe("side effects (the registry's `changes`)", () => {
 
   test("only a flow that says what it changes asks the person first, and saving or deleting your flow does", () => {
     const asking = names.filter((name) => entryOf(name).confirm !== undefined)
-    expect(asking).toEqual(["flow/save", "flow/delete"])
+    expect(asking).toEqual(["flow/save", "flow/delete", "flow/draft/delete"])
     for (const name of asking) expect([name, entryOf(name).changes !== undefined]).toEqual([name, true])
   })
 

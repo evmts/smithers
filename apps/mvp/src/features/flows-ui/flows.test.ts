@@ -6,7 +6,7 @@ import { FlowRegistry, registry as flowEntries } from "../../flows/registry"
 import { Effect, Exit, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
-import { stop, testFile, usage } from "../../../worker/test/harness.ts"
+import { eventually, stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { contents } from "../../../worker/test/harness.ts"
 import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
@@ -18,7 +18,7 @@ import { Layer } from "effect"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import * as Catalog from "../../flows/catalog"
 import { cell, member, openAgent } from "../../test/agent"
-import { FlowAnswer, FlowDelete, FlowList, FlowNew, FlowRead, FlowRun, FlowSave, FlowWrite } from "./flows"
+import { FlowAnswer, FlowDelete, FlowDraftDelete, FlowList, FlowNew, FlowRead, FlowRun, FlowSave, FlowWrite } from "./flows"
 import { DRAFT_ID_NAMESPACE } from "./contract"
 import { roundExecutionId, roundOf } from "./round"
 import { renderSource, SOURCE_PATH } from "./source"
@@ -499,6 +499,30 @@ describe("a flow's code", () => {
     expect(writeOutcome({ _tag: "@smthrs/mvp/flows/FlowNotFound" })).toBe("not_found")
     expect(writeOutcome({ _tag: "@smthrs/mvp/flows/FlowsUnavailable" })).toBe("unavailable")
   })
+})
+
+describe("flow/draft/delete", () => {
+  test("deletes your draft and stops its round on this engine; again, or someone else's, deletes nothing", async () => {
+    const SILENT = "SILENT-never-answered"
+    // The drafting model call never answers: the round is live when the draft is deleted.
+    const d = await device((request) => (drafting(request) ? Stream.never : Stream.empty))
+    const draftId = crypto.randomUUID()
+    const round = d.engine.flows.execute(FlowNew, {
+      executionId: roundExecutionId(draftId, 0),
+      payload: { name: "dark-mode", request: SILENT },
+    })
+    const ended = Effect.runPromise(Effect.exit(round))
+    await eventually(async () => (await draftRow(draftId))?.status === "drafting", 30_000)
+    expect(await d.run(d.engine.flows.execute(FlowDraftDelete, { executionId: crypto.randomUUID(), payload: { draftId } })))
+      .toEqual(Exit.succeed({ deleted: true }))
+    expect((await ended)._tag).toBe("Failure")
+    expect(await d.run(d.engine.flows.execute(FlowDraftDelete, { executionId: crypto.randomUUID(), payload: { draftId } })))
+      .toEqual(Exit.succeed({ deleted: false }))
+    expect(await d.run(d.engine.flows.execute(FlowDraftDelete, {
+      executionId: crypto.randomUUID(),
+      payload: { draftId: crypto.randomUUID() },
+    }))).toEqual(Exit.succeed({ deleted: false }))
+  }, SLOW)
 })
 
 describe("flow/list and flow/delete", () => {

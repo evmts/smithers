@@ -11,7 +11,8 @@ import type { Inspection } from "../runs/schema"
 import { listRows } from "../runs/page"
 import { Runs } from "../runs/runs"
 import { codeSaveable, formReady, savedRefusal, writtenRefusal } from "./actions"
-import { codePath, draftFailureWords, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
+import { codePath, draftFailureWords, draftPath, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
+import { type RunStatus, shownRound } from "./round"
 import { FlowsUi } from "./flowsUi"
 import { placementOf, renderSource } from "./source"
 
@@ -115,6 +116,25 @@ describe("the form", () => {
     expect(writeRefusalWords("stale")).toBe("Changed since you opened it")
     expect(writeRefusalWords("teapot")).toBe("teapot")
     expect(codePath("release-notes")).toBe("/app/flows/code/release-notes")
+  })
+
+  test("a card shows its row, unless this device's run of its round ended without writing it", () => {
+    const draft = { id: "d", round: 1, status: "drafting" as const, failure: null }
+    const run = (status: RunStatus, runId = "d:1") => ({ runId, status })
+    const drafting = { status: "drafting", failure: null, retry: false }
+    expect(shownRound(draft, undefined)).toEqual(drafting)
+    for (const status of ["pending", "running", "suspended", "completed", "absent"] as const) {
+      expect([status, shownRound(draft, run(status))]).toEqual([status, drafting])
+    }
+    expect(shownRound(draft, run("cancelled"))).toEqual({ status: "failed", failure: "stopped", retry: true })
+    expect(shownRound(draft, run("failed"))).toEqual({ status: "failed", failure: "ended", retry: true })
+    // Another round's run, or none read yet, says nothing about this one.
+    expect(shownRound(draft, run("cancelled", "d:0"))).toEqual(drafting)
+    expect(shownRound(draft, { runId: null, status: "absent" })).toEqual(drafting)
+    // A row past drafting is what it says; only a failed one offers Draft again.
+    expect(shownRound({ ...draft, status: "ready" as const }, run("failed"))).toEqual({ status: "ready", failure: null, retry: false })
+    expect(shownRound({ ...draft, status: "failed" as const, failure: "quota" }, run("completed")))
+      .toEqual({ status: "failed", failure: "quota", retry: true })
   })
 
   test("a failed round reads by its code; one it doesn't know reads as itself", () => {
@@ -237,6 +257,78 @@ describe("a flow of your own, from a tab", () => {
     await t.reply("The flow's name: hello", `ctx.done(${JSON.stringify(drafted())})`, 1)
     await until(() => expect(t.draft()?.draft).toMatchObject({ status: "ready", round: 1 }))
     await until(() => expect(t.flows.queries.answers.toArray).toEqual([]))
+  }, WITHIN)
+
+  test("two Draft presses before the first is admitted make one draft, drafted once", async () => {
+    const t = await open()
+    t.flows.actions.setName("hello")
+    t.flows.actions.setRequest("Say hello")
+    await until(() => expect(t.flows.queries.form.toArray[0]).toMatchObject({ name: "hello", request: "Say hello" }))
+    t.flows.actions.startDraft()
+    t.flows.actions.startDraft()
+    await until(() => expect(t.went("/app/flows/drafts/")).toBeDefined())
+    const draftId = t.went("/app/flows/drafts/")!.split("/").at(-1)!
+    await t.reply("The flow's name: hello", `ctx.done(${JSON.stringify(drafted())})`)
+    await until(() => expect(t.flows.queries.drafts.toArray.map((draft) => [draft.id, draft.status])).toEqual([[draftId, "ready"]]))
+    expect(t.api.modelRequests("The flow's name: hello")).toBe(1)
+    expect(new Set(host(t).navigated.filter((path) => path.startsWith("/app/flows/drafts/")))).toEqual(new Set([draftPath(draftId)]))
+    // The form took a new draft id for the next one.
+    expect(t.flows.queries.form.toArray[0]).toMatchObject({ name: "", request: "" })
+    expect(t.flows.queries.form.toArray[0]!.draftId).not.toBe(draftId)
+  }, WITHIN)
+
+  test("Stop the round's run: the card reads Failed, Stopped; Draft again drafts the next round to Ready", async () => {
+    const t = await open()
+    t.flows.actions.setName("hello")
+    t.flows.actions.setRequest("Say hello")
+    await until(() => expect(t.flows.queries.form.toArray[0]).toMatchObject({ name: "hello" }))
+    t.flows.actions.startDraft()
+    await until(() => expect(t.went("/app/flows/drafts/")).toBeDefined())
+    const draftId = t.went("/app/flows/drafts/")!.split("/").at(-1)!
+    await t.flows.actions.openDraft(draftId)
+    // The drafting model call is in flight and never answered; the round's row says drafting.
+    await until(() => expect(t.api.modelRequests("The flow's name: hello")).toBe(1))
+    await until(() => expect(t.draft()?.draft).toMatchObject({ id: draftId, status: "drafting", round: 0 }))
+    // Nothing settled yet: the card reads Drafting, with no Draft again.
+    await until(() => expect(t.flows.queries.round.toArray[0]).toMatchObject({ runId: `${draftId}:0`, status: "running" }))
+    expect(shownRound(t.draft()!.draft, t.flows.queries.round.toArray[0])).toEqual({ status: "drafting", failure: null, retry: false })
+    // Stop the round from its run page: its run ends cancelled before it wrote the draft.
+    await t.runs.actions.openRun(`${draftId}:0`)
+    await until(() => expect(t.inspection()?.run.status).toBe("running"))
+    t.runs.actions.stop()
+    await until(() => expect(t.flows.queries.round.toArray[0]).toMatchObject({ runId: `${draftId}:0`, status: "cancelled" }))
+    expect(t.draft()?.draft.status).toBe("drafting")
+    expect(shownRound(t.draft()!.draft, t.flows.queries.round.toArray[0])).toEqual({ status: "failed", failure: "stopped", retry: true })
+    expect(draftFailureWords("stopped")).toBe("Stopped")
+
+    t.flows.actions.draftAgain()
+    await t.reply("The flow's name: hello", `ctx.done(${JSON.stringify(drafted())})`, 1)
+    await until(() => expect(t.draft()?.draft).toMatchObject({ id: draftId, status: "ready", round: 1 }))
+    await until(() => expect(t.flows.queries.round.toArray[0]).toMatchObject({ runId: `${draftId}:1`, status: "completed" }))
+    expect(shownRound(t.draft()!.draft, t.flows.queries.round.toArray[0])).toEqual({ status: "ready", failure: null, retry: false })
+  }, WITHIN)
+
+  test("Delete a draft whose round still drafts: its round stops and it leaves the drafts list", async () => {
+    const t = await open()
+    t.flows.actions.setName("hello")
+    t.flows.actions.setRequest("Say hello")
+    await until(() => expect(t.flows.queries.form.toArray[0]).toMatchObject({ name: "hello" }))
+    t.flows.actions.startDraft()
+    await until(() => expect(t.went("/app/flows/drafts/")).toBeDefined())
+    const draftId = t.went("/app/flows/drafts/")!.split("/").at(-1)!
+    await t.flows.actions.openDraft(draftId)
+    await until(() => expect(t.api.modelRequests("The flow's name: hello")).toBe(1))
+    await until(() => expect(t.flows.queries.drafts.toArray.map((draft) => draft.id)).toEqual([draftId]))
+    const before = host(t).navigated.length
+    t.flows.actions.deleteDraft(draftId)
+    await until(() => expect(host(t).navigated.length).toBeGreaterThan(before))
+    expect(t.went(FLOWS_PATH)).toBe(FLOWS_PATH)
+    await until(() => expect(t.flows.queries.drafts.toArray).toEqual([]))
+    await t.runs.actions.openRun(`${draftId}:0`)
+    await until(() => expect(t.inspection()?.run.status).toBe("cancelled"))
+    // Its page now shows no draft, and no round.
+    await t.flows.actions.openDraft(draftId)
+    expect(t.flows.queries.round.toArray[0]).toMatchObject({ runId: null, status: "absent" })
   }, WITHIN)
 
   test("Save refuses a name another of your flows took meanwhile", async () => {

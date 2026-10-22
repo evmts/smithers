@@ -17,7 +17,7 @@ import {
 import { useFlowsUi } from "./FlowsUiContext"
 
 // Your own flows (decision 0014 §5, `/app/flows`): each one's name and description with Run, Edit, Code and Delete,
-// then the drafts not saved yet, and New flow. A flow whose code was edited by hand can't run yet: Run is off, and the
+// then the drafts not saved yet, each with Delete, and New flow. A flow whose code was edited by hand can't run yet: Run is off, and the
 // row says why.
 export function FlowsPage() {
   const { queries, actions } = useFlowsUi()
@@ -75,6 +75,15 @@ export function FlowsPage() {
                   <Link to={draftPath(draft.id) as never}>{draft.name ?? draft.request}</Link>
                 </TableCell>
                 <TableCell>{draftStatusLine(draft.status, draft.round)}</TableCell>
+                <TableCell>
+                  <Button
+                    aria-label={`${DELETE} draft ${draft.name ?? draft.request}`}
+                    variant="ghost"
+                    onClick={() => actions.deleteDraft(draft.id)}
+                  >
+                    {DELETE}
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

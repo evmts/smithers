@@ -1,12 +1,16 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
-import { Context, Duration, Effect, Layer, Schema } from "effect"
+import { BrowserEngine } from "@smthrs/platform-browser"
+import { Context, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract"
+import { roundExecutionId } from "./round"
 import { Draft, FlowRow } from "./schema"
 
 // Your own flows on this tab (decision 0014 §1 "On the device", docs/features/flows.md#the-browser): the person's flows
 // and drafts, which Postgres keeps and Electric syncs to every device they sign in on, kept on the device; and this
-// tab's own form, unsent answers, the draft it shows and a draft's last refusal, and the code it shows, in memory.
+// tab's own form, unsent answers, the draft it shows and a draft's last refusal, the code it shows, and how the shown
+// draft's round runs on this device's engine, in memory. The round is read again on each batch of the engine's events
+// and each change of the drafts, at most once per `FOLLOW_EVERY`; nothing polls.
 
 /** Where the shapes sync from: ChatApi's origin, the site's own. */
 export interface FlowsUiConfig {
@@ -15,10 +19,30 @@ export interface FlowsUiConfig {
   readonly confirmWithin?: Duration.Input
 }
 
-/** The new-flow form: its one row. */
+/**
+ * The new-flow form: its one row, with the draft id its Draft starts. A second press before the first is admitted
+ * starts the same execution, which the engine runs once.
+ */
 export const FORM = "form"
-export const Form = Schema.Struct({ id: Schema.Literal(FORM), name: Schema.String, request: Schema.String })
+export const Form = Schema.Struct({
+  id: Schema.Literal(FORM),
+  name: Schema.String,
+  request: Schema.String,
+  draftId: Schema.String,
+})
 export type Form = typeof Form.Type
+
+/** How often the shown draft's round is read again while the engine works or the drafts change. */
+export const FOLLOW_EVERY = Duration.millis(200)
+
+/** A run's status on this device's engine, or `absent` when the engine doesn't hold it (another device, or none) or can't be read. */
+export const RoundStatus = Schema.Literals(["pending", "running", "suspended", "completed", "failed", "cancelled", "absent"])
+export type RoundStatus = typeof RoundStatus.Type
+
+/** The shown draft's round, `<draftId>:<round>`, as this device's engine last read it. */
+export const ROUND = "round"
+export const RoundRun = Schema.Struct({ id: Schema.Literal(ROUND), runId: Schema.NullOr(Schema.String), status: RoundStatus })
+export type RoundRun = typeof RoundRun.Type
 
 /** One unsent answer, `<draftId>:<questionId>`. */
 export const AnswerRow = Schema.Struct({
@@ -55,6 +79,10 @@ export const Code = Schema.Struct({
   refusal: Schema.NullOr(Schema.String),
 })
 export type Code = typeof Code.Type
+
+/** The shown draft's round run. */
+export const roundQuery = (round: Collection.Collection<RoundRun, string>) =>
+  LiveQuery.make((q) => q.from({ round: round.tanstack }).findOne())
 
 /** The draft `shown` names, once the device has it. */
 export const draftQuery = (shown: Collection.Collection<Shown, string>, drafts: Collection.Collection<Draft>) =>
@@ -103,20 +131,33 @@ export class FlowsUiStore extends Context.Service<
     readonly answers: Collection.Collection<AnswerRow, string>
     readonly shown: Collection.Collection<Shown, string>
     readonly code: Collection.Collection<Code, string>
+    readonly round: Collection.Collection<RoundRun, string>
     readonly draft: Live<typeof draftQuery>
     readonly flowList: Live<typeof flowsQuery>
     readonly draftList: Live<typeof draftsQuery>
     readonly formRow: Live<typeof formQuery>
     readonly answerList: Live<typeof answersQuery>
     readonly codeRow: Live<typeof codeQuery>
+    readonly roundRow: Live<typeof roundQuery>
     readonly confirmWithin: Duration.Input
+    /** Reads the shown draft's round from this device's engine again. */
+    readonly readRound: Effect.Effect<void>
+    /**
+     * The first round from `round` on that this device's engine holds no run of, for `draftId`: what Draft again
+     * starts, so it never joins a run an earlier attempt left. An engine that can't be read holds none.
+     */
+    readonly nextRound: (draftId: string, round: number) => Effect.Effect<number>
   }
 >()("@smthrs/mvp/flows/FlowsUiStore") {
-  /** The store; its collections cleaned up and its Electric shapes closed when the scope closes. */
+  /**
+   * The store over this tab's `BrowserEngine`; its collections cleaned up, its Electric shapes closed and its following
+   * of the engine stopped when the scope closes.
+   */
   static readonly layer = (config: FlowsUiConfig) =>
     Layer.effect(
       FlowsUiStore,
       Effect.gen(function* () {
+        const engine = yield* BrowserEngine.BrowserEngine
         const shape = (route: string) => ({
           url: `${config.origin}${route}`,
           columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -146,7 +187,7 @@ export class FlowsUiStore extends Context.Service<
           id: "flow-form",
           schema: Form,
           getKey: (row) => row.id,
-          initialData: [{ id: FORM, name: "", request: "" }],
+          initialData: [{ id: FORM, name: "", request: "", draftId: crypto.randomUUID() }],
         })
         const answers = yield* Collection.local<AnswerRow, string>({
           id: "flow-answers",
@@ -167,6 +208,52 @@ export class FlowsUiStore extends Context.Service<
             { id: CODE, name: "", state: "loading", revision: 0, source: "", text: "", busy: false, refusal: null },
           ],
         })
+        const round = yield* Collection.local<RoundRun, string>({
+          id: "flow-round",
+          schema: RoundRun,
+          getKey: (row) => row.id,
+          initialData: [{ id: ROUND, runId: null, status: "absent" }],
+        })
+
+        /** How this engine holds `runId`: its status, or `absent` when it doesn't hold it or can't be read. */
+        const statusOf = (runId: string) =>
+          engine.inspect(runId, { limit: 1 }).pipe(
+            Effect.map((inspection): RoundStatus => inspection.run.status),
+            Effect.orElseSucceed((): RoundStatus => "absent"),
+          )
+
+        const readRound = Effect.gen(function* () {
+          const showing = Option.getOrThrow(yield* shown.get(SHOWN))
+          const draft = showing.draftId === null ? Option.none() : yield* drafts.get(showing.draftId)
+          const runId = Option.match(draft, { onNone: () => null, onSome: (row) => roundExecutionId(row.id, row.round) })
+          const status = runId === null ? "absent" : yield* statusOf(runId)
+          yield* round.update(ROUND, (row) => {
+            row.runId = runId
+            row.status = status
+          })
+        }).pipe(Effect.asVoid, Effect.orDie)
+
+        /** The first round from `round` on that this engine holds no run of. */
+        const nextRound = (draftId: string, from: number): Effect.Effect<number> =>
+          Effect.flatMap(statusOf(roundExecutionId(draftId, from)), (status) =>
+            status === "absent" ? Effect.succeed(from) : nextRound(draftId, from + 1))
+
+        // Every batch of the engine's events for the shown draft, and every change of the drafts, reads the round again.
+        yield* Stream.merge(
+          engine.events.pipe(Stream.map((event) => event.executionId)),
+          drafts.changes().pipe(Stream.as("")),
+        ).pipe(
+          Stream.groupedWithin(Number.MAX_SAFE_INTEGER, FOLLOW_EVERY),
+          Stream.runForEach((ids) =>
+            Effect.gen(function* () {
+              const { draftId } = Option.getOrThrow(yield* shown.get(SHOWN))
+              if (draftId === null) return
+              if (ids.some((id) => id === "" || id.startsWith(`${draftId}:`))) yield* readRound
+            })
+          ),
+          Effect.forkScoped,
+        )
+
         return FlowsUiStore.of({
           flows,
           drafts,
@@ -174,12 +261,16 @@ export class FlowsUiStore extends Context.Service<
           answers,
           shown,
           code,
+          round,
+          readRound,
+          nextRound,
           draft: yield* draftQuery(shown, drafts),
           flowList: yield* flowsQuery(flows),
           draftList: yield* draftsQuery(drafts),
           formRow: yield* formQuery(form),
           answerList: yield* answersQuery(answers),
           codeRow: yield* codeQuery(code),
+          roundRow: yield* roundQuery(round),
           confirmWithin: config.confirmWithin ?? Duration.seconds(15),
         })
       }),

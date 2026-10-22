@@ -186,6 +186,17 @@ export const FlowDeleteReference = described(
   "Delete one of your flows.",
 )
 
+/** `flow/draft/delete { draftId }`: deletes a draft of yours not saved yet, and stops its round on this device. */
+export const FlowDraftDeleteReference = described(
+  {
+    _tag: "flow/draft/delete",
+    payloadSchema: Schema.Struct({ draftId: Schema.String.check(Schema.isUUID()) }),
+    successSchema: Schema.Struct({ deleted: Schema.Boolean }),
+    errorSchema: RouteFailure,
+  },
+  "Delete a draft of yours that isn't saved yet.",
+)
+
 /** `flow/list`: your flows. */
 export const FlowListReference = described(
   {

@@ -9,6 +9,7 @@ import {
   DraftNotReady,
   FlowAnswerReference,
   FlowDeleteReference,
+  FlowDraftDeleteReference,
   FlowInvalid,
   FlowListReference,
   FlowNeedsSandbox,
@@ -43,6 +44,7 @@ import { Description } from "./schema"
 //   flow/run { name, input?, revision? }
 //     flow/run/load   ─ the revision's flow.ts, its digest and its checks; code not drafted as drafted needs a sandbox
 //     flow/run/prompt ─ a child execution, whose payload pins the revision and its list: the agent follows it
+//   flow/draft/delete { draftId }      ─ stops the draft's round here, then deletes the draft
 //   flow/delete { flowId }, flow/list
 //
 // A drafted flow's body is one agent step that follows its instructions; `flow/run/prompt` is that step as this engine
@@ -338,6 +340,25 @@ export const FlowDelete = Flow.make(FlowDeleteReference._tag, {
   success: FlowDeleteReference.successSchema,
   error: FlowDeleteReference.errorSchema,
   body: Node.capture({ remove: RemoveFlow.name }, ({ flowId }) => RemoveFlow.call({ flowId })),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/draft/delete/remove`: stops the draft's round if this engine runs it, then deletes the draft through ChatApi. */
+export const RemoveDraft = Action.make("flow/draft/delete/remove", {
+  payload: FlowDraftDeleteReference.payloadSchema.fields,
+  success: FlowDraftDeleteReference.successSchema,
+  error: RouteFailure,
+  tier: "sealed",
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/draft/delete`: deletes a draft of yours. */
+export const FlowDraftDelete = Flow.make(FlowDraftDeleteReference._tag, {
+  description: FlowDraftDeleteReference.description!,
+  modelInvocable: true,
+  payload: FlowDraftDeleteReference.payloadSchema,
+  success: FlowDraftDeleteReference.successSchema,
+  error: FlowDraftDeleteReference.errorSchema,
+  body: Node.capture({ remove: RemoveDraft.name }, ({ draftId }) => RemoveDraft.call({ draftId })),
 }).annotate(Flow.Placement, Placement.client())
 
 /** `flow/read/source`: one revision's code, and where it runs. */

@@ -40,7 +40,8 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 //   revision of their flow `name`, admitted only while `revision` is still its latest (`409 stale` otherwise).
 // - `POST /api/flows/<id>/delete`: deletes one; its name is free again.
 // - `GET` and `POST /api/flow-drafts/<id>`: a draft round, which only `flow/new`'s steps write. A write for an older
-//   round than the row's is stale, and a saved draft never changes.
+//   round than the row's is stale, a saved draft never changes, and a deleted one is gone (`404`).
+// - `POST /api/flow-drafts/<id>/delete`: deletes a draft not saved yet; a round still running can't write it back.
 // - `POST /api/flow-drafts/<id>/answers {round, answers}`: the person's answers to the round's questions.
 // - `GET /api/shapes/flows` and `GET /api/shapes/flow-drafts`: Electric's rows of the signed-in person, without the
 //   owner's id; signed out, none.
@@ -113,6 +114,7 @@ interface DraftRow {
   readonly checks: ReadonlyArray<{ readonly ok: boolean }>
   readonly questions: ReadonlyArray<DraftQuestion>
   readonly flowId: string | null
+  readonly deleted: boolean
 }
 
 /** The draft `id`, as the routes read it, or `undefined`. */
@@ -129,8 +131,10 @@ const draftOf = (id: string) =>
       readonly checks: unknown
       readonly questions: unknown
       readonly flowId: string | null
+      readonly deleted: boolean
     }>`
-      SELECT actor_id AS "actorId", status, round, request, name, files, checks, questions, flow_id AS "flowId"
+      SELECT actor_id AS "actorId", status, round, request, name, files, checks, questions, flow_id AS "flowId",
+        deleted_at IS NOT NULL AS deleted
       FROM flow_drafts WHERE id = ${id}`
     // The driver hands jsonb columns over parsed.
     return row === undefined ? undefined : {
@@ -171,12 +175,34 @@ const writeDraft = (id: string, actorId: string, write: DraftWrite) =>
         files = EXCLUDED.files, checks = EXCLUDED.checks, questions = EXCLUDED.questions, failure = EXCLUDED.failure,
         updated_at = now()
       WHERE d.actor_id = EXCLUDED.actor_id AND d.round <= EXCLUDED.round AND d.status NOT IN ('saved', 'proposed')
+        AND d.deleted_at IS NULL
         AND NOT (d.round = EXCLUDED.round AND d.status = EXCLUDED.status AND d.files = EXCLUDED.files
           AND d.checks = EXCLUDED.checks AND d.questions = EXCLUDED.questions
           AND d.name IS NOT DISTINCT FROM EXCLUDED.name AND d.summary IS NOT DISTINCT FROM EXCLUDED.summary
           AND d.failure IS NOT DISTINCT FROM EXCLUDED.failure)
       RETURNING pg_current_xact_id()::xid::text AS txid`
     return row === undefined ? undefined : Number(row.txid)
+  })
+
+/** Deletes the author's draft `id` not saved yet: its transaction, or why not. */
+const deleteDraft = (id: string, actorId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const draft = yield* draftOf(id)
+    if (draft === undefined || draft.deleted) return { _tag: "Refused" as const, status: 404, code: "not_found" }
+    if (draft.actorId !== actorId) return { _tag: "Refused" as const, status: 403, code: "forbidden" }
+    const [row] = yield* sql<{ readonly txid: string }>`
+      UPDATE flow_drafts SET deleted_at = now(), updated_at = now()
+      WHERE id = ${id} AND actor_id = ${actorId} AND deleted_at IS NULL AND status NOT IN ('saved', 'proposed')
+      RETURNING pg_current_xact_id()::xid::text AS txid`
+    // Saved or proposed meanwhile, or deleted by a request that won the race.
+    if (row === undefined) {
+      const now = yield* draftOf(id)
+      return now!.deleted
+        ? { _tag: "Refused" as const, status: 404, code: "not_found" }
+        : { _tag: "Refused" as const, status: 409, code: "settled" }
+    }
+    return { _tag: "Deleted" as const, txid: Number(row.txid) }
   })
 
 /** The answers merged into the round's questions, by id; an answer to no question of the round is dropped. */
@@ -213,11 +239,23 @@ export const saveRefusal = (draft: DraftRow, save: SaveRequest): string | undefi
 const nameTaken = (error: unknown) =>
   SqlError.isSqlError(error) && error.reason._tag === "UniqueViolation" && error.reason.constraint === "flows_owner_name"
 
-/** Saves a ready draft as a flow, or the next revision of the flow it edits; marks the draft saved. One transaction. */
+/** The flow a draft edits was deleted meanwhile: what rolls a save's transaction back. */
+const GONE = "gone" as const
+
+/**
+ * Saves a ready draft as a flow, or the next revision of the flow it edits; marks the draft saved. One transaction,
+ * which claims the draft first: a second save of the same draft waits for the first and then finds it saved
+ * (`Claimed`), so a double Save makes one revision. A flow deleted meanwhile (`Gone`) rolls the claim back.
+ */
 const save = (actorId: string, request: SaveRequest, draft: DraftRow) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
+      const [claimed] = yield* sql<{ readonly id: string }>`
+        UPDATE flow_drafts SET status = 'saved', updated_at = now()
+        WHERE id = ${request.draftId} AND status = 'ready' AND deleted_at IS NULL
+        RETURNING id`
+      if (claimed === undefined) return { _tag: "Claimed" as const }
       let flowId: string
       let revision: number
       const placement = placementOf(request.source)
@@ -233,7 +271,7 @@ const save = (actorId: string, request: SaveRequest, draft: DraftRow) =>
             placement = ${placement}, updated_at = now()
           WHERE id = ${draft.flowId} AND owner_id = ${actorId} AND deleted_at IS NULL
           RETURNING revision`
-        if (row === undefined) return { _tag: "Gone" as const }
+        if (row === undefined) return yield* Effect.fail(GONE)
         flowId = draft.flowId
         revision = row.revision
       }
@@ -241,10 +279,10 @@ const save = (actorId: string, request: SaveRequest, draft: DraftRow) =>
         INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by)
         VALUES (${flowId}, ${revision}, ${request.digest}, ${request.source}, ${actorId})`
       const [written] = yield* sql<{ readonly txid: string }>`
-        UPDATE flow_drafts SET status = 'saved', flow_id = ${flowId}, updated_at = now() WHERE id = ${request.draftId}
+        UPDATE flow_drafts SET flow_id = ${flowId}, updated_at = now() WHERE id = ${request.draftId}
         RETURNING pg_current_xact_id()::xid::text AS txid`
       return { _tag: "Saved" as const, flowId, name: request.name, revision, txid: Number(written!.txid) }
-    }))
+    })).pipe(Effect.catchIf((error) => error === GONE, () => Effect.succeed({ _tag: "Gone" as const })))
   })
 
 /** The flow and revision a saved draft became: what a repeated save answers. */
@@ -356,7 +394,7 @@ const answerDraft = (id: string, actorId: string, answers: DraftAnswers) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const draft = yield* draftOf(id)
-    if (draft === undefined) return { _tag: "Refused" as const, status: 404, code: "not_found" }
+    if (draft === undefined || draft.deleted) return { _tag: "Refused" as const, status: 404, code: "not_found" }
     if (draft.actorId !== actorId) return { _tag: "Refused" as const, status: 403, code: "forbidden" }
     if (draft.status === "saved" || draft.status === "proposed") {
       return { _tag: "Refused" as const, status: 409, code: "settled" }
@@ -476,7 +514,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const saving = read.value
         fields.draftId = saving.draftId
         const draft = yield* draftOf(saving.draftId.toLowerCase())
-        if (draft === undefined) return refusal(404, "not_found")
+        if (draft === undefined || draft.deleted) return refusal(404, "not_found")
         if (draft.actorId !== actor.subject.id) return refusal(403, "forbidden")
         if (draft.status === "saved") {
           const saved = yield* savedOf(draft)
@@ -498,6 +536,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         if (saved._tag === "Gone") {
           fields.code = "gone"
           return refusal(409, "gone")
+        }
+        if (saved._tag === "Claimed") {
+          // Another save of this draft got there first, or it stopped being ready meanwhile.
+          const now = yield* draftOf(saving.draftId.toLowerCase())
+          if (now!.status !== "saved") {
+            fields.code = "not_ready"
+            return refusal(409, "not_ready")
+          }
+          fields.existing = true
+          return ok({ ...(yield* savedOf(now!)), txid: null })
         }
         fields.flowId = saved.flowId
         fields.revision = saved.revision
@@ -556,7 +604,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           fields.draftId = id
           if (request.method === "GET") {
             const row = yield* draftOf(id)
-            if (row === undefined) return refusal(404, "not_found")
+            if (row === undefined || row.deleted) return refusal(404, "not_found")
             if (row.actorId !== actor.subject.id) return refusal(403, "forbidden")
             return ok(yield* draftBody(id))
           }
@@ -573,6 +621,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (txid !== undefined) return ok({ txid })
           const row = yield* draftOf(id)
           if (row!.actorId !== actor.subject.id) return refusal(403, "forbidden")
+          // Deleted: a round still running on a device can't bring it back.
+          if (row!.deleted) return refusal(404, "not_found")
           if (row!.status === "saved" || row!.status === "proposed") return refusal(409, "settled")
           if (row!.round > write.round) return refusal(409, "stale_round")
           fields.existing = true
@@ -595,12 +645,27 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           return ok({ txid: answered.txid })
         }))
 
+    /** `POST /api/flow-drafts/<id>/delete`. */
+    const removeDraft = (id: string) =>
+      routed("draft_delete", (request, actor, fields) =>
+        Effect.gen(function* () {
+          fields.draftId = id
+          if (request.method !== "POST") return methodNot("POST")
+          const deleted = yield* deleteDraft(id, actor.subject.id)
+          if (deleted._tag === "Refused") {
+            fields.code = deleted.code
+            return refusal(deleted.status, deleted.code)
+          }
+          return ok({ txid: deleted.txid })
+        }))
+
     /** `/api/flow-drafts/<rest>`. */
     const drafts = (rest: string) => {
       const [id = "", tail, ...more] = rest.split("/")
       if (!isUuid(id) || more.length > 0) return Effect.succeed(refusal(404, "not_found"))
       if (tail === undefined) return draft(id.toLowerCase())
       if (tail === "answers") return answers(id.toLowerCase())
+      if (tail === "delete") return removeDraft(id.toLowerCase())
       return Effect.succeed(refusal(404, "not_found"))
     }
 
@@ -619,7 +684,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       })
 
     const flowsShape = shapeOf(FLOWS_TABLE, "owner_id = $1 AND deleted_at IS NULL", SYNCED_FLOW_COLUMNS, "flow.shape")
-    const draftsShape = shapeOf(FLOW_DRAFTS_TABLE, "actor_id = $1", SYNCED_DRAFT_COLUMNS, "flow.drafts.shape")
+    const draftsShape = shapeOf(FLOW_DRAFTS_TABLE, "actor_id = $1 AND deleted_at IS NULL", SYNCED_DRAFT_COLUMNS, "flow.drafts.shape")
 
     return { flows, drafts, flowsShape, draftsShape }
   })

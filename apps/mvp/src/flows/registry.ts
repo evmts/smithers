@@ -22,6 +22,7 @@ import type { Role } from "../features/auth/contract"
 import {
   FlowAnswerReference,
   FlowDeleteReference,
+  FlowDraftDeleteReference,
   FlowListReference,
   FlowNewReference,
   FlowPromptReference,
@@ -189,6 +190,11 @@ export const registry = {
     userOnlyReason: "flow/run starts it with the revision it pinned; nobody starts it by hand.",
   },
   "flow/delete": { flow: FlowDeleteReference, changes: "deletes the person's flow", confirm: "Delete this flow?" },
+  "flow/draft/delete": {
+    flow: FlowDraftDeleteReference,
+    changes: "deletes a draft of the person's",
+    confirm: "Delete this draft?",
+  },
   "flow/list": { flow: FlowListReference },
   // Runs (decision 0014 §2): the acts on a run this device holds, and the reads. Their results show on the run page.
   "run/cancel": { flow: Cancel, changes: "cancels a run" },

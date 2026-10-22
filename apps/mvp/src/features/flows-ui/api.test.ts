@@ -62,6 +62,7 @@ describe("FlowsClient", () => {
       ["POST http://chat.test/api/flows/save", { flowId: "f", name: "hello", revision: 1, txid: 4 }],
       ["POST http://chat.test/api/flows/write", { flowId: "f", name: "hello", revision: 2, txid: 6 }],
       ["POST http://chat.test/api/flows/f/delete", { txid: 5 }],
+      ["POST http://chat.test/api/flow-drafts/d/delete", { txid: 7 }],
     ])
     const { run, seen } = client((request) => json(answers.get(`${request.method} ${request.url}`)))
     expect(await run((c) => c.list)).toEqual(Exit.succeed({ flows: [] }))
@@ -77,8 +78,9 @@ describe("FlowsClient", () => {
     expect(await run((c) => c.write(write))).toEqual(Exit.succeed({ flowId: "f", name: "hello", revision: 2, txid: 6 }))
     expect(JSON.parse(seen.at(-1)!.body)).toEqual(write)
     expect(await run((c) => c.remove("f"))).toEqual(Exit.succeed(true))
+    expect(await run((c) => c.deleteDraft("d"))).toEqual(Exit.succeed(true))
     expect(seen.map((request) => request.method))
-      .toEqual(["GET", "GET", "GET", "GET", "POST", "POST", "POST", "POST", "POST"])
+      .toEqual(["GET", "GET", "GET", "GET", "POST", "POST", "POST", "POST", "POST", "POST"])
   })
 
   test("a 404 is a missing flow for a source or a write and nothing to delete; elsewhere a refusal", async () => {
@@ -88,6 +90,7 @@ describe("FlowsClient", () => {
       c.write({ name: "hello", revision: 1, description: "x", source: "s", digest: "a".repeat(64) })
     ))).toEqual({ _tag: "@smthrs/mvp/flows/FlowNotFound" })
     expect(await run((c) => c.remove("f"))).toEqual(Exit.succeed(false))
+    expect(await run((c) => c.deleteDraft("d"))).toEqual(Exit.succeed(false))
     expect(failureOf(await run((c) => c.draft("d")))).toEqual({
       _tag: "@smthrs/mvp/flows/FlowsRefused",
       status: 404,

@@ -197,6 +197,44 @@ describe("drafts", () => {
   })
 })
 
+describe("deleting a draft", () => {
+  test("only the author deletes a draft not saved yet; it is gone after, and a late round can't bring it back", async () => {
+    const h = await open()
+    const draftId = crypto.randomUUID()
+    expect((await writeRound(h, draftId, round("notes", { status: "drafting", files: [], checks: [] }))).status).toBe(200)
+    expect(await json(await send(await open(other), "POST", `/api/flow-drafts/${draftId}/delete`))).toEqual([403, { code: "forbidden" }])
+    const [status, body] = await json(await send(h, "POST", `/api/flow-drafts/${draftId}/delete`))
+    expect([status, body]).toEqual([200, { txid: expect.any(Number) }])
+    expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { route: "draft_delete", status: 200, draftId } })
+    // Gone: deleting it again, reading it, answering it, saving it, and the round still running writing it.
+    expect(await json(await send(h, "POST", `/api/flow-drafts/${draftId}/delete`))).toEqual([404, { code: "not_found" }])
+    expect(await json(await send(h, "GET", `/api/flow-drafts/${draftId}`))).toEqual([404, { code: "not_found" }])
+    expect(await json(await send(h, "POST", `/api/flow-drafts/${draftId}/answers`, { round: 0, answers: [{ id: "q1", value: "x" }] })))
+      .toEqual([404, { code: "not_found" }])
+    expect(await json(await send(h, "POST", "/api/flows/save", saving(draftId, "notes")))).toEqual([404, { code: "not_found" }])
+    expect(await json(await writeRound(h, draftId, round("notes", { round: 1 })))).toEqual([404, { code: "not_found" }])
+    expect(await draftRow(draftId)).toMatchObject({ status: "drafting", round: 0 })
+    // One no one wrote, and GET, are refused too.
+    expect(await json(await send(h, "POST", `/api/flow-drafts/${crypto.randomUUID()}/delete`))).toEqual([404, { code: "not_found" }])
+    expect((await send(h, "GET", `/api/flow-drafts/${draftId}/delete`)).status).toBe(405)
+  })
+
+  test("a saved draft is settled, and stays", async () => {
+    const h = await open()
+    const { draftId } = await saved(h, "notes")
+    expect(await json(await send(h, "POST", `/api/flow-drafts/${draftId}/delete`))).toEqual([409, { code: "settled" }])
+    expect(await draftRow(draftId)).toMatchObject({ status: "saved" })
+  })
+
+  test("two deletes at once: one deletes it, the other finds it gone", async () => {
+    const h = await open()
+    const draftId = crypto.randomUUID()
+    expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
+    const answers = await Promise.all([1, 2].map(() => send(h, "POST", `/api/flow-drafts/${draftId}/delete`).then(json)))
+    expect(answers.map(([status]) => status).sort()).toEqual([200, 404])
+  })
+})
+
 describe("answers", () => {
   test("the author's answers land on the round's questions by id; the same answers again write nothing", async () => {
     const h = await open()
@@ -242,6 +280,56 @@ describe("POST /api/flows/save", () => {
     expect(await json(await send(h, "POST", "/api/flows/save", saving(draftId, "notes"))))
       .toEqual([200, { ...(body as object), txid: null }])
     expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { route: "save", existing: true } })
+  })
+
+  test("two saves of one ready draft at once make one revision, and both answer it", async () => {
+    const h = await open()
+    const draftId = crypto.randomUUID()
+    expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
+    const answers = await Promise.all([1, 2].map(() => send(h, "POST", "/api/flows/save", saving(draftId, "notes")).then(json)))
+    expect(answers.map(([status]) => status)).toEqual([200, 200])
+    const [first, second] = answers.map(([, body]) => body as { flowId: string; revision: number })
+    expect(second).toMatchObject({ flowId: first!.flowId, revision: 1 })
+    const [count] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly n: number }>`SELECT count(*)::int AS n FROM flow_revisions WHERE flow_id = ${first!.flowId}`))
+    expect(count!.n).toBe(1)
+  })
+
+  test("a save that finds the draft no longer ready when it claims it is not_ready, and writes nothing", async () => {
+    const h = await open()
+    const draftId = crypto.randomUUID()
+    expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
+    // A newer round holds the draft's row, uncommitted, while the save reads it ready and then waits on its claim.
+    let release!: () => void
+    const released = new Promise<void>((resolve) => (release = resolve))
+    let held!: () => void
+    const holding = new Promise<void>((resolve) => (held = resolve))
+    const newer = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql.withTransaction(Effect.gen(function* () {
+        yield* sql`UPDATE flow_drafts SET status = 'drafting', round = 1 WHERE id = ${draftId}`
+        held()
+        yield* Effect.promise(() => released)
+      }))))
+    await holding
+    const saving_ = send(h, "POST", "/api/flows/save", saving(draftId, "notes")).then(json)
+    try {
+      // The save's claim waits on the newer round's row lock.
+      await eventually(async () => {
+        const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql<{ readonly n: number }>`
+            SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%UPDATE flow_drafts SET status = ''saved''%'`))
+        return row!.n > 0
+      }, 10_000)
+    } finally {
+      release()
+      await newer
+    }
+    expect(await saving_).toEqual([409, { code: "not_ready" }])
+    expect(await draftRow(draftId)).toMatchObject({ status: "drafting", round: 1, flowId: null })
+    const [count] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly n: number }>`SELECT count(*)::int AS n FROM flows`))
+    expect(count!.n).toBe(0)
   })
 
   test("a draft that edits a flow saves its next revision under the same id", async () => {
@@ -475,10 +563,14 @@ describe("the shapes", () => {
       columns: PersonalFlows.SYNCED_FLOW_COLUMNS.join(","),
     })
 
+    // A deleted draft leaves the shape.
+    const deleted = crypto.randomUUID()
+    expect((await writeRound(h, deleted, round("later"))).status).toBe(200)
+    expect((await send(h, "POST", `/api/flow-drafts/${deleted}/delete`)).status).toBe(200)
     const drafts = await values(await h.fetch("/api/shapes/flow-drafts?offset=-1"))
     expect(drafts.map((draft) => draft.id).sort()).toEqual([mine.draftId, gone.draftId].sort())
     expect(drafts[0]).not.toHaveProperty("actor_id")
-    expect(upstream[1]!.searchParams.get("where")).toBe("actor_id = $1")
+    expect(upstream[1]!.searchParams.get("where")).toBe("actor_id = $1 AND deleted_at IS NULL")
     await eventually(() => h.line("flow.shape").length === 1 && h.line("flow.drafts.shape").length === 1)
   })
 

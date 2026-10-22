@@ -41,6 +41,8 @@ export class FlowsClient extends Context.Service<
     /** Code the person wrote as their flow's next revision; `FlowNotFound` when they have no such flow. */
     readonly write: (request: WriteRequest) => Effect.Effect<Saved, FlowsUnavailable | FlowsRefused | FlowNotFound>
     readonly remove: (flowId: string) => Effect.Effect<boolean, FlowsUnavailable | FlowsRefused>
+    /** Deletes the draft `draftId`: `false` when it isn't the person's or is gone already. */
+    readonly deleteDraft: (draftId: string) => Effect.Effect<boolean, FlowsUnavailable | FlowsRefused>
   }
 >()("@smthrs/mvp/flows/FlowsClient") {
   /** The client over the host's `HttpClient`, each request answered within `within`. */
@@ -118,6 +120,13 @@ export class FlowsClient extends Context.Service<
               // Not the person's, or deleted already: nothing to delete.
               Effect.catchTag("@smthrs/mvp/flows/FlowNotFound", () => Effect.succeed(false)),
               Effect.withSpan("flow.client.delete"),
+            ),
+          deleteDraft: (draftId) =>
+            exchange(post(`${FLOW_DRAFTS_ROUTE}/${draftId}/delete`, {}), Written, new FlowNotFound()).pipe(
+              Effect.as(true),
+              // Gone already, or never the person's to read.
+              Effect.catchTag("@smthrs/mvp/flows/FlowNotFound", () => Effect.succeed(false)),
+              Effect.withSpan("flow.client.delete_draft"),
             ),
         })
       }),

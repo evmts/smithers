@@ -51,12 +51,16 @@ const started = (run: (admitted: Deferred.Deferred<void, DispatchFailed>) => Eff
 /** The new-flow route's loader: an empty form, or one that edits the flow `name`. */
 export const openNew = (name: string | undefined) => setForm({ name: name ?? "", request: "" })
 
-/** Draft: round 0 of a new draft, from the form; its card opens once the engine has the round. */
+/**
+ * Draft: round 0 of a new draft, from the form; its card opens once the engine has the round. The draft's id is the
+ * form's, so a second press before the first is admitted starts the same execution, which the engine runs once; the
+ * form then takes a new one.
+ */
 export const startDraft = Effect.gen(function* () {
   const store = yield* FlowsUiStore
   const form = Option.getOrThrow(yield* store.form.get(FORM))
   if (!formReady(form)) return
-  const draftId = crypto.randomUUID()
+  const { draftId } = form
   const flows = yield* FlowDispatch
   const admitted = yield* started((admitted) =>
     flows.dispatch("flow/new", { name: form.name, request: form.request.trim() }, {
@@ -66,12 +70,15 @@ export const startDraft = Effect.gen(function* () {
     })
   )
   if (!admitted) return
-  yield* setForm({ name: "", request: "" })
+  if ((Option.getOrThrow(yield* store.form.get(FORM))).draftId === draftId) {
+    yield* setForm({ name: "", request: "", draftId: crypto.randomUUID() })
+  }
   yield* go(draftPath(draftId))
 })
 
-/** The draft route's loader: shows `draftId`, with no refusal. */
-export const openDraft = (draftId: string) => setShown({ draftId, refusal: null, busy: false })
+/** The draft route's loader: shows `draftId`, with no refusal, and reads its round from this device's engine. */
+export const openDraft = (draftId: string) =>
+  Effect.andThen(setShown({ draftId, refusal: null, busy: false }), Effect.flatMap(FlowsUiStore, (store) => store.readRound))
 
 /** An answer typed into a question's field. */
 export const setAnswer = (draftId: string, questionId: string, value: string) =>
@@ -114,6 +121,39 @@ export const answer = Effect.gen(function* () {
   )
   if (admitted) yield* Effect.asVoid((yield* FlowsUiStore).answers.delete(ids)).pipe(Effect.orDie)
 })
+
+/**
+ * Draft again: the shown draft's next round, from its request and what it drafted so far, at the first round from its
+ * own that this device's engine holds no run of. Its card follows the new round once the engine has it.
+ */
+export const draftAgain = Effect.gen(function* () {
+  const shown = yield* shownDraft
+  if (Option.isNone(shown)) return
+  const { draft } = shown.value
+  const store = yield* FlowsUiStore
+  const round = yield* store.nextRound(draft.id, draft.round)
+  const flows = yield* FlowDispatch
+  const admitted = yield* started((admitted) =>
+    // `flow/new` names every draft it writes.
+    flows.dispatch("flow/new", { name: draft.name!, request: draft.request }, {
+      door: "button",
+      executionId: roundExecutionId(draft.id, round),
+      admitted,
+    })
+  )
+  yield* admitted ? store.readRound : setShown({ refusal: "again_unavailable" })
+})
+
+/** Delete: the draft `draftId`, its round stopped here; the list of flows opens once it is gone. */
+export const deleteDraft = (draftId: string) =>
+  Effect.gen(function* () {
+    const dispatched = yield* (yield* FlowDispatch).dispatch("flow/draft/delete", { draftId }, { door: "button" }).pipe(
+      Effect.result,
+    )
+    if (dispatched._tag === "Success" && dispatched.success._tag === "Done") return yield* go(FLOWS_PATH)
+    const { draftId: showing } = Option.getOrThrow(yield* (yield* FlowsUiStore).shown.get(SHOWN))
+    if (showing === draftId) yield* setShown({ refusal: "delete_unavailable" })
+  })
 
 /** What `flow/save` refused, as the code the card shows: `name_taken`, the refusal's own code, else `unavailable`. */
 export const savedRefusal = (error: { readonly _tag: string; readonly code?: string }) =>

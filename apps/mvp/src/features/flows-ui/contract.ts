@@ -149,13 +149,15 @@ export const MINE = "Mine"
 /** Why a flow whose code isn't drafted from a prompt doesn't run: no host runs a person's own code yet. */
 export const NEEDS_SANDBOX = "Needs a sandbox"
 
-/** What a refused save reads as on the draft card, by its code. */
+/** What a refused act on the draft card reads as, by its code: Save's, Draft again's and Delete's. */
 export const SAVE_REFUSALS: Readonly<Record<string, string>> = {
   name_taken: "Name taken",
   checks: "A check failed",
   needs_you: "Answer the questions first",
   not_ready: "Not ready",
   unavailable: "Couldn't save. Try again.",
+  again_unavailable: "Couldn't start. Try again.",
+  delete_unavailable: "Couldn't delete. Try again.",
 }
 
 /** Why a draft's round failed, as its card reads it, by its code (./failure.ts); an unknown code reads as itself. */

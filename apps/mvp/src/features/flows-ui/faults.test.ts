@@ -9,7 +9,7 @@ import { read } from "../../test/otlp"
 import { EngineFaults } from "../../test/faults"
 import { dispatches } from "../../flows/dispatch"
 import { Runs } from "../runs/runs"
-import { FLOWS_PATH } from "./contract"
+import { FLOWS_PATH, SAVE_REFUSALS } from "./contract"
 import { FlowsUi } from "./flowsUi"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -102,7 +102,7 @@ describe("an engine that refuses a start", () => {
     expect(t.host.navigated).toHaveLength(before)
   }, 180_000)
 
-  test("Save's own refusal reads by its code", async () => {
+  test("a round whose checks fail is Failed, Save's own refusal reads by its code, and Draft again and Delete the engine won't start say they couldn't", async () => {
     const t = await open()
     t.flows.actions.setName("hello")
     t.flows.actions.setRequest("Say hello")
@@ -110,12 +110,27 @@ describe("an engine that refuses a start", () => {
     t.flows.actions.startDraft()
     await until(() => expect(t.host.navigated.some((path) => path.startsWith("/app/flows/drafts/"))).toBe(true))
     const draftId = t.host.navigated.find((path) => path.startsWith("/app/flows/drafts/"))!.split("/").at(-1)!
-    // The agent's draft lists a flow nobody may call: the checks fail, and Save is refused `checks`.
+    // The agent's draft lists a flow nobody may call: the checks fail, the round fails `checks`, and Save is refused.
     await t.reply("The flow's name: hello", `ctx.done(${JSON.stringify({ ...drafted, flows: ["repo/write"] })})`)
     await t.flows.actions.openDraft(draftId)
-    await until(() => expect(t.flows.queries.draft.toArray[0]?.draft.status).toBe("ready"))
+    await until(() => expect(t.flows.queries.draft.toArray[0]?.draft).toMatchObject({ status: "failed", failure: "checks" }))
     t.flows.actions.save()
-    await until(() => expect(t.flows.queries.draft.toArray[0]?.shown).toMatchObject({ busy: false, refusal: "checks" }))
+    await until(() => expect(t.flows.queries.draft.toArray[0]?.shown).toMatchObject({ busy: false, refusal: "not_ready" }))
+
+    await t.refuse("flow/new")
+    t.flows.actions.draftAgain()
+    await until(() => expect(t.flows.queries.draft.toArray[0]?.shown.refusal).toBe("again_unavailable"))
+    expect(SAVE_REFUSALS.again_unavailable).toBe("Couldn't start. Try again.")
+
+    await t.refuse("flow/draft/delete")
+    t.flows.actions.deleteDraft(draftId)
+    await until(() => expect(t.flows.queries.draft.toArray[0]?.shown.refusal).toBe("delete_unavailable"))
+    // A draft deleted from the list while another shows leaves the shown card's line alone.
+    await t.flows.actions.openDraft(draftId)
+    t.flows.actions.deleteDraft(crypto.randomUUID())
+    await until(() => expect(t.refused("flow/draft/delete")).toBe(2))
+    expect(t.flows.queries.draft.toArray[0]?.shown.refusal).toBeNull()
+    expect(t.flows.queries.drafts.toArray.map((draft) => draft.id)).toEqual([draftId])
   }, 180_000)
 
   test("a flow's code the engine won't read is unavailable, and a write it won't start says it couldn't save", async () => {
