@@ -13,7 +13,7 @@ import { HostModel } from "@smthrs/model-host"
 import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Schema, Scope, Stream } from "effect"
-import { SqlClient } from "effect/sql"
+import { SqlClient, SqlError } from "effect/sql"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -465,7 +465,16 @@ describe("the todo run on a host that dies mid-implement", { timeout: 180_000 },
     ).pipe(Layer.provide(machine.layer))
     const start = (await commit("Add a line to README", "Add a line to the README."))!
     const executionId = todoExecutionId(start.attemptId)
-    /** A Durable Object's engine: one incarnation of the object, over the engine schema `schema` when it resumes one. */
+    /**
+     * A Durable Object's engine: one incarnation of the object, over the engine schema `schema` when it resumes one.
+     * Once `dead` is set it never reaches the database again, as an incarnation Cloudflare stopped never does: its pool
+     * would otherwise reconnect, and under `singleIncarnationLiveness` it would take the run back from the next one.
+     */
+    let dead = false
+    const reachable = Effect.suspend(() =>
+      dead
+        ? Effect.fail(new SqlError.SqlError({ reason: new SqlError.ConnectionError({ cause: new Error("the host died") }) }))
+        : Effect.void)
     const engine = async (schema?: string) => {
       const scope = Effect.runSync(Scope.make())
       const built = await Effect.runPromise(
@@ -474,7 +483,7 @@ describe("the todo run on a host that dies mid-implement", { timeout: 180_000 },
             hostId: "durable-object",
             isAlive: RunStore.Ownership.singleIncarnationLiveness,
             maxConnections: 3,
-            ...(schema === undefined ? {} : { schema }),
+            ...(schema === undefined ? { databaseGate: reachable } : { schema }),
           }),
         ),
       )
@@ -487,6 +496,7 @@ describe("the todo run on a host that dies mid-implement", { timeout: 180_000 },
     const running = Effect.runFork(Effect.exit(first.execute))
     // Frames 1 and 2 are answered and their calls ran; frame 3 is being asked when the alarm is cut off.
     await expect.poll(() => agent.asked.length, { interval: 20, timeout: 60_000 }).toBe(3)
+    dead = true
     await runtime.runPromise(
       Effect.flatMap(SqlClient.SqlClient, (client) =>
         client`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
