@@ -411,6 +411,9 @@ export const execute = (
 ): Effect.Effect<Answer, Refused | Unavailable, HttpClient.HttpClient | Vault | Audit> =>
   Effect.gen(function*() {
     const startedAt = yield* Clock.currentTimeMillis
+    // The caller's services: its logger, metrics and span, for the outcome an answer's body settles once it has
+    // streamed, which a host may do outside the request's services.
+    const services = yield* Effect.context<never>()
     const method = request.method
     const url = Url.make(request.url, request.urlParams, undefined).pipe(Result.map((parsed) => parsed.href))
     const decision = decide({
@@ -512,7 +515,11 @@ export const execute = (
         )
       )
     ).pipe(
-      Stream.onExit((exit) => settle(Exit.isSuccess(exit) ? "forwarded" : "broken", sent.status, used.length))
+      Stream.onExit((exit) =>
+        settle(Exit.isSuccess(exit) ? "forwarded" : "broken", sent.status, used.length).pipe(
+          Effect.provideContext(services)
+        )
+      )
     )
     return { status: sent.status, headers: answered, body }
   }).pipe(Effect.withSpan("Egress.execute", { kind: "client" }))

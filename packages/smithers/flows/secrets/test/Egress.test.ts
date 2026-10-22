@@ -368,6 +368,23 @@ describe("Egress.forward", () => {
     expect(leaks(recorded.recorded())).toEqual([])
   })
 
+  test("an answer the host streams outside the request's services is still logged and counted by its caller", async () => {
+    const upstream = scripted(() => new Response("ok"))
+    const { response, body, recorded } = await forwardThrough(
+      new Request(`https://${API}/v1`, { headers: { "x-api-key": PLACEHOLDER } }),
+      { fetch: upstream.fetch, hostContext: false }
+    )
+    expect([response.status, body]).toEqual([200, "ok"])
+    expect(recorded.count("forwarded")).toBe(1)
+    expect(String(recorded.logs.at(-1)?.message)).toBe("secrets.egress")
+    expect(recorded.logs.at(-1)!.annotations).toMatchObject({
+      outcome: "forwarded",
+      host: API,
+      status: 200,
+      secrets: 1
+    })
+  })
+
   test("an answer that breaks off counts as broken and fails with nothing of the answer", async () => {
     const upstream = scripted(() => new Response(brokenBody(`first ${VALUE}`)))
     const recorded = telemetry()

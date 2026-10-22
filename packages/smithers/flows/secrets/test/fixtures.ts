@@ -152,6 +152,8 @@ export const forwardThrough = async (
     readonly policy?: Egress.Policy
     readonly values?: Record<string, string>
     readonly auditDown?: boolean
+    /** Whether the host streams the answer with the request's services; a Worker's host streams it with its own. */
+    readonly hostContext?: boolean
   }
 ) => {
   const recorded = telemetry()
@@ -164,7 +166,9 @@ export const forwardThrough = async (
       }).pipe(Effect.provide(Layer.mergeAll(httpClient(options.fetch), vault(options.values), audited.layer)))
     )
   )
-  const web = HttpServerResponse.toWeb(response, { context })
+  const web = options.hostContext === false
+    ? HttpServerResponse.toWeb(response)
+    : HttpServerResponse.toWeb(response, { context })
   const body = await web.text()
   return { response: web, body, recorded, entries: audited.entries }
 }

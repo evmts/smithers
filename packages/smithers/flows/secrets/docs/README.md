@@ -44,7 +44,9 @@ use a credential against the hosts it was meant for, and can't read it.
 - **Opaque telemetry.** One `Egress.execute` span and one count on
   `secret_egress_requests` by `outcome` per request; a log line with the host,
   method, status and number of secrets. The HTTP client's own span is off,
-  and no failure carries the request.
+  and no failure carries the request. A forwarded request settles once its
+  answer has streamed, through the caller's logger and metrics, wherever the
+  host streams it.
 
 ## What it doesn't do
 
