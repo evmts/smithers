@@ -37,6 +37,8 @@ export interface Options {
   readonly hostId: string
   /** The one execution this runtime drives. Every other run is refused. */
   readonly executionId: string
+  /** Persisted intent's flow tag; avoids recovery queries for unrelated registrations. */
+  readonly flow?: string | undefined
 }
 
 /**
@@ -59,7 +61,7 @@ export const layer = <Registered, RegistrationError, RegistrationRequirements>(
       owner: { hostId: options.hostId },
       isAlive: Ownership.singleIncarnationLiveness,
       canExecute: (row) => Effect.succeed(row.runId === options.executionId),
-      sweep: { host: options.executionId },
+      sweep: { host: options.executionId, ...(options.flow === undefined ? {} : { flow: options.flow }) },
       placement: "cloudflare"
     },
     StepBoundary.layerUnsupported,

@@ -48,6 +48,7 @@ it("reports invalid JavaScript configuration before constructing injected servic
     // A host-driven sweep names the one execution it drives.
     [{ sweep: "sometimes" }, "sweep"],
     [{ sweep: { host: "" } }, "sweep"],
+    [{ sweep: { host: "hello-1", flow: "" } }, "sweep"],
     // A bound on resumed runs is a count of turns, at least one.
     [{ resumeConcurrency: 0 }, "resumeConcurrency"],
     [{ resumeConcurrency: 1.5 }, "resumeConcurrency"],
@@ -203,7 +204,7 @@ it("runs a flow on a host with no filesystem, from injected services alone", asy
     Jj.layerNoop({})
   )))
   const runtime = Runtime.layer(
-    { ...options, sweep: { host: "hello-1" } },
+    { ...options, sweep: { host: "hello-1", flow: Hello._tag } },
     StepBoundary.layerUnsupported,
     WorkspaceSandbox.layerUnsupported,
     Interpreter.layer(Hello).pipe(

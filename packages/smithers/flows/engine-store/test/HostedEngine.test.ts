@@ -7,6 +7,7 @@
  * matrix. Each hosted case has a `"process"` control beside it, so the
  * behavior it pins is the host mode's and not the fixture's.
  */
+import * as SlowNetwork from "@smthrs/database/test/SlowNetwork"
 import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Ownership, RunStore } from "@smthrs/run-store"
@@ -109,7 +110,7 @@ const sleeper = (owner: Ownership.OwnerId, sweep: EngineStore.Sweep) =>
         yield* DurableClock.sleep({ name: "nap", duration: "10 minutes" })
         return "woke"
       }))
-  })).pipe(Layer.provideMerge(engine(filename, owner, sweep)))
+  })).pipe(Layer.provideMerge(engine(filename, owner, typeof sweep === "object" ? { ...sweep, flow: Sleeper._tag } : sweep)))
 
 describe("registration under a hosted sweep", () => {
   it("re-arms only the hosted execution's clocks", () =>
@@ -157,6 +158,47 @@ describe("registration under a hosted sweep", () => {
       expect(theirs).toBe("completed")
     })))
 })
+
+// Kept catalog-scaling benchmark: real store, 32 registrations, one hosted flow.
+// Span counts are the deterministic gate; elapsed time is an observation only.
+it.each([false, true])("recovers only the hosted flow when registering a 32-flow catalog (hint=%s)", (hint) =>
+  run(Effect.gen(function*() {
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const catalog = Array.from({ length: 32 }, (_, i) => Flow.make(`catalog/${i}`, {
+      payload: {},
+      success: Schema.String,
+      body: opaqueHandlerBody
+    }))
+    const postgres = /^postgres(?:ql)?:/.test(filename)
+    const target = postgres ? yield* SlowNetwork.proxy(filename, { delayMs: 10 }) : filename
+    const elapsedMs = yield* Effect.scoped(Effect.gen(function*() {
+      const runtime = yield* FlowRuntime.FlowRuntime
+      const started = performance.now()
+      for (const flow of catalog) yield* runtime.register(flow, () => Effect.succeed("done"))
+      return Math.round(performance.now() - started)
+    }).pipe(
+      Effect.provide(engine(target, first, { host: "catalog-run", ...(hint ? { flow: "catalog/17" } : {}) })),
+      Effect.provideService(Tracer.Tracer, tracer)
+    ))
+    const recoveries = spans.filter((span) => span.name === "DeferredPersistence.sweepDue").length
+    console.info(JSON.stringify({
+      benchmark: "hosted-catalog-registration",
+      flows: 32,
+      hint,
+      recoveries,
+      elapsedMs,
+      backend: postgres ? "postgres" : "sqlite",
+      networkDelayEachWayMs: postgres ? 10 : 0
+    }))
+    expect(recoveries).toBe(hint ? 1 : 32)
+  })))
 
 const Blocker = Flow.make("HostedEngine/Blocker", {
   payload: {},

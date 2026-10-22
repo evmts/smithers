@@ -201,7 +201,10 @@ const nonEmpty = "must be a non-empty string"
  * execution named by a non-empty id.
  */
 const Sweep = Schema.UndefinedOr(
-  Schema.Union([Schema.Literal("process"), Schema.Struct({ host: Schema.NonEmptyString })])
+  Schema.Union([
+    Schema.Literal("process"),
+    Schema.Struct({ host: Schema.NonEmptyString, flow: Schema.optionalKey(Schema.NonEmptyString) })
+  ])
 )
 
 /**

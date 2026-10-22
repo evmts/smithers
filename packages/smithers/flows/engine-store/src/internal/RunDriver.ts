@@ -117,7 +117,11 @@ export type ScheduledResumeReason = RequestedResumeReason | "operator" | "delega
  * @since 1.0.0
  * @category models
  */
-export type Sweep = "process" | { readonly host: string }
+export type Sweep = "process" | {
+  readonly host: string
+  /** The persisted intent's flow tag; recover only this flow during registration when supplied. */
+  readonly flow?: string | undefined
+}
 
 /**
  * Dependencies for the run driver.

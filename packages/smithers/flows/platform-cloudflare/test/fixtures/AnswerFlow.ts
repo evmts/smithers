@@ -45,5 +45,7 @@ export const runtime = (options: {
   readonly database: Layer.Layer<SqlClient.SqlClient>
 }) =>
 (intent: ExecutionObject.Intent) =>
-  CloudflareRuntime.layer({ hostId: options.hostId, executionId: intent.executionId }, registration(options.record))
-    .pipe(Layer.provide(options.database))
+  CloudflareRuntime.layer(
+    { hostId: options.hostId, executionId: intent.executionId, flow: intent.flow },
+    registration(options.record)
+  ).pipe(Layer.provide(options.database))

@@ -243,9 +243,10 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never>(
   return ExecutionObject.make(storage, {
     flows,
     runtime: (intent) =>
-      CloudflareRuntime.layer({ hostId: options.hostId, executionId: intent.executionId }, registration).pipe(
-        Layer.provide(options.database),
-      ),
+      CloudflareRuntime.layer(
+        { hostId: options.hostId, executionId: intent.executionId, flow: intent.flow },
+        registration,
+      ).pipe(Layer.provide(options.database)),
     router: options.router,
     canStart: options.canStart,
     driveBudgetMs: options.driveBudgetMs,

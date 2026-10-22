@@ -546,6 +546,7 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     driver,
     // The one execution a hosted store's registration recovers, if any.
     hostedExecution: typeof options.sweep === "object" ? options.sweep.host : undefined,
+    hostedFlow: typeof options.sweep === "object" ? options.sweep.flow : undefined,
     deferred,
     // The budget of each execution a budgeted `drive` is driving now.
     budgets: new Map<string, DriveBudget.DriveBudget>(),
@@ -1015,15 +1016,21 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
   // two same-name spans around one operation.
   register: (flow, execute) =>
     store.driver.register(flow, execute).pipe(
-      Effect.tap(() => store.deferred.sweepDue(flow._tag, store.hostedExecution).pipe(
-        Effect.timed,
-        Effect.flatMap(([elapsed]) => Effect.logInfo("engine-store.registration.recovered").pipe(
-          Effect.annotateLogs({
-            "smithers.flow": flow._tag,
-            durationMs: Math.round(Duration.toMillis(elapsed))
-          })
-        ))
-      ))
+      Effect.tap(() =>
+        store.hostedFlow !== undefined && store.hostedFlow !== flow._tag
+          ? Effect.void
+          : store.deferred.sweepDue(flow._tag, store.hostedExecution).pipe(
+            Effect.timed,
+            Effect.flatMap(([elapsed]) =>
+              Effect.logInfo("engine-store.registration.recovered").pipe(
+                Effect.annotateLogs({
+                  "smithers.flow": flow._tag,
+                  durationMs: Math.round(Duration.toMillis(elapsed))
+                })
+              )
+            )
+          )
+      )
     ),
   execute: store.driver.execute,
   poll: store.driver.poll,

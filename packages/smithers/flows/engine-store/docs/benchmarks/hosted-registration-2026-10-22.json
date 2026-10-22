@@ -1,0 +1,102 @@
+{
+  "benchmark": "HostedEngine 32-flow catalog",
+  "baseline": "998199dc plus registration timing telemetry and failing regression",
+  "date": "2026-10-22",
+  "command": "pnpm test:matrix test/HostedEngine.test.ts --coverage.enabled=false",
+  "runner": "Latitude via lat-run, Node 26.5.0",
+  "method": "Registration only after runtime construction; real SQLite and Postgres. Postgres uses SlowNetwork with 10ms delay each way per TCP chunk. One observation per case, not a percentile. Both versions retain all 32 handlers.",
+  "gate": "hinted recovery passes == 1; unhinted == 32; baseline fails on both backends, after passes 14/14 per backend",
+  "limitations": [
+    "Not a production or Hyperdrive benchmark",
+    "No startup, admission or claim duration in this timer",
+    "No claim of full-suite coverage from these focused runs"
+  ],
+  "runs": [
+    {
+      "phase": "before",
+      "receiptFile": "/tmp/todo-start-red.log",
+      "receiptSha256": "4d04a6f5c61d4acca9c25815d983df64cda8af326fff41f80a687b90cb872c03",
+      "observations": [
+        {
+          "benchmark": "hosted-catalog-registration",
+          "flows": 32,
+          "hint": false,
+          "recoveries": 32,
+          "elapsedMs": 8,
+          "backend": "sqlite",
+          "networkDelayEachWayMs": 0
+        },
+        {
+          "benchmark": "hosted-catalog-registration",
+          "flows": 32,
+          "hint": true,
+          "recoveries": 32,
+          "elapsedMs": 7,
+          "backend": "sqlite",
+          "networkDelayEachWayMs": 0
+        },
+        {
+          "benchmark": "hosted-catalog-registration",
+          "flows": 32,
+          "hint": false,
+          "recoveries": 32,
+          "elapsedMs": 5292,
+          "backend": "postgres",
+          "networkDelayEachWayMs": 10
+        },
+        {
+          "benchmark": "hosted-catalog-registration",
+          "flows": 32,
+          "hint": true,
+          "recoveries": 32,
+          "elapsedMs": 5314,
+          "backend": "postgres",
+          "networkDelayEachWayMs": 10
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "receiptFile": "/tmp/todo-start-green.log",
+      "receiptSha256": "ab236411ab36fbf74b3de1a5b980d18acb9833ce5d63c53a437c5b1198d89ebd",
+      "observations": [
+        {
+          "benchmark": "hosted-catalog-registration",
+          "flows": 32,
+          "hint": false,
+          "recoveries": 32,
+          "elapsedMs": 7,
+          "backend": "sqlite",
+          "networkDelayEachWayMs": 0
+        },
+        {
+          "benchmark": "hosted-catalog-registration",
+          "flows": 32,
+          "hint": true,
+          "recoveries": 1,
+          "elapsedMs": 2,
+          "backend": "sqlite",
+          "networkDelayEachWayMs": 0
+        },
+        {
+          "benchmark": "hosted-catalog-registration",
+          "flows": 32,
+          "hint": false,
+          "recoveries": 32,
+          "elapsedMs": 5292,
+          "backend": "postgres",
+          "networkDelayEachWayMs": 10
+        },
+        {
+          "benchmark": "hosted-catalog-registration",
+          "flows": 32,
+          "hint": true,
+          "recoveries": 1,
+          "elapsedMs": 168,
+          "backend": "postgres",
+          "networkDelayEachWayMs": 10
+        }
+      ]
+    }
+  ]
+}
