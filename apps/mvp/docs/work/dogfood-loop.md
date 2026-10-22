@@ -47,6 +47,8 @@ links: [../rulings.md, ../features/issues.md, ../features/todos.md, ../features/
 
 ## History
 
+2026-10-22 PDT: #4430's lint red is fixed on main; the loop runs again on #4432, opened through the app, with TODO retry and the predecessor hold deployed.
+
 2026-10-21 13:45 PDT: step 1 works on production (#4430); GH-10, more TODOs per issue, stacked pull requests and check jobs built; the dogfood spec runs each step against a deployment named by `E2E_DOGFOOD=smithersai/smithers`.
 
 2026-10-21 11:20 PDT: map written by the dogfood-loop builder from `main@origin` c8df75af, the peer workspaces' unlanded commits (factory stack, prod-flows), production shapes read as `codeplanesmithers`, and `smithersai/smithers`' settings (`delete_branch_on_merge` off, the `Main` ruleset: no deletion, no force push, linear history).
