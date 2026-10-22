@@ -568,6 +568,18 @@ properties and ignores other own data fields, so an `Attempt` from `put` or
 on any key, or a missing or inherited id field is refused with
 `invalid_attempt`.
 
+#### listRun
+
+```ts
+const listRun?: (runId: string) => Effect<ReadonlyArray<Attempt>, AttemptStoreError>
+```
+
+Every attempt row of one run, ordered by step key digest and attempt, in one
+read. Each row is what `get` answers for it. A resumed run's replay reads its
+recorded attempts here once instead of one `get` per step. It is optional:
+`AttemptStore.layer` implements it, `makeNoop` omits it, and a caller of a store
+without it reads each attempt with `get`.
+
 #### heartbeat
 
 ```ts

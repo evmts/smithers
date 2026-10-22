@@ -318,6 +318,16 @@ export type FinishResult =
 export interface Service {
   readonly put: (attempt: Attempt, owner: OwnerId) => Effect.Effect<PutResult, AttemptStoreError>
   readonly get: (id: AttemptId) => Effect.Effect<Option.Option<Attempt>, AttemptStoreError>
+  /**
+   * Every attempt row of one run, ordered by step key digest and attempt, in
+   * one read: what `get` answers for each, all at once. A resumed run's
+   * replay reads its recorded attempts here once rather than one `get` per
+   * step it reaches.
+   *
+   * Optional: a store that cannot read a run's rows at once omits it, and its
+   * callers read each attempt with `get`.
+   */
+  readonly listRun?: ((runId: string) => Effect.Effect<ReadonlyArray<Attempt>, AttemptStoreError>) | undefined
   readonly heartbeat: (
     runId: string,
     stepKeyDigest: string,
@@ -952,6 +962,25 @@ export const makeWith = (
       }).pipe(observeExit)
     )
 
+    const listRun: NonNullable<Service["listRun"]> = Effect.fn("AttemptStore.listRun")((runId) =>
+      Effect.gen(function*() {
+        if (!Boundary.isDurableText(runId)) {
+          return yield* Effect.fail(
+            error("listRun", "invalid_attempt", "run id violates the durable identifier contract")
+          )
+        }
+        yield* Effect.annotateCurrentSpan({ runId })
+        const rows = yield* sql<Record<string, unknown>>`
+        SELECT run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
+          heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
+        FROM flows_attempts
+        WHERE run_id = ${runId}
+        ORDER BY step_key_digest, attempt
+      `.pipe(Effect.mapError(mapPersistenceError("listRun")))
+        return yield* Effect.forEach(rows, (row) => decodeRow("listRun", row))
+      }).pipe(observeExit)
+    )
+
     const heartbeat: Service["heartbeat"] = Effect.fn("AttemptStore.heartbeat")((
       runId,
       stepKeyDigest,
@@ -1143,7 +1172,7 @@ export const makeWith = (
       }).pipe(observeOutcome<PatchResult>())
     )
 
-    return { put, get, heartbeat, finish, patch }
+    return { put, get, listRun, heartbeat, finish, patch }
   })
 
 /**
