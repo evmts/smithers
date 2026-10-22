@@ -1,4 +1,4 @@
-# 0035: Crash-safe CLI host exclusion
+# 0037: Crash-safe CLI host exclusion
 
 Date: 2026-10-22
 Status: accepted
