@@ -11,6 +11,8 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     exclude: [...configDefaults.exclude, "test/faults/**"],
     environment: "node",
+    // FlowStore exercises the real descriptor-relative host, including in a clean checkout.
+    globalSetup: ["./test/BuildNativeHelper.ts"],
     // A developer's credentials must not turn the ordinary suite into a paid
     // network run. The live examples under `test/examples` stay available
     // through explicit opt-in, so every provider key an example reads is

@@ -44,6 +44,17 @@ const importRules = ImportRules({
       files: ["test/AgentAction.test.ts", "test/Budget.test.ts", "test/BudgetDurability.test.ts"],
       callees: ["setTimeout", "*.waitForTimeout"],
       because: "test.behavioral: wait on a condition or TestClock, never a fixed sleep."
+    },
+    {
+      kind: "forbidHostModules",
+      files: ["src/**"],
+      because: "sdk.platform-neutral: host operations arrive through injected Effect services."
+    },
+    {
+      kind: "rootImportsOnly",
+      files: ["src/EngineChildren.ts", "src/FlowEngineLike.ts", "src/FlowStore.ts"],
+      packages: ["@smthrs/*"],
+      because: "sdk.root-imports-only: these runtime boundaries use the public package roots."
     }
   ]
 })

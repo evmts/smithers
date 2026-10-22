@@ -52,6 +52,7 @@ import { describe, expect, it, vi } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
 import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
 import * as InternalModelStep from "../src/internal/ModelStep.ts"
 import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import * as WorkspaceObservation from "../src/WorkspaceObservation.ts"
@@ -1888,6 +1889,32 @@ describe("cell call identity across runs", () => {
     // hosts holding a capability envelope. A sealed result computed under a
     // broad envelope was then cross-run reusable by a run with an attenuated
     // one. Undeclared authority now pins the key to its execution.
+    expect(outcomes.map((outcome) => outcome._tag)).toEqual(["completed", "completed"])
+    expect(executed).toEqual(["fs/write#0", "fs/write#0"])
+  })
+
+  it("regression: sandbox memo is local to execution when sessions are shared and authority is unknown", async () => {
+    const executed: Array<string> = []
+    const runner = await Effect.gen(function*() {
+      const sandbox = yield* InMemoryWorkspaceSandbox.make()
+      return yield* FlowEngineLike.sandboxed(sandbox.service, countingCalls(executed))
+    }).pipe(Effect.provide(NodeCrypto.layer), Effect.runPromise)
+    const body = Effect.gen(function*() {
+      const port = yield* FlowEngineLike.make({ model: countingModel([]), route: staticRoute(), calls: runner })
+      return (yield* port.call(sharedCellCall("sealed"))).value
+    })
+    const outcomes = await driveBoth(body, body)
+    expect(outcomes).toMatchObject([{ value: 1 }, { value: 2 }])
+    expect(executed).toEqual(["fs/write#0", "fs/write#0"])
+  })
+
+  it("regression: omitted authority clears an inherited complete cache environment", async () => {
+    const executed: Array<string> = []
+    const inherited = Action.layerCacheEnvironment({ layers: ["outer"], capabilities: { envelope: ["*"] } })
+    const outcomes = await driveBoth(
+      callOnce(executed, "sealed", undefined).pipe(Effect.provide(inherited)),
+      callOnce(executed, "sealed", undefined).pipe(Effect.provide(inherited))
+    )
     expect(outcomes.map((outcome) => outcome._tag)).toEqual(["completed", "completed"])
     expect(executed).toEqual(["fs/write#0", "fs/write#0"])
   })

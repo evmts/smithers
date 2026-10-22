@@ -9,6 +9,7 @@
  * can only catch what is typed.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Action } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Descriptor from "@smthrs/registry/Descriptor"
@@ -16,6 +17,7 @@ import { Effect, Option } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { describe, expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
 import type * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
 
 const run = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) =>
@@ -99,8 +101,13 @@ describe("the sandboxed call runner", () => {
     // into the cache key a sealed call is addressed by.
     const error = await run(
       Effect.gen(function*() {
-        const calls = yield* FlowEngineLike.sandboxed(sandboxOf({}), runner)
-        return yield* Effect.flip(calls.run(call({ path: "\uD800" })))
+        const sandbox = yield* InMemoryWorkspaceSandbox.make()
+        const calls = yield* FlowEngineLike.sandboxed(sandbox.service, runner)
+        return yield* Effect.flip(
+          calls.run(call({ path: "\uD800" })).pipe(
+            Effect.provideService(Action.CurrentCacheEnvironment, { layers: [], capabilities: {} })
+          )
+        )
       })
     )
 

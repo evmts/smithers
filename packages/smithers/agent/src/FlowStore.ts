@@ -17,8 +17,9 @@
  * @since 0.1.0
  */
 
-import * as Fault from "@smthrs/flow/Fault"
-import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
+import { Fault } from "@smthrs/flow"
+import { FileSystem as KernelFileSystem } from "@smthrs/kernel"
+import { Descriptor } from "@smthrs/registry"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -29,6 +30,8 @@ import * as RcMap from "effect/RcMap"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
+
+const { projectFlowsDirectory } = Descriptor
 
 /**
  * Stable error codes returned by saved-flow storage.
@@ -355,7 +358,9 @@ const publish = (
               if (info.type !== "File") {
                 return yield* Effect.fail(error("write_failed", `"${entry.relative}" is not a regular file.`))
               }
-              yield* fs.copyFile(entry.target, entry.backup)
+              yield* fs.readFile(entry.target).pipe(
+                Effect.flatMap((bytes) => fs.writeFile(entry.backup, bytes, { flag: "wx" }))
+              )
               entry.existed = true
             }
           }
@@ -398,7 +403,11 @@ const publish = (
           return yield* Effect.failCause(installed.cause)
         }
       }))
-      if (!retainGeneration) yield* fs.remove(generation, { recursive: true })
+      if (!retainGeneration) {
+        yield* fs.remove(generation, { recursive: true }).pipe(
+          Effect.catchCause(() => Effect.logWarning("agent: flow staging cleanup failed; generation retained"))
+        )
+      }
       if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
     })
   ).pipe(Effect.mapError((cause) =>
@@ -424,12 +433,16 @@ const serializeWrite = <A, E>(root: string, write: Effect.Effect<A, E>): Effect.
  *
  * Validates every path with the injected Path semantics, refuses one that is
  * not a file under `.smithers/flows/<id>/`, and rejects symbolic links below the root
- * before staging. Writes to the same resolved root are
+ * before staging. Requires the kernel's no-follow filesystem host extension;
+ * plain path-based hosts are refused. Publication, backups, rollback and cleanup
+ * use a descriptor-relative view pinned to the root. Writes to the same resolved root are
  * serialized within this process, including across store instances.
  * The entire file set and backups are staged inside the root before targets
  * are replaced by individual atomic renames. Publication failures restore the
  * previous files; interruption cleans staging or waits for publication to finish.
  * If recovery itself fails, backups remain at the location in the error.
+ * A cleanup failure retains staging and logs a warning without replacing the
+ * publication result.
  * Readers outside the store can observe publication in progress. This is not a
  * crash-durable transaction or a lock against other processes changing the tree.
  *
@@ -463,10 +476,19 @@ export const makeFileSystem = (
             resolved.push([confined, source])
           }
           for (const [relative] of resolved) yield* validateConfinement(fs, path, root, relative)
+          if (!KernelFileSystem.isConfinable(fs)) {
+            return yield* Effect.fail(
+              error("unsupported", "Saving flows requires a no-follow, confined filesystem host.")
+            )
+          }
           yield* fs.makeDirectory(root, { recursive: true }).pipe(
             Effect.mapError((cause) => error("write_failed", "could not create the flows root", cause))
           )
-          yield* publish(fs, path, root, resolved)
+          const confined = yield* KernelFileSystem.confined(fs, root).pipe(
+            Effect.provideService(Path.Path, path),
+            Effect.mapError((cause) => error("write_failed", "could not confine the flows root", cause))
+          )
+          yield* publish(confined, path, root, resolved)
           return { files: Object.keys(files) }
         })
       ),

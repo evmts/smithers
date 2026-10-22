@@ -8,13 +8,16 @@
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { Cause, Deferred, Effect, Exit, Fiber, FileSystem, Layer, Path, PlatformError } from "effect"
+import { FileSystem as KernelFileSystem } from "@smthrs/kernel"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
+import { Cause, Deferred, Effect, Exit, Fiber, FileSystem, Layer, Logger, Path, PlatformError } from "effect"
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync
@@ -24,7 +27,13 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as FlowStore from "../src/FlowStore.ts"
 
-const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
+const platform = Layer.merge(AtomicFileSystem.layer, NodePath.layer)
+
+const confinedAt = (directory: string) =>
+  Effect.flatMap(
+    FileSystem.FileSystem,
+    (fs) => KernelFileSystem.confined(fs, directory)
+  )
 
 const roots = new Set<string>()
 const root = (): string => {
@@ -169,10 +178,70 @@ describe("FlowStore.makeMemory", () => {
 })
 
 describe("FlowStore.layerFileSystem", () => {
+  it.each(["plain", "atomic"] as const)(
+    "regression: refuses publication through a concurrently replaced parent (%s)",
+    async (host) => {
+      const directory = root()
+      const outside = root()
+      const parent = join(directory, ".smithers/flows/triage")
+      mkdirSync(parent, { recursive: true })
+      writeFileSync(join(outside, "flow.ts"), "outside original")
+      const result = await Effect.gen(function*() {
+        const fs = yield* (host === "plain" ? FileSystem.FileSystem : confinedAt(directory))
+        const path = yield* Path.Path
+        const replacing = FileSystem.FileSystem.of({
+          ...fs,
+          rename: (from, to) =>
+            Effect.gen(function*() {
+              if (from.endsWith(".new")) {
+                renameSync(parent, `${parent}-moved`)
+                symlinkSync(outside, parent)
+              }
+              yield* fs.rename(from, to)
+            })
+        })
+        return yield* FlowStore.makeFileSystem(replacing, path, directory).write("triage", {
+          ".smithers/flows/triage/flow.ts": "new flow"
+        })
+      }).pipe(
+        Effect.provide(host === "plain" ? Layer.merge(NodeFileSystem.layer, NodePath.layer) : platform),
+        Effect.runPromiseExit
+      )
+      expect(readFileSync(join(outside, "flow.ts"), "utf8")).toBe("outside original")
+      expect(Exit.isFailure(result)).toBe(true)
+    }
+  )
+
+  it("regression: cleanup failure preserves a successful publication receipt", async () => {
+    const directory = root()
+    const warnings: Array<string> = []
+    const capture = Logger.make((entry) => warnings.push(String(entry.message)))
+    const result = await Effect.gen(function*() {
+      const fs = yield* confinedAt(directory)
+      const path = yield* Path.Path
+      const failing = FileSystem.FileSystem.of({
+        ...fs,
+        remove: (target, options) =>
+          target.includes(".flow-store-")
+            ? Effect.fail(
+              PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "remove" })
+            )
+            : fs.remove(target, options)
+      })
+      return yield* FlowStore.makeFileSystem(failing, path, directory).write("triage", files("triage"))
+    }).pipe(Effect.provide(platform), Effect.provide(Logger.layer([capture])), Effect.runPromiseExit)
+    expect(result).toEqual(Exit.succeed({ files: Object.keys(files("triage")) }))
+    for (const [relative, source] of Object.entries(files("triage"))) {
+      expect(readFileSync(join(directory, relative), "utf8")).toBe(source)
+    }
+    expect(warnings).toContain("agent: flow staging cleanup failed; generation retained")
+    expect(readdirSync(directory).some((name) => name.startsWith(".flow-store-"))).toBe(true)
+  })
+
   it("publishes on a host that refuses makeTempDirectory, as the kernel filesystem does", async () => {
     const directory = root()
     const result = await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const refused = PlatformError.systemError({
         _tag: "PermissionDenied",
@@ -201,7 +270,7 @@ describe("FlowStore.layerFileSystem", () => {
     await onDisk(directory, (store) => store.write("triage", original))
     const writes: Array<string> = []
     const result = await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const failing = FileSystem.FileSystem.of({
         ...fs,
@@ -238,7 +307,7 @@ describe("FlowStore.layerFileSystem", () => {
     const original = files("triage")
     if (existing) await onDisk(directory, (store) => store.write("triage", original))
     const result = await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const failing = FileSystem.FileSystem.of({
         ...fs,
@@ -269,7 +338,7 @@ describe("FlowStore.layerFileSystem", () => {
     const directory = root()
     await onDisk(directory, (store) => store.write("triage", files("triage")))
     const result = await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const failing = FileSystem.FileSystem.of({
         ...fs,
@@ -304,15 +373,15 @@ describe("FlowStore.layerFileSystem", () => {
     const original = files("triage")
     await onDisk(directory, (store) => store.write("triage", original))
     const result = await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const failing = FileSystem.FileSystem.of({
         ...fs,
-        copyFile: () =>
+        writeFile: () =>
           Effect.fail(PlatformError.systemError({
             _tag: "Unknown",
             module: "FileSystem",
-            method: "copyFile",
+            method: "writeFile",
             description: "ENOSPC"
           }))
       })
@@ -334,7 +403,7 @@ describe("FlowStore.layerFileSystem", () => {
     const original = files("triage")
     await onDisk(directory, (store) => store.write("triage", original))
     await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const entered = yield* Deferred.make<void>()
       let writes = 0
@@ -363,7 +432,7 @@ describe("FlowStore.layerFileSystem", () => {
     const directory = root()
     await onDisk(directory, (store) => store.write("triage", files("triage")))
     await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const entered = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
@@ -396,7 +465,7 @@ describe("FlowStore.layerFileSystem", () => {
     const directory = root()
     const writes: Array<string> = []
     await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const secondRequested = yield* Deferred.make<void>()
       const recording = FileSystem.FileSystem.of({
@@ -533,7 +602,7 @@ describe("FlowStore.layerFileSystem", () => {
     const directory = root()
     const outside = root()
     const result = await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const planted = FileSystem.FileSystem.of({
         ...fs,
@@ -556,7 +625,7 @@ describe("FlowStore.layerFileSystem", () => {
     const original = files("triage")
     await onDisk(directory, (store) => store.write("triage", original))
     const result = await Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
+      const fs = yield* confinedAt(directory)
       const path = yield* Path.Path
       const failing = FileSystem.FileSystem.of({
         ...fs,

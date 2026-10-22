@@ -8,6 +8,7 @@
  * that lands on the host is the one the cell's flow wrote.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Action } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
 import * as CellTurn from "@smthrs/harness/CellTurn"
 import * as ContextWindow from "@smthrs/harness/ContextWindow"
@@ -19,7 +20,7 @@ import * as Steering from "@smthrs/harness/Steering"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as Descriptor from "@smthrs/registry/Descriptor"
-import { Effect, Option, Stream } from "effect"
+import { Effect, Layer, Option, Stream } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { describe, expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -149,9 +150,54 @@ const turn = (
       Effect.provideService(EngineLike.EngineLike, port)
     )
     return messages
-  })
+  }).pipe(Effect.provideService(Action.CurrentCacheEnvironment, { layers: ["layer-a"], capabilities: {} }))
 
 describe("a cell call through the workspace sandbox", () => {
+  it.each(["unknown", "different", "same", "layers"] as const)(
+    "regression: sandbox memo distinguishes %s effective authority",
+    async (authority) => {
+      await Effect.gen(function*() {
+        const sandbox = yield* InMemoryWorkspaceSandbox.make()
+        let executions = 0
+        const runner = yield* FlowEngineLike.sandboxed(sandbox.service, {
+          run: () => Effect.sync(() => new Cell.CallResult({ outcome: "success", value: ++executions }))
+        })
+        const call = (session: string) =>
+          new Cell.Call({
+            flowName: "read",
+            input: {},
+            capabilities: [],
+            effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+            placement: Option.none(),
+            identity: new Cell.CallIdentity({
+              session,
+              frame: 0,
+              cell: "cell",
+              ordinal: 0,
+              declaration: "read-v1",
+              layers: []
+            })
+          })
+        const first = call("run-a")
+        const second = call(authority === "unknown" ? "run-a" : "run-b")
+        const env = (envelope: string, layer = "host") =>
+          Action.layerCacheEnvironment({ layers: [layer], capabilities: { envelope: [envelope] } })
+        const a = yield* runner.run(first).pipe(Effect.provide(
+          authority === "unknown"
+            ? Layer.empty :
+            env("broad")
+        ))
+        const b = yield* runner.run(second).pipe(Effect.provide(
+          authority === "unknown"
+            ? Layer.empty :
+            env(authority === "different" ? "narrow" : "broad", authority === "layers" ? "host-v2" : "host")
+        ))
+        expect(a.value).toBe(1)
+        expect(b.value).toBe(authority === "same" ? 1 : 2)
+      }).pipe(Effect.provide(NodeCrypto.layer), Effect.runPromise)
+    }
+  )
+
   it("materializes the file the cell's flow wrote", async () => {
     const outcome = await Effect.runPromise(
       Effect.gen(function*() {

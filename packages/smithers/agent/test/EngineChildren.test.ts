@@ -41,8 +41,9 @@ import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { Registry } from "@smthrs/registry"
 import { RunStore } from "@smthrs/run-store"
-import { Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Schema } from "effect"
 import type * as Scope from "effect/Scope"
+import { TestClock } from "effect/testing"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -325,6 +326,88 @@ const childErrorOf = (exit: Exit.Exit<unknown, unknown>): ChildFlows.ChildError 
 }
 
 describe("EngineChildren.spawn", () => {
+  it("regression: preserves explicit null for payload schema validation", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("null-payload")
+      yield* registerChildren(runtime)
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
+      yield* runtime.register(Parent, () =>
+        port.spawn({ flow: Worker._tag, input: null }).pipe(
+          Effect.as("started"),
+          Effect.catch((error) => Effect.succeed(error.code))
+        ))
+      expect(yield* runtime.execute(Parent, { executionId: "null-parent", payload: {} })).toBe("failed")
+    })))
+
+  it.each(["slow", "stalled"] as const)(
+    "regression: start budget includes %s storage",
+    (mode) =>
+      run(
+        Effect.gen(function*() {
+          const runtime = yield* engine(`start-storage-${mode}`)
+          const store = yield* RunStore.RunStore
+          const read = yield* Deferred.make<void>()
+          let cleaned = false
+          const stalled: FlowRuntime.FlowRuntime["Service"] = {
+            ...runtime,
+            execute: () =>
+              Effect.never.pipe(Effect.ensuring(Effect.sync(() => {
+                cleaned = true
+              })))
+          }
+          const port = yield* children({ startTimeout: "1 second", pollInterval: "10 millis" }).pipe(
+            Effect.provideService(FlowRuntime.FlowRuntime, stalled),
+            Effect.provideService(RunStore.RunStore, {
+              ...store,
+              get: (id) =>
+                Deferred.succeed(read, undefined).pipe(
+                  Effect.andThen(mode === "stalled" ? Effect.never : Effect.sleep("2 seconds")),
+                  Effect.andThen(store.get(id))
+                )
+            })
+          )
+          yield* runtime.register(Parent, () =>
+            port.spawn({ flow: Worker._tag }).pipe(
+              Effect.as("started"),
+              Effect.catch((error) => Effect.succeed(error.code))
+            ))
+          const spawning = yield* Effect.forkChild(
+            runtime.execute(Parent, { executionId: `storage-${mode}`, payload: {} })
+          )
+          yield* Deferred.await(read)
+          yield* TestClock.adjust("1 second")
+          const ended = spawning.pollUnsafe()
+          yield* Fiber.interrupt(spawning)
+          expect(ended).toEqual(Exit.succeed("failed"))
+          expect(cleaned).toBe(true)
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
+  )
+
+  it("regression: detached failure logs redact credentials before rendering", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("safe-detached-log")
+      const messages: Array<string> = []
+      const capture = Logger.make((entry) => {
+        messages.push(JSON.stringify(entry.message) + Cause.pretty(entry.cause))
+      })
+      const broken: FlowRuntime.FlowRuntime["Service"] = {
+        ...runtime,
+        execute: () => Effect.die(new Error("admission failed: password=child-secret"))
+      }
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, broken))
+      yield* runtime.register(Parent, () =>
+        port.spawn({ flow: Worker._tag }).pipe(
+          Effect.as("started"),
+          Effect.catch((error) => Effect.succeed(error.message))
+        ).pipe(Effect.provide(Logger.layer([capture]))))
+      const refusal = yield* runtime.execute(Parent, { executionId: "safe-log-parent", payload: {} })
+      expect(refusal).not.toContain("child-secret")
+      expect(messages.join("\n")).toContain("ended abnormally")
+      expect(messages.join("\n")).not.toContain("child-secret")
+      expect(messages.join("\n")).toContain("[REDACTED]")
+    })))
+
   it("distinguishes a delimiter-bearing direct child from a nested child", () => {
     const direct = EngineChildren.childExecutionId("root", EngineChildren.childExecutionId("review", "check"))
     const nested = EngineChildren.childExecutionId(EngineChildren.childExecutionId("root", "review"), "check")
@@ -650,6 +733,107 @@ describe("EngineChildren.spawn", () => {
 })
 
 describe("EngineChildren.await", () => {
+  it("regression: runtime polling errors remain catchable ChildError failures", () =>
+    run(Effect.gen(function*() {
+      const runtime = yield* engine("poll-error")
+      const store = yield* RunStore.RunStore
+      yield* store.create("poll-missing", JSON.stringify({ flowName: Worker._tag }))
+      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, {
+        ...runtime,
+        poll: () => Effect.fail(new FlowRuntime.FlowExecutionNotFound({ executionId: "poll-missing" }))
+      }))
+      const result = yield* Effect.exit(
+        port.await({ child: "poll-missing" }).pipe(
+          Effect.catch((error) => Effect.succeed(error.code))
+        )
+      )
+      expect(result).toEqual(Exit.succeed("failed"))
+    })))
+
+  it("regression: await parks the parent round on a durable timer", () =>
+    run(
+      Effect.gen(function*() {
+        const runtime = yield* engine("await-parks")
+        const store = yield* RunStore.RunStore
+        const parent = "await-parks-parent"
+        const child = EngineChildren.childExecutionId(parent, "worker")
+        yield* store.create(
+          child,
+          JSON.stringify({ version: 1, flowName: Worker._tag, payload: {}, capabilityCeilings: [[]] }),
+          { lineageId: child, roundOrdinal: 0 }
+        )
+        yield* runtime.register(Worker, () => Effect.succeed("finished"))
+        const scheduled = yield* Deferred.make<void>()
+        const polled = yield* Deferred.make<void>()
+        const repolled = yield* Deferred.make<void>()
+        let polls = 0
+        const observed: FlowRuntime.FlowRuntime["Service"] = {
+          ...runtime,
+          poll: (flow, id) =>
+            runtime.poll(flow, id).pipe(
+              Effect.tap(() => Deferred.succeed(++polls === 1 ? polled : repolled, undefined))
+            ),
+          scheduleClock: (flow, options) =>
+            runtime.scheduleClock(flow, options).pipe(
+              Effect.tap(() => Deferred.succeed(scheduled, undefined))
+            )
+        }
+        const port = yield* children({ pollInterval: "1 second" }).pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, observed)
+        )
+        yield* runtime.register(Parent, () =>
+          port.await({ child }).pipe(Effect.map((value) => value.output), Effect.orDie))
+        yield* runtime.execute(Parent, { executionId: parent, payload: {}, discard: true })
+        yield* Deferred.await(polled)
+        // Wait for either the timer registration or a second polling pass. The
+        // old implementation only re-polls, proving that it kept the round open.
+        const checking = yield* Effect.forkChild(Effect.raceFirst(
+          Deferred.await(scheduled).pipe(Effect.as("durable")),
+          Deferred.await(repolled).pipe(Effect.as("ordinary"))
+        ))
+        while (checking.pollUnsafe() === undefined) {
+          yield* TestClock.adjust("1 second")
+          yield* Effect.yieldNow
+        }
+        expect(yield* Fiber.join(checking)).toBe("durable")
+      }).pipe(Effect.provide(TestClock.layer()))
+    ))
+
+  it("keeps an await deadline across a suspended parent's re-drive", () =>
+    run(
+      Effect.gen(function*() {
+        const runtime = yield* engine("await-deadline-replay")
+        const store = yield* RunStore.RunStore
+        const parent = "await-deadline-parent"
+        const child = EngineChildren.childExecutionId(parent, "worker")
+        yield* store.create(
+          child,
+          JSON.stringify({ version: 1, flowName: Worker._tag, payload: {}, capabilityCeilings: [[]] }),
+          { lineageId: child, roundOrdinal: 0 }
+        )
+        yield* runtime.register(Worker, () => Effect.succeed("finished"))
+        const port = yield* children({ pollInterval: "1 second", awaitTimeout: "2 seconds" }).pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, runtime)
+        )
+        yield* runtime.register(Parent, () =>
+          port.await({ child }).pipe(
+            Effect.map((value) => value.output),
+            Effect.catch((error) => Effect.succeed(error.code))
+          ))
+        yield* runtime.execute(Parent, { executionId: parent, payload: {}, discard: true })
+        yield* store.get(parent).pipe(Effect.repeat({ while: (row) => row.status !== "suspended" }))
+        // No clock worker is needed: re-drive explicitly after the original
+        // deadline. A fresh timeout on that drive would park the parent again.
+        yield* TestClock.adjust("3 seconds")
+        yield* runtime.resume(Parent, parent)
+        const result = yield* runtime.poll(Parent, parent)
+        expect(result).toMatchObject({
+          _tag: "Some",
+          value: { _tag: "Complete", exit: { _tag: "Success", value: "still_running" } }
+        })
+      }).pipe(Effect.provide(TestClock.layer()))
+    ))
+
   it("returns the child's output to a second engine over the same database file", () =>
     withTempFile(async (filename) => {
       const child = await runOn(

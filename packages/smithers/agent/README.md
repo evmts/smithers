@@ -157,9 +157,14 @@ implementation.
   bound over an injected `Children` port, because nothing browser-safe can
   honestly claim to persist a detached run.
 - `EngineChildren` — that port, over a durable engine. `spawn` starts the named
-  flow as a run of its own and answers once its row exists, `await` reads the
+  flow as a run of its own and answers once its row exists. Its start deadline
+  includes storage latency and interrupts stalled admission. Explicit `null`
+  input reaches payload validation unchanged; only omitted input defaults to
+  `{}`. Detached failure diagnostics redact credentials. `await` reads the
   child's result back out of the run store (so another process, another engine,
-  and a later incarnation all work), and `send` steers the child through
+  and a later incarnation all work). Inside a flow it parks on durable timers
+  with a journaled deadline; host collectors outside a flow poll in memory.
+  Polling failures are catchable `ChildError` failures. `send` steers the child through
   `Control.steer`, naming the message with the calling step's key, an ordinal
   counted inside the enclosing dispatch, so a re-driven round delivers it once
   and a send after a park never inherits a replayed step's number. The message
@@ -684,7 +689,12 @@ A run that solved something once solved it as a script: a few cells that read th
 
 `flows/show-script` hands the model its own turn back — the source of every cell it executed, in order — together with the rules a saved flow has to follow and the file skeleton to fill in. It reads `@smthrs/harness/CellHistory`, the optional service the cell controller records into, so a host that keeps no history reports an empty script instead of failing. `flows/write-flow` takes the three files that come back — the flow, its end-to-end test, and the fixture that test replays — and writes them through a `FlowStore`. When a `Registry` is in context it is refreshed afterwards, which is what makes the saved flow appear in `ctx.flows` on the next frame rather than the next run.
 
-`FlowStore` is where the files land, and the host decides where that is: `FlowStore.layerFileSystem(root)` writes `<root>/.smithers/flows/<id>/{flow.ts,flow.e2e.ts,fixtures/<id>.json}` through Effect's `FileSystem`, `FlowStore.layerMemory()` keeps them in a map, and `FlowStore.layerNoop()` refuses with a message the model can read. The store is also the last place an id is still text, so `FlowStore.validateId` runs before any path is built from it: `../escape` is refused as a bad id rather than caught as a surprising write. The rules and the skeleton are the host's too — `PromoteFlows.Options` replaces both for a host whose flows are laid out differently.
+`FlowStore` is where the files land, and the host decides where that is: `FlowStore.layerFileSystem(root)` writes `<root>/.smithers/flows/<id>/{flow.ts,flow.e2e.ts,fixtures/<id>.json}` through Effect's `FileSystem`, `FlowStore.layerMemory()` keeps them in a map, and `FlowStore.layerNoop()` refuses with a message the model can read. The filesystem host must support the kernel's no-follow confinement (on Node,
+`NodeHost.layer` from `@smthrs/platform-node`). A plain
+path-based host is refused. Publication and rollback stay pinned to the root;
+staging cleanup failure logs a warning and preserves the publication result.
+
+The store is also the last place an id is still text, so `FlowStore.validateId` runs before any path is built from it: `../escape` is refused as a bad id rather than caught as a surprising write. The rules and the skeleton are the host's too — `PromoteFlows.Options` replaces both for a host whose flows are laid out differently.
 
 ## Public API
 
@@ -718,3 +728,7 @@ when the host is constructed. Budget attribution retains the declared purpose
 when reading shares do not sum to the recorded token and USD charge. Recovery
 fails closed when duplicate step records disagree on tokens or USD, including
 missing versus known USD charges.
+
+The package test suite builds `smithers-jj-export` from this checkout with Cargo
+before running. FlowStore disk tests use its real descriptor-relative filesystem;
+a clean checkout needs the workspace Rust toolchain as well as pnpm dependencies.

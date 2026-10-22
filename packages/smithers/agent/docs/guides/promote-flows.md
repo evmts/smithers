@@ -63,6 +63,12 @@ satisfy:
 | `FlowStore.layerMemory(map)`      | A caller-owned `Map<string, string>` keyed by path, so a test reads the bytes back without a filesystem. Every key must be a file path under `.smithers/flows/<id>/`. |
 | `FlowStore.layerNoop()`           | Nowhere: refuses with `FlowStoreError { code: "unsupported" }` and a message the model can read.                                                                      |
 
+The filesystem store requires a no-follow host, such as Node's
+`NodeHost.layer` from `@smthrs/platform-node`.
+It refuses plain path-only hosts. Publication, backups, rollback and cleanup
+use the kernel's filesystem view pinned to the root. Cleanup failure retains
+staging and logs a warning without changing a successful save into a failure.
+
 Every message a store returns is written for the model that will read it back
 as a call failure, because the cell that asked to save a flow is the only thing
 that can correct the id or reissue the write.

@@ -348,8 +348,23 @@ export const sandboxed = (
     ...(runner.authorize === undefined ? {} : { authorize: runner.authorize }),
     run: (call) =>
       Effect.gen(function*() {
-        const cacheKey = call.effects.tier === "sealed"
-          ? yield* StepKey.fromKeyMaterial(callMaterial(call, options.layers), {}).pipe(
+        const environment = yield* Action.CurrentCacheEnvironment
+        const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+        const cacheEnvironment = environment ?? (Option.isSome(instance)
+          ? { run: `${instance.value.flow._tag}/${instance.value.executionId}` }
+          : undefined)
+        const material = callMaterial(call, [...(options.layers ?? []), ...(environment?.layers ?? [])])
+        const cacheKey = call.effects.tier === "sealed" && cacheEnvironment !== undefined
+          ? yield* StepKey.fromKeyMaterial({
+            ...material,
+            body: {
+              call: material.body,
+              // A sandbox memo hit bypasses the workflow entirely. Its key
+              // needs the same effective authority as the durable activity;
+              // unknown authority confines reuse to this execution.
+              environment: cacheEnvironment
+            }
+          }, {}).pipe(
             Effect.provideService(Crypto.Crypto, crypto),
             Effect.mapError((cause) => engineFailed(`Cell call ${call.flowName} could not be keyed`, cause))
           )
@@ -721,16 +736,16 @@ export const make = (
     // exact stale-cache class issue #75 exists to close. Omitting the field
     // instead leaves keys run-local until a host supplies `Options.capabilities`,
     // and the environment is now complete-or-absent, so an undeclared envelope
-    // means no environment reference at all rather than a partial one.
-    const context = options.capabilities === undefined
-      ? services
-      : Context.merge(
-        services,
-        Context.make(Action.CurrentCacheEnvironment, {
-          layers: scope.layers,
-          capabilities: options.capabilities
-        })
-      )
+    // explicitly clears any inherited environment rather than retaining an
+    // outer composition's complete authority by accident.
+    const context = Context.add(
+      services,
+      Action.CurrentCacheEnvironment,
+      options.capabilities === undefined ? undefined : {
+        layers: scope.layers,
+        capabilities: options.capabilities
+      }
+    )
 
     // The wait a budget park declared, applied when the frame suspends.
     let parkedOn: FlowRuntime.WaitingAnnotation | undefined

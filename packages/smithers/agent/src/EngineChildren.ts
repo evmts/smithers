@@ -37,20 +37,16 @@
  * such a caller composed this port and already holds the run store and the
  * control plane it reads and steers through.
  *
- * The one thing it does not do is park the caller. `await` waits by re-reading
- * the child's run row on an interval rather than suspending the run, so a cell
- * that awaits a long child holds its round open. That is a bounded, honest cost of
- * the port's shape — `Children.await` answers with a value — and the note is
- * here rather than in a comment on the loop because it is the operation's
- * contract, not an implementation detail.
+ * Inside a flow, `await` parks the caller on durable timers between checks.
+ * Its journaled deadline survives replay, so resuming a parent cannot restart
+ * the wait budget. Outside a flow, a host collector polls in memory.
  *
  * @since 0.1.0
  */
 
-import { Control } from "@smthrs/control/Control"
-import type { ControlError } from "@smthrs/control/ControlError"
+import { Control, type ControlError } from "@smthrs/control"
 import type { Flow } from "@smthrs/flow"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import { Redaction } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
@@ -216,12 +212,12 @@ export const make = (
 ): Effect.Effect<
   ChildFlows.Children,
   never,
-  Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore
+  Control.Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore
 > =>
   Effect.gen(function*() {
     const runtime = yield* FlowRuntime.FlowRuntime
     const store = yield* RunStore.RunStore
-    const control = yield* Control
+    const control = yield* Control.Control
     /**
      * Captured at construction, not required per call.
      *
@@ -339,8 +335,7 @@ export const make = (
     const awaitStarted = (
       child: string,
       flowName: string,
-      fiber: Fiber.Fiber<unknown, unknown>,
-      remaining: Duration.Duration
+      fiber: Fiber.Fiber<unknown, unknown>
     ): Effect.Effect<void, ChildError> =>
       Effect.gen(function*() {
         const ended = yield* Effect.sync(() => fiber.pollUnsafe())
@@ -363,13 +358,8 @@ export const make = (
             )
           )
         }
-        if (Duration.isLessThanOrEqualTo(remaining, Duration.zero)) {
-          return yield* Effect.fail(
-            failed(`The child run ${child} was not created within its start budget.`)
-          )
-        }
         yield* Effect.sleep(pollInterval)
-        return yield* awaitStarted(child, flowName, fiber, Duration.subtract(remaining, pollInterval))
+        return yield* awaitStarted(child, flowName, fiber)
       })
 
     const spawn: ChildFlows.Children["spawn"] = (input) =>
@@ -401,13 +391,24 @@ export const make = (
             // the real declaration it registered.
             (runtime.execute(flow as never, {
               executionId: child,
-              payload: input.input ?? {},
+              payload: input.input === undefined ? {} : input.input,
               discard: true
             }) as Effect.Effect<unknown, unknown>).pipe(
-              Effect.tapCause((cause) => Effect.logWarning(`agent: detached child ${child} ended abnormally`, cause))
+              Effect.tapCause((cause) =>
+                Effect.logWarning(
+                  `agent: detached child ${child} ended abnormally`,
+                  Redaction.redactDiagnostic(Cause.pretty(cause))
+                )
+              )
             )
           ),
-          (fiber) => awaitStarted(child, input.flow, fiber, startTimeout),
+          (fiber) =>
+            awaitStarted(child, input.flow, fiber).pipe(
+              Effect.timeoutOrElse({
+                duration: startTimeout,
+                orElse: () => Effect.fail(failed(`The child run ${child} was not created within its start budget.`))
+              })
+            ),
           (fiber, exit) => Exit.isFailure(exit) ? Fiber.interrupt(fiber) : Effect.void
         )
         return { child }
@@ -425,11 +426,19 @@ export const make = (
         if (row.value.status === "cancelled") {
           return yield* Effect.fail(failed(`The child run ${child} was cancelled.`))
         }
-        const state = yield* Effect.orDie(decodeChildState(row.value.stateJson))
+        const state = yield* decodeChildState(row.value.stateJson).pipe(
+          Effect.mapError(() => failed(`The child run ${child} has unreadable state.`))
+        )
         const flow = yield* declarationOf(state.flowName, "agent/await")
-        const result = yield* (Effect.orDie(runtime.poll(flow as never, child)) as Effect.Effect<
-          Option.Option<Flow.Result<unknown, unknown>>
-        >)
+        const result = yield* (runtime.poll(flow as never, child) as Effect.Effect<
+          Option.Option<Flow.Result<unknown, unknown>>,
+          unknown
+        >).pipe(
+          Effect.tapError((cause) =>
+            Effect.logWarning("agent: child polling failed", Redaction.redactDiagnostic(cause))
+          ),
+          Effect.mapError(() => failed(`The runtime could not poll the child run ${child}.`))
+        )
         // Nothing recorded yet: the round has not settled even once.
         if (Option.isNone(result)) return Option.none()
         const settled = result.value
@@ -453,34 +462,73 @@ export const make = (
         return Option.some({ child, output: asText(settled.exit.value) })
       })
 
-    const awaitChild: ChildFlows.Children["await"] = (input) => {
-      const attempt: Effect.Effect<typeof ChildFlows.AwaitOutput.Type, ChildError> = Effect.flatMap(
-        outcomeOf(input.child),
-        Option.match({
-          onNone: () => Effect.sleep(pollInterval).pipe(Effect.andThen(Effect.suspend(() => attempt))),
-          onSome: Effect.succeed
-        })
-      )
-      const timeout = input.timeoutSeconds === undefined
-        ? awaitTimeout
-        : Duration.seconds(input.timeoutSeconds)
-      return Effect.andThen(
-        ownedByCaller("agent/await", input.child),
-        Effect.timeoutOrElse(attempt, {
-          duration: timeout,
-          orElse: () =>
-            Effect.fail(
-              new ChildError({
-                code: "still_running",
-                message: `The child run ${input.child} is still running after ${
-                  Duration.format(timeout)
-                }; await it again to keep waiting.`,
-                limitMillis: Duration.toMillis(timeout)
-              })
-            )
-        })
-      )
-    }
+    const awaitChild: ChildFlows.Children["await"] = (input) =>
+      Effect.gen(function*() {
+        yield* ownedByCaller("agent/await", input.child)
+        const timeout = input.timeoutSeconds === undefined ? awaitTimeout : Duration.seconds(input.timeoutSeconds)
+        const expired = () =>
+          Effect.fail(
+            new ChildError({
+              code: "still_running",
+              message: `The child run ${input.child} is still running after ${
+                Duration.format(timeout)
+              }; await it again to keep waiting.`,
+              limitMillis: Duration.toMillis(timeout)
+            })
+          )
+        const parent = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+        if (Option.isNone(parent)) {
+          const attempt: Effect.Effect<typeof ChildFlows.AwaitOutput.Type, ChildError> = Effect.flatMap(
+            outcomeOf(input.child),
+            Option.match({
+              onNone: () => Effect.sleep(pollInterval).pipe(Effect.andThen(Effect.suspend(() => attempt))),
+              onSome: Effect.succeed
+            })
+          )
+          return yield* Effect.timeoutOrElse(attempt, { duration: timeout, orElse: expired })
+        }
+        const dispatch = yield* Action.CurrentInvocationKey
+        const key = yield* Action.idempotencyKey(
+          "agent/await",
+          dispatch === undefined ? undefined : { parentScope: dispatch }
+        ).pipe(
+          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(FlowRuntime.FlowInstance, parent.value)
+        )
+        // This is an invocation deadline, not a fresh timeout on every drive.
+        const deadline = yield* Action.make({
+          name: "agent/await/deadline",
+          tier: "sealed",
+          idempotencyKey: key,
+          success: Schema.Number,
+          execute: Effect.clockWith((clock) =>
+            Effect.map(clock.currentTimeMillis, (now) => now + Duration.toMillis(timeout))
+          )
+        }).pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, runtime),
+          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(FlowRuntime.FlowInstance, parent.value)
+        )
+        let attempt = 0
+        while (true) {
+          const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+          const remaining = deadline - now
+          if (remaining <= 0) return yield* expired()
+          const outcome = yield* outcomeOf(input.child).pipe(
+            Effect.timeoutOrElse({ duration: remaining, orElse: expired })
+          )
+          if (Option.isSome(outcome)) return outcome.value
+          yield* DurableClock.sleep({
+            name: `${key}/${attempt++}`,
+            duration: Math.min(Duration.toMillis(pollInterval), remaining),
+            inMemoryThreshold: 0
+          }).pipe(
+            Effect.provideService(FlowRuntime.FlowRuntime, runtime),
+            Effect.provideService(Crypto.Crypto, crypto),
+            Effect.provideService(FlowRuntime.FlowInstance, parent.value)
+          )
+        }
+      })
 
     const send: ChildFlows.Children["send"] = (input) =>
       Effect.gen(function*() {
@@ -562,7 +610,7 @@ export const make = (
           },
           idempotencyKey: messageId
         }).pipe(
-          Effect.mapError((cause: ControlError) =>
+          Effect.mapError((cause: ControlError.ControlError) =>
             cause._tag === "/control/RunNotFound"
               ? notFound(`agent/send knows no child run ${input.child}.`)
               : failed(`agent/send could not steer ${input.child}: ${cause._tag}`)
@@ -612,5 +660,5 @@ export const layer = (
 ): Layer.Layer<
   ChildFlows.Children,
   never,
-  Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore
+  Control.Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore
 > => Layer.effect(ChildFlows.Children)(make(options))
