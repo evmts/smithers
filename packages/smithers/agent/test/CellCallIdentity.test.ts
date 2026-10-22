@@ -13,6 +13,8 @@ import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import materialApproval from "./fixtures/cell-call-material-approval-required.json" with { type: "json" }
 import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
+import materialEncoding3 from "./fixtures/cell-call-material-key-encoding-3.json" with { type: "json" }
+import materialModelErrorCause from "./fixtures/cell-call-material-model-error-cause.json" with { type: "json" }
 import materialCost from "./fixtures/cell-call-material-reported-cost.json" with { type: "json" }
 import material112 from "./fixtures/cell-call-material-v1.json" with { type: "json" }
 import * as V1 from "./fixtures/CellCallV1.ts"
@@ -40,7 +42,8 @@ const flow = Flow.make("agent/test/cell-call-identity", {
   body: () => Node.succeed(undefined)
 })
 
-it("pins the complete canonical material delivered to SHA-256", async () => {
+/** Dispatches the fixed call under `encoding` and returns its key and the material hashed on the way. */
+const observe = async (encoding: FlowEngine.KeyEncoding) => {
   const material: Array<string> = []
   const crypto = Layer.effect(Crypto.Crypto)(Effect.map(Crypto.Crypto, (live) => ({
     ...live,
@@ -79,9 +82,15 @@ it("pins the complete canonical material delivered to SHA-256", async () => {
     Effect.provide(
       Layer.mergeAll(FlowEngine.layerMemory, crypto, Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())
     ),
+    Effect.provideService(FlowEngine.ActionKeyEncoding, encoding),
     Effect.scoped,
     Effect.runPromise
   )
+  return { material, observed }
+}
+
+it("pins the complete canonical material delivered to SHA-256", async () => {
+  const { material, observed } = await observe(FlowEngine.keyEncodings[0])
   // Preserve the archived checksum and pin the complete current preimage.
   // An Effect upgrade is not transparent replay compatibility.
   expect(`key1_${createHash("sha256").update(V1.canonical(material112)).digest("hex")}`).toBe(V1.key)
@@ -92,10 +101,24 @@ it("pins the complete canonical material delivered to SHA-256", async () => {
   expect(`key1_${createHash("sha256").update(expected).digest("hex")}`).toBe(V1.approvalRequiredKey)
   expect(V1.approvalRequiredKey).not.toBe(V1.effect115Key)
   expect(material).not.toContain(archived115)
-  const current = V1.canonical(materialCost)
-  expect(`key1_${createHash("sha256").update(current).digest("hex")}`).toBe(V1.reportedCostKey)
+  const reportedCost = V1.canonical(materialCost)
+  expect(`key1_${createHash("sha256").update(reportedCost).digest("hex")}`).toBe(V1.reportedCostKey)
   expect(V1.reportedCostKey).not.toBe(V1.approvalRequiredKey)
   expect(material).not.toContain(expected)
+  expect(material).not.toContain(reportedCost)
+  const modelErrorCause = V1.canonical(materialModelErrorCause)
+  expect(`key1_${createHash("sha256").update(modelErrorCause).digest("hex")}`).toBe(V1.modelErrorCauseKey)
+  expect(V1.modelErrorCauseKey).not.toBe(V1.reportedCostKey)
+  // Key encoding 3 names itself in the same material.
+  const current = V1.canonical(materialEncoding3)
+  expect(`key1_${createHash("sha256").update(current).digest("hex")}`).toBe(V1.keyEncoding3Key)
+  expect(material).not.toContain(modelErrorCause)
   expect(material).toContain(current)
-  expect(observed.value).toBe(V1.reportedCostKey)
+  expect(observed.value).toBe(V1.keyEncoding3Key)
+})
+
+it("derives the pre-encoding-3 key under key encoding 2, so a recorded call is found again", async () => {
+  const { material, observed } = await observe(2)
+  expect(material).toContain(V1.canonical(materialModelErrorCause))
+  expect(observed.value).toBe(V1.modelErrorCauseKey)
 })

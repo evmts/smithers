@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
@@ -18,7 +19,7 @@ import { DatabaseSync } from "node:sqlite"
 import { expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
-import materialCost from "./fixtures/cell-call-material-reported-cost.json" with { type: "json" }
+import materialCurrent from "./fixtures/cell-call-material-model-error-cause.json" with { type: "json" }
 import * as V1 from "./fixtures/CellCallV1.ts"
 import { HarnessErrorBeforeApproval } from "./fixtures/HarnessErrorBeforeApproval.ts"
 import * as Safety from "./Safety.ts"
@@ -26,6 +27,11 @@ import * as Safety from "./Safety.ts"
 // Replay requires the same declaration as well as the same Effect lock.
 // Retained prior declarations replay their old key; the current approval-aware
 // declaration replays its own key through the current public agent port.
+//
+// The journal is written the way an engine before key encoding 3 wrote it
+// (encoding 2, no `keyEncoding` in the key) and resumed by the current engine,
+// which keys new records under encoding 3 and finds the recorded attempt under
+// the older key: the sealed call runs once, never again after the upgrade.
 const flow = Flow.make("agent/test/cell-call-v1-reopen", {
   payload: {},
   success: Schema.Json,
@@ -35,8 +41,8 @@ const flow = Flow.make("agent/test/cell-call-v1-reopen", {
 const proceed = DurableDeferred.make("agent/test/cell-call-v1-proceed", { success: Schema.Void })
 
 const reopenDeclaration = async (declaration: "retained-prior" | "current"): Promise<void> => {
-  const material = declaration === "retained-prior" ? materialV1 : materialCost
-  const expectedKey = declaration === "retained-prior" ? V1.effect115Key : V1.reportedCostKey
+  const material = declaration === "retained-prior" ? materialV1 : materialCurrent
+  const expectedKey = declaration === "retained-prior" ? V1.effect115Key : V1.modelErrorCauseKey
   const wireError = declaration === "retained-prior" ? HarnessErrorBeforeApproval : HarnessError
   const directory = mkdtempSync(join(tmpdir(), "smithers-m1-cell-key-"))
   const filename = join(directory, "engine.sqlite")
@@ -114,7 +120,8 @@ const reopenDeclaration = async (declaration: "retained-prior" | "current"): Pro
       Layer.provide([
         NodeCrypto.layer,
         AtomicFileSystem.layer,
-        Jj.layerNoop({ snapshot: () => Effect.die("sealed calls take no snapshot") })
+        Jj.layerNoop({ snapshot: () => Effect.die("sealed calls take no snapshot") }),
+        Layer.succeed(FlowEngine.ActionKeyEncoding)(historical ? 2 : FlowEngine.keyEncodings[0])
       ])
     )
   }
@@ -153,7 +160,7 @@ const reopenDeclaration = async (declaration: "retained-prior" | "current"): Pro
         // `HarnessErrorCode` gained `completion_incomplete` (#3009).
         step_key_digest: declaration === "retained-prior"
           ? "324184457f5da0916c2970fdd8d1894ee48713c8042adada8f7620dbfe543a12"
-          : "4db9c79b98eccc3310c71f990e17cfd5d1d5e7c7d773029c3492ce66e2aa9c6a",
+          : "ea01601c43407bacf8305e13409f186a13009c1daa6b1c9ef106e9fb18d4547b",
         state: "succeeded"
       }])
     } finally {

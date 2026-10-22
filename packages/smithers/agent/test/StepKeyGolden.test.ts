@@ -151,6 +151,10 @@ const drive = <A>(
     Effect.runPromise
   )
 
+/** Derives a key the way an engine before key encoding 3 wrote it. */
+const underEncoding2 = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.provideService(effect, FlowEngine.ActionKeyEncoding, 2)
+
 /** Seals the fixed step through a port built over `layers`. */
 const sealUnder = (layers: ReadonlyArray<string>) =>
   Effect.gen(function*() {
@@ -186,7 +190,8 @@ describe("the sealed model step key", () => {
       return {
         host: yield* sealUnder(["golden-host-layer"]),
         again: yield* sealUnder(["golden-host-layer"]),
-        other: yield* sealUnder(["another-host-layer"])
+        other: yield* sealUnder(["another-host-layer"]),
+        encoding2: yield* underEncoding2(sealUnder(["golden-host-layer"]))
       }
     }))
 
@@ -252,7 +257,19 @@ describe("the sealed model step key", () => {
     expect(observed.host).not.toBe("key1_3f683043bfe48814c4f4fe4ea219b2f5475539f72142abaef067987e9bf8241e")
     expect(observed.host).not.toBe("key1_1f993b7602a78244c50e2d62884a7adaf57aa1d9bb84d96c71f3a4938a2f85a3")
     // EvaluatorError usage now declares the reported cost (#3824).
-    expect(observed.host).toBe("key1_598ea5fa58ff895d326e7542cd8c166083fdff827c01165992bdd165b27945c1")
+    expect(observed.host).not.toBe("key1_598ea5fa58ff895d326e7542cd8c166083fdff827c01165992bdd165b27945c1")
+    expect(observed.encoding2).not.toBe("key1_598ea5fa58ff895d326e7542cd8c166083fdff827c01165992bdd165b27945c1")
+    // Moved when `HarnessError.cause` gained the provider's typed `ModelError`
+    // (9904ce12f1): a declaration change, which moves the key under every key
+    // encoding. With that commit's `HarnessError` swapped back, encoding 2
+    // derives the key above byte for byte, so the derivation itself did not move.
+    //
+    // Moved again on 2026-10-21 when sealed keys began to name their encoding
+    // (`keyEncoding: 3`, engine 631bbbe2). This move strands nothing: key
+    // encoding 2 still derives the previous key, and a run journaled under it
+    // replays there (CellCallIdentityReplay.test.ts).
+    expect(observed.encoding2).toBe("key1_8ea4786bba8082954abcb2c65b209b3528f9b4307df90a94d34031369879cc2d")
+    expect(observed.host).toBe("key1_f56e335aa68923604edc22e7c3da6298f8198caeb3cf3d5c75da647d1629c58c")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)
@@ -265,7 +282,11 @@ describe("the sealed model step key", () => {
 describe("the sealed cell-call key", () => {
   it("is exactly this string, and moves with the composition", async () => {
     const observed = await drive(Effect.gen(function*() {
-      return { host: yield* callUnder(["golden-host-layer"]), other: yield* callUnder(["another-host-layer"]) }
+      return {
+        host: yield* callUnder(["golden-host-layer"]),
+        other: yield* callUnder(["another-host-layer"]),
+        encoding2: yield* underEncoding2(callUnder(["golden-host-layer"]))
+      }
     }))
 
     // The same warning applies. This key additionally folds in the composition
@@ -288,7 +309,13 @@ describe("the sealed cell-call key", () => {
     // The same schema migration for `approval_unavailable` (#3161/#3317).
     expect(observed.host).not.toBe("key1_425bb2aeef11571a366804d4700e45def8ac0aceac7c7c585b3e1f9461259283")
     expect(observed.host).not.toBe("key1_1e7f6586798d0220c9866f7d53e4d17ba33245e13e476b7e59ce3d080ec2fc8e")
-    expect(observed.host).toBe("key1_5a55d5f0eb804f94c23df600642072cbe5e926f26ae6c8cbb549d3834bfcb68c")
+    expect(observed.host).not.toBe("key1_5a55d5f0eb804f94c23df600642072cbe5e926f26ae6c8cbb549d3834bfcb68c")
+    // Moved when `HarnessError.cause` gained the provider's typed `ModelError`
+    // (9904ce12f1), a declaration change; and again when sealed keys began to
+    // name their encoding (`keyEncoding: 3`), which key encoding 2 undoes, so a
+    // recorded call replays.
+    expect(observed.encoding2).toBe("key1_c753452803048e450f3f45a4ff5b97455bc729f6c3011cc8364f4c344caf6208")
+    expect(observed.host).toBe("key1_e389acc8bba469bfdf24e19262d93e98f8631fd8a1e4729747c93d7ecb960388")
     // The composition really is in the key: the same call resolved under a
     // different layer set is a different boundary, not a cache hit.
     expect(observed.other).not.toBe(observed.host)

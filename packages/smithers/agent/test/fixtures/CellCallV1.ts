@@ -52,6 +52,18 @@ export const approvalRequiredKey = "key1_1e7f6586798d0220c9866f7d53e4d17ba33245e
 // Keep all earlier preimages unchanged.
 export const reportedCostKey = "key1_5a55d5f0eb804f94c23df600642072cbe5e926f26ae6c8cbb549d3834bfcb68c"
 
+// Moved when `HarnessError.cause` gained the provider's typed `ModelError`
+// (9904ce12f1): the error declaration folded into the preimage changed, so the
+// key moved under every key encoding, as a declaration change must (issue
+// #120). The derivation did not move: with that commit's `HarnessError`
+// swapped back, encoding 2 derives `reportedCostKey` byte for byte.
+export const modelErrorCauseKey = "key1_c753452803048e450f3f45a4ff5b97455bc729f6c3011cc8364f4c344caf6208"
+
+// Key encoding 3 (2026-10-21) writes `keyEncoding: 3` into the same material,
+// so the current key names its derivation. Key encoding 2 still derives
+// `modelErrorCauseKey`, and a run recorded under it replays there.
+export const keyEncoding3Key = "key1_e389acc8bba469bfdf24e19262d93e98f8631fd8a1e4729747c93d7ecb960388"
+
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.
 export const canonical = (value: unknown): string => {
