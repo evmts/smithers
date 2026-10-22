@@ -56,7 +56,7 @@ once, and transfers a `MessagePort`; everything after uses the port.
 | `terminal/options` | page to frame | `{ theme, colors, readOnly }`, after any changes |
 | `terminal/focus` | page to frame | `{}` |
 | `terminal/input` | frame to page | `{ data }`, at most 1 MiB |
-| `terminal/resize` | frame to page | `{ cols, rows }`, first and after each fit that changes them |
+| `terminal/resize` | frame to page | `{ cols, rows }`, integers from 1 to 65,535, first and after each fit that changes them |
 | `terminal/key` | frame to page | a `TerminalFrameKey`, for ⌘K and Ctrl+K only |
 | `terminal/link` | frame to page | `{ url }`, an `http:` or `https:` URL of at most 2048 characters |
 

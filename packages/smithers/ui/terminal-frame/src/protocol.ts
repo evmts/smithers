@@ -74,14 +74,16 @@ export const acceptsInitialize = (message: unknown, nonce: string): boolean =>
   isRecord(message) && message.jsonrpc === "2.0" && message.id === initializeId &&
   message.method === "terminal/initialize" && isRecord(message.params) && message.params.nonce === nonce;
 
-const isDimension = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 1;
+/** Terminal sizes fit the unsigned 16-bit dimensions used by PTY resize protocols. */
+const isDimension = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 65535;
 
 const decodeKey = (params: Record<string, unknown>): TerminalFrameKey | undefined => {
   const { key, metaKey, ctrlKey, shiftKey, altKey } = params;
   if (typeof key !== "string" || key.length > 32) return undefined;
   const flags = [metaKey, ctrlKey, shiftKey, altKey];
   if (!flags.every((flag) => typeof flag === "boolean")) return undefined;
-  return { key, metaKey, ctrlKey, shiftKey, altKey } as TerminalFrameKey;
+  const shortcut = { key, metaKey, ctrlKey, shiftKey, altKey } as TerminalFrameKey;
+  return isPageKey(shortcut) ? shortcut : undefined;
 };
 
 /** Decodes a message from the frame's port, or `undefined` for anything this protocol does not define. */
