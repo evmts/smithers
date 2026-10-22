@@ -7,7 +7,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, ExternalJob, FlowRuntime } from "@smthrs/flow"
-import { Cause, Clock, Effect, Exit, Fiber, Layer, Schema } from "effect"
+import { Cause, Clock, type Duration, Effect, Exit, Fiber, Layer, Metric, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { withCrypto } from "./Crypto.ts"
 
@@ -361,10 +361,63 @@ describe("ExternalJob run", () => {
     })
   })
 
-  it("refuses a wait that isn't a finite positive duration", () => {
+  it("refuses a wait that is negative or not finite", () => {
     const p = provider({})
-    expect(() => Job.run({ value: "x" }, { executionId: "x", operations: p.operations, wait: "0 millis" })).toThrow(
-      new RangeError("ExternalJob.run: wait must be a finite positive duration")
+    for (const wait of [-1, Infinity, "soon" as Duration.Input] as const) {
+      expect(() => Job.run({ value: "x" }, { executionId: "x", operations: p.operations, wait })).toThrow(
+        new RangeError("ExternalJob.run: wait must be a finite duration, 0 or more")
+      )
+    }
+  })
+
+  it.effect("hands work to the job at once when the wait is 0", () => {
+    const p = provider({ answers: [{ _tag: "Exited", exitCode: 0 }] })
+    return on(
+      p,
+      Effect.gen(function*() {
+        expect(yield* Job.run({ value: "v" }, { executionId: "v", operations: p.operations, wait: 0 })).toBe(
+          "collected handle:v"
+        )
+        expect(p.calls).toEqual(["start v#g1", "status v#g1 100", "collect v#g1"])
+      })
     )
+  })
+
+  it.effect("records each wait in the step by how it ended, for the time its drive was held", () => {
+    const count = (outcome: string) =>
+      Effect.map(
+        Metric.value(Metric.withAttributes(ExternalJob.stepWaits, { job: Job._tag, outcome })),
+        (state) => state.count
+      )
+    const collected = provider({ exitAt: 250 })
+    const handed = provider({ answers: [{ _tag: "Lost" }, { _tag: "Exited", exitCode: 0 }] })
+    const held = provider({ answers: ["hold"] })
+    return Effect.gen(function*() {
+      const before = { collected: yield* count("collected"), handed: yield* count("handed_off") }
+      const interruptedBefore = yield* count("interrupted")
+      yield* on(
+        collected,
+        Effect.gen(function*() {
+          const running = yield* Effect.forkChild(
+            Job.run({ value: "m1" }, { executionId: "m1", operations: collected.operations })
+          )
+          yield* turns
+          yield* TestClock.adjust(250)
+          yield* Fiber.join(running)
+        })
+      )
+      yield* on(handed, Job.run({ value: "m2" }, { executionId: "m2", operations: handed.operations }))
+      yield* on(
+        held,
+        Effect.gen(function*() {
+          const running = yield* Effect.forkChild(Job.run({ value: "m3" }, { executionId: "m3", operations: held.operations }))
+          yield* turns
+          yield* Fiber.interrupt(running)
+        })
+      )
+      expect(yield* count("collected")).toBe(before.collected + 1)
+      expect(yield* count("handed_off")).toBe(before.handed + 1)
+      expect(yield* count("interrupted")).toBe(interruptedBefore + 1)
+    })
   })
 })

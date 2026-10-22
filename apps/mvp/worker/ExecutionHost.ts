@@ -106,7 +106,8 @@ export const withGitHub = <ROut, E, R, GE, GR, SE, SR>(
  * `flows`, plus the coding factory's `todo` run and a pull request head's `checks/Run` (decision 0016, the factory
  * simplified; docs/features/todos.md#the-run) over `services`, the branches' machines (`machines`) and the agent's
  * `implement` (worker/flows/TodoAgent.ts `registration`), when this deployment has the GitHub App. A head's check scripts
- * run for up to `commandSeconds` (`SANDBOX_COMMAND_MAX_SECONDS`; `COMMAND_LIMIT_SECONDS` unless given). `services` is built
+ * run for up to `commandSeconds` (`SANDBOX_COMMAND_MAX_SECONDS`; `COMMAND_LIMIT_SECONDS` unless given), their step waiting
+ * on each for up to `stepWaitSeconds` (`SANDBOX_COMMAND_STEP_WAIT_SECONDS`). `services` is built
  * when each execution's registration is, as `withGitHub`'s is. The agent's commands run as `sandbox/Command` jobs,
  * which `withSandboxTools` registers, so `flows` comes from it.
  */
@@ -116,6 +117,7 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
   machines: Layer.Layer<Machines, ME, MR>,
   implement: Layer.Layer<Layer.Success<typeof Implement.layer>, IE, IR>,
   commandSeconds?: number,
+  stepWaitSeconds?: number,
 ) => ({
   flows: [...flows.flows, Todo.Todo, TodoDrop.Drop, Checks.ChecksRun],
   registration: Layer.mergeAll(
@@ -124,7 +126,7 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
       Layer.mergeAll(
         Todo.registration(built, implement),
         TodoDrop.registration(built),
-        Checks.registration(built, commandSeconds),
+        Checks.registration(built, commandSeconds, stepWaitSeconds),
       )
         .pipe(Layer.provide(machines))
     )),

@@ -200,6 +200,7 @@ export const machineBindings = <E, R>(
   machines: Machines["Service"],
   resolve: (executionId: string) => Effect.Effect<Option.Option<Machine.TodoMachine>, E, R>,
   commandSeconds: number,
+  stepWaitSeconds: number = COMMAND_LIMIT_SECONDS,
 ) =>
   toolsOf(commandSeconds).map((entry) =>
     FlowBinding.make({
@@ -224,7 +225,13 @@ export const machineBindings = <E, R>(
           const tool = { ...input, tool: entry.tool } as SandboxTools.Call
           // A command runs as the call's own `sandbox/Command` job, so it holds no step of this run while it runs.
           const ran = tool.tool === "run"
-            ? SandboxCommand.run(machines, { branch: machine.value.branch, ownerId: machine.value.ownerId }, callId, tool)
+            ? SandboxCommand.run(
+              machines,
+              { branch: machine.value.branch, ownerId: machine.value.ownerId },
+              callId,
+              tool,
+              SandboxCommand.stepWait(tool, stepWaitSeconds),
+            )
             : Effect.map(machines.tool(machine.value.branch, machine.value.ownerId, callId, tool), (done) => done.result)
           return (yield* ran.pipe(Effect.mapError(failedAs))) as never
         }),
@@ -238,18 +245,24 @@ export const bindings = <E>(
   machines: Machines["Service"],
   database: Layer.Layer<SqlClient.SqlClient, E>,
   commandSeconds: number,
+  stepWaitSeconds: number = COMMAND_LIMIT_SECONDS,
 ) =>
   machineBindings(
     machines,
     (executionId) => Machine.ofExecution(executionId).pipe(Effect.provide(database)),
     commandSeconds,
+    stepWaitSeconds,
   )
 
 /**
  * The step's host: no registry and no other flows, the sandbox tools on the attempt's machine, their commands running up
  * to `commandSeconds`, and the cell limits. Needs the host's `Machines`, and what `database` needs.
  */
-export const host = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, commandSeconds: number) =>
+export const host = <E, R>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  commandSeconds: number,
+  stepWaitSeconds: number = COMMAND_LIMIT_SECONDS,
+) =>
   Layer.effect(
     AgentAction.Host,
     Effect.gen(function* () {
@@ -261,7 +274,7 @@ export const host = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
         flows: [
           FlowBinding.source(
             "machine",
-            bindings(machines, Layer.provide(database, Layer.succeedContext(context)), commandSeconds),
+            bindings(machines, Layer.provide(database, Layer.succeedContext(context)), commandSeconds, stepWaitSeconds),
           ),
         ],
         limits: LIMITS,
@@ -298,7 +311,8 @@ export const steering = Notifications.layerForExecution().pipe(Layer.provide(Not
  * `todo/Implement`'s implementation over `seat`, `database` and the host's `Machines`, with `sandbox`, the agent's cell
  * sandbox (`Agent.layerSandbox` in Node; the QuickJS build a Worker bundles, `Agent.layerSandboxWithVariant`, on
  * Cloudflare), and `steering` over the engine's `Journal`. A command runs for up to `commandSeconds`
- * (`SANDBOX_COMMAND_MAX_SECONDS`, `COMMAND_LIMIT_SECONDS` unless set). Quota refusals park the step; the endpoint holds
+ * (`SANDBOX_COMMAND_MAX_SECONDS`, `COMMAND_LIMIT_SECONDS` unless set), and its step waits on it for up to
+ * `stepWaitSeconds` (`SANDBOX_COMMAND_STEP_WAIT_SECONDS`). Quota refusals park the step; the endpoint holds
  * the budget.
  */
 export const registration = <E, R, SE, SR>(
@@ -306,10 +320,11 @@ export const registration = <E, R, SE, SR>(
   database: Layer.Layer<SqlClient.SqlClient, E, R>,
   sandbox: Layer.Layer<Sandbox.Sandbox, SE, SR>,
   commandSeconds: number = COMMAND_LIMIT_SECONDS,
+  stepWaitSeconds: number = COMMAND_LIMIT_SECONDS,
 ) =>
   Implement.layer.pipe(
     // Steering first: the first layer that provides the agent's `Steering.Source` is the one it drains.
-    Layer.provide(Layer.mergeAll(host(database, commandSeconds), seats(seat), Agent.layer, steering)),
+    Layer.provide(Layer.mergeAll(host(database, commandSeconds, stepWaitSeconds), seats(seat), Agent.layer, steering)),
     Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
     Layer.provide(Layer.mergeAll(sandbox, Evaluator.layerUnavailable())),
   )

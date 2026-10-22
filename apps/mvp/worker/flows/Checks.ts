@@ -243,7 +243,11 @@ export const reviewBodyOf = (findings: string, login: string): string =>
  * deployment's longest command (`SANDBOX_COMMAND_MAX_SECONDS`, worker/flows/SandboxCommand.ts `maxSeconds`;
  * `COMMAND_LIMIT_SECONDS` unless given).
  */
-export const steps = <E, R>(services: Services<E, R>, commandSeconds: number = COMMAND_LIMIT_SECONDS) => {
+export const steps = <E, R>(
+  services: Services<E, R>,
+  commandSeconds: number = COMMAND_LIMIT_SECONDS,
+  stepWaitSeconds: number = COMMAND_LIMIT_SECONDS,
+) => {
   const repositoryOfRequest = (request: ChecksRequest) => repositoryOf(request.repoId.replace(/^github\//, ""))
 
   /** Sends check `name`'s `state` on the head as the App, with a token that may write commit statuses only. */
@@ -340,11 +344,9 @@ export const steps = <E, R>(services: Services<E, R>, commandSeconds: number = C
         const callId = yield* Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:check:${name}`).pipe(
           Effect.provide(WebCrypto.layer),
         )
-        const ran = yield* SandboxCommand.run(machines, machine, callId, {
-          tool: "run",
-          command: `sh ${CHECKS_DIRECTORY}/${name}.sh`,
-          timeoutSeconds: commandSeconds,
-        }).pipe(Effect.option)
+        const script = { tool: "run" as const, command: `sh ${CHECKS_DIRECTORY}/${name}.sh`, timeoutSeconds: commandSeconds }
+        const ran = yield* SandboxCommand.run(machines, machine, callId, script, SandboxCommand.stepWait(script, stepWaitSeconds))
+          .pipe(Effect.option)
         const status = Option.match(ran, {
           onNone: () => "failed" as const,
           onSome: (run) => (run.exitCode === 0 && !run.timedOut ? "done" as const : "failed" as const),
@@ -485,10 +487,14 @@ export const steps = <E, R>(services: Services<E, R>, commandSeconds: number = C
 
 /**
  * Registers `checks/Run` with its steps over `services` and the host's `Machines`, each check script running for up to
- * `commandSeconds` (`COMMAND_LIMIT_SECONDS` unless given).
+ * `commandSeconds` (`COMMAND_LIMIT_SECONDS` unless given), its step waiting on it for up to `stepWaitSeconds`.
  */
-export const registration = <E, R>(services: Services<E, R>, commandSeconds: number = COMMAND_LIMIT_SECONDS) => {
-  const implementation = steps(services, commandSeconds)
+export const registration = <E, R>(
+  services: Services<E, R>,
+  commandSeconds: number = COMMAND_LIMIT_SECONDS,
+  stepWaitSeconds: number = COMMAND_LIMIT_SECONDS,
+) => {
+  const implementation = steps(services, commandSeconds, stepWaitSeconds)
   return Interpreter.layerWithImplementations(
     ChecksRun,
     Layer.mergeAll(

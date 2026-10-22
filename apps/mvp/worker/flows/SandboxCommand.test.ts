@@ -368,6 +368,25 @@ describe("how long a command runs", () => {
     }
   })
 
+  test("SANDBOX_COMMAND_STEP_WAIT_SECONDS is an hour unless set, any whole number of seconds from 0, and caps the step's wait", () => {
+    const waitOf = (env: Record<string, string>) =>
+      Effect.runSync(Effect.exit(SandboxCommand.stepWaitSeconds.parse(ConfigProvider.fromUnknown(env))))
+    expect(waitOf({})).toEqual(Exit.succeed(3600))
+    expect(waitOf({ SANDBOX_COMMAND_STEP_WAIT_SECONDS: "0" })).toEqual(Exit.succeed(0))
+    expect(waitOf({ SANDBOX_COMMAND_STEP_WAIT_SECONDS: "120" })).toEqual(Exit.succeed(120))
+    expect(waitOf({ SANDBOX_COMMAND_STEP_WAIT_SECONDS: "" })).toEqual(Exit.succeed(3600))
+    for (const invalid of ["-1", "3601", "1.5", "a minute"]) {
+      const exit = waitOf({ SANDBOX_COMMAND_STEP_WAIT_SECONDS: invalid })
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause), invalid).toMatchObject({ _tag: "ConfigError" })
+    }
+    // A step waits as long as its command may run and stop, at most the cap; 0 sends every command to its job.
+    const call = { tool: "run" as const, command: "pnpm install", timeoutSeconds: 600 }
+    expect(SandboxCommand.stepWait(call)).toBe(615_000)
+    expect(SandboxCommand.stepWait(call, 120)).toBe(120_000)
+    expect(SandboxCommand.stepWait({ tool: "run", command: "true" }, 3600)).toBe(75_000)
+    expect(SandboxCommand.stepWait(call, 0)).toBe(0)
+  })
+
   test("the job takes a command up to an hour, past SandboxTools' 600 s, and refuses one past it", () => {
     const payload = (timeoutSeconds: number) => ({
       target: { branch: { branchId: "b", owner: "o", name: "n", branch: "main" }, ownerId: OWNER, callId: "c" },

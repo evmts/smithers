@@ -126,6 +126,8 @@ const object = <E, R>(
       const driveBudgetMs = yield* ExecutionHost.driveBudget.pipe(Effect.orDie)
       // The longest command the TODO agent's run tool takes (docs/features/sandbox-tools.md#configuration).
       const commandSeconds = yield* SandboxCommand.maxSeconds.pipe(Effect.orDie)
+      // How long a step waits on its command itself before the command goes on as its job (docs/features/sandbox-tools.md).
+      const stepWaitSeconds = yield* SandboxCommand.stepWaitSeconds.pipe(Effect.orDie)
       // `repo/Clone` runs here when this deployment has a Code Storage organization (docs/features/repo.md#the-clone).
       // Its Index reads the file list into the same immutable cache RepoApi reads from.
       const repoClone = yield* RepoConfig.cloneServices(appDatabase, EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)).pipe(
@@ -249,8 +251,15 @@ const object = <E, R>(
                 machines,
                 // The `todo` run's agent writes with the `coding` role, admitted and metered as the endpoint's calls are.
                 Layer.unwrap(Effect.map(flowStarter, (started) =>
-                  TodoAgent.registration(seats("coding", started), appDatabase, AgentSandbox.layer, commandSeconds))),
+                  TodoAgent.registration(
+                    seats("coding", started),
+                    appDatabase,
+                    AgentSandbox.layer,
+                    commandSeconds,
+                    stepWaitSeconds,
+                  ))),
                 commandSeconds,
+                stepWaitSeconds,
               ),
             )
             : hostFor(flows)

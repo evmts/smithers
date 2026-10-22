@@ -11,6 +11,7 @@ import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Action from "./Action/index.ts"
@@ -76,14 +77,41 @@ Fault.register("@smthrs/flow/ExternalJobLost", "infra")
 Fault.register("@smthrs/flow/ExternalJobTimedOut", "dependency")
 Fault.register("@smthrs/flow/ExternalJobAgain", "dependency")
 
-const millis = (value: Duration.Input, field: string, at = "make"): number => {
+const millis = (value: Duration.Input, field: string): number => {
   const parsed = Duration.fromInput(value)
   const result = Option.isSome(parsed) ? Duration.toMillis(parsed.value) : NaN
   if (!Number.isFinite(result) || result <= 0) {
-    throw new RangeError(`ExternalJob.${at}: ${field} must be a finite positive duration`)
+    throw new RangeError(`ExternalJob.make: ${field} must be a finite positive duration`)
   }
   return result
 }
+
+/** `run`'s wait in milliseconds: finite and not negative, 0 meaning the work goes to the job at once. */
+const waitMillis = (value: Duration.Input): number => {
+  const parsed = Duration.fromInput(value)
+  const result = Option.isSome(parsed) ? Duration.toMillis(parsed.value) : NaN
+  if (!Number.isFinite(result) || result < 0) {
+    throw new RangeError("ExternalJob.run: wait must be a finite duration, 0 or more")
+  }
+  return result
+}
+/**
+ * How long `run` waited on a job's work inside the step that asked, in
+ * milliseconds, by `job` (its tag) and `outcome`: `collected` (the work ended
+ * and was collected there), `handed_off` (it was still running when the wait
+ * ended, or was lost or refused, and went to the job's execution), or
+ * `interrupted` (the step was). The step holds its run's drive while it
+ * waits: on a host that bills by wall time, such as a Durable Object's alarm,
+ * this is that time.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const stepWaits = Metric.histogram("flows_external_job_step_wait_ms", {
+  description: "Milliseconds an ExternalJob's run waited on its work inside the step that asked",
+  boundaries: [100, 1_000, 5_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 900_000]
+})
+
 /**
  * What a status read may do before it answers: wait up to `waitMs`
  * milliseconds for the work to end, answering as soon as it does, and with
@@ -596,7 +624,9 @@ export const make = <
    * does: the provider answers the same handle and starts nothing. A step
    * asked again joins a job an earlier attempt handed its work to.
    *
-   * Throws a `RangeError` for a `wait` that isn't a finite positive duration.
+   * A `wait` of 0 hands the work to the job at once. Each wait is recorded on
+   * {@link stepWaits}. Throws a `RangeError` for a `wait` that is negative or
+   * not finite.
    */
   const run = <R>(
     payload: State["input"],
@@ -606,7 +636,7 @@ export const make = <
       readonly wait?: Duration.Input | undefined
     }
   ) => {
-    const waitMs = Math.min(timeout, options.wait === undefined ? maximum : millis(options.wait, "wait", "run"))
+    const waitMs = Math.min(timeout, options.wait === undefined ? maximum : waitMillis(options.wait))
     return Effect.gen(function*() {
       const executed = flow.execute(payload, { executionId: options.executionId })
       // The job's actions are the caller's to register, as `toLayer` does: `run` is asked with its operations.
@@ -624,7 +654,16 @@ export const make = <
       const deadline = yield* DriveDeadline
       const left = deadline === undefined ? waitMs : Math.min(waitMs, deadline - Math.floor(yield* Clock.currentTimeMillis))
       if (left <= 0) return yield* execute
-      const done = yield* inline(options.operations, payload, options.executionId, left)
+      const begunAt = yield* Clock.currentTimeMillis
+      const waited = (outcome: "collected" | "handed_off" | "interrupted") =>
+        Effect.flatMap(
+          Clock.currentTimeMillis,
+          (now) => Metric.update(Metric.withAttributes(stepWaits, { job: tag, outcome }), now - begunAt)
+        )
+      const done = yield* inline(options.operations, payload, options.executionId, left).pipe(
+        Effect.onInterrupt(() => waited("interrupted"))
+      )
+      yield* waited(Option.isSome(done) ? "collected" : "handed_off")
       return Option.isSome(done) ? done.value : yield* execute
     })
   }

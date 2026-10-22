@@ -89,12 +89,24 @@ export const registration = Layer.unwrap(
 export const STOP_MARGIN_MS = 15_000
 
 /**
- * How long the step that asks for `call` waits on it in the step itself: as long as the command may run and stop. The
- * drive's budget bounds it too (`FlowRuntime.DriveDeadline`): a command still running then goes on as its job, and the
- * run parks.
+ * `SANDBOX_COMMAND_STEP_WAIT_SECONDS`: the longest the step that asks for a command waits on it in the step itself, in
+ * whole seconds from 0 (never: every command goes on as its job, and its run parks) to `COMMAND_LIMIT_SECONDS`, which it
+ * is unless set (as long as the command may run). Waiting holds the run's drive, and on Cloudflare its Durable Object's
+ * alarm, while the command runs (`flows_external_job_step_wait` counts that time). Any other value fails with a
+ * `ConfigError`. The `FlowExecution` object reads it once.
  */
-export const stepWait = (call: typeof SandboxTools.Run.Type): Duration.Input =>
-  (call.timeoutSeconds ?? SandboxTools.limits.defaultTimeoutSeconds) * 1000 + STOP_MARGIN_MS
+export const stepWaitSeconds: Config.Config<number> = Config.schema(
+  Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: COMMAND_LIMIT_SECONDS })),
+  "SANDBOX_COMMAND_STEP_WAIT_SECONDS",
+).pipe(Config.withDefault(COMMAND_LIMIT_SECONDS))
+
+/**
+ * How long the step that asks for `call` waits on it in the step itself: as long as the command may run and stop, at
+ * most `capSeconds` (`SANDBOX_COMMAND_STEP_WAIT_SECONDS`). The drive's budget bounds it too
+ * (`FlowRuntime.DriveDeadline`): a command still running then goes on as its job, and the run parks.
+ */
+export const stepWait = (call: typeof SandboxTools.Run.Type, capSeconds: number = COMMAND_LIMIT_SECONDS): Duration.Input =>
+  Math.min((call.timeoutSeconds ?? SandboxTools.limits.defaultTimeoutSeconds) * 1000 + STOP_MARGIN_MS, capSeconds * 1000)
 
 /** The execution id of call `callId`'s command: from the call's own id, so the call asked again joins the same job. */
 export const commandExecutionId = (callId: string): string => `sandbox-command:${callId}`

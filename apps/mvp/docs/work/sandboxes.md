@@ -7,6 +7,15 @@ updated: 2026-10-22 08:20 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
 
+## A command answers in the step that asks — 2026-10-22 PDT (evening)
+
+A step that asks for a command (the TODO agent's tool, a head's checks) starts it, waits on it and collects it itself,
+for as long as the command may run and the drive's budget allows, and only a command still running then goes on as the
+`sandbox/Command` job. Command-latency benchmark at 25 ms round trips: a command that exits at once 47 s to 0.1 s, a
+30 s command 47 s to 0.1 s. **Trade-off, decided by the lead:** latency over Durable Object wall time. While a step
+waits, its alarm is held and billed; `flows_external_job_step_wait_ms` shows that time by outcome, and
+`SANDBOX_COMMAND_STEP_WAIT_SECONDS` caps it (0 returns to parking on every command). Revisit when real usage shows up.
+
 ## A command no longer holds a host: `sandbox/Command` — 2026-10-22 04:15 PDT
 
 **State:** works in production (evidence below, 08:29 PDT). A TODO's `pnpm install` failed twice in production on 2026-10-22 with
