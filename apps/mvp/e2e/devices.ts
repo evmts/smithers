@@ -237,10 +237,14 @@ export class Tab {
   }
 
   // The app has opened the conversation: the shell renders only once its first snapshot loaded.
-  // The app's home, or a deployment run's own branch (e2e/target.ts `home`), whose chrome names the branch.
+  // The app's home, or a deployment run's own branch (e2e/target.ts `home`), whose chrome names the branch. The branch's
+  // pending chrome names it too while its route still loads (src/screens/branch/BranchPendingScreen.tsx), so the page is
+  // open once the router's loading bar is gone as well.
   async ready() {
     const opened = atOwnPlace(this.page.url()) ? this.page.getByRole("navigation", { name: "Branch" }) : this.page.getByRole("main", { name: "App" })
     await expect(opened, `${this.name}: the app opens`).toBeVisible({ timeout: 30_000 })
+    await expect(this.page.getByRole("progressbar", { name: "Loading page" }), `${this.name}: the page finished loading`)
+      .toHaveCount(0, { timeout: 60_000 })
   }
 
   // A reload another navigation overtakes, such as the service worker's update reloading the page, still ends with

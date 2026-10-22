@@ -1,9 +1,9 @@
 ---
 title: Live attention across devices
-status: in-progress
+status: done
 area: notifications
 owner: Claude Opus (live-attention)
-updated: 2026-10-21
+updated: 2026-10-22
 links: [../features/agent-status.md, ../features/notifications.md, ../features/sign-in.md, ../decisions/0015-agent-status.md, ../decisions/0009-notifications-and-live-work.md]
 ---
 
@@ -21,4 +21,6 @@ Unit tests prove branch statuses and title counts across two devices, settled-an
 
 The real-model two-device test checks the card, toast, bell and title, Hide across devices, and an answer from the second device. Browser crash records retain the last two heap samples. Playwright execution belongs to the deployment sweep.
 
-production e2e: pending deploy
+Production e2e, 2026-10-22 04:18 to 04:23 PDT, against https://smithers.sh running main 9b86879e3606 (deployed 04:11): `status.spec` "needs you, live" passed on two devices with the real model (card, toast with Answer, bell, title count on A and B; Hide on B removed the toast on both and kept the panel entry; Answer from B resumed A's run with the chosen colour), and all four `navigate.spec` tests passed, hover Runs included. GIFs: `status-needs-you-live.gif` and `navigate-navigate-by-hover.gif` in the production GIF folder (`e2e/prod.mjs`). The first run that morning failed every asking spec before it asked: the branch page's pending chrome names the branch while its route still loads, so `Tab.ready` (e2e/devices.ts) returned early and the composer wasn't there yet; `ready` now also waits for the router's loading bar to go.
+
+Open: the evals' `ask-*` cases are unexplained; the report route now answers `409 not_writable` with its reason instead of a silent `200`, so the next eval run names the cause.
