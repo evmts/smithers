@@ -1,6 +1,8 @@
 import { afterAll, expect, it } from "@effect/vitest"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { DurableDeferred, HumanTask } from "@smthrs/flow"
+import { Journal, JournalEvent } from "@smthrs/journal"
+import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -238,7 +240,7 @@ it.live(
   () =>
     Effect.gen(function*() {
       const { answer, log } = script({ compilesOn: { http: 2 }, approvedOn: 2 })
-      const final = yield* Kit.run(BunPortSmithers, {
+      const payload = {
         repo: "/tmp/bun",
         requireOperatorPlan: false,
         files,
@@ -246,13 +248,15 @@ it.live(
         targets: [{ id: "http-server", crate: "http", file: "src/http/lib.rs" }],
         probes: [{ id: "help", cmd: "--help", expect: "Usage" }],
         areas: [{ id: "bun-http", glob: "test/js/bun/http/", crate: "runtime/server" }],
-        sweeps: [{ id: "idioms", kind: "idiom", pattern: "TODO(port)", scope: "src/" }]
-      }, {
+        sweeps: [{ id: "idioms", kind: "idiom" as const, pattern: "TODO(port)", scope: "src/" }]
+      }
+      const options = {
         filename: join(directory, "all-phases.sqlite"),
         executionId: "bun-port-all-phases",
         script: answer,
         actions: layer
-      })
+      }
+      const final = yield* Kit.run(BunPortSmithers, payload, options)
 
       // Each phase starts only after the one before it settled.
       const starts = [
@@ -268,9 +272,50 @@ it.live(
       expect(starts).toEqual([...starts].sort((a, b) => a - b))
       expect(starts.every((index) => index >= 0)).toBe(true)
       // The low-confidence field got three votes; the high-confidence one was not sampled.
-      expect(log.filter((e) => e.startsWith("lifetime-verify"))).toEqual(
+      const verifiers = log.filter((e) => e.startsWith("lifetime-verify"))
+      expect([...verifiers].sort()).toEqual(
         [1, 2, 3].map((n) => `lifetime-verify src/http/http.zig|Server|ptr verifier-${n}`)
       )
+      expect(
+        log.every((entry, index) =>
+          !entry.startsWith("lifetime-verify") || index < firstIndex(log, "phase-a-implement")
+        )
+      ).toBe(true)
+      // Reopen the persisted run. Replay retains its recorded sequence and never
+      // calls the seats again, even when they would now reject every request.
+      const recordedLog = [...log]
+      const history = () =>
+        Effect.scoped(
+          Effect.gen(function*() {
+            const journal = yield* Journal.Journal
+            const state = yield* DurableEngineState.DurableEngineState
+            const pending = [options.executionId]
+            const pages: Array<Journal.EntriesPage> = []
+            for (const runId of pending) {
+              pages.push(yield* journal.entries({ runId: JournalEvent.RunId.make(runId), limit: 10_000 }))
+              for (const edge of yield* state.runChildren(runId)) {
+                if (!pending.includes(edge.childId)) pending.push(edge.childId)
+              }
+            }
+            return pages
+          }).pipe(Effect.provide(TestNodeRuntime.durableEngine(options.filename, "examples-use-cases")))
+        )
+      const recorded = yield* history()
+      expect(recorded.length).toBeGreaterThan(1)
+      for (const page of recorded) {
+        expect(page.hasMore).toBe(false)
+        expect(page.entries.length).toBeGreaterThan(0)
+      }
+      const replayed = yield* Kit.run(BunPortSmithers, payload, {
+        ...options,
+        script: () => {
+          throw new Error("Replay must not call a model")
+        }
+      })
+      expect(replayed).toEqual(final)
+      expect(yield* history()).toEqual(recorded)
+      expect(log).toEqual(recordedLog)
+      expect(log.filter((e) => e.startsWith("lifetime-verify"))).toEqual(verifiers)
       // Phase A wrote the path 0.x computed and fixed the must-fix finding.
       expect(log).toContain("phase-a-implement src/http/http.zig -> src/http/lib.rs")
       expect(log).toContain("phase-a-fix src/http/lib.rs SAFETY")
