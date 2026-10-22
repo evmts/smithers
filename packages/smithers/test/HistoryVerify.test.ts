@@ -30,6 +30,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import { appendHistoryCommands } from "../src/cli/HistoryCommands.ts"
 import * as Verify from "../src/history/Verify.ts"
 import * as NodeControl from "../src/NodeControl.ts"
+import * as Needs from "./Needs.ts"
 
 const moduleSource = (root: string, second = "verify/second") =>
   `import { Action, Flow, HumanTask } from "@smthrs/flow"
@@ -300,12 +301,11 @@ it("verifies a store elsewhere against the project's flows", async () => {
   })
 }, 240_000)
 
-it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", async () => {
+it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", async (context) => {
   // The prefix names every store's schema by its file's basename, so a
   // scratch `engine.db` would alias the original: the copy is named apart.
   const prefix = `test_verify_${randomUUID().replaceAll("-", "").slice(0, 16)}`
-  const postgresUrl = process.env.SMITHERS_HISTORY_TEST_PG_URL ?? process.env.SMITHERS_TEST_DATABASE_URL
-  if (postgresUrl === undefined) throw new Error("Set SMITHERS_HISTORY_TEST_PG_URL or SMITHERS_TEST_DATABASE_URL")
+  const postgresUrl = Needs.postgres(context)
   const adminUrl = new URL(postgresUrl)
   adminUrl.searchParams.set("schema", "public")
   vi.stubEnv("SMITHERS_POSTGRES_URL", postgresUrl)

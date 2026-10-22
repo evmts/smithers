@@ -15,6 +15,7 @@ import { join } from "node:path"
 import { afterEach, expect, it, vi } from "vitest"
 import * as StoreCopy from "../src/history/StoreCopy.ts"
 import * as ControlDatabaseMigrations from "../src/internal/ControlDatabaseMigrations.ts"
+import * as Needs from "./Needs.ts"
 
 const url = process.env.SMITHERS_HISTORY_TEST_PG_URL ?? process.env.SMITHERS_TEST_DATABASE_URL!
 const publicUrl = () => {
@@ -107,7 +108,8 @@ it("copies a SQLite store into a new file and leaves the source as it was", asyn
   expect(existsSync(copy)).toBe(true)
 })
 
-it("copies a PostgreSQL schema whole, continues its identities and drops the copy", async () => {
+it("copies a PostgreSQL schema whole, continues its identities and drops the copy", async (context) => {
+  Needs.postgres(context)
   const prefix = `test_copy_${randomUUID().replaceAll("-", "").slice(0, 16)}`
   vi.stubEnv("SMITHERS_POSTGRES_URL", url)
   vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
@@ -189,7 +191,8 @@ it("copies a PostgreSQL schema whole, continues its identities and drops the cop
   }
 })
 
-it("refuses a PostgreSQL copy that exists already or would reach its source, and leaves no schema", async () => {
+it("refuses a PostgreSQL copy that exists already or would reach its source, and leaves no schema", async (context) => {
+  Needs.postgres(context)
   const prefix = `test_copy_${randomUUID().replaceAll("-", "").slice(0, 16)}`
   vi.stubEnv("SMITHERS_POSTGRES_URL", url)
   vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
@@ -261,8 +264,8 @@ it("refuses a PostgreSQL copy that exists already or would reach its source, and
   }
 })
 
-it.each(["default", "check"])(
-  "refuses an external sequence in a PostgreSQL %s and rolls back the copy",
+it.skipIf(!Needs.postgresConfigured).each(["default", "check"])(
+  "refuses an external sequence in a PostgreSQL %s and rolls back the copy (needs PostgreSQL: set SMITHERS_HISTORY_TEST_PG_URL)",
   async (kind) => {
     const prefix = `test_copy_${randomUUID().replaceAll("-", "").slice(0, 16)}`
     vi.stubEnv("SMITHERS_POSTGRES_URL", url)

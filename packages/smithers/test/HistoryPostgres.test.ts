@@ -14,14 +14,14 @@ import { expect, it, vi } from "vitest"
 import * as History from "../src/history/History.ts"
 import * as Workspace from "../src/history/Workspace.ts"
 import * as ControlDatabaseMigrations from "../src/internal/ControlDatabaseMigrations.ts"
+import * as Needs from "./Needs.ts"
 
 it(
   "reads and reconciles PostgreSQL history without SQLite files",
-  async () => {
+  async (context) => {
+    const postgresUrl = Needs.postgres(context)
     const root = await mkdtemp(join(tmpdir(), "postgres-history-"))
     const prefix = `test_history_${randomUUID().replaceAll("-", "")}`
-    const postgresUrl = process.env.SMITHERS_HISTORY_TEST_PG_URL ?? process.env.SMITHERS_TEST_DATABASE_URL
-    if (postgresUrl === undefined) throw new Error("Set SMITHERS_HISTORY_TEST_PG_URL or SMITHERS_TEST_DATABASE_URL")
     vi.stubEnv("SMITHERS_POSTGRES_URL", postgresUrl)
     vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
     vi.stubEnv("SMITHERS_BACKEND", "postgres")
