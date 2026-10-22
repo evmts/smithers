@@ -22,6 +22,7 @@
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Path from "effect/Path"
+import * as Stream from "effect/Stream"
 import { headOf, inside, linked, normalizePath, unreadable } from "./repo.ts"
 
 /**
@@ -70,7 +71,7 @@ const skillsDirectory = ".agents/skills"
 
 // A link is never read, nor a file a linked parent directory leads outside
 // `root` to: its target may lie anywhere.
-const text = (root: string, file: string) =>
+const text = (root: string, file: string, limit: number | null = pageBytes) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -80,10 +81,19 @@ const text = (root: string, file: string) =>
     )
     if (real === undefined) return undefined
     // A catalog entry naming a directory, or anything but a file, is skipped.
-    const info = yield* fs.stat(file).pipe(Effect.catch(unreadable<FileSystem.File.Info | undefined>(undefined)))
+    const info = yield* fs.stat(real).pipe(Effect.catch(unreadable<FileSystem.File.Info | undefined>(undefined)))
     if (info?.type !== "File") return undefined
-    return yield* fs.readFileString(file).pipe(
-      Effect.map((value): string | undefined => headOf(value, pageBytes)),
+    // Catalog JSON must be complete before parsing. Page bodies, in contrast,
+    // are bounded at the filesystem boundary, before allocating their text.
+    const decoder = new TextDecoder()
+    return yield* (limit === null ? fs.readFileString(real) : Stream.runFold(
+      fs.stream(real, { bytesToRead: limit, chunkSize: limit }),
+      () => "",
+      (value, chunk) => value + decoder.decode(chunk, { stream: true })
+    ).pipe(
+      // Drop a code point cut by the page budget, flush a complete file.
+      Effect.map((value) => headOf(value + (info.size <= limit ? decoder.decode() : ""), limit))
+    )).pipe(
       Effect.catch(unreadable(undefined))
     )
   })
@@ -93,12 +103,13 @@ const pages = (root: string) =>
     const path = yield* Path.Path
     const found: Array<Page> = []
     const documents = new Set<string>()
-    const raw = yield* text(root, path.join(root, catalogPath))
+    const raw = yield* text(root, path.join(root, catalogPath), null)
     if (raw === undefined) return { found, documents }
     // Any JSON value parses, `null` included; only an object's `pages` array counts.
     const parsed = yield* Effect.try(() => JSON.parse(raw) as { pages?: unknown } | null).pipe(Effect.option)
     const specs = parsed._tag === "Some" && Array.isArray(parsed.value?.pages) ? parsed.value.pages : []
     for (const spec of specs as ReadonlyArray<Record<string, unknown>>) {
+      if (spec === null || typeof spec !== "object" || Array.isArray(spec)) continue
       // A document outside the root, or in a private tree, is never read.
       const document = typeof spec.document === "string" ? normalizePath(spec.document) : null
       if (typeof spec.id !== "string" || document === null) continue

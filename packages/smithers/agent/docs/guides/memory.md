@@ -56,12 +56,20 @@ names; a directory without a README is judged by its entry names alone.
 `AGENTS.md` and `CLAUDE.md` are never candidates: every harness reads them
 itself. A root below a jj workspace root reads only its own tracked files.
 Outside jj, a git repository lists only the files git tracks, so an ignored or
-untracked file is never a candidate; a filesystem walk runs only when neither
-jj nor git answers. Links, `.env` files, `Smithers-Ops/`, `.flows/` and
+untracked file is never a candidate. When neither command answers, memory
+walks only plain directories with no `.jj` or `.git` marker at the root or any
+ancestor. A repository whose listing is unavailable yields no discovered
+files and emits the content-free `memory.repo.listing_unavailable` warning,
+span and counter. Links, `.env` files, `Smithers-Ops/`, `.flows/` and
 `node_modules/` are never read, whether walked, seeded or named by a catalog
 page, and neither is a seed, catalog document or skill that resolves outside
 the root through a linked parent directory. A file or walked directory the host
 will not let memory read is skipped like an absent one.
+
+Catalog JSON is read completely before parsing; invalid page entries are
+skipped independently. Each page body reads at most 32 KiB from disk, retaining
+whole UTF-8 characters at the boundary. The page budget does not limit catalog
+metadata. Each command has its own UTF-8 decoder, flushed when its output ends.
 
 ## Budget and cache
 

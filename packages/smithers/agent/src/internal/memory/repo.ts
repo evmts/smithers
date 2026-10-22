@@ -11,6 +11,7 @@
 
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
+import * as Metric from "effect/Metric"
 import * as Path from "effect/Path"
 import type * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
@@ -108,7 +109,12 @@ export const run = (command: string, args: ReadonlyArray<string>, cwd: string) =
   })).pipe(Effect.catch(() => Effect.succeed(undefined)))
 
 const collect = <E>(stream: Stream.Stream<Uint8Array, E>) =>
-  Stream.runFold(stream, () => "", (text, chunk: Uint8Array) => text + decoder.decode(chunk, { stream: true }))
+  Effect.suspend(() => {
+    const decoder = new TextDecoder()
+    return Stream.runFold(stream, () => "", (text, chunk) => text + decoder.decode(chunk, { stream: true })).pipe(
+      Effect.map((text) => text + decoder.decode())
+    )
+  })
 
 /**
  * A repository-relative path, normalized, or `null` for an absolute or
@@ -193,7 +199,7 @@ export const unreadable = <A>(value: A) => (error: PlatformError.PlatformError) 
 /**
  * The tracked files of `root`: jj's view of `@` under `root` when it is in a
  * jj workspace, else git's index under `root` when it is in a git repository,
- * otherwise a bounded filesystem walk that skips hidden and build directories,
+ * otherwise, only outside a repository, a bounded filesystem walk that skips hidden and build directories,
  * never follows a link and skips a directory it may not list. Either way a
  * path {@link normalizePath} refuses is dropped.
  *
@@ -215,6 +221,24 @@ export const tree = (root: string, limit: number = maxWalkFiles) =>
     if (indexed !== undefined) return fromPaths(indexed.split("\0").filter((line) => normalizePath(line) !== null))
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
+    // A failed command is not proof of absence. Never replace a repository's
+    // tracked listing with a walk that could expose ignored or untracked files.
+    let directory = yield* fs.realPath(root).pipe(Effect.catch(unreadable(undefined)))
+    if (directory === undefined) return fromPaths([])
+    while (true) {
+      for (const marker of [".jj", ".git"]) {
+        if (yield* fs.exists(path.join(directory, marker)).pipe(Effect.catch(unreadable(true)))) {
+          yield* Effect.logWarning("memory.repo.listing_unavailable").pipe(
+            Effect.tap(() => Metric.update(Metric.counter("memory.repo.listing_unavailable"), 1)),
+            Effect.withSpan("memory.repo.listing_unavailable")
+          )
+          return fromPaths([])
+        }
+      }
+      const parent = path.dirname(directory)
+      if (parent === directory) break
+      directory = parent
+    }
     const files: Array<string> = []
     const walk = (dir: string): Effect.Effect<void, PlatformError.PlatformError> =>
       Effect.gen(function*() {
@@ -256,8 +280,12 @@ export const head = (
     // `fail` lets a denied read surface, for a path the task named.
     const skip = options.denied === "skip" ? unreadable : absent
     if (yield* linked(fs, file)) return undefined
-    const info = yield* fs.stat(file).pipe(Effect.catch(skip(undefined)))
+    const rootReal = yield* fs.realPath(root).pipe(Effect.catch(skip(undefined)))
+    if (rootReal === undefined) return undefined
+    const real = yield* inside(fs, path, rootReal, file).pipe(Effect.catch(skip(undefined)))
+    if (real === undefined) return undefined
+    const info = yield* fs.stat(real).pipe(Effect.catch(skip(undefined)))
     if (info === undefined || info.type !== "File" || info.size > maxFileBytes) return undefined
-    const text = yield* fs.readFileString(file).pipe(Effect.catch(skip(undefined)))
+    const text = yield* fs.readFileString(real).pipe(Effect.catch(skip(undefined)))
     return text === undefined || text.includes("\u0000") ? undefined : headOf(text, limit)
   })
