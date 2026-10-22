@@ -583,6 +583,18 @@ describe("LinkPullRequest", () => {
     expect(github.writes()).toEqual(["POST /graphql"])
   })
 
+  it.each(["`Closes #7`", "```\nFixes #7\n```", "<!-- Resolves #7 -->", "    Closes #7"])(
+    "checks actual closing references for Markdown %s",
+    async (body) => {
+      github = await startGitHub()
+      github.pullBody = body
+      const result = await runAction(Actions.LinkPullRequest, payload)
+      expect(result.updated).toBe(true)
+      expect([...github.linkedIssues]).toEqual(["o/r#7"])
+      expect(github.pullBody).toBe(body)
+    }
+  )
+
   const targets = {
     data: {
       pullRepository: {
@@ -710,6 +722,7 @@ describe("LinkPullRequest", () => {
   it("leaves a description that already closes the issue", async () => {
     github = await startGitHub()
     github.pullBody = "resolved: O/R#7"
+    github.linkedIssues.add("o/r#7")
     const linked = await runAction(Actions.LinkPullRequest, {
       owner: "o",
       repo: "r",
@@ -742,20 +755,37 @@ describe("LinkPullRequest", () => {
   })
 })
 
-describe("closesIssue", () => {
-  const issue = { owner: "o", repo: "r.js", issueNumber: 7 }
-  it.each([
-    ["Closes #7", true, true],
-    ["fixes o/r.js#7", true, true],
-    ["Fixed: #7.", true, true],
-    ["closes #70", true, false],
-    ["closes #7", false, false],
-    ["closes o/rxjs#7", false, false],
-    ["closes other/r.js#7", true, false],
-    ["see #7", true, false],
-    ["preclosed #7", true, false],
-    ["RESOLVES o/r.js#7", false, true]
-  ])("%j in the same repository %s -> %s", (body, same, expected) => {
-    expect(Actions.closesIssue(body, issue, same)).toBe(expected)
+describe("concurrent keyed writes", () => {
+  it("creates one sticky comment for concurrent upserts of the same key", async () => {
+    github = await startGitHub()
+    const client = gitHubLayer({ token: "t", apiBaseUrl: github.fixture.origin }, {})
+    const receipts = await Promise.all(Array.from({ length: 8 }, (_, index) =>
+      runAction(Actions.UpsertComment, {
+        owner: "o",
+        repo: "r",
+        issueNumber: 7,
+        key: "shared",
+        body: `Update ${index}`,
+        author: { login: "smithers" }
+      }, client)))
+    expect(github.comments).toHaveLength(1)
+    expect(new Set(receipts.map((receipt) => receipt.id)).size).toBe(1)
+  })
+
+  it("creates one check run for concurrent calls with the same external key", async () => {
+    github = await startGitHub()
+    const client = gitHubLayer({ token: "t", apiBaseUrl: github.fixture.origin }, {})
+    const receipts = await Promise.all(Array.from({ length: 8 }, (_, index) =>
+      runAction(Actions.CheckRun, {
+        owner: "o",
+        repo: "r",
+        appId: 42,
+        headSha: SHA,
+        name: "smithers",
+        key: "shared",
+        output: { title: "Progress", summary: `Update ${index}` }
+      }, client)))
+    expect(github.checkRuns).toHaveLength(1)
+    expect(new Set(receipts.map((receipt) => receipt.id)).size).toBe(1)
   })
 })

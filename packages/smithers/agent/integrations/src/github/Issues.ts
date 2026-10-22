@@ -32,7 +32,7 @@
  * **Labels.** {@link addLabels}, {@link removeLabel} and {@link createLabel}
  * are idempotent at GitHub: adding a label the issue has, removing one it
  * lacks, or creating one the repository has changes nothing. So they classify
- * a 5xx or a dropped connection as `retryable`, not `outcomeUnknown`, and a
+ * a 5xx or a dropped connection as `retryable` while retaining `outcomeUnknown`, and a
  * step's retry policy repeats them without looking first.
  *
  * Every coordinate is validated before it becomes a request path, as

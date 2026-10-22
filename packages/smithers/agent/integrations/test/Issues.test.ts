@@ -605,13 +605,13 @@ describe("addLabels", () => {
     })
   })
 
-  it("fails retryable, not outcomeUnknown, when the answer is lost, and the repeat adds nothing twice", async () => {
+  it("fails retryable and outcomeUnknown, when the answer is lost, and the repeat adds nothing twice", async () => {
     github = await startGitHub()
     github.issues.push(rawIssue(1, "Body"))
     github.lose = true
     const lost = await failure(Issues.addLabels("o", "r", 1, ["smithers:accepted"]))
     expect(lost.reason).toBe("delivery-failed")
-    expect(lost.details).toMatchObject({ status: 502, retryable: true, outcomeUnknown: false })
+    expect(lost.details).toMatchObject({ status: 502, retryable: true, outcomeUnknown: true })
     expect(await run(Issues.addLabels("o", "r", 1, ["smithers:accepted"]))).toEqual([
       { name: "bug" },
       { name: "smithers:accepted" }
@@ -661,13 +661,13 @@ describe("removeLabel", () => {
     expect(await run(Issues.removeLabel("o", "r", 9, "bug"))).toBe(false)
   })
 
-  it("fails retryable, not outcomeUnknown, when the answer is lost, and the repeat finds the label gone", async () => {
+  it("fails retryable and outcomeUnknown, when the answer is lost, and the repeat finds the label gone", async () => {
     github = await startGitHub()
     github.issues.push(rawIssue(1, "Body"))
     github.lose = true
     const lost = await failure(Issues.removeLabel("o", "r", 1, "bug"))
     expect(lost.reason).toBe("delivery-failed")
-    expect(lost.details).toMatchObject({ status: 502, retryable: true, outcomeUnknown: false })
+    expect(lost.details).toMatchObject({ status: 502, retryable: true, outcomeUnknown: true })
     expect(await run(Issues.removeLabel("o", "r", 1, "bug"))).toBe(false)
     expect(labelNames(1)).toEqual([])
   })
@@ -710,12 +710,12 @@ describe("createLabel", () => {
     expect(github.labels).toHaveLength(1)
   })
 
-  it("fails retryable, not outcomeUnknown, when the answer is lost, and the repeat finds the label made", async () => {
+  it("fails retryable and outcomeUnknown, when the answer is lost, and the repeat finds the label made", async () => {
     github = await startGitHub()
     github.lose = true
     const lost = await failure(Issues.createLabel("o", "r", { name: "smithers:accepted", color: "0e8a16" }))
     expect(lost.reason).toBe("delivery-failed")
-    expect(lost.details).toMatchObject({ status: 502, retryable: true, outcomeUnknown: false })
+    expect(lost.details).toMatchObject({ status: 502, retryable: true, outcomeUnknown: true })
     expect(await run(Issues.createLabel("o", "r", { name: "smithers:accepted", color: "0e8a16" }))).toBe(false)
     expect(github.labels.map((label) => label["name"])).toEqual(["smithers:accepted"])
   })

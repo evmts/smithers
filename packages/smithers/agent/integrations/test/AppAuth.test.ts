@@ -362,7 +362,7 @@ describe("installationToken", () => {
       AppAuth.make(credentials()).pipe(Effect.provideService(HttpClient.HttpClient, transport))
     )
     const error = await Effect.runPromise(Effect.flip(service.installationToken({ installationId: 77 })))
-    expect(error.details).toMatchObject({ status: 502, retryable: true, outcomeUnknown: false })
+    expect(error.details).toMatchObject({ status: 502, retryable: true, outcomeUnknown: true })
     expect(handled).toHaveLength(1)
   })
 

@@ -35,7 +35,11 @@ Use `GitHub.Actions.CommentOnIssue` inside a flow to journal its result.
 `AddLabels`, `UpsertComment`, `CheckRun`, and `LinkPullRequest` provide keyed
 write-back actions, which the flow engine retries durably, waiting a rate
 limit's `Retry-After`; the clients never retry. Ambiguous writes report
-`outcomeUnknown` and are not blindly repeated. GitHub webhooks enter through
+`outcomeUnknown`, even when `retryUnsafeWrites` permits a retry. Sticky-comment
+and check-run actions serialize reconciliation and writes for the same key
+within one process, across action layers. Separate processes must route a key
+to one owner; a write still in flight remotely can remain ambiguous. PR links
+are confirmed from GitHub’s closing references, never inferred from Markdown. GitHub webhooks enter through
 the backend at `POST /webhooks/github`.
 
 Request spans record method, status and failure classification without caller

@@ -133,8 +133,8 @@ export interface RequestOptions {
   readonly query?: Readonly<Record<string, string | number | boolean | undefined>> | undefined
   /**
    * Classify a POST, PATCH, PUT, or DELETE whose answer was lost as
-   * `retryable` rather than `outcomeUnknown`, so a step's retry policy repeats
-   * it.
+   * `retryable` while retaining `outcomeUnknown`, so a step's retry policy
+   * may repeat it without losing the ambiguity report.
    *
    * Off by default. A 5xx or a transport failure on a write is the classic
    * ambiguous case: GitHub may have committed it and lost the answer, so
@@ -520,7 +520,8 @@ const build = (
     // A rate limit is a refusal: the request was not performed, so repeating
     // it is safe for every verb. A 5xx or a dropped connection on a write is
     // not, because GitHub may have applied it and lost the answer.
-    const mayRepeatAmbiguously = retryUnsafeWrites || !UNSAFE_METHODS.includes(method)
+    const unsafeWrite = UNSAFE_METHODS.includes(method)
+    const mayRepeatAmbiguously = retryUnsafeWrites || !unsafeWrite
     const request = HttpClientRequest.make(method)(url, { headers })
     // Answered, not followed: `http` does not follow a redirect, which would
     // re-send the token to whatever host its Location names. A 3xx fails below
@@ -544,9 +545,9 @@ const build = (
         return integrationError(
           "delivery-failed",
           `GitHub request failed: ${method} - ${cause instanceof Error ? cause.message : String(cause)}${
-            mayRepeatAmbiguously ? "" : " (outcome unknown: the write may have been applied)"
+            unsafeWrite ? " (outcome unknown: the write may have been applied)" : ""
           }`,
-          { method, retryable: mayRepeatAmbiguously, outcomeUnknown: !mayRepeatAmbiguously },
+          { method, retryable: mayRepeatAmbiguously, outcomeUnknown: unsafeWrite },
           { cause }
         )
       }),
@@ -561,12 +562,12 @@ const build = (
           Effect.fail(integrationError(
             "delivery-failed",
             `GitHub request timed out after ${requestTimeoutMs} ms: ${method}${
-              mayRepeatAmbiguously ? "" : " (outcome unknown: the write may have been applied)"
+              unsafeWrite ? " (outcome unknown: the write may have been applied)" : ""
             }`,
             {
               method,
               retryable: mayRepeatAmbiguously,
-              outcomeUnknown: !mayRepeatAmbiguously,
+              outcomeUnknown: unsafeWrite,
               timedOut: true,
               requestTimeoutMs
             }
@@ -612,7 +613,7 @@ const build = (
           ))
         }
         const serverError = status >= 500
-        const outcomeUnknown = serverError && !mayRepeatAmbiguously
+        const outcomeUnknown = serverError && unsafeWrite && !rateLimited
         const retryable = rateLimited || (serverError && mayRepeatAmbiguously)
         // The wait the engine honors before another attempt. Only a rate limit
         // reads `x-ratelimit-reset`, which every response carries and which

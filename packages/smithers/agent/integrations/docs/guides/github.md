@@ -115,7 +115,8 @@ send it through the [GitHub proxy](#stay-inside-githubs-rate-limits). A 5xx or
 a dropped connection is `retryable` only for a read. On a write it reports
 `outcomeUnknown: true` in the failure's `details`, because GitHub may have
 applied the write and lost the answer. If you know your endpoint is
-idempotent, mark its lost writes retryable per call:
+idempotent, mark its lost writes retryable per call. `outcomeUnknown` remains
+true because permission to retry does not establish whether the write happened:
 
 ```ts
 yield * client.request("POST", path, body, { retryUnsafeWrites: true })

@@ -32,7 +32,9 @@
  * the write, such as a dashboard comment every run of a schedule edits; never
  * derive it from what is written.
  *
- * The limit: GitHub enforces neither the comment marker nor a check run's
+ * Same-key reads and writes are serialized within this process, including
+ * across separately built action layers. Separate processes must route a key
+ * to one owner. The limit: GitHub enforces neither the comment marker nor a check run's
  * `external_id` as unique. A write still in flight at GitHub when the repeat
  * reads can land after it, and then both exist. The engine's backoff and a
  * restart's delay make that window narrow, not closed; an upsert then edits the
@@ -46,6 +48,7 @@ import { Effect, Layer, Option, Schema } from "effect"
 import { Failure, fromIntegrationError, retryPolicy as stepRetryPolicy } from "../core/ActionFailure.ts"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
+import { withWriteLock } from "./internal/WriteLock.ts"
 import { IssueNumber, Owner, Repo, requireRepositoryPath } from "./Repository.ts"
 
 /**
@@ -372,7 +375,7 @@ export const UpsertComment = Action.make("integrations/github/upsert-comment", {
   success: StickyComment,
   error: Failure,
   tier: "irreversible",
-  implementationVersion: "github/upsert-comment/v2",
+  implementationVersion: "github/upsert-comment/v3",
   idempotencyKey: (payload) => ({
     action: "integrations/github/upsert-comment",
     owner: payload.owner,
@@ -408,45 +411,50 @@ export const layerUpsertComment: Layer.Layer<
       const client = yield* GitHubClient
       const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
       const marker = stickyMarker(payload.key ?? (yield* runKey(UpsertComment.name)))
-      const body = `${marker}\n${payload.body}`
-      const page = yield* client.paginate(`/repos/${repository}/issues/${payload.issueNumber}/comments`, {
-        maxPages: RECONCILE_PAGES
-      })
-      // github.com's editor saves CRLF line ends, so a comment a person edited
-      // still starts with the marker, followed by `\r\n`.
-      const existing = (yield* decodeItems(ListedComment, page.items, "upsert-comment")).find((comment) =>
-        comment.body?.split("\n", 1)[0]?.replace(/\r$/, "") === marker &&
-        ("login" in payload.author
-          ? comment.user?.login.toLowerCase() === payload.author.login.toLowerCase()
-          : comment.user?.type === "Bot" && comment.performed_via_github_app?.id === payload.author.appId)
-      )
-      if (existing === undefined && page.truncated) {
-        return yield* Effect.fail(
-          refused(
-            "upsert-comment",
-            `Issue ${payload.issueNumber} has more comments than ${RECONCILE_PAGES} pages; the sticky comment was not looked for further.`
+      return yield* withWriteLock(
+        JSON.stringify(["comment", repository.toLowerCase(), payload.issueNumber, marker]),
+        Effect.gen(function*() {
+          const body = `${marker}\n${payload.body}`
+          const page = yield* client.paginate(`/repos/${repository}/issues/${payload.issueNumber}/comments`, {
+            maxPages: RECONCILE_PAGES
+          })
+          // github.com's editor saves CRLF line ends, so a comment a person edited
+          // still starts with the marker, followed by `\r\n`.
+          const existing = (yield* decodeItems(ListedComment, page.items, "upsert-comment")).find((comment) =>
+            comment.body?.split("\n", 1)[0]?.replace(/\r$/, "") === marker &&
+            ("login" in payload.author
+              ? comment.user?.login.toLowerCase() === payload.author.login.toLowerCase()
+              : comment.user?.type === "Bot" && comment.performed_via_github_app?.id === payload.author.appId)
           )
-        )
-      }
-      if (existing === undefined) {
-        const created = yield* client.request(
-          "POST",
-          `/repos/${repository}/issues/${payload.issueNumber}/comments`,
-          { body },
-          { schema: Comment }
-        )
-        return { ...created, outcome: "created" as const }
-      }
-      if (existing.body === body) return { id: existing.id, url: existing.url, outcome: "unchanged" as const }
-      const updated = yield* client.request(
-        "PATCH",
-        `/repos/${repository}/issues/comments/${existing.id}`,
-        { body },
-        { schema: Comment }
+          if (existing === undefined && page.truncated) {
+            return yield* Effect.fail(
+              refused(
+                "upsert-comment",
+                `Issue ${payload.issueNumber} has more comments than ${RECONCILE_PAGES} pages; the sticky comment was not looked for further.`
+              )
+            )
+          }
+          if (existing === undefined) {
+            const created = yield* client.request(
+              "POST",
+              `/repos/${repository}/issues/${payload.issueNumber}/comments`,
+              { body },
+              { schema: Comment }
+            )
+            return { ...created, outcome: "created" as const }
+          }
+          if (existing.body === body) return { id: existing.id, url: existing.url, outcome: "unchanged" as const }
+          const updated = yield* client.request(
+            "PATCH",
+            `/repos/${repository}/issues/comments/${existing.id}`,
+            { body },
+            { schema: Comment }
+          )
+          return { ...updated, outcome: "updated" as const }
+        })
       )
-      return { ...updated, outcome: "updated" as const }
     }).pipe(Effect.mapError(reconciled)),
-  { implementationVersion: "github/upsert-comment/v2" }
+  { implementationVersion: "github/upsert-comment/v3" }
 )
 
 /**
@@ -527,7 +535,7 @@ export const CheckRun = Action.make("integrations/github/check-run", {
   success: CheckRunReceipt,
   error: Failure,
   tier: "irreversible",
-  implementationVersion: "github/check-run/v3",
+  implementationVersion: "github/check-run/v4",
   idempotencyKey: (payload) => ({
     action: "integrations/github/check-run",
     ...(payload as unknown as Record<string, Schema.Json>)
@@ -562,46 +570,56 @@ export const layerCheckRun: Layer.Layer<
       const client = yield* GitHubClient
       const repository = yield* requireRepositoryPath(payload.owner, payload.repo)
       const key = payload.key ?? (yield* runKey(CheckRun.name))
-      const listed = yield* client.request(
-        "GET",
-        `/repos/${repository}/commits/${payload.headSha}/check-runs`,
-        undefined,
-        {
-          query: { check_name: payload.name, filter: "all", per_page: 100 },
-          schema: CheckRuns
-        }
+      return yield* withWriteLock(
+        JSON.stringify(["check-run", repository.toLowerCase(), payload.headSha, payload.name, payload.appId, key]),
+        Effect.gen(function*() {
+          const listed = yield* client.request(
+            "GET",
+            `/repos/${repository}/commits/${payload.headSha}/check-runs`,
+            undefined,
+            {
+              query: { check_name: payload.name, filter: "all", per_page: 100 },
+              schema: CheckRuns
+            }
+          )
+          const runs = yield* decodeItems(ListedCheckRun, listed.check_runs, "check-run")
+          const existing = runs.find((run) => run.external_id === key && run.app.id === payload.appId)
+          if (existing === undefined && listed.total_count > listed.check_runs.length) {
+            return yield* Effect.fail(
+              refused("check-run", `Commit ${payload.headSha} has more than 100 "${payload.name}" check runs.`)
+            )
+          }
+          const fields = {
+            name: payload.name,
+            external_id: key,
+            ...(payload.status === undefined ? {} : { status: payload.status }),
+            ...(payload.conclusion === undefined ? {} : { conclusion: payload.conclusion }),
+            ...(payload.detailsUrl === undefined ? {} : { details_url: payload.detailsUrl }),
+            ...(payload.output === undefined ? {} : { output: payload.output })
+          }
+          const written = existing === undefined
+            ? yield* client.request(
+              "POST",
+              `/repos/${repository}/check-runs`,
+              { ...fields, head_sha: payload.headSha },
+              {
+                schema: ListedCheckRun
+              }
+            )
+            : yield* client.request("PATCH", `/repos/${repository}/check-runs/${existing.id}`, fields, {
+              schema: ListedCheckRun
+            })
+          return {
+            id: written.id,
+            url: written.html_url,
+            status: written.status,
+            conclusion: written.conclusion,
+            created: existing === undefined
+          }
+        })
       )
-      const runs = yield* decodeItems(ListedCheckRun, listed.check_runs, "check-run")
-      const existing = runs.find((run) => run.external_id === key && run.app.id === payload.appId)
-      if (existing === undefined && listed.total_count > listed.check_runs.length) {
-        return yield* Effect.fail(
-          refused("check-run", `Commit ${payload.headSha} has more than 100 "${payload.name}" check runs.`)
-        )
-      }
-      const fields = {
-        name: payload.name,
-        external_id: key,
-        ...(payload.status === undefined ? {} : { status: payload.status }),
-        ...(payload.conclusion === undefined ? {} : { conclusion: payload.conclusion }),
-        ...(payload.detailsUrl === undefined ? {} : { details_url: payload.detailsUrl }),
-        ...(payload.output === undefined ? {} : { output: payload.output })
-      }
-      const written = existing === undefined
-        ? yield* client.request("POST", `/repos/${repository}/check-runs`, { ...fields, head_sha: payload.headSha }, {
-          schema: ListedCheckRun
-        })
-        : yield* client.request("PATCH", `/repos/${repository}/check-runs/${existing.id}`, fields, {
-          schema: ListedCheckRun
-        })
-      return {
-        id: written.id,
-        url: written.html_url,
-        status: written.status,
-        conclusion: written.conclusion,
-        created: existing === undefined
-      }
     }).pipe(Effect.mapError(reconciled)),
-  { implementationVersion: "github/check-run/v3" }
+  { implementationVersion: "github/check-run/v4" }
 )
 
 /**
@@ -650,7 +668,7 @@ export const LinkPullRequest = Action.make("integrations/github/link-pr", {
   success: PullRequestLinked,
   error: Failure,
   tier: "irreversible",
-  implementationVersion: "github/link-pr/v2",
+  implementationVersion: "github/link-pr/v3",
   idempotencyKey: (payload) => ({
     action: "integrations/github/link-pr",
     owner: payload.owner,
@@ -663,7 +681,7 @@ export const LinkPullRequest = Action.make("integrations/github/link-pr", {
   retryPolicy
 })
 
-const PullRequest = Schema.Struct({ html_url: Schema.String, body: Schema.NullOr(Schema.String) })
+const PullRequest = Schema.Struct({ html_url: Schema.String })
 
 const NodeId = Schema.Struct({ id: Schema.NonEmptyString })
 const LinkTargets = Schema.Struct({
@@ -685,29 +703,6 @@ const decodeLinked = Schema.decodeUnknownOption(Schema.Struct({
   data: Schema.Struct({ addCloseIssueReferences: Schema.Struct({ issue: NodeId }) }),
   errors: Schema.optionalKey(Schema.Array(Schema.Unknown))
 }))
-
-const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-
-/**
- * Whether `body` already closes issue `issueNumber` of `owner/repo`, written
- * from the pull request's repository `sameRepository` or not.
- *
- * @category predicates
- * @since 1.0.0
- */
-export const closesIssue = (
-  body: string,
-  issue: { readonly owner: string; readonly repo: string; readonly issueNumber: number },
-  sameRepository: boolean
-): boolean => {
-  const qualified = `${escapeRegExp(issue.owner)}/${escapeRegExp(issue.repo)}`
-  const target = sameRepository ? `(?:${qualified})?#` : `${qualified}#`
-  const pattern = new RegExp(
-    `\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\\s+${target}${issue.issueNumber}(?!\\d)`,
-    "i"
-  )
-  return pattern.test(body)
-}
 
 /**
  * Implements {@link LinkPullRequest} over the client in context.
@@ -734,11 +729,7 @@ export const layerLinkPullRequest: Layer.Layer<
         : `${issueOwner}/${issueRepo}#${payload.issueNumber}`
       const path = `/repos/${repository}/pulls/${payload.pullNumber}`
       const pull = yield* client.request("GET", path, undefined, { schema: PullRequest })
-      const body = pull.body ?? ""
       const linked = { pullNumber: payload.pullNumber, url: pull.html_url, reference }
-      if (closesIssue(body, { owner: issueOwner, repo: issueRepo, issueNumber: payload.issueNumber }, sameRepository)) {
-        return { ...linked, updated: false }
-      }
       // GitHub does not support conditional PATCH here. A second body read
       // would still race with a person's edit; link the objects instead.
       const targets = yield* client.request("POST", "/graphql", {
@@ -787,7 +778,7 @@ export const layerLinkPullRequest: Layer.Layer<
       }
       return { ...linked, updated: true }
     }).pipe(Effect.mapError(reconciled)),
-  { implementationVersion: "github/link-pr/v2" }
+  { implementationVersion: "github/link-pr/v3" }
 )
 
 /**

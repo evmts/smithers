@@ -173,6 +173,17 @@ const importRules = ImportRules({
       files: ["test/Core*.test.ts", "test/SourceRecord.test.ts", "test/SourceResume.test.ts"],
       callees: ["setTimeout", "setInterval", "Effect.sleep"],
       because: "test.behavioral: wait for a condition or advance TestClock; never sleep to synchronize a test."
+    },
+    {
+      kind: "forbidHostModules",
+      files: ["src/github/**"],
+      because: "sdk.platform-neutral: GitHub adapters receive platform services through Effect."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/{GitHub*,Actions,AppAuth,ClientTracing,Issues,Statuses,WriteLock}.test.ts"],
+      callees: ["setTimeout", "*.waitForTimeout", "vi.mock", "vi.doMock", "vi.stubGlobal", "jest.mock"],
+      because: "test.behavioral: use real dependencies, faulty Effect services and condition waits or TestClock."
     }
   ]
 })

@@ -1,5 +1,6 @@
-import { type Duration, Effect, Exit, Fiber, Redacted, Schema } from "effect"
+import { Deferred, type Duration, Effect, Exit, Fiber, Redacted, Schema } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
+import { TestClock } from "effect/testing"
 import { inspect } from "node:util"
 import { afterEach, describe, expect, expectTypeOf, it } from "vitest"
 import { fromIntegrationError } from "../src/core/ActionFailure.ts"
@@ -544,8 +545,8 @@ describe("GitHubClient over a real HTTP server", () => {
       Effect.flip(client().request("PUT", "/x", { a: 1 }, { retryUnsafeWrites: true }))
     )
     expect(fixture.requests).toHaveLength(1)
-    expect(failure.details).toMatchObject({ retryable: true, outcomeUnknown: false })
-    expect(failure.message).not.toContain("outcome unknown")
+    expect(failure.details).toMatchObject({ retryable: true, outcomeUnknown: true })
+    expect(failure.message).toContain("outcome unknown")
   })
 
   // `new URL("httpx")` throws a bare TypeError, which used to escape the
@@ -943,5 +944,57 @@ describe("GitHub proxy refusals", () => {
     expect(failure.reason).toBe("delivery-failed")
     expect(failure.details).toMatchObject({ retryable: true, rateLimited: true })
     expect(fixture.requests).toHaveLength(1)
+  })
+})
+
+describe("write safety regressions", () => {
+  it.each(["bearer", "basic"])("preserves configured loopback HTTP for %s authentication", async (kind) => {
+    fixture = await startFixture((_request, response) => json(response, 200, { authenticated: true }))
+    const config = kind === "bearer"
+      ? { token: TOKEN }
+      : { clientCredentials: { clientId: "app", clientSecret: Redacted.make("secret") } }
+    const local = gitHubClient({ ...config, apiBaseUrl: fixture.origin }, {})
+    expect(await Effect.runPromise(local.request("GET", "/x"))).toEqual({ authenticated: true })
+    expect(fixture.requests).toHaveLength(1)
+    expect(fixture.requests[0]?.headers["authorization"]).toBe(
+      kind === "bearer" ? `Bearer ${TOKEN}` : `Basic ${btoa("app:secret")}`
+    )
+  })
+
+  it.each(["transport", "body"])("retains unknown outcome with unsafe retries after a %s failure", async (stage) => {
+    const transport = stage === "transport"
+      ? rejectingTransport(new Error("lost response"))
+      : brokenBodyTransport(new Error("lost body"))
+    const failure = await Effect.runPromise(Effect.flip(
+      gitHubClientOver(transport, { token: TOKEN }).request("POST", "/x", {}, { retryUnsafeWrites: true })
+    ))
+    expect(failure.details).toMatchObject({ retryable: true, outcomeUnknown: true })
+    expect(failure.message).toContain("outcome unknown")
+  })
+
+  it("retains unknown outcome with unsafe retries after a deadline", async () => {
+    const failure = await Effect.runPromise(
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        const transport = HttpClient.make(() => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)))
+        const client = gitHubClientOver(transport, { token: TOKEN, requestTimeout: "1 second" })
+        const fiber = yield* Effect.forkChild(
+          Effect.flip(client.request("POST", "/x", {}, { retryUnsafeWrites: true }))
+        )
+        yield* Deferred.await(started)
+        yield* TestClock.adjust("1 second")
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+    expect(failure.details).toMatchObject({ timedOut: true, retryable: true, outcomeUnknown: true })
+  })
+
+  it.each([false, true])("allows anonymous HTTP with an explicit blank token: %s", async (blankToken) => {
+    fixture = await startFixture((_request, response) => json(response, 200, { anonymous: true }))
+    const config = { apiBaseUrl: fixture.origin, ...(blankToken ? { token: " " } : {}) }
+    const anonymous = gitHubClient(config, blankToken ? { GITHUB_TOKEN: TOKEN } : {})
+    expect(await Effect.runPromise(anonymous.request("GET", "/x"))).toEqual({ anonymous: true })
+    expect(fixture.requests).toHaveLength(1)
+    expect(fixture.requests[0]?.headers["authorization"]).toBeUndefined()
   })
 })

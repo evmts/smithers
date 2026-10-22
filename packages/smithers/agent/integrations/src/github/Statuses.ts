@@ -9,8 +9,8 @@
  * **Safe to repeat.** A status is a fact about a commit: GitHub keeps every
  * one it is sent and shows the latest per context. Sending the same state
  * again changes nothing anyone reads, so {@link create} asks the client to
- * retry a write whose answer was lost (`retryUnsafeWrites`) instead of
- * failing `outcomeUnknown`.
+ * retry a write whose answer was lost (`retryUnsafeWrites`) while retaining
+ * `outcomeUnknown` in the failure report.
  *
  * **Per commit.** A status names the exact SHA it describes, never a branch:
  * a newer head starts with no statuses, so a result for an older head can't

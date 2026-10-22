@@ -135,12 +135,12 @@ describe("create", () => {
     expect((JSON.parse(github!.fixture.requests[1]!.body) as { description: string }).description).toBe(exact)
   })
 
-  it("marks a lost answer retryable, never outcome-unknown: sending the same state again changes nothing anyone reads", async () => {
+  it("marks a lost answer retryable and outcome-unknown: sending the same state again changes nothing anyone reads", async () => {
     await startGitHub()
     github!.lose = true
     const lost = await failure(Statuses.create("o", "r", HEAD, { state: "success", context: "smithers/lint" }))
     expect(lost.details).toMatchObject({ status: 502, retryable: true })
-    expect(lost.details?.["outcomeUnknown"]).not.toBe(true)
+    expect(lost.details?.["outcomeUnknown"]).toBe(true)
     await run(Statuses.create("o", "r", HEAD, { state: "success", context: "smithers/lint" }))
     expect(github!.statuses.get(HEAD)).toHaveLength(2)
     expect(shown(HEAD)).toEqual({ "smithers/lint": "success" })

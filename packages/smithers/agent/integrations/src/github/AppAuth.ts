@@ -21,7 +21,7 @@
  *   `SMITHERS_GITHUB_API_BASE_URL` never decides who calls or where the JWT
  *   goes. The client makes one request and never repeats it; the flow step
  *   around the call owns retries. Minting a token is safe to repeat, so a lost
- *   answer to it is `retryable` rather than `outcomeUnknown`.
+ *   answer to it is `retryable` while retaining `outcomeUnknown`.
  *
  * Neither the private key, the JWT, nor a minted installation token appears in
  * an error message, its `details`, its cause, or a span attribute. A response

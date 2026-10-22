@@ -24,6 +24,17 @@ const traced = async <A, E>(effect: Effect.Effect<A, E>) => {
 }
 
 describe("client tracing", () => {
+  it("records both retry permission and the unknown write outcome", async () => {
+    fixture = await startFixture((_request, response) => json(response, 502, {}))
+    const client = gitHubClient({ token: "secret-token", apiBaseUrl: fixture.origin }, {})
+    const spans = await traced(client.request("POST", "/x", {}, { retryUnsafeWrites: true }))
+    const span = spans.find((candidate) => candidate.name === "GitHubClient.request")
+    expect(span?.attributes.get("integration.retryable")).toBe(true)
+    expect(span?.attributes.get("integration.outcome_unknown")).toBe(true)
+    expect(fixture.requests).toHaveLength(1)
+    expect(JSON.stringify(spans.map((candidate) => [...candidate.attributes.entries()]))).not.toContain("secret-token")
+  })
+
   it("records a GitHub request span with its failure class, never the token", async () => {
     fixture = await startFixture((_request, response) =>
       json(response, 429, { message: "boom" }, { "retry-after": "7" })
