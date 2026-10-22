@@ -5,7 +5,28 @@ import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
 import { PROMPT_CATALOG } from "../features/flows-ui/callable"
 import { AUTHOR_TOOLS } from "../features/flows-ui/contract"
-import { scopeFor, scopeOf } from "./catalog"
+import { publicError, scopeFor, scopeOf } from "./catalog"
+
+describe("publicError", () => {
+  test("the agent reads a failure's kind and numeric command limit, without its message", () => {
+    expect(publicError({ _tag: "@smthrs/mvp/sandbox/SandboxCommandTooLong", maxSeconds: 1800, message: "private" }))
+      .toBe("SandboxCommandTooLong: at most 1800 seconds")
+    expect(publicError({ _tag: "OtherLimit", maxSeconds: 60 })).toBe("OtherLimit: at most 60 seconds")
+  })
+
+  test.each([undefined, null, "1800", { seconds: 1800 }])("a failure without a numeric limit (%s) stays its kind", (maxSeconds) => {
+    expect(publicError({ _tag: "@smthrs/mvp/sandbox/SandboxCallRefused", maxSeconds, message: "private" }))
+      .toBe("SandboxCallRefused")
+  })
+
+  test.each([null, undefined, "private", 1800, {}, { maxSeconds: 1800 }])("an untagged failure (%s) stays failed", (failure) => {
+    expect(publicError(failure)).toBe("failed")
+  })
+
+  test("a tagged failure without a limit stays its kind", () => {
+    expect(publicError({ _tag: "@smthrs/mvp/sandbox/SandboxCallFailed", message: "private" })).toBe("SandboxCallFailed")
+  })
+})
 
 describe("scopeOf", () => {
   test("a draft's agent reads; a person's flow's agent calls what it lists that a person's flow may call", () => {

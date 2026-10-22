@@ -1,7 +1,12 @@
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { callExecutionId, MAX_CALL_BODY_BYTES, SANDBOX_CALLS_ROUTE } from "../../src/features/sandbox/contract.ts"
+import {
+  callExecutionId,
+  COMMAND_LIMIT_SECONDS,
+  MAX_CALL_BODY_BYTES,
+  SANDBOX_CALLS_ROUTE,
+} from "../../src/features/sandbox/contract.ts"
 import type { Actor } from "../Actor.ts"
 import { boundTo, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
@@ -18,7 +23,8 @@ import { branchAccess, canEdit } from "./Access.ts"
 //   names the answer it works on, whose conversation it stays in. It admits the call for the person signed in (they
 //   asked the answer, may edit the conversation's branch, and the branch isn't locked), records the `running` row,
 //   and starts the remote `sandbox/Call`, one execution per call. The same call again is answered as it stands. A
-//   command runs up to the deployment's `SANDBOX_COMMAND_MAX_SECONDS` (an hour unless set); one past it is `invalid`.
+//   command runs up to the deployment's `SANDBOX_COMMAND_MAX_SECONDS` (an hour unless set); one past it is refused
+//   `too_long` with that limit (`maxSeconds`), which the agent reads.
 // - `GET /api/sandbox/calls/<id>`: how the call stands: `running`, `done` with the tool's result, or `failed` with why.
 //   Only the person who asked reads it.
 //
@@ -32,14 +38,13 @@ export const requests = Metric.counter("smithers_sandbox_call_requests", {
 })
 
 const Uuid = Schema.String.check(Schema.isUUID())
-/** A call's request, its command running up to `commandSeconds`. */
-const callRequest = (commandSeconds: number) =>
-  Schema.Struct({
-    callId: Uuid,
-    call: ToolCall(commandSeconds),
-    conversationId: Schema.optional(Uuid),
-    answerId: Schema.optional(Uuid),
-  })
+/** A call's request decoded against the command job's own limit, before deployment admission. */
+const callRequest = Schema.Struct({
+  callId: Uuid,
+  call: ToolCall(COMMAND_LIMIT_SECONDS),
+  conversationId: Schema.optional(Uuid),
+  answerId: Schema.optional(Uuid),
+})
 const isUuid = Schema.is(Uuid)
 
 const noStore = { "cache-control": "no-store" }
@@ -98,7 +103,7 @@ const answerConversation = (answerId: string, actor: Actor) =>
  * through `Flows.FlowStarter`.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, commandSeconds: number) => {
-  const decodeCall = Schema.decodeUnknownEffect(Schema.fromJsonString(callRequest(commandSeconds)))
+  const decodeCall = Schema.decodeUnknownEffect(Schema.fromJsonString(callRequest))
   /** One request's records: a log line `sandbox.<route>`, its span's status, and a count. */
   const recorded = <RR>(
     route: "call" | "result",
@@ -163,6 +168,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
         fields.branchId = branch.branchId
         if (!canEdit(branch.access)) return refuse(fields, 403, "forbidden")
         if (branch.mode === "locked") return refuse(fields, 409, "locked")
+        if (call.tool === "run" && (call.timeoutSeconds ?? 60) > commandSeconds) {
+          fields.code = "too_long"
+          return HttpServerResponse.jsonUnsafe(
+            { code: "too_long", maxSeconds: commandSeconds },
+            { status: 400, headers: noStore },
+          )
+        }
         const ownerId = actor.value.subject.id
         const inserted = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
           sql`

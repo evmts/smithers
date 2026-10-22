@@ -38,9 +38,14 @@ export class NotApproved extends Schema.TaggedError<NotApproved>()("@smthrs/mvp/
 /** The child execution that asks the person to approve a call before it runs: the call's own, then `/confirm`. */
 export const confirmExecutionId = (identity: Cell.CallIdentity): string => `${childExecutionId(identity)}/confirm`
 
-/** What a cell reads of a flow's failure: its kind, the last segment of its tag, never its message. */
-export const publicError = (error: unknown): string =>
-  typeof error === "object" && error !== null && "_tag" in error ? String(error._tag).split("/").at(-1)! : "failed"
+/** What a cell reads of a flow's failure: its kind and any numeric `maxSeconds` limit, never its message. */
+export const publicError = (error: unknown): string => {
+  if (typeof error !== "object" || error === null || !("_tag" in error)) return "failed"
+  const kind = String(error._tag).split("/").at(-1)!
+  return "maxSeconds" in error && typeof error.maxSeconds === "number"
+    ? `${kind}: at most ${error.maxSeconds} seconds`
+    : kind
+}
 
 /** The flows the agent may call: the model-invocable ones. */
 export const agentFlows: ReadonlyArray<FlowName> = names.filter(modelInvocable)

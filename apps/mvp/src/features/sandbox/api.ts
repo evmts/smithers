@@ -7,10 +7,11 @@ import { Refused, Standing } from "./schema"
 // ChatApi's sandbox call routes as the tools' steps call them (docs/features/sandbox-tools.md#the-routes), through
 // Effect's HttpClient, with one deadline covering each exchange.
 
-/** ChatApi didn't take or answer the call: a refusal (`status`, with its `code`), or no whole answer in time (neither). */
+/** ChatApi didn't take or answer the call: a refusal (`status`, `code`, optional `maxSeconds`), or no whole answer in time. */
 export class CallRefused extends Data.TaggedError("CallRefused")<{
   readonly status?: number
   readonly code?: string
+  readonly maxSeconds?: number
 }> {}
 
 /** How long one request may take. The machine runs the tool after, in the remote `sandbox/Call`. */
@@ -48,7 +49,7 @@ export class SandboxClient extends Context.Service<
               const body = decodeRefused(yield* Effect.orElseSucceed(response.text, () => ""))
               return yield* new CallRefused({
                 status: response.status,
-                ...Option.match(body, { onNone: () => ({}), onSome: ({ code }) => ({ code }) }),
+                ...Option.match(body, { onNone: () => ({}), onSome: (refused) => refused }),
               })
             }
             return yield* response.json.pipe(

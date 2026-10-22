@@ -22,7 +22,9 @@ import { pinConversation } from "./actions"
 import { CallRefused, SandboxClient } from "./api"
 import { CALL_ID_NAMESPACE, COMMAND_LIMIT_SECONDS, SANDBOX_TELEMETRY } from "./contract"
 import {
+  Failure,
   RESULT_RETRY,
+  START_RETRY,
   SandboxCallFailed,
   SandboxCallRefused,
   SandboxCallRunning,
@@ -52,8 +54,8 @@ const WITHIN = 90_000
 const callIdOf = (executionId: string) => Effect.runPromise(Uuid.v5(CALL_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer)))
 
 /** The tools' flows on the Node host's engine, calling ChatApi's real routes as a Member: a run, the harness and records. */
-const openEngine = async () => {
-  const h = await branchHarness(runtime, { actor: member })
+const openEngine = async (commandMaxSeconds = COMMAND_LIMIT_SECONDS) => {
+  const h = await branchHarness(runtime, { actor: member, config: { SANDBOX_COMMAND_MAX_SECONDS: String(commandMaxSeconds) } })
   const fetch: typeof globalThis.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
     return h.fetch(`${url.pathname}${url.search}`, input instanceof Request ? input : init)
@@ -114,6 +116,26 @@ const ran = {
 } as const
 
 describe("the flows", () => {
+  test("a lowered limit reaches the browser's flow once, without starting a command; a shorter new call runs", async () => {
+    const engine = await openEngine(900)
+    const branch = await tracked(runtime, REPO, `feature/${crypto.randomUUID()}`)
+    const input = { command: `echo ${SENTINEL}`, conversationId: branch.conversationId }
+    const failure = await Effect.runPromise(Effect.flip(await engine.execute(SandboxRun, "too-long", { ...input, timeoutSeconds: 901 })))
+    expect(failure).toMatchObject({ _tag: "@smthrs/mvp/sandbox/SandboxCommandTooLong", maxSeconds: 900 })
+    expect(engine.h.starts).toEqual([])
+    expect(await rows()).toEqual([])
+    expect(engine.h.line("sandbox.call")).toHaveLength(1)
+    expect(engine.count({ tool: "run", outcome: "too_long" })).toBe(1)
+    expect(engine.lines()).toMatchObject([{ level: "WARN", annotations: { tool: "run", outcome: "too_long" } }])
+    expect(JSON.stringify(engine.lines())).not.toContain(SENTINEL)
+
+    const shorter = engine.execute(SandboxRun, "shorter", { ...input, timeoutSeconds: 900 })
+    await vi.waitFor(() => expect(engine.h.starts).toHaveLength(1), { timeout: 30_000, interval: 20 })
+    expect(engine.h.starts[0]).toMatchObject({ payload: { call: { timeoutSeconds: 900 } } })
+    await runtime.runPromise(settle(await callIdOf("shorter"), { status: "done", result: ran }))
+    expect(await shorter).toEqual(Exit.succeed(ran))
+  }, WITHIN)
+
   test("a person's run calls ChatApi with the pinned conversation, waits while it runs, and answers its result", async () => {
     const engine = await openEngine()
     const branch = await tracked(runtime, REPO, `feature/${crypto.randomUUID()}`)
@@ -238,6 +260,38 @@ const step = async <A, E>(
 }
 
 describe("the steps", () => {
+  test.each([60, 900, 1800, COMMAND_LIMIT_SECONDS])("a too_long refusal carries the %s second limit without retrying", (maxSeconds) => {
+    const failure = refusalOf(new CallRefused({ status: 400, code: "too_long", maxSeconds }))
+    expect(failure).toMatchObject({ _tag: "@smthrs/mvp/sandbox/SandboxCommandTooLong", maxSeconds })
+    expect(Schema.is(Failure)(failure)).toBe(true)
+    expect(START_RETRY.nonRetryable).toContain(failure._tag)
+    expect(RESULT_RETRY.nonRetryable).toContain(failure._tag)
+  })
+
+  test("too_long needs a 400 and the limit; other refusals keep their meaning", () => {
+    expect(refusalOf(new CallRefused({ status: 400, code: "too_long" })))
+      .toEqual(new SandboxCallRefused({ reason: "invalid" }))
+    expect(refusalOf(new CallRefused({ status: 400, code: "invalid", maxSeconds: 900 })))
+      .toEqual(new SandboxCallRefused({ reason: "invalid" }))
+    expect(refusalOf(new CallRefused({ status: 413, code: "too_long", maxSeconds: 900 })))
+      .toEqual(new SandboxCallRefused({ reason: "invalid" }))
+    expect(refusalOf(new CallRefused({ status: 503, code: "too_long", maxSeconds: 900 })))
+      .toEqual(new SandboxCallUnavailable())
+  })
+
+  test("start and result count a too_long refusal by its own outcome", async () => {
+    const refused = new CallRefused({ status: 400, code: "too_long", maxSeconds: 900 })
+    const starting = await step(
+      start("run")({ command: "pnpm install", timeoutSeconds: 901, conversationId: "c" }),
+      scripted({ start: Effect.fail(refused) }).layer,
+    )
+    expect(starting.exit).toEqual(Exit.fail(refusalOf(refused)))
+    expect(starting.count("run", "too_long")).toBe(1)
+    const reading = await step(result("run")({ callId: "c" }), scripted({ result: [Effect.fail(refused)] }).layer)
+    expect(reading.exit).toEqual(Exit.fail(refusalOf(refused)))
+    expect(reading.count("run", "too_long")).toBe(1)
+  })
+
   test.each<[number | undefined, string | undefined, SandboxCallRefused | SandboxCallUnavailable]>([
     [401, undefined, new SandboxCallRefused({ reason: "sign_in" })],
     [403, "forbidden", new SandboxCallRefused({ reason: "forbidden" })],
@@ -360,6 +414,16 @@ describe("the client", () => {
   }
   const startRun = (c: SandboxClient["Service"]) =>
     c.start({ callId: "c-1", call: { tool: "status" }, conversationId: "v-1" })
+
+  test.each([1, 900, 1800, COMMAND_LIMIT_SECONDS])("a refused call keeps the deployment's %s second limit", async (maxSeconds) => {
+    expect((await client(startRun, async () => Response.json({ code: "too_long", maxSeconds }, { status: 400 }))).ended)
+      .toMatchObject({ status: 400, code: "too_long", maxSeconds })
+  })
+
+  test.each([0, -1, 1.5, "900", null])("a refusal with an invalid maxSeconds (%s) isn't decoded", async (maxSeconds) => {
+    expect((await client(startRun, async () => Response.json({ code: "too_long", maxSeconds }, { status: 400 }))).ended)
+      .toEqual(new CallRefused({ status: 400 }))
+  })
 
   test("posts a call and gets one, answering how it stands on 200 or 202", async () => {
     const posted = await client(startRun, async () => Response.json({ callId: "c-1", status: "running" }, { status: 202 }))

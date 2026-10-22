@@ -15,6 +15,7 @@ import {
   SandboxCallRefused,
   SandboxCallRunning,
   SandboxCallUnavailable,
+  SandboxCommandTooLong,
   Status,
   type tools,
   Write,
@@ -44,8 +45,10 @@ const targetOf = (conversationId: string | undefined) =>
   })
 
 /** What ChatApi's refusal means to the flow. */
-export const refusalOf = (refused: CallRefused): SandboxCallRefused | SandboxCallUnavailable =>
-  refused.status === 401
+export const refusalOf = (refused: CallRefused): SandboxCallRefused | SandboxCommandTooLong | SandboxCallUnavailable =>
+  refused.status === 400 && refused.code === "too_long" && refused.maxSeconds !== undefined
+    ? new SandboxCommandTooLong({ maxSeconds: refused.maxSeconds })
+    : refused.status === 401
     ? new SandboxCallRefused({ reason: "sign_in" })
     : refused.status === 403
     ? new SandboxCallRefused({ reason: "forbidden" })
@@ -67,7 +70,9 @@ const settled = (tool: SandboxTools.Tool, callId: string, outcome: string) =>
   )
 
 const outcomeOf = (failure: Failure): string =>
-  failure._tag === "@smthrs/mvp/sandbox/SandboxCallRefused"
+  failure._tag === "@smthrs/mvp/sandbox/SandboxCommandTooLong"
+    ? "too_long"
+    : failure._tag === "@smthrs/mvp/sandbox/SandboxCallRefused"
     ? failure.reason
     : failure._tag === "@smthrs/mvp/sandbox/SandboxCallFailed"
     ? failure.failure

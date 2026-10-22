@@ -112,7 +112,7 @@ describe("POST /api/sandbox/calls", () => {
     expect(recorded(h)).not.toContain("mona")
   })
 
-  test("a command runs up to the deployment's SANDBOX_COMMAND_MAX_SECONDS, an hour unless set; one past it is invalid", async () => {
+  test("a command runs up to the deployment's SANDBOX_COMMAND_MAX_SECONDS; one past it is too_long with the limit", async () => {
     const branch = await tracked(runtime, REPO, "feature/x")
     const target = { conversationId: branch.conversationId }
     const long = (timeoutSeconds: number) => ({ ...run, timeoutSeconds })
@@ -131,10 +131,22 @@ describe("POST /api/sandbox/calls", () => {
     const quarter = await open(member, { config: { SANDBOX_COMMAND_MAX_SECONDS: "900" } })
     const callId = crypto.randomUUID()
     expect(await json(await post(quarter, { callId, call: long(900), ...target }))).toEqual([202, { callId, status: "running" }])
-    expect(await json(await post(quarter, { callId: crypto.randomUUID(), call: long(901), ...target }))).toEqual([
+    const refused = await post(quarter, { callId: crypto.randomUUID(), call: long(901), ...target })
+    expect(await json(refused)).toEqual([
       400,
-      { code: "invalid" },
+      { code: "too_long", maxSeconds: 900 },
     ])
+    expect(refused.headers.get("cache-control")).toBe("no-store")
+    expect(quarter.starts).toHaveLength(1)
+    expect(await calls()).toHaveLength(3)
+    expect(quarter.line("sandbox.call").at(-1)).toMatchObject({
+      level: "WARN",
+      annotations: { code: "too_long", outcome: "too_long", status: 400 },
+    })
+    expect(quarter.count(SandboxCalls.requests, { route: "call", outcome: "too_long" })).toBe(1)
+    expect(recorded(quarter)).not.toContain(SENTINEL)
+    expect(await json(await post(quarter, { callId: crypto.randomUUID(), call: long(COMMAND_LIMIT_SECONDS + 1), ...target })))
+      .toEqual([400, { code: "invalid" }])
     expect(quarter.starts).toHaveLength(1)
     expect(await calls()).toHaveLength(3)
   })

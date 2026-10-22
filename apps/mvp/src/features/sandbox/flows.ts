@@ -24,6 +24,12 @@ export class SandboxCallRefused extends Schema.TaggedError<SandboxCallRefused>()
   { reason: Schema.Literals(["sign_in", "forbidden", "locked", "not_found", "invalid"]) },
 ) {}
 
+/** The command is past the deployment's limit; the agent can ask for a shorter run. */
+export class SandboxCommandTooLong extends Schema.TaggedError<SandboxCommandTooLong>()(
+  "@smthrs/mvp/sandbox/SandboxCommandTooLong",
+  { maxSeconds: Schema.Int },
+) {}
+
 /** The machine settled the call failed: it couldn't run, or the tool refused it (`SandboxTools.ToolRefused`). */
 export class SandboxCallFailed extends Schema.TaggedError<SandboxCallFailed>()("@smthrs/mvp/sandbox/SandboxCallFailed", {
   failure: Schema.Literals(CALL_FAILURES),
@@ -42,10 +48,20 @@ export class SandboxCallRunning extends Schema.TaggedError<SandboxCallRunning>()
 ) {}
 
 /** What a tool's flow can fail with. */
-export const Failure = Schema.Union([SandboxCallRefused, SandboxCallFailed, SandboxCallUnavailable, SandboxCallRunning])
+export const Failure = Schema.Union([
+  SandboxCallRefused,
+  SandboxCommandTooLong,
+  SandboxCallFailed,
+  SandboxCallUnavailable,
+  SandboxCallRunning,
+])
 export type Failure = typeof Failure.Type
 
-const NON_RETRYABLE = ["@smthrs/mvp/sandbox/SandboxCallRefused", "@smthrs/mvp/sandbox/SandboxCallFailed"]
+const NON_RETRYABLE = [
+  "@smthrs/mvp/sandbox/SandboxCallRefused",
+  "@smthrs/mvp/sandbox/SandboxCommandTooLong",
+  "@smthrs/mvp/sandbox/SandboxCallFailed",
+]
 
 /** Starting a call while ChatApi is unreachable: 500 ms doubling to 8 s, for at most 2 minutes. */
 export const START_RETRY = RetryPolicy.make({

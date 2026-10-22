@@ -17,7 +17,8 @@ branch agent) is now its own `sandbox/Command` job (`worker/flows/SandboxCommand
 ([long commands](../features/sandbox-tools.md#long-commands)). Regression tests kill the host mid-command on the Durable
 Object handlers and on the Node engine; the command runs once and its result arrives. `e2e/sandbox-tools.spec.ts`
 "long command" runs a 9.5-minute command end to end; it runs in production after the deploy.
-Known: a run cancelled while its job is parked leaves the command to its own timeout (at most 600 s), because the
+Known: a run cancelled while its job is parked leaves the command to its own timeout (at most
+`SANDBOX_COMMAND_MAX_SECONDS`, an hour unless set; corrected 2026-10-22 13:21 PDT, it said 600 s), because the
 job's rollback lives in the host that parked. A pull request's check scripts run as the same job (`checks/Scripts`).
 The long-command e2e found every first provision of a person's user hung under `alchemy dev`: `useradd` warns on
 stderr that the uid is outside UID_MIN..UID_MAX, and there a piped stream nobody reads holds the exec's exit. Commands

@@ -13,5 +13,8 @@ export const Standing = Schema.Union([
 ])
 export type Standing = typeof Standing.Type
 
-/** A refusal's body: its code. */
-export const Refused = Schema.Struct({ code: Schema.String })
+/** A refusal's body: its code and, for a command past the deployment's limit, that limit. */
+export const Refused = Schema.Struct({
+  code: Schema.String,
+  maxSeconds: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+})
