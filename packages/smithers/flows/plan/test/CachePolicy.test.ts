@@ -26,7 +26,7 @@ describe("CachePolicy", () => {
   })
 
   it("refuses a scope the engine cannot honor", () => {
-    expect(decode({ scope: "workflow" })._tag).toBe("Failure")
+    expect(decode({ scope: "unknown" })._tag).toBe("Failure")
   })
 
   it("refuses a time-to-live that is not a positive whole millisecond count", () => {

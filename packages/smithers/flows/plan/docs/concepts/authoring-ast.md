@@ -202,3 +202,10 @@ the flow tag, payload, and declaration side table in every one of them.
 supported names, not authoring API: they validate nothing, and several of them
 answer `undefined` for an AST that was rehydrated from JSON, because the side
 tables holding the real functions do not survive serialization.
+
+Cache policies decode historical `workflow` and `global` scopes as `flow` and
+`shared`; encoding writes current names. Annotations validate and freeze a
+snapshot. Node combinators reject invalid inputs before invoking builders.
+JSON projections reject bigint, including nested values and toJSON results.
+Replay containment rejects traversal and path aliases. Compiled glob matchers
+retain at most 512 entries; eviction only changes compilation cost.

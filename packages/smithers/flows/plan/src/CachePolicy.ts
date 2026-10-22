@@ -18,6 +18,9 @@
 import * as Context from "effect/Context"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as SchemaGetter from "effect/SchemaGetter"
+
+const CurrentScope = Schema.Literals(["run", "flow", "shared"])
 
 /**
  * How far a recorded sealed result may travel.
@@ -34,7 +37,15 @@ import * as Schema from "effect/Schema"
  * @category models
  * @since 1.0.0-rc.0
  */
-export const CacheScope = Schema.Literals(["run", "flow", "shared"])
+export const CacheScope = Object.assign(
+  Schema.Literals(["run", "flow", "shared", "workflow", "global"]).pipe(
+    Schema.decodeTo(CurrentScope, {
+      decode: SchemaGetter.transform((scope) => scope === "workflow" ? "flow" : scope === "global" ? "shared" : scope),
+      encode: SchemaGetter.transform((scope) => scope)
+    })
+  ),
+  { literals: CurrentScope.literals }
+)
 
 /**
  * The value form of {@link CacheScope}.
@@ -136,4 +147,8 @@ export const cachePolicyOf = (annotations: Context.Context<never>): CachePolicy 
 export const annotate = <A extends { annotate: (key: typeof CachePolicyAnnotation, value: CachePolicy) => A }>(
   declaration: A,
   policy: CachePolicy
-): A => declaration.annotate(CachePolicyAnnotation, policy)
+): A =>
+  declaration.annotate(
+    CachePolicyAnnotation,
+    Object.freeze({ ...Schema.decodeUnknownSync(CachePolicy)(policy) })
+  )

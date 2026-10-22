@@ -151,6 +151,7 @@ export const jsonMirror = (
         return
       }
       const kind = typeof current
+      if (kind === "bigint") throw payloadError(path, "contains a bigint with no JSON representation")
       if (current === null || (kind !== "object" && kind !== "function")) {
         finish(kind === "undefined" || kind === "symbol" ? missing : current)
         return

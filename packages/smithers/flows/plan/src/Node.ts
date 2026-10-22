@@ -256,6 +256,19 @@ export interface CatchOptions<E, B, E2, R2 = never, Handled = E> {
  */
 export const isNode = (value: unknown): value is Any => internal.isNode(value)
 
+/** Refuse unchecked JavaScript inputs before reading topology or running builders. */
+const checkedAst = (self: Any): Ast => {
+  if (!isNode(self)) {
+    throw new GraphBuildError({
+      code: "invalid_continuation",
+      node: "combinator/self",
+      path: [],
+      message: "Node combinators expect a Node as their input"
+    })
+  }
+  return self.ast
+}
+
 /**
  * The inert value delivered by {@link succeed}. Planned references resolve to
  * their result type; other values follow the payload's JSON projection.
@@ -266,6 +279,7 @@ export const isNode = (value: unknown): value is Any => internal.isNode(value)
  * @category models
  */
 export type Succeed<A> = A extends Planned.Planned<infer Value> ? Value
+  : A extends bigint ? never
   : A extends Date ? string | null
   : A extends { toJSON: (...args: any) => infer Value } ? Succeed<Value>
   : A extends (...args: any) => any ? undefined
@@ -466,7 +480,7 @@ export const map: {
 } = dual(
   2,
   <A, E, R, B>(self: Node<A, E, R>, f: (a: A) => B): Node<B, E, R> =>
-    internal.makeNode<B, E, R>(internal.map(self.ast, (value) => f(value as A), f))
+    internal.makeNode<B, E, R>(internal.map(checkedAst(self), (value) => f(value as A), f))
 )
 
 /**
@@ -499,7 +513,7 @@ export const andThen: {
           "Node.andThen expects a Node; use Node.bindPlanned for a symbolic builder or Node.map for value computation"
       })
     }
-    return internal.makeNode<B, E | E2, R | R2>(internal.andThenNode(self.ast, next.ast))
+    return internal.makeNode<B, E | E2, R | R2>(internal.andThenNode(checkedAst(self), next.ast))
   }
 )
 
@@ -534,7 +548,7 @@ export const bindPlanned: {
     build: (reference: Planned.Planned<A>) => Node<B, E2, R2>
   ): Node<B, E | E2, R | R2> =>
     internal.makeNode<B, E | E2, R | R2>(
-      internal.andThen(self.ast, (value) => build(value as Planned.Planned<A>), build)
+      internal.andThen(checkedAst(self), (value) => build(value as Planned.Planned<A>), build)
     )
 )
 
@@ -619,13 +633,14 @@ export const branch: {
     self: Node<A, E, R>,
     options: BranchOptions<A, B1, E1, R1, B2, E2, R2>
   ): Node<B1 | B2, E | E1 | E2, R | R1 | R2> => {
+    const first = checkedAst(self)
     const predicate = options.if
     const subjectToken = `${branchSubject}/${subjects.branch++}`
     const subject = Planned.make<A>(subjectToken)
     return internal.makeNode<B1 | B2, E | E1 | E2, R | R1 | R2>(
       internal.branch(
         subjectToken,
-        self.ast,
+        first,
         (value) => predicate(value as A),
         predicate,
         arm(options.then, subject, "then"),
@@ -683,9 +698,10 @@ const catch_: {
     self: Node<A, E, R>,
     options: CatchOptions<E, B, E2, R2, Handled>
   ): Node<A | B, E | E2, R | R2> => {
+    const first = checkedAst(self)
     const subjectToken = `${catchSubject}/${subjects.catch++}`
     const failure = arm(options.onFailure, Planned.make<Handled>(subjectToken), "onFailure", catchSubject)
-    return internal.makeNode(internal.catch_(subjectToken, self.ast, failure, options.error))
+    return internal.makeNode(internal.catch_(subjectToken, first, failure, options.error))
   }
 )
 
@@ -710,15 +726,16 @@ export const priority: {
 } = dual(
   2,
   <A, E, R>(self: Node<A, E, R>, value: number): Node<A, E, R> => {
+    const first = checkedAst(self)
     if (!Number.isSafeInteger(value)) {
       throw new GraphBuildError({
         code: "invalid_priority",
-        node: self.ast._tag,
+        node: first._tag,
         path: [],
         message: `Node.priority expects a safe integer, received ${value}`
       })
     }
-    return internal.makeNode<A, E, R>(internal.withPriority(self.ast, value))
+    return internal.makeNode<A, E, R>(internal.withPriority(first, value))
   }
 )
 

@@ -66,7 +66,6 @@ export interface PlanDiff {
  * @private
  */
 const stable = (value: unknown): string => {
-  if (typeof value === "bigint") return `${value}n`
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined"
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`
   const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left < right ? -1 : 1)

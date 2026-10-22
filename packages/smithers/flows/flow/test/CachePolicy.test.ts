@@ -22,8 +22,16 @@ describe("CachePolicy", () => {
     }
   })
 
+  it("decodes historical scopes and encodes current scopes", () => {
+    for (const [historical, current] of [["workflow", "flow"], ["global", "shared"]] as const) {
+      const policy = Schema.decodeUnknownSync(CachePolicy)({ scope: historical })
+      expect(policy).toEqual({ scope: current })
+      expect(Schema.encodeSync(CachePolicy)(policy)).toEqual({ scope: current })
+    }
+  })
+
   it("refuses a scope the engine cannot honor", () => {
-    expect(decode({ scope: "workflow" })._tag).toBe("Failure")
+    expect(decode({ scope: "unknown" })._tag).toBe("Failure")
   })
 
   it("refuses a time-to-live that is not a positive whole millisecond count", () => {

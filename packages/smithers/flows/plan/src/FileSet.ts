@@ -398,6 +398,8 @@ const patternMatcher = (pattern: string): (path: string) => boolean => {
     }
     return next[0] === 1
   }
+  // Bound process lifetime retention across unique declarations.
+  if (patternMatchers.size >= 512) patternMatchers.delete(patternMatchers.keys().next().value!)
   patternMatchers.set(key, matcher)
   return matcher
 }
@@ -444,6 +446,7 @@ const beneath = (tree: string, path: string): boolean => {
  * @since 1.0.0-rc.0
  */
 export const contains = (entry: Entry, path: string): boolean => {
+  if (!workspaceRelative(path)) return false
   const inside = canonical(path)
   if (typeof entry === "string") return canonical(entry) === inside
   if (isGlob(entry)) return matchesGlob(entry, inside)
