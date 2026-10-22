@@ -58,7 +58,9 @@ it("resumes the same generated coding run after SIGKILL during the agent step", 
   const runs = () => {
     const db = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true, timeout: 10_000 })
     try {
-      return db.prepare("SELECT run_id, status FROM flows_runs").all() as Array<{ run_id: string; status: string }>
+      return db.prepare(
+        "SELECT run_id, status FROM (SELECT * FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery')"
+      ).all() as Array<{ run_id: string; status: string }>
     } finally {
       db.close()
     }
@@ -98,7 +100,7 @@ it("resumes the same generated coding run after SIGKILL during the agent step", 
     expect(readFileSync(join(root, "index.js"), "utf8")).toContain("coding in progress")
     const db = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true })
     const recorded = db.prepare(
-      "SELECT payload_json FROM flows_journal_events WHERE event_type = 'flows.engine.plan-recorded'"
+      "SELECT payload_json FROM flows_journal_events WHERE event_type = 'flows.engine.plan-recorded' AND run_id IN (SELECT run_id FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery')"
     ).all()
     db.close()
     expect(recorded).toHaveLength(1)

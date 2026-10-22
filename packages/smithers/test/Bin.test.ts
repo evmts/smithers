@@ -1941,7 +1941,9 @@ describe("an attached launch's exit status", processBudget, () => {
 
       const engine = new DatabaseSync(join(cwd, ".flows", "engine.db"), { readOnly: true })
       try {
-        const rows = engine.prepare("SELECT status FROM flows_runs").all() as unknown as ReadonlyArray<
+        const rows = engine.prepare(
+          "SELECT status FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery'"
+        ).all() as unknown as ReadonlyArray<
           { readonly status: string }
         >
         expect(rows).toHaveLength(2)
@@ -2180,7 +2182,9 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
     if (!existsSync(file)) return []
     const handle = new DatabaseSync(file, { readOnly: true })
     try {
-      return handle.prepare("SELECT run_id AS runId, status FROM flows_runs ORDER BY run_id")
+      return handle.prepare(
+        "SELECT run_id AS runId, status FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery' ORDER BY run_id"
+      )
         .all() as unknown as ReadonlyArray<{ runId: string; status: string }>
     } finally {
       handle.close()

@@ -21,7 +21,9 @@ const poll = async (predicate: () => boolean | Promise<boolean>, label: string) 
 const readRows = (root: string) => {
   const db = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true })
   try {
-    return db.prepare("SELECT run_id, status, state_json FROM flows_runs").all() as Array<{
+    return db.prepare(
+      "SELECT run_id, status, state_json FROM (SELECT * FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery')"
+    ).all() as Array<{
       run_id: string
       status: string
       state_json: string

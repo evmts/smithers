@@ -74,7 +74,9 @@ const alive = (pid: number) => {
 const rows = (root: string) => {
   const db = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true })
   try {
-    return db.prepare("SELECT run_id, status, waiting_reason, owner_pid, cancel_requested_at_ms FROM flows_runs")
+    return db.prepare(
+      "SELECT run_id, status, waiting_reason, owner_pid, cancel_requested_at_ms FROM (SELECT * FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery')"
+    )
       .all() as unknown as Array<
         {
           run_id: string

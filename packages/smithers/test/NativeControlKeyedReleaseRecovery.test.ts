@@ -62,14 +62,19 @@ const snapshot = (root: string) => {
   const control = new DatabaseSync(join(root, ".flows", "control.db"), { readOnly: true })
   try {
     return {
-      runs: (db.prepare("SELECT run_id, status, waiting_reason, state_json FROM flows_runs ORDER BY run_id")
+      runs: (db.prepare(
+        "SELECT run_id, status, waiting_reason, state_json FROM (SELECT * FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery') ORDER BY run_id"
+      )
         .all() as unknown as Array<NativeRow>)
         .map((row) => ({ ...row, state: JSON.parse(row.state_json) })),
-      attempts:
-        (db.prepare("SELECT run_id, state, meta_json FROM flows_attempts ORDER BY run_id, step_key_digest, attempt")
-          .all() as unknown as Array<AttemptRow>)
-          .map((row) => ({ ...row, meta: JSON.parse(row.meta_json) })),
-      journal: (db.prepare("SELECT run_id, event_type, payload_json FROM flows_journal_events ORDER BY run_id, seq")
+      attempts: (db.prepare(
+        "SELECT run_id, state, meta_json FROM flows_attempts WHERE run_id IN (SELECT run_id FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery') ORDER BY run_id, step_key_digest, attempt"
+      )
+        .all() as unknown as Array<AttemptRow>)
+        .map((row) => ({ ...row, meta: JSON.parse(row.meta_json) })),
+      journal: (db.prepare(
+        "SELECT run_id, event_type, payload_json FROM flows_journal_events WHERE run_id IN (SELECT run_id FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery') ORDER BY run_id, seq"
+      )
         .all() as unknown as Array<JournalRow>)
         .map((row) => ({ ...row, payload: JSON.parse(row.payload_json) })),
       control: (control.prepare("SELECT run_id, event_type, payload_json FROM flows_journal_events ORDER BY seq")

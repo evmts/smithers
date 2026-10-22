@@ -103,7 +103,9 @@ const rows = () => {
   // The live host writes this file; wait out its write lock rather than fail the read.
   const db = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true, timeout: 10_000 })
   try {
-    return db.prepare("SELECT run_id, status, waiting_reason FROM flows_runs").all() as unknown as Array<
+    return db.prepare(
+      "SELECT run_id, status, waiting_reason FROM (SELECT * FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery')"
+    ).all() as unknown as Array<
       { readonly run_id: string; readonly status: string; readonly waiting_reason: string | null }
     >
   } finally {
