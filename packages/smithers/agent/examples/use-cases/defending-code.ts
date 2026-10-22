@@ -361,9 +361,7 @@ const fanOut = <A, R>(
   const caught = Object.fromEntries(
     Object.entries(members).map(([key, call]) => [key, Node.catch(call, { onFailure: () => Node.succeed(null) })])
   )
-  // `Bounded.all` types its joined record loosely; every member above has
-  // already caught its own failure, so the join cannot fail.
-  const joined = Bounded.all(caught, { concurrency: fanout }) as Node.Node<Readonly<Record<string, unknown>>, never, R>
+  const joined = Bounded.all(caught, { concurrency: fanout })
   return Node.map(joined, (settled) => Object.values(settled).filter(keep))
 }
 

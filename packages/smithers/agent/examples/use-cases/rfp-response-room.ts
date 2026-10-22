@@ -192,8 +192,6 @@ requested output files, list open questions, and mark whether the package is rea
     }`
 })
 
-type DraftTag = "examples/RfpResponseRoom/Draft"
-
 /**
  * Drafts every requirement. It runs as a child execution, so its payload is
  * real when its body plans: one draft per requirement, at most
@@ -214,12 +212,7 @@ export const DraftAnswers = Flow.make("examples/RfpResponseRoom/DraftAnswers", {
       requirement.id,
       DraftAnswer.call({ requirement, answerPlan, approvedSources })
     ]))
-    // `Bounded.all` types its joined record loosely; every member is a draft call.
-    const joined = Bounded.all(members, { concurrency: maxDraftConcurrency }) as Node.Node<
-      Readonly<Record<string, AnswerDraft>>,
-      AgentAction.AgentFailure,
-      Action.Requirement<DraftTag>
-    >
+    const joined = Bounded.all(members, { concurrency: maxDraftConcurrency })
     return Node.map(joined, (drafted) => requirements.map((requirement) => drafted[requirement.id]!))
   }
 })

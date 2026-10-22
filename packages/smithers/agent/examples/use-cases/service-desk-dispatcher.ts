@@ -159,13 +159,7 @@ export const HandleTickets = Flow.make("examples/ServiceDeskDispatcher/HandleTic
       ticket.id,
       Node.catch(route(ticket), { onFailure: () => Node.succeed(null) })
     ]))
-    // `Bounded.all` types its joined record loosely; every member above has
-    // already caught its own failure, so the join cannot fail.
-    const joined = Bounded.all(members, { concurrency: 5 }) as Node.Node<
-      Readonly<Record<string, unknown>>,
-      never,
-      Action.Requirement<HandlerTag>
-    >
+    const joined = Bounded.all(members, { concurrency: 5 })
     return Node.map(joined, (handled) => Object.values(handled).filter(Schema.is(HandlerResult)))
   }
 })

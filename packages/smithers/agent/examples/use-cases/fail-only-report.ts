@@ -201,13 +201,7 @@ const runAll = (
       onFailure: () => Node.succeed(null)
     })
   ]))
-  // `Bounded.all` types its joined record loosely; every member above has
-  // already caught its own failure, so the join cannot fail.
-  const joined = Bounded.all(members, { concurrency: options.concurrency }) as Node.Node<
-    Readonly<Record<string, unknown>>,
-    never,
-    Action.Requirement<"examples/FailOnlyReport/Run">
-  >
+  const joined = Bounded.all(members, { concurrency: options.concurrency })
   return Node.map(joined, (ran) => Object.values(ran).filter(Schema.is(RunResult)))
 }
 

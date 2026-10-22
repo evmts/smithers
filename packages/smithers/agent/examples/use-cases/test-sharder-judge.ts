@@ -14,7 +14,7 @@
  * 0.x gave the analyzer and selector `bash`, `grep` and `read` tools and the runner `bash` and `read`; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
-import { type Action, Flow, Interpreter } from "@smthrs/flow"
+import { Flow, Interpreter } from "@smthrs/flow"
 import * as Bounded from "@smthrs/patterns/Bounded"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
@@ -149,13 +149,7 @@ export const RunShards = Flow.make("examples/TestSharderJudge/RunShards", {
         onFailure: () => Node.succeed(null)
       })
     ]))
-    // `Bounded.all` types its joined record loosely; every member above has
-    // already caught its own failure, so the join cannot fail.
-    const joined = Bounded.all(members, { concurrency }) as Node.Node<
-      Readonly<Record<string, unknown>>,
-      never,
-      Action.Requirement<"examples/TestSharderJudge/Run">
-    >
+    const joined = Bounded.all(members, { concurrency })
     return Node.map(joined, (ran) => Object.values(ran).filter(Schema.is(RunResult)))
   }
 })

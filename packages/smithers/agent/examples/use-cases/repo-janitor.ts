@@ -14,7 +14,7 @@
  * 0.x's agents opened the PR and edited files through `bash`, `read`, `write` and `grep` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
-import { type Action, Flow } from "@smthrs/flow"
+import { Flow } from "@smthrs/flow"
 import * as Bounded from "@smthrs/patterns/Bounded"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
@@ -166,13 +166,7 @@ export const RepoJanitor = Flow.make("examples/RepoJanitor", {
             else: () => Node.succeed(null)
           })
         ]))
-        // `Bounded.all` types its joined record loosely; the members are the
-        // fixer calls above, and each fails only with an agent failure.
-        const fixed = Bounded.all(members, { concurrency: 3 }) as Node.Node<
-          Readonly<Record<string, unknown>>,
-          AgentAction.AgentFailure,
-          Action.Requirement<"examples/RepoJanitor/Fix">
-        >
+        const fixed = Bounded.all(members, { concurrency: 3 })
         return Node.branch(Node.map(fixed, tally), {
           if: (totals) => totals.totalFixes > 0,
           then: (totals) => Summarize.call(totals),

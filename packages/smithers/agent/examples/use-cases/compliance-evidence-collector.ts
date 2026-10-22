@@ -14,7 +14,7 @@
  * 0.x gave the agents `read`, `write`, `bash` and `grep` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
-import { type Action, Flow, Interpreter } from "@smthrs/flow"
+import { Flow, Interpreter } from "@smthrs/flow"
 import * as Bounded from "@smthrs/patterns/Bounded"
 import { Node } from "@smthrs/plan"
 import * as Layer from "effect/Layer"
@@ -173,13 +173,7 @@ export const FetchEvidence = Flow.make("examples/ComplianceEvidenceCollector/Fet
       ])
     ))
     if (Object.keys(members).length === 0) return Node.succeed([])
-    // `Bounded.all` types its joined record loosely; every member above has
-    // already caught its own failure, so the join cannot fail.
-    const joined = Bounded.all(members, { concurrency }) as Node.Node<
-      Readonly<Record<string, unknown>>,
-      never,
-      Action.Requirement<"examples/ComplianceEvidenceCollector/Fetch">
-    >
+    const joined = Bounded.all(members, { concurrency })
     return Node.map(joined, (fetched) => Object.values(fetched).filter(Schema.is(EvidenceItem)))
   }
 })
@@ -200,13 +194,7 @@ export const NormalizeEvidence = Flow.make("examples/ComplianceEvidenceCollector
         method: item.method
       })
     ]))
-    // `Bounded.all` types its joined record loosely. A normalize failure fails
-    // the round, as it failed the 0.x run.
-    const joined = Bounded.all(members, { concurrency }) as Node.Node<
-      Readonly<Record<string, unknown>>,
-      AgentAction.AgentFailure,
-      Action.Requirement<"examples/ComplianceEvidenceCollector/Normalize">
-    >
+    const joined = Bounded.all(members, { concurrency })
     return Node.map(
       joined,
       (normalized): ReadonlyArray<Normalized> => Object.values(normalized).filter(Schema.is(Normalized))

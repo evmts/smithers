@@ -16,6 +16,7 @@
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
+import type * as Types from "effect/Types"
 import * as Compose from "./internal/Compose.ts"
 import { PatternError } from "./PatternError.ts"
 
@@ -99,10 +100,14 @@ const ranked = <Member>(
  * @category constructors
  * @since 0.1.0
  */
-export const all = (
-  members: Readonly<Record<string, Node.Any>>,
+export const all = <const Nodes extends Readonly<Record<string, Node.Any>>>(
+  members: Nodes,
   options: AllOptions
-): Node.Node<Readonly<Record<string, unknown>>, unknown, any> => {
+): Node.Node<
+  Types.Simplify<{ readonly [K in keyof Nodes]: Node.Success<Nodes[K]> }>,
+  Node.Error<Nodes[keyof Nodes]>,
+  Node.Services<Nodes[keyof Nodes]>
+> => {
   width(options.concurrency)
   const names = Object.keys(members)
   nonEmpty(names)
@@ -155,7 +160,13 @@ export const all = (
         ))
     )
   }
-  return visit(0, {})
+  // Batching preserves each member and key; only the private accumulator
+  // erases their heterogeneous types while it assembles planned references.
+  return visit(0, {}) as Node.Node<
+    Types.Simplify<{ readonly [K in keyof Nodes]: Node.Success<Nodes[K]> }>,
+    Node.Error<Nodes[keyof Nodes]>,
+    Node.Services<Nodes[keyof Nodes]>
+  >
 }
 
 /**

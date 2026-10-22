@@ -223,8 +223,7 @@ const nodeId = (file: string): string =>
 
 /**
  * Runs one step per file, at most `concurrency` at a time, and collects the
- * results in file order. `Bounded.all` types its joined record loosely, so the
- * results are re-typed with `is`.
+ * results in file order.
  */
 const perFile = <A, Tag extends Tags>(
   files: ReadonlyArray<string>,
@@ -234,11 +233,7 @@ const perFile = <A, Tag extends Tags>(
 ): Node.Node<ReadonlyArray<A>, AgentAction.AgentFailure, Action.Requirement<Tag>> => {
   if (files.length === 0) return Node.succeed([])
   const members = Object.fromEntries(files.map((file) => [nodeId(file), step(file)]))
-  const joined = Bounded.all(members, { concurrency }) as Node.Node<
-    Readonly<Record<string, unknown>>,
-    AgentAction.AgentFailure,
-    Action.Requirement<Tag>
-  >
+  const joined = Bounded.all(members, { concurrency })
   return Node.map(joined, Node.capture({}, (byFile) => Object.keys(members).map((key) => byFile[key]).filter(is)))
 }
 

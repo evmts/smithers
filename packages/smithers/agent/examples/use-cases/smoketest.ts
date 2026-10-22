@@ -106,13 +106,7 @@ const runChecks = (
     `check-${name}`,
     Node.catch(RunCheck.call({ name, cmd, directory, timeoutMs }), { onFailure: () => Node.succeed(null) })
   ]))
-  // `Bounded.all` types its joined record loosely; every member above has
-  // already caught its own failure, so the join cannot fail.
-  const joined = Bounded.all(members, { concurrency: maxParallel }) as Node.Node<
-    Readonly<Record<string, unknown>>,
-    never,
-    Action.Requirement<"examples/Smoketest/RunCheck">
-  >
+  const joined = Bounded.all(members, { concurrency: maxParallel })
   return Node.map(joined, (rows) => Object.values(rows).filter(Schema.is(CheckResult)))
 }
 

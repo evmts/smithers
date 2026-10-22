@@ -135,13 +135,7 @@ export const UpdateCandidates = Flow.make("examples/DependencyUpdate/UpdateCandi
       dependency.name,
       Node.catch(UpdateDependency.call({ ...dependency, directory }), { onFailure: () => Node.succeed(null) })
     ]))
-    // `Bounded.all` types its joined record loosely; every member above has
-    // already caught its own failure, so the join cannot fail.
-    const joined = Bounded.all(members, { concurrency: 3 }) as Node.Node<
-      Readonly<Record<string, unknown>>,
-      never,
-      Action.Requirement<"examples/DependencyUpdate/Update">
-    >
+    const joined = Bounded.all(members, { concurrency: 3 })
     return Node.map(joined, (updated) => Object.values(updated).filter(Schema.is(UpdateResult)))
   }
 })

@@ -122,13 +122,7 @@ export const FixAll = Flow.make("examples/DocSync/FixAll", {
       `fix-${i}`,
       Node.catch(FixDoc.call(discrepancy), { onFailure: () => Node.succeed(null) })
     ]))
-    // `Bounded.all` types its joined record loosely; every member above has
-    // already caught its own failure, so the join cannot fail.
-    const joined = Bounded.all(members, { concurrency: 3 }) as Node.Node<
-      Readonly<Record<string, unknown>>,
-      never,
-      Action.Requirement<"examples/DocSync/Fix">
-    >
+    const joined = Bounded.all(members, { concurrency: 3 })
     return Node.map(joined, (fixed) => Object.values(fixed).filter(Schema.is(FixResult)))
   }
 })

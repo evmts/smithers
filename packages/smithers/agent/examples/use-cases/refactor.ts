@@ -13,7 +13,7 @@
  * 0.x gave the agents `read`, `grep`, `edit` and `bash` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
-import { type Action, Flow, Interpreter } from "@smthrs/flow"
+import { Flow, Interpreter } from "@smthrs/flow"
 import * as Bounded from "@smthrs/patterns/Bounded"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
@@ -149,13 +149,7 @@ export const RefactorTargets = Flow.make("examples/Refactor/RefactorTargets", {
         { onFailure: () => Node.succeed(null) }
       )
     ]))
-    // `Bounded.all` types its joined record loosely; every member above has
-    // already caught its own failure, so the join cannot fail.
-    const joined = Bounded.all(members, { concurrency: 5 }) as Node.Node<
-      Readonly<Record<string, unknown>>,
-      never,
-      Action.Requirement<"examples/Refactor/RefactorFile">
-    >
+    const joined = Bounded.all(members, { concurrency: 5 })
     return Node.map(joined, (changed) => Object.values(changed).filter(Schema.is(Change)))
   }
 })

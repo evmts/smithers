@@ -178,8 +178,6 @@ const probeAll = (
 ): Node.Node<Readonly<Record<string, unknown>>, AgentAction.AgentFailure, ProbeRequirement> =>
   options.servers.length === 0
     ? Node.succeed({})
-    // `Bounded.all` types its joined record loosely; every member is a `Probe`
-    // call, so it fails only as a `Probe` fails.
     : Bounded.all(
       Object.fromEntries(options.servers.map((server) => [
         server,
@@ -190,7 +188,7 @@ const probeAll = (
         })
       ])),
       { concurrency: options.maxConcurrency }
-    ) as Node.Node<Readonly<Record<string, unknown>>, AgentAction.AgentFailure, ProbeRequirement>
+    )
 
 /** Every probe so far: the earlier rounds' and this round's. Pure, so it is a `Node.map`, not a step. */
 const accumulate = (

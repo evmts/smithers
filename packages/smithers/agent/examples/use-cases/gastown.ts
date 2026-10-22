@@ -524,13 +524,7 @@ export const Dispatch = Flow.make("examples/Gastown/Dispatch", {
       `polecat-${bead.id}`,
       Node.catch(retriedOnce(() => Polecat.call(bead)), { onFailure: () => Node.succeed(null) })
     ]))
-    // `Bounded.all` types its joined record loosely; every member above has
-    // already caught its own failure, so the join cannot fail.
-    const joined = Bounded.all(polecats, { concurrency: maxAgents }) as Node.Node<
-      Readonly<Record<string, unknown>>,
-      never,
-      Action.Requirement<"examples/Gastown/Polecat">
-    >
+    const joined = Bounded.all(polecats, { concurrency: maxAgents })
     const worked = Node.map(joined, (settled) => Object.values(settled).filter(Schema.is(PolecatResult)))
     const dispatched: Node.Node<
       { readonly results: ReadonlyArray<PolecatResult>; readonly witnessEvents: ReadonlyArray<WitnessEvent> },

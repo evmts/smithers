@@ -883,13 +883,7 @@ const parallel = <A, E, R>(
 ): Node.Node<ReadonlyArray<A>, E, R> => {
   if (members.length === 0) return Node.succeed([])
   const keys = members.map(([key]) => key)
-  // `Bounded.all` types its joined record loosely; each member keeps its own
-  // node type, so the record holds one `A` per key.
-  const joined = Bounded.all(Object.fromEntries(members), { concurrency: Math.max(1, concurrency) }) as Node.Node<
-    Readonly<Record<string, A>>,
-    E,
-    R
-  >
+  const joined = Bounded.all(Object.fromEntries(members), { concurrency: Math.max(1, concurrency) })
   return Node.map(joined, Node.capture({}, (settled) => keys.map((key) => settled[key]!)))
 }
 

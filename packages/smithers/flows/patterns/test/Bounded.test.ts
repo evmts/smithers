@@ -1,13 +1,14 @@
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
-import { expect } from "vitest"
+import { expect, expectTypeOf } from "vitest"
 import * as Bounded from "../src/Bounded.ts"
 import { PatternError } from "../src/PatternError.ts"
+import { execute } from "./Execute.ts"
 import { callsTo } from "./Graphs.ts"
 
 const worker = Flow.make("worker", {
@@ -31,6 +32,35 @@ const memberNode = (graph: Graph.Graph, name: string): Graph.GraphNode | undefin
   Graph.nodes(graph).find((node) => node.id.endsWith(`.all.${name}`))
 
 describe("Bounded", () => {
+  it("preserves each member's success, error, and requirements like Node.all", async () => {
+    const text = Action.make("bounded/text", { payload: {}, success: Schema.String, error: Schema.String })
+    const count = Action.make("bounded/count", { payload: {}, success: Schema.Number, error: Schema.Number })
+    const members = { text: text.call({}), count: count.call({}), flag: Node.succeed(true) }
+    const joined = Bounded.all(members, { concurrency: 1 })
+    const unbounded = Node.all(members)
+    expectTypeOf(joined).toEqualTypeOf<typeof unbounded>()
+    expectTypeOf<Node.Success<typeof joined>>().toEqualTypeOf<
+      { readonly text: string; readonly count: number; readonly flag: boolean }
+    >()
+    expectTypeOf<Node.Error<typeof joined>>().toEqualTypeOf<string | number>()
+    const host = Flow.make("bounded/typed", {
+      payload: {},
+      success: Schema.Struct({ text: Schema.String, count: Schema.Number, flag: Schema.Boolean }),
+      error: Schema.Union([Schema.String, Schema.Number]),
+      body: () => joined
+    })
+    expect(
+      await execute(
+        host,
+        {},
+        "bounded-typed",
+        text.toLayer(() => Effect.succeed("ready")),
+        count.toLayer(() => Effect.succeed(2))
+      )
+    )
+      .toEqual({ text: "ready", count: 2, flag: true })
+  })
+
   it("splits members into sequential batches of the declared width", () => {
     const graph = graphOf(Bounded.all(members(["a", "b", "c", "d", "e"]), { concurrency: 2 }))
     const joins = Graph.nodes(graph).filter((node) => node.kind === "All")
