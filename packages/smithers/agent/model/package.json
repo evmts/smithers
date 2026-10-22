@@ -60,7 +60,8 @@
     "./RequestExecutor": "./src/RequestExecutor.ts",
     "./Route": "./src/Route.ts",
     "./ToolStream": "./src/ToolStream.ts",
-    "./index": "./src/index.ts"
+    "./index": "./src/index.ts",
+    "./WireTrace": "./src/WireTrace.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -330,6 +331,16 @@
         "require": {
           "types": "./dist/cjs/ModelCatalog.d.ts",
           "default": "./dist/cjs/ModelCatalog.js"
+        }
+      },
+      "./WireTrace": {
+        "import": {
+          "types": "./dist/esm/WireTrace.d.ts",
+          "default": "./dist/esm/WireTrace.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WireTrace.d.ts",
+          "default": "./dist/cjs/WireTrace.js"
         }
       }
     }

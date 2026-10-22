@@ -148,3 +148,6 @@ export * as Route from "./Route.ts"
  * @slop
  */
 export * as ToolStream from "./ToolStream.ts"
+
+/** @since 1.0.0 */
+export * as WireTrace from "./WireTrace.ts"

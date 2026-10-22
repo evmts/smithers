@@ -28,7 +28,8 @@ const expectedExports = [
   "Protocol",
   "RequestExecutor",
   "Route",
-  "ToolStream"
+  "ToolStream",
+  "WireTrace"
 ] as const
 
 describe("CommonJS build", () => {

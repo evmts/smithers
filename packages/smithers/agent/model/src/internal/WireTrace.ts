@@ -1,7 +1,7 @@
 /**
  * Opt-in wire trace for prompt-cache and latency debugging.
  *
- * `SMITHERS_WIRE_TRACE=<file>` appends two JSON lines per model call, paired
+ * An injected `WireTrace` sink receives two records per model call, paired
  * by `call`.
  *
  * The `request` line is written as the request is first signed: the route,
@@ -21,8 +21,10 @@
  * @internal
  */
 
+import { Cause, Effect } from "effect"
 import * as CanonicalJson from "../CanonicalJson.ts"
 import type { Timing, Usage } from "../ModelEvent.ts"
+import type * as Sink from "../WireTrace.ts"
 
 interface Traced {
   readonly routeId: string
@@ -83,47 +85,46 @@ export const line = (
   }
 }
 
-interface NodeProcess {
-  readonly env: Record<string, string | undefined>
-  readonly getBuiltinModule: (id: "node:fs") => { readonly appendFileSync: (path: string, data: string) => void }
+/**
+ * One call's sink, retained so both records reach the same host.
+ * @category models
+ * @since 1.0.0
+ */
+export interface TracedCall {
+  readonly id: number
+  readonly sink: Sink.WireTrace
 }
 
-const append = (node: NodeProcess, file: string, value: Record<string, unknown>): void => {
-  try {
-    node.getBuiltinModule("node:fs").appendFileSync(file, `${JSON.stringify(value)}\n`)
-  } catch {
-    // An unwritable trace file is the tracer's problem, not the call's.
-  }
+const append = (sink: Sink.WireTrace, value: Record<string, unknown>): Effect.Effect<void> => {
+  const budget = sink.writeTimeoutMs ?? 1_000
+  return Effect.suspend(() => sink.write(value)).pipe(
+    Effect.timeout(Number.isFinite(budget) && budget > 0 ? budget : 1_000),
+    Effect.catchCause((cause) =>
+      Cause.hasInterrupts(cause)
+        ? Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+        : Effect.logDebug("Model wire trace write failed")
+    )
+  )
 }
 
-const traceFile = (node: NodeProcess | undefined): string | undefined => {
-  const file = node?.env.SMITHERS_WIRE_TRACE
-  return file === undefined || file === "" ? undefined : file
-}
-
-/** Numbers the traced calls of this process, so a call's two lines pair up. */
+/** Numbers traced calls so their two records pair up. */
 let calls = 0
 
 /**
- * Appends the request line when `SMITHERS_WIRE_TRACE` names a file, and
- * answers the number that pairs it with the call's response line. Tracing
- * never fails a model call: a runtime without `process` records nothing and
- * answers nothing.
- *
- * @category models
- * @since 1.0.0-rc.1
+ * Records a request only when the host supplied a sink.
+ * @category tracing
+ * @since 1.0.0
  */
 export const record = (
   prepared: Traced,
-  node: NodeProcess | undefined = (globalThis as { readonly process?: NodeProcess }).process
-): number | undefined => {
-  const file = traceFile(node)
-  if (file === undefined) return undefined
-  const call = ++calls
-  const { at, kind, ...request } = line(prepared)
-  append(node!, file, { at, kind, call, ...request })
-  return call
-}
+  sink: Sink.WireTrace | undefined
+): Effect.Effect<TracedCall | undefined> =>
+  Effect.suspend(() => {
+    if (sink === undefined) return Effect.succeed(undefined)
+    const id = ++calls
+    const { at, kind, ...request } = line(prepared)
+    return Effect.as(append(sink, { at, kind, call: id, ...request }), { id, sink })
+  })
 
 /**
  * What one call's response line is written from. Everything here is what the
@@ -196,20 +197,13 @@ export const responseLine = (call: number, answered: Answered, at: number): Reco
 })
 
 /**
- * Appends the response line of a call whose request line was written; `call`
- * is what {@link record} answered, and a call that was not traced records
- * nothing. `answered` is only evaluated when a line is written.
- *
- * @category models
+ * Records a response on the sink that received the request, if any.
+ * @category tracing
  * @since 1.0.0
  */
 export const recordResponse = (
-  call: number | undefined,
+  call: TracedCall | undefined,
   answered: () => Answered,
-  at: number,
-  node: NodeProcess | undefined = (globalThis as { readonly process?: NodeProcess }).process
-): void => {
-  const file = traceFile(node)
-  if (call === undefined || file === undefined) return
-  append(node!, file, responseLine(call, answered(), at))
-}
+  at: number
+): Effect.Effect<void> =>
+  Effect.suspend(() => call === undefined ? Effect.void : append(call.sink, responseLine(call.id, answered(), at)))

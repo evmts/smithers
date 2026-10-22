@@ -126,9 +126,32 @@ message is audit data; never execute it.
 
 ## Prompt cache
 
-**Cached input stops growing across a conversation.** Set
-`SMITHERS_WIRE_TRACE` to a file path and rerun. Each call appends two JSON
-lines, paired by `call`. The `request` line has the route, the
+**Cached input stops growing across a conversation.** Provide
+`WireTrace.layerFileSystem(path)` when building the route. Each call appends
+two JSON lines, paired by `call`.
+
+```ts
+import { Route, WireTrace } from "@smthrs/model"
+import { NodeHost } from "@smthrs/platform-node"
+import { Layer } from "effect"
+
+// `route` is your configured route; transport layers are provided separately.
+const tracedRoute = Route.layer(route).pipe(
+  Layer.provide(WireTrace.layerFileSystem("./model-trace.jsonl")),
+  Layer.provide(NodeHost.NodeFileSystem.layer)
+)
+```
+
+The default records no files, including in browsers and Workers.
+`SMITHERS_WIRE_TRACE` is no longer read implicitly; a host may read its own
+configuration and pass the chosen path. A custom `WireTrace.WireTrace` service
+can send the same records to another sink. Write failures log a diagnostic at
+debug level and never fail the model call. Cooperative writes have a 1,000 ms deadline; a custom sink can set a finite,
+positive `writeTimeoutMs`. Cancellation still records the response, waiting at
+most this budget for cleanup. Sinks must support interruption and must not block
+JavaScript synchronously.
+
+The `request` line has the route, the
 `prompt_cache_key` body field, the `session-id` header, `affinity` (whether a
 remembered `x-codex-turn-state` rides along), a short hash of the
 instructions, a hash and kind for each input item, and `commonPrefixItems`:
@@ -151,8 +174,8 @@ content. Compare the `request` line with the `usage` on the `response` line:
 
 ## Latency
 
-**A call waits a long time before its first token.** Set
-`SMITHERS_WIRE_TRACE` to a file path and rerun. The `response` line of each
+**A call waits a long time before its first token.** Enable the injected
+wire trace described above and rerun. The `response` line of each
 call is written when the call ends, however it ends. It is one line; it is
 wrapped here:
 

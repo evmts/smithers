@@ -8,7 +8,7 @@
  */
 
 import { SpanFailure } from "@smthrs/flow"
-import { Clock, Effect, Exit, Layer, Redacted, Result, Schema, Stream } from "effect"
+import { Clock, Effect, Exit, Layer, Option, Redacted, Result, Schema, Stream } from "effect"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as SchemaIssue from "effect/SchemaIssue"
 import * as AnthropicMessages from "./AnthropicMessages.ts"
@@ -26,6 +26,7 @@ import * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
 import * as OpenAIResponses from "./OpenAIResponses.ts"
 import type * as Protocol from "./Protocol.ts"
 import * as RequestExecutor from "./RequestExecutor.ts"
+import * as TraceSink from "./WireTrace.ts"
 
 /**
  * The credential-free representation used to construct a sealed model step.
@@ -273,7 +274,7 @@ const rememberAffinity = (slot: string, value: string): void => {
 interface Call {
   readonly timing: CallTiming.CallTiming
   /** The wire trace's number for the call, when it is traced. */
-  traced: number | undefined
+  traced: WireTrace.TracedCall | undefined
   status: number | undefined
   headers: Readonly<Record<string, string>> | undefined
   usage: Usage
@@ -291,7 +292,8 @@ const stream = <Body, Frame, Event, State>(
   route: Route<Body, Frame, Event, State>,
   executor: RequestExecutor.RequestExecutor,
   request: ModelRequest,
-  call: Call
+  call: Call,
+  sink: TraceSink.WireTrace | undefined
 ): Stream.Stream<ModelEvent, Model.ModelFailure> =>
   Stream.scoped(
     Stream.unwrap(
@@ -311,7 +313,7 @@ const stream = <Body, Frame, Event, State>(
             const token = slot === undefined ? undefined : affinity.get(slot)
             if (!traced) {
               traced = true
-              call.traced = WireTrace.record({ ...prepared, affinity: token !== undefined })
+              call.traced = yield* WireTrace.record({ ...prepared, affinity: token !== undefined }, sink)
             }
             const signedHeaders = {
               ...signed,
@@ -444,7 +446,8 @@ const stream = <Body, Frame, Event, State>(
 const measured = <Body, Frame, Event, State>(
   route: Route<Body, Frame, Event, State>,
   executor: RequestExecutor.RequestExecutor,
-  request: ModelRequest
+  request: ModelRequest,
+  sink: TraceSink.WireTrace | undefined
 ): Stream.Stream<ModelEvent, Model.ModelFailure> =>
   Stream.unwrap(Effect.map(Clock.clockWith(Effect.succeed), (clock) => {
     const timing = CallTiming.start(clock)
@@ -457,16 +460,16 @@ const measured = <Body, Frame, Event, State>(
       settled: undefined
     }
     let failure: string | undefined
-    return stream(route, executor, request, call).pipe(
+    return stream(route, executor, request, call, sink).pipe(
       Stream.mapError((error) => {
         failure = error.code
         timing.closed()
         return timed(error, timing.read())
       }),
       Stream.onExit((exit) =>
-        Effect.sync(() => {
+        Effect.suspend(() => {
           timing.closed()
-          WireTrace.recordResponse(call.traced, () => {
+          return WireTrace.recordResponse(call.traced, () => {
             const reading = timing.read()
             return {
               routeId: route.id,
@@ -510,7 +513,11 @@ export const toModel = <Body, Frame, Event, State>(
 ): Effect.Effect<Model.Model, never, RequestExecutor.RequestExecutor> =>
   Effect.gen(function*() {
     const executor = yield* RequestExecutor.RequestExecutor
-    return Model.make({ providerName: config.providerName, stream: (request) => measured(config, executor, request) })
+    const sink = Option.getOrUndefined(yield* Effect.serviceOption(TraceSink.WireTrace))
+    return Model.make({
+      providerName: config.providerName,
+      stream: (request) => measured(config, executor, request, sink)
+    })
   })
 
 /**

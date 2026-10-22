@@ -3,10 +3,14 @@
  * prefix it measures against the previous request on the same key, and the
  * environment switch that turns it on.
  */
-import { mkdtempSync, readFileSync } from "node:fs"
+import { NodeHost } from "@smthrs/platform-node"
+import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
+import { TestClock } from "effect/testing"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import { WireTrace as Sink } from "../src/index.ts"
 import * as WireTrace from "../src/internal/WireTrace.ts"
 
 const prepared = (body: Record<string, unknown>, key?: string) => ({
@@ -50,43 +54,6 @@ describe("WireTrace.line", () => {
       commonPrefixItems: 1
     })
     expect(WireTrace.line(prepared({}), history)).toMatchObject({ items: [], commonPrefixItems: 0 })
-  })
-})
-
-describe("WireTrace.record", () => {
-  it("appends one request line to the file SMITHERS_WIRE_TRACE names, and numbers the call", () => {
-    const file = join(mkdtempSync(join(tmpdir(), "wire-trace-")), "trace.jsonl")
-    const node = { env: { SMITHERS_WIRE_TRACE: file }, getBuiltinModule: process.getBuiltinModule } as never
-    const first = WireTrace.record(prepared({ input: [user("a")] }, "record-k"), node)
-    const second = WireTrace.record(prepared({ input: [user("a"), user("b")] }, "record-k"), node)
-    const lines = readFileSync(file, "utf8").trim().split("\n").map((text) => JSON.parse(text))
-    expect(lines.map((line) => line.commonPrefixItems)).toEqual([0, 1])
-    expect(lines.map((line) => line.kind)).toEqual(["request", "request"])
-    // The number is what pairs a call's request line with its response line.
-    expect(lines.map((line) => line.call)).toEqual([first, second])
-    expect(second).toBe(first! + 1)
-  })
-
-  it("records nothing when the variable is unset or empty, or when there is no process", () => {
-    let writes = 0
-    const counting = { appendFileSync: () => void writes++ }
-    expect(WireTrace.record(prepared({}), { env: {}, getBuiltinModule: () => counting })).toBeUndefined()
-    WireTrace.record(prepared({}), { env: { SMITHERS_WIRE_TRACE: "" }, getBuiltinModule: () => counting })
-    WireTrace.record(prepared({}), undefined)
-    expect(writes).toBe(0)
-    expect(() => WireTrace.record(prepared({}))).not.toThrow()
-  })
-
-  it("never fails the call when the trace file cannot be written", () => {
-    const failing = {
-      appendFileSync: () => {
-        throw new Error("read-only")
-      }
-    }
-    expect(() =>
-      WireTrace.record(prepared({}), { env: { SMITHERS_WIRE_TRACE: "/x" }, getBuiltinModule: () => failing })
-    )
-      .not.toThrow()
   })
 })
 
@@ -152,42 +119,143 @@ describe("WireTrace.responseLine", () => {
   })
 })
 
-describe("WireTrace.recordResponse", () => {
-  it("appends the response line after the call's request line", () => {
-    const file = join(mkdtempSync(join(tmpdir(), "wire-trace-")), "trace.jsonl")
-    const node = { env: { SMITHERS_WIRE_TRACE: file }, getBuiltinModule: process.getBuiltinModule } as never
-    const call = WireTrace.record(prepared({ input: [user("a")] }, "response-k"), node)
-    WireTrace.recordResponse(call, () => answered({ status: 200 }), 9_400, node)
-    const lines = readFileSync(file, "utf8").trim().split("\n").map((text) => JSON.parse(text))
-    expect(lines.map((line) => [line.kind, line.call])).toEqual([["request", call], ["response", call]])
-  })
-
-  it("records nothing, and reads nothing, for a call that was not traced", () => {
-    let writes = 0
-    let read = 0
-    const counting = { appendFileSync: () => void writes++ }
-    const reading = () => {
-      read++
-      return answered()
-    }
-    WireTrace.recordResponse(undefined, reading, 0, {
-      env: { SMITHERS_WIRE_TRACE: "/x" },
-      getBuiltinModule: () => counting
+describe("the injected wire trace", () => {
+  it("appends paired records using the Node host filesystem, preserving existing content", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "wire-trace-"))
+    const file = join(directory, "trace.jsonl")
+    const run = Effect.gen(function*() {
+      const sink = yield* Sink.WireTrace
+      const first = yield* WireTrace.record(prepared({ input: [user("a")] }, "record-k"), sink)
+      const second = yield* WireTrace.record(prepared({ input: [user("a"), user("b")] }, "record-k"), sink)
+      yield* WireTrace.recordResponse(first, () => answered({ status: 200 }), 9_400)
+      return [first!.id, second!.id]
     })
-    WireTrace.recordResponse(1, reading, 0, { env: {}, getBuiltinModule: () => counting })
-    WireTrace.recordResponse(1, reading, 0, undefined)
-    expect([writes, read]).toEqual([0, 0])
-    expect(() => WireTrace.recordResponse(1, reading, 0)).not.toThrow()
+    try {
+      const ids = await Effect.runPromise(run.pipe(
+        Effect.provide(Sink.layerFileSystem(file)),
+        Effect.provide(NodeHost.NodeFileSystem.layer)
+      ))
+      const lines = readFileSync(file, "utf8").trim().split("\n").map((text) => JSON.parse(text))
+      expect(lines.map((line) => [line.kind, line.call])).toEqual([["request", ids[0]], ["request", ids[1]], [
+        "response",
+        ids[0]
+      ]])
+      expect(lines.slice(0, 2).map((line) => line.commonPrefixItems)).toEqual([0, 1])
+      expect(ids[1]).toBe(ids[0]! + 1)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
-  it("never fails the call when the trace file cannot be written", () => {
-    const failing = {
-      appendFileSync: () => {
-        throw new Error("read-only")
-      }
-    }
-    expect(() =>
-      WireTrace.recordResponse(1, answered, 0, { env: { SMITHERS_WIRE_TRACE: "/x" }, getBuiltinModule: () => failing })
-    ).not.toThrow()
+  it("does not evaluate a request or response when no sink was provided", async () => {
+    const invalid = { ...prepared({}), bodyText: "not json" }
+    expect(await Effect.runPromise(WireTrace.record(invalid, undefined))).toBeUndefined()
+    await Effect.runPromise(WireTrace.recordResponse(undefined, () => {
+      throw new Error("must not read")
+    }, 0))
   })
+
+  it("keeps diagnostic failures from failing a call, for request and response writes", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "wire-trace-"))
+    try {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const sink = yield* Sink.WireTrace
+          const call = yield* WireTrace.record(prepared({}), sink)
+          expect(call).toBeDefined()
+          yield* WireTrace.recordResponse(call, answered, 0)
+        }).pipe(
+          // A directory cannot be opened as an append file: the real host fails.
+          Effect.provide(Sink.layerFileSystem(directory)),
+          Effect.provide(NodeHost.NodeFileSystem.layer)
+        )
+      )
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+})
+
+it.each(["typed", "defect", "throw"])(
+  "isolates a sink's %s failure from request and response recording",
+  async (kind) => {
+    const sink = Sink.WireTrace.of({
+      write: () => {
+        if (kind === "throw") throw new Error("diagnostic secret")
+        return kind === "typed" ? Effect.fail("diagnostic secret") : Effect.die("diagnostic secret")
+      }
+    })
+    const call = await Effect.runPromise(WireTrace.record(prepared({}), sink))
+    expect(call).toBeDefined()
+    await Effect.runPromise(WireTrace.recordResponse(call, answered, 0))
+  }
+)
+
+it.each([undefined, 25, 0, -1, Infinity, NaN])(
+  "bounds an async finalizer write (budget %s)",
+  async (writeTimeoutMs) => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const sink = Sink.WireTrace.of({
+          writeTimeoutMs,
+          write: () => Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(release))
+        })
+        const fiber = yield* WireTrace.recordResponse({ id: 1, sink }, answered, 0).pipe(
+          Effect.uninterruptible,
+          Effect.forkChild
+        )
+        yield* Deferred.await(started)
+        yield* TestClock.adjust(writeTimeoutMs === 25 ? 25 : 1_000)
+        const beforeRelease = fiber.pollUnsafe()
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.await(fiber)
+        expect(beforeRelease).toBeDefined()
+        expect(Exit.isSuccess(beforeRelease!)).toBe(true)
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
+  }
+)
+
+it.each(["request", "response"])("preserves cancellation during a pending %s write", async (kind) => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const sink = Sink.WireTrace.of({
+        writeTimeoutMs: 25,
+        write: () => Effect.andThen(Deferred.succeed(started, undefined), Deferred.await(release))
+      })
+      const write = kind === "request"
+        ? WireTrace.record(prepared({}), sink)
+        : WireTrace.recordResponse({ id: 1, sink }, answered, 0).pipe(Effect.uninterruptible)
+      const fiber = yield* write.pipe(Effect.forkChild)
+      yield* Deferred.await(started)
+      const interrupted = yield* Fiber.interrupt(fiber).pipe(Effect.forkChild)
+      yield* TestClock.adjust(25)
+      const beforeRelease = interrupted.pollUnsafe()
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.await(interrupted)
+      expect(beforeRelease).toBeDefined()
+      expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true)
+    }).pipe(Effect.provide(TestClock.layer()))
+  )
+})
+
+it("retains original interruption reasons and isolates accompanying sink faults", async () => {
+  const interruption = Cause.makeInterruptReason(42)
+  const sink = Sink.WireTrace.of({
+    write: () =>
+      Effect.failCause(Cause.fromReasons([
+        Cause.makeFailReason("diagnostic secret"),
+        Cause.makeDieReason("diagnostic defect"),
+        interruption
+      ]))
+  })
+  const exit = await Effect.runPromiseExit(
+    WireTrace.recordResponse({ id: 1, sink }, answered, 0).pipe(Effect.uninterruptible)
+  )
+  expect(Exit.isFailure(exit)).toBe(true)
+  if (Exit.isFailure(exit)) expect(exit.cause.reasons).toEqual([interruption])
 })

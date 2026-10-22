@@ -146,11 +146,6 @@ export const KNOWN_HOST_ACCESS = [
     reason: "reads its configuration from process.env"
   },
   {
-    module: "packages/smithers/agent/model/src/internal/WireTrace.ts",
-    kinds: ["ambient-global", "builtin", "host-module"],
-    reason: "appends the opt-in SMITHERS_WIRE_TRACE file through node:fs"
-  },
-  {
     module: "packages/smithers/flows/engine-store/src/OwnerIdentity.ts",
     kinds: ["ambient-global"],
     reason: "reads process.pid into the run owner's identity"

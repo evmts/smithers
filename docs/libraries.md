@@ -166,7 +166,6 @@ them stops reaching the host, so the list only shrinks.
 
 | Module | Reaches | For |
 | --- | --- | --- |
-| `@smthrs/model` `src/internal/WireTrace.ts` | `process.env`, `getBuiltinModule("node:fs")` | Appending the opt-in `SMITHERS_WIRE_TRACE` file |
 | `@smthrs/engine-store` `src/internal/HostReflection.ts` | `getBuiltinModule("node:util/types")` | Proxy and native-error detection |
 | `@smthrs/engine` `src/internal/Diagnostic.ts` | `getBuiltinModule("node:util")` | Proxy detection |
 | `@smthrs/run-store` `src/Ownership.ts` | `process.kill(pid, 0)` | `sameHostPidProbe` |

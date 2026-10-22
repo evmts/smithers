@@ -132,6 +132,9 @@ The root entry point exports these namespaces. Each is also importable from
 - **`ToolStream`**: Pure accumulation of fragmented provider tool-call arguments.
   `OpenToolCall`, `State`, `Completed`, `EndResult`, `FlushResult`, `initial`, `start`, `delta`, `end`, `flushAborted`
 
+- **`WireTrace`**: Optional credential-free request and response diagnostics.
+  `WireTrace`, `layerFileSystem` (requires the host FileSystem); no file writes by default.
+
 `@smthrs/model/package.json` is also exported. The `internal/*` and nested
 `*/index` subpaths are blocked.
 

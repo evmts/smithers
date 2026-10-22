@@ -7,6 +7,7 @@
  * those moments. No value in this file depends on how long the test took.
  */
 import { Capability, Permission } from "@smthrs/capability"
+import { NodeHost } from "@smthrs/platform-node"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -26,6 +27,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import type * as Auth from "../src/Auth.ts"
+import { WireTrace } from "../src/index.ts"
 import { ModelError } from "../src/ModelError.ts"
 import type * as ModelEvent from "../src/ModelEvent.ts"
 import * as ModelRequest from "../src/ModelRequest.ts"
@@ -727,17 +729,13 @@ describe("the wire trace's response line", () => {
   }
   const chatgpt = Result.getOrThrow(OpenAIChatGPT.make({ auth: signing }))
 
-  // Runs `effect` with `SMITHERS_WIRE_TRACE` naming a fresh file and answers its lines.
+  // Runs against the Node host's real filesystem, with tracing explicitly injected.
   const traced = async (effect: Effect.Effect<unknown, unknown, never>) => {
     const file = join(mkdtempSync(join(tmpdir(), "wire-trace-")), "trace.jsonl")
-    const before = process.env["SMITHERS_WIRE_TRACE"]
-    process.env["SMITHERS_WIRE_TRACE"] = file
-    try {
-      await onTestClock(effect)
-    } finally {
-      if (before === undefined) delete process.env["SMITHERS_WIRE_TRACE"]
-      else process.env["SMITHERS_WIRE_TRACE"] = before
-    }
+    await onTestClock(effect.pipe(
+      Effect.provide(WireTrace.layerFileSystem(file)),
+      Effect.provide(NodeHost.NodeFileSystem.layer)
+    ))
     const text = readFileSync(file, "utf8")
     return { text, lines: text.trim().split("\n").map((line) => JSON.parse(line) as Record<string, any>) }
   }
@@ -872,15 +870,13 @@ describe("the wire trace's response line", () => {
       sign: () => Effect.fail(new ModelError({ code: "authentication", message: "no credential" }))
     }
     const file = join(mkdtempSync(join(tmpdir(), "wire-trace-")), "trace.jsonl")
-    process.env["SMITHERS_WIRE_TRACE"] = file
-    try {
-      const error = await onTestClock(
-        Effect.flatMap(streamOf(withAuth(openai, unsigned), []), (stream) => Effect.flip(Stream.runDrain(stream)))
+    const error = await onTestClock(
+      Effect.flatMap(streamOf(withAuth(openai, unsigned), []), (stream) => Effect.flip(Stream.runDrain(stream))).pipe(
+        Effect.provide(WireTrace.layerFileSystem(file)),
+        Effect.provide(NodeHost.NodeFileSystem.layer)
       )
-      expect(error).toMatchObject({ code: "authentication" })
-    } finally {
-      delete process.env["SMITHERS_WIRE_TRACE"]
-    }
+    )
+    expect(error).toMatchObject({ code: "authentication" })
     expect(() => readFileSync(file, "utf8")).toThrow()
   })
 })
