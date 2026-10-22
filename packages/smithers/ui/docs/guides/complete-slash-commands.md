@@ -71,8 +71,10 @@ own Enter and Escape. Shift+Enter, Shift+Tab, a key held with a modifier, and
 keys during an IME composition stay the composer's. A click accepts a row
 without taking focus from the input.
 
+A `readOnly` composer hides completions and never invokes their callbacks.
+
 The input stays a textbox. It declares `aria-autocomplete="list"` and
-`aria-haspopup="listbox"` whenever `completions` is set, and while rows show it
+`aria-haspopup="listbox"` whenever `completions` is set and the composer is editable, and while rows show it
 names the list with `aria-controls` and the highlighted row with
 `aria-activedescendant`. The list is a `listbox` named by `label`.
 

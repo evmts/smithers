@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useMemo, useRef, useSyncExternalStore } from "react";
+import { useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { timelineLevels, type TimelineBlock } from "./timelineZoom";
 export { timelineCapacity, timelineLevelCount, timelineLevels, type TimelineBlock, type TimelineLevel } from "./timelineZoom";
 import { useInjectUiCss } from "../styles";
@@ -42,6 +42,9 @@ export const timelineKey = (key: string, index: number, length: number): number 
 export function ChatTimeline({ entries, onJump, groupSummaries = {}, onGroupsChange }: ChatTimelineProps) {
   useInjectUiCss();
   const rail = useRef<HTMLElement>(null);
+  const onGroupsChangeRef = useRef(onGroupsChange);
+  useLayoutEffect(() => { onGroupsChangeRef.current = onGroupsChange; }, [onGroupsChange]);
+  const hasGroupsChange = onGroupsChange !== undefined;
   const ids = entries.map(entry => entry.id).join("\0");
   const geometry = useMemo(() => {
     let snapshot = "408|";
@@ -66,7 +69,7 @@ export function ChatTimeline({ entries, onJump, groupSummaries = {}, onGroupsCha
           const last = Math.max(first, list.indexOf(visible.at(-1) ?? ""));
           const groups = timelineLevels(list, height, first, last).filter(level => level.level > 0).flatMap(level => level.blocks);
           const key = JSON.stringify(groups);
-          if (key !== groupKey) { groupKey = key; onGroupsChange?.(groups); }
+          if (key !== groupKey) { groupKey = key; onGroupsChangeRef.current?.(groups); }
         };
         document.addEventListener("scroll", update, true);
         window.addEventListener("resize", update);
@@ -77,7 +80,7 @@ export function ChatTimeline({ entries, onJump, groupSummaries = {}, onGroupsCha
         return () => { observer.disconnect(); document.removeEventListener("scroll", update, true); window.removeEventListener("resize", update); };
       },
     };
-  }, [ids, onGroupsChange]);
+  }, [ids, hasGroupsChange]);
   const snapshot = useSyncExternalStore(geometry.subscribe, geometry.read, () => "408|");
   const [height, visible = ""] = snapshot.split("|");
   const band = visible.split("\0");

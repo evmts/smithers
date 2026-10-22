@@ -28,7 +28,7 @@ export const chatTimelineCss = `
 .sui-timeline-disclosure,.sui-timeline-disclosure[open]{inset-inline-end:calc(100% + 24px);top:0;bottom:0;width:190px;border:0;background:none;box-shadow:none}
 .sui-timeline-disclosure>summary{display:none}
 .sui-timeline-disclosure::details-content{display:block;content-visibility:visible}
-.sui-timeline-disclosure .sui-chat-timeline,.sui-timeline-disclosure[open] .sui-chat-timeline{display:block;width:190px;padding:0;max-height:70vh;overflow:visible}
+.sui-timeline-disclosure .sui-chat-timeline,.sui-timeline-disclosure[open] .sui-chat-timeline{display:flex;width:190px;padding:0;max-height:70vh;overflow:visible}
 .sui-chat-timeline li{min-height:0}
 .sui-timeline-preview{position:absolute;z-index:6;inset-inline-start:0;top:100%;width:240px}
 }}

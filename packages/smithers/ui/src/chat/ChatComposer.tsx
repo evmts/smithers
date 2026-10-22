@@ -118,7 +118,7 @@ export function ChatComposer({
 }: ChatComposerProps) {
   useInjectUiCss();
   const listId = `${useId()}-completions`;
-  const listed = completions !== undefined && completions.items.length > 0 ? completions : undefined;
+  const listed = !readOnly && completions !== undefined && completions.items.length > 0 ? completions : undefined;
   const highlighted = listed === undefined ? 0 : clampHighlight(listed.highlighted, listed.items.length);
   const busy = lifecycleStatus === "submitted" || lifecycleStatus === "streaming";
   const canSubmit = !disabled && !readOnly && (!busy || submitWhileBusy) && value.trim().length > 0;
@@ -178,8 +178,8 @@ export function ChatComposer({
 
   const input = (
     <textarea
-      aria-autocomplete={completions === undefined ? undefined : "list"}
-      aria-haspopup={completions === undefined ? undefined : "listbox"}
+      aria-autocomplete={readOnly || completions === undefined ? undefined : "list"}
+      aria-haspopup={readOnly || completions === undefined ? undefined : "listbox"}
       aria-controls={listed === undefined ? undefined : listId}
       aria-activedescendant={listed === undefined ? undefined : completionOptionId(listId, highlighted)}
       {...textareaProps}

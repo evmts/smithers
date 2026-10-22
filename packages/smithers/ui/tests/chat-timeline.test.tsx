@@ -1,6 +1,65 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { ChatTimeline, timelineKey, timelineLabel, type ChatTimelineEntry } from "../src/chat/ChatTimeline";
+import { chatTimelineCss } from "../src/chat/chatTimelineCss";
+
+test("inline group callbacks can update parent summaries without repeating unchanged groups", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const entries = Array.from({ length: 100 }, (_, index) => ({ id: `group-entry-${index}`, kind: "ask" as const, state: "done" as const }));
+  let notifications = 0;
+  function Parent() {
+    const [summaries, setSummaries] = useState<Readonly<Record<string, string>>>({});
+    return <ChatTimeline entries={entries} groupSummaries={summaries} onGroupsChange={groups => {
+      notifications++;
+      // Bound the faulty build's feedback loop so the regression can fail without hanging.
+      if (notifications <= 3) setSummaries(Object.fromEntries(groups.map(group => [group.id, "Group summary"])));
+    }} />;
+  }
+  try {
+    await act(async () => root.render(<Parent />));
+    expect(host.textContent).toContain("Group summary");
+    expect(notifications).toBe(1);
+    await act(async () => {
+      document.dispatchEvent(new Event("scroll"));
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(notifications).toBe(1);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("desktop timeline keeps zoom levels in flex columns", () => {
+  // Check the shipped desktop override, including its higher-specificity open disclosure selector.
+  const desktop = chatTimelineCss.slice(chatTimelineCss.indexOf("@media(min-width:1180px)"), chatTimelineCss.indexOf(".sui-timeline-band{position:"));
+  const declarations = desktop.match(/\.sui-timeline-disclosure \.sui-chat-timeline,\.sui-timeline-disclosure\[open\] \.sui-chat-timeline\{([^}]+)\}/)?.[1];
+  expect(declarations).toBeDefined();
+  const style = document.createElement("div").style;
+  style.cssText = `display:flex;flex-direction:row;${declarations}`;
+  expect(style.display).toBe("flex");
+  expect(style.flexDirection).toBe("row");
+  expect(chatTimelineCss).toContain(".sui-chat-timeline ol{position:relative;display:flex;flex-direction:column");
+});
+
+test("enabling group callbacks requests current groups even without geometry changes", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const entries = Array.from({ length: 100 }, (_, index) => ({ id: `late-group-${index}`, kind: "ask" as const, state: "done" as const }));
+  const received: string[] = [];
+  try {
+    await act(async () => root.render(<ChatTimeline entries={entries} />));
+    await act(async () => root.render(<ChatTimeline entries={entries} onGroupsChange={groups => { if (groups.length) received.push("first"); }} />));
+    expect(received).toEqual(["first"]);
+    await act(async () => root.render(<ChatTimeline entries={entries} />));
+    await act(async () => root.render(<ChatTimeline entries={entries} onGroupsChange={groups => { if (groups.length) received.push("second"); }} />));
+    expect(received).toEqual(["first", "second"]);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
 
 test("timeline keys are bounded and leave other keys to the host", () => {
   for (const key of ["ArrowDown", "j"]) { expect(timelineKey(key, 1, 3)).toBe(2); expect(timelineKey(key, 2, 3)).toBe(2); }

@@ -44,7 +44,7 @@ const host = (highlighted = 0, items = ["/theme", "/help", "/clone"]) => {
   return { calls, completions };
 };
 
-async function render(props: { completions?: ChatComposerCompletions; onStop?: () => void; submitted?: Array<string>; busy?: boolean }) {
+async function render(props: { completions?: ChatComposerCompletions; onStop?: () => void; submitted?: Array<string>; busy?: boolean; readOnly?: boolean }) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -58,6 +58,7 @@ async function render(props: { completions?: ChatComposerCompletions; onStop?: (
         lifecycleStatus={props.busy ? "streaming" : "ready"}
         onStop={props.onStop}
         completions={props.completions}
+        readOnly={props.readOnly}
       />,
     )
   );
@@ -76,6 +77,33 @@ async function press(key: string, init: KeyboardEventInit = {}): Promise<Keyboar
 }
 
 describe("ChatComposer completions", () => {
+  test("read-only drafts do not invoke completion callbacks from the keyboard", async () => {
+    const { calls, completions } = host();
+    const submitted: string[] = [];
+    await render({ completions, readOnly: true, submitted });
+    for (const key of ["Enter", "Tab", "ArrowDown", "ArrowUp", "Escape"]) await press(key);
+    expect(calls).toEqual([]);
+    expect(submitted).toEqual([]);
+    expect(textarea().value).toBe("/");
+    expect(textarea().readOnly).toBe(true);
+  });
+
+  test("read-only drafts offer no pointer completion that can change the draft", async () => {
+    const { calls, completions } = host();
+    await render({ completions, readOnly: true });
+    await act(async () => {
+      for (const option of options()) {
+        option.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+        option.click();
+      }
+    });
+    expect(calls).toEqual([]);
+    expect(listbox()).toBeNull();
+    for (const name of ["aria-autocomplete", "aria-haspopup", "aria-controls", "aria-activedescendant"]) {
+      expect(textarea().getAttribute(name)).toBeNull();
+    }
+  });
+
   test("rows show as a labelled listbox the input points at, with the highlighted row selected", async () => {
     const { completions } = host(1);
     await render({ completions });
