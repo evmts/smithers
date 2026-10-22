@@ -187,8 +187,8 @@ describe("one npm CLI backend contracts", () => {
     expect(result.code, result.output).toBe(0)
     expect(calls).toEqual([
       ["POST", "/api/repos/owner/repo/issues/7/labels", { labels: ["bug"] }],
-      ["GET", "/api/repos/owner/repo/issues/7", undefined],
-      ["PATCH", "/api/repos/owner/repo/issues/7", { body: "", assignees: ["alice", "bob"] }]
+      ["POST", "/api/repos/owner/repo/issues/7/assignees", { assignees: ["bob"] }],
+      ["PATCH", "/api/repos/owner/repo/issues/7", { body: "" }]
     ])
   })
   it("keeps private wiki reads in the selected space", async () => {
