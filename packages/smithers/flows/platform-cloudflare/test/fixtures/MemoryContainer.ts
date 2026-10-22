@@ -35,6 +35,7 @@ export interface Interactive {
   readonly breakOutput: Effect.Effect<void>
   /** The next bytes stdin received. */
   readonly typed: Effect.Effect<Uint8Array>
+  readonly resized: Effect.Effect<void>
   readonly resizes: Array<readonly [number, number]>
   readonly kills: Array<number | undefined>
   /** The exit code, once the process exits. */
@@ -52,6 +53,8 @@ export interface Faults {
   readonly stdin?: boolean
   /** Resizing fails. */
   readonly resize?: boolean
+  /** Holds stdin after receiving a chunk, to exercise backpressure. */
+  readonly holdStdin?: Deferred.Deferred<void>
   /** Every `exec` waits for this, after announcing itself on `entered`. */
   readonly hold?: Deferred.Deferred<void>
 }
@@ -80,6 +83,7 @@ export const make = (
       const typed = yield* Queue.unbounded<Uint8Array>()
       const exitCode = yield* Deferred.make<number>()
       const resizes: Array<readonly [number, number]> = []
+      const resized = yield* Queue.unbounded<void>()
       const kills: Array<number | undefined> = []
       const exit = (code: number) =>
         Effect.andThen(Queue.end(output), Deferred.succeed(exitCode, code)).pipe(Effect.asVoid)
@@ -90,6 +94,7 @@ export const make = (
         exit,
         breakOutput: Effect.asVoid(Queue.fail(output, new ContainerFailure({ message: "output broke" }))),
         typed: Queue.take(typed),
+        resized: Queue.take(resized),
         resizes,
         kills,
         exited: Deferred.await(exitCode)
@@ -99,7 +104,12 @@ export const make = (
         stdin: options?.stdin === "pipe" && faults.noStdin !== true
           ? faults.stdin === true
             ? Sink.forEach(() => Effect.fail(new ContainerFailure({ message: "stdin broke" })))
-            : Sink.forEach((chunk: Uint8Array) => Queue.offer(typed, chunk.slice()))
+            : Sink.forEach((chunk: Uint8Array) =>
+              Effect.andThen(
+                Queue.offer(typed, chunk.slice()),
+                faults.holdStdin === undefined ? Effect.void : Deferred.await(faults.holdStdin)
+              )
+            )
           : undefined,
         stdout: faults.noStdout === true ? undefined : Stream.fromQueue(output),
         exitCode: Deferred.await(exitCode),
@@ -113,6 +123,7 @@ export const make = (
             ? Effect.fail(new ContainerFailure({ message: "resize broke" }))
             : Effect.sync(() => {
               resizes.push([cols, rows])
+              Queue.offerUnsafe(resized, undefined)
             })
       }
       return process
@@ -157,6 +168,8 @@ export interface MemorySocket {
   readonly emit: (type: "message" | "close" | "error", data?: unknown) => void
   /** Makes every later send throw, as a send on a socket that went away does. */
   readonly breakSends: () => void
+  readonly closeCalls: Array<{ readonly code: number | undefined; readonly reason: string | undefined }>
+  readonly listenerCount: () => number
 }
 
 /** A server WebSocket the test plays the viewer of. */
@@ -165,8 +178,11 @@ export const socket = (): MemorySocket => {
   const sent = Effect.runSync(Queue.unbounded<Sent>())
   const closed = Effect.runSync(Deferred.make<number | undefined>())
   let broken = false
+  const closeCalls: MemorySocket["closeCalls"] = []
   return {
     next: Queue.take(sent),
+    closeCalls,
+    listenerCount: () => [...listeners.values()].reduce((total, entries) => total + entries.length, 0),
     closed: Deferred.await(closed),
     breakSends: () => {
       broken = true
@@ -179,11 +195,15 @@ export const socket = (): MemorySocket => {
         if (broken) throw new TypeError("WebSocket send() after close")
         Queue.offerUnsafe(sent, typeof message === "string" ? message : new Uint8Array(message).slice())
       },
-      close: (code) => {
+      close: (code, reason) => {
+        closeCalls.push({ code, reason })
         Deferred.doneUnsafe(closed, Effect.succeed(code))
       },
       addEventListener: (type, listener) => {
         listeners.set(type, [...(listeners.get(type) ?? []), listener])
+      },
+      removeEventListener: (type, listener) => {
+        listeners.set(type, (listeners.get(type) ?? []).filter((entry) => entry !== listener))
       }
     }
   }

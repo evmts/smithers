@@ -30,6 +30,7 @@
  */
 
 import { TerminalProtocol } from "@smthrs/sandbox"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
@@ -120,6 +121,7 @@ export interface Socket {
   send(message: string | ArrayBuffer | Uint8Array): void
   close(code?: number, reason?: string): void
   addEventListener(type: "message" | "close" | "error", listener: (event: SocketEvent) => void): void
+  removeEventListener(type: "message" | "close" | "error", listener: (event: SocketEvent) => void): void
 }
 
 /**
@@ -457,8 +459,30 @@ const encoder = new TextEncoder()
 const textBytes = (text: string): number =>
   text.length > TerminalProtocol.maxFrameBytes ? text.length : encoder.encode(text).byteLength
 
-/** Every inbound event, in order, as the queue the bridge reads. */
-type Inbound = { readonly _tag: "Message"; readonly data: unknown } | { readonly _tag: "Closed" }
+/** A validated frame or a content-free refusal, in arrival order. */
+type Inbound = Binary | { readonly _tag: "Resize"; readonly control: TerminalProtocol.Resize } | {
+  readonly _tag: "Verdict"
+  readonly verdict: Verdict
+}
+
+/** At most 1 MiB of retained frames across ingress, stdin and the pending write. */
+const inputByteBudget = 16 * TerminalProtocol.maxFrameBytes
+const frameOverhead = 64
+const frameCost = (size: number): number => frameOverhead + size
+
+/** Validate before retaining any socket payload, including while exec or stdin is stalled. */
+const decode = (data: unknown): Inbound => {
+  if (typeof data === "string") {
+    if (textBytes(data) > TerminalProtocol.maxFrameBytes) return { _tag: "Verdict", verdict: tooBig }
+    const control = TerminalProtocol.decodeClientControl(data)
+    return control === undefined ? { _tag: "Verdict", verdict: unsupported } : { _tag: "Resize", control }
+  }
+  const frame = binary(data)
+  if (frame === undefined) return { _tag: "Verdict", verdict: unsupported }
+  return (frame._tag === "Buffer" ? frame.bytes.byteLength : frame.size) > TerminalProtocol.maxFrameBytes
+    ? { _tag: "Verdict", verdict: tooBig }
+    : frame
+}
 
 /**
  * Bridges an accepted server WebSocket to a new tmux client attached to the
@@ -487,7 +511,10 @@ type Inbound = { readonly _tag: "Message"; readonly data: unknown } | { readonly
  *
  * Invalid options close the socket with `CloseCode.unsupported` before
  * anything runs; a failed `exec`, stdin, resize or output stream with
- * `CloseCode.failed`. Run it in the background of the Durable Object for
+ * `CloseCode.failed`. Retained frames share a 1 MiB budget across both queues and the pending write,
+ * charged at 64 bytes per frame plus its binary byte length (zero for resize);
+ * overflow closes with `CloseCode.failed` and reason `Terminal input buffer full`.
+ * Interruption closes the socket and removes all listeners. Run it in the background of the Durable Object for
  * the socket's lifetime, started right after `accept()`.
  *
  * @category operations
@@ -513,20 +540,55 @@ export const attach = <E, R>(
         try: () => socket.send(message),
         catch: () => closed
       })
-    const close = (code: number) => Effect.ignore(Effect.try(() => socket.close(code)))
+    let finished = false
+    let overflow = false
+    const close = (code: number, reason?: string) =>
+      Effect.ignore(Effect.try(() => {
+        finished = true
+        socket.close(code, reason)
+      }))
 
+    let retainedBytes = 0
     const events = yield* Queue.unbounded<Inbound>()
-    yield* Effect.sync(() => {
-      socket.addEventListener("message", (event) => {
-        Queue.offerUnsafe(events, { _tag: "Message", data: event.data })
-      })
-      socket.addEventListener("close", () => {
-        Queue.offerUnsafe(events, { _tag: "Closed" })
-      })
-      socket.addEventListener("error", () => {
-        Queue.offerUnsafe(events, { _tag: "Closed" })
-      })
-    })
+    const stop = yield* Deferred.make<Verdict>()
+    let stopped = false
+    const message = (event: SocketEvent) => {
+      if (stopped) return
+      const inbound = decode(event.data)
+      // Retain only the fixed verdict for rejected frames, preserving earlier input's order.
+      if (inbound._tag === "Verdict") stopped = true
+      const cost = frameCost(
+        inbound._tag === "Buffer" ? inbound.bytes.byteLength : inbound._tag === "Blob" ? inbound.size : 0
+      )
+      if (retainedBytes + cost > inputByteBudget) {
+        overflow = true
+        Deferred.doneUnsafe(stop, Effect.succeed(failed))
+        stopped = true
+        return
+      }
+      retainedBytes += cost
+      Queue.offerUnsafe(events, inbound)
+    }
+    const disconnected = () => {
+      finished = true
+      stopped = true
+      Deferred.doneUnsafe(stop, Effect.succeed(closed))
+    }
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        socket.addEventListener("message", message)
+        socket.addEventListener("close", disconnected)
+        socket.addEventListener("error", disconnected)
+      }),
+      () =>
+        Effect.gen(function*() {
+          socket.removeEventListener("message", message)
+          socket.removeEventListener("close", disconnected)
+          socket.removeEventListener("error", disconnected)
+          yield* Queue.shutdown(events)
+          if (!finished) yield* close(TerminalProtocol.CloseCode.failed, "Terminal interrupted")
+        })
+    )
 
     const valid = yield* Effect.exit(
       Effect.all([checkName(options.name), checkUser(options.user), checkSize(options.cols, options.rows)])
@@ -551,7 +613,10 @@ export const attach = <E, R>(
       return { outcome: "failed", closeCode: TerminalProtocol.CloseCode.failed, bytes: counted } as const
     }
     const process = spawned.value
-    const input = yield* Queue.unbounded<Uint8Array>()
+    const input = yield* Effect.acquireRelease(
+      Queue.unbounded<Uint8Array>(),
+      Queue.shutdown
+    )
 
     /** The shell's output, in frames under the cap, until the tmux client exits. */
     const outbound = (stdout: Stream.Stream<Uint8Array, E, R>): Effect.Effect<Verdict, never, R> =>
@@ -570,21 +635,20 @@ export const attach = <E, R>(
       )
 
     /** What one frame from the viewer does, or the verdict it ends the bridge with. */
-    const handle = (data: unknown): Effect.Effect<Verdict | undefined, never, R> =>
+    const handle = (
+      frame: Exclude<Inbound, { readonly _tag: "Verdict" }>
+    ): Effect.Effect<Verdict | undefined, never, R> =>
       Effect.gen(function*() {
-        if (typeof data === "string") {
-          if (textBytes(data) > TerminalProtocol.maxFrameBytes) return tooBig
-          const control = TerminalProtocol.decodeClientControl(data)
-          if (control === undefined) return unsupported
-          if (access === "read") return undefined
-          const resized = yield* Effect.exit(process.resize(control.cols, control.rows))
+        if (frame._tag === "Resize") {
+          const resized = yield* Effect.exit(
+            access === "read" ? Effect.void : process.resize(frame.control.cols, frame.control.rows)
+          )
+          retainedBytes -= frameCost(0)
           return Exit.isSuccess(resized) ? undefined : failed
         }
-        const frame = binary(data)
-        if (frame === undefined) return unsupported
         const size = frame._tag === "Buffer" ? frame.bytes.byteLength : frame.size
-        if (size > TerminalProtocol.maxFrameBytes) return tooBig
         if (access === "read") {
+          retainedBytes -= frameCost(size)
           yield* count("dropped", size)
           return undefined
         }
@@ -602,17 +666,36 @@ export const attach = <E, R>(
     const inbound = Effect.gen(function*() {
       for (;;) {
         const event = yield* Queue.take(events)
-        if (event._tag === "Closed") return closed
-        const verdict = yield* handle(event.data)
+        if (event._tag === "Verdict") {
+          retainedBytes -= frameCost(0)
+          return event.verdict
+        }
+        const verdict = yield* handle(event)
         if (verdict !== undefined) return verdict
       }
+    })
+
+    // The next pull follows the sink's completed write. Keep the current
+    // chunk charged while stdin is blocked, then release it before taking another.
+    let writingBytes = 0
+    const takeInput = Effect.suspend(() => {
+      retainedBytes -= writingBytes
+      writingBytes = 0
+      return Effect.map(Queue.take(input), (chunk) => {
+        writingBytes = frameCost(chunk.byteLength)
+        return chunk
+      })
     })
 
     /** A writer's keystrokes into stdin, which only a failure ends; a reader has none. */
     const typing = (stdin: Process<E, R>["stdin"]): Effect.Effect<Verdict, never, R> =>
       stdin === undefined
         ? Effect.never
-        : Stream.fromQueue(input).pipe(Stream.run(stdin), Effect.as(failed), Effect.catch(() => Effect.succeed(failed)))
+        : Stream.fromEffectRepeat(takeInput).pipe(
+          Stream.run(stdin),
+          Effect.as(failed),
+          Effect.catch(() => Effect.succeed(failed))
+        )
 
     /** Sends `ready`, then bridges both directions until the first of them ends. */
     const bridge = (stdout: Stream.Stream<Uint8Array, E, R>, stdin: Process<E, R>["stdin"]) =>
@@ -621,7 +704,7 @@ export const attach = <E, R>(
         if (Exit.isFailure(sent)) return closed
         return yield* Effect.acquireUseRelease(
           Metric.update(Metric.withAttributes(sessionsOpen, { access }), 1),
-          () => Effect.raceAll([outbound(stdout), inbound, typing(stdin)]),
+          () => Effect.raceAll([Deferred.await(stop), outbound(stdout), inbound, typing(stdin)]),
           () => Metric.update(Metric.withAttributes(sessionsOpen, { access }), -1)
         )
       })
@@ -648,7 +731,8 @@ export const attach = <E, R>(
         closeCode = TerminalProtocol.CloseCode.failed
         break
     }
-    if (closeCode !== null) yield* close(closeCode)
+    if (closeCode !== null) yield* close(closeCode, overflow ? "Terminal input buffer full" : undefined)
+    else finished = true
     // A client still attached is this socket's alone: kill it, never the
     // session. Waiting for its exit lets the scope's own cleanup know the
     // process is gone, so nothing signals a reused pid later.

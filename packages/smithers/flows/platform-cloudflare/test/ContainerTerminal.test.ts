@@ -314,6 +314,142 @@ describe("ContainerTerminal.attach", () => {
       expect(client.kills).toEqual([9])
     }))
 
+  it.effect("ingress overflow closes a stalled attach with a bounded-buffer reason", () =>
+    Effect.gen(function*() {
+      const hold = yield* Deferred.make<void>()
+      const memory = MemoryContainer.make(shell, { hold })
+      const viewer = MemoryContainer.socket()
+      const fiber = yield* Effect.forkChild(ContainerTerminal.attach(memory.container, viewer.socket, {
+        name: id,
+        user: "1000:2000",
+        access: "write",
+        cols: 80,
+        rows: 24
+      }))
+      yield* memory.entered
+      for (let i = 0; i < 17; i++) viewer.emit("message", new Uint8Array(max))
+      // This also gives old code a terminating verdict, rather than a timeout.
+      viewer.emit("message", "{invalid")
+      yield* Deferred.succeed(hold, undefined)
+      const client = yield* memory.started
+      const report = yield* Fiber.join(fiber)
+      expect(report.outcome).toBe("failed")
+      expect(viewer.closeCalls).toEqual([{
+        code: TerminalProtocol.CloseCode.failed,
+        reason: "Terminal input buffer full"
+      }])
+      expect(client.kills).toEqual([9])
+      expect(viewer.listenerCount()).toBe(0)
+    }))
+
+  it.effect.each(
+    [
+      ["empty binary", new Uint8Array(0)],
+      ["resize", TerminalProtocol.encodeResize(80, 24)]
+    ] as const
+  )("a flood of %s frames closes stalled stdin with a bounded-buffer reason", ([, frame]) =>
+    Effect.gen(function*() {
+      const holdStdin = yield* Deferred.make<void>()
+      const { client, fiber, viewer } = yield* open("write", { holdStdin })
+      yield* viewer.next
+      viewer.emit("message", new Uint8Array([1]))
+      yield* client.typed
+      for (let i = 0; i < 16_384; i++) viewer.emit("message", frame)
+      // Without per-frame accounting this terminates as unsupported, rather than timing out.
+      viewer.emit("message", "{invalid")
+      expect((yield* Fiber.join(fiber)).outcome).toBe("failed")
+      expect(viewer.closeCalls).toEqual([{
+        code: TerminalProtocol.CloseCode.failed,
+        reason: "Terminal input buffer full"
+      }])
+      expect(client.kills).toEqual([9])
+      expect(viewer.listenerCount()).toBe(0)
+    }))
+
+  it.effect("2,000 one-byte frames survive stalled stdin in order without closing the socket", () =>
+    Effect.gen(function*() {
+      const holdStdin = yield* Deferred.make<void>()
+      const { client, fiber, viewer } = yield* open("write", { holdStdin })
+      yield* viewer.next
+      viewer.emit("message", new Uint8Array([255]))
+      expect(yield* client.typed).toEqual(new Uint8Array([255]))
+      for (let i = 0; i < 2_000; i++) viewer.emit("message", new Uint8Array([i % 251]))
+      // A real resize receipt means ingress drained while stdin remained stalled.
+      viewer.emit("message", TerminalProtocol.encodeResize(80, 24))
+      // Race the receipt with completion so the old frame cap fails without timing out.
+      const state = yield* Effect.raceFirst(
+        Effect.as(client.resized, "open"),
+        Effect.as(Fiber.join(fiber), "closed")
+      )
+      expect(state).toBe("open")
+      expect(viewer.closeCalls).toEqual([])
+      yield* Deferred.succeed(holdStdin, undefined)
+      for (let i = 0; i < 2_000; i++) expect(yield* client.typed).toEqual(new Uint8Array([i % 251]))
+      // The budget is reclaimed after writes, so another full 1 MiB is accepted.
+      for (let i = 0; i < 16; i++) {
+        viewer.emit("message", new Uint8Array(max))
+        expect((yield* client.typed).byteLength).toBe(max)
+      }
+      expect(viewer.closeCalls).toEqual([])
+      viewer.emit("close")
+      expect(yield* Fiber.join(fiber)).toMatchObject({ outcome: "closed", bytes: { in: 2_001 + 16 * max } })
+    }))
+
+  it.effect("more than 1 MiB across ingress, stdin and the pending write closes a stalled writer", () =>
+    Effect.gen(function*() {
+      // Each binary frame costs its byte length plus 64 bytes of overhead.
+      const size = max - 64
+      const holdStdin = yield* Deferred.make<void>()
+      const { client, fiber, viewer } = yield* open("write", { holdStdin })
+      yield* viewer.next
+      viewer.emit("message", new Uint8Array(size))
+      yield* client.typed
+      // Receipts put eight frames in stdin; seven more remain in ingress.
+      for (let i = 0; i < 8; i++) {
+        viewer.emit("message", new Uint8Array(size))
+        viewer.emit("message", TerminalProtocol.encodeResize(80, 24))
+        yield* client.resized
+      }
+      for (let i = 0; i < 7; i++) viewer.emit("message", new Uint8Array(size))
+      expect(viewer.closeCalls).toEqual([])
+      viewer.emit("message", new Uint8Array([1]))
+      const report = yield* Fiber.join(fiber)
+      expect(report.outcome).toBe("failed")
+      expect(viewer.closeCalls).toEqual([{
+        code: TerminalProtocol.CloseCode.failed,
+        reason: "Terminal input buffer full"
+      }])
+      expect(client.kills).toEqual([9])
+    }))
+
+  it.effect("interruption removes listeners and closes the socket during attach and streaming", () =>
+    Effect.gen(function*() {
+      const hold = yield* Deferred.make<void>()
+      const memory = MemoryContainer.make(shell, { hold })
+      const viewer = MemoryContainer.socket()
+      const fiber = yield* Effect.forkChild(ContainerTerminal.attach(memory.container, viewer.socket, {
+        name: id,
+        user: "1000:2000",
+        access: "read",
+        cols: 80,
+        rows: 24
+      }))
+      yield* memory.entered
+      expect(viewer.listenerCount()).toBe(3)
+      yield* Fiber.interrupt(fiber)
+      expect(viewer.closeCalls).toEqual([{ code: TerminalProtocol.CloseCode.failed, reason: "Terminal interrupted" }])
+      expect(viewer.listenerCount()).toBe(0)
+      viewer.emit("message", bytes(sentinel))
+      const running = yield* open("write")
+      yield* running.viewer.next
+      yield* Fiber.interrupt(running.fiber)
+      expect(running.viewer.closeCalls).toEqual([{
+        code: TerminalProtocol.CloseCode.failed,
+        reason: "Terminal interrupted"
+      }])
+      expect(running.viewer.listenerCount()).toBe(0)
+    }))
+
   it.effect("telemetry counts access, outcomes and bytes, and carries no content", () => {
     const t = Telemetry.make()
     return Effect.gen(function*() {

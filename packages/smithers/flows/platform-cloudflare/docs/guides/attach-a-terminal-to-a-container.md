@@ -134,6 +134,16 @@ const connect = (terminalId: string, access: "write" | "read", cols: number, row
 | a frame over 64 KiB                    | closes with 1009          | closes with 1009                     |
 | its tmux client                        | `attach-session -t =<id>` | `-f read-only,ignore-size`, no stdin |
 
+Ingress validates each frame before buffering. Retained frames share a 1 MiB
+budget across ingress, stdin and the pending write. Each costs 64 bytes plus its
+binary byte length (zero for resize), so at most 16,384 frames can be retained.
+If the next frame would exceed it, the
+socket closes with code 1011 and reason `Terminal input buffer full`; the viewer
+may reconnect. Stdin consumes one frame at a time. Interruption closes the
+socket with code 1011 and reason `Terminal interrupted`. Every exit removes all
+three socket listeners and discards buffered input. Custom socket adapters must
+implement `removeEventListener`.
+
 When the session ends, every viewer gets `ended {reason: "closed"}` and close
 code 1000. When a viewer goes away, `attach` kills only that viewer's tmux
 client: the shell keeps running, and the next socket attaches to it and sees
