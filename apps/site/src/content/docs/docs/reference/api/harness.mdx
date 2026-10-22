@@ -302,7 +302,9 @@ Above it, each supervisor reading of a judged run also asks
 `compaction/marks` about the transcript segments not yet marked, the person's
 excepted, and the next boundary stores the answers, by segment digest, on
 `State.segmentFacts` inside its recorded drain
-(`Steering.DrainRecord.marks`). The first such reading is asked about every
+(`Steering.DrainRecord.marks`), even when that drain disables message delivery.
+Marks are consumed once; disabling delivery drops messages, not mark evidence.
+The first such reading is asked about every
 segment so far. Marking changes nothing the model is sent: the prefix a
 request is sent stays byte-stable until a compaction.
 
@@ -770,7 +772,10 @@ export interface EngineLike {
   digest, paths, complete }`). `complete: false` means the measurement covered
   a bounded prefix, and a prefix cannot say the rest of the tree held still.
   After a partial walk, measurement stops for the rest of that run; mutation
-  evidence falls back to flow declarations.
+  evidence falls back to flow declarations. Even a complete walk covers only
+  the workspace: failed calls retain their mutation declarations, since they
+  may have written elsewhere before failing. Such writes also invalidate
+  earlier checks in the frame. Boundary-refused calls declare no mutation.
 - `capture` pins the workspace under the id in the `CaptureRequest` and
   returns a `Snapshot` (`{ id, ref }`), where `ref` is the host's own name for
   what it pinned.
@@ -1181,13 +1186,25 @@ that did the work, so a replayed frame reports the replay's own readings:
   the flow calls the cell issued, refused ones included, and `callMs` sums
   what they took. `CellCallSettled.durationMillis` is one call, from issue to
   settlement.
-- `CellCallSettled.reason` is the `Cell.FailureKind` of a handler failure: its
-  `tag` and its own `code`, each only when it reads as an identifier. A
-  binding reports it through `Cell.Failures`, a `Context.Reference` the
-  controller provides around each flow call, and `Cell.failureKind` reads it
-  off the failure without trusting it. The failure's message stays as opaque
-  as it was: the cell is told what the binding's `publicError` selects and
-  nothing else, and the record carries names, never the failure's text.
+- `CellCallSettled.reason` is the `Cell.FailureKind` of a handler failure.
+  Handler tags and codes stay opaque by default: even an identifier can carry
+  a secret. A binding's `failureKinds` allowlists fixed public `tags` and
+  `codes` by exact match. `Cell.failureKind(failure, allowed)` enforces that
+  allowlist and the identifier length bound. The binding reports the result
+  through the injected `Cell.Failures` service; the controller journals it.
+  The cell sees only the text explicitly selected by `publicError`.
+
+Ledger mutation markers record `WRITE CALL`, input bytes, and whether the call
+settled successfully. A declaration or successful call does not prove the tree
+changed. Repeated calls still name the first attempt, including failed ones.
+Digest paths quote non-identifier keys in brackets, so a literal `a.b` field
+stays distinct from the nested `a.b` path.
+
+Extracted cell blocks share notebook bindings and are separated by semicolons.
+Repeated top-level declarations rebind; duplicate lexical declarations in a
+nested scope still fail. Compaction rejects prefixes or marks that separate a
+tool exchange, and rejects unmatched calls or results before requesting a
+summary or applying a historical step.
 
 A host that keeps a spend ledger labels each charge from `EngineLike.Spend`, a
 `Context.Reference` the controller provides around every sealed step, every
@@ -1357,6 +1374,11 @@ exactly when a segment is squashed. `compactPrefix` is `compactMarked` with
 every segment squashed. `render` projects the window into the `ModelRequest` of
 [`@smthrs/model`](/docs/reference/api/model/).
 
+`SegmentInput.declaredDigest` adds upstream identity to the digest; kind, zone
+and content are always hashed. Supplying `tokens` skips token estimation.
+`compact` keeps the most recent compactable segment whole and
+returns the same window when it is the only one.
+
 `appendTurn` and `compact` are dual, so each one takes the window first or
 returns a function of it, and a `ContextWindow` is `Pipeable`. The direct and
 the piped forms are the same call:
@@ -1489,6 +1511,9 @@ that stands for the whole body, and a readable body is `text`. A
 `tool` whose command is the script its `custom_tool_call` requested, followed
 by a failed `edit` when the report names the file an `apply_patch` could not
 change. The request waits in `state.calls` until its output arrives.
+Other custom tools retain their output as a successful `tool`, unless the
+output explicitly reports a failed patch. The code-mode prefix is required
+only for `exec` and `wait`, whose successful output repeats completed items.
 
 ### Claude Code
 
@@ -1689,7 +1714,9 @@ completion itself (`if (after.exitCode === 0) ctx.done(…)`,
 `ctx.done((await ctx.call(…)).stdout)`), a cell that hands a result to
 anything the parse cannot see through (a function of its own, a `.then`
 callback, an alias), and a cell whose calls are effects with discarded
-results, are spared. `FailedCallDemanded` takes precedence, and with no frame
+results, are spared. Calls and completions evaluated inside `console.*`
+arguments still count as program actions; merely formatting a printed result
+does not. `FailedCallDemanded` takes precedence, and with no frame
 left the answer stands; a refused answer is also what the run ends on when
 the budget runs out before it completes again.
 

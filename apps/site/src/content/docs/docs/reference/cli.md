@@ -336,7 +336,7 @@ smthrs exec [id] [options]
 | `--env` | array of string | `[]` | no | KEY=VALUE exported to the command (repeatable) |
 | `--exec-id` | string |  | no | Durable command ID; reuse with the same command to reattach after a disconnect |
 | `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
-| `--seed-agent-auth` | string |  | no | Agent auth to seed before running the command (claude seeds ANTHROPIC_API_KEY; subscription logins stay on the workspace) |
+| `--seed-agent-auth` | string |  | no | Disabled: host credentials cannot be seeded into workspaces |
 | `--timeout` | number |  | no | Cancel after this many seconds (default: 0; server guard: 60 minutes) |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 

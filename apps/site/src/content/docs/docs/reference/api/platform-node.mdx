@@ -1196,8 +1196,8 @@ variables as `dispatcher` does and speaks HTTP/1.1 only. `connect` carries TLS
 options such as a private provider's `ca`.
 
 ```ts
-import { EgressHttpClient } from "@smthrs/platform-node"
 import { HostModel } from "@smthrs/model-host"
+import { EgressHttpClient } from "@smthrs/platform-node"
 import { Effect, Layer } from "effect"
 
 const model = Layer.unwrap(Effect.map(

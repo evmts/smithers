@@ -616,7 +616,7 @@
             },
             "seedAgentAuth": {
               "type": "string",
-              "description": "Agent auth to seed before running the command (claude seeds ANTHROPIC_API_KEY; subscription logins stay on the workspace)"
+              "description": "Disabled: host credentials cannot be seeded into workspaces"
             },
             "timeout": {
               "type": "number",

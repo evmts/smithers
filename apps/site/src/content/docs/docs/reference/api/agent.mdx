@@ -1752,6 +1752,11 @@ deliberately omitted too, since both sources share that error code. Custom
 services must keep all other refusal messages suitable for cells and journals;
 diagnostic causes are never selected.
 
+Shell and test bindings publish only the standard library's closed error-code
+set in settlement metadata through `failureKinds`. Custom bindings must declare
+their own fixed public tags and codes; undeclared classifications stay opaque,
+independently of the message selected by `publicError`.
+
 ### StandardFlows.filesystem
 
 ```ts

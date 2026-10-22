@@ -6829,6 +6829,11 @@ deliberately omitted too, since both sources share that error code. Custom
 services must keep all other refusal messages suitable for cells and journals;
 diagnostic causes are never selected.
 
+Shell and test bindings publish only the standard library's closed error-code
+set in settlement metadata through `failureKinds`. Custom bindings must declare
+their own fixed public tags and codes; undeclared classifications stay opaque,
+independently of the message selected by `publicError`.
+
 ### StandardFlows.filesystem
 
 ```ts
@@ -12950,14 +12955,14 @@ The acceptance port from the control plane into a real run executor.
 point and batch readers in one options object. Omit the object for a host without
 engine observations. Mutation methods remain refused.
 
-| Export            | Kind     | Signature                                                                                                                                                |
-| ----------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ControlExecutor` | class    | `Context.Service<ControlExecutor, Service>` at key `/control/ControlExecutor`                                                                            |
-| `make`            | function | `(implementation: Service) => Service`                                                                                                                   |
-| `makeNoop`        | function | `(overrides?: Partial<Service>) => Service`. Accepts every launch as `pending` and starts nothing.                                                       |
+| Export            | Kind     | Signature                                                                                                                                                                                               |
+| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ControlExecutor` | class    | `Context.Service<ControlExecutor, Service>` at key `/control/ControlExecutor`                                                                                                                           |
+| `make`            | function | `(implementation: Service) => Service`                                                                                                                                                                  |
+| `makeNoop`        | function | `(overrides?: Partial<Service>) => Service`. Accepts every launch as `pending` and starts nothing.                                                                                                      |
 | `makeObserving`   | function | `(service: Service) => Service`. The same executor with `launch` and `resumeRun` refused as defects and parked settlement left to the driving host, for a host composed to observe runs and drive none. |
-| `layer`           | layer    | `(implementation: Service) => Layer<ControlExecutor>`                                                                                                    |
-| `layerNoop`       | layer    | `(overrides?: Partial<Service>) => Layer<ControlExecutor>`                                                                                               |
+| `layer`           | layer    | `(implementation: Service) => Layer<ControlExecutor>`                                                                                                                                                   |
+| `layerNoop`       | layer    | `(overrides?: Partial<Service>) => Layer<ControlExecutor>`                                                                                                                                              |
 
 ### Service
 
@@ -13087,11 +13092,11 @@ automatically. Absolute Web request URLs already supply the scheme.
 
 ## ControlClient
 
-| Export           | Kind       | Signature                                                                                                     |
-| ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| Export           | Kind       | Signature                                                                                                                                          |
+| ---------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ClientConfig`   | interface  | `{ url: string; credential?: string; watchTransport?: "http" \| "socket" }`. `credential` is attached as a bearer token on every HTTP RPC request. |
-| `layer`          | layer      | `(config: ClientConfig) => Layer<Control, ...>`                                                               |
-| `isControlError` | refinement | `(value: unknown) => value is ControlError`, derived from `ControlErrorSchema`.                               |
+| `layer`          | layer      | `(config: ClientConfig) => Layer<Control, ...>`                                                                                                    |
+| `isControlError` | refinement | `(value: unknown) => value is ControlError`, derived from `ControlErrorSchema`.                                                                    |
 
 Unary procedures use HTTP at `url`. With a credential, `watch` uses the same
 HTTP protocol and bearer; without one it defaults to the platform Socket
@@ -19514,7 +19519,9 @@ Above it, each supervisor reading of a judged run also asks
 `compaction/marks` about the transcript segments not yet marked, the person's
 excepted, and the next boundary stores the answers, by segment digest, on
 `State.segmentFacts` inside its recorded drain
-(`Steering.DrainRecord.marks`). The first such reading is asked about every
+(`Steering.DrainRecord.marks`), even when that drain disables message delivery.
+Marks are consumed once; disabling delivery drops messages, not mark evidence.
+The first such reading is asked about every
 segment so far. Marking changes nothing the model is sent: the prefix a
 request is sent stays byte-stable until a compaction.
 
@@ -19982,7 +19989,10 @@ export interface EngineLike {
   digest, paths, complete }`). `complete: false` means the measurement covered
   a bounded prefix, and a prefix cannot say the rest of the tree held still.
   After a partial walk, measurement stops for the rest of that run; mutation
-  evidence falls back to flow declarations.
+  evidence falls back to flow declarations. Even a complete walk covers only
+  the workspace: failed calls retain their mutation declarations, since they
+  may have written elsewhere before failing. Such writes also invalidate
+  earlier checks in the frame. Boundary-refused calls declare no mutation.
 - `capture` pins the workspace under the id in the `CaptureRequest` and
   returns a `Snapshot` (`{ id, ref }`), where `ref` is the host's own name for
   what it pinned.
@@ -20393,13 +20403,25 @@ that did the work, so a replayed frame reports the replay's own readings:
   the flow calls the cell issued, refused ones included, and `callMs` sums
   what they took. `CellCallSettled.durationMillis` is one call, from issue to
   settlement.
-- `CellCallSettled.reason` is the `Cell.FailureKind` of a handler failure: its
-  `tag` and its own `code`, each only when it reads as an identifier. A
-  binding reports it through `Cell.Failures`, a `Context.Reference` the
-  controller provides around each flow call, and `Cell.failureKind` reads it
-  off the failure without trusting it. The failure's message stays as opaque
-  as it was: the cell is told what the binding's `publicError` selects and
-  nothing else, and the record carries names, never the failure's text.
+- `CellCallSettled.reason` is the `Cell.FailureKind` of a handler failure.
+  Handler tags and codes stay opaque by default: even an identifier can carry
+  a secret. A binding's `failureKinds` allowlists fixed public `tags` and
+  `codes` by exact match. `Cell.failureKind(failure, allowed)` enforces that
+  allowlist and the identifier length bound. The binding reports the result
+  through the injected `Cell.Failures` service; the controller journals it.
+  The cell sees only the text explicitly selected by `publicError`.
+
+Ledger mutation markers record `WRITE CALL`, input bytes, and whether the call
+settled successfully. A declaration or successful call does not prove the tree
+changed. Repeated calls still name the first attempt, including failed ones.
+Digest paths quote non-identifier keys in brackets, so a literal `a.b` field
+stays distinct from the nested `a.b` path.
+
+Extracted cell blocks share notebook bindings and are separated by semicolons.
+Repeated top-level declarations rebind; duplicate lexical declarations in a
+nested scope still fail. Compaction rejects prefixes or marks that separate a
+tool exchange, and rejects unmatched calls or results before requesting a
+summary or applying a historical step.
 
 A host that keeps a spend ledger labels each charge from `EngineLike.Spend`, a
 `Context.Reference` the controller provides around every sealed step, every
@@ -20569,6 +20591,11 @@ exactly when a segment is squashed. `compactPrefix` is `compactMarked` with
 every segment squashed. `render` projects the window into the `ModelRequest` of
 [`@smthrs/model`](/docs/reference/api/model/).
 
+`SegmentInput.declaredDigest` adds upstream identity to the digest; kind, zone
+and content are always hashed. Supplying `tokens` skips token estimation.
+`compact` keeps the most recent compactable segment whole and
+returns the same window when it is the only one.
+
 `appendTurn` and `compact` are dual, so each one takes the window first or
 returns a function of it, and a `ContextWindow` is `Pipeable`. The direct and
 the piped forms are the same call:
@@ -20701,6 +20728,9 @@ that stands for the whole body, and a readable body is `text`. A
 `tool` whose command is the script its `custom_tool_call` requested, followed
 by a failed `edit` when the report names the file an `apply_patch` could not
 change. The request waits in `state.calls` until its output arrives.
+Other custom tools retain their output as a successful `tool`, unless the
+output explicitly reports a failed patch. The code-mode prefix is required
+only for `exec` and `wait`, whose successful output repeats completed items.
 
 ### Claude Code
 
@@ -20901,7 +20931,9 @@ completion itself (`if (after.exitCode === 0) ctx.done(…)`,
 `ctx.done((await ctx.call(…)).stdout)`), a cell that hands a result to
 anything the parse cannot see through (a function of its own, a `.then`
 callback, an alias), and a cell whose calls are effects with discarded
-results, are spared. `FailedCallDemanded` takes precedence, and with no frame
+results, are spared. Calls and completions evaluated inside `console.*`
+arguments still count as program actions; merely formatting a printed result
+does not. `FailedCallDemanded` takes precedence, and with no frame
 left the answer stands; a refused answer is also what the run ends on when
 the budget runs out before it completes again.
 
@@ -21736,11 +21768,11 @@ construction. Raw upstream stacks and nested causes are discarded.
 
 Service interface:
 
-| Method     | Signature                                                                                                                                                                                                                                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `request`  | `(method: RequestMethod, path: string, body?: unknown, options?: RequestOptions) => Effect<unknown, IntegrationError>`, or `<A>(method: RequestMethod, path: string, body: unknown, options: DecodedRequestOptions<A>) => Effect<A, IntegrationError>` | One REST call. Without a schema the result is the parsed JSON as `unknown`; a `schema` decodes it, fixes the result type, and fails `decode-failed` when the body does not match. A rate limit (a 429, or the 403 forms GitHub uses for a secondary limit) is never repeated: it fails `retryable` for every method, with the server's `Retry-After` or `x-ratelimit-reset`, capped at one minute, as `details.retryAfterMillis`. A 5xx or transport failure is `retryable` only for a read, with a 5xx's `Retry-After`; on a write it reports `outcomeUnknown` unless `retryUnsafeWrites` is set. The retry policy of the step that made the call decides whether there is another attempt. An unserializable body or an unparseable path fails `invalid-config` before any request. Interrupting the fiber aborts the request in flight. Each request also carries the configured `requestTimeout`; expiring aborts the exchange and fails `delivery-failed` with `timedOut: true`, and on a write with `outcomeUnknown: true`. |
-| `paginate` | `(path: string, options?: { perPage?: number; maxPages?: number }) => Effect<Page, IntegrationError>`                                                                                                                                                  | Follows `Link: rel="next"` within the page budget and concatenates the pages. `perPage` defaults to 100 and accepts 1 to 100; `maxPages` defaults to 10 and accepts 1 to 1000. A bound outside its range fails `invalid-config` before the first request. Running out of budget with a next link outstanding is reported as `truncated: true`, never as a short but complete answer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `count`    | `(path: string, options?: RequestOptions) => Effect<Count, IntegrationError>`                                                                                                                                                                          | One request for pages of one item (`per_page=1`): `total` is the `rel="last"` link's page, so a repository's branches, tags, commits or contributors are counted without walking them, and `first` is the first item as parsed JSON (`undefined` for an empty list). A list with no `last` link holds what its one page holds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Method     | Signature                                                                                                                                                                                                                                              | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `request`  | `(method: RequestMethod, path: string, body?: unknown, options?: RequestOptions) => Effect<unknown, IntegrationError>`, or `<A>(method: RequestMethod, path: string, body: unknown, options: DecodedRequestOptions<A>) => Effect<A, IntegrationError>` | One REST call. Without a schema the result is the parsed JSON as `unknown`; a `schema` decodes it, fixes the result type, and fails `decode-failed` when the body does not match. A rate limit (a 429, or the 403 forms GitHub uses for a secondary limit) is never repeated: it fails `retryable` for every method, with the server's `Retry-After` or `x-ratelimit-reset`, capped at one minute, as `details.retryAfterMillis`. A 5xx or transport failure is `retryable` only for a read, with a 5xx's `Retry-After`; on a write it always reports `outcomeUnknown`; `retryUnsafeWrites` additionally permits retrying. The retry policy of the step that made the call decides whether there is another attempt. An unserializable body or an unparseable path fails `invalid-config` before any request. Interrupting the fiber aborts the request in flight. Each request also carries the configured `requestTimeout`; expiring aborts the exchange and fails `delivery-failed` with `timedOut: true`, and on a write with `outcomeUnknown: true`. |
+| `paginate` | `(path: string, options?: { perPage?: number; maxPages?: number }) => Effect<Page, IntegrationError>`                                                                                                                                                  | Follows `Link: rel="next"` within the page budget and concatenates the pages. `perPage` defaults to 100 and accepts 1 to 100; `maxPages` defaults to 10 and accepts 1 to 1000. A bound outside its range fails `invalid-config` before the first request. Running out of budget with a next link outstanding is reported as `truncated: true`, never as a short but complete answer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `count`    | `(path: string, options?: RequestOptions) => Effect<Count, IntegrationError>`                                                                                                                                                                          | One request for pages of one item (`per_page=1`): `total` is the `rel="last"` link's page, so a repository's branches, tags, commits or contributors are counted without walking them, and `first` is the first item as parsed JSON (`undefined` for an empty list). A list with no `last` link holds what its one page holds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 | Export                | Signature                                                                             | Notes                                                                                                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -21885,7 +21917,6 @@ explains the pattern.
 | `runKey`                                                                        | `(action: string) => Effect<string>`                          | `run:` and 32 hex of SHA-256 over the running execution’s id: the key `UpsertComment` and `CheckRun` use when the payload names none. Dies with `Action.EffectKeyUnavailable` outside a flow execution.                                                                                                                                                                                                                                                                                     |
 | `CheckRun`                                                                      | `Action`, tag `integrations/github/check-run`                 | Requires the authenticated App’s numeric `appId`. Creates or updates that App’s check run whose `external_id` is `key` on `headSha`; without `key`, the running execution’s (`runKey`), one per run and name. Keyed. Needs a GitHub App installation token. Success: `id`, `url`, `status`, `conclusion`, `created`.                                                                                                                                                                        |
 | `LinkPullRequest`                                                               | `Action`, tag `integrations/github/link-pr`                   | Adds a closing link through `addCloseIssueReferences`, preserving the description. Existing keywords or manual links are unchanged; unsupported servers fail without editing the body. Keyed. Success: `pullNumber`, `url`, `reference`, `updated`.                                                                                                                                                                                                                                         |
-| `closesIssue`                                                                   | `(body, issue, sameRepository) => boolean`                    | Whether a description closes the issue with any GitHub closing keyword.                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `layerAddLabels`, `layerUpsertComment`, `layerCheckRun`, `layerLinkPullRequest` | same as `layerCommentOnIssue`                                 | Implement each action over the client in context.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `layer`                                                                         | same                                                          | Every GitHub action's implementation in one layer.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
@@ -28073,12 +28104,12 @@ Credential handling for a model route. This is the redaction boundary:
 credentials never enter the sealed step view, and signing never logs their
 values.
 
-| Export                    | Kind        | Behavior                                                                                                                                                                                                                                                                                                                      |
-| ------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Export                    | Kind        | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `Auth`                    | interface   | `sign(headers)` returns the headers with the credential applied, failing with `ModelError`. Optional `refreshRejected(headers)` receives the refused attempt’s signed headers; optional `refresh` is the fallback effect. The route runs one recovery after an `authentication` failure, then re-signs and retries once. `sign` may hold rotating state, but every dependency is captured at construction; the type has no requirements channel. |
-| `Redacted<A>`             | type        | Effect's `Redacted`: a value whose string and JSON representations conceal its contents.                                                                                                                                                                                                                                      |
-| `apiKeyHeader(name, key)` | constructor | Adds a redacted API key as an exact HTTP header.                                                                                                                                                                                                                                                                              |
-| `bearer(key)`             | constructor | Adds a redacted API key as `Authorization: Bearer <key>`.                                                                                                                                                                                                                                                                     |
+| `Redacted<A>`             | type        | Effect's `Redacted`: a value whose string and JSON representations conceal its contents.                                                                                                                                                                                                                                                                                                                                                         |
+| `apiKeyHeader(name, key)` | constructor | Adds a redacted API key as an exact HTTP header.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `bearer(key)`             | constructor | Adds a redacted API key as `Authorization: Bearer <key>`.                                                                                                                                                                                                                                                                                                                                                                                        |
 
 Both constructors fail signing with `authentication` and message `API key
 must not be empty` when the redacted value is empty. `credentialNamePattern`
@@ -28896,13 +28927,16 @@ here, and so does any host that admits a person's message straight into a
 run's queue, so a steer reads the same in every transcript.
 
 ```ts
-yield* queue.admit(runId, Notification.humanSteer({
+yield * queue.admit(
   runId,
-  id: messageId,
-  actor: `person:${login}`,
-  attribution: { login },
-  payload: SteerPayload.encode({ kind: "Message", body })
-}))
+  Notification.humanSteer({
+    runId,
+    id: messageId,
+    actor: `person:${login}`,
+    attribution: { login },
+    payload: SteerPayload.encode({ kind: "Message", body })
+  })
+)
 ```
 
 ## NotificationState
@@ -35028,8 +35062,8 @@ variables as `dispatcher` does and speaks HTTP/1.1 only. `connect` carries TLS
 options such as a private provider's `ca`.
 
 ```ts
-import { EgressHttpClient } from "@smthrs/platform-node"
 import { HostModel } from "@smthrs/model-host"
+import { EgressHttpClient } from "@smthrs/platform-node"
 import { Effect, Layer } from "effect"
 
 const model = Layer.unwrap(Effect.map(
@@ -45637,43 +45671,43 @@ the page's messages.
 A repository's own home: the sections and blocks `.smithers/home.json` declares, and who sees each section. See
 [Read a repository's home](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/read-a-home.md).
 
-| Export | What it is |
-| --- | --- |
-| `path` | `".smithers/home.json"` |
-| `read(text)` | `{ _tag: "Declared", sections, contributors, skipped }` or `{ _tag: "Invalid", reason }`; never throws |
-| `Read`, `Invalid`, `Section` | the answer; why a file is not a home: `json`, `shape`, `sections`, `section`, `blocks` or `block`; a section `{ title?, audience, blocks }` |
-| `Audience`, `audiences` | `everyone`, `contributor`, `maintainer`, from the widest |
-| `Contributors` | who counts as a contributor: `role` or `anyone` |
-| `sees(viewer, section)`, `visible(sections, viewer)`, `widen(viewer, contributors)` | whether an audience may see a section's; the sections it may see, in order; `everyone` as a contributor on a home open to anyone |
-| `SectionHeading` | a section's `{ title?, audience? }` as declared |
-| `Block`, `kinds`, `liveKinds` | the union of the sixteen block schemas, and its type; every kind; the live ones, `flows`, `stack`, `issues`, `runs` |
-| `TextBlock`, `LinksBlock`, `FlowsBlock`, `PromptBlock` | `{ type, title?, text }`; `{ type, title?, links: [{ label, url }] }`; `{ type, title? }`; `{ type, flow?, title?, placeholder? }` |
-| `MarkdownBlock`, `StackBlock`, `AppBlock`, `ViewBlock` | `{ type, path, title? }`; `{ type, title? }`; `{ type, flow, title, picture }`; `{ type, flow }` |
-| `HeroBlock`, `CodeBlock`, `CardsBlock`, `StatsBlock`, `ReleasesBlock` | `{ type, title, tagline?, text?, install?, actions?, announcement? }`; `{ type, code, file?, language?, title? }`; `{ type, cards, title?, more? }`; `{ type, stats, title? }`; `{ type, releases, title?, more? }` |
-| `IssuesBlock`, `RunsBlock`, `ActionBlock` | `{ type, title? }`; `{ type, title? }`; `{ type, flow, title, key? }` |
-| `Card`, `Stat`, `Release`, `Link` | `{ title, text?, label?, url? }`; `{ value, label }`; `{ name, url, date, summary? }`; `{ label, url }` |
-| `Title`, `Prose`, `Line`, `Command`, `Code`, `Language`, `IsoDate`, `Key`, `Url`, `RepositoryPath`, `FlowName`, `AppPicture` | the field schemas the blocks share |
-| `maximumSections`, `maximumBlocks`, `maximumEntries`, `maximumStats`, `maximumActions` | 8, 32, 12, 6, 3 |
-| `maximumTitleLength`, `maximumLineLength`, `maximumTextLength`, `maximumCodeLength`, `maximumUrlLength`, `htmlPattern` | 120, 280, 4,096, 4,096, 2,048, and the pattern of a tag, a closing tag, a comment or a processing instruction |
+| Export                                                                                                                       | What it is                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                                                                                                                       | `".smithers/home.json"`                                                                                                                                                                                             |
+| `read(text)`                                                                                                                 | `{ _tag: "Declared", sections, contributors, skipped }` or `{ _tag: "Invalid", reason }`; never throws                                                                                                              |
+| `Read`, `Invalid`, `Section`                                                                                                 | the answer; why a file is not a home: `json`, `shape`, `sections`, `section`, `blocks` or `block`; a section `{ title?, audience, blocks }`                                                                         |
+| `Audience`, `audiences`                                                                                                      | `everyone`, `contributor`, `maintainer`, from the widest                                                                                                                                                            |
+| `Contributors`                                                                                                               | who counts as a contributor: `role` or `anyone`                                                                                                                                                                     |
+| `sees(viewer, section)`, `visible(sections, viewer)`, `widen(viewer, contributors)`                                          | whether an audience may see a section's; the sections it may see, in order; `everyone` as a contributor on a home open to anyone                                                                                    |
+| `SectionHeading`                                                                                                             | a section's `{ title?, audience? }` as declared                                                                                                                                                                     |
+| `Block`, `kinds`, `liveKinds`                                                                                                | the union of the sixteen block schemas, and its type; every kind; the live ones, `flows`, `stack`, `issues`, `runs`                                                                                                 |
+| `TextBlock`, `LinksBlock`, `FlowsBlock`, `PromptBlock`                                                                       | `{ type, title?, text }`; `{ type, title?, links: [{ label, url }] }`; `{ type, title? }`; `{ type, flow?, title?, placeholder? }`                                                                                  |
+| `MarkdownBlock`, `StackBlock`, `AppBlock`, `ViewBlock`                                                                       | `{ type, path, title? }`; `{ type, title? }`; `{ type, flow, title, picture }`; `{ type, flow }`                                                                                                                    |
+| `HeroBlock`, `CodeBlock`, `CardsBlock`, `StatsBlock`, `ReleasesBlock`                                                        | `{ type, title, tagline?, text?, install?, actions?, announcement? }`; `{ type, code, file?, language?, title? }`; `{ type, cards, title?, more? }`; `{ type, stats, title? }`; `{ type, releases, title?, more? }` |
+| `IssuesBlock`, `RunsBlock`, `ActionBlock`                                                                                    | `{ type, title? }`; `{ type, title? }`; `{ type, flow, title, key? }`                                                                                                                                               |
+| `Card`, `Stat`, `Release`, `Link`                                                                                            | `{ title, text?, label?, url? }`; `{ value, label }`; `{ name, url, date, summary? }`; `{ label, url }`                                                                                                             |
+| `Title`, `Prose`, `Line`, `Command`, `Code`, `Language`, `IsoDate`, `Key`, `Url`, `RepositoryPath`, `FlowName`, `AppPicture` | the field schemas the blocks share                                                                                                                                                                                  |
+| `maximumSections`, `maximumBlocks`, `maximumEntries`, `maximumStats`, `maximumActions`                                       | 8, 32, 12, 6, 3                                                                                                                                                                                                     |
+| `maximumTitleLength`, `maximumLineLength`, `maximumTextLength`, `maximumCodeLength`, `maximumUrlLength`, `htmlPattern`       | 120, 280, 4,096, 4,096, 2,048, and the pattern of a tag, a closing tag, a comment or a processing instruction                                                                                                       |
 
 ## `WebPage`
 
 Whether an outside page shows in a frame, asked from a server, and the card
 shown in its place. See [Check a web page before framing it](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/check-a-web-page.md).
 
-| Export                                         | What it is                                                                                                                                  |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `check(url, options)`                          | `Effect<Checked, never, HttpClient>`: requests the page as a frame would, guarded on every hop; never fails                                 |
-| `Options`                                      | `{ ancestors, privateHosts?, maxRedirects? (5), timeout? (8 s), headTimeout? (3 s), maxBytes? (256 KiB), userAgent? }`                      |
-| `Checked`                                      | schema and type: `{ framing, reason?, status?, title?, description?, icon? }`                                                               |
-| `Preview`                                      | schema and type: `{ title?, description?, icon? }`                                                                                          |
-| `FRAMINGS`, `Framing`                          | `allowed`, `refused`, `unknown`                                                                                                             |
-| `REASONS`, `Reason`                            | `x_frame_options`, `frame_ancestors`, `insecure`, `content`, `status`, `invalid_url`, `private_host`, `redirects`, `timeout`, `unreachable` |
-| `framing(headers, { page, ancestors })`        | `{ framing: "allowed" }` or `{ framing: "refused", reason }` from headers; malformed page or ancestor URLs yield `{ framing: "unknown", reason: "invalid_url" }`                                |
-| `content(headers)`                             | whether a sandboxed frame shows the response: not an attachment, a PDF or an octet stream                                                   |
-| `preview(html, pageUrl)`                       | the `Preview` read from a page's head                                                                                                       |
-| `HeaderRecord`                                 | response headers by name, in any case                                                                                                       |
-| `MAX_TITLE`, `MAX_DESCRIPTION`, `MAX_ICON_URL` | 200, 300 and 2,048 characters                                                                                                               |
+| Export                                         | What it is                                                                                                                                                       |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check(url, options)`                          | `Effect<Checked, never, HttpClient>`: requests the page as a frame would, guarded on every hop; never fails                                                      |
+| `Options`                                      | `{ ancestors, privateHosts?, maxRedirects? (5), timeout? (8 s), headTimeout? (3 s), maxBytes? (256 KiB), userAgent? }`                                           |
+| `Checked`                                      | schema and type: `{ framing, reason?, status?, title?, description?, icon? }`                                                                                    |
+| `Preview`                                      | schema and type: `{ title?, description?, icon? }`                                                                                                               |
+| `FRAMINGS`, `Framing`                          | `allowed`, `refused`, `unknown`                                                                                                                                  |
+| `REASONS`, `Reason`                            | `x_frame_options`, `frame_ancestors`, `insecure`, `content`, `status`, `invalid_url`, `private_host`, `redirects`, `timeout`, `unreachable`                      |
+| `framing(headers, { page, ancestors })`        | `{ framing: "allowed" }` or `{ framing: "refused", reason }` from headers; malformed page or ancestor URLs yield `{ framing: "unknown", reason: "invalid_url" }` |
+| `content(headers)`                             | whether a sandboxed frame shows the response: not an attachment, a PDF or an octet stream                                                                        |
+| `preview(html, pageUrl)`                       | the `Preview` read from a page's head                                                                                                                            |
+| `HeaderRecord`                                 | response headers by name, in any case                                                                                                                            |
+| `MAX_TITLE`, `MAX_DESCRIPTION`, `MAX_ICON_URL` | 200, 300 and 2,048 characters                                                                                                                                    |
 
 ---
 
@@ -46005,7 +46039,7 @@ smthrs exec [id] [options]
 | `--env` | array of string | `[]` | no | KEY=VALUE exported to the command (repeatable) |
 | `--exec-id` | string |  | no | Durable command ID; reuse with the same command to reattach after a disconnect |
 | `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
-| `--seed-agent-auth` | string |  | no | Agent auth to seed before running the command (claude seeds ANTHROPIC_API_KEY; subscription logins stay on the workspace) |
+| `--seed-agent-auth` | string |  | no | Disabled: host credentials cannot be seeded into workspaces |
 | `--timeout` | number |  | no | Cancel after this many seconds (default: 0; server guard: 60 minutes) |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
