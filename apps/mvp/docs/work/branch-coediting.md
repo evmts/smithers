@@ -3,7 +3,7 @@ title: Shared branch prompt and file co-editing
 status: in-progress
 area: app
 owner: coedit merger and builder (Opus, lead session 6253ecf2)
-updated: 2026-10-21 16:30 PDT
+updated: 2026-10-21 20:45 PDT
 links: [../features/coedit.md, branch-sharing.md, branch-terminal.md, branch-workspace-clarity.md, ../decisions/0013-branch-workspace.md, ../rulings.md]
 ---
 
@@ -22,7 +22,9 @@ links: [../features/coedit.md, branch-sharing.md, branch-terminal.md, branch-wor
 - Production before the fix (16:56 PDT, against the build deployed then): the two-device test made the file in the terminal, both devices opened it through `sandbox/read`, typed at once with each other's carets, converged, and A's Save reached Saved through `sandbox/write`; it failed at "B says Saved too", as the old build does.
 - Known gaps, in [coedit.md](../features/coedit.md#saved): overlapping Saves can leave the wrong mark; a reload during a Save leaves no mark.
 
-**Next step:** Land, deploy, run coedit.spec locally and in production, record the GIF.
+- Production after the fix (deployed main 41ebbdd64aad at 20:38 PDT): coedit.spec's two-device test passed in 5.0 min (file made in the terminal, both devices edit with carets, A saves and both say Saved, B edits and saves and both say Saved, the working copy holds every edit); the two-person and answer-box tests skip as declared (devPeople, scriptedAgent). Recording: `~/Desktop/smithers-mvp/prod/gifs/coedit-co-editing-one-person-s-two-devices-edit-a-file-at-once-and-.gif`, checked by `e2e:gifs`.
+
+**Next step:** Run coedit.spec locally on the Mac mini (all three tests). Close the two known gaps (tests marked broken in `coedit.test.ts`). Find the answer-box flake's cause from records.
 
 **Open questions for Will:** A second GitHub test account, so the two-person test runs in production (today it is local only).
 
