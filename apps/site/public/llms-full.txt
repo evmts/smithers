@@ -35370,7 +35370,7 @@ https://smithers.sh/docs/reference/api/plugin/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/plugin/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/plugin/docs)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/flow`](/docs/reference/api/flow/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/registry`](/docs/reference/api/registry/)
 
 Import the declarations from the root and the four stateful modules either as
 namespaces from the root or from their own subpaths:
@@ -35409,6 +35409,8 @@ console.log(kernel.config) // { editor: { readOnly: false } }
 | Hook kinds and type-level helpers, `engineHooks`, `handlerOf`, `orderOf` | from `Hooks`       | The hook surface.                                                     |
 | `PluginErrorCode`, `PluginError`                                         | from `PluginError` | The single typed failure.                                             |
 | `Config`, `Kernel`, `Plugins`, `Resolve`                                 | namespaces         | The four modules.                                                     |
+| `Manifest`, `Load`, `Contribution`, `JsonSchema`, `Host`                 | namespaces         | Plugin manifests, the loader, and the host contract.                  |
+| `Bind`, `When`, `Keys`                                                   | namespaces         | The binding, `when` and key grammars.                                 |
 
 ### FlowsHooks
 
@@ -35884,13 +35886,145 @@ and `$options.parallelConcurrency` is an option.
 startup; `Kernel.observerErrors` returns them for redacted logging by the host.
 What to change for each code is in [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/troubleshooting.md).
 
+## Manifest
+
+```ts
+import * as Manifest from "@smthrs/plugin/Manifest"
+```
+
+| Export                                                                                                                                                      | Kind                        | Summary                                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `Manifest` and `type Manifest`                                                                                                                              | schema                      | The whole `plugin.json` shape.                                                                                   |
+| `PluginId`, `Qualified`, `FlowTag`, `Version`, `Range`, `Minimum`, `Capability`, `Title`, `Prose`, `When`, `RelativePath`, `JsonSchema`, `QueryRef`, `Args` | schemas                     | The field grammars.                                                                                              |
+| `Event`, `Render`, `View`, `Slot`, `Command`, `Keybinding`, `Card`, `Setting`, `Trigger`, `Hook`, `Tap`, `ModelRole`, `Records`                             | schemas                     | One per contribution entry.                                                                                      |
+| `PLUGIN_API`                                                                                                                                                | `"1.0.0"`                   | The plugin API this loader implements; `requires.api` is a range over it.                                        |
+| `RESERVED`                                                                                                                                                  | frozen array                | First segments only the core uses: `app chat repo run flow ui view system auth secret github issue plugin core`. |
+| `decode(input: unknown)`                                                                                                                                    | `Effect<Manifest, Refusal>` | Admits parsed JSON, refusing `invalid` with the failing field's path.                                            |
+| `parse(text: string)`                                                                                                                                       | `Effect<Manifest, Refusal>` | The byte limit, then `JSON.parse`, then `decode`.                                                                |
+
+`decode` first copies the input as bounded, inert JSON, so an accessor never
+runs and a proxy cannot change the value after admission. It then decodes with
+`onExcessProperty: "error"`: an unknown field refuses, and so does a union entry
+that carries both alternatives, such as a keybinding with `command` and
+`event`. `$defs` keys follow JSON Schema convention (`Option`, `Note`) and may
+start with a capital. A `RelativePath` (`flows`, `skills`, a `view` or `app`
+render's `module`) is portable and stays inside the plugin root: `/`-separated
+segments of letters, digits and `._@+-`, with no leading `/`, no empty, `.` or
+`..` segment, no scheme and no backslash.
+
+### Manifest limits
+
+| Constant                 | Value  | Refused as |
+| ------------------------ | ------ | ---------- |
+| `maximumManifestBytes`   | 65,536 | `invalid`  |
+| `maximumEntriesPerPoint` | 64     | `invalid`  |
+| `maximumSchemaBytes`     | 16,384 | `invalid`  |
+| `maximumDepth`           | 32     | `invalid`  |
+
+## Load
+
+```ts
+import * as Load from "@smthrs/plugin/Load"
+
+declare const load: (host: Load.HostFacts, candidates: ReadonlyArray<Load.Candidate>) => Effect.Effect<Load.Loaded>
+```
+
+`HostFacts` is what the host implements and knows: `api`, the `points` it
+folds, its flow `catalog` (`FlowFacts`: `capabilities`, `minimum`,
+`personOnly`, `system`, optional resolved `payload`), core query row schemas in
+`queries`, and `tierCap`, which capabilities each tier may declare. A
+`Candidate` is a `tier`, an undecoded `manifest`, and the `flows` it owns as
+`OwnedFlow` facts. `Loaded` is `{ contributions, refused }`.
+
+`load` never fails. It decodes each candidate, checks `requires.api`, refuses
+both plugins of a shared id, orders the rest by `requires.plugins` (ties by id),
+then checks and folds each plugin against the host and the plugins before it.
+Refusals are ordered by plugin id. `maximumHeaderEntries` (6) bounds
+`shell.header` across all plugins. The checks and their reasons are listed in
+[Plugin manifests](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/manifests.md#what-the-loader-checks).
+
+## Contribution
+
+| Export                                               | Summary                                                                                                           |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Reason`                                             | The closed refusal reasons.                                                                                       |
+| `Refusal`                                            | `Schema.TaggedError` `"plugin/Refusal"`: `{ plugin?, reason, path?, detail }`. Carries no manifest value but ids. |
+| `Tier`                                               | `"built-in" \| "repository" \| "personal"`.                                                                       |
+| `Point`                                              | The twelve contribution points a host may advertise.                                                              |
+| `Contributions`, `empty`                             | `{ plugins, views, slots, commands, keybindings }`, folded; `empty` has none.                                     |
+| `Active`                                             | A loaded plugin: `id`, `version`, `title`, `tier`, `capabilities`, `uses`, `owns`.                                |
+| `View`, `Event`, `FlowEvent`, `LocalEvent`           | A view with its events; a flow event's `payload` is resolved and carries `personOnly`.                            |
+| `Slot`, `Command`                                    | The manifest entries plus `plugin` and `tier`.                                                                    |
+| `Keybinding`, `CommandKeybinding`, `EventKeybinding` | A binding with parsed `keys` and `when`; an event binding names its `view` and `personOnly`.                      |
+
+## JsonSchema
+
+| Export                                           | Summary                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `resolve(schema, defs?, at?)`                    | `Effect<Resolved, Refusal>`: admits the closed subset and inlines `#/$defs/<Name>` refs.                |
+| `validate(resolved, value)`                      | `Option<string>`: the path of the first failing value (`$.note`), or none.                              |
+| `properties(resolved)`                           | Every declared property name, `oneOf` and `anyOf` members included.                                     |
+| `property(resolved, name)`, `at(resolved, path)` | The schema a property name, or a path of names and `items` indexes, reaches; undefined when undeclared. |
+| `Resolved`, `TypeName`, `Json`                   | The resolved schema shape.                                                                              |
+| `maximumBytes`, `maximumDepth`                   | 16,384 bytes, 32 levels.                                                                                |
+
+The admitted keywords are `type`, `properties`, `required`,
+`additionalProperties` (boolean only), `items` (one schema), `enum`, `const`,
+`minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, `maxItems`,
+`oneOf`, `anyOf`, `title`, `description`, `default` and `$ref`.
+Anything else, a URL ref, an unknown ref or a ref cycle refuses
+`schema_unresolved`. `pattern` is outside the subset: the host would run a
+plugin's regular expression on arbitrary text, and a backtracking one such as
+`^(a+)+$` hangs it. A `password` format, `writeOnly: true`, or a property named
+like a secret (`secret`, `password`, `token`, `credential`) refuses
+`secret_field`.
+
+## Host
+
+| Export                                           | Summary                                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `PluginHost`                                     | The interface and its `Context.Service` key `"@smthrs/plugin/PluginHost"`.   |
+| `PluginRefused`, `RefusedReason`                 | `Schema.TaggedError` `"plugin/PluginRefused"`: `{ plugin, reason, detail }`. |
+| `Live<R>`                                        | `{ current, subscribe }`, a framework-free live source.                      |
+| `ItemRef`, `EventRef`, `Dispatched`, `Delivered` | `{ query, key }`, `{ view, name }`, `{ runId }`, `{ name, fields }`.         |
+| `PluginTab<Q, A>`                                | `{ queries, actions }`, what a tab layer gives its components.               |
+
+```ts
+export interface PluginHost {
+  readonly query: <R>(name: string) => Effect.Effect<Live<R>, PluginRefused>
+  readonly select: (item: ItemRef) => Effect.Effect<void, PluginRefused>
+  readonly propose: (event: EventRef, fields: unknown) => Effect.Effect<void, PluginRefused>
+  readonly dispatch: (event: EventRef, fields: unknown) => Effect.Effect<Dispatched, PluginRefused>
+  readonly open: (view: string) => Effect.Effect<void>
+  readonly events: (view: string) => Stream.Stream<Delivered>
+}
+```
+
+`events` is the declared local events of a view the host's keymap delivered, in
+order; person-only events are never delivered. `dispatch` of a person-only
+event is refused `person_only`: the host's action strip owns it.
+
+## Bind, When and Keys
+
+| Export                               | Summary                                                                                                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `Bind.references(args, at?)`         | `Result<ReadonlyArray<Reference>, Refusal>`: every `$item`, `$event` and `$key` reference, refusing `invalid` outside the grammar.    |
+| `Bind.bind(args, scope)`             | `Result<Record<string, unknown>, string>`: fills references from `{ item, event, key? }`; a missing value fails naming the reference. |
+| `When.parse(text)`                   | `Result<When, string>`: `view == <id>`, `item.<field>`, `focus.input`, `!`, `&&`.                                                     |
+| `When.evaluate(when, context)`       | Whether the condition holds for `{ view?, item?, focusInput }`.                                                                       |
+| `When.view(when)`, `When.always`     | The view a condition requires; the empty condition.                                                                                   |
+| `Keys.parse(text)`                   | `Result<Keys, string>`: one or two strokes, `mod+ctrl+alt+shift+<key>`.                                                               |
+| `Keys.match(keys, pressed, { mac })` | `{ matched, partial, index? }` for `KeyboardEvent`-shaped presses; `index` is a `digit`'s value less one.                             |
+
 ## Related packages
 
 The shipped hook catalog is the Smithers agent loop in
 [`@smthrs/agent`](/docs/reference/api/agent/), which augments `FlowsHooks` with three
 waterfalls. `Action.CacheEnvironment` comes from
 [`@smthrs/flow`](/docs/reference/api/flow/). The other runtime dependency,
-[`@smthrs/canonical`](/docs/reference/api/canonical/), supplies immutable catalog maps.
+[`@smthrs/canonical`](/docs/reference/api/canonical/), supplies immutable catalog maps and
+bounded JSON admission; [`@smthrs/registry`](/docs/reference/api/registry/) supplies the
+`Pack.checkCompatible` range grammar the loader checks `requires` with.
 
 ---
 
