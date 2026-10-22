@@ -48,7 +48,7 @@ The layers build without jj. With no usable jj, every operation fails with the
 `not_installed` code and a message naming the fix, rather than throwing. Nothing in the package installs,
 downloads, or `chmod`s a binary on your behalf.
 
-On a sibling working-copy operation error, the Node and Bun layers run `jj workspace update-stale` in the same workspace and retry the command once, preserving working-copy files and reporting both failures if recovery fails.
+On a stale or sibling working-copy operation error, the Node and Bun layers fail with `JjError.code = "stale_workspace"`, naming the workspace directory. They disable jj’s automatic stale update and never run `workspace update-stale` or retry with a working-copy rewrite. Commit or back up your files, then recover deliberately.
 
 ### Point at a specific jj
 

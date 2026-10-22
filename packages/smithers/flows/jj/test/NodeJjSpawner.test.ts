@@ -14,7 +14,6 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
-import * as Logger from "effect/Logger"
 import * as PlatformError from "effect/PlatformError"
 import type * as EffectChildProcess from "effect/process/ChildProcess"
 import {
@@ -518,7 +517,7 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
         module: "NodeJj",
         method: "status",
         command:
-          "jj status --color=never --config snapshot.max-new-file-size=0 --config signing.behavior=drop --config signing.backends.gpg.program=/dev/null --config signing.backends.gpgsm.program=/dev/null --config signing.backends.ssh.program=/dev/null --config fsmonitor.backend=none"
+          "jj status --color=never --config snapshot.max-new-file-size=0 --config signing.behavior=drop --config signing.backends.gpg.program=/dev/null --config signing.backends.gpgsm.program=/dev/null --config signing.backends.ssh.program=/dev/null --config fsmonitor.backend=none --config snapshot.auto-update-stale=false"
       })
     }))
 
@@ -640,77 +639,56 @@ describe("NodeJj repository-root validation", () => {
   })
 })
 
-describe.skipIf(process.platform === "win32")("jj sibling operation recovery", () => {
-  for (const runner of ["direct", "spawner"] as const) {
-    for (const mode of ["recover", "other", "retry-sibling", "retry-other", "repair-fails"] as const) {
-      it.effect(`${runner}: ${mode}`, () =>
+describe.skipIf(process.platform === "win32")("jj stale workspace refusal", () => {
+  for (const runner of ["direct", "spawner", "ambient"] as const) {
+    for (
+      const message of [
+        "Internal error: The repo was loaded at operation first, which seems to be a sibling of the working copy's operation original",
+        "Error: The working copy is stale (not updated since operation original)",
+        "unrelated failure"
+      ]
+    ) {
+      it.effect(`${runner}: ${message}`, () =>
         Effect.gen(function*() {
           const root = mkdtempSync(join(tmpdir(), "jj-sibling-"))
           yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(root, { recursive: true, force: true })))
+          const previousCwd = process.cwd()
+          if (runner === "ambient") {
+            process.chdir(root)
+            yield* Effect.addFinalizer(() => Effect.sync(() => process.chdir(previousCwd)))
+          }
           const binary = join(root, "jj")
           writeFileSync(
             binary,
             `#!/bin/sh
 if [ "$1" = "--version" ]; then echo "jj 0.40.0"; exit 0; fi
 printf '%s\\n' "$*" >> calls
-pwd >> directories
-if [ "$1 $2" = "workspace update-stale" ]; then
-  ${mode === "repair-fails" ? "echo \"repair failed\" >&2; exit 1" : ": > repaired; exit 0"}
-fi
-if [ "${mode}" = "other" ]; then echo "unrelated failure" >&2; exit 1; fi
-if [ ! -f repaired ]; then
-  echo "Internal error: The repo was loaded at operation first, which seems to be a sibling of the working copy's operation original" >&2
-  exit 1
-fi
-${
-              mode === "retry-sibling"
-                ? "echo \"Internal error: The repo was loaded at operation second, which seems to be a sibling of the working copy's operation retry\" >&2; exit 1"
-                : ""
-            }
-${mode === "retry-other" ? "echo \"retry unrelated failure\" >&2; exit 1" : ""}
-echo "clean after repair"
+echo "${message}" >&2
+exit 1
 `,
             { mode: 0o755 }
           )
           process.env.SMITHERS_JJ_PATH = binary
           writeFileSync(join(root, "user-edit"), "keep my working copy")
-          const layer = runner === "direct"
+          const layer = runner === "ambient"
+            ? budgeted(NodeJj.layer)
+            : runner === "direct"
             ? budgeted(NodeJj.layerAt(root))
             : Layer.provide(budgeted(NodeJj.layerSpawnerAt(root)), realSpawner)
-          const logs: Array<unknown> = []
-          const logger = Logger.layer([Logger.make(({ message }) => logs.push(message))])
           const result = yield* Effect.result(
-            Effect.flatMap(Jj, (jj) => jj.status()).pipe(
-              Effect.provide(layer),
-              Effect.provide(logger)
-            )
+            Effect.flatMap(Jj, (jj) => jj.status()).pipe(Effect.provide(layer))
           )
-          expect(logs).toHaveLength(mode === "other" || mode === "repair-fails" ? 0 : 1)
           const calls = readFileSync(join(root, "calls"), "utf8").trim().split("\n")
-          expect(calls).toHaveLength(mode === "other" ? 1 : mode === "repair-fails" ? 2 : 3)
-          if (mode !== "other") expect(calls[1]).toMatch(/^workspace update-stale(?: |$)/)
-          if (calls.length === 3) expect(calls[2]).toBe(calls[0])
-          expect(readFileSync(join(root, "directories"), "utf8").trim().split("\n")).toEqual(
-            calls.map(() => realpathSync(root))
-          )
+          expect(calls).toHaveLength(1)
+          expect(calls[0]).toContain("snapshot.auto-update-stale=false")
           expect(readFileSync(join(root, "user-edit"), "utf8")).toBe("keep my working copy")
-          if (mode === "recover") {
-            expect(result._tag).toBe("Success")
-            if (result._tag === "Success") expect(result.success).toBe("clean after repair\n")
-          } else {
-            expect(result._tag).toBe("Failure")
-            if (result._tag !== "Failure") return
-            if (mode === "other") expect(result.failure.message).toContain("unrelated failure")
-            else {
-              expect(result.failure.message).toContain("operation first")
-              expect(result.failure.message).toContain(
-                mode === "retry-sibling"
-                  ? "operation second"
-                  : mode === "retry-other"
-                  ? "retry unrelated failure"
-                  : "repair failed"
-              )
-            }
+          expect(result._tag).toBe("Failure")
+          if (result._tag !== "Failure") return
+          expect(result.failure.message).toContain(message)
+          expect(result.failure.code).toBe(message === "unrelated failure" ? "unknown" : "stale_workspace")
+          if (message !== "unrelated failure") {
+            expect(result.failure.message).toContain(root)
+            expect(result.failure.message).toContain("commit or back up")
           }
         }).pipe(Effect.scoped))
     }

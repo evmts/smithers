@@ -28,8 +28,8 @@ Behind a service, each of those becomes a decision the composition makes once:
 - **The repository is explicit.** `NodeJj.layerAt(root)` pins one absolute
   repository root, so a `chdir` in unrelated code cannot redirect a restore
   into another checkout.
-- **Failures are a closed set of six codes.** `not_installed`, `conflict`,
-  `invalid_ref`, `snapshot_refused`, `unsupported_version`, and `unknown`, each
+- **Failures are a closed set of seven codes.** `not_installed`, `conflict`,
+  `invalid_ref`, `snapshot_refused`, `stale_workspace`, `unsupported_version`, and `unknown`, each
   carrying the command that produced it and a plain-data cause you can store and
   replay. Nothing escapes as an untyped throw, and the last two can fail a CLI
   layer as it is built rather than an operation.
@@ -135,7 +135,7 @@ step of a run you start from a terminal.
 - [Version control as a capability](./concepts/version-control-as-a-capability.md):
   why the contract holds these nine operations and no others, and the grants
   the kernel checks.
-- [How a jj failure is reported](./concepts/failures.md): the six codes, how
+- [How a jj failure is reported](./concepts/failures.md): the seven codes, how
   each backend classifies onto them, and why a cause is plain data.
 - [Snapshot a working copy and put it back](./guides/snapshot-and-restore.md):
   what `restore` does to uncommitted edits, and when to reach for `revert`

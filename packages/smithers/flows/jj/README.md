@@ -16,7 +16,7 @@ revert one change, and restore a whole operation.
 One program written against that service runs against the
 [jj](https://jj-vcs.github.io) command line on Node and Bun, or against jj-lib
 compiled to WebAssembly in a browser tab. Behind a service rather than an
-ad-hoc `spawn`, the repository is explicit, failures are a closed set of six
+ad-hoc `spawn`, the repository is explicit, failures are a closed set of seven
 codes, and a test swaps the layer instead of the code.
 
 ## Install
@@ -163,13 +163,14 @@ private-index, permission and conflict errors. Durable actions own retry policy;
 `SandboxMerge.Apply` releases these fences before its engine-owned retry wait.
 No helper sleeps or removes Git's active lock.
 
-## Failures are six codes
+## Failures are seven codes
 
 Every operation fails with a `JjError` carrying a stable `code`, the `module`
 and `method` that failed, the `command` that produced it, and a plain-data
 `cause`. `not_installed` means no usable jj on this host, `conflict` that the
 repository refused, `invalid_ref` that a revision does not resolve,
-`snapshot_refused` that jj skipped files while capturing the working copy, and
+`snapshot_refused` that jj skipped files while capturing the working copy,
+`stale_workspace` requires deliberate working-copy recovery after committing or backing up files, and
 `unknown` everything else jj reported. Nothing escapes as an untyped throw, and
 the codes survive a journal round trip, so a recorded run keeps its meaning.
 

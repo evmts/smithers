@@ -552,7 +552,9 @@ const HOST_ONLY_CONFIG: ReadonlyArray<string> = [
   "--config",
   "signing.backends.ssh.program=/dev/null",
   "--config",
-  "fsmonitor.backend=none"
+  "fsmonitor.backend=none",
+  "--config",
+  "snapshot.auto-update-stale=false"
 ]
 
 const isFile = (path: string): boolean => {
@@ -807,28 +809,18 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
       refuseUnmigratedConfig(method, args, cwd ?? repositoryRoot),
       () =>
         spawn(method, args, cwd).pipe(Effect.catch((original) => {
-          if (!original.message.includes("seems to be a sibling of the working copy's operation")) {
+          if (!/seems to be a sibling of the working copy's operation|working copy is stale/i.test(original.message)) {
             return Effect.fail(original)
           }
-          // Use the same binary, host spawner and workspace. Calling spawn rather
-          // than run bounds recovery to one repair and one original-command retry.
-          return Effect.gen(function*() {
-            yield* spawn("workspace update-stale", [
-              "workspace",
-              "update-stale",
-              "--color=never",
-              "--config",
-              "snapshot.max-new-file-size=0",
-              ...HOST_ONLY_CONFIG
-            ], cwd)
-            yield* Effect.logWarning("jj: ran workspace update-stale after sibling operation error; retrying once")
-            return yield* spawn(method, args, cwd)
-          }).pipe(Effect.mapError((error) =>
+          return Effect.fail(
             new JjError({
-              ...error,
-              message: `${original.message}\nRecovery failed: ${error.message}`
+              ...original,
+              code: "stale_workspace",
+              message: `${original.message}\nWorkspace ${
+                cwd ?? process.cwd()
+              }: commit or back up your files and recover deliberately. Smithers will not update the working copy automatically.`
             })
-          ))
+          )
         }))
     )
   const inRepository = (method: string, args: ReadonlyArray<string>) => {

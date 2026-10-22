@@ -407,28 +407,21 @@ test("missing inventoried source files fail closed while nonfiles and binary or 
 })
 
 
-for (const mode of ["recover", "other", "retry-sibling", "retry-other", "repair-fails"]) {
-  test(`jj listing recovers only once: ${mode}`, { skip: process.platform === "win32" }, (t) => {
-    const root = tree(t, { ".jj/marker": "", "source.ts": "export const value = 1\n" })
+for (const message of [
+  "Internal error: seems to be a sibling of the working copy's operation original",
+  "Error: The working copy is stale (not updated since operation original)",
+  "unrelated failure"
+]) {
+  test(`jj listing fails without recovery: ${message}`, { skip: process.platform === "win32" }, (t) => {
+    const root = tree(t, { ".jj/marker": "", "source.ts": "uncommitted work\n" })
     const bin = join(root, "bin")
     mkdirSync(bin)
     const binary = join(bin, "jj")
     writeFileSync(binary, `#!${process.execPath}
 const fs = require("node:fs")
-const args = process.argv.slice(2)
-fs.appendFileSync("calls", JSON.stringify({ args, cwd: process.cwd() }) + "\\n")
-const sibling = "Internal error: The repo was loaded at operation first, which seems to be a sibling of the working copy's operation original"
-const fail = message => { console.error(message); process.exit(1) }
-if (args[0] === "workspace" && args[1] === "update-stale") {
-  if ("${mode}" === "repair-fails") fail("repair failed")
-  fs.writeFileSync("repaired", "")
-} else {
-  if ("${mode}" === "other") fail("unrelated failure")
-  if (!fs.existsSync("repaired")) fail(sibling)
-  if ("${mode}" === "retry-sibling") fail(sibling.replace("operation first", "operation second"))
-  if ("${mode}" === "retry-other") fail("retry unrelated failure")
-  process.stdout.write("source.ts\\0")
-}
+fs.appendFileSync("calls", JSON.stringify(process.argv.slice(2)) + "\\n")
+console.error(${JSON.stringify(message)})
+process.exit(1)
 `)
     chmodSync(binary, 0o755)
     const result = spawnSync(process.execPath, [script, "--include-untracked", root], {
@@ -436,20 +429,47 @@ if (args[0] === "workspace" && args[1] === "update-stale") {
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}` }
     })
     const calls = readFileSync(join(root, "calls"), "utf8").trim().split("\n").map(JSON.parse)
-    assert.equal(calls.length, mode === "other" ? 1 : mode === "repair-fails" ? 2 : 3)
-    assert.ok(calls.every(call => call.cwd === calls[0].cwd))
-    if (mode !== "other") assert.deepEqual(calls[1].args, ["workspace", "update-stale"])
-    if (calls.length === 3) assert.deepEqual(calls[2], calls[0])
-    assert.equal(result.status, mode === "recover" ? 0 : 2, result.stderr)
-    assert.equal((result.stderr.match(/ran workspace update-stale/g) ?? []).length,
-      mode === "other" || mode === "repair-fails" ? 0 : 1)
-    if (mode !== "recover") {
-      if (mode === "other") assert.match(result.stderr, /unrelated failure/)
-      else {
-        assert.match(result.stderr, /operation first/)
-        assert.match(result.stderr, mode === "retry-sibling" ? /operation second/ :
-          mode === "retry-other" ? /retry unrelated failure/ : /repair failed/)
-      }
+    assert.equal(calls.length, 1)
+    assert.ok(calls[0].includes("snapshot.auto-update-stale=false"))
+    assert.equal(result.status, 2)
+    assert.ok(result.stderr.includes(message))
+    if (message !== "unrelated failure") {
+      assert.ok(result.stderr.includes(root))
+      assert.match(result.stderr, /commit or back up/)
     }
+    assert.equal(readFileSync(join(root, "source.ts"), "utf8"), "uncommitted work\n")
   })
 }
+
+test("ignore character classes, escaped markers and malformed brackets match literally", () => {
+  const rules = parseIgnore("\\#literal\n[ab].ts\n[!a].js\n[broken\nfile?.txt\n")
+  assert.equal(isIgnored(rules, "#literal"), true)
+  assert.equal(isIgnored(rules, "a.ts"), true)
+  assert.equal(isIgnored(rules, "c.ts"), false)
+  assert.equal(isIgnored(rules, "b.js"), true)
+  assert.equal(isIgnored(rules, "a.js"), false)
+  assert.equal(isIgnored(rules, "[broken"), true)
+  assert.equal(isIgnored(rules, "file1.txt"), true)
+})
+
+test("reference globs support single characters, recursive suffixes and braces", () => {
+  const source = 'const x = { paths: ["docs/?.md", "docs/**", "{alpha,beta}.ts", "{broken", "plain*.ts", "docs/**/x.ts"] }'
+  assert.deepEqual(danglingFindings(["PACKAGE.ts", "docs/a.md", "alpha.ts", "{broken", "plain.ts", "docs/sub/x.ts"], () => source), [])
+})
+
+test("jj listing preserves startup failures as errors", (t) => {
+  const root = tree(t, { ".jj/marker": "", "precious": "keep" })
+  const previous = process.env.PATH
+  try {
+    process.env.PATH = join(root, "missing-bin")
+    assert.throws(() => listFiles(root), /ENOENT/)
+  } finally {
+    process.env.PATH = previous
+  }
+  assert.equal(readFileSync(join(root, "precious"), "utf8"), "keep")
+})
+
+test("stdin inventory supports the default repository root", () => {
+  const result = spawnSync(process.execPath, [script, "--files-from-stdin"], { encoding: "utf8", input: "" })
+  assert.equal(result.status, 0, result.stderr)
+})

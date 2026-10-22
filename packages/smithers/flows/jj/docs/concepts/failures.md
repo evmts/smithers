@@ -1,6 +1,6 @@
 ---
 title: "How a jj failure is reported"
-description: "The six JjError codes and what each means, how each layer classifies jj's own output onto them, and why the cause is copied onto plain data before it reaches the journal."
+description: "The seven JjError codes and what each means, how each layer classifies jj's own output onto them, and why the cause is copied onto plain data before it reaches the journal."
 sidebar:
   order: 2
 ---
@@ -12,16 +12,17 @@ produced it, and an optional `cause`. Nothing escapes as an untyped throw: a
 WebAssembly module, and a repository that refuses an operation all arrive the
 same way.
 
-## The six codes are a closed contract
+## The seven codes are a closed contract
 
-| Code                  | Meaning                                                         |
-| --------------------- | --------------------------------------------------------------- |
-| `not_installed`       | No usable jj on this host.                                      |
-| `conflict`            | The repository refused: the operation would conflict.           |
-| `invalid_ref`         | The change id or revision does not resolve.                     |
-| `snapshot_refused`    | jj skipped files while capturing the working copy.              |
-| `unsupported_version` | The jj command line is older than the minimum, or unrecognized. |
-| `unknown`             | Everything else jj reported.                                    |
+| Code                  | Meaning                                                               |
+| --------------------- | --------------------------------------------------------------------- |
+| `not_installed`       | No usable jj on this host.                                            |
+| `conflict`            | The repository refused: the operation would conflict.                 |
+| `invalid_ref`         | The change id or revision does not resolve.                           |
+| `snapshot_refused`    | jj skipped files while capturing the working copy.                    |
+| `unsupported_version` | The jj command line is older than the minimum, or unrecognized.       |
+| `stale_workspace`     | Stale or sibling workspace; back up files before deliberate recovery. |
+| `unknown`             | Everything else jj reported.                                          |
 
 Callers branch on these, step keys digest them, and user interfaces map them to
 remediation. A code is added and never repurposed. Widening `conflict` to cover

@@ -20,9 +20,9 @@ import { homedir } from "node:os"
 
 export class HostFailed extends Schema.TaggedError<HostFailed>()("issue-sweep/HostFailed", {
   message: Schema.String,
-  code: Schema.optional(Schema.Literals(["unreachable", "refused"]))
+  code: Schema.optional(Schema.Literals(["unreachable", "refused", "stale_workspace"]))
 }) {}
-Fault.register("issue-sweep/HostFailed", { unreachable: "infra", refused: "dependency" })
+Fault.register("issue-sweep/HostFailed", { unreachable: "infra", refused: "dependency", stale_workspace: "dependency" })
 
 /** Classify host diagnostics while retaining the host failure codec. */
 export const hostFailed = (message: string) =>
@@ -43,34 +43,42 @@ export interface RunOptions {
   readonly env?: Record<string, string> | undefined
 }
 
-/**
- * The workspace a failed `jj -R <workspace> ...` must bring up to date before
- * it is tried again, or `undefined`. Many writers share one repository, so a
- * workspace's last operation can end up beside the repository's head instead
- * of under it; jj then refuses every command there until the workspace is
- * updated. One such refusal used to stop a whole sweep round.
- */
-export const staleWorkspace = (args: ReadonlyArray<string>, exited: Exited): string | undefined => {
-  if (exited.code === 0 || args[0] !== "-R" || args[1] === undefined) return undefined
-  return /seems to be a sibling of the working copy's operation|The working copy is stale/.test(exited.stderr)
-    ? args[1]
-    : undefined
+/** Names a stale jj workspace without changing its files. */
+export const staleWorkspace = (
+  args: ReadonlyArray<string>,
+  exited: Exited,
+  cwd?: string
+): string | undefined => {
+  if (exited.code === 0) return undefined
+  if (!/seems to be a sibling of the working copy's operation|The working copy is stale/.test(exited.stderr)) {
+    return undefined
+  }
+  return args[0] === "-R" && args[1] !== undefined ? args[1] : cwd
 }
 
-/**
- * Runs `command` with `args` on the host and waits for it. Output streams are
- * read concurrently so a full pipe never deadlocks the child; closing the
- * scope (an interrupt, a timeout) kills the process. A `jj -R` command refused
- * because its workspace fell behind ({@link staleWorkspace}) runs once more
- * after `jj workspace update-stale` there.
- */
-export const run = (command: string, args: ReadonlyArray<string>, options: RunOptions = {}) =>
-  Effect.flatMap(once(command, args, options), (exited) => {
-    const stale = command === "jj" ? staleWorkspace(args, exited) : undefined
+/** Runs a host command once; stale jj workspaces require deliberate recovery. */
+export const run = (command: string, args: ReadonlyArray<string>, options: RunOptions = {}) => {
+  // Landing serializes writes as `lockf -k -t 900 <lock> jj ...`.
+  const jjAt = command === "jj" ? -1 : command === "lockf" && args[4] === "jj" ? 4 : undefined
+  const jjArgs = jjAt === undefined ? undefined : args.slice(jjAt + 1)
+  const argv = jjAt === undefined ? args : [
+    ...args.slice(0, jjAt + 1),
+    "--config",
+    "snapshot.auto-update-stale=false",
+    ...args.slice(jjAt + 1)
+  ]
+  return Effect.flatMap(once(command, argv, options), (exited) => {
+    const stale = jjArgs === undefined ? undefined : staleWorkspace(jjArgs, exited, options.cwd ?? process.cwd())
     return stale === undefined
       ? Effect.succeed(exited)
-      : Effect.andThen(once("jj", ["-R", stale, "workspace", "update-stale"], options), once(command, args, options))
+      : Effect.fail(
+        new HostFailed({
+          code: "stale_workspace",
+          message: `${exited.stderr}\nWorkspace ${stale}: commit or back up your files and recover deliberately.`
+        })
+      )
   })
+}
 
 const once = (command: string, args: ReadonlyArray<string>, options: RunOptions) =>
   Effect.scoped(Effect.gen(function*() {

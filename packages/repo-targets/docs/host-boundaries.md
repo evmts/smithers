@@ -18,3 +18,7 @@ machinery. The declaration stays platform neutral; builtin classification
 runs in the Node-hosted checker. This rule checks module references, not
 ambient globals or dynamically computed specifiers; the existing hidden-host
 and judgment checks cover those separately.
+
+The tracked-file hygiene check fails closed on stale or sibling jj working
+copies. It never repairs a workspace; commit or back up files before deliberate
+recovery. Its error carries `code: "stale_workspace"` and the workspace directory.

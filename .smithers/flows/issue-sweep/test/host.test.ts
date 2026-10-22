@@ -3,8 +3,22 @@ import { Unreachable } from "@smthrs/kernel"
 import { Effect, Exit, Fiber } from "effect"
 import { TestClock } from "effect/testing"
 import assert from "node:assert/strict"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import test from "node:test"
-import { ridingOutages, staleWorkspace } from "../host.ts"
+import {
+  hostFailed,
+  output,
+  repository,
+  ridingOutages,
+  run,
+  staleWorkspace,
+  tail,
+  workspaceName,
+  workspaceOf,
+  workspaces
+} from "../host.ts"
 
 const refused = (stderr: string) => ({ stdout: "", stderr, code: 255 })
 const sibling = "Internal error: The repo was loaded at operation 3798008d8429, which seems to be a sibling of " +
@@ -106,5 +120,73 @@ test("network signatures retry even when the original host error is registered a
       assert.equal(attempts, 3)
       assert.equal(Fault.of(failure).class, "bug")
     }).pipe(Effect.provide(TestClock.layer()))
+  )
+})
+
+test("host process output, failures and workspace helpers retain their contracts", async () => {
+  assert.equal(await Effect.runPromise(output("sh", ["-c", "printf hello"])), "hello")
+  assert.equal((await Effect.runPromise(run("sh", ["-c", "exit 7"]))).code, 7)
+  for (
+    const [command, args] of [["sh", ["-c", "echo refused >&2; exit 1"]], ["nodejj-missing-command", []], [
+      "false",
+      []
+    ]] as const
+  ) {
+    const result = await Effect.runPromise(Effect.result(output(command, args)))
+    assert.equal(result._tag, "Failure")
+  }
+  assert.equal(hostFailed(dns).code, "unreachable")
+  assert.equal(tail("a\nb\nc\n", 2), "b\nc")
+  assert.equal(workspaceName(12), "sweep-12")
+  assert.equal(workspaceOf(12), `${workspaces}/issue-12`)
+  assert.ok(repository.endsWith("/smithers"))
+})
+
+for (const mode of ["root", "cwd", "locked"] as const) {
+  const useRoot = mode !== "cwd"
+  test(`stale host jj fails without recovery or retry (${mode})`, async (t) => {
+    const root = mkdtempSync(join(tmpdir(), "sweep-stale-"))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    const binary = join(root, "jj")
+    if (mode === "locked") {
+      writeFileSync(join(root, "lockf"), "#!/bin/sh\nshift 4\nexec \"$@\"\n", { mode: 0o755 })
+    }
+    writeFileSync(
+      binary,
+      `#!/bin/sh
+printf '%s\\n' "$*" >> "${root}/calls"
+echo "Error: The working copy is stale (not updated since op 1)" >&2
+exit 255
+`,
+      { mode: 0o755 }
+    )
+    writeFileSync(join(root, "precious"), "keep")
+    const result = await Effect.runPromise(Effect.result(run(mode === "locked" ? "lockf" : "jj", [
+      ...(mode === "locked" ? ["-k", "-t", "900", join(root, "lock"), "jj"] : []),
+      ...(useRoot ? ["-R", root, "status"] : ["status"])
+    ], {
+      ...(useRoot ? {} : { cwd: root }),
+      env: { PATH: `${root}:${process.env.PATH}` }
+    })))
+    assert.equal(result._tag, "Failure")
+    if (result._tag === "Failure") {
+      assert.equal(result.failure.code, "stale_workspace")
+      assert.ok(result.failure.message.includes(root))
+      assert.ok(result.failure.message.includes("commit or back up"))
+    }
+    const calls = readFileSync(join(root, "calls"), "utf8").trim().split("\n")
+    assert.equal(calls.length, 1)
+    assert.ok(calls[0].includes("snapshot.auto-update-stale=false"))
+    assert.equal(readFileSync(join(root, "precious"), "utf8"), "keep")
+  })
+}
+
+test("unrelated lockf commands retain their original result", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "sweep-lockf-"))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  writeFileSync(join(root, "lockf"), "#!/bin/sh\nprintf unchanged\n", { mode: 0o755 })
+  assert.equal(
+    await Effect.runPromise(output("lockf", [], { env: { PATH: `${root}:${process.env.PATH}` } })),
+    "unchanged"
   )
 })

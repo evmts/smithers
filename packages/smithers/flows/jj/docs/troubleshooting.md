@@ -3,7 +3,7 @@ title: "Troubleshooting"
 description: "Every failure @smthrs/jj reports, grouped by code: the symptom you see, what caused it, and what to change."
 ---
 
-Every failure this package produces is a `JjError` with one of six codes.
+Every failure this package produces is a `JjError` with one of seven codes.
 Find the code, then the message, and read the matching section. A CLI layer
 builds without jj, so every code arrives from an operation. Two of them,
 `not_installed` and `unsupported_version`, come from the version probe the
@@ -295,3 +295,13 @@ TypeError: NodeJj.layerAt requires an absolute repository root: ./checkout
 A relative repository root is a wiring mistake rather than a runtime condition,
 so it is refused at construction instead of failing later. Pass an absolute
 path. `layerSpawnerAt` behaves the same way.
+
+## `stale_workspace`
+
+The workspace’s recorded operation is stale or a sibling of the repository head.
+The error names the workspace directory and preserves jj’s diagnostic. Smithers
+never runs `jj workspace update-stale` or another working-copy rewrite to recover,
+and disables `snapshot.auto-update-stale` even if user config enables it.
+
+Commit or back up your files before deliberately recovering the workspace.
+Retry only after recovery; the failed operation is never retried automatically.

@@ -149,20 +149,17 @@ export const listFiles = (root, { includeUntracked = false, projectedTree = fals
     args = ["ls-files", "--cached", ...(includeUntracked ? ["--others", "--exclude-standard"] : []), "-z"]
   } else if (existsSync(join(root, ".jj"))) {
     command = "jj"
-    args = [...(includeUntracked ? [] : ["--ignore-working-copy"]), "file", "list", "-T", 'path ++ "\\0"']
+    args = ["--config", "snapshot.auto-update-stale=false", ...(includeUntracked ? [] : ["--ignore-working-copy"]), "file", "list", "-T", 'path ++ "\\0"']
   } else return walkFiles(root, readIgnore(root), { projectedTree })
   const options = { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }
   const failed = result => result.error !== undefined || result.status !== 0
   const diagnostic = result => result.error?.message ?? result.stderr.trim()
-  let result = spawnSync(command, args, options)
+  const result = spawnSync(command, args, options)
   if (command === "jj" && failed(result) &&
-      result.stderr?.includes("seems to be a sibling of the working copy's operation")) {
-    const original = diagnostic(result)
-    const repaired = spawnSync(command, ["workspace", "update-stale"], options)
-    if (failed(repaired)) throw new Error(`jj file listing failed: ${original}\nRecovery failed: ${diagnostic(repaired)}`)
-    console.error("jj: ran workspace update-stale after sibling operation error; retrying once")
-    result = spawnSync(command, args, options)
-    if (failed(result)) throw new Error(`jj file listing failed: ${original}\nRetry failed: ${diagnostic(result)}`)
+      /seems to be a sibling of the working copy's operation|working copy is stale/i.test(diagnostic(result))) {
+    const error = new Error(`jj file listing failed: ${diagnostic(result)}\nWorkspace ${root}: commit or back up your files and recover deliberately.`)
+    error.code = "stale_workspace"
+    throw error
   }
   if (failed(result)) {
     throw new Error(`${command} file listing failed: ${diagnostic(result)}`)

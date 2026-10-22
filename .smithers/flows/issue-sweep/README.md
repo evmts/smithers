@@ -88,3 +88,8 @@ Retain the returned run ID and inspect `smthrs runs show <id>` and
 `smthrs runs logs <id> --follow`. Admission is not completion. VM placement
 requires the disk floor above; Cloud qualification remains blocked on #3379.
 Local `Fix` is scoped and does not survive host death.
+
+Stale or sibling jj workspaces fail with `HostFailed.code = "stale_workspace"`.
+Host commands disable jj's automatic stale update and never run recovery or
+retry a stale command. Commit or back up the named workspace before deliberate
+recovery.
