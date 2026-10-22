@@ -171,7 +171,7 @@ describe("refusals: no Electric needed", () => {
       const who = new URL(request.url, "http://localhost").searchParams.get("who")
       if (who === "stranger") return yield* new ShapeProxy.Refused({ status: 403 })
       if (who === null) return yield* new ShapeProxy.Refused({ status: 401 })
-      if (who === "blip") return yield* new ShapeProxy.Refused({ status: 503, retryAfter: 5 })
+      if (who === "blip") return yield* new ShapeProxy.Refused({ status: 503, retryAfter: 5, upstream: "database" })
       return { table: "items", where: "owner = $1", params: { "1": who } }
     })
     const h = harness({ shape: decide })
@@ -193,6 +193,10 @@ describe("refusals: no Electric needed", () => {
       { status: 503, cacheControl: "private, no-store", retryAfter: "5", body: "", level: "Error", logged: 503 }
     ])
     expect(h.upstream).toEqual([])
+    expect(h.logs.map((line) => line.annotations.upstream)).toEqual(["access", "access", "database"])
+    expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "4xx" })).toBe(2)
+    expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx" })).toBe(1)
+    expect(new Set(h.logs.map((line) => line.annotations.correlationId)).size).toBe(3)
     expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false" })).toBe(1)
     const servers = h.spans.filter(({ kind }) => kind === "server")
     expect(servers.map(({ attributes }) => attributes.get("http.response.status_code"))).toEqual([401, 403, 503])
@@ -205,6 +209,27 @@ describe("refusals: no Electric needed", () => {
       ["where", "owner = $1"],
       ["params[1]", "person-1"]
     ])
+  })
+
+  test("a defect deciding a shape answers 500 with one content-free record", async () => {
+    const h = harness({ shape: Effect.die(new Error("PRIVATE-DECISION-CONTENT")) })
+    const response = await h.request("?offset=-1")
+    expect(response.status).toBe(500)
+    expect(h.upstream).toEqual([])
+    expect(h.logs).toHaveLength(1)
+    expect(h.line()?.annotations).toMatchObject({ status: 500, upstream: "access", statusClass: "5xx" })
+    expect(JSON.stringify(h.logs)).not.toContain("PRIVATE-DECISION-CONTENT")
+    expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx" })).toBe(1)
+  })
+
+  test("abandoning a shape decision records exactly one abort without contacting Electric", async () => {
+    const h = harness({ shape: Effect.never })
+    const fiber = h.fork("?offset=-1")
+    await vi.waitFor(() => expect(h.spans.some((span) => span.kind === "server")).toBe(true))
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    expect(h.logs).toHaveLength(1)
+    expect(h.line()?.annotations).toMatchObject({ status: 499, upstream: "access", outcome: "aborted" })
+    expect(h.upstream).toEqual([])
   })
 
   test("a refusal is never kept, even on a public shape", async () => {
@@ -244,6 +269,10 @@ describe("faults: no Electric needed", () => {
     expect([...h.upstream[0]!.searchParams]).toEqual([["offset", "-1"], ["handle", "h-1"], ["table", "items"]])
     expect(h.line()?.annotations).toEqual({
       status: 502,
+      route: "electric.shape",
+      upstream: "electric",
+      correlationId: response.headers.get("x-request-id"),
+      statusClass: "5xx",
       live: false,
       durationMs: expect.any(Number),
       bytes: 0,
@@ -251,7 +280,10 @@ describe("faults: no Electric needed", () => {
     })
     expect(Object.fromEntries(h.span().attributes)).toEqual({
       "http.response.status_code": 502,
-      "electric.shape.live": false
+      "electric.shape.live": false,
+      route: "electric.shape",
+      upstream: "electric",
+      correlationId: response.headers.get("x-request-id")
     })
     expect(JSON.stringify(h.logs)).not.toContain("lower")
   })

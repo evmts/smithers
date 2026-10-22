@@ -139,6 +139,8 @@ export type Cache = "no-store" | "public"
 export class Refused extends Data.TaggedError("Refused")<{
   readonly status: 401 | 403 | 503
   readonly retryAfter?: number | undefined
+  /** The failed dependency when the host cannot decide access; defaults to `access`. */
+  readonly upstream?: "database" | "access" | undefined
 }> {}
 
 /**
@@ -196,6 +198,14 @@ export const defaultMetric: Metric.Counter<number> = Metric.counter("electric_sh
   description: "Electric shape requests the proxy answered, by status and live",
   incremental: true
 })
+
+/**
+ * Responses across all shapes, by the host's fixed name and HTTP status class.
+ *
+ * @category observability
+ * @since 0.1.0
+ */
+export const responses = Metric.counter("electric_shape_responses", { incremental: true })
 
 /**
  * Reads Electric's connection from `ELECTRIC_URL`, `ELECTRIC_SECRET` (as a
@@ -288,9 +298,14 @@ export const make = <R = never>(
     readonly startedAt: number
     readonly bytes: number
     readonly outcome: Outcome
+    readonly correlationId: string
+    readonly upstream: string
   }) =>
     Effect.gen(function*() {
       const { status, live, bytes, outcome } = request
+      const { correlationId, upstream } = request
+      const statusClass = `${Math.floor(status / 100)}xx`
+      yield* Metric.update(Metric.withAttributes(responses, { name, statusClass }), 1)
       const durationMs = (yield* Clock.currentTimeMillis) - request.startedAt
       yield* Metric.update(Metric.withAttributes(metric, { status: String(status), live: String(live) }), 1)
       const level = status >= 500 || outcome === "failed"
@@ -299,32 +314,42 @@ export const make = <R = never>(
         ? "Warn"
         : "Info"
       yield* Effect.logWithLevel(level)(name).pipe(
-        Effect.annotateLogs({ status, live, durationMs, bytes, outcome })
+        Effect.annotateLogs({ route: name, correlationId, upstream, status, statusClass, live, durationMs, bytes, outcome })
       )
     })
 
   return Effect.gen(function*() {
+    const span = yield* Effect.orDie(Effect.currentSpan)
+    const correlationId = span.spanId
+    const ownHeaders = { ...own, "x-request-id": correlationId }
     const request = yield* HttpServerRequest.HttpServerRequest
     const startedAt = yield* Clock.currentTimeMillis
     const incoming = new URL(request.url, "http://localhost").searchParams
     const live = incoming.get("live") === "true"
-    const answered = (status: number) =>
-      Effect.annotateCurrentSpan({ "http.response.status_code": status, "electric.shape.live": live })
-    const ended = (status: number, outcome: Outcome = "complete") =>
-      Effect.andThen(answered(status), record({ status, live, startedAt, bytes: 0, outcome }))
+    const answered = (status: number, upstream: string) =>
+      Effect.annotateCurrentSpan({ "http.response.status_code": status, "electric.shape.live": live, route: name, correlationId, upstream })
+    const ended = (status: number, upstream: string, outcome: Outcome = "complete") =>
+      Effect.andThen(answered(status, upstream), record({ status, live, startedAt, bytes: 0, outcome, correlationId, upstream }))
 
     if (request.method !== "GET") {
-      yield* ended(405)
-      return HttpServerResponse.empty({ status: 405, headers: { allow: "GET", ...own } })
+      yield* ended(405, "proxy")
+      return HttpServerResponse.empty({ status: 405, headers: { allow: "GET", ...ownHeaders } })
     }
 
-    const decided = yield* Effect.result(Effect.isEffect(options.shape) ? options.shape : Effect.succeed(options.shape))
+    const decided = yield* Effect.result(Effect.isEffect(options.shape) ? options.shape : Effect.succeed(options.shape)).pipe(
+      Effect.catchDefect(() => Effect.succeed(undefined)),
+      Effect.onInterrupt(() => ended(499, "access", "aborted"))
+    )
+    if (decided === undefined) {
+      yield* ended(500, "access")
+      return HttpServerResponse.empty({ status: 500, headers: ownHeaders })
+    }
     if (Result.isFailure(decided)) {
       const { status, retryAfter } = decided.failure
-      yield* ended(status)
+      yield* ended(status, decided.failure.upstream ?? "access")
       return HttpServerResponse.empty({
         status,
-        headers: { ...noStore, ...(retryAfter === undefined ? {} : { "retry-after": String(retryAfter) }) }
+        headers: { ...noStore, "x-request-id": correlationId, ...(retryAfter === undefined ? {} : { "retry-after": String(retryAfter) }) }
       })
     }
     const shape = decided.success
@@ -355,14 +380,14 @@ export const make = <R = never>(
     const response = yield* client.execute(upstream).pipe(
       Effect.option,
       // The browser went away before Electric answered, as it does with a live request it no longer needs.
-      Effect.onInterrupt(() => ended(499, "aborted"))
+      Effect.onInterrupt(() => ended(499, "electric", "aborted"))
     )
     if (Option.isNone(response)) {
-      yield* ended(502)
-      return HttpServerResponse.empty({ status: 502, headers: own })
+      yield* ended(502, "electric")
+      return HttpServerResponse.empty({ status: 502, headers: ownHeaders })
     }
     const { status, headers, stream } = response.value
-    yield* answered(status)
+    yield* answered(status, "electric")
     // The body streams after this handler and its span end, outside its services, so the record runs with them.
     const context = yield* Effect.context<never>()
     let bytes = 0
@@ -371,6 +396,8 @@ export const make = <R = never>(
       Stream.onExit((exit) =>
         record({
           status,
+          correlationId,
+          upstream: "electric",
           live,
           startedAt,
           bytes,
@@ -384,7 +411,7 @@ export const make = <R = never>(
         ...Object.fromEntries(
           Object.entries(headers).filter(([key]) => !dropped(key) && (keeps || !caching.has(key)))
         ),
-        ...own
+        ...ownHeaders
       }
     })
   }).pipe(Effect.withSpan(name, { kind: "server" }))

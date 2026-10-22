@@ -149,7 +149,7 @@ A request the proxy refuses never reaches Electric:
 | A method other than `GET`             | 405, with `allow: GET`      | none |
 | A `shape` Effect that fails `Refused` | its status, 401, 403 or 503 | none |
 
-When Electric can't be reached, the proxy answers 502.
+When Electric can't be reached, the proxy answers 502. A defect while deciding access answers 500 and is recorded without its message. `Refused.upstream` identifies a failed host dependency (`database`); other refusals default to `access`. An abandoned access check records 499.
 
 ## What it records
 
@@ -159,17 +159,20 @@ clause or a parameter value.
 
 - **Span.** One server span per request, named `name` (default
   `electric.shape`), with `http.response.status_code` and
-  `electric.shape.live`. The `HttpClient` adds its own client span for the call to
+  `electric.shape.live`, `route`, `upstream` and `correlationId`. The `HttpClient` adds its own client span for the call to
   Electric, with `secret=REDACTED` in `url.full`.
 - **Log line.** One line per request, once its body has ended, with the message
-  `name` and the annotations `status`, `live`, `durationMs`, `bytes` and
+  `name` and the annotations `route` (the fixed shape name), `upstream`, `correlationId`, `statusClass`, `status`, `live`, `durationMs`, `bytes` and
   `outcome`. `outcome` is `complete`, `aborted`
   (the browser went away: status 499 before Electric answered, else mid-body)
   or `failed` (Electric's body broke off). The level is Error for a 5xx or a
   failed body, Warn for another 4xx, and Info otherwise, an aborted request
   included.
 - **Count.** One count on `metric`, by `status` and `live` as strings. The
-  default is `ShapeProxy.defaultMetric`, `electric_shape_requests`.
+  default is `ShapeProxy.defaultMetric`, `electric_shape_requests`. `ShapeProxy.responses`
+  also counts every response as `electric_shape_responses{name,statusClass}`.
+
+The proxy generates `correlationId` from its server span id and returns it as `x-request-id`; it never trusts a browser-supplied id. `upstream` identifies the boundary that answered: `electric`, `database` for a host-declared dependency failure, `access` for other access outcomes, or `proxy` for a method refusal. It does not guess which internal Electric dependency failed.
 
 ## Limits
 
