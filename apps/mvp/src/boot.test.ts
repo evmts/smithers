@@ -35,6 +35,7 @@ import { inProcessWorker } from "./test/languageServer"
 import { faultyServices } from "./test/faults"
 import { read } from "./test/otlp"
 import { PluginsUi } from "./plugins/ui"
+import { Secrets } from "./features/secrets/secrets"
 
 // The browser program and its boundary, on the app's own layer over a Node device, against ChatApi's real handler.
 // Records are read back from the OTLP exports the browser sent.
@@ -107,6 +108,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(CodeIntel),
       Effect.service(Pulls),
       Effect.service(PluginsUi),
+      Effect.service(Secrets),
       Effect.service(Docs),
       Effect.service(Domains),
     ]),

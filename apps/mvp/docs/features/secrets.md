@@ -1,6 +1,6 @@
 # Secrets
 
-A repository's secrets are write-only values that code in a branch's sandbox uses without ever holding: the box holds a placeholder, and the egress outside the box puts the value in the request only for that secret's own hosts. This page covers the first slice of [decision 0005 §4](../decisions/0005-sandboxes-secrets-and-the-forge.md#4-secrets): storing a secret, its host allowlist, the audit, and the egress. The Secrets card, main-only secrets and secret files come later ([What's not built](#whats-not-built)).
+A repository's secrets are write-only values that code in a branch's sandbox uses without ever holding: the box holds a placeholder, and the egress outside the box puts the value in the request only for that secret's own hosts. This page covers the first slice of [decision 0005 §4](../decisions/0005-sandboxes-secrets-and-the-forge.md#4-secrets): storing a secret, its host allowlist, the Secrets page, the audit, and the egress. Main-only secrets and secret files come later ([What's not built](#whats-not-built)).
 
 ```
 Admin ── PUT /api/repos/<owner>/<name>/secrets/<NAME> { value, hosts, methods? }
@@ -35,6 +35,22 @@ box: STRIPE_KEY=smthrs-secret-<64 hex>      (environment, derived per branch and
 ## Reading
 
 Nobody reads a value back. `GET /api/shapes/secrets?repo=<repo id>` syncs the repository's `repo_id`, `name`, `hosts`, `methods` and `updated_at` to a Member or above; anyone else, or a request naming another repository, gets a shape with no rows. Electric sends the array columns in Postgres' text form (`{api.stripe.com}`).
+
+## The Secrets page
+
+`/<owner>/<name>/settings/secrets` lists a repository's secrets by name: each one's hosts, its methods when set, and when it last changed. The list comes from `GET /api/shapes/secrets?repo=<repo id>` into `secrets:<repo id>`, which the device keeps. The repository header's Secrets link shows to a Member or above.
+
+| Who | Sees | Does |
+|---|---|---|
+| Admin, in person | the list | Add (Name, Value, Hosts separated by commas or line breaks), Rotate (a new value; hosts prefilled and editable; its methods kept), Delete after a confirmation |
+| Maintainer, Member | the list | nothing |
+| anyone else | "You can't see this repository's secrets." | nothing |
+
+The server decides every write: the page only hides controls, and shows each refusal's `code` as a short phrase.
+
+A `202` means the flow started, not that it landed: the form says Saving until the list shows the row new or changed (a delete: gone), and after 60 s that it hasn't shown up yet. Add refuses a name the list already has ("NAME exists. Rotate it instead."): Rotate is the only way to replace a value, and it keeps the secret's methods. No whole answer is an unknown outcome ("Couldn't confirm the save. Check the list before trying again."), shown as landed if the list later has it. Forms and their state belong to one repository.
+
+A value is never shown again and never stays on the device. It is typed into a password field, read from the form once on submit, held `Redacted` in the action and sent in one `PUT` through `SecretsClient` (Effect `HttpClient`) in the person's own session. It never goes through the device's outbox or a browser flow, no collection has a field for it, and the form clears once the write lands. The page records `secrets.put` and `secrets.delete` spans, a `secrets.write` log line and the `smithers_web_secret_writes` counter (`started`, `refused`, `unknown`, `landed`, `late`), carrying names, a hosts count, outcomes and codes, never a value.
 
 ## The egress
 
@@ -72,11 +88,11 @@ SECRETS_KEY is a Worker secret Alchemy generates once (`infra/Secrets.ts`, 32 ra
 
 - `packages/smithers/flows/secrets/test/` (100% coverage): substitution only in headers and only for bound hosts and methods; refusals unsent; redirects returned unfollowed, also against real servers and the real `fetch`, with a control that shows a followed redirect would leak; scrubbing of every form at every chunk split; header and placeholder limits; vault, audit and upstream failures; and a sentinel search of every span, log line, metric and failure.
 - `worker/secrets/Secrets.test.ts`, on the compose Postgres and Electric, with the flows on the Node host's engine: an Admin's set, replace and delete, and every refusal; a sentinel search of every table, the flow journal and everything recorded; the shape's columns; the egress end to end with a scripted upstream, including another host, an earlier generation and a redirect.
+- `src/features/secrets/` (100% coverage), on the app's layer against ChatApi's real handler: Add, Rotate and Delete as an Admin, read-only for a Member, nothing for anyone else, every refusal and a network failure; and a sentinel search, after Add and Rotate, of every collection row, the outbox, the device's SQLite files, ChatApi's spans and everything the tab exported.
 
 ## What's not built
 
 - **An e2e through a real box** before `SANDBOX_SECRETS` is on by default ([Wiring into the box](#wiring-into-the-box)).
-- **The Secrets card** (0005 §6 "Later"): the routes and the shape are ready for it. Its writes must not go through the device's outbox or a browser flow, which would keep the value on the device.
 - **Main-only secrets** (D-24) and **secret files** (M-42).
 - **The forge token and model routing** in the egress (0005 §4 steps 3 and 4), which the forge proxy and the model endpoint do today on their own routes.
 - **Path scoping** of a secret, beyond hosts and methods.

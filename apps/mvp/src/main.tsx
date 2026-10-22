@@ -14,6 +14,7 @@ import { CodeIntelProvider } from "./features/code-intel/components/CodeIntelCon
 import { CommandsProvider } from "./features/commands/components/CommandsContext"
 import { IssuesProvider } from "./features/issues/components/IssuesContext"
 import { PullsProvider } from "./features/pulls/components/PullsContext"
+import { SecretsProvider } from "./features/secrets/components/SecretsContext"
 import { RepoProvider } from "./features/repo/components/RepoContext"
 import { RunsProvider } from "./features/runs/components/RunsContext"
 import { FlowsUiProvider } from "./features/flows-ui/components/FlowsUiContext"
@@ -292,6 +293,7 @@ const render: BootOptions["render"] = (
   codeIntel,
   pulls,
   plugins,
+  secrets,
   docs,
   domains,
 ) =>
@@ -315,6 +317,7 @@ const render: BootOptions["render"] = (
                                   (src/router.tsx). */}
                               <IssuesProvider value={issues}>
                                 <PullsProvider value={pulls}>
+                                <SecretsProvider value={secrets}>
                                 <TodosProvider value={todos}>
                                 <RunsProvider value={runs}>
                                   <FlowsUiProvider value={flows}>
@@ -326,7 +329,7 @@ const render: BootOptions["render"] = (
                                         <PluginsProvider value={plugins}>
                                           <RouterProvider
                                             router={router}
-                                            context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins, domains }}
+                                            context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins, domains, secrets }}
                                           />
                                         </PluginsProvider>
                                       </AttentionProvider>
@@ -335,6 +338,7 @@ const render: BootOptions["render"] = (
                                   </FlowsUiProvider>
                                 </RunsProvider>
                                 </TodosProvider>
+                                </SecretsProvider>
                                 </PullsProvider>
                               </IssuesProvider>
                             </TerminalProvider>

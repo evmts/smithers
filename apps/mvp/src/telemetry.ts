@@ -24,6 +24,7 @@ import { FLOWS_UI_TELEMETRY } from "./features/flows-ui/contract"
 import { DOCS_TELEMETRY } from "./features/docs/contract"
 import { HOME_TELEMETRY } from "./features/home/contract"
 import { RUNS_TELEMETRY } from "./features/runs/contract"
+import { SECRETS_TELEMETRY } from "./features/secrets/contract"
 import { SPEND_TELEMETRY } from "./features/spend/contract"
 import { PLUGINS_TELEMETRY } from "./plugins/contract"
 import { DOMAINS_TELEMETRY } from "./features/domains/contract"
@@ -136,6 +137,7 @@ const features: ReadonlyArray<Telemetry> = [
   JEV_TELEMETRY,
   ISSUES_TELEMETRY,
   PULLS_TELEMETRY,
+  SECRETS_TELEMETRY,
   TODOS_TELEMETRY,
   FLOWS_UI_TELEMETRY,
   RUNS_TELEMETRY,

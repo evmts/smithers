@@ -27,6 +27,7 @@ import { PresenceStore } from "../presence/store"
 import { Repo } from "../repo/repo"
 import { RepoStore } from "../repo/store"
 import { Runs } from "../runs/runs"
+import { Secrets } from "../secrets/secrets"
 import { Spend } from "../spend/spend"
 import { Status } from "../status/status"
 import { Theme } from "../theme/theme"
@@ -53,7 +54,7 @@ test.each(["empty", "mine", "watching"] as const)(
         repo: yield* Repo, home: yield* Home, views: yield* Views, branch: yield* Branch,
         terminal: yield* Terminal, issues: yield* Issues, pulls: yield* Pulls,
         todos: yield* Todos, runs: yield* Runs, flows: yield* FlowsUi, plugins: yield* PluginsUi, docs: yield* Docs,
-        domains: yield* Domains,
+        domains: yield* Domains, secrets: yield* Secrets,
       }
     }))
     const theme = await runtime.runPromise(Effect.service(Theme))

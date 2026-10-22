@@ -1,11 +1,17 @@
 ---
 title: Secrets through an egress proxy (feature 6)
-status: in-progress
+status: done
 area: infra
-owner: Opus secrets builder running in isolated mini repository; Codex tracker curates note
-updated: 2026-10-21 22:43 PDT
+owner: Codex secrets rebase
+updated: 2026-10-22
 links: [../decisions/0005-sandboxes-secrets-and-the-forge.md, ../../../../AGENTS.md, sandboxes.md, design-questions.md, branch-terminal.md, connect-agents-sandboxes-forge.md, decisions-for-will.md, ../features/secrets.md, docs-truth-pass.md]
 ---
+
+## Rebase validation — 2026-10-22
+
+Rebased the six secrets commits onto `998199dc6263`. Preserved the plugin host, device authority, offline recovery, attention and TODO admission wiring. Terminal provisioning uses main's session boundary and the catalog's `@smthrs/platform-cloudflare` runner; the check-job and secrets paths share `SandboxEgress.SETUP`. Both terminal regression suites remain intact. The device lock was generated on Latitude at epoch 64 without rewriting schema history. No new migration or decision number is required.
+
+Typecheck and import rules passed on Latitude. The secrets E2E passed on the mini with `SANDBOX_SECRETS=true` and its fixture repository, using the existing flag-aware builder wrapper. The full app run passed 3,225 tests and reported seven failures: the missing target prerequisite, missing header auth provider and telemetry-contract drift were fixed without weakening assertions, and all seven failing files passed follow-up runs (the other four failures did not recur). Platform-cloudflare passed 165 tests and secrets passed 107, both at 100% coverage. Latitude lacks Docker for five container tests; the mini secrets E2E passed against a real container. The API baseline was regenerated on Latitude: only SandboxObject changed. Final receipts and commit IDs are in `~/smithers-builders/rb22-secrets-REPORT.md`.
 
 ## Tracker reconciliation — 2026-10-21 22:43 PDT
 

@@ -53,3 +53,15 @@ export const REFUSALS = [
   "unavailable",
 ] as const
 export type Refusal = (typeof REFUSALS)[number]
+
+/** Why the browser's write was refused: one of the server's refusals, or `exists` for an Add of a name the list has. */
+export type WriteFailure = Refusal | "exists"
+
+/** The hosts a person typed: split on commas, spaces and line breaks, blanks dropped. The server checks each one. */
+export const splitHosts = (text: string): ReadonlyArray<string> => text.split(/[\s,]+/).filter((host) => host !== "")
+
+/** The browser's records of secret writes (src/telemetry.ts): names, hosts, outcomes and codes; never a value. */
+export const SECRETS_TELEMETRY = {
+  records: ["secrets.put", "secrets.delete", "secrets.write", "smithers_web_secret_writes"],
+  fields: ["op", "outcome", "code", "hosts"],
+} as const

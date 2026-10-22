@@ -65,6 +65,9 @@ import type { CuratedFile } from "../../worker/home/Curated.ts"
 import * as RemoteRuns from "../../worker/RemoteRuns.ts"
 import * as RepoApi from "../../worker/RepoApi.ts"
 import * as RunCredentials from "../../worker/RunCredentials.ts"
+import * as SecretsApi from "../../worker/secrets/Api.ts"
+import { SecretKeys } from "../../worker/secrets/Keys.ts"
+import * as SecretFlows from "../../worker/secrets/SecretFlows.ts"
 import * as SignIn from "../../worker/SignIn.ts"
 import * as StackApi from "../../worker/stack/Api.ts"
 import * as Stack from "../../worker/stack/Stack.ts"
@@ -101,6 +104,8 @@ import {
 import type { PullsClient } from "../features/pulls/api"
 import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE } from "../features/pulls/contract"
 import { todoExecutionId } from "../features/pulls/contract"
+import type { SecretsClient } from "../features/secrets/api"
+import { SECRETS_TABLE } from "../features/secrets/contract"
 import { REPOS_ROUTE, repoId, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
 import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
 import { RUNS_TABLE } from "../features/status/contract"
@@ -214,8 +219,12 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   TODO_REQUESTS_TABLE,
   PULLS_TABLE,
   PULL_COMMITS_TABLE,
-  REVIEWS_TABLE
+  REVIEWS_TABLE,
+  SECRETS_TABLE
 ])
+
+/** SECRETS_KEY in a test ChatApi: secrets are on. */
+export const TEST_SECRETS_KEY = Redacted.make("0123456789abcdef".repeat(4))
 
 /** A Postgres schema for one device's engine store, and where the device keeps the engine's leaders. */
 export interface EngineStore {
@@ -593,6 +602,27 @@ export class TestChatApi extends Context.Service<
         })
         const domains = yield* DomainsApi.make({ id: repoId(repository.owner, repository.name) }, database)
 
+        // Repository secrets, as ChatApi routes them (worker/ChatApi.ts), on under TEST_SECRETS_KEY for TEST_REPOSITORY:
+        // `secret/Put` and `secret/Delete` run for real on a Node host's engine of their own, built on first use, so a
+        // write's row is in Postgres when its request answers, and Electric brings it to the device.
+        const secretsApi = yield* SecretsApi.make(repository).pipe(
+          Effect.provideService(ConfigProvider.ConfigProvider, config),
+        )
+        const secretEngine = yield* Effect.cached(
+          buildEngine(SecretFlows.registration(database), { maxConnections: 2 }).pipe(Scope.provide(layerScope), Effect.orDie),
+        )
+        const secretStarter = Flows.FlowStarter.of({
+          start: (flow, { executionId, payload }) =>
+            Effect.gen(function* () {
+              const { context } = yield* secretEngine
+              const flows = Context.get(context, FlowRuntime.FlowRuntime)
+              yield* Effect.ignore(
+                (flows.execute(flow as never, { executionId, payload: payload as never }) as Effect.Effect<unknown, unknown>)
+                  .pipe(Effect.provide(context)),
+              )
+            }),
+        })
+
         // ChatApi acknowledges an ask only once its answer's expiry started, so the chat routes' host takes every start,
         // as a Durable Object would, and runs none: no answer here lives 25 minutes.
         const expiries = Flows.FlowStarter.of({ start: () => Effect.void })
@@ -642,6 +672,12 @@ export class TestChatApi extends Context.Service<
           }
           if (GitHubApi.handles(path)) return github.fetch.pipe(Effect.provideService(Flows.FlowStarter, recording))
           if (StackApi.handles(path)) return stack.fetch
+          if (SecretsApi.handles(path)) {
+            return secretsApi.fetch.pipe(
+              Effect.provideService(Flows.FlowStarter, secretStarter),
+              Effect.provide(SecretKeys.layer(TEST_SECRETS_KEY)),
+            )
+          }
           if (RemoteRuns.handles(path)) return remoteRuns.fetch
           if (HomeApi.handles(path)) return home.fetch
           if (DocsApi.handles(path)) return docs.fetch.pipe(Effect.provide(docsSource))
@@ -1240,11 +1276,12 @@ export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">
   /** The default device's `reopenRoute`: what opening the tab's route again does; nothing unless set. */
   readonly reopenRoute?: () => void
   /**
-   * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient`, `TextsClient` or
-   * `PullsClient` or a ShapeSource reference (test.faults-by-injection).
+   * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient`, `TextsClient`,
+   * `PullsClient`, `SecretsClient` or a ShapeSource reference (test.faults-by-injection).
    */
   readonly replace?:
     | Layer.Layer<IssuesClient, never, HttpClient.HttpClient>
+    | Layer.Layer<SecretsClient, never, HttpClient.HttpClient>
     | Layer.Layer<PullsClient, never, HttpClient.HttpClient>
     | Layer.Layer<StackClient, never, HttpClient.HttpClient>
     | Layer.Layer<TextsClient, never, HttpClient.HttpClient>

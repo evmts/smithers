@@ -7,15 +7,16 @@ import { mayManageDomains, signInHref } from "../../auth/contract"
 import { ConnectionPill } from "../../chat/components/ConnectionPill"
 import { SETTINGS } from "../../domains/copy"
 import { ISSUES } from "../../issues/contract"
+import { SecretsLink } from "../../secrets/components/SecretsLink"
 import { STACK } from "../../todos/contract"
 import { CLONE, TRY_AGAIN } from "../contract"
 import { headerOf } from "../view"
 import { useRepo } from "./RepoContext"
 
-// The repository's name, which opens its home or root, its Issues, its Stack and, for a Maintainer or Admin, its
-// Settings (decision 0039), then what can be done about it: Clone;
-// nothing while it clones (the files' place says Cloning, RepoPage); the sign-in link in Clone's place for a signed-out
-// person; or why a clone failed or was refused, with Try again. The person's bell is its last slot, so it never sits on
+// The repository's name, which opens its home or root, its Issues, its Stack, for a Member or above its Secrets and,
+// for a Maintainer or Admin, its Settings (decision 0039), then what can be done about it: Clone; nothing while it
+// clones (the files' place says Cloning, RepoPage); the sign-in link in Clone's place for a signed-out person; or why a
+// clone failed or was refused, with Try again. The person's bell is its last slot, so it never sits on
 // an action: the screens that render this header don't float it (attention/contract.ts `BELL_ROUTES`).
 export function RepoHeader() {
   const { queries, actions } = useRepo()
@@ -37,6 +38,7 @@ export function RepoHeader() {
       <Button asChild variant="ghost">
         <Link to="/$owner/$repo/stack" params={{ owner: view.owner, repo: view.name }}>{STACK}</Link>
       </Button>
+      <SecretsLink owner={view.owner} repo={view.name} />
       {(header.kind === "clone" || header.kind === "sign_in") && header.status !== undefined
         ? <span role="status">{header.status}</span>
         : null}

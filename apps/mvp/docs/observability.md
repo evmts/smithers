@@ -155,6 +155,7 @@ Each tab's engine worker (`src/flows/engine.worker.ts`) passes `BrowserRuntime.r
 
 | Records | From | Fields |
 |---|---|---|
+| `flow.run.created`, `flow.run.claimed` | the durable engine admitting and claiming a run | `smithers.execution.id`, `smithers.flow`, `createdAtMs`, `claimedAtMs`; no input |
 | `flow.dispatch` (log and span), `smithers_flow_dispatches` | the tab's dispatch (`src/flows/dispatch.ts`) | `flow`, `door`, `executionId`, `outcome`, `durationMs`; `reason` on an error, and `refusal` (such as `plan_changed`) when the engine's interpreter refused the run; the span's `smithers.flow.*` |
 | `browser.engine.storage`, `browser.storage.persist`, `smithers_browser_engine_requests`, `smithers_browser_engine_storage` | the tab's side of the engine (`@smthrs/platform-browser`) | `request`, `outcome`, `error.type` |
 | `browser.runtime.elect`, `browser.runtime.leader`, `browser.runtime.wake`, `browser.runtime.request` (a failed request's line), `browser.runtime.statement`, `browser.runtime.lost` (`reason`: `stolen` or `overflow`), `browser.runtime.stopped`, `smithers_browser_runtime_*`, `browser.tab_channel.overflow`, `smithers_browser_tab_channel_overflows` | the leader (`@smthrs/platform-browser`) | `flows`, `request`, `outcome`, `error.type`, `smithers.execution.id`, `smithers.flow`, `smithers.wake` |
@@ -621,6 +622,9 @@ An Admin's writes of repository secrets, their shape, and a box's requests throu
 | `secrets.egress` (span) | | the egress | `smithers.branch.id`, `smithers.sandbox.generation` |
 | `Egress.execute` (span), `secrets.egress` (log) | | the egress (`@smthrs/secrets`) | `server.address`, `http.request.method`, `smithers.egress.outcome`, `http.response.status_code`; the log's `outcome`, `host`, `method`, `status`, `secrets` (a count), `durationMs`, `errorCode` |
 | `secret_egress_requests` | counter | the egress (`@smthrs/secrets`) | `outcome` (`forwarded`, `broken`, a refusal code, `unavailable_<code>`) |
+| `secrets.put`, `secrets.delete` | span | browser, the Secrets page (`SecretsClient`) | the client span's own: no body |
+| `secrets.write` | log | browser, the Secrets page | `op` (`put`, `delete`), `name`, `outcome` (`started` on 202, `refused`, `unknown` for no whole answer, then `landed` once the list shows it or `late` past 60 s), `code` (the refusal, or `exists`), `hosts` (a count) |
+| `smithers_web_secret_writes` | counter | browser, the Secrets page | `op`, `outcome` |
 
 The egress turns its HTTP client's own span off, so no request header reaches a trace. `secret_events` keeps each decision in Postgres for the audit.
 

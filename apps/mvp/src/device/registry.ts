@@ -18,6 +18,7 @@ import {
 } from "../features/issues/schema"
 import { CheckRow, PullCommitRow, PullRow, ReviewRow } from "../features/pulls/schema"
 import { Repository } from "../features/repo/schema"
+import { SecretRow } from "../features/secrets/schema"
 import { AlertChannel, AlertDelivery, Seen, SpendAlert } from "../features/spend/schema"
 import { SteerSending, SteerSent } from "../features/runs/schema"
 import { Run } from "../features/status/schema"
@@ -157,6 +158,8 @@ const synced = [
   Migrations.synced({ id: "pull-commits", version: 1, schema: PullCommitRow }),
   Migrations.synced({ id: "pull-reviews", version: 1, schema: ReviewRow }),
   Migrations.synced({ id: "pull-checks", version: 1, schema: CheckRow }),
+  // A repository's secret names and bindings, one collection per repository; never a value.
+  Migrations.synced({ id: "secrets", version: 1, schema: SecretRow, family: true }),
 ]
 
 // --- The outbox's payloads, by the collection key each write names ---

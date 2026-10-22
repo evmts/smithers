@@ -1,5 +1,5 @@
 {
-  "epoch": 66,
+  "epoch": 67,
   "stores": {
     "branch-conversations": {
       "kind": "local",
@@ -237,6 +237,12 @@
       "kind": "synced",
       "versions": {
         "1": "08c8ce91e2a65800"
+      }
+    },
+    "secrets": {
+      "kind": "synced",
+      "versions": {
+        "1": "aad5709b2c9c7bd6"
       }
     }
   },

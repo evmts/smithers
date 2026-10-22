@@ -73,6 +73,9 @@ import { SteerWrites } from "./features/runs/writes"
 import { Status, type StatusView } from "./features/status/status"
 import { Terminal, type TerminalView } from "./features/terminal/terminal"
 import { StatusStore, TabTitle } from "./features/status/store"
+import { SecretsClient } from "./features/secrets/api"
+import { Secrets, type SecretsLayer } from "./features/secrets/secrets"
+import { SecretsStore } from "./features/secrets/store"
 import { Spend, type SpendView } from "./features/spend/spend"
 import { pluginKeys } from "./plugins/keymap"
 import { Plugins } from "./plugins/plugins"
@@ -219,6 +222,12 @@ export const appLayer = <S = never>(
     // The plugin host (decision 0017): the built-in plugins, loaded through the public loader, and the one contract,
     // PluginHost, each plugin's tab reads and acts through (src/plugins/).
     PluginsUi.layer,
+    // A repository's secrets (docs/features/secrets.md#the-secrets-page): their names, and an Admin's writes straight to
+    // ChatApi (`SecretsClient`, below), never through the outbox, which would keep a value on the device.
+    Secrets.layer.pipe(Layer.provideMerge(SecretsStore.layer({
+      origin,
+      ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),
+    }))),
     tabIssues({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     // TODOs and the stack (decision 0016): the stack pages, the drafts, and this tab's answers to the TODO steps it
     // started.
@@ -291,11 +300,13 @@ export const appLayer = <S = never>(
     Layer.provideMerge(tabAnswers),
     Layer.provideMerge(ThemeStore.layer(host.theme)),
     Layer.provideMerge(services),
-    // Below `services`, so a test's services may give a faulty `IssuesClient`, `StackClient` or `PullsClient` in its place.
+    // Below `services`, so a test's services may give a faulty `IssuesClient`, `StackClient`, `PullsClient` or
+    // `SecretsClient` in its place.
     Layer.provideMerge(
       Layer.mergeAll(
         IssuesClient.layer({ origin, within: REQUEST_WITHIN }),
         PullsClient.layer({ origin, within: REQUEST_WITHIN }),
+        SecretsClient.layer({ origin, within: REQUEST_WITHIN }),
         StackClient.layer({ origin, within: REQUEST_WITHIN }),
         TextsClient.layer({ origin, within: REQUEST_WITHIN }),
         RepoClient.layer({ origin, within: REQUEST_WITHIN }),
@@ -407,6 +418,7 @@ export interface BootOptions {
     codeIntel: CodeIntelView,
     pulls: PullsLayer,
     plugins: PluginsView,
+    secrets: SecretsLayer,
     docs: DocsView,
     domains: DomainsView,
   ) => void
@@ -440,6 +452,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const codeIntel = yield* CodeIntel
     const pulls = yield* Pulls
     const plugins = yield* PluginsUi
+    const secrets = yield* Secrets
     const docs = yield* Docs
     const domains = yield* Domains
     const store = yield* ChatStore
@@ -466,6 +479,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         codeIntel,
         pulls,
         plugins,
+        secrets,
         docs,
         domains,
       )

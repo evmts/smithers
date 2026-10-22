@@ -15,6 +15,7 @@ import type { TodosView } from "./features/todos/todos"
 import { lineSearch } from "./features/repo/paths"
 import type { RepoView } from "./features/repo/repo"
 import type { RunsView } from "./features/runs/runs"
+import type { SecretsLayer } from "./features/secrets/secrets"
 import type { TerminalView } from "./features/terminal/terminal"
 import type { ViewsView } from "./features/views/views"
 import { AppScreen } from "./screens/app/AppScreen"
@@ -39,6 +40,7 @@ import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
 import { RunScreen } from "./screens/runs/RunScreen"
 import { RunsScreen } from "./screens/runs/RunsScreen"
+import { SecretsScreen } from "./screens/secrets/SecretsScreen"
 import { RepoSettingsScreen } from "./screens/repo-settings/RepoSettingsScreen"
 import { SettingsScreen } from "./screens/settings/SettingsScreen"
 import { PluginScreen } from "./screens/plugin/PluginScreen"
@@ -55,8 +57,8 @@ import { ViewScreen } from "./screens/view/ViewScreen"
 // files are still on their way after a second shows with skeletons in their place, never blank.
 
 /**
- * What every route gets: the repository, its home, views, branch, terminal, issues, pull requests, runs and flows layers, from
- * main.tsx's `RouterProvider`.
+ * What every route gets: the repository, its home, views, branch, terminal, issues, pull requests, runs, flows and secrets
+ * layers, from main.tsx's `RouterProvider`.
  */
 export interface RouterContext {
   readonly repo: RepoView
@@ -72,6 +74,7 @@ export interface RouterContext {
   readonly flows: FlowsUiView
   readonly plugins: PluginsView
   readonly domains: DomainsView
+  readonly secrets: SecretsLayer
 }
 
 /**
@@ -505,6 +508,22 @@ const todoRoute = createRoute({
     ),
 })
 
+/**
+ * `/$owner/$repo/settings/secrets`: the repository's secrets by name, for a Member or above; an Admin adds, rotates and
+ * deletes them (docs/features/secrets.md#the-secrets-page).
+ */
+const secretsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/settings/secrets",
+  component: SecretsScreen,
+  beforeLoad: ({ context, params, ...load }) =>
+    enter(
+      load,
+      () => context.secrets.actions.warm(params.owner, params.repo),
+      () => context.secrets.actions.open(params.owner, params.repo),
+    ),
+})
+
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
     landingRoute,
@@ -534,6 +553,7 @@ export const router = createRouter({
     pullTabRoute,
     stackRoute,
     todoRoute,
+    secretsRoute,
   ]),
   // A link's hover or focus preloads its page: its route's `beforeLoad` warms what it shows (`enter`).
   defaultPreload: "intent",
@@ -553,6 +573,7 @@ export const router = createRouter({
     runs: undefined!,
     flows: undefined!,
     domains: undefined!,
+    secrets: undefined!,
   },
 })
 
