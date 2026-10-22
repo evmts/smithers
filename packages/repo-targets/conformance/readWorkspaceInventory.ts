@@ -22,6 +22,7 @@ export const readWorkspaceInventory = (root = resolve(import.meta.dirname, "../.
     const path = join(packagesDir, name, "package.json")
     const manifest = JSON.parse(readFileSync(path, "utf8")) as {
       readonly name?: string
+      readonly private?: boolean
       readonly smthrs?: { readonly group?: unknown }
     }
     return { name, path, manifest }

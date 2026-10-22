@@ -127,6 +127,7 @@ export const namespaces = [
   "PlanStore",
   "Poll",
   "RetryPolicy",
+  "RunMetrics",
   "RunStore",
   "Runtime",
   "Sandbox",

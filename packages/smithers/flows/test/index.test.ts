@@ -69,12 +69,16 @@ const packageManifests = inventory.manifests.map(({ name, path: manifestPath, ma
       `${manifestPath}: smthrs.group must be one of ${packageGroups.join(", ")}; received ${JSON.stringify(group)}`
     )
   }
-  return { name, group }
+  return { name, group, private: manifest.private === true }
 })
 const packageNamesForGroup = (group: PackageGroup) =>
   packageManifests.filter((manifest) => manifest.group === group).map((manifest) => manifest.name)
 const enginePackageNames = packageNamesForGroup("engine")
+// e6609cc6bdfc added private @smthrs/secrets: the published barrel must
+// never require a package consumers cannot install.
+const privatePackageNames = packageManifests.filter((manifest) => manifest.private).map(({ name }) => name)
 const namespacedEnginePackageNames = enginePackageNames
+  .filter((name) => !privatePackageNames.includes(name))
   .filter((name) => leaf(name) !== "flows" && leaf(name) !== "flow" && !isPlatformBundle(name))
 // `@smthrs/flow` is the one package re-exported FLAT rather than as a single
 // namespace: writing a flow is the point of the library, so `Flow`,
@@ -141,6 +145,17 @@ describe("barrel", () => {
     expect(enginePackageNames.filter(isPlatformBundle).length).toBeGreaterThanOrEqual(3)
     expect(namespacedEnginePackageNames.filter(isPlatformBundle)).toEqual([])
     expect(expected.filter((name) => name.startsWith("Platform"))).toEqual([])
+  })
+
+  it("keeps private packages out of the published barrel and its dependencies", () => {
+    const manifest = JSON.parse(readFileSync(join(umbrellaRoot, "package.json"), "utf8"))
+    expect(privatePackageNames).toContain("smithers/flows/secrets")
+    for (const name of privatePackageNames) {
+      expect(Flows).not.toHaveProperty(namespaceName(name))
+      const entry = inventory.manifests.find((entry) => entry.name === name)!
+      expect(entry.manifest.name).toBeTypeOf("string")
+      expect(Object.keys(manifest.dependencies)).not.toContain(entry.manifest.name)
+    }
   })
 
   it("excludes the separate agent release surface", () => {
