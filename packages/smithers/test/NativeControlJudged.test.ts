@@ -318,7 +318,8 @@ describe("the shipped Node executor under ScriptedJudge.layerAll", () => {
     )
     expect(relevance.pinned).not.toContain(mcpFlow)
 
-    // Only the MCP flow and the project's own flows are judged; the MCP flow the task never names is withheld.
+    // ba537ddc570f hides Markdown calls when no prompt runner is composed.
+    // The MCP flow the task never names is still withheld.
     type Verdict = { readonly id: string }
     const settled = first(survey!, "control.agent.relevance-settled")!.payload as {
       readonly scope: string
@@ -328,7 +329,7 @@ describe("the shipped Node executor under ScriptedJudge.layerAll", () => {
     }
     expect(settled.source).toBe("run")
     expect(settled.withheld.map((item) => item.id)).toContain(mcpFlow)
-    expect([...settled.kept, ...settled.withheld].map((item) => item.id).sort()).toEqual([mcpFlow, "probe", "survey"])
+    expect([...settled.kept, ...settled.withheld].map((item) => item.id).sort()).toEqual([mcpFlow, "probe"])
 
     // The subagent arms on its own session and gates on its own prompt, which names the MCP flow.
     const subagent = steps.filter((event) => event.step?.action === "test/Pinger")

@@ -367,13 +367,14 @@ describe("the shipped Node executor's supervisor memory", () => {
     expect(sealed.requests.length).toBeGreaterThan(1)
     expect(sealed.requests.join("\n")).not.toContain("host-only-secret")
     expect(sealed.requests[1]).toContain("MEMORY-REFUSED")
-    // A sealed host opens with no workspace rows to judge.
-    expect(sealed.settled!.kept.filter((item) => item.kind === "memory")).toEqual([])
+    // ba537ddc570f hides unrunnable Markdown calls; with no workspace
+    // rows either, there is no frame-0 relevance question to record.
+    expect(sealed.settled).toBeUndefined()
 
     const processOnly = await probe({}, true)
     expect(processOnly.requests.length).toBeGreaterThan(1)
     expect(processOnly.requests.join("\n")).not.toContain("host-only-secret")
     expect(processOnly.requests[1]).toContain("REAL-PROCESS PROCESS_ONLY_OK")
-    expect(processOnly.settled!.kept.filter((item) => item.kind === "memory")).toEqual([])
+    expect(processOnly.settled).toBeUndefined()
   }, 60_000)
 })
