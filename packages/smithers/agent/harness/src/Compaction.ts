@@ -193,10 +193,42 @@ const prefix = (
       })
     )
   }
+  if (pairBoundaries(segments).has(prefixLength)) {
+    return Effect.fail(new InvalidStep({ message: "A compaction prefix must not split a tool exchange" }))
+  }
   return Effect.succeed(segments.slice(0, prefixLength))
 }
 
 const marksDigest = (marks: ReadonlyArray<ContextWindow.Mark>): string => Digest.digest(CanonicalJson.stringify(marks))
+
+/** Keeps every tool exchange whole in both the summary and retained context. */
+const verifyExchanges = (
+  segments: ReadonlyArray<ContextWindow.Segment>,
+  marks: ReadonlyArray<ContextWindow.Mark>
+): Effect.Effect<void, InvalidStep> => {
+  for (const boundary of pairBoundaries(segments)) {
+    if (marks[boundary - 1] !== marks[boundary]) {
+      return Effect.fail(new InvalidStep({ message: "Compaction marks must keep each tool exchange together" }))
+    }
+  }
+  const calls = new Set<string>()
+  const results = new Set<string>()
+  for (const [index, segment] of segments.entries()) {
+    if (marks[index] !== "squash") continue
+    for (const item of segment.content) {
+      if (!("role" in item)) continue
+      if (item.role === "assistant") {
+        for (const part of item.content) if (part.type === "tool-call") calls.add(part.id)
+      } else if (item.role === "tool") {
+        for (const part of item.content) results.add(part.toolCallId)
+      }
+    }
+  }
+  if ([...calls].some((id) => !results.has(id)) || [...results].some((id) => !calls.has(id))) {
+    return Effect.fail(new InvalidStep({ message: "A compaction summary requires matched tool calls and results" }))
+  }
+  return Effect.void
+}
 
 /**
  * Declares a compaction step without invoking a model or selecting a trigger.
@@ -217,6 +249,7 @@ export const declare = Effect.fn("flows/harness/Compaction.declare")(function*(
   if (marks !== undefined && marks.length !== prefixLength) {
     return yield* new InvalidStep({ message: "The compaction marks must name every prefix segment once" })
   }
+  yield* verifyExchanges(segments, marks ?? segments.map(() => "squash"))
   const replacedPrefixDigest = yield* Effect.fromResult(
     ContextWindow.prefixDigest(window, segments.length)
   ).pipe(
@@ -295,6 +328,7 @@ export const summaryRequest = Effect.fn("flows/harness/Compaction.summaryRequest
   const segments = yield* prefix(window, step.prefixLength)
   yield* verifyPrefix(window, step, "declared")
   const marks = yield* stepMarks(step)
+  yield* verifyExchanges(segments, marks)
   if (!marks.includes("squash")) {
     return yield* new InvalidStep({ message: "A compaction that squashes nothing has no summary to request" })
   }
@@ -334,9 +368,10 @@ export const apply = Effect.fn("flows/harness/Compaction.apply")(function*(
   step: CompactionStep,
   recordedSummary?: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>
 ) {
-  yield* prefix(window, step.prefixLength)
+  const segments = yield* prefix(window, step.prefixLength)
   yield* verifyPrefix(window, step, "recorded")
   const marks = yield* stepMarks(step)
+  yield* verifyExchanges(segments, marks)
   if (marks.includes("squash") !== (recordedSummary !== undefined)) {
     return yield* new InvalidStep({
       message: recordedSummary === undefined

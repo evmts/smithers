@@ -3372,7 +3372,8 @@ describe("CellTurn failed model calls", () => {
 
   it.each([
     ["a harness failure's code", new HarnessError({ code: "engine_failed", message: "no route" }), "engine_failed"],
-    ["a failure's tag where it has no code", { _tag: "Odd" }, "Odd"],
+    ["`failed` for an undeclared tag", { _tag: "Odd" }, "failed"],
+    ["`failed` for identifier-shaped secrets", { _tag: "SYNTHETIC_SECRET", code: "SYNTHETIC_SECRET" }, "failed"],
     ["`failed` where it names neither", {}, "failed"]
   ])("names %s", async (_, raised, code) => {
     const { events } = await run({ state: state({ maxFrames: 1 }), script: [{ events: [], failure: raised }] })

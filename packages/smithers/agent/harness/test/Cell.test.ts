@@ -22,7 +22,7 @@ describe("Cell.extract", () => {
 
     const extracted = Result.getOrThrow(Cell.extract(text))
     expect(extracted.source.text).toBe(
-      "const files = await ctx.call(\"fs/list\", { path: \".\" })\n" +
+      "const files = await ctx.call(\"fs/list\", { path: \".\" })\n;\n" +
         "ctx.done(files.length + \" entries\")"
     )
     expect(extracted.source.language).toBe("javascript")
@@ -115,7 +115,7 @@ describe("Cell.extract", () => {
     ].join("\n\n")
 
     const extracted = Result.getOrThrow(Cell.extract(text))
-    expect(extracted.source.text).toBe("const first = 1\nreturn first")
+    expect(extracted.source.text).toBe("const first = 1\n;\nreturn first")
     expect(extracted.source.language).toBe("javascript")
     expect(extracted.blocks).toBe(2)
   })
@@ -149,7 +149,7 @@ describe("Cell.extract", () => {
     const first = "const marker = \"```\" // inline ```"
     const second = "ctx.done(marker)"
     const extracted = Result.getOrThrow(Cell.extract([fenced("cell", first), fenced("cell", second)].join("\n\n")))
-    expect(extracted.source.text).toBe(first + "\n" + second)
+    expect(extracted.source.text).toBe(first + "\n;\n" + second)
     expect(extracted.blocks).toBe(2)
   })
 

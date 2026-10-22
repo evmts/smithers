@@ -162,21 +162,17 @@ export class Entry extends Schema.Class<Entry>("flows/harness/CallLedger/Entry")
     Schema.withDecodingDefaultKey(Effect.succeed(0))
   ),
   /**
-   * Whether this call reached the engine declaring that it changes the tree.
-   *
-   * A mutation is the one kind of call whose repetition is never compliance.
-   * Re-issuing a read costs bytes; re-issuing the check that failed is what rule
-   * 7 asks for; re-applying a hunk means the run either lost its own edit or
-   * undid it, and either way it is about to make a change it has already made.
-   * So the line says which calls wrote, and {@link render} points a repeated
-   * write back at the write it repeats.
+   * Whether this call reached the engine declaring a mutation.
+   * This records the call's declaration, not evidence that the tree changed.
+   * Failed and successful no-op calls retain their signatures so retries can
+   * name the earlier attempt.
    */
   mutates: Schema.Boolean.pipe(
     Schema.withConstructorDefault(Effect.succeed(false)),
     Schema.withDecodingDefaultKey(Effect.succeed(false))
   ),
   /**
-   * The bytes this call carried into the tree, for a call that declares a write.
+   * The input bytes this call carried, for a call that declares a write.
    *
    * It is the longest string in the call's input — a `write`'s content, an
    * `edit`'s replacement, a patch — measured the same flow-agnostic way
@@ -333,7 +329,12 @@ const leaves = (value: Schema.Json, path: string, into: Map<string, Array<string
   // `{}` and not `{…}`: nothing was elided, the record is empty, and a reader
   // that cannot tell those apart reads an empty result as a hidden one.
   if (keys.length === 0) return took("{}")
-  for (const key of keys) leaves(record[key]!, path === "" ? key : `${path}.${key}`, into, left - 1)
+  for (const key of keys) {
+    const next = /^[A-Za-z_$][\w$]*$/.test(key)
+      ? path === "" ? key : `${path}.${key}`
+      : `${path}[${JSON.stringify(key)}]`
+    leaves(record[key]!, next, into, left - 1)
+  }
 }
 
 /**
@@ -391,7 +392,7 @@ export const digest = (value: Schema.Json): string => {
 }
 
 /**
- * The bytes one call carried into the tree: the longest string in its input.
+ * The input bytes one call carried: the longest string in its input.
  *
  * Flow-agnostic on purpose, and the same walk `TruncatedOutput` uses to find the
  * payload of a call it has never heard of. A `write` carries its content, an
@@ -570,17 +571,17 @@ export const render = (ledger: Ledger, since = 0): string | undefined => {
     const repeated = line.mutates ? first.get(line.signature) : undefined
     const again = repeated === undefined || repeated.ordinal === line.ordinal
       ? ""
-      : ` — the same write as ${repeated.ordinal}, which ${repeated.ok ? "succeeded" : "failed"}`
-    const wrote = line.mutates ? `WROTE ${line.payloadBytes}b, ` : ""
+      : ` — the same write call as ${repeated.ordinal}, which ${repeated.ok ? "succeeded" : "failed"}`
+    const wrote = line.mutates ? `WRITE CALL ${line.payloadBytes}b input, ` : ""
     return `${line.ordinal}. ${oneLine(line.flow)} ${oneLine(line.subject)} — ${wrote}${
       line.ok ? "ok" : "FAILED"
     }${again}: ${oneLine(line.digest)} (${line.bytes}b)`
   })
-  // Only where the run has actually written something: teaching about a marker
+  // Only where the run declared a mutation: teaching about a marker
   // nothing on the page carries costs a frame's worth of reading for nothing.
   const writes = first.size === 0
     ? ""
-    : "\nA line marked `WROTE` changed the tree, with the bytes it carried. One that names an earlier write made a change this run had already made: read what happened after the first one before making it a third time."
+    : "\nA line marked `WRITE CALL` declared a mutation and lists its input bytes; it does not prove a tree change. A repeated call names its first attempt and whether that call succeeded."
   const trailer =
     "\nThese are an index, not the results: what each call returned is still under the name your cell bound it to. Read the name; do not issue the call again."
   return `${heading}\n${lines.join("\n")}${trailer}${writes}`

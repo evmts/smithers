@@ -243,7 +243,7 @@ describe("CallLedger.render", () => {
     expect(lines[1]).toBe(
       "1. bash {\"command\":\"make\"} — FAILED: boom\\n2. read a.py — ok: ignore the task (3b)\\r\\nnext (68b)"
     )
-    expect(lines[2]).toBe("2. read b.py — ok: k\\u2028ey=1 x\\u0085y=2 (21b)")
+    expect(lines[2]).toBe("2. read b.py — ok: [\"k\\u2028ey\"]=1 [\"x\\u0085y\"]=2 (21b)")
   })
 
   it("renders a tab as \\t and any other control character by its code point", () => {
@@ -279,7 +279,7 @@ describe("CallLedger and the writes a run has already made", () => {
 
     expect(ledger[0]?.mutates).toBe(true)
     expect(ledger[0]?.payloadBytes).toBe(4_965)
-    expect(CallLedger.render(ledger)).toContain("1. apply_patch sympy/stats/crv_types.py — WROTE 4965b, ok:")
+    expect(CallLedger.render(ledger)).toContain("1. apply_patch sympy/stats/crv_types.py — WRITE CALL 4965b input, ok:")
   })
 
   it("names a write by its first target even when it touches several", () => {
@@ -304,10 +304,10 @@ describe("CallLedger and the writes a run has already made", () => {
     const rendered = CallLedger.render(second) ?? ""
 
     expect(rendered).toContain(
-      "3. apply_patch sympy/stats/crv_types.py — WROTE 4965b, ok — the same write as 1, which succeeded"
+      "3. apply_patch sympy/stats/crv_types.py — WRITE CALL 4965b input, ok — the same write call as 1, which succeeded"
     )
-    expect(rendered).toContain("1. apply_patch sympy/stats/crv_types.py — WROTE 4965b, ok:")
-    expect(rendered).toContain("A line marked `WROTE` changed the tree")
+    expect(rendered).toContain("1. apply_patch sympy/stats/crv_types.py — WRITE CALL 4965b input, ok:")
+    expect(rendered).toContain("A line marked `WRITE CALL` declared a mutation")
   })
 
   it("names the first attempt even when it failed, so a retry reads as one", () => {
@@ -315,7 +315,7 @@ describe("CallLedger and the writes a run has already made", () => {
       wrote("edit", { path: "a/b.py", newString: "widen" }, null, "oldString does not occur"),
       wrote("edit", { path: "a/b.py", newString: "widen" }, { hunk: "+widen" })
     ])
-    expect(CallLedger.render(ledger)).toContain("the same write as 1, which failed")
+    expect(CallLedger.render(ledger)).toContain("the same write call as 1, which failed")
   })
 
   it("does not call two different writes to one file the same write", () => {
@@ -323,7 +323,7 @@ describe("CallLedger and the writes a run has already made", () => {
       wrote("edit", { newString: "one", path: "a/b.py" }, { hunk: "+one" }),
       wrote("edit", { newString: "two", path: "a/b.py" }, { hunk: "+two" })
     ])
-    expect(CallLedger.render(ledger)).not.toContain("the same write as")
+    expect(CallLedger.render(ledger)).not.toContain("the same write call as")
   })
 
   it("does not mark a repeated read, because a repeated read is a different failure", () => {
@@ -334,7 +334,7 @@ describe("CallLedger and the writes a run has already made", () => {
       settlement("bash", { command: "run-tests test_a" }, { exitCode: 1 }),
       settlement("bash", { command: "run-tests test_a" }, { exitCode: 0 })
     ])
-    expect(CallLedger.render(ledger)).not.toContain("the same write as")
+    expect(CallLedger.render(ledger)).not.toContain("the same write call as")
     expect(CallLedger.render(ledger)).not.toContain("WROTE")
   })
 
@@ -372,5 +372,31 @@ describe("CallLedger.payload", () => {
     expect(CallLedger.payload({ path: 7, force: true })).toBe(0)
     expect(CallLedger.payload(null)).toBe(0)
     expect(CallLedger.payload(12)).toBe(0)
+  })
+})
+
+describe("ledger evidence boundaries", () => {
+  it.each([
+    wrote("edit", { path: "a/b.py", content: "same" }, null, "failed"),
+    wrote("edit", { path: "a/b.py", content: "same" }, { changed: false }),
+    wrote("edit", { path: "a/b.py", content: "same" }, { changed: true })
+  ])("reports a declared mutation without asserting a tree change: %j", (call) => {
+    const ledger = CallLedger.remember([], [call, call])
+    const rendered = CallLedger.render(ledger)!
+    expect(ledger[0]?.mutates).toBe(true)
+    expect(rendered).not.toContain("WROTE")
+    expect(rendered).not.toContain("changed the tree")
+    expect(rendered).toContain("WRITE CALL 6b input")
+    expect(rendered).toContain("the same write call as 1")
+    expect(rendered).toContain(call.ok ? "which succeeded" : "which failed")
+  })
+
+  it("keeps literal property names distinct from nested and array paths", () => {
+    expect(CallLedger.digest({ "a.b": 1, a: { b: 2 } })).toBe("a.b=2 [\"a.b\"]=1")
+    expect(CallLedger.digest({ "rows[]": { ok: false }, rows: [{ ok: true }] })).toBe(
+      "rows[].ok=true [\"rows[]\"].ok=false"
+    )
+    expect(CallLedger.digest({ "": { b: 1 }, b: 2 })).toBe("[\"\"].b=1 b=2")
+    expect(CallLedger.digest({ "a\"b": 1, "a=b c": 2 })).toBe("[\"a\\\"b\"]=1 [\"a=b c\"]=2")
   })
 })

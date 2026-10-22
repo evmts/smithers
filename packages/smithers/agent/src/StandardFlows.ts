@@ -55,6 +55,7 @@ import * as Recall from "@smthrs/memory/Recall"
 import * as WithMemory from "@smthrs/memory/WithMemory"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import { StdError as StandardError } from "@smthrs/std"
 import * as ApplyPatch from "@smthrs/std/ApplyPatch"
 import * as Bash from "@smthrs/std/Bash"
 import * as Container from "@smthrs/std/Container"
@@ -356,6 +357,7 @@ export const shell = (
             : Bash.sealed(options.sealedTo)
         ),
         publicError: publicExecutionError,
+        failureKinds: { codes: StandardError.Code.literals },
         timedOut: commandTimedOut,
         presentation: Bash.presentation
       }),
@@ -432,6 +434,7 @@ export const tests = (
         flow: TestRun.flow,
         handler: withinCallLimit(TestRun.name, options?.callLimitMillis, undefined, TestRun.run),
         publicError: publicExecutionError,
+        failureKinds: { codes: StandardError.Code.literals },
         timedOut: commandTimedOut,
         activity: TestRun.activity,
         presentation: TestRun.presentation

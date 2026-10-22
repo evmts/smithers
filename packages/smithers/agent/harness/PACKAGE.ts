@@ -34,7 +34,7 @@ const importRules = ImportRules({
     {
       kind: "forbidCalls",
       files: ["test/**"],
-      callees: ["setTimeout", "setInterval"],
+      callees: ["setTimeout", "setInterval", "*.waitForTimeout"],
       because: "test.behavioral: synchronize tests on conditions or Effect TestClock instead of timer waits."
     },
     {

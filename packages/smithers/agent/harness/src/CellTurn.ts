@@ -36,7 +36,7 @@ import * as CompletionClaim from "./CompletionClaim.ts"
 import * as ContextWindow from "./ContextWindow.ts"
 import * as EngineLike from "./EngineLike.ts"
 import * as FailedCall from "./FailedCall.ts"
-import { HarnessError } from "./HarnessError.ts"
+import { HarnessError, HarnessErrorCode } from "./HarnessError.ts"
 import * as cellPrompt from "./internal/cellPrompt.ts"
 import { compactable, defaultKeepRecent, defaultReserve } from "./internal/compactable.ts"
 import * as compactionMarks from "./internal/compactionMarks.ts"
@@ -2612,7 +2612,9 @@ const unsettled = (
       // The frame waited on this call whether or not it answered. A summary
       // call's wait is its compaction's, which times itself.
       if (call.purpose === "frame") spent.modelMs += durationMillis
-      const kind = failure === undefined ? { code: "interrupted" } : Cell.failureKind(failure)
+      const kind = failure === undefined ? { code: "interrupted" } : Cell.failureKind(failure, {
+        codes: [...ModelError.ModelErrorCode.literals, ...HarnessErrorCode.literals]
+      })
       const wire = failure instanceof ModelError.ModelError ? failure : undefined
       const timing = wire?.timing ?? reported
       const { stages, tries } = reached.read()

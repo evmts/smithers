@@ -7,7 +7,7 @@
  * modes.
  */
 import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
-import { Cause, Deferred, Effect, Exit, Fiber, Option, Schema, Scope } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Result, Schema, Scope } from "effect"
 import { TestClock } from "effect/testing"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { newVariant } from "quickjs-emscripten-core"
@@ -1050,5 +1050,19 @@ describe("QuickJSSandbox module quarantine", () => {
     } finally {
       allocation.mockRestore()
     }
+  })
+})
+
+it.each([
+  ["const first = 1", "(() => { globalThis.answer = 2 })()"],
+  ["const first = 1", "[2].forEach(n => { globalThis.answer = n })"],
+  ["const first = 1 // trailing comment", "(() => { globalThis.answer = 2 })()"],
+  ["const first = 1", "`value`; globalThis.answer = 2"]
+])("separates cell block expressions: %s / %s", async (first, second) => {
+  const fence = (body: string) => "```cell\n" + body + "\n```"
+  const extracted = Result.getOrThrow(Cell.extract([fence(first), fence(second), fence("ctx.done(answer)")].join("\n")))
+  expect(await outcomeOf(extracted.source.text)).toMatchObject({
+    _tag: "settled",
+    transition: { _tag: "complete", output: "2" }
   })
 })

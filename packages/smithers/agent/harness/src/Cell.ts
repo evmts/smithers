@@ -365,13 +365,11 @@ export type CallFailureCode = typeof CallFailureCode.Type
 export const defaultCallFailureCode: CallFailureCode = "flow_failed"
 
 /**
- * What kind of failure a flow's handler met, in identifiers only.
+ * Public classification of a handler failure.
  *
- * A handler's failure is opaque to the cell unless its binding declares a
- * public message, and "Flow bash failed." is then all a run's record says. The
- * failure's `_tag` and its own `code` are names its author chose, not data it
- * carried, so they may be journaled where its message may not: they tell a
- * command that could not be started from one that ran and failed.
+ * Tags and codes may contain confidential data even when they look like
+ * identifiers. Only names a binding explicitly allowlists as public may be
+ * journaled; the default is opaque.
  *
  * @category models
  * @since 1.0.0-rc.1
@@ -393,24 +391,32 @@ export const FailureKind = Schema.Struct({
 })
 
 /**
- * What {@link failureKind} lets through: a name, never prose.
+ * Bounds an explicitly public classification; syntax alone grants no disclosure.
  */
 const identifier = /^[A-Za-z][\w.:/-]{0,95}$/
 
 /**
  * The {@link FailureKind} of one handler failure, read without trusting it:
- * a failure with throwing accessors, or with a tag or code that is not an
- * identifier, says nothing.
+ * only explicitly allowlisted public identifiers pass. Throwing accessors
+ * disclose nothing. With no allowlist, every failure stays opaque.
  *
  * @category conversions
  * @since 1.0.0-rc.1
  */
-export const failureKind = (failure: unknown): FailureKind => {
+export const failureKind = (
+  failure: unknown,
+  allowed: {
+    readonly tags?: ReadonlyArray<string> | undefined
+    readonly codes?: ReadonlyArray<string> | undefined
+  } = {}
+): FailureKind => {
   try {
     const { _tag, code } = failure as { readonly _tag?: unknown; readonly code?: unknown }
     return {
-      ...(typeof _tag === "string" && identifier.test(_tag) ? { tag: _tag } : {}),
-      ...(typeof code === "string" && identifier.test(code) ? { code } : {})
+      ...(typeof _tag === "string" && identifier.test(_tag) && allowed.tags?.includes(_tag) === true
+        ? { tag: _tag }
+        : {}),
+      ...(typeof code === "string" && identifier.test(code) && allowed.codes?.includes(code) === true ? { code } : {})
     }
   } catch {
     return {}
@@ -899,7 +905,7 @@ export interface Extracted {
  * Extracts the cell program one model settlement emitted.
  *
  * Every fenced block tagged as a cell is kept, in reply order, and the blocks
- * are joined with newlines into one global async script in the persistent
+ * are joined with newline-delimited semicolons into one global async script in the persistent
  * realm. Top-level `await` is supported; top-level `return` is invalid. Blocks
  * execute in order. The first `ctx.done` or `ctx.park` that records an intent
  * seals the frame; later `ctx.done` and `ctx.park` calls do nothing. Ordinary
@@ -917,20 +923,16 @@ export interface Extracted {
  *
  * A byte-identical repeat of a block is dropped rather than concatenated. Both
  * multi-block replies in that wave are in the journals, and the second one is a
- * model that emitted the same block twice: joining the duplicate would declare
- * its names twice and turn a frame that runs today into a `compile_failed`. A
- * repeat is the model restating one program, never a second step — a second
- * step that genuinely re-runs the same code would still have to differ
- * somewhere, if only in what it does with the result.
+ * model that emitted the same block twice. Re-running the duplicate could
+ * repeat host work. A repeat is treated as one program restated; a second step
+ * that intentionally runs the same code must differ somewhere.
  *
- * Distinct blocks are joined as they were written, so a value bound in one is
- * bound for the ones after it. One program therefore means one set of
- * declarations, and two blocks that both declare the same name are a
- * `SyntaxError` the compiler reports — a durable observation the next frame can
- * fix, unlike silently running one block of seven, which is not observable at
- * all. The contract states the rule so a model that batches writes blocks that
- * compose, and `CellTurn` names the block count when such a program fails to
- * compile.
+ * Distinct blocks share one global scope, with a statement separator between
+ * blocks so a leading `(`, `[` or template literal cannot continue the previous
+ * expression. Top-level declarations rebind existing names through notebook
+ * normalization, including repeated names across distinct blocks. Duplicate
+ * lexical declarations inside a nested scope still cause a `SyntaxError`.
+ * `CellTurn` names the block count when a program fails to compile.
  *
  * The program is `typescript` when any block declared a typed fence, because
  * both bindings run TypeScript by erasing type-only syntax and erasure is
@@ -973,7 +975,7 @@ export const extract = (text: string): Result.Result<Extracted, Rejected> => {
     )
   }
   return Result.succeed({
-    source: source([...distinct].join("\n"), typed ? "typescript" : "javascript"),
+    source: source([...distinct].join("\n;\n"), typed ? "typescript" : "javascript"),
     blocks: bodies.length
   })
 }

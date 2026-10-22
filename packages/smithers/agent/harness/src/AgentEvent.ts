@@ -674,7 +674,7 @@ export class CellCallSettled extends Schema.TaggedClass<CellCallSettled>(
    */
   durationMillis: Schema.optional(NonNegativeSafeInt),
   /**
-   * What kind of failure the flow's handler met, in identifiers only: see
+   * Explicitly public classification of the handler failure: see
    * `Cell.FailureKind`. Absent for a call that succeeded, for a failure the
    * boundary raised itself, and for a settlement replayed from its record.
    */

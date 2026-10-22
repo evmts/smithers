@@ -688,10 +688,14 @@ describe("FlowBinding.make", () => {
     })
   })
 
-  it("reports what kind of failure the handler met in identifiers only, and tells the cell no more than before", async () => {
+  it("reports explicitly public failure identifiers, and tells the cell no more than before", async () => {
     const reported: Array<Cell.FailureKind> = []
     const failing = (failure: unknown) =>
-      FlowBinding.make({ flow: echo, handler: () => Effect.fail(failure) }).run(call("echo", { text: "hi" })).pipe(
+      FlowBinding.make({
+        flow: echo,
+        handler: () => Effect.fail(failure),
+        failureKinds: { tags: ["StdError"], codes: ["request_failed"] }
+      }).run(call("echo", { text: "hi" })).pipe(
         Effect.provideService(Cell.Failures, (kind) => Effect.sync(() => void reported.push(kind))),
         Effect.runPromise
       )
@@ -1183,4 +1187,37 @@ describe("FlowBinding.registry", () => {
     expect(visible.map((entry) => entry.name)).toEqual(["review"])
     expect(warnings).toEqual([])
   })
+})
+
+it("keeps identifier-shaped confidential failure fields out of settlement metadata", async () => {
+  const reported: Array<Cell.FailureKind> = []
+  const secret = "SYNTHETIC_SECRET_credential123"
+  const binding = FlowBinding.make({
+    flow: echo,
+    handler: () => Effect.fail({ _tag: secret, code: secret, message: secret })
+  })
+  const result = await Effect.runPromise(
+    binding.run(call("echo", { text: "hi" })).pipe(
+      Effect.provideService(Cell.Failures, (kind) => Effect.sync(() => void reported.push(kind)))
+    )
+  )
+  expect(reported).toEqual([{}])
+  expect(JSON.stringify([result, reported])).not.toContain(secret)
+})
+
+it("filters failure metadata by exact public names and handles unreadable failures", () => {
+  const allowed = { tags: ["PublicError"], codes: ["not_found"] }
+  expect(Cell.failureKind({ _tag: "PublicError", code: "SYNTHETIC_SECRET" }, allowed)).toEqual({ tag: "PublicError" })
+  expect(Cell.failureKind({ _tag: "SYNTHETIC_SECRET", code: "not_found" }, allowed)).toEqual({ code: "not_found" })
+  expect(Cell.failureKind({ _tag: "PublicError", code: "not_found" })).toEqual({})
+  expect(Cell.failureKind({ _tag: "PublicError" }, { tags: ["PublicError"] })).toEqual({ tag: "PublicError" })
+  expect(Cell.failureKind({ code: "not_found" }, { codes: ["not_found"] })).toEqual({ code: "not_found" })
+  expect(Cell.failureKind({ _tag: "has spaces", code: "has spaces" }, { tags: ["has spaces"], codes: ["has spaces"] }))
+    .toEqual({})
+  expect(Cell.failureKind({
+    get _tag() {
+      throw new Error("unreadable")
+    }
+  }, allowed)).toEqual({})
+  expect(Cell.failureKind(null, allowed)).toEqual({})
 })

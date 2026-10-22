@@ -311,6 +311,12 @@ export interface Options<
    */
   readonly handler: (input: I["Type"], call: Cell.Call) => Effect.Effect<O["Type"], E, R>
   /**
+   * Handler tags and codes explicitly safe to persist in settlement metadata.
+   * Omitted, handler classification stays opaque. Declare only fixed public
+   * names; never derive this allowlist from a failure or user content.
+   */
+  readonly failureKinds?: Parameters<typeof failureKind>[1] | undefined
+  /**
    * Opts safe handler-failure details into cell-visible, journaled text.
    * Forward message only for error classes the host authored with model-facing
    * text; never forward messages of transport, SDK, OS, or unknown errors,
@@ -393,7 +399,7 @@ export const make = <
           const failure = produced.failure as Exclude<E, HarnessError>
           // For the run's record only: what kind of failure this was. The
           // cell is told what `publicError` selects below and nothing more.
-          yield* (yield* Failures)(failureKind(failure))
+          yield* (yield* Failures)(failureKind(failure, options.failureKinds))
           const message = publicMessage(failure, options.publicError)
           const rendered = message === undefined
             ? `Flow ${descriptor.name} failed.`

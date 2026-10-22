@@ -480,12 +480,14 @@ describe("CellTurn repl and a write the run has already made", () => {
 
     // Each frame's section stays in the window, so the first write was listed
     // one frame earlier and the newest section lists only the second.
-    expect(frameBlock(model.recorder.requests[1])).toContain("1. fs/write crv_types.py — WROTE 216b, ok")
+    expect(frameBlock(model.recorder.requests[1])).toContain("1. fs/write crv_types.py — WRITE CALL 216b input, ok")
     const block = frameBlock(model.recorder.requests[2])
     expect(block).not.toContain("1. fs/write")
-    expect(block).toContain("2. fs/write crv_types.py — WROTE 216b, ok — the same write as 1, which succeeded")
-    expect(conversation(model.recorder.requests[2])).toContain("1. fs/write crv_types.py — WROTE 216b, ok")
-    expect(block).toContain("A line marked `WROTE` changed the tree")
+    expect(block).toContain(
+      "2. fs/write crv_types.py — WRITE CALL 216b input, ok — the same write call as 1, which succeeded"
+    )
+    expect(conversation(model.recorder.requests[2])).toContain("1. fs/write crv_types.py — WRITE CALL 216b input, ok")
+    expect(block).toContain("A line marked `WRITE CALL` declared a mutation")
   })
 
   it("says nothing about writes to a run that has only read", async () => {

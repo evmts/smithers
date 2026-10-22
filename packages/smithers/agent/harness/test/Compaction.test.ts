@@ -675,3 +675,62 @@ describe("Compaction", () => {
     })
   })
 })
+
+describe("compaction tool exchange integrity", () => {
+  const call = ModelRequest.Message.assistant(
+    ModelRequest.ToolCallPart.make({ id: "read-1", name: "read", arguments: "{}" }),
+    { stopReason: "tool-calls" }
+  )
+  const result = ModelRequest.Message.tool(ModelRequest.ToolResultPart.make({ toolCallId: "read-1", content: "ok" }))
+  const input = ContextWindow.make({
+    modelId: "model",
+    segments: [call, result].map((item) => ({ ...segment("", 10), content: [item] }))
+  })
+
+  it.each(
+    [
+      ["squash", "keep"],
+      ["keep", "squash"],
+      ["squash", "remove"],
+      ["remove", "squash"],
+      ["keep", "remove"],
+      ["remove", "keep"]
+    ] as const
+  )("refuses inconsistent pair marks %s / %s", (left, right) => {
+    const declared = Effect.runSync(Effect.result(Compaction.declare(input, 2, summarizer, [left, right])))
+    expect(declared._tag).toBe("Failure")
+    if (declared._tag === "Failure") expect(declared.failure).toBeInstanceOf(Compaction.InvalidStep)
+  })
+
+  it("refuses an explicit prefix that splits a tool exchange", () => {
+    expect(Effect.runSync(Effect.result(Compaction.declare(input, 1, summarizer)))._tag).toBe("Failure")
+  })
+
+  it.each([call, result])("refuses a summary of an originally unmatched tool message: %j", (item) => {
+    const unmatched = ContextWindow.make({ modelId: "model", segments: [{ ...segment("", 10), content: [item] }] })
+    expect(Effect.runSync(Effect.result(Compaction.declare(unmatched, 1, summarizer)))._tag).toBe("Failure")
+  })
+
+  it("rechecks inconsistent marks in a replayed step before asking the summarizer", () => {
+    const safe = Effect.runSync(Compaction.declare(input, 2, summarizer))
+    // A historical step can carry a valid marks digest without safe pair marks.
+    const unrelated = window()
+    const marked = Effect.runSync(Compaction.declare(unrelated, 2, summarizer, ["keep", "squash"]))
+    const historical = { ...safe, marks: marked.marks, marksDigest: marked.marksDigest }
+    expect(Effect.runSync(Effect.result(Compaction.summaryRequest(input, historical)))._tag).toBe("Failure")
+    expect(Effect.runSync(Effect.result(Compaction.apply(input, historical, message("s"))))._tag).toBe("Failure")
+  })
+
+  it.each(["squash", "keep", "remove"] as const)("accepts a complete exchange marked %s", (mark) => {
+    const step = Effect.runSync(Compaction.declare(input, 2, summarizer, [mark, mark]))
+    if (mark === "squash") {
+      expect(Effect.runSync(Compaction.summaryRequest(input, step)).messages).toEqual([
+        call,
+        result,
+        ModelRequest.Message.user(Compaction.summaryTurn)
+      ])
+    }
+    const applied = Effect.runSync(Compaction.apply(input, step, mark === "squash" ? message("s") : undefined))
+    expect(applied.segments).toHaveLength(mark === "keep" ? 2 : mark === "squash" ? 1 : 0)
+  })
+})

@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Result } from "effect"
 import { readFileSync } from "node:fs"
 import { sep } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -135,4 +135,20 @@ it("keeps copyable guide flow declarations free of filesystem-root grants", () =
     expect(echo, root).toContain("capabilities: [],")
     expect(echo, root).toContain("effects: { reads: [], writes: []")
   }
+})
+
+it("documents repeated top-level declarations as notebook rebinding", async () => {
+  const docs = comments("Cell").find((comment) => comment.includes("Extracts the cell program"))!
+  expect(docs).not.toMatch(/two blocks that both declare the same name are a/)
+  expect(docs).toContain("top-level")
+  expect(docs).toContain("rebind")
+  const cell = Result.getOrThrow(Cell.extract(
+    "```cell\nconst value = 1\n```\n```cell\nconst value = 2; ctx.done(value)\n```"
+  )).source
+  const frame = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const sandbox = yield* QuickJSSandbox.make
+    const realm = yield* sandbox.openRealm!({ flows: {} })
+    return yield* realm.evaluate({ cell, frame: 0, call: () => Effect.die("unexpected call") })
+  })))
+  expect(frame.outcome).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "2" } })
 })

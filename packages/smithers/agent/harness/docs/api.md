@@ -1174,13 +1174,25 @@ that did the work, so a replayed frame reports the replay's own readings:
   the flow calls the cell issued, refused ones included, and `callMs` sums
   what they took. `CellCallSettled.durationMillis` is one call, from issue to
   settlement.
-- `CellCallSettled.reason` is the `Cell.FailureKind` of a handler failure: its
-  `tag` and its own `code`, each only when it reads as an identifier. A
-  binding reports it through `Cell.Failures`, a `Context.Reference` the
-  controller provides around each flow call, and `Cell.failureKind` reads it
-  off the failure without trusting it. The failure's message stays as opaque
-  as it was: the cell is told what the binding's `publicError` selects and
-  nothing else, and the record carries names, never the failure's text.
+- `CellCallSettled.reason` is the `Cell.FailureKind` of a handler failure.
+  Handler tags and codes stay opaque by default: even an identifier can carry
+  a secret. A binding's `failureKinds` allowlists fixed public `tags` and
+  `codes` by exact match. `Cell.failureKind(failure, allowed)` enforces that
+  allowlist and the identifier length bound. The binding reports the result
+  through the injected `Cell.Failures` service; the controller journals it.
+  The cell sees only the text explicitly selected by `publicError`.
+
+Ledger mutation markers record `WRITE CALL`, input bytes, and whether the call
+settled successfully. A declaration or successful call does not prove the tree
+changed. Repeated calls still name the first attempt, including failed ones.
+Digest paths quote non-identifier keys in brackets, so a literal `a.b` field
+stays distinct from the nested `a.b` path.
+
+Extracted cell blocks share notebook bindings and are separated by semicolons.
+Repeated top-level declarations rebind; duplicate lexical declarations in a
+nested scope still fail. Compaction rejects prefixes or marks that separate a
+tool exchange, and rejects unmatched calls or results before requesting a
+summary or applying a historical step.
 
 A host that keeps a spend ledger labels each charge from `EngineLike.Spend`, a
 `Context.Reference` the controller provides around every sealed step, every
