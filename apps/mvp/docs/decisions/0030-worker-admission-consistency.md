@@ -1,4 +1,4 @@
-# 0028: Worker admission consistency
+# 0030: Worker admission consistency
 
 Status: implemented (2026-10-21), addressing Will's confirmed worker findings.
 
