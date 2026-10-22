@@ -51,6 +51,7 @@ import { Control } from "@smthrs/control/Control"
 import type { ControlError } from "@smthrs/control/ControlError"
 import type { Flow } from "@smthrs/flow"
 import { Action, FlowRuntime } from "@smthrs/flow"
+import { Redaction } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Crypto from "effect/Crypto"
@@ -164,12 +165,13 @@ const unowned = (operation: string, parentExecutionId: string, child: string): C
  *
  * 2,048 characters preserve a useful typed error and its immediate context
  * without copying an unbounded engine stack into the cell transcript and its
- * durable call record.
+ * durable call record. Redact the complete text before clipping it, so the
+ * bound cannot cut a credential into an unrecognizable prefix.
  */
 const maxChildFailureCauseCharacters = 2_048
 
 const boundedCause = (cause: Cause.Cause<unknown>): string =>
-  Cause.pretty(cause).slice(0, maxChildFailureCauseCharacters)
+  String(Redaction.redact(Cause.pretty(cause))).slice(0, maxChildFailureCauseCharacters)
 
 /**
  * The one thing this port reads out of a child run's state document.
@@ -250,7 +252,10 @@ export const make = (
         Effect.catch((error) =>
           error.code === "not_found_row"
             ? Effect.succeedNone
-            : Effect.logWarning(`agent: the run store could not read child run ${executionId}`, error).pipe(
+            : Effect.logWarning(`agent: the run store could not read child run ${executionId}`, {
+              code: error.code,
+              method: "get"
+            }).pipe(
               Effect.andThen(Effect.fail(failed(`The run store could not read the child run ${executionId}.`)))
             )
         )

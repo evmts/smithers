@@ -263,7 +263,7 @@ describe("a USD park", () => {
       new Budget.BudgetExceeded({ scope: "usd", onExceeded: "park", used, reserved, max, next, message: "over" })
     expect(Budget.raise({ usd: 1, tokens: 10 }, exceeded(0.7, 0, 0.4, 1))).toEqual({ usd: 2.1, tokens: 10 })
     expect(Budget.raise({ usd: 0.5 }, exceeded(0.251, 0.1, 0.0001, 0.5))).toEqual({ usd: 0.86 })
-    expect(Budget.raise({ usd: 0 }, exceeded(0, 0, 0, 0))).toEqual({ usd: 0 })
+    expect(Budget.raise({ usd: 0 }, exceeded(0, 0, 0, 0))).toEqual({ usd: 0.01 })
   })
 
   it("applies the largest approved USD raise and never lowers one", () => {

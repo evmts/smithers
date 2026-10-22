@@ -41,7 +41,7 @@ import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { Registry } from "@smthrs/registry"
 import { RunStore } from "@smthrs/run-store"
-import { Deferred, Effect, Exit, Fiber, Layer, Option, Schedule, Schema } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Schema } from "effect"
 import type * as Scope from "effect/Scope"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -775,10 +775,13 @@ describe("EngineChildren.await", () => {
       const runtime = yield* engine("children-await-failed")
       const store = yield* RunStore.RunStore
       const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
-      yield* runtime.register(Refusing, () => Effect.fail(new WorkerRefusal({ message: "worker refused" })))
+      yield* runtime.register(Refusing, () =>
+        Effect.fail(new WorkerRefusal({ message: "worker refused sk-abcdefghijklmnopqrstuvwxyz1234567890" })))
       yield* runtime.register(Parent, () =>
         port.spawn({ flow: Refusing._tag, label: "doomed" }).pipe(
-          Effect.map((spawned) => spawned.child),
+          Effect.map((spawned) =>
+            spawned.child
+          ),
           Effect.orDie
         ))
       const child = yield* runtime.execute(Parent, { executionId: "await-failed", payload: {} })
@@ -788,6 +791,7 @@ describe("EngineChildren.await", () => {
       const refusal = childErrorOf(yield* Effect.exit(port.await({ child })))
       expect(refusal?.code).toBe("failed")
       expect(refusal?.message).toContain("agent/test/WorkerRefusal")
+      expect(refusal?.message).not.toContain("sk-abcdefghijklmnopqrstuvwxyz1234567890")
     })))
 
   it("refuses a round that handed off instead of answering", () =>
@@ -872,7 +876,7 @@ describe("EngineChildren.await", () => {
             new RunStore.RunStoreError({
               code: "persistence_failed",
               method: "get",
-              message: "the database is gone",
+              message: "the database is gone sk-abcdefghijklmnopqrstuvwxyz1234567890",
               cause: undefined
             })
           )
@@ -882,7 +886,13 @@ describe("EngineChildren.await", () => {
         Effect.provideService(RunStore.RunStore, broken)
       )
 
-      const exit = yield* Effect.exit(port.await({ child: "any-child" }))
+      const logs: Array<string> = []
+      const exit = yield* Effect.exit(port.await({ child: "any-child" })).pipe(
+        Effect.provide(Logger.layer([Logger.make((entry) => {
+          logs.push(JSON.stringify(entry.message))
+        })]))
+      )
+      expect(logs.join(" ")).not.toContain("sk-abcdefghijklmnopqrstuvwxyz1234567890")
       // A store that cannot answer is not a missing child: reporting
       // `not_found` here would tell a cell its child never existed. Nor is it
       // a defect in the calling cell: a busy database is data it can see.

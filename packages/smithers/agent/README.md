@@ -512,6 +512,9 @@ declared for the run. Five rules make it usable:
   one run's spend, from its live accumulator when the run is here and from its
   records when it is not. `Budget.defaultMaxRuns` bounds how many tallies are
   held in memory; `Budget.layer(policy, { maxRuns })` sets it.
+  Uncached reads combine journal and spend-ledger charges by step key. Only
+  journal-backed accounts can be evicted: a spend ledger alone cannot restore
+  latency clocks, suspension spans or skip decisions.
 - **Admission reserves a projection.** Before dispatch, `reserve(stepKey)`
   atomically counts actual spend plus estimates for all in-flight calls. The
   largest observed call sets the estimate; larger completed calls raise
@@ -533,6 +536,10 @@ declared for the run. Five rules make it usable:
   recorded answer, so a re-dispatch pays the ledger again and not the provider.
   The `flows.agent.budget-warning.v1` record is the one this module still lets
   go: nothing reads it back.
+  Suspension and resumption transitions must run outside journal transactions,
+  so a rollback cannot leave live latency accounting ahead of durable history.
+  A latency warning still checks daily, token and USD ceilings. Approval raises
+  have a minimum of one token or millisecond, or one cent, including a zero ceiling.
 
 These are soft admission bounds: an admitted call can cost more than its
 forecast, including the first call. Concurrent admission requires one shared

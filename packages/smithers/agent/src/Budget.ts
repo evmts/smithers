@@ -1507,7 +1507,8 @@ export const make = (
                   })
                 }
                 yield* Ref.update(run.state, (current) => ({ ...current, latched: ledger.latched }))
-                run.evictable = spendLedger !== undefined || Option.isSome(yield* Effect.serviceOption(Journal.Journal))
+                // A spend ledger cannot restore clocks, suspension spans or the skip latch.
+                run.evictable = Option.isSome(yield* Effect.serviceOption(Journal.Journal))
               })
             ),
             Effect.andThen(Effect.sync(() => {
@@ -1617,6 +1618,18 @@ export const make = (
         const open = run.suspendedSince
         if ((to === "suspend") === (open !== undefined)) return
         if (runId !== looseRunId) {
+          const journal = yield* Effect.serviceOption(Journal.Journal)
+          if (Option.isSome(journal)) {
+            let outsideTransaction = false
+            yield* journal.value.whenCommitted(Effect.sync(() => {
+              outsideTransaction = true
+            }))
+            if (!outsideTransaction) {
+              return yield* Effect.fail(
+                unavailable("record", runId, "a suspension transition must be recorded outside a journal transaction")
+              )
+            }
+          }
           const payload = yield* Schema.encodeEffect(BudgetClockRecord)({ at }).pipe(
             Effect.mapError((cause) => unavailable("record", runId, "its suspension record does not encode", cause))
           )
@@ -1678,10 +1691,12 @@ export const make = (
             })
           ))
         }
+        // Warnings never bypass a stricter ceiling later in the policy.
+        let warned: Verdict | undefined
         const latency = policy.latency
         const active = now - run.startedAt - run.suspendedMillis
         if (latency !== undefined && active > latency.maxMillis) {
-          return yield* settle(
+          const verdict = yield* settle(
             run,
             runId,
             exceeded(
@@ -1692,6 +1707,8 @@ export const make = (
               0
             )
           )
+          if (verdict._tag !== "warn") return verdict
+          warned = verdict
         }
         const tokens = policy.tokens
         const daily = policy.daily
@@ -1719,7 +1736,6 @@ export const make = (
           ? forecast
           : current.largestCall
         // A `warn` ceiling still lets a stricter one refuse the same call.
-        let warned: Verdict | undefined
         if (
           tokens !== undefined &&
           (tokens.max === 0 ||
@@ -1738,7 +1754,7 @@ export const make = (
             )
           )
           if (verdict._tag !== "warn") return verdict
-          warned = verdict
+          warned ??= verdict
         }
         const usd = policy.usd
         if (usd !== undefined) {
@@ -1937,14 +1953,10 @@ export const make = (
           // No accumulator, so no caching either: answering about an arbitrary
           // run must not leave one tally per run the process was ever asked
           // about.
-          return Effect.map(recoverUsage(runId, recoveryEntries), (ledger) => {
-            let tokens = 0
-            let largestCall = 0
-            for (const { spent } of ledger.usage.values()) {
-              tokens += spent
-              largestCall = Math.max(largestCall, spent)
-            }
-            return { tokens, calls: ledger.usage.size, largestCall }
+          return Effect.gen(function*() {
+            const snapshot = yield* newAccount
+            yield* ensureRecovered(snapshot, runId)
+            return summarize(yield* Ref.get(snapshot.state))
           })
         })
     })
@@ -2075,7 +2087,10 @@ export const raise = (
   ...budget,
   [ceilingKey(exceeded.scope)]: roundedUp(
     exceeded.scope,
-    exceeded.used + (exceeded.reserved ?? 0) + exceeded.next + exceeded.max
+    Math.max(
+      exceeded.scope === "usd" ? 0.01 : 1,
+      exceeded.used + (exceeded.reserved ?? 0) + exceeded.next + exceeded.max
+    )
   )
 })
 
