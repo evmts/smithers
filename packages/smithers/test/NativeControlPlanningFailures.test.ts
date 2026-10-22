@@ -119,7 +119,8 @@ it.each(["message", "platform"])("redacts the complete load issue: %s", async (k
 
 it.each(["walk", "compile"] as const)("does not log arbitrary planning exception content: %s", async (kind) => {
   const { logs } = await onRuntime(kind)
-  expect(logs).toContain(kind === "walk" ? "could not walk its body" : "produced no graph")
+  expect(logs).toContain("could not walk its body")
+  expect(logs).toContain("graph_build_failed")
   expect(logs).not.toContain("private planning document")
 })
 

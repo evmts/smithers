@@ -620,8 +620,8 @@ ${source}`
     try {
       const logs: Array<string> = []
       await expect(planOn(root, Uncompilable, logs)).rejects.toMatchObject({ _tag: "/control/InvalidInput" })
-      expect(logs.join("\n")).toContain("produced no graph")
-      expect(logs.join("\n")).not.toContain("could not walk its body")
+      expect(logs.join("\n")).toContain("could not walk its body")
+      expect(logs.join("\n")).toContain("graph_build_failed")
     } finally {
       await rm(root, { recursive: true, force: true })
     }
