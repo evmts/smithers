@@ -13,7 +13,7 @@
  */
 import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
-import { Clock, Context, Effect, Exit, Fiber, Layer, Metric, Stream } from "effect"
+import { Clock, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Logger, Metric, Stream } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { randomUUID } from "node:crypto"
 import { DatabaseMetrics, DurableWriter, PostgresDatabase } from "../src/index.ts"
@@ -45,7 +45,16 @@ for (const endpoint of endpoints) {
 
     const schema = () => `pooling_${randomUUID().replaceAll("-", "")}`
     /** A client for `name`, with its own pool, whose schema is dropped when the test's scope closes. */
-    const client = (name: string, options?: { readonly readOnly?: boolean; readonly applicationName?: string }) =>
+    const client = (
+      name: string,
+      options?: {
+        readonly readOnly?: boolean
+        readonly applicationName?: string
+        readonly maxConnections?: number
+        readonly writerLockTimeout?: Duration.Input
+        readonly acquireWarning?: Duration.Input
+      }
+    ) =>
       Effect.gen(function*() {
         const sql = Context.get(
           yield* Layer.build(PostgresDatabase.layer({
@@ -53,7 +62,9 @@ for (const endpoint of endpoints) {
             driver: Pg,
             schema: name,
             readOnly: options?.readOnly,
-            postgres: { applicationName: options?.applicationName }
+            writerLockTimeout: options?.writerLockTimeout,
+            acquireWarning: options?.acquireWarning,
+            postgres: { applicationName: options?.applicationName, maxConnections: options?.maxConnections }
           })),
           SqlClient
         )
@@ -181,6 +192,137 @@ for (const endpoint of endpoints) {
         const after = yield* waits
         expect(after.count - before.count).toBe(2)
         expect(after.max).toBeGreaterThanOrEqual(held)
+      }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
+
+    // Writers queued on the writer lock each held one of Hyperdrive's server
+    // connections while they waited, so a queue as long as its pool held them
+    // all, and Hyperdrive closed every other client after 15 seconds without
+    // one: production alarms failed with `Connection closed` (2026-10-22).
+    // PgBouncer's four server connections stand in for that pool here.
+    it.live("lets its server connection go while a write waits out a held writer lock", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const holder = yield* client(name)
+        yield* holder`CREATE TABLE receipts (id INTEGER PRIMARY KEY)`
+        const writers = yield* Effect.forEach(
+          Array.from({ length: 6 }, (_, index) => index),
+          () => client(name, { maxConnections: 1, writerLockTimeout: "100 millis" })
+        )
+        const reader = yield* client(schema())
+        const timeouts = Metric.value(DatabaseMetrics.writerLockTimeouts)
+        const before = (yield* timeouts).count
+        const release = yield* Deferred.make<void>()
+        const held = yield* Deferred.make<void>()
+        const holding = yield* holder.withTransaction(
+          Effect.andThen(Deferred.succeed(held, undefined), Deferred.await(release))
+        ).pipe(Effect.forkScoped)
+        yield* Deferred.await(held)
+        const writes = yield* Effect.forEach(
+          writers,
+          (sql, index) => DurableWriter.make(sql).write(sql`INSERT INTO receipts VALUES (${index})`),
+          { concurrency: "unbounded" }
+        ).pipe(Effect.forkScoped)
+        // The writers queue on the lock: through PgBouncer, more of them than
+        // it has server connections left.
+        yield* Effect.sleep("300 millis")
+        // A client that needs no lock still gets a server connection while the
+        // lock stays held.
+        const read = yield* Effect.timeoutOption(reader`SELECT 1 AS one`, "2 seconds")
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(holding)
+        yield* Fiber.join(writes)
+        expect(read._tag === "Some" ? read.value : "starved").toEqual([{ one: 1 }])
+        expect(yield* holder`SELECT id FROM receipts ORDER BY id`).toEqual(
+          writers.map((_, index) => ({ id: index }))
+        )
+        expect((yield* timeouts).count - before).toBeGreaterThanOrEqual(writers.length)
+      }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
+
+    it.live("bounds a write's wait for the writer lock and counts the waits that ran out", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const holder = yield* client(name)
+        const waiter = yield* client(name, { writerLockTimeout: "50 millis" })
+        const timeouts = Metric.value(DatabaseMetrics.writerLockTimeouts)
+        const waits = Metric.value(DatabaseMetrics.writerLockWait)
+        const timeoutsBefore = (yield* timeouts).count
+        const waitsBefore = yield* waits
+        // `lock_timeout` stays at the client's limit for the rest of the write.
+        const setting = waiter<{ readonly timeout: string }>`SELECT current_setting('lock_timeout') AS timeout`
+        const { inside } = yield* holder.withTransaction(Effect.gen(function*() {
+          const inside = yield* waiter.withTransaction(setting).pipe(Effect.forkScoped)
+          yield* TestDatabase.until(Effect.map(timeouts, (counter) => counter.count - timeoutsBefore >= 3))
+          return { inside }
+        }))
+        expect(yield* Fiber.join(inside)).toEqual([{ timeout: "50ms" }])
+        // A lone statement takes no lock and keeps the server's own limit.
+        expect(yield* setting).toEqual([{ timeout: "0" }])
+        // An infinite limit waits as long as the lock is held.
+        const unbounded = yield* client(name, { writerLockTimeout: Duration.infinity })
+        expect(
+          yield* unbounded.withTransaction(
+            unbounded<{ readonly timeout: string }>`SELECT current_setting('lock_timeout') AS timeout`
+          )
+        ).toEqual([{ timeout: "0" }])
+        const after = yield* waits
+        // The holder's write, the waiter's, and the unbounded client's schema check and write.
+        expect(after.count - waitsBefore.count).toBe(4)
+        expect(after.max).toBeGreaterThanOrEqual(150)
+      }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
+
+    // A step that waited on a pool logged nothing for 26 seconds on a loaded
+    // stack (2026-10-22).
+    it.live("warns while a wait for a pooled connection runs long, then takes the connection, and times every wait", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const sql = yield* client(name, { maxConnections: 1, acquireWarning: "200 millis" })
+        const waits = Metric.value(DatabaseMetrics.connectionWait)
+        const before = yield* waits
+        const warnings: Array<unknown> = []
+        const logger = Logger.make((options) => {
+          if (JSON.stringify(options.message).includes("postgres.connection.waiting")) warnings.push(options.message)
+        })
+        const release = yield* Deferred.make<void>()
+        const held = yield* Deferred.make<void>()
+        // The pool's one connection is held by a transaction until released.
+        const holding = yield* sql.withTransaction(
+          Effect.andThen(Deferred.succeed(held, undefined), Deferred.await(release))
+        ).pipe(Effect.forkScoped)
+        yield* Deferred.await(held)
+        const waiting = yield* sql<{ readonly one: number }>`SELECT 1 AS one`.pipe(
+          Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+          Effect.forkScoped
+        )
+        yield* Effect.sleep("500 millis")
+        expect(warnings).toHaveLength(1)
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(holding)
+        expect(yield* Fiber.join(waiting)).toEqual([{ one: 1 }])
+        // A wait that ends before the warning logs nothing.
+        yield* sql`SELECT 1`.pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+        expect(warnings).toHaveLength(1)
+        const after = yield* waits
+        expect(after.count - before.count).toBe(3)
+        expect(after.max).toBeGreaterThanOrEqual(400)
+      }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
+
+    it.live("counts a connection that would not open and a login the server refused", () =>
+      Effect.gen(function*() {
+        const closed = new URL(url)
+        closed.port = "1"
+        const refused = new URL(url)
+        refused.password = "not-the-password"
+        const failures = Metric.value(DatabaseMetrics.loginFailures)
+        for (const target of [closed, refused]) {
+          const before = (yield* failures).count
+          const built = yield* Effect.exit(Layer.build(PostgresDatabase.layer({
+            url: target.toString(),
+            driver: Pg,
+            schema: schema()
+          })))
+          expect(Exit.isFailure(built)).toBe(true)
+          expect((yield* failures).count - before).toBe(1)
+        }
       }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
 
     it.live("runs a read-only client's statements in READ ONLY transactions on its schema", () =>

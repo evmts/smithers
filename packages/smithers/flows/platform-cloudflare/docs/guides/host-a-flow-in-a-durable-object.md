@@ -144,9 +144,9 @@ Every `start`, `wake` and alarm logs, traces and counts itself:
 and `smithers_cloudflare_execution_alarms` counters, by outcome.
 `smithers_cloudflare_execution_routed` counts the executions alarms started and
 woke on other objects, by `route`, and each alarm span carries the counts as
-`smithers.execution.started` and `smithers.execution.woken`. Each alarm line and span names its execution and flow
-as `smithers.execution.id` and `smithers.flow`. A `Retrying` alarm
+`smithers.execution.started` and `smithers.execution.woken`. Each start and alarm line and span names its execution and
+flow as `smithers.execution.id` and `smithers.flow`. A `Retrying` alarm
 also carries `error.type` and `smithers.execution.attempt`, and a failure that reached the database its SQL error's
-kind and code. None of them carries the payload or a flow's failure message; only a failed schema migration adds its
+kind and code, and for a lost or refused connection the driver's text for it. None of them carries the payload or a flow's failure message; only a failed schema migration adds its
 statement and the database's message. [Troubleshooting](../troubleshooting.md) maps each `error.type` to its
 cause.

@@ -306,6 +306,43 @@ and Hyperdrive drops the connection when it receives one.
 **Fix:** use `PostgresDatabase.layer`, which sends every statement unnamed. A
 hand-built `PgClient` behind Hyperdrive needs `prepare: false`.
 
+### `postgres.connection.waiting`
+
+**Symptom:** this warning, with `waitedMs`, while a statement or transaction
+waits for a pooled connection longer than the client's `acquireWarning` (10
+seconds by default).
+
+**Cause:** every connection in the client's pool stayed busy, or a pooler in
+front of the server granted none. `flows_db_connection_wait` shows how long
+waits take.
+
+**Fix:** raise `postgres.maxConnections` if the work is concurrent by design,
+or find what holds connections: a long transaction, or writers queued on the
+schema's writer lock (`flows_db_writer_lock_wait`). The wait has no deadline:
+a deadline would race it in another fiber, and a transaction acquires its
+connection where it can't be interrupted, so an interrupted caller would wait
+the deadline out, or a finalizer's write would be dropped.
+
+### `Connection closed` behind Hyperdrive after 15 seconds, under load
+
+**Symptom:** behind Cloudflare Hyperdrive, with many writers on one schema,
+transactions and lone statements fail with `PgConnection: Connection closed`
+15 seconds after they began, and the server shows as many sessions waiting on
+an advisory lock as the Hyperdrive configuration has origin connections.
+Nothing fails against PostgreSQL directly.
+
+**Cause:** a write waits for its schema's writer lock inside its transaction,
+which holds one of Hyperdrive's origin connections. When the writers waiting
+held them all, Hyperdrive closed every other client after 15 seconds without
+one. Releases before `writerLockTimeout` waited without limit.
+
+**Fix:** use a release with `writerLockTimeout`, and keep it under 15 seconds.
+`flows_db_writer_lock_timeouts` counts the waits that ran out; a rising rate
+means the schema's writer lock is the bottleneck, and `flows_db_writer_lock_wait`
+says how long writes wait. Shorten writes, or move the writers closer to the
+database, to raise the lock's ceiling (see
+[the writer lock](./concepts/sqlite-only.md#the-writer-lock)).
+
 Migrate the full composed set before starting stores. Independently racing
 package ladders can install a higher block before a lower package exists; the
 migration validator correctly refuses that gap. See

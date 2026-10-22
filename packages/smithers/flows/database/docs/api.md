@@ -388,12 +388,55 @@ const writerLockWait: Metric.Histogram<Duration.Duration>
 
 Timer `flows_db_writer_lock_wait`, in milliseconds, described as "Time a
 PostgreSQL durable write waited for its schema's writer lock". It measures from
-sending the lock statement to holding the lock. A writable `PostgresDatabase`
+the write's first attempt to holding the lock, across every wait that ran out
+and every backoff between them. A writable `PostgresDatabase`
 client records one observation per transaction it begins: each outermost
 `DurableWriter.write` and each `withTransaction`. Read-only clients, statements
 outside a transaction, and SQLite record nothing. Writes to one schema commit
 one at a time, so a rising wait means that schema's write rate is at the lock's
 ceiling; see [the writer lock](./concepts/sqlite-only.md#the-writer-lock).
+
+### connectionWait
+
+```ts
+const connectionWait: Metric.Histogram<Duration.Duration>
+```
+
+Timer `flows_db_connection_wait`, in milliseconds, described as "Time a
+PostgreSQL statement or transaction waited for a pooled connection". A
+`PostgresDatabase` client records one observation per connection it takes from
+its pool, and a wait that runs past `acquireWarning` also logs
+`postgres.connection.waiting` while it waits. A rising wait means the pool is
+too small for the work sent through it, or the pooler in front of the server
+grants no connection.
+
+### loginFailures
+
+```ts
+const loginFailures: Metric.Counter<number>
+```
+
+Counter `flows_db_login_failures`, described as "PostgreSQL connections that
+failed to open or log in". A `PostgresDatabase` client adds one for each
+connection that was refused or timed out while opening (`ConnectionError`) or
+whose login the server refused (`AuthenticationError`), and logs a
+`postgres.login.failed` warning with the error's kind as `db.error`, and a
+connection failure's driver text as `db.error.message`. A rising rate means
+the server or a pooler in front of it is refusing clients, such as a compute
+out of connections.
+
+### writerLockTimeouts
+
+```ts
+const writerLockTimeouts: Metric.Counter<number>
+```
+
+Counter `flows_db_writer_lock_timeouts`, described as "PostgreSQL writer-lock
+waits that reached the timeout and released their server connection". A
+writable `PostgresDatabase` client adds one each time a write's wait for the
+writer lock reaches its `writerLockTimeout`, rolls back and backs off. A quiet
+system reads zero; a rising rate means more writers queue on one schema than
+the timeout covers.
 
 ## UnsupportedBackend
 
@@ -622,6 +665,34 @@ that closes a named statement, which `@effect/sql-pg` does once its
 statement failure aborted with `ROLLBACK`; the client fails that transaction
 with `SqlError` instead of reporting it committed.
 
+A write waits for the writer lock at most `writerLockTimeout` at a time, so a
+long queue of writers never holds every server connection a pooler grants.
+A wait that runs out rolls the transaction back, letting its connection go,
+counts once in `DatabaseMetrics.writerLockTimeouts`, and tries again after a
+jittered backoff from half the timeout to four times it. The limit is
+`SET LOCAL lock_timeout`, so any lock the write waits on longer afterwards fails
+with `lock_not_available`, which `DurableWriter` retries.
+
+### defaultAcquireWarning
+
+```ts
+const defaultAcquireWarning: Duration.Duration
+```
+
+Ten seconds: how long a wait for a pooled connection runs before it logs a
+`postgres.connection.waiting` warning, unless `acquireWarning` says otherwise.
+`DatabaseMetrics.connectionWait` times every wait.
+
+### defaultWriterLockTimeout
+
+```ts
+const defaultWriterLockTimeout: Duration.Duration
+```
+
+Two seconds: how long one wait for the writer lock holds a server connection
+unless `writerLockTimeout` says otherwise. It is well under the 15 seconds
+Cloudflare Hyperdrive lets a client wait for a connection before closing it.
+
 ### PostgresDatabaseOptions
 
 ```ts
@@ -633,16 +704,20 @@ interface PostgresDatabaseOptions {
     | Omit<Pg.PgClient.PgPoolConfig, "url" | "types" | "prepare" | "preparedStatementCacheSize">
     | undefined
   readonly readOnly?: boolean | undefined
+  readonly writerLockTimeout?: Duration.Input | undefined
+  readonly acquireWarning?: Duration.Input | undefined
 }
 ```
 
-| Field      | Meaning                                                                                                                                                                         |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`      | The connection URL. It reaches the driver as a `Redacted` value. For Hyperdrive, pass the binding's `connectionString`.                                                         |
-| `driver`   | The `@effect/sql-pg` module: `import * as Pg from "@effect/sql-pg"`, then `driver: Pg`.                                                                                         |
-| `schema`   | Defaults to `smithers_flows`. It must be 1 to 63 UTF-8 bytes without NUL.                                                                                                       |
-| `postgres` | Effect PostgreSQL pool and connection options. Smithers owns the type registry, which reads integers back as exact JavaScript numbers, and turns named prepared statements off. |
-| `readOnly` | Reads an existing schema without creating it or taking the writer lock; every transaction is `READ ONLY`.                                                                       |
+| Field               | Meaning                                                                                                                                                                                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`               | The connection URL. It reaches the driver as a `Redacted` value. For Hyperdrive, pass the binding's `connectionString`.                                                                                                                                                                   |
+| `driver`            | The `@effect/sql-pg` module: `import * as Pg from "@effect/sql-pg"`, then `driver: Pg`.                                                                                                                                                                                                   |
+| `schema`            | Defaults to `smithers_flows`. It must be 1 to 63 UTF-8 bytes without NUL.                                                                                                                                                                                                                 |
+| `postgres`          | Effect PostgreSQL pool and connection options. Smithers owns the type registry, which reads integers back as exact JavaScript numbers, and turns named prepared statements off.                                                                                                           |
+| `readOnly`          | Reads an existing schema without creating it or taking the writer lock; every transaction is `READ ONLY`.                                                                                                                                                                                 |
+| `writerLockTimeout` | How long one wait for the writer lock may hold a server connection; `defaultWriterLockTimeout` when unset. A zero duration tries the lock once per attempt; an infinite one waits without limit.                                                                                          |
+| `acquireWarning`    | How long a statement or transaction waits for a pooled connection before a `postgres.connection.waiting` warning says so; `defaultAcquireWarning` when unset. The wait goes on, with the caller's interruptibility, so a finalizer's write still commits after its caller is interrupted. |
 
 ### Driver
 

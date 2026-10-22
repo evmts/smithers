@@ -124,7 +124,8 @@ export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
  *   what failed, never its message. `detail` names a failed schema
  *   migration's cause (the migration, its failed statement, the SQL error's
  *   kind, SQLSTATE code and the database's message) and, for any other
- *   failure that reached the database, only the SQL error's kind and code.
+ *   failure that reached the database, only the SQL error's kind and code,
+ *   and for a lost or refused connection the driver's text for it.
  * - `Forgotten`: the execution settled and its retention window has passed;
  *   the object deleted its intent, its count and its settlement, and the
  *   alarm is deleted. The object is empty, as one that never held an
@@ -432,11 +433,13 @@ export const start = <A, E, R, RS>(
 ): Effect.Effect<A, E | IntentConflict, R | RS> =>
   Effect.gen(function*() {
     const next = stored(value)
+    // Every start line names its execution and flow, as its span does; never the payload.
+    const ids = { "smithers.execution.id": value.executionId, "smithers.flow": value.flow }
     const previous = yield* storage.get<string>(intentKey)
     if (previous !== undefined && storedIdentity(previous) !== identity(value)) {
       yield* Effect.annotateCurrentSpan({ "smithers.execution.start": "conflict" })
       yield* Metric.update(Metric.withAttributes(starts, { outcome: "conflict" }), 1)
-      yield* Effect.logWarning("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome: "conflict" }))
+      yield* Effect.logWarning("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome: "conflict", ...ids }))
       return yield* new IntentConflict({
         executionId: value.executionId,
         message: `Execution ${value.executionId} already holds a different intent`
@@ -451,9 +454,9 @@ export const start = <A, E, R, RS>(
     yield* Metric.update(Metric.withAttributes(starts, { outcome }), 1)
     yield* (Exit.isFailure(exit)
       ? Effect.logWarning("cloudflare.execution.start").pipe(
-        Effect.annotateLogs({ outcome, "error.type": RetryPolicy.failureType(exit.cause) })
+        Effect.annotateLogs({ outcome, ...ids, "error.type": RetryPolicy.failureType(exit.cause) })
       )
-      : Effect.logInfo("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome })))
+      : Effect.logInfo("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome, ...ids })))
     return exit
   }).pipe(
     Effect.withSpan("cloudflare.execution.start", {

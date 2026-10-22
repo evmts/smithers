@@ -16,6 +16,15 @@
  * `Connection closed`: the flow engine's schema, about 110 statements in one
  * transaction, never installed behind Hyperdrive (2026-10-21).
  *
+ * A write waits for its schema's writer lock inside its transaction, so the
+ * wait holds one of the proxy's server connections. Behind Hyperdrive, whose
+ * configuration grants a fixed number of them, a queue of writers as long as
+ * that number held every one, and Hyperdrive closed each other client after
+ * waiting 15 seconds for a connection: alarms failed with `Connection closed`
+ * under load (2026-10-22). A wait therefore lasts at most `writerLockTimeout`;
+ * then the write rolls back, letting its server connection go, and tries
+ * again after a jittered backoff.
+ *
  * The socket driver is injected. `@effect/sql-pg` connects through `node:net`
  * and `node:tls`, which Node, Bun and Workers with `nodejs_compat` supply and
  * a browser does not, so the composition root passes the driver in and this
@@ -24,11 +33,25 @@
  */
 
 import type * as Pg from "@effect/sql-pg"
-import { Effect, Exit, Layer, Metric, Redacted, Result, Scope, Stream } from "effect"
+import {
+  Cause,
+  Clock,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Metric,
+  Random,
+  Redacted,
+  Result,
+  Scope,
+  Stream
+} from "effect"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { Connection } from "effect/sql/SqlConnection"
-import { SqlError, UnknownError } from "effect/sql/SqlError"
+import { isSqlError, SqlError, UnknownError } from "effect/sql/SqlError"
 import type { Compiler } from "effect/sql/Statement"
 import * as DatabaseMetrics from "../DatabaseMetrics.ts"
 import * as ReadOnly from "../internal/ReadOnly.ts"
@@ -69,7 +92,46 @@ export interface PostgresDatabaseOptions {
    * every transaction is `READ ONLY`.
    */
   readonly readOnly?: boolean | undefined
+  /**
+   * How long one wait for the schema's writer lock may hold a server
+   * connection; 2 seconds by default. A write that waits longer rolls back,
+   * letting the connection go, and tries again after a jittered backoff that
+   * grows from half this timeout to four times it, so a long queue of writers
+   * never holds every connection a pooler grants. The limit stays set for the
+   * rest of the write: any lock it waits on longer fails with
+   * `lock_not_available`, which `DurableWriter` retries. A zero duration
+   * tries the lock once per attempt; an infinite one waits without limit,
+   * holding the connection throughout.
+   */
+  readonly writerLockTimeout?: Duration.Input | undefined
+  /**
+   * How long a statement or transaction waits for a connection from the pool
+   * before a `postgres.connection.waiting` warning says so; 10 seconds by
+   * default. The wait goes on: it keeps the caller's interruptibility, so a
+   * finalizer's write still commits after its caller is interrupted.
+   * `DatabaseMetrics.connectionWait` times every wait.
+   */
+  readonly acquireWarning?: Duration.Input | undefined
 }
+
+/**
+ * The longest one wait for the writer lock holds a server connection unless
+ * `writerLockTimeout` says otherwise: 2 seconds, well under the 15 seconds
+ * Cloudflare Hyperdrive lets a client wait for a connection.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultWriterLockTimeout: Duration.Duration = Duration.seconds(2)
+
+/**
+ * How long a wait for a pooled connection runs before it logs a warning,
+ * unless `acquireWarning` says otherwise: 10 seconds.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultAcquireWarning: Duration.Duration = Duration.seconds(10)
 
 // Why `SET LOCAL` and not schema-qualified SQL: every store and migration over
 // this client writes unqualified table names, and `Dialect.tables`,
@@ -81,9 +143,17 @@ export interface PostgresDatabaseOptions {
 const scopeStatement = "SELECT set_config('search_path', quote_ident($1), true)"
 // The writer lock is keyed by the schema's name. Earlier releases hashed
 // `current_schema()`, which is that name while the schema exists, so processes
-// on either release serialize against each other.
-const lockStatement =
-  "SELECT set_config('search_path', quote_ident($1), true), pg_advisory_xact_lock(hashtextextended($1, 2099))"
+// on either release serialize against each other. `lock_timeout` is set before
+// the lock in the same statement, so it bounds that wait, and stays set for
+// the rest of the transaction.
+const lockStatement = "SELECT set_config('search_path', quote_ident($1), true), " +
+  "set_config('lock_timeout', $2, true), pg_advisory_xact_lock(hashtextextended($1, 2099))"
+
+/** Whether `cause` is the server refusing a lock wait past `lock_timeout` (SQLSTATE `55P03`). */
+const isLockTimeout = (cause: Cause.Cause<SqlError>): boolean => {
+  const error = Cause.squash(cause)
+  return isSqlError(error) && error.reason._tag === "LockTimeoutError"
+}
 
 /** Provides PostgreSQL with serialized transactions and exact safe-number reads.
  * A dedicated schema keeps flow state separate from backend product tables.
@@ -129,14 +199,36 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
   const scoped = (conn: Connection) => open(conn, conn.execute(scopeStatement, [schema], undefined))
   // `Dialect.readTransaction` on either client: one snapshot, no writer lock.
   const snapshot = (conn: Connection) => open(conn, conn.execute(scopeStatement, [schema], undefined), readBegin)
-  const locked = (conn: Connection) =>
-    open(
-      conn,
-      Effect.flatMap(
-        Effect.timed(conn.execute(lockStatement, [schema], undefined)),
-        ([waited]) => Metric.update(DatabaseMetrics.writerLockWait, waited)
-      )
+  // `lock_timeout` in milliseconds; `0` is PostgreSQL's "no limit".
+  const lockTimeout = Duration.fromInputUnsafe(options.writerLockTimeout ?? defaultWriterLockTimeout)
+  const lockTimeoutMs = Duration.isFinite(lockTimeout) ? Math.max(1, Math.ceil(Duration.toMillis(lockTimeout))) : 0
+  // After the n-th wait that ran out: from half the timeout, doubling, at most
+  // four times it, each delay drawn between half and all of its bound.
+  const backoff = (attempt: number) =>
+    Effect.map(
+      Random.nextBetween(0.5, 1),
+      (jitter) => Duration.millis(Math.min(lockTimeoutMs * 4, lockTimeoutMs * 2 ** (attempt - 1) / 2) * jitter)
     )
+  const locked = (conn: Connection) =>
+    Effect.gen(function*() {
+      const started = yield* Clock.currentTimeMillis
+      for (let attempt = 1;; attempt++) {
+        const exit = yield* Effect.exit(
+          open(conn, conn.execute(lockStatement, [schema, String(lockTimeoutMs)], undefined))
+        )
+        if (Exit.isSuccess(exit)) {
+          return yield* Metric.update(
+            DatabaseMetrics.writerLockWait,
+            Duration.millis((yield* Clock.currentTimeMillis) - started)
+          )
+        }
+        if (!isLockTimeout(exit.cause)) return yield* exit
+        // `open` rolled the transaction back, so the server connection is free
+        // for other clients while this one waits.
+        yield* Metric.update(DatabaseMetrics.writerLockTimeouts, 1)
+        yield* Effect.interruptible(Effect.flatMap(backoff(attempt), Effect.sleep))
+      }
+    })
   // PostgreSQL answers COMMIT in an aborted transaction with the tag ROLLBACK
   // and no error; that is a failed write, never a committed one.
   const commit = (conn: Connection) =>
@@ -193,10 +285,44 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
         ))
       }))
   })
+  const acquireWarning = Duration.fromInputUnsafe(options.acquireWarning ?? defaultAcquireWarning)
+  // A wait that runs long says so while it waits, from a fiber of its own.
+  const stillWaiting = Effect.andThen(
+    Effect.sleep(acquireWarning),
+    Effect.logWarning("postgres.connection.waiting").pipe(
+      Effect.annotateLogs({ waitedMs: Duration.toMillis(acquireWarning) })
+    )
+  )
   return Layer.effect(
     SqlClient.SqlClient,
     Effect.gen(function*() {
       const pg = yield* PgClient.make({ ...options.postgres, url: Redacted.make(options.url), types, prepare: false })
+      // Every connection this client uses comes from here, timed. The wait
+      // stays in the caller's fiber with the caller's interruptibility. A
+      // deadline would race it in another fiber, and a transaction acquires
+      // inside an uninterruptible region: joining that fiber there kept an
+      // interrupted caller waiting out the deadline, and making the join
+      // interruptible dropped a finalizer's write (2026-10-22).
+      const reserve = Effect.acquireUseRelease(
+        Effect.forkDetach(stillWaiting),
+        () => Effect.timed(pg.reserve),
+        (warning) => Fiber.interrupt(warning)
+      ).pipe(
+        Effect.flatMap(([waited, conn]) => Effect.as(Metric.update(DatabaseMetrics.connectionWait, waited), conn)),
+        // Taking a connection fails only when one would not open or log in:
+        // counted, and logged by its kind. A connection failure's text is the
+        // driver's, never a statement or a row; a refused login's stays out.
+        Effect.tapError((error) =>
+          Effect.andThen(
+            Metric.update(DatabaseMetrics.loginFailures, 1),
+            Effect.logWarning("postgres.login.failed").pipe(Effect.annotateLogs({
+              "db.error": error.reason._tag,
+              ...(error.reason._tag === "ConnectionError" ? { "db.error.message": error.reason.message } : {})
+            }))
+          )
+        ),
+        Effect.withSpan("PostgresDatabase.acquire", { kind: "internal" })
+      )
       const baseCompiler = PgClient.makeCompiler()
       const compiler: Compiler = {
         dialect: "pg",
@@ -217,7 +343,7 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
       }
       Object.defineProperty(compiler, "withoutTransform", { value: compiler })
       const sql = yield* SqlClient.make({
-        acquirer: Effect.map(pg.reserve, statements),
+        acquirer: Effect.map(reserve, statements),
         compiler,
         spanAttributes: [["db.system.name", "postgresql"]]
       })
@@ -227,7 +353,7 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
           spanAttributes: [["db.system.name", "postgresql"]],
           acquireConnection: Effect.gen(function*() {
             const reservation = yield* Scope.make()
-            const conn = yield* Scope.provide(pg.reserve, reservation).pipe(
+            const conn = yield* Scope.provide(reserve, reservation).pipe(
               Effect.onExit((exit) => exit._tag === "Failure" ? Scope.close(reservation, exit) : Effect.void)
             )
             return [reservation, conn] as const

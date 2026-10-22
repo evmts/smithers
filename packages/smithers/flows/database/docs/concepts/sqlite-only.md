@@ -170,6 +170,21 @@ schemas do. A Worker far from its database pays its full round trip several
 times per write. `DatabaseMetrics.writerLockWait` times every wait for the
 lock in production, so a schema at its ceiling shows as a rising wait.
 
+A write waits for the lock inside its transaction, so the wait holds a server
+connection. Behind a pooler that grants a fixed number of them, such as a
+Hyperdrive configuration's origin connections, a queue of writers as long as
+that number would hold every one, and every other client of the pooler would
+wait; Hyperdrive closes a client that waits 15 seconds, and the client sees
+`PgConnection: Connection closed`. So one wait lasts at most
+`writerLockTimeout` (2 seconds by default): the write then rolls back, letting
+its connection go, and tries again after a jittered backoff from half the
+timeout to four times it. A queue the timeout covers keeps first-come order;
+a longer one holds only the writers inside their current wait.
+`DatabaseMetrics.writerLockTimeouts` counts the waits that ran out. The limit
+is `SET LOCAL lock_timeout`, so it stays in force for the rest of the write: any
+lock the write waits on longer fails with `lock_not_available`, which
+`DurableWriter` retries.
+
 `test/WriterLock.bench.ts` (`pnpm --filter @smthrs/database bench`) measures
 one-row writes through the compose PgBouncer and the compose PostgreSQL behind
 it. Each writer is its own one-connection client, as separate Workers are.

@@ -29,7 +29,8 @@ export const writeRetries = Metric.counter("flows_db_write_retries", {
 
 /**
  * Timer over how long a PostgreSQL write waited for its schema's writer
- * lock, from sending the lock statement to holding the lock. A writable
+ * lock, from its first attempt to holding the lock, across every wait that
+ * ran out and every backoff between them. A writable
  * `PostgresDatabase` client records one observation per transaction it
  * begins: each outermost `DurableWriter.write` and each `withTransaction`.
  * Writes to one schema commit one at a time, so a rising wait reads as that
@@ -41,4 +42,48 @@ export const writeRetries = Metric.counter("flows_db_write_retries", {
  */
 export const writerLockWait = Metric.timer("flows_db_writer_lock_wait", {
   description: "Time a PostgreSQL durable write waited for its schema's writer lock"
+})
+
+/**
+ * Counter over PostgreSQL writer-lock waits that reached their client's
+ * `writerLockTimeout`. Each such wait rolled its transaction back, letting
+ * its server connection go, and the write tried again after a backoff. A
+ * quiet system reads zero; a rising rate reads as a queue of writers longer
+ * than the timeout covers, which `writerLockWait` then shows as wait time.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const writerLockTimeouts = Metric.counter("flows_db_writer_lock_timeouts", {
+  description: "PostgreSQL writer-lock waits that reached the timeout and released their server connection",
+  incremental: true
+})
+
+/**
+ * Timer over how long a `PostgresDatabase` statement or transaction waited
+ * for a connection from its pool, one observation per wait. A wait that runs
+ * past the client's `acquireWarning` also logs `postgres.connection.waiting`
+ * while it waits. A rising wait reads as a pool too small for the work sent
+ * through it, or as a pooler that grants no server connection.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const connectionWait = Metric.timer("flows_db_connection_wait", {
+  description: "Time a PostgreSQL statement or transaction waited for a pooled connection"
+})
+
+/**
+ * Counter over `PostgresDatabase` connections that would not open or log in:
+ * a refused or timed-out connection, or a refused login. Each also logs a
+ * `postgres.login.failed` warning with the error's kind. A quiet system reads
+ * zero; a rising rate reads as a server or pooler refusing clients, such as a
+ * compute out of connections.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const loginFailures = Metric.counter("flows_db_login_failures", {
+  description: "PostgreSQL connections that failed to open or log in",
+  incremental: true
 })

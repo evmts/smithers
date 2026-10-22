@@ -150,7 +150,8 @@ id for whoever reads it.
 
 Each `start` logs a `cloudflare.execution.start` line, each `wake` a
 `cloudflare.execution.wake` line and each alarm a `cloudflare.execution.alarm`
-line, inside spans of the same names, with the outcome as an annotation. The
+line, inside spans of the same names, with the outcome as an annotation; start
+and alarm lines also name the execution and flow. The
 `smithers_cloudflare_execution_starts`, `smithers_cloudflare_execution_wakes`
 and `smithers_cloudflare_execution_alarms` counters count them by outcome. None of
 them carries the payload. See [the execution lifecycle](./concepts/execution-lifecycle.md) for what each outcome means.

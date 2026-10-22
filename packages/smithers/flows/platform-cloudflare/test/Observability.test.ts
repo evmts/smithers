@@ -133,12 +133,15 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
           expect.objectContaining({ _tag: "Ended", exit: expect.objectContaining({ _tag: "Failure" }) })
         ])
         for (const span of starts) expect(span.attributes.get("smithers.execution.id")).toBe(executionId)
+        // Every start line names its execution and flow, the conflict included.
         expect(t.lines("cloudflare.execution.start").map((line) => line.annotations)).toEqual(
           starts.map((span, index) =>
             expect.objectContaining({
               trace_id: span.traceId,
               span_id: span.spanId,
               outcome: span.attributes.get("smithers.execution.start"),
+              "smithers.execution.id": executionId,
+              "smithers.flow": Answer._tag,
               ...(index === 1 ? { "error.type": "Leaky" } : index === 2 ? { "error.type": "unknown" } : {})
             })
           )
@@ -333,17 +336,14 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
       expect(annotations).toMatchObject(detail)
     }))
 
-  it.live("an unreachable database's alarm logs the SQL error's kind and nothing else", () =>
+  it.live("an unreachable database's alarm logs the SQL error's kind and the driver's text for it, and nothing else", () =>
     Effect.gen(function*() {
       const closed = new URL(Postgres.url)
       closed.port = "1"
       const { annotations, outcome } = yield* failedAlarm(() => Effect.void, closed.toString())
-      expect(outcome).toMatchObject({
-        _tag: "Retrying",
-        failure: "SqlError",
-        detail: { "db.error": "ConnectionError" }
-      })
-      expect(Object.keys((outcome as { detail: object }).detail)).toEqual(["db.error"])
-      expect(annotations).toMatchObject({ "error.type": "SqlError", "db.error": "ConnectionError" })
+      const detail = { "db.error": "ConnectionError", "db.error.message": "PgConnection: Failed to connect" }
+      expect(outcome).toMatchObject({ _tag: "Retrying", failure: "SqlError", detail })
+      expect(Object.keys((outcome as { detail: object }).detail).sort()).toEqual(Object.keys(detail).sort())
+      expect(annotations).toMatchObject({ "error.type": "SqlError", ...detail })
     }))
 })

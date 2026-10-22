@@ -9,7 +9,7 @@
  * text. For a `MigrationError` the detail names the migration, the statement
  * that failed and the database's message. For any failure that reached the
  * database it names the SQL error's kind and SQLSTATE code, which carry no
- * content. A data exception (SQLSTATE class `22`) quotes the value it
+ * content, and for a lost or refused connection the driver's text for it. A data exception (SQLSTATE class `22`) quotes the value it
  * rejected, so its message is left out even under a migration.
  *
  * @since 1.0.0
@@ -50,6 +50,8 @@ const text = (value: string): string =>
  * ({@link withFailedStatement}):
  *
  * - `db.error`: the SQL error's kind (`ConnectionError`, `SqlSyntaxError`, ...);
+ * - `db.error.message`: for a `ConnectionError`, the driver's text for it
+ *   (`PgConnection: Connection closed`), which carries no content;
  * - `db.response.status_code`: its SQLSTATE code;
  * - under a `MigrationError` only: `db.migration` (`<id>_<name>`),
  *   `db.migration.kind`, `error.message` (the migration error's own text),
@@ -67,7 +69,14 @@ export const detail = (
   const result: Record<string, string> = {}
   const sql = errors.findIndex((error) => error._tag === "SqlError")
   // The reason may be beyond the bounded chain.
-  if (sql !== -1 && errors[sql + 1] !== undefined) result["db.error"] = String(errors[sql + 1]!._tag)
+  const reason = sql === -1 ? undefined : errors[sql + 1]
+  if (reason !== undefined) {
+    result["db.error"] = String(reason._tag)
+    // A lost or refused connection's own text is the driver's ("PgConnection:
+    // Connection closed", "PgConnection: Connection timed out"), never a row or
+    // a statement, and it says which of those happened.
+    if (reason._tag === "ConnectionError") result["db.error.message"] = text(String(reason.message))
+  }
   const code = errors.map((error) => error.code).find((value): value is string =>
     typeof value === "string" && sqlState.test(value)
   )
