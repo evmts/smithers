@@ -1744,6 +1744,29 @@
         }
       },
       "reason": "Reviewed in 9d77a930: model-wire-trace-host changeset and model docs/api.md declare the injected WireTrace service and host layer."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./SandboxCommand",
+      "development": "./src/SandboxCommand/index.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/SandboxCommand/index.d.ts",
+          "default": "./dist/esm/SandboxCommand/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SandboxCommand/index.d.ts",
+          "default": "./dist/cjs/SandboxCommand/index.js"
+        }
+      },
+      "reason": "Reviewed in de1f04f64bc5: SandboxCommand, a command that outlives any host as an ExternalJob, is a deliberate public entry of @smthrs/sandbox."
+    },
+    {
+      "name": "@smthrs/sandbox",
+      "subpath": "./SandboxCommand/*",
+      "development": null,
+      "published": null,
+      "reason": "Closes the SandboxCommand directory's deep paths, as every other directory in this package does, so ./SandboxCommand is its only entrypoint."
     }
   ],
   "removed": [
