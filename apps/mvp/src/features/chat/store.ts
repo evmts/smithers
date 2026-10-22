@@ -1,3 +1,4 @@
+import { observeLoad } from "./load"
 import { makeLane, makeSummaries, followSummaries, summaryQuery } from "../timeline/store"
 import { answerCannotFinish } from "./answerEnd"
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
@@ -311,6 +312,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   // this tab writes the device's rows, or from the tab that does (Collection.make's one writer), so the wait is on the
   // row, never on this tab's own stream. Rows arrive only once the device has restored the conversation, so the wait
   // counts from then, and the restore waits as long at most: a device store in memory restores from the network.
+  yield* observeLoad(messages).pipe(Effect.forkIn(scope, { startImmediately: true }))
+
   const delivered = (row: Asking) =>
     Effect.gen(function* () {
       const synced = row.conversationId === undefined ? messages : (yield* open(row.conversationId)).messages
@@ -437,6 +440,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
         },
         ...(config.retry === undefined ? {} : { retry: config.retry }),
       })
+      yield* observeLoad(branchMessages).pipe(Effect.forkIn(scope, { startImmediately: true }))
       const branchViews = yield* viewsStore.forConversation(conversationId)
       const branchHistory = yield* Collection.local<History, string>({
         id: `chat-history:${conversationId}`,

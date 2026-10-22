@@ -24,7 +24,7 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 //   addresses, or one Telegram chat id. None turns the channel off. The row keeps the configured ALERT_APP_URL,
 //   which each message links to, independently of a local or preview request's origin.
 // - `GET /api/shapes/alert-channels` and `GET /api/shapes/alert-deliveries`: the setting and the receipts, to Admins
-//   only; anyone else gets a shape with no rows.
+//   only; anyone else is refused 403 before Electric.
 // - `channels`: the deployment's providers, from its secrets, as `@smthrs/notifications`' `Channels` layer. The
 //   `ops/SpendAlert` flow sends through it (worker/flows/SpendAlert.ts).
 //
@@ -116,14 +116,8 @@ export const write = (
 /** The audience an Admin reads. */
 const ADMINS = "admin"
 
-/** No audience: what anyone else's shape filters on, so it holds no rows. */
-const NOBODY = ""
-
-/** Whose rows a shape request reads: an Admin's own, in person, else nobody's. */
-const audience = Effect.map(
-  ShapeAccess.actor,
-  (actor) => (Option.isSome(actor) && actor.value.role === "admin" && actor.value.act === undefined ? ADMINS : NOBODY),
-)
+/** Only an Admin in person may subscribe to settings and receipts. */
+const audience = Effect.as(ShapeAccess.admin, ADMINS)
 
 /**
  * Reads Electric's connection (`ShapeProxy.config`) and returns the routes: `set` for `POST /api/alert-channels`, and

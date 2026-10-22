@@ -5,7 +5,7 @@
 import { Effect, Layer } from "effect"
 import { beforeAll, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { LOCAL_ELECTRIC_URL, SHAPE_ROUTE } from "../src/features/chat/contract.ts"
+import { SHAPE_ROUTE } from "../src/features/chat/contract.ts"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "../src/features/flows-ui/contract.ts"
 import { RUNS_SHAPE_ROUTE } from "../src/features/status/contract.ts"
 import { VIEWS_SHAPE_ROUTE } from "../src/features/views/contract.ts"
@@ -43,7 +43,7 @@ const teamConversation = (name: string) =>
   )
 
 beforeAll(async () => {
-  const health = `${LOCAL_ELECTRIC_URL}/v1/health`
+  const health = `${await runtime.runPromise(TestDatabase.electricUrl)}/v1/health`
   const response = await fetch(health).catch((error: unknown) => {
     throw TestDatabase.explain("Electric", new URL(health).host)(error)
   })
@@ -236,7 +236,7 @@ describe("GET /api/shapes/messages", () => {
     const body = await response.text()
     expect(JSON.parse(body)).toEqual(expect.any(Array))
     const [sent] = h.upstream
-    expect(`${sent!.origin}${sent!.pathname}`).toBe("http://localhost:30001/v1/shape")
+    expect(`${sent!.origin}${sent!.pathname}`).toBe(`${await runtime.runPromise(TestDatabase.electricUrl)}/v1/shape`)
     // Signed out, nobody may watch the branch, so the shape is no conversation's.
     expect([...sent!.searchParams]).toEqual([
       ["offset", "-1"],
@@ -251,6 +251,9 @@ describe("GET /api/shapes/messages", () => {
       level: "INFO",
       annotations: {
         status: 200,
+        route: "chat.shape",
+        upstream: "electric",
+        correlationId: expect.any(String),
         live: false,
         durationMs: expect.any(Number),
         bytes: new TextEncoder().encode(body).byteLength,

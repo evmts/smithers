@@ -3,7 +3,7 @@ import type { Interpreter } from "@smthrs/flow"
 import { Effect } from "effect"
 import { type AppOptions, type BootOptions, start } from "../boot"
 import type { Question } from "../features/chat/api"
-import { EngineFaults, type QuestionFault, QuestionFaults, faultyServices } from "./faults"
+import { EngineFaults, ShapeRecovery, type QuestionFault, QuestionFaults, faultyServices } from "./faults"
 
 // The app on faulty services, for the end-to-end tests of unhappy paths (docs/rules.md, test.faults-by-injection).
 // Under `alchemy dev`, main.tsx loads this module when the page's URL carries `?faults`; a production build drops that
@@ -18,6 +18,7 @@ export interface Switches {
     readonly refuse: (status?: number, requests?: ShapeSource.Requests) => void
     readonly stall: (requests?: ShapeSource.Requests) => void
     readonly corrupt: (requests?: ShapeSource.Requests) => void
+    readonly failures: () => number
     readonly heal: () => void
   }
   readonly questions: { readonly failNext: (fault: QuestionFault) => void; readonly asked: () => ReadonlyArray<Question> }
@@ -54,8 +55,11 @@ export const opening = (search: string): ((switches: ShapeSource.Switches) => Ef
  * once its services are built: a test waits for them with `page.waitForFunction(() => "faults" in window)`.
  */
 export const startWithFaults = async (page: AppOptions & BootOptions, search: string, target: object) => {
-  const { runtime, stop } = start(page, faultyServices(page, opening(search)))
+  let rendered!: () => void
+  const ready = new Promise<void>((resolve) => { rendered = resolve })
+  const { runtime, stop } = start({ ...page, render: (...views) => { page.render(...views); rendered() } }, faultyServices(page, opening(search), new URLSearchParams(search).get("faults") === "recovery" ? 3 : 0))
   const [shapes, questions, engine] = await runtime.runPromise(Effect.all([ShapeSource.Faults, QuestionFaults, EngineFaults]))
+  const recovery = await runtime.runPromise(Effect.service(ShapeRecovery))
   const faults: Switches = {
     shapes: {
       down: (requests) => runtime.runSync(shapes.down(requests)),
@@ -63,6 +67,7 @@ export const startWithFaults = async (page: AppOptions & BootOptions, search: st
       stall: (requests) => runtime.runSync(shapes.stall(requests)),
       corrupt: (requests) => runtime.runSync(shapes.corrupt(requests)),
       heal: () => runtime.runSync(shapes.heal),
+      failures: () => runtime.runSync(recovery.failures),
     },
     questions: {
       failNext: (fault) => runtime.runSync(questions.failNext(fault)),
@@ -75,5 +80,6 @@ export const startWithFaults = async (page: AppOptions & BootOptions, search: st
     },
   }
   Object.assign(target, { faults })
+  await ready
   return { stop }
 }

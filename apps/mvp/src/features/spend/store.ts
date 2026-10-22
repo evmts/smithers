@@ -1,8 +1,9 @@
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, Metric, type Scope, Stream } from "effect"
+import { Context, Effect, Layer, Metric, Option, type Scope, Stream } from "effect"
+import { AuthStore, SESSION } from "../auth/store"
 import { ALERT_CHANNELS_SHAPE_ROUTE, ALERT_DELIVERIES_SHAPE_ROUTE, SPEND_ALERTS_SHAPE_ROUTE } from "./contract"
-import { channelsQuery, deliveriesQuery, openQuery, savesQuery } from "./queries"
+import { adminQuery, channelsQuery, deliveriesQuery, openQuery, savesQuery } from "./queries"
 import { AlertChannel, AlertDelivery, ChannelSave, Seen, SpendAlert } from "./schema"
 
 // Spend alerts on this tab (docs/features/spend-alerts.md): the deployment's model spend alerts, which only an Admin's
@@ -52,6 +53,23 @@ export class SpendStore extends Context.Service<
       SpendStore,
       Effect.gen(function* () {
         const scope = yield* Effect.scope
+        const auth = yield* AuthStore
+        const source = yield* ShapeSource.ShapeSource
+        // Permission is a prerequisite, not a failed request. No Admin shape reaches the network until the
+        // session is confirmed; subsequent requests recheck it. Sign-out wipes the device's collections.
+        const allowed = auth.sessionState.rows.pipe(
+          Stream.filter((rows) => rows.some((row) => row.status === "signed_in" && row.role === "admin")),
+          Stream.take(1),
+          Stream.runDrain,
+        )
+        const deniedAt = new Map<string, number>()
+        const adminSource = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.gen(function* () {
+          yield* allowed
+          const confirmation = yield* auth.confirmation
+          const response = yield* source.request(url, init)
+          if (response.status === 403) deniedAt.set(new URL(url).pathname, confirmation)
+          return response
+        }) })
         const alerts = yield* ElectricCollection.make<SpendAlert>({
           id: "spend-alerts",
           schema: SpendAlert,
@@ -63,14 +81,14 @@ export class SpendStore extends Context.Service<
             columnMapper: ElectricCollection.snakeCamelMapper(),
             parser: { int8: (value: string) => Number(value) },
           },
-        })
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, adminSource))
         const seen = yield* Collection.persisted<Seen, string>({
           id: "spend-seen",
           schema: Seen,
           getKey: (row) => row.kind,
           schemaVersion: 1,
         })
-        const open = yield* openQuery(alerts, seen)
+        const open = yield* openQuery(yield* adminQuery(alerts, auth.session, SpendAlert.fields), seen)
         const shape = {
           columnMapper: ElectricCollection.snakeCamelMapper(),
           parser: { timestamptz: (value: string) => new Date(value).toISOString() },
@@ -82,7 +100,7 @@ export class SpendStore extends Context.Service<
           syncMode: "eager",
           persist: { schemaVersion: 1 },
           shape: { url: `${config.origin}${ALERT_CHANNELS_SHAPE_ROUTE}`, ...shape },
-        })
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, adminSource))
         const deliveries = yield* ElectricCollection.make<AlertDelivery>({
           id: "alert-deliveries",
           schema: AlertDelivery,
@@ -90,15 +108,36 @@ export class SpendStore extends Context.Service<
           syncMode: "eager",
           persist: { schemaVersion: 1 },
           shape: { url: `${config.origin}${ALERT_DELIVERIES_SHAPE_ROUTE}`, ...shape },
-        })
+        }).pipe(Effect.provideService(ShapeSource.ShapeSource, adminSource))
         const saves = yield* Collection.local<ChannelSave, string>({
           id: "alert-channel-saves",
           schema: ChannelSave,
           getKey: (row) => row.channel,
         })
-        const channelList = yield* channelsQuery(channels)
-        const receipts = yield* deliveriesQuery(deliveries)
+        const channelList = yield* channelsQuery(yield* adminQuery(channels, auth.session, AlertChannel.fields))
+        const receipts = yield* deliveriesQuery(yield* adminQuery(deliveries, auth.session, AlertDelivery.fields))
         const pending = yield* savesQuery(saves)
+
+        // A 403 stays stopped until a newer successful confirmation grants Admin access. Observe both
+        // edges: an old request's refusal may arrive after the newer confirmation.
+        const resume = <A extends object>(shape: ElectricCollection.ElectricCollection<A>, route: string) => Effect.gen(function* () {
+          let stopped = false
+          yield* Stream.merge(shape.sync, Stream.map(auth.confirmations, () => ({ _tag: "Authorized" as const }))).pipe(
+            Stream.runForEach((event) => Effect.gen(function* () {
+              if (event._tag !== "Authorized") stopped = event._tag === "Stopped" && event.error.status === 403
+              const denied = deniedAt.get(route)
+              if (!stopped || denied === undefined || (yield* auth.confirmation) <= denied) return
+              const reader = Option.getOrThrow(yield* auth.session.get(SESSION))
+              if (reader.status !== "signed_in" || reader.role !== "admin") return
+              stopped = false
+              deniedAt.delete(route)
+              yield* shape.reconnect
+            })),
+          )
+        })
+        yield* resume(alerts, SPEND_ALERTS_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
+        yield* resume(channels, ALERT_CHANNELS_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
+        yield* resume(deliveries, ALERT_DELIVERIES_SHAPE_ROUTE).pipe(Effect.forkIn(scope, { startImmediately: true }))
 
         // A record of each alert the tab shows, once.
         const recorded = new Set<string>()

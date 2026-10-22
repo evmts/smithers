@@ -145,6 +145,28 @@ const faultyEngine = Layer.effectContext(
   }),
 )
 
+/** A finite 503 outage on a new branch's message shape; every healthy request uses the real source. */
+export class ShapeRecovery extends Context.Service<ShapeRecovery, { readonly failures: Effect.Effect<number> }>()(
+  "@smthrs/mvp/test/ShapeRecovery",
+) {}
+
+const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(function* () {
+  const real = yield* ShapeSource.ShapeSource
+  const failed = yield* Ref.make(0)
+  const source = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.gen(function* () {
+    const target = new URL(url)
+    if (target.pathname === "/api/shapes/messages" && target.searchParams.has("conversation") &&
+      (yield* Ref.get(failed)) < failures) {
+      yield* Ref.update(failed, (count) => count + 1)
+      return new Response(null, { status: 503 })
+    }
+    return yield* real.request(url, init)
+  }) })
+  return Context.make(ShapeSource.ShapeSource, source).pipe(
+    Context.add(ShapeRecovery, ShapeRecovery.of({ failures: Ref.get(failed) })),
+  )
+}))
+
 /**
  * The browser's services with switches: ChatApi's real client behind `QuestionFaults`, sign-in's real client,
  * Electric's real shape source behind `ShapeSource.Faults`, and this tab's real engine behind `EngineFaults`. Pass it
@@ -154,10 +176,11 @@ const faultyEngine = Layer.effectContext(
 export const faultyServices = (
   options: Pick<AppOptions, "origin" | "answerWithin">,
   shapes?: (switches: ShapeSource.Switches) => Effect.Effect<void>,
+  recover = 0,
 ) =>
   Layer.mergeAll(
     faultyClient.pipe(Layer.provide(realServices(options))),
     AuthClient.layer({ origin: options.origin, within: options.answerWithin ?? "15 seconds" }),
-    ShapeSource.layerFaulty(shapes),
+    recoveringSource(recover).pipe(Layer.provideMerge(ShapeSource.layerFaulty(shapes))),
     faultyEngine,
   )

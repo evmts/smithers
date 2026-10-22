@@ -111,6 +111,12 @@ const openTab = async (client: Layer.Layer<AuthClient>, device: NodeDevice = nod
   return {
     actions,
     listen,
+    confirmation: () => runtime.runSync(Effect.flatMap(AuthStore, (store) => store.confirmation)),
+    confirmed: () => queries.confirmed.toArray[0],
+    forgetConfirmed: () => runtime.runPromise(Effect.gen(function* () {
+      const store = yield* AuthStore
+      yield* (yield* store.confirmed.delete("session")).persisted
+    })),
     session: () => queries.session.toArray[0]!,
     /** What ComposerGate shows on this tab now. */
     access: (): ComposerAccess => composerAccess(queries.session.toArray[0]!, queries.confirmed.toArray[0]),
@@ -170,6 +176,19 @@ describe("sign-in on a tab", () => {
     const tab = await openTab(realClient(browser(h)))
     await tab.settled("signed_out")
     expect(tab.session().available).toBe(false)
+  })
+
+  test("sign-out still ends the real session when its local confirmation was already removed", async () => {
+    const b = browser(await signInHarness(server))
+    await b.signIn()
+    const tab = await openTab(realClient(b))
+    await tab.settled("signed_in")
+    await vi.waitFor(() => expect(tab.confirmed()?.login).toBe("octocat"))
+    await tab.forgetConfirmed()
+    expect(tab.confirmed()).toBeUndefined()
+    tab.actions.signOut()
+    await tab.settled("signed_out")
+    await vi.waitFor(() => expect(tab.count(signOuts, { outcome: "signed_out" })).toBe(1))
   })
 
   test("a ChatApi that can't say who is signed in leaves the tab unreachable, with the status in the log", async () => {
@@ -453,6 +472,20 @@ describe("signing out wipes the device", () => {
   })
 })
 
+
+test("a same-valued successful refresh advances authorization without changing the session row", async () => {
+  const b = browser(await signInHarness(server))
+  await b.signIn()
+  const tab = await openTab(realClient(b))
+  await tab.settled("signed_in")
+  const session = { ...tab.session() }
+  const confirmation = tab.confirmation()
+  const requests = b.sessionRequests()
+  tab.actions.reload()
+  await vi.waitFor(() => expect(tab.confirmation()).toBe(confirmation + 1))
+  expect(tab.session()).toEqual(session)
+  expect(b.sessionRequests()).toBe(requests + 1)
+})
 
 test("reconnecting refreshes the real session through the auth lifecycle", async () => {
   const h = await signInHarness(server)

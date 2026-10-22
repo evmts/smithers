@@ -1,5 +1,5 @@
 import { PgClient } from "@effect/sql-pg"
-import { Context, Data, Effect, Layer, Redacted } from "effect"
+import { Config, Context, Data, Effect, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "./Database.ts"
 
@@ -24,12 +24,25 @@ export class Scratch extends Context.Service<
 
 const compose = new URL(Database.LOCAL_URL)
 
+const localServer = Config.Port("TEST_DATABASE_PORT").pipe(Config.withDefault(Number(compose.port)), Effect.map((port) => {
+  const server = new URL(compose)
+  server.port = String(port)
+  return server
+}))
+
+/** An isolated fixture's Electric port; test configuration cannot name a remote host. */
+export const electricUrl = Config.Port("TEST_ELECTRIC_PORT").pipe(
+  Config.withDefault(30001),
+  Effect.map((port) => `http://localhost:${port}`),
+)
+
 /** `DATABASE_URL`, the compose Postgres when unset, refused when it names another host or port. */
 export const serverUrl = Effect.gen(function* () {
+  const expected = yield* localServer
   const url = new URL(Redacted.value(yield* Database.url))
-  if (url.hostname !== compose.hostname || url.port !== compose.port) {
+  if (url.hostname !== expected.hostname || url.port !== expected.port) {
     return yield* new Unusable({
-      message: `Tests use only the compose Postgres at ${compose.host}, and DATABASE_URL names ${url.host}. Unset it.`,
+      message: `Tests use only the compose Postgres at ${expected.host}, and DATABASE_URL names ${url.host}. Unset it.`,
     })
   }
   return url
@@ -87,5 +100,5 @@ export const layer = (prefix: string) =>
         Layer.succeed(Scratch, Scratch.of({ name, database })),
         PgClient.layer({ url, maxConnections: 4 }),
       )
-    }).pipe(Effect.mapError(explain("Postgres", compose.host))),
+    }).pipe(Effect.catch((error) => Effect.flatMap(localServer, (expected) => Effect.fail(explain("Postgres", expected.host)(error))))),
   )

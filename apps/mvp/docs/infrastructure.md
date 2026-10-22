@@ -89,6 +89,7 @@ Every page held 11 to 15 shapes, counted from the shape URLs each page requested
 ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and nothing else (`db/TestDatabase.ts`):
 
 - They refuse a `DATABASE_URL` that names another host or port, before connecting to it. Unset it to run them.
+- For an isolated local stack, set `TEST_DATABASE_PORT` and `TEST_ELECTRIC_PORT` to its published ports and `DATABASE_URL` to its localhost database. The database guard still requires localhost and the explicitly selected test port; Electric's test endpoint stays on localhost.
 - Each test file works in a schema of its own on the compose Postgres, which `db/migrations` builds and which is dropped after the file. A test migrates only schemas of its own: it never migrates the dev database, touches the dev conversation, or sees another file's rows.
 - With Postgres or Electric down, a test file fails with `No Postgres answers at localhost:54321. Start it with pnpm db:up.` (or Electric at `localhost:30001`). Any other setup failure fails it as it is.
 

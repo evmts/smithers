@@ -12,7 +12,7 @@ import * as Conversations from "../../../worker/branch/Conversations.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { framable } from "../../../worker/test/pages.ts"
 import { member, nodeDevice, openFaultyApp, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
-import { QuestionFaults } from "../../test/faults"
+import { QuestionFaults, ShapeRecovery } from "../../test/faults"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
 import { COULDNT_ANSWER, QUESTIONS_ROUTE } from "../chat/contract"
@@ -357,12 +357,65 @@ describe("delivering to a branch's conversation", () => {
     expect(seen.filter((frame) => frame.opened && frame.messages === 0)).toEqual([])
   }, WITHIN)
 
+  test("a new branch recovers its conversation and composer after three shape 503s without reload", async () => {
+    const tab = await tabOn(openFaultyApp({ ...quick, shapeFailures: 3 }))
+    const branch = await tab.branch("feature/recovery")
+    await tab.chat.actions.show(branch)
+    tab.shown(branch)
+    await until(() => expect(tab.history(branch)).toMatchObject({ opened: true }))
+    expect(await tab.runtime.runPromise(Effect.flatMap(ShapeRecovery, (fault) => fault.failures))).toBe(3)
+    // Later healthy batches must not report another recovery or failure.
+    const { id } = await tab.askIn(branch, "after recovery")
+    await until(() => expect(tab.store.opened(branch)?.messages.tanstack.has(id)).toBe(true))
+    await tab.runtime.dispose()
+    const exports = tab.api.telemetry.map((entry) => entry.body).join("\n")
+    expect(exports).toContain("chat load failed")
+    expect(exports).toContain("chat load recovered")
+    expect(exports).toContain("chat.messages")
+    expect(exports.match(/"stringValue":"chat load failed"/g)).toHaveLength(2)
+    expect(exports.match(/"stringValue":"chat load recovered"/g)).toHaveLength(2)
+    expect(exports).not.toContain("after recovery")
+  }, WITHIN)
+
+  test("a network outage records status zero and recovers through the client's policy", async () => {
+    const tab = await tabOn(openFaultyApp(quick, (faults) => faults.down()))
+    const branch = await tab.branch("feature/network-recovery")
+    await tab.chat.actions.show(branch)
+    tab.shown(branch)
+    const messages = tab.store.opened(branch)!.messages
+    await until(async () => expect(await tab.runtime.runPromise(Stream.runHead(messages.sync))).toMatchObject({
+      _tag: "Some", value: { _tag: "Failed" },
+    }))
+    await tab.runtime.runPromise(Effect.flatMap(ShapeSource.Faults, (faults) => faults.heal))
+    await until(() => expect(tab.history(branch)).toMatchObject({ opened: true }))
+    await tab.runtime.dispose()
+    const exports = tab.api.telemetry.map((entry) => entry.body).join("\n")
+    expect(exports).toContain("chat load failed")
+    expect(exports).toContain("chat load recovered")
+    expect(exports).toContain('"key":"status","value":{"intValue":0}')
+  }, WITHIN)
+
   test("a branch with no messages at all opens empty once its shape has synced", async () => {
     const tab = await openChat()
     const branch = await tab.branch("feature/empty")
     await tab.chat.actions.show(branch)
     await until(() => expect(tab.history(branch)).toMatchObject({ opened: true }))
     expect(tab.shown(branch)).toEqual([])
+  }, WITHIN)
+
+  test("a cached branch opens its conversation while the reloaded device's shapes are offline", async () => {
+    const device = nodeDevice()
+    const first = await openChat({ host: device })
+    const branch = await first.branch("feature/cached")
+    await first.chat.actions.show(branch)
+    await first.askIn(branch, "kept on this device")
+    await until(() => expect(device.stored(`chat-messages:${branch}`)).toBe(2))
+    await first.runtime.dispose()
+    const offline = await tabOn(openFaultyApp({ ...quick, host: device }, (faults) => faults.down()))
+    await offline.chat.actions.show(branch)
+    await until(() => expect(offline.history(branch)).toMatchObject({ opened: true }))
+    expect(offline.shown(branch)).toContain("user done kept on this device")
+    expect(offline.history(branch)?.opened).toBe(true)
   }, WITHIN)
 
   test("a branch's conversation the device can't read stays blank, never empty", async () => {

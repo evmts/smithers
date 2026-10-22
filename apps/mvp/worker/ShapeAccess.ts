@@ -1,5 +1,5 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { Sessions } from "./Actor.ts"
 
 // What a shape route answers when it can't decide whose rows to serve. A device holds each shape's `handle` and
@@ -11,9 +11,15 @@ import { Sessions } from "./Actor.ts"
 export const RETRY_AFTER_SECONDS = 5
 
 /** The refusal of a shape request the server can't decide right now. */
-export const unavailable = new ShapeProxy.Refused({ status: 503, retryAfter: RETRY_AFTER_SECONDS })
+export const unavailable = new ShapeProxy.Refused({ status: 503, upstream: "database", retryAfter: RETRY_AFTER_SECONDS })
 
 /** Who is asking for a shape: signed out is none; a session store that can't answer is `unavailable`. */
 export const actor = Effect.gen(function* () {
   return yield* (yield* Sessions).resolve
 }).pipe(Effect.mapError(() => unavailable))
+
+/** Admin-only shapes are refused before Electric is contacted; unreadable sessions still answer 503. */
+export const admin = Effect.flatMap(actor, (reader) =>
+  Option.isSome(reader) && reader.value.role === "admin" && reader.value.act === undefined
+    ? Effect.void
+    : Effect.fail(new ShapeProxy.Refused({ status: 403 })))

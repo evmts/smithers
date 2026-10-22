@@ -219,7 +219,7 @@ describe("the channels' and receipts' shapes", () => {
     expect(h.count(AlertChannels.deliveryShapes, { status: "200", live: "false" })).toBe(1)
   })
 
-  test("a Member, an agent acting for an Admin, and a signed-out request get shapes with no rows", async () => {
+  test("a Member, an agent acting for an Admin, and a signed-out request are refused without calling Electric", async () => {
     const { h: adminHandler } = await open(admin)
     expect((await set(adminHandler, { channel: "email", destinations: ["hidden@example.com"] })).status).toBe(200)
     await sql(`INSERT INTO alert_deliveries (alert_id, channel, status)
@@ -230,10 +230,10 @@ describe("the channels' and receipts' shapes", () => {
       const { h, upstream } = await open(actor)
       for (const path of ["/api/shapes/alert-channels?offset=-1", "/api/shapes/alert-deliveries?offset=-1"]) {
         const response = await h.fetch(path)
-        expect(response.status).toBe(200)
-        expect(await values(response)).toEqual([])
+        expect(response.status).toBe(403)
+        expect(response.headers.get("retry-after")).toBeNull()
       }
-      expect(upstream.map((url) => url.searchParams.get("params[1]"))).toEqual(["", ""])
+      expect(upstream).toEqual([])
     }
   })
 })

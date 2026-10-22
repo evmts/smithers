@@ -3,17 +3,19 @@
 // (src/test/chatApi.ts) against ChatApi's real handler over the compose Postgres and Electric. The alerts are recorded
 // by `ops/SpendAlert`'s own step over ChatApi's schema, as the flow records them once a window ends.
 import { Channels } from "@smthrs/notifications"
-import { Effect, type ManagedRuntime, Metric, Redacted } from "effect"
+import { Effect, Latch, Layer, type ManagedRuntime, Metric, Redacted, Stream } from "effect"
+import { ShapeSource } from "@smthrs/effect-electric"
 import { SqlClient } from "effect/sql"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import * as SpendAlert from "../../../worker/flows/SpendAlert.ts"
 import { type AlertProviders, startAlertProviders } from "../../../worker/test/alertProviders.ts"
-import { member, nodeDevice, type NodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { asPerson, member, nodeDevice, type NodeDevice, openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { splitDestinations } from "./contract"
 import { ALERT_WORD, alertDetail, alertMessage, receiptText } from "./copy"
 import { RECEIPTS_SHOWN } from "./queries"
 import { Spend } from "./spend"
+import { AuthStore, SESSION } from "../auth/store"
 import { hidden, shown, SpendStore } from "./store"
 
 const admin: Actor = { subject: { kind: "person", id: "person-admin" }, role: "admin" }
@@ -27,16 +29,22 @@ const until = (assertion: () => void | Promise<void>, timeout = 30_000) =>
   vi.waitFor(assertion, { timeout, interval: 20 })
 
 /** ChatApi, signed in as `actor` on every request. */
-const openApi = async (actor: Actor) => {
-  const runtime = openTestApp({ answers: false }, { actor })
+const openApi = async (actor: Actor, people?: Record<string, Actor>) => {
+  const runtime = openTestApp({ answers: false }, { actor, ...(people === undefined ? {} : { people }) })
   runtimes.push(runtime)
   return runtime.runPromise(Effect.service(TestChatApi))
 }
 
 /** A tab on `device` (a reload when the device had one open before), its open alerts syncing. */
-const openSpendTab = async (api: TestChatApi["Service"], device: NodeDevice = nodeDevice()) => {
-  const runtime: ManagedRuntime.ManagedRuntime<Spend | SpendStore, unknown> = openTab(api, { host: device })
+const openSpendTab = async (api: TestChatApi["Service"], device: NodeDevice = nodeDevice(), role: Actor["role"] = "admin", options: TabOptions = {}) => {
+  const runtime: ManagedRuntime.ManagedRuntime<Spend | SpendStore | AuthStore, unknown> = openTab(api, { ...options, host: device })
   runtimes.push(runtime)
+  const auth = await runtime.runPromise(Effect.service(AuthStore))
+  await until(() => expect(auth.session.tanstack.get(SESSION)?.status).not.toBe("loading"))
+  await runtime.runPromise(auth.session.update(SESSION, (row) => void Object.assign(row, {
+    status: "signed_in", role, login: role,
+  })))
+  await runtime.runPromise(auth.sessionConfirmed)
   const spend = await runtime.runPromise(Effect.service(Spend))
   const store = await runtime.runPromise(Effect.service(SpendStore))
   store.open.tanstack.startSyncImmediate()
@@ -97,15 +105,103 @@ describe("an Admin's tab", { timeout: 90_000 }, () => {
     await until(() => expect(other.open()).toEqual([third, second, first]))
   })
 
+  test("demotion hides restored Admin alerts, settings and receipts on this device", async () => {
+    const api = await openApi(admin)
+    const device = nodeDevice()
+    const tab = await openSpendTab(api, device)
+    const id = await alert(api, "before-demotion", "agent", 100)
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO alert_channels (channel, destinations, app_url, updated_by)
+      VALUES ('email', '["private@example.com"]', 'https://app.test', 'admin')`)))
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO alert_deliveries (alert_id, channel, status) VALUES (${id}, 'email', 'sent')`)))
+    const store = await tab.runtime.runPromise(Effect.service(SpendStore))
+    for (const query of [store.channelList, store.receipts]) query.tanstack.startSyncImmediate()
+    await until(() => expect([tab.open().length, store.channelList.tanstack.size, store.receipts.tanstack.size]).toEqual([1, 1, 1]))
+    const auth = await tab.runtime.runPromise(Effect.service(AuthStore))
+    await tab.runtime.runPromise(auth.session.update(SESSION, (row) => { row.role = "member" }))
+    await until(() => expect([tab.open().length, store.channelList.tanstack.size, store.receipts.tanstack.size]).toEqual([0, 0, 0]))
+    await tab.runtime.dispose()
+    const restored = await openSpendTab(api, device, "member")
+    expect(restored.open()).toEqual([])
+    expect(restored.shown()).toBe(0)
+  })
+
   test("a Member's tab syncs no alerts", async () => {
     const api = await openApi(member)
     await alert(api, "call-1", "agent", 1_000)
-    const tab = await openSpendTab(api)
-    const store = await tab.runtime.runPromise(Effect.service(SpendStore))
-    // Synced up to date after the alert was recorded, and it holds nothing.
-    await until(() => expect(store.alerts.tanstack.status).toBe("ready"))
+    const requested: string[] = []
+    const tab = await openSpendTab({ ...api, fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      requested.push(url.pathname)
+      return api.fetch(input, init)
+    } }, nodeDevice(), "member")
+    await tab.runtime.runPromise(Effect.sleep("100 millis"))
+    expect(requested.filter((path) => /shapes\/(spend-alerts|alert-channels|alert-deliveries)$/.test(path))).toEqual([])
     expect(tab.open()).toEqual([])
     expect(tab.shown()).toBe(0)
+  })
+
+  test.each([
+    { late: false, rejected: null }, { late: true, rejected: null },
+    { late: false, rejected: "signed_out" }, { late: false, rejected: "member" },
+  ] as const)("an Admin confirmation resumes genuine 403s: $late, $rejected", async ({ late, rejected }) => {
+    const people = { reader: member }
+    const api = await openApi(member, people)
+    const id = await alert(api, "reauthorized", "agent", 100)
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO alert_channels (channel, destinations, app_url, updated_by)
+      VALUES ('email', '["private@example.com"]', 'https://app.test', 'admin')`)))
+    await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO alert_deliveries (alert_id, channel, status) VALUES (${id}, 'email', 'sent')`)))
+    // The browser still thinks Admin while the server has revoked access.
+    const release = await Effect.runPromise(Latch.make(!late))
+    let denied = 0
+    const source = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.gen(function* () {
+      const response = yield* ShapeSource.fetchSource.request(url, init)
+      if (response.status === 403 && /shapes\/(spend-alerts|alert-channels|alert-deliveries)$/.test(new URL(url).pathname)) {
+        denied++
+        yield* release.await
+      }
+      return response
+    }) })
+    const tab = await openSpendTab(asPerson(api, "reader"), nodeDevice(), "admin", {
+      replace: Layer.succeed(ShapeSource.ShapeSource, source),
+    })
+    const store = await tab.runtime.runPromise(Effect.service(SpendStore))
+    for (const query of [store.channelList, store.receipts]) query.tanstack.startSyncImmediate()
+    await until(() => expect(denied).toBeGreaterThanOrEqual(3))
+    if (!late) {
+      for (const shape of [store.alerts, store.channels, store.deliveries]) {
+        await until(async () => expect(await tab.runtime.runPromise(Stream.runHead(shape.sync))).toMatchObject({
+          _tag: "Some", value: { _tag: "Stopped", error: { status: 403 } },
+        }))
+      }
+      const before = denied
+      await tab.runtime.runPromise(Effect.sleep("100 millis"))
+      expect(denied).toBe(before)
+    }
+    const auth = await tab.runtime.runPromise(Effect.service(AuthStore))
+    if (rejected !== null) {
+      const before = denied
+      await tab.runtime.runPromise(auth.session.update(SESSION, (row) => {
+        row.status = rejected === "signed_out" ? "signed_out" : "signed_in"
+        row.role = "member"
+      }))
+      await tab.runtime.runPromise(auth.sessionConfirmed)
+      await tab.runtime.runPromise(Effect.sleep("100 millis"))
+      expect(denied).toBe(before)
+      expect(tab.open()).toEqual([])
+      await tab.runtime.runPromise(auth.session.update(SESSION, (row) => {
+        row.status = "signed_in"
+        row.role = "admin"
+      }))
+    }
+    people.reader = admin
+    // A successful refresh returns identical fields: no row mutation or role transition occurs.
+    await tab.runtime.runPromise(auth.sessionConfirmed)
+    await tab.runtime.runPromise(release.open)
+    await until(() => expect([tab.open(), store.channelList.tanstack.size, store.receipts.tanstack.size]).toEqual([[id], 1, 1]))
   })
 })
 
@@ -142,9 +238,9 @@ beforeAll(async () => {
 afterAll(() => providers.close())
 
 /** A tab whose settings sync, and what it shows. */
-const openSettingsTab = async (api: TestChatApi["Service"]) => {
+const openSettingsTab = async (api: TestChatApi["Service"], role: Actor["role"] = "admin") => {
   // Its engine leads, so the flows its Save dispatches run.
-  const tab = await openSpendTab(api, nodeDevice({ agent: api }))
+  const tab = await openSpendTab(api, nodeDevice({ agent: api }), role)
   const store = await tab.runtime.runPromise(Effect.service(SpendStore))
   for (const query of [store.channelList, store.receipts, store.pending]) query.tanstack.startSyncImmediate()
   return {
@@ -198,10 +294,10 @@ describe("an Admin's alert channels", { timeout: 90_000 }, () => {
     set.spend.actions.setChannel("email", ["will@example.com"])
     await until(() => expect(set.channels()).toEqual({ email: ["will@example.com"] }))
 
-    const tab = await openSettingsTab(await openApi(member))
+    const tab = await openSettingsTab(await openApi(member), "member")
     tab.spend.actions.setChannel("email", ["member@example.com"])
     await until(() => expect(tab.saves()).toEqual(["email:failed"]))
-    await until(() => expect(tab.store.channels.tanstack.status).toBe("ready"))
+    await tab.runtime.runPromise(Effect.sleep("100 millis"))
     expect(tab.channels()).toEqual({})
   })
 

@@ -106,3 +106,33 @@ test.each([
   window.faults!.shapes.heal()
   await stop()
 })
+
+
+test("a closed ChatApi refuses new requests before its database is dropped", async () => {
+  const host = ManagedRuntime.make(TestChatApi.layer.pipe(
+    Layer.provideMerge(TestDatabase.layer("test_closed_chat_api")),
+  ))
+  runtimes.push(host)
+  const api = await host.runPromise(Effect.service(TestChatApi))
+  const initial = await api.fetch(`${api.origin}/api/shapes/messages?offset=-1`)
+  expect(initial.status).toBe(200)
+  await initial.text()
+  await host.dispose()
+  const response = await api.fetch(`${api.origin}/api/auth/session`)
+  expect(response.status).toBe(503)
+  expect(await response.text()).toBe("")
+})
+
+test("closing ChatApi aborts an unread real Electric response before dropping its schema", async () => {
+  const host = ManagedRuntime.make(TestChatApi.layer.pipe(
+    Layer.provideMerge(TestDatabase.layer("test_streaming_chat_api_close")),
+  ))
+  runtimes.push(host)
+  const api = await host.runPromise(Effect.service(TestChatApi))
+  const response = await api.fetch(`${api.origin}/api/shapes/messages?offset=-1`)
+  expect(response.status).toBe(200)
+  expect(response.body).not.toBeNull()
+  await host.dispose()
+  expect(typeof await response.text()).toBe("string")
+  expect((await api.fetch(`${api.origin}/api/auth/session`)).status).toBe(503)
+})

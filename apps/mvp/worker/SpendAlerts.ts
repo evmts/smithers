@@ -1,5 +1,5 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Effect, Metric, Option } from "effect"
+import { Effect, Metric } from "effect"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import { SPEND_ALERT_COLUMNS, SPEND_ALERTS_TABLE } from "../src/features/spend/contract.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
@@ -16,26 +16,23 @@ export const shapes = Metric.counter("smithers_spend_alert_shape_requests", {
 /** The audience an Admin reads. */
 const ADMINS = "admin"
 
-/** No audience: what anyone else's shape filters on, so it holds no rows. */
-const NOBODY = ""
-
 /**
  * Reads Electric's connection (`ShapeProxy.config`) and returns `GET /api/shapes/spend-alerts`: every alert for a
- * person with the Admin role; signed out, or any other role, a shape with no rows; sessions unreadable, 503
+ * person with the Admin role; signed out, or any other role, 403; sessions unreadable, 503
  * (worker/ShapeAccess.ts). Each request is a `spend.alerts.shape` line and a count.
  */
 export const make = Effect.gen(function* () {
   const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
   return ShapeProxy.make({
     ...connection,
-    shape: Effect.map(ShapeAccess.actor, (actor) => ({
+    shape: Effect.as(ShapeAccess.admin, {
       table: SPEND_ALERTS_TABLE,
       where: "audience = $1",
       params: {
-        "1": Option.isSome(actor) && actor.value.role === "admin" && actor.value.act === undefined ? ADMINS : NOBODY,
+        "1": ADMINS,
       },
       columns: [...SPEND_ALERT_COLUMNS],
-    })),
+    }),
     name: "spend.alerts.shape",
     metric: shapes,
   })

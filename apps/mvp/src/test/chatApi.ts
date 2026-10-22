@@ -71,7 +71,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { type AppOptions, appLayer, type Host, realServices } from "../boot"
 import { bindSessionConnectivity } from "../features/auth/auth"
 import { faultyServices } from "./faults"
-import { LOCAL_ELECTRIC_URL, MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
+import { MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
 import { RUNS_TABLE } from "../features/status/contract"
 import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
@@ -376,7 +376,7 @@ export class TestChatApi extends Context.Service<
           },
         })
         const config = ConfigProvider.fromUnknown({
-          ELECTRIC_URL: LOCAL_ELECTRIC_URL,
+          ELECTRIC_URL: yield* TestDatabase.electricUrl,
           ALERT_APP_URL: "http://chat.test/app",
           ...(options.forge === "code-storage"
             ? { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: yield* Effect.promise(codeStorageKey) }
@@ -463,6 +463,7 @@ export class TestChatApi extends Context.Service<
 
         // Electric, as ChatApi calls it: the table in this schema. The forge's reads go to the scripted GitHub, and a page
         // ChatApi checks before it is framed to the scripted outside web.
+        const closing = new AbortController()
         const outside = outsideWeb(options.pages ?? {})
         const electric: typeof globalThis.fetch = (input, init) => {
           const upstream = new URL(input instanceof Request ? input.url : String(input))
@@ -471,7 +472,10 @@ export class TestChatApi extends Context.Service<
           if (upstream.protocol === "https:") return outside(input, init)
           const table = upstream.searchParams.get("table")
           if (table !== null && SCHEMA_TABLES.has(table)) upstream.searchParams.set("table", `${schema}.${table}`)
-          return globalThis.fetch(upstream, init)
+          return globalThis.fetch(upstream, {
+            ...init,
+            signal: init?.signal ? AbortSignal.any([init.signal, closing.signal]) : closing.signal,
+          })
         }
 
         // Runs on Cloudflare (worker/RemoteRuns.ts): an engine on a schema named now and made on first use, read by the
@@ -542,19 +546,40 @@ export class TestChatApi extends Context.Service<
             )
         })
 
-        const handler = HttpEffect.toWebHandler(
-          routed.pipe(
-            // No remote host runs here: every other remote start (a clone) is refused as unavailable.
-            Effect.provideService(Flows.FlowStarter, Flows.FlowStarter.of({
-              start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "no_remote_host" })),
-            })),
-            Effect.provide(sessions),
-            Effect.provide(FetchHttpClient.layer),
-            Effect.provideService(FetchHttpClient.Fetch, electric),
-            Effect.provideService(Tracer.Tracer, tracer),
-            Effect.provideService(ConfigProvider.ConfigProvider, config),
-          ),
+        const application = routed.pipe(
+          // No remote host runs here: every other remote start (a clone) is refused as unavailable.
+          Effect.provideService(Flows.FlowStarter, Flows.FlowStarter.of({
+            start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "no_remote_host" })),
+          })),
+          Effect.provide(sessions),
+          Effect.provide(FetchHttpClient.layer),
+          Effect.provideService(FetchHttpClient.Fetch, electric),
+          Effect.provideService(Tracer.Tracer, tracer),
+          Effect.provideService(ConfigProvider.ConfigProvider, config),
         )
+        // Close admission and drain handlers before dropping their schemas. Abort also closes streamed bodies.
+        const active = new Set<Promise<void>>()
+        yield* Effect.addFinalizer(() =>
+          Effect.promise(async () => {
+            closing.abort()
+            await Promise.all(active)
+          })
+        )
+        const handler = (request: Request): Promise<Response> => {
+          if (closing.signal.aborted) return Promise.resolve(new Response(null, { status: 503 }))
+          const scoped = new Request(request, { signal: AbortSignal.any([request.signal, closing.signal]) })
+          let finished!: () => void
+          const done = new Promise<void>((resolve) => { finished = resolve })
+          active.add(done)
+          return HttpEffect.toWebHandler(Effect.gen(function* () {
+            // Register first so this receipt follows every request resource, including an unread response body.
+            yield* Effect.addFinalizer(() => Effect.sync(() => {
+              active.delete(done)
+              finished()
+            }))
+            return yield* application
+          }))(scoped)
+        }
 
         let reloads = 0
         const telemetry: Array<{ path: string; body: string }> = []
@@ -1064,6 +1089,7 @@ const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
  * engine never leads, so a question it sends waits for a run to be recorded and nothing after it is sent.
  */
 export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">> & {
+  readonly shapeFailures?: number
   readonly answers?: boolean
   /** View-only fixtures start sign-in here; boot-program fixtures bind it on their actual event target instead. */
   readonly sessionLifecycle?: boolean
@@ -1073,13 +1099,14 @@ export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">
   readonly reopenRoute?: () => void
   /**
    * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient`, `TextsClient` or
-   * `PullsClient` (test.faults-by-injection).
+   * `PullsClient` or a ShapeSource reference (test.faults-by-injection).
    */
   readonly replace?:
     | Layer.Layer<IssuesClient, never, HttpClient.HttpClient>
     | Layer.Layer<PullsClient, never, HttpClient.HttpClient>
     | Layer.Layer<StackClient, never, HttpClient.HttpClient>
     | Layer.Layer<TextsClient, never, HttpClient.HttpClient>
+    | Layer.Layer<never, never, HttpClient.HttpClient>
 }
 
 /** The scripted GitHub App's key: one per test file, since making an RSA key takes a while. */
@@ -1091,7 +1118,7 @@ export type StartFaults = (switches: ShapeSource.Switches) => Effect.Effect<void
 
 const app = (
   api: TestChatApi["Service"],
-  { answers, host, reopenRoute, replace: _replace, webSocket: _webSocket, sessionLifecycle: _sessionLifecycle, ...options }: TabOptions,
+  { answers, host, reopenRoute, replace: _replace, webSocket: _webSocket, sessionLifecycle: _sessionLifecycle, shapeFailures: _shapeFailures, ...options }: TabOptions,
 ): AppOptions => ({
   ...options,
   origin: api.origin,
@@ -1115,7 +1142,7 @@ export const tabLayer = (api: TestChatApi["Service"], options: TabOptions = {}) 
 /** The browser app on `api` with the faulty services and their switches (src/test/faults.ts). */
 export const faultyTabLayer = (api: TestChatApi["Service"], options: TabOptions = {}, start?: StartFaults) => {
   const tab = app(api, options)
-  const layer = appLayer(tab, faultyServices(tab, start))
+  const layer = appLayer(tab, faultyServices(tab, start, options.shapeFailures))
   const started = options.sessionLifecycle === false
     ? layer
     : Layer.effectDiscard(bindSessionConnectivity(new EventTarget())).pipe(Layer.provideMerge(layer))

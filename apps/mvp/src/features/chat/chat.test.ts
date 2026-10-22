@@ -674,7 +674,7 @@ describe("the device store", () => {
     // A fresh device's two tabs each start their shape afresh. The second is busy: what it commits reaches the device
     // store 1.5 s late. Its snapshot, taken before the question, used to land after the first tab stored the question:
     // it emptied the device of it, and the reload that followed took it from both tabs (docs/work/local-first-conflicts.md).
-    const { api, onApi } = await openChat()
+    const { api, onApi } = await openChat({ answers: false })
     for (let seed = 0; seed < 80; seed++) await onApi(api.askElsewhere(`seed ${seed}`))
     const device = nodeDevice()
     const busy: Busy = { ms: 0, inFlight: 0 }

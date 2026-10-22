@@ -112,6 +112,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
   const registry: Metric.MetricRegistry = new Map()
   const requests: Array<ModelRequest.ModelRequest> = []
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
+  const config = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl), ...options.config })
   const model = Model.make({
     stream: (request) => {
       requests.push(request)
@@ -123,7 +124,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
-      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(options.config ?? {})),
+      Effect.provideService(ConfigProvider.ConfigProvider, config),
     )
   const hostModel = Layer.succeed(
     HostModel,

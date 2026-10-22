@@ -59,6 +59,7 @@ export const load = Effect.gen(function* () {
       ? { status: "signed_in", login: state.login, role: state.role, available: true }
       : { status: "signed_out", login: null, role: null, available: state.available },
   )
+  yield* (yield* AuthStore).sessionConfirmed
   if (state.signedIn) yield* confirm({ login: state.login, role: state.role, ...(state.personId === undefined ? {} : { personId: state.personId }) })
   yield* Effect.logInfo("session loaded").pipe(Effect.annotateLogs({ signedIn: state.signedIn }))
 }).pipe(Effect.annotateLogs({ feature: "auth" }))

@@ -1,5 +1,5 @@
 import { Collection, LiveQuery, type Persistence } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, type Scope } from "effect"
+import { Context, Effect, Layer, PubSub, type Scope, Stream } from "effect"
 import { Confirmed, Session } from "./schema"
 
 // Sign-in's state on this tab: one local row saying who is signed in, the last session ChatApi confirmed, kept on the
@@ -22,6 +22,10 @@ export class AuthStore extends Context.Service<
     /** The last session ChatApi confirmed signed in, kept on the device through `Persistence`. */
     readonly confirmed: Collection.Collection<Confirmed, string>
     readonly confirmedState: Effect.Success<ReturnType<typeof confirmedQuery>>
+    /** Successful server confirmations, including an unchanged role; generations fence in-flight refusals. */
+    readonly confirmations: Stream.Stream<number>
+    readonly confirmation: Effect.Effect<number>
+    readonly sessionConfirmed: Effect.Effect<void>
     /** Where requests an action starts run, closed with the store. */
     readonly scope: Scope.Scope
   }
@@ -55,11 +59,16 @@ export class AuthStore extends Context.Service<
         getKey: (row) => row.id,
         schemaVersion: 2,
       })
+      const confirmations = yield* PubSub.unbounded<number>()
+      let confirmation = 0
       return {
         session,
         sessionState: yield* sessionQuery(session),
         confirmed,
         confirmedState: yield* confirmedQuery(confirmed),
+        confirmations: Stream.fromPubSub(confirmations),
+        confirmation: Effect.sync(() => confirmation),
+        sessionConfirmed: Effect.sync(() => { PubSub.publishUnsafe(confirmations, ++confirmation) }),
         scope: yield* Effect.scope,
       }
     }),
