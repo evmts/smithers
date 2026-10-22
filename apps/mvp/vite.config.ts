@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
 import { devHttps } from "./dev/https.ts"
-import { FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./src/pwa.ts"
+import { DOCS_SITE, FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./src/pwa.ts"
 
 // The app's shell, for the service worker to precache: everything a reload needs before it reaches the network.
 const SHELL = ["**/*.{js,css,html,woff2,svg,png}"]
@@ -64,7 +64,8 @@ export default defineConfig({
         // 2026-10-20), which fails `vite build`; an offline reload needs both precached.
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [API],
+        // The docs site answers its own paths on the app's hostname (infra/DocsSite.ts); the shell never stands in.
+        navigateFallbackDenylist: [API, DOCS_SITE],
         cleanupOutdatedCaches: true,
         // A module the precache doesn't list (under the dev server, every one) is kept from the last visit, so an
         // offline reload still has it. The network answers first whenever it can.
@@ -81,8 +82,8 @@ export default defineConfig({
         enabled: true,
         type: "module",
         navigateFallback: "index.html",
-        // Every app route falls back to the shell offline, as in production; /api/* never does.
-        navigateFallbackAllowlist: [/^\/(?!api\/)/],
+        // Every app route falls back to the shell offline, as in production; /api/* and the docs site's paths never do.
+        navigateFallbackAllowlist: [new RegExp(`^(?!${API.source.slice(1)}|${DOCS_SITE.source.slice(1)})`)],
         // The dev service worker is generated here, outside the source tree.
         resolveTempFolder: () => join(import.meta.dirname, "node_modules", ".vite-pwa-dev"),
       },

@@ -206,6 +206,14 @@ const needs = {
     reason: "it needs a Maintainer or above; the test account's role on the deployment's repository is below that",
     blocked: true,
   },
+  docsSite: {
+    met: (run) => {
+      const url = appURLOf(run.env)
+      return run.target === "deployment" && url !== undefined && !new URL(url).hostname.endsWith(".workers.dev")
+    },
+    reason: "the docs site answers beside the app only on a deployment's custom domain (APP_DOMAIN, infra/DocsSite.ts), " +
+      "not at its workers.dev URL or under alchemy dev",
+  },
 } satisfies Record<string, Need>
 
 export type NeedName = keyof typeof needs

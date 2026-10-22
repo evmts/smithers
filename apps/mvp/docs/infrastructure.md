@@ -117,16 +117,39 @@ ChatApi's tests (`worker/`, `db/`) use the compose Postgres and Electric and not
 - the `ChatDatabase` Hyperdrive config, whose origin is the project's direct host, with its query cache off so an answer's history sees the latest writes;
 - ChatApi, bound to Hyperdrive, with Workers Logs and Traces persisted. It has no Cron Trigger: nothing answers on the server;
 - the `FlowExecution` Durable Object class, hosted by ChatApi with SQLite storage, one object per remote flow execution. Its engine keeps its runs in the schema `smithers_flows` of the same Postgres, through the same `ChatDatabase` Hyperdrive config, and migrates that schema on its first alarm ([remote-flows.md](features/remote-flows.md));
-- the site Worker with the app's assets, bound to ChatApi, with Workers Logs and Traces persisted.
+- the site Worker with the app's assets, bound to ChatApi, with Workers Logs and Traces persisted, at the custom domain `APP_DOMAIN` ([Domain](#domain));
+- with a custom domain, the docs site (`infra/DocsSite.ts`): `apps/site`'s Astro build as static assets, with no Worker code.
+
+### Domain
+
+`APP_DOMAIN` names the hostname the app serves at, such as `example.com`. A production deploy refuses to run without it (`infra/Domain.ts`), so a deployer who leaves it out can't detach the domain or drop the docs site by accident. `APP_DOMAIN=workers.dev` deploys with no custom domain and no docs site: the app answers only at the site Worker's `workers.dev` URL. Under `alchemy dev` it is ignored.
+
+With a domain, one hostname serves two sites:
+
+```
+https://<APP_DOMAIN>/<path>
+  ├─ a docs path (/docs, /docs/*, /changelogs/*, /llms.txt …) ─▶ zone route ─▶ docs site (apps/site)
+  └─ every other path (/, /app, /<owner>/<repo>, /api/*)      ─▶ custom domain ─▶ site Worker ─▶ ChatApi
+```
+
+- The site Worker takes `APP_DOMAIN` as its custom domain. Cloudflare creates the DNS record and certificate. The zone must be in the deploying account. `APP_DOMAIN=workers.dev` detaches any custom domain the site Worker has. The `workers.dev` URL keeps answering, so a GitHub webhook pointed there keeps working.
+- The docs site claims each of its paths with a zone route. Cloudflare runs routes before a custom domain, so those paths are the docs site's and every other path stays the app's. `DOCS_SITE_PATHS` in `src/pwa.ts` lists them: each docs folder bare and with `/*` (never a prefix such as `/docs*`, which would also take `/docsify/docsify` from the app's repositories), plus the site's asset folders and files, each with a trailing `*`. A route path without a trailing `*` never matches a URL with a query, and a route path can't hold one, so `/docs?ref=x` reaches the site Worker, which redirects it to `/docs/?ref=x` (`worker/index.ts`). A GitHub owner named after a docs folder (`docs`, `changelogs`, `migration`, `privacy`, `terms`, `refunds`, `demo`, `bug`) isn't reachable at `/<owner>/<repo>`.
+- The app's service worker controls every page on the origin after one visit. It leaves the same paths to the network: its navigation fallback and its shell cache skip them (`src/pwa.ts` `DOCS_SITE`, `e2e/docs-site.spec.ts`).
+- `pnpm run deploy` builds the docs site with `pnpm build` in `apps/site`, and builds it again only when that folder's files change. The deploying checkout needs `apps/site`'s dependencies installed.
+- The docs site's `_redirects` and `_headers` apply. Its 404 page answers a missing docs page.
+- Sign-in sends GitHub `https://<APP_DOMAIN>/api/auth/callback` from a request there. Add that URL to the GitHub App's callback URLs. Session cookies are host-only (`__Host-`), so a session at the `workers.dev` URL doesn't carry over, and neither does a device's local data, which belongs to its origin.
+
+**Moving a hostname that other Workers serve.** Alchemy refuses a hostname that another Worker holds as a custom domain. Before the first deploy with a domain, detach the hostname from that Worker (`DELETE /accounts/<account>/workers/domains/<id>`) and delete zone routes that send the whole hostname elsewhere (`DELETE /zones/<zone>/workers/routes/<id>` for a `<host>/*` route), because a route outranks the new custom domain. Deploy right after: the hostname has no DNS record from the detach until the deploy attaches it.
 
 ### Credentials
 
 Set these in the environment of `pnpm plan`, `pnpm run deploy` and `pnpm destroy`. Alchemy also loads `apps/mvp/.env`, which git ignores: keep identifiers such as `CLOUDFLARE_ACCOUNT_ID` and `NEON_ORG_ID` there, and secrets in your shell or a secret manager, never in a file in the repository. ChatApi reads its settings with Effect `Config` while Alchemy plans it, and Alchemy binds each one that is set to the Worker as a secret.
 
-A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_BUDGET`, raises it in production too when you deploy from that checkout. Deploy from a clean `jj workspace` of the pushed revision, which has no `.env`, and pass the two identifiers in the environment.
+A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_BUDGET`, raises it in production too when you deploy from that checkout. Deploy from a clean `jj workspace` of the pushed revision, which has no `.env`, and pass the two identifiers and `APP_DOMAIN` in the environment.
 
 | Variable | Required | Used by | Notes |
 |---|---|---|---|
+| `APP_DOMAIN` | yes, for a production deploy | Alchemy | the hostname the app serves at, or `workers.dev` for none ([Domain](#domain)) |
 | `CLOUDFLARE_API_TOKEN` | yes | Alchemy | at least Workers Scripts, Containers and Hyperdrive edit, and Secrets Store edit for Alchemy's state store. `pnpm exec alchemy profile edit` instead sets up a profile through OAuth, in an interactive terminal. |
 | `CLOUDFLARE_ACCOUNT_ID` | yes, with the token | Alchemy | |
 | `ALCHEMY_PASSWORD` | yes | Alchemy | encrypts the database URL and Electric's secret in the stack's state |
@@ -161,6 +184,8 @@ Leave `SESSION_SECRET` unset: Alchemy generates it once (`infra/SignIn.ts`) and 
    curl -i -X POST https://<site>/api/questions -H 'content-type: application/json' \
      -d "{\"id\":\"$(uuidgen)\",\"answerId\":\"$(uuidgen)\",\"text\":\"Say hi.\"}"     # 401: asking needs a Member
    curl -i 'https://<site>/api/shapes/messages?offset=-1'                         # 200 with electric-handle
+   curl -sI https://<site>/docs/ | head -1                                         # 200: the docs site, with a domain
+   curl -s https://<site>/llms.txt | head -1                                       # "# Smithers"
    ```
 
    Then sign in at `<site>/app` as a Member of `GITHUB_REPOSITORY` and ask: the browser's agent answers.

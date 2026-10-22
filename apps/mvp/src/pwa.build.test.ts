@@ -1,11 +1,12 @@
 // The production build (`vite build`, which `pnpm run deploy` runs): it succeeds, and its service worker precaches
-// the app's bundle and the engine worker, so an offline reload has both. Workbox skips a file over its size limit and
+// the app's bundle and the engine worker, so an offline reload has both, and leaves the docs site's paths alone. Workbox skips a file over its size limit and
 // fails the build; on 2026-10-20 both files outgrew its 2 MiB default and the first production deploy failed here.
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { build } from "vite"
 import { afterAll, expect, test } from "vitest"
+import { DOCS_SITE } from "./pwa"
 
 const root = join(import.meta.dirname, "..")
 const outDir = mkdtempSync(join(tmpdir(), "smithers-mvp-build-"))
@@ -21,4 +22,7 @@ test("the production build succeeds and precaches the app's bundle and the engin
   const serviceWorker = readFileSync(join(outDir, "sw.js"), "utf8")
   expect(serviceWorker).toContain(`assets/${bundle}`)
   expect(serviceWorker).toContain(`assets/${engine}`)
+  // The docs site's paths, which share the app's hostname, are left to the network: by the shell's fallback for a
+  // navigation and by its cache (src/pwa.ts DOCS_SITE).
+  expect(serviceWorker.split(DOCS_SITE.source).length - 1).toBe(2)
 }, 180_000)

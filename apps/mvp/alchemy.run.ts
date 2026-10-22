@@ -16,7 +16,10 @@
  * - FlowExecution (worker/Executions.ts): the Durable Object ChatApi hosts, one per remote flow execution, which runs
  *   the durable flow engine over Postgres (schema smithers_flows) through the same Hyperdrive config
  *   (docs/features/remote-flows.md). Declaring ChatApi declares it.
- * - The site (Vite build + worker/index.ts): serves the app and hands /api/* to ChatApi over a service binding.
+ * - The site (Vite build + worker/index.ts): serves the app and hands /api/* to ChatApi over a service binding. In
+ *   production it answers at the custom domain `APP_DOMAIN` (infra/Domain.ts), unless that is `workers.dev`.
+ * - The docs site (apps/site, infra/DocsSite.ts): beside a custom domain, it serves its own paths there (/docs/**,
+ *   /changelogs/**, llms.txt…) by zone routes, which Cloudflare runs before the site's custom domain.
  *
  * Under `alchemy dev` (`pnpm dev`), Postgres and Electric are the compose services (`pnpm db:up`): no Neon project,
  * container or gateway is declared, and Hyperdrive passes through to DATABASE_URL.
@@ -32,13 +35,16 @@ import * as Alchemy from "alchemy"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Neon from "alchemy/Neon"
 import type { State } from "alchemy/State"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { ChatDatabase } from "./infra/ChatDatabase.ts"
+import { DocsSite } from "./infra/DocsSite.ts"
+import { AppDomain } from "./infra/Domain.ts"
 import * as Electric from "./infra/Electric.ts"
 import ElectricGateway, { DatabaseUrl as ElectricDatabaseUrl } from "./infra/ElectricGateway.ts"
 import { directUrl, Postgres } from "./infra/Postgres.ts"
 import * as Secrets from "./infra/Secrets.ts"
 import * as SignIn from "./infra/SignIn.ts"
+import { DOCS_SITE_FOLDERS } from "./src/pwa.ts"
 import ChatApi from "./worker/ChatApi.ts"
 import DevChatApi from "./worker/DevChatApi.ts"
 
@@ -63,6 +69,9 @@ export default Alchemy.Stack(
   "smithers-mvp",
   { providers: Layer.mergeAll(Cloudflare.providers(), Neon.providers()), state },
   Effect.gen(function* () {
+    // Production's hostname, read first: a production deploy without APP_DOMAIN stops before it changes anything
+    // (infra/Domain.ts).
+    const domain = (yield* Alchemy.ALCHEMY_DEV) ? Option.none<string>() : yield* AppDomain.pipe(Effect.orDie)
     // Declared before ChatApi, so ChatApi's `ChatDatabase` is this one: Neon's in production, compose's in dev.
     yield* ChatDatabase
     const endpoint = yield* electric
@@ -79,9 +88,12 @@ export default Alchemy.Stack(
     const site = yield* Cloudflare.Website.Vite("smithers-mvp", {
       main: "worker/index.ts",
       compatibility: { date: "2026-10-01", flags: ["enable_request_signal"] },
-      // The Worker answers /api/*; every other path is the single-page app.
-      assets: { notFoundHandling: "single-page-application", runWorkerFirst: ["/api/*"] },
+      // The Worker answers /api/* and sends a bare docs folder on to the docs site; every other path is the
+      // single-page app.
+      assets: { notFoundHandling: "single-page-application", runWorkerFirst: ["/api/*", ...DOCS_SITE_FOLDERS] },
       env: { CHAT_API: chatApi },
+      // Production's custom domain, or none at all with APP_DOMAIN=workers.dev; `alchemy dev` leaves it alone.
+      ...(Option.isSome(domain) ? { domain: domain.value } : (yield* Alchemy.ALCHEMY_DEV) ? {} : { domain: null }),
       // Workers Logs and Traces for the site's requests, kept like ChatApi's.
       observability: {
         enabled: true,
@@ -89,6 +101,7 @@ export default Alchemy.Stack(
         traces: { enabled: true, persist: true },
       },
     })
+    if (Option.isSome(domain)) yield* DocsSite(domain.value)
     return { url: site.url }
   }),
 )

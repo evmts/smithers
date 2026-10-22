@@ -62,7 +62,14 @@ describe("the target", () => {
 describe("needs", () => {
   it("are all met locally, where local development's Admin is signed in, but GitHub sign-in", () => {
     const unmet = (Object.keys(NEEDS) as Array<NeedName>).filter((name) => !NEEDS[name].met(local))
-    expect(unmet).toEqual(["webhookSecret", "alertProviders", "oldBuild", "githubSignIn", "factoryRepository", "githubScratch", "githubApp", "longRun"])
+    expect(unmet).toEqual(["webhookSecret", "alertProviders", "oldBuild", "githubSignIn", "factoryRepository", "githubScratch", "githubApp", "longRun", "docsSite"])
+  })
+
+  it("for the docs site, are met only by a deployment at its custom domain", () => {
+    expect(NEEDS.docsSite.met(deployedAs("guest", { BASE_URL: "https://app.example.com" }))).toBe(true)
+    expect(NEEDS.docsSite.met(deployedAs("guest", { BASE_URL: "https://smithers-mvp-prod.example.workers.dev" }))).toBe(false)
+    expect(NEEDS.docsSite.met(deployedAs("guest"))).toBe(false)
+    expect(NEEDS.docsSite.met({ ...local, env: { BASE_URL: "https://app.example.com" } })).toBe(false)
   })
 
   it("in a deployment, leave out every dev-only need, and meet a role need by the account's role", () => {

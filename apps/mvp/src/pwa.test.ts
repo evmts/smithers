@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
-import { FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./pwa"
+import { DOCS_SITE, DOCS_SITE_PATHS, FRAME_POLICY, PAGE_HEADERS, shellCaches } from "./pwa"
 
 const APP = "https://app.smithers.sh"
 
@@ -24,6 +24,33 @@ describe("the service worker's shell", () => {
     expect(shellCaches(request("https://example.com/app.js", "script"))).toBe(false)
     expect(shellCaches(request(`${APP}/api/shapes/views`, ""))).toBe(false)
     expect(shellCaches(request(`${APP}/src/main.tsx`, "script", "POST"))).toBe(false)
+  })
+})
+
+describe("the docs site's paths", () => {
+  // One path under each route: a folder's own page, a page inside it, or the file itself.
+  const served = DOCS_SITE_PATHS.map((path) => path.replace(/\/\*$/, "/page/").replace(/\*$/, ""))
+
+  test("are never the app's: its service worker neither keeps nor answers them", () => {
+    for (const path of served) {
+      expect(DOCS_SITE.test(path)).toBe(true)
+      expect(DOCS_SITE.test(`${path}?q=1`)).toBe(true)
+      expect(shellCaches(request(`${APP}${path}`, "document"))).toBe(false)
+    }
+    expect(DOCS_SITE.test("/docs")).toBe(true)
+    expect(DOCS_SITE.test("/docs/installation/")).toBe(true)
+    expect(DOCS_SITE.test("/changelogs/1.0.0-rc.0/")).toBe(true)
+  })
+
+  test("leave the app its own pages, including repositories whose owner starts like one of them", () => {
+    for (const path of ["/", "/app", "/app/flows", "/smithersai/smithers", "/docsify/docsify", "/demos/x", "/llms/x", "/assets/index.js"]) {
+      expect(DOCS_SITE.test(path)).toBe(false)
+      expect(shellCaches(request(`${APP}${path}`, "document"))).toBe(true)
+    }
+  })
+
+  test("are written out in the shell's matcher exactly as the list makes them, since Workbox copies its source", () => {
+    expect(String(shellCaches)).toContain(`/${DOCS_SITE.source}/.test(url.pathname)`)
   })
 })
 
