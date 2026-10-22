@@ -4,7 +4,7 @@ status: blocked
 area: notifications
 owner: Codex Sol toast-overlap
 updated: 2026-10-22
-links: [../decisions/0009-notifications-and-live-work.md, ../decisions/0034-toasts-reserve-page-space.md]
+links: [../decisions/0009-notifications-and-live-work.md, ../decisions/0036-toasts-reserve-page-space.md]
 ---
 
 Implemented page notices in document flow with the existing three-card cap. Terminal engine cancellation closes an answer through durable settlement, including Stop after reload. Terminal answers repair notices whose run metadata disappeared; existing expiry handles missing answer records. Repair preserves recipients and rechecks branch access. No product copy was added.

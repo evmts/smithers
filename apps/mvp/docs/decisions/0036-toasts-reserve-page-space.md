@@ -1,4 +1,4 @@
-# 0034: Page notices reserve space; terminal receipts settle work
+# 0036: Page notices reserve space; terminal receipts settle work
 
 2026-10-22. Implements M-48 and decision 0009's requirement that unrelated controls remain usable.
 
