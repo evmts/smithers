@@ -5,7 +5,7 @@
  * real `serve` process, and the grant survives that process being killed.
  */
 import { spawn, spawnSync } from "node:child_process"
-import { mkdtempSync, realpathSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs"
 import { type AddressInfo, createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -36,12 +36,15 @@ const freePort = () =>
 
 /** A served workspace: its base URL, the operator token it printed, and a hard kill. */
 const serve = async (cwd: string, port: number) => {
+  const tokenFile = join(cwd, "operator-token")
   const child = spawn(process.execPath, [
     "--no-warnings",
     "--import",
     scriptedHost,
     executable,
     "serve",
+    "--operator-token-file",
+    tokenFile,
     "--port",
     String(port)
   ], {
@@ -58,8 +61,10 @@ const serve = async (cwd: string, port: number) => {
   const deadline = Date.now() + 120_000
   for (;;) {
     if (child.exitCode !== null || child.signalCode !== null) throw new Error(`serve exited early: ${banner}`)
-    const token = /approval token\s+([0-9a-f]{64})/.exec(banner)?.[1]
-    const ready = token !== undefined && await fetch(`${base}/health`).then((response) => response.ok, () => false)
+    // 08881fc8cb57 supplies a private token file even when progress is silent.
+    const token = existsSync(tokenFile) ? readFileSync(tokenFile, "utf8").trim() : undefined
+    const ready = token !== undefined && /^[0-9a-f]{64}$/.test(token) &&
+      await fetch(`${base}/health`).then((response) => response.ok, () => false)
     if (ready) {
       return {
         base,
