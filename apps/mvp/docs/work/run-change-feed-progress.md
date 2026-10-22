@@ -1,11 +1,46 @@
 ---
-title: Update run pages during long agent steps
+title: A run's change feed moves while an action attempt works
 status: in-progress
 area: sdk
-owner: Codex Sol run-progress builder assigned by lead; Codex tracker maintains note
-updated: 2026-10-21 21:10 PDT
-links: [todo-active-run-view.md, journal-deployment-lock-contention.md, flow-debugging.md, ../rulings.md]
+owner: Codex GPT-6.1 Sol
+updated: 2026-10-22
+links: [todo-active-run-view.md, ../decisions/0026-watching-a-todo-run.md, ../features/runs.md]
 ---
+
+## Design — 2026-10-21, 16:10 PDT
+
+**What:** A run's row of the engine's change feed (`flows_run_changes`) moves while one action attempt works, so a page following a TODO's run sees the agent's turns, tool calls and a steer's delivery as they happen, not when the `todo/Implement` step settles.
+
+**Why (evidence):** the live steer e2e on 2026-10-21 (stack `steer_williamcory`) read the run at 22:31 UTC and next at 22:41 UTC: ten minutes with no change notification while the agent worked inside `todo/Implement`, whose journal grew from 19 to 201 events. The run page and a steer's Delivered lagged by the whole step. Decision 0026 and `features/runs.md` say the feed moves "about once per step attempt"; it doesn't.
+
+**Cause:** `@smthrs/run-store` migration `0003_execution_revisions` bumps a run's revision only from triggers on `flows_runs` (insert, update, delete). An agent's model turns, cell calls and steering drains are inner sealed steps: they write `flows_attempts` rows and journal events, never the run's row.
+
+**Design (recommended):** the engine touches the run's row when an attempt starts or settles inside a run, at a bounded rate.
+
+```
+attempt started/settled (run-store AttemptStore, the same transaction as its INSERT/UPDATE of flows_attempts)
+  └─ if now - run.progress_at_ms >= PROGRESS_EVERY_MS (2 000)
+       UPDATE flows_runs SET progress_at_ms = now WHERE run_id = ? AND (progress_at_ms IS NULL OR progress_at_ms <= now - 2000)
+         └─ existing trigger: flows_run_source.revision + 1 → flows_run_changes(run_id).revision
+```
+
+- **New column** `flows_runs.progress_at_ms INTEGER NULL` (run-store migration `0005_run_progress`). Row metadata only: it is not in the plan, the payload or any step key, so no plan digest or `implementationVersion` changes, and a run parked across a deploy replays unchanged.
+- **Bounded rate:** the conditional `UPDATE … WHERE progress_at_ms <= now - 2000` makes the bump at most once per 2 s per run whatever the attempt rate, and is a no-op inside the window (no trigger fires on zero rows). The interval is an engine option (`EngineStore.Options.progressEvery`), default 2 s.
+- **Same transaction as the attempt row,** under the engine's fenced writer: a stale owner can't bump, and a rolled-back attempt bumps nothing.
+- **Readers:** unchanged. Electric already follows `flows_run_changes`; `RunInspection` ignores the column.
+- **Contention:** every bump also updates the singleton `flows_run_source` row, which serializes writers across runs. At 0.5 Hz per running run that's small; the journal-latency builder's per-run writer lock (af234a6d6c5f5d459) should take this into account, and this design must take its lock order (attempt row, then run row, inside one writer transaction).
+
+**Rejected:** a trigger on `flows_journal_events` (hundreds of writes per minute per run, every one bumping the global singleton); a trigger on `flows_attempts` without a rate bound (the same, at the attempt rate); a separate heartbeat flow or timer (a second scheduler beside the engine, DUR-2); polling from the tab (FE rule, decision 0026 §4).
+
+**Regression test (fails today):** `packages/smithers/flows/engine-store/test/RunChangeProgress.test.ts`, on SQLite and on Postgres under `SMITHERS_TEST_PG_URL`: run a flow whose one action performs three inner sealed steps (`Action.make(... tier: "sealed")` called from the action body), each waiting on a gate the test releases. After each release, read `flows_run_changes.revision` for the run: it must have moved at least once between the action's start and its settlement while the action is still running. Today the revision moves only at the action's start and end. A second case: ten inner steps within 2 s move it at most twice (the bound). A third: a fenced-out stale owner's attempt write doesn't move it.
+
+**App proof:** `apps/mvp/src/features/runs/remote.test.ts` "a Member watches it live" gains an assertion that a page reads the run again during `probe/Pause`'s long step with inner steps; the steer e2e's Delivered then appears within seconds of the agent's next turn.
+
+**Next step:** a builder takes this note: send the design to the journal-latency builder first, then the failing test, then the migration and the bump beside `AttemptStore`'s writes of `flows_attempts`. Mechanical parts (migration, option plumbing, docs) can go to Codex Sol.
+
+**Open questions for Will:** None.
+
+## Earlier tracker history from main
 
 ## Tracker reconciliation — 2026-10-21 21:10 PDT
 
