@@ -7391,11 +7391,12 @@
         "Metric.d.ts": "be427fdaea2a7d7162359fa376a8e6cd627570f7f3c186b279dfb19e46737e81",
         "NodeOtel.d.ts": "b14d9b1835966feae0ea26310768ceb766940e47d47be6097ac73d49bfb0777f",
         "Otel.d.ts": "20e1d127e3d88e95c89dcfc45484d605603c3cbb41ea26d02a98bc42e9ddf46f",
-        "Otlp.d.ts": "6dcb8fdee47803f0a0870d2f14b4157b4d4dc44e93b137bd62c51cb73da53b9a",
+        "Otlp.d.ts": "de89ce29361335fbb91ede9c8bf79185548cc83280a5611ae844967868ba6a30",
         "OtlpRelay.d.ts": "bff3adce4ad443307e103c12b87c09bff17bb75eeabdb82bf0603b7df47348bb",
         "Resource.d.ts": "0aac1e7a9bfb28b241b0030c51be8c9b5ab70c8a3851d3b70334960ba7453ae8",
         "index.d.ts": "a5c8f45bb0db4075cec90a0c055eb1cc6f52482e9dddbede4e0e6f14e28843df",
-        "internal/schemaIssuePath.d.ts": "d1121b36495f65d0503eceb0170cee739e9ebdfdab2f0aed169c7f0083f21f4d"
+        "internal/schemaIssuePath.d.ts": "d1121b36495f65d0503eceb0170cee739e9ebdfdab2f0aed169c7f0083f21f4d",
+        "internal/split.d.ts": "e2271f312cd9f0299611ce2bda52933bb84965b2e9587f0d37df4f582e32bb54"
       }
     },
     "@smthrs/patterns": {
