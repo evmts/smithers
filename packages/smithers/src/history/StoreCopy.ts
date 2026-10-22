@@ -45,6 +45,36 @@ const requalify = (definition: string, from: string, to: string): string => defi
 
 const unsafe = (message: string) => new CliError.Refused({ fault: "bug", code: "verify_copy_unsafe", message })
 
+/** Refuses copied definitions that can mutate the source or an external sequence. */
+const isolated = (from: string, to: string) =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient
+    // Nothing the copy holds may depend on anything the source holds: a
+    // default drawing from any sequence outside the copy would advance it.
+    // A default, trigger or rule names no schema of its own; its table does.
+    const reaching = yield* sql<{ object: string; referenced: string }>`
+      SELECT o.type || ' ' || o.identity AS object, r.identity AS referenced FROM pg_depend d
+      CROSS JOIN LATERAL pg_identify_object(d.classid, d.objid, d.objsubid) o
+      CROSS JOIN LATERAL pg_identify_object(d.refclassid, d.refobjid, d.refobjsubid) r
+      WHERE (r.schema = ${from} OR (r.type = 'sequence' AND r.schema IS DISTINCT FROM ${to}))
+        AND ${to} = COALESCE(o.schema, (
+        SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.oid = CASE d.classid
+          WHEN 'pg_attrdef'::regclass THEN (SELECT adrelid FROM pg_attrdef WHERE oid = d.objid)
+          WHEN 'pg_trigger'::regclass THEN (SELECT tgrelid FROM pg_trigger WHERE oid = d.objid)
+          WHEN 'pg_rewrite'::regclass THEN (SELECT ev_class FROM pg_rewrite WHERE oid = d.objid)
+          WHEN 'pg_constraint'::regclass THEN (SELECT conrelid FROM pg_constraint WHERE oid = d.objid)
+        END))
+      LIMIT 1`
+    if (reaching.length > 0) {
+      return yield* Effect.fail(
+        unsafe(
+          `The copy of ${from} would reach outside itself: ${reaching[0]!.object} uses ${reaching[0]!.referenced}`
+        )
+      )
+    }
+  })
+
 /**
  * Copies the PostgreSQL schema `from` into `to`, which it creates, on the
  * server at `url`.
@@ -88,6 +118,11 @@ const copySchema = (url: string, from: string, to: string) =>
         yield* sql.unsafe(
           `CREATE TABLE ${target}.${table.name} (LIKE ${source}.${table.name} INCLUDING ALL EXCLUDING INDEXES)`
         )
+      }
+      // Check definitions before inserting: a check can consume a sequence,
+      // whose position a transaction rollback cannot restore.
+      yield* isolated(from, to)
+      for (const table of tables) {
         yield* sql.unsafe(
           `INSERT INTO ${target}.${table.name} (${table.columns}) OVERRIDING SYSTEM VALUE ` +
             `SELECT ${table.columns} FROM ${source}.${table.name}`
@@ -134,27 +169,7 @@ const copySchema = (url: string, from: string, to: string) =>
         JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = ${from} AND NOT t.tgisinternal ORDER BY c.relname, t.tgname`
       for (const row of triggers) yield* sql.unsafe(requalify(row.definition, source, target))
-      // Nothing the copy holds may depend on anything the source holds: a
-      // default drawing from the source's sequence would advance it.
-      // A default, trigger or rule names no schema of its own; its table does.
-      const reaching = yield* sql<{ object: string; referenced: string }>`
-        SELECT o.type || ' ' || o.identity AS object, r.identity AS referenced FROM pg_depend d
-        CROSS JOIN LATERAL pg_identify_object(d.classid, d.objid, d.objsubid) o
-        CROSS JOIN LATERAL pg_identify_object(d.refclassid, d.refobjid, d.refobjsubid) r
-        WHERE r.schema = ${from} AND ${to} = COALESCE(o.schema, (
-          SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE c.oid = CASE d.classid
-            WHEN 'pg_attrdef'::regclass THEN (SELECT adrelid FROM pg_attrdef WHERE oid = d.objid)
-            WHEN 'pg_trigger'::regclass THEN (SELECT tgrelid FROM pg_trigger WHERE oid = d.objid)
-            WHEN 'pg_rewrite'::regclass THEN (SELECT ev_class FROM pg_rewrite WHERE oid = d.objid)
-            WHEN 'pg_constraint'::regclass THEN (SELECT conrelid FROM pg_constraint WHERE oid = d.objid)
-          END))
-        LIMIT 1`
-      if (reaching.length > 0) {
-        return yield* Effect.fail(
-          unsafe(`The copy of ${from} would reach its source: ${reaching[0]!.object} uses ${reaching[0]!.referenced}`)
-        )
-      }
+      yield* isolated(from, to)
     }))
   }).pipe(
     // The server's catalog schema: opening it creates nothing of the copy's.

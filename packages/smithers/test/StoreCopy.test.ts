@@ -260,3 +260,75 @@ it("refuses a PostgreSQL copy that exists already or would reach its source, and
     })).catch(() => undefined)
   }
 })
+
+it.each(["default", "check"])(
+  "refuses an external sequence in a PostgreSQL %s and rolls back the copy",
+  async (kind) => {
+    const prefix = `test_copy_${randomUUID().replaceAll("-", "").slice(0, 16)}`
+    vi.stubEnv("SMITHERS_POSTGRES_URL", url)
+    vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
+    vi.stubEnv("SMITHERS_BACKEND", "postgres")
+    const directory = mkdtempSync(join(tmpdir(), "store-copy-external-"))
+    roots.push(directory)
+    const external = `${prefix}_external`
+    const source = join(directory, "source.db")
+    const copy = join(directory, "copy.db")
+    const position = () =>
+      on(
+        publicUrl(),
+        Effect.flatMap(SqlClient, (sql) => sql`SELECT last_value, is_called FROM ${sql(external)}.counter`)
+      )
+    try {
+      await on(
+        publicUrl(),
+        Effect.gen(function*() {
+          const sql = yield* SqlClient
+          yield* sql`CREATE SCHEMA ${sql(external)}`
+          yield* sql`CREATE SEQUENCE ${sql(external)}.counter`
+        })
+      )
+      await on(
+        source,
+        Effect.gen(function*() {
+          const sql = yield* SqlClient
+          const expression = `nextval('${external}.counter'::regclass)`
+          yield* sql.unsafe(
+            kind === "default"
+              ? `CREATE TABLE counted (n BIGINT DEFAULT ${expression})`
+              : `CREATE TABLE counted (n BIGINT CHECK (n < ${expression}))`
+          )
+          yield* sql`INSERT INTO counted(n) VALUES (0)`
+        })
+      )
+      const before = await position()
+      const result = await Effect.runPromise(Effect.result(StoreCopy.copy(source, copy)))
+      expect(result).toMatchObject({ _tag: "Failure", failure: { code: "verify_copy_unsafe" } })
+      const schemas = await on(
+        publicUrl(),
+        Effect.flatMap(
+          SqlClient,
+          (sql) =>
+            sql<{ name: string }>`SELECT nspname AS name FROM pg_namespace WHERE nspname = ${
+              StoreCopy.postgres(copy)!.schema
+            }`
+        )
+      )
+      expect(schemas).toEqual([])
+      expect(await position()).toEqual(before)
+    } finally {
+      await on(
+        publicUrl(),
+        Effect.gen(function*() {
+          const sql = yield* SqlClient
+          for (
+            const row of yield* sql<
+              { name: string }
+            >`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`${prefix}%`}`
+          ) {
+            yield* sql`DROP SCHEMA ${sql(row.name)} CASCADE`
+          }
+        })
+      )
+    }
+  }
+)

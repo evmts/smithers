@@ -63,9 +63,9 @@ export interface Step {
  * `executes` is the first dispatch no record serves, where the resume would
  * run code again.
  * `notReplayed` are recorded successful steps the resume never asked for:
- * dropped or re-keyed by the current code. A run is `divergent` when a
- * recorded step goes unreplayed while the resume executes; one that replays
- * everything it recorded before executing new work is `consistent`.
+ * dropped or re-keyed by the current code. A run is `divergent` when any
+ * recorded successful step goes unreplayed, including when replay fails
+ * before another dispatch. Replaying every recorded success is `consistent`.
  *
  * @since 1.0.0
  * @category models
@@ -93,13 +93,15 @@ export interface Settled {
 /**
  * What resuming every run a store holds would do: one {@link Report} per run a
  * resume can take, the settled runs it cannot, and the runs whose resume was
- * refused ({@link Unverified}). The store is `divergent` when any report is.
+ * refused ({@link Unverified}). The store is `divergent` when any report is,
+ * `unverified` when any attempt failed and no report diverges, and otherwise
+ * `consistent`.
  *
  * @since 1.0.0
  * @category models
  */
 export interface Summary {
-  readonly verdict: "consistent" | "divergent"
+  readonly verdict: "consistent" | "divergent" | "unverified"
   readonly reports: ReadonlyArray<Report>
   readonly settled: ReadonlyArray<Settled>
   readonly unverified: ReadonlyArray<Unverified>
@@ -368,8 +370,13 @@ const existing = (root: string, options: Options): Application.Databases => {
   return stores
 }
 
-/** One run's report from what its original recorded and what its copy dispatched. */
-const report = (runId: string, steps: ReadonlyArray<Step>, own: ReadonlyArray<ReplayOnly.Dispatch>): Report => {
+/**
+ * One run's report from what its original recorded and what its copy dispatched.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const report = (runId: string, steps: ReadonlyArray<Step>, own: ReadonlyArray<ReplayOnly.Dispatch>): Report => {
   const name = (dispatch: ReplayOnly.Dispatch): Step => ({
     ...steps.find((step) => step.stepKeyDigest === dispatch.stepKeyDigest),
     stepKeyDigest: dispatch.stepKeyDigest,
@@ -382,7 +389,7 @@ const report = (runId: string, steps: ReadonlyArray<Step>, own: ReadonlyArray<Re
   const notReplayed = steps.filter((step) => !served.has(step.stepKeyDigest))
   return {
     runId,
-    verdict: first !== undefined && notReplayed.length > 0 ? "divergent" : "consistent",
+    verdict: notReplayed.length > 0 ? "divergent" : "consistent",
     replayed,
     ...(resumed === undefined ? {} : { resumes: name(resumed) }),
     ...(first === undefined ? {} : { executes: name(first) }),
@@ -433,7 +440,11 @@ export const verifyAll = async (root: string, options: Options = {}, signal?: Ab
         else done.push(outcome.success.settled)
       }
       return {
-        verdict: reports.some((each) => each.verdict === "divergent") ? "divergent" : "consistent",
+        verdict: reports.some((each) => each.verdict === "divergent")
+          ? "divergent"
+          : skipped.length > 0
+          ? "unverified"
+          : "consistent",
         reports,
         settled: done,
         unverified: skipped
@@ -453,16 +464,18 @@ export const verifyAll = async (root: string, options: Options = {}, signal?: Ab
 export const divergence = (report: Report): CliError.Refused => {
   const label = (step: Step) => step.action ?? step.node ?? step.stepKeyDigest
   const dropped = report.notReplayed.map(label).join(", ")
+  const missing = `${report.notReplayed.length} recorded step(s) would not replay: ${dropped}`
   return refused(
     "user",
     "run_divergent",
-    `Resuming ${report.runId} would execute ${report.executes === undefined ? "new work" : label(report.executes)} ` +
-      `again; ${report.notReplayed.length} recorded step(s) would not replay: ${dropped}`
+    report.executes === undefined
+      ? `Resuming ${report.runId}: ${missing}`
+      : `Resuming ${report.runId} would execute ${label(report.executes)} again; ${missing}`
   )
 }
 
 /**
- * The refusal a divergent store exits with: every divergent run's sentence.
+ * The refusal an incomplete or divergent store exits with, naming every affected run.
  *
  * @since 1.0.0
  * @category constructors
@@ -470,6 +483,9 @@ export const divergence = (report: Report): CliError.Refused => {
 export const storeDivergence = (summary: Summary): CliError.Refused =>
   refused(
     "user",
-    "run_divergent",
-    summary.reports.filter((each) => each.verdict === "divergent").map((each) => divergence(each).message).join("\n")
+    summary.verdict === "unverified" ? "verify_incomplete" : "run_divergent",
+    [
+      ...summary.reports.filter((each) => each.verdict === "divergent").map((each) => divergence(each).message),
+      ...summary.unverified.map((each) => `${each.runId}: ${each.code}: ${each.message}`)
+    ].join("\n")
   )

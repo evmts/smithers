@@ -336,13 +336,17 @@ copies the stores, resumes the copy with an engine that executes no action body,
 and reports the recorded steps that replay, a recorded step that never finished
 and would be re-entered (`resumes`), the first step that would execute
 (`executes`), and the recorded steps nothing asked for (`notReplayed`). It exits
-1 with `run_divergent` when a recorded step would be dropped or re-keyed. The
+1 with `run_divergent` when any recorded successful step remains unreplayed,
+even if replay fails before another dispatch. The
 project's stores are only read: a SQLite store is copied with `VACUUM INTO`, a
-PostgreSQL one into a scratch schema that is dropped afterwards.
+PostgreSQL one into a scratch schema that is dropped afterwards. Copies that
+retain external sequence dependencies are refused before rows are inserted.
 
 Without a run, `runs verify` reports every run the store holds, one report per
 run a resume can take, and lists the settled ones under `settled`; it exits 1
-when any run diverges. `--against <engine.db>` verifies the store at that path,
+when any run diverges. A failed verification attempt is listed under
+`unverified`; if none diverges, the verdict is `unverified` and the command
+exits 1 with `verify_incomplete`, naming each refusal. `--against <engine.db>` verifies the store at that path,
 with the `control.db` beside it, under the project's current flows: an old
 snapshot, or another checkout's stores.
 

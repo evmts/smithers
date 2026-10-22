@@ -87,7 +87,7 @@ export const appendHistoryCommands = (cli: Cli.Cli, runtime: Bridge.Runtime = {}
           const against = c.options.against === undefined ? {} : { against: c.options.against }
           if (c.args.run === undefined) {
             const summary = await Verify.verifyAll(root, against, runtime.signal)
-            if (summary.verdict === "divergent") throw Verify.storeDivergence(summary)
+            if (summary.verdict !== "consistent") throw Verify.storeDivergence(summary)
             return summary
           }
           const report = await Verify.verify(root, c.args.run, against, runtime.signal)

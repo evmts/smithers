@@ -173,6 +173,30 @@ it("reports a re-keyed step as dropped and the step that would execute", async (
   expect(recordedActions(root)).toEqual(["verify/first", "verify/second"])
 }, 120_000)
 
+it.each([false, true])("reports unreplayed steps without a would-execute dispatch (partial replay: %s)", (partial) => {
+  const first = { stepKeyDigest: "first", action: "verify/first" }
+  const second = { stepKeyDigest: "second", action: "verify/second" }
+  const report = Verify.report(
+    "run-1",
+    [first, second],
+    partial
+      ? [{
+        runId: "run-1",
+        stepKeyDigest: "first",
+        action: "verify/first",
+        attempt: 1,
+        tier: "irreversible",
+        outcome: "replayed"
+      }]
+      : []
+  )
+  expect(report.replayed).toEqual(partial ? [first] : [])
+  expect(report.executes).toBeUndefined()
+  expect(report.resumes).toBeUndefined()
+  expect(report.notReplayed).toEqual(partial ? [second] : [first, second])
+  expect(report.verdict).toBe("divergent")
+})
+
 it("refuses a copy that does not stop in time", async () => {
   const { root, runId } = await parkedProject()
   await expect(Verify.verify(root, runId, { settleWithin: "1 millis" })).rejects
@@ -211,7 +235,7 @@ it("names the step that would execute and the steps that would not replay", () =
     "Resuming run-1 would execute verify/second-renamed again; 2 recorded step(s) would not replay: node-1, d0"
   )
   expect(Verify.divergence({ runId: "r", verdict: "divergent", replayed: [], notReplayed: [] }).message)
-    .toBe("Resuming r would execute new work again; 0 recorded step(s) would not replay: ")
+    .toBe("Resuming r: 0 recorded step(s) would not replay: ")
 })
 
 it("verifies every run a store holds and lists the settled ones apart", async () => {
@@ -252,7 +276,11 @@ it("lists a run whose copy does not stop in time instead of ending the whole ver
   expect(summary.unverified).toEqual([
     { runId, code: "verify_timeout", message: `The copy of ${runId} did not stop replaying in time` }
   ])
-  expect(summary.verdict).toBe("consistent")
+  expect(summary.verdict).toBe("unverified")
+  expect(Verify.storeDivergence(summary)).toMatchObject({
+    code: "verify_incomplete",
+    message: `${runId}: verify_timeout: The copy of ${runId} did not stop replaying in time`
+  })
 }, 240_000)
 
 it("verifies a store elsewhere against the project's flows", async () => {
@@ -327,6 +355,28 @@ it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", 
     expect(await rows()).toBe(before)
     expect(await schemas()).toEqual([`${prefix}_control_db`, `${prefix}_engine_db`])
     expect(recordedActions(root)).toEqual(["verify/first", "verify/second"])
+    // An unsafe store copy leaves the whole verification unverified, including at the CLI boundary.
+    const external = `${prefix}_external`
+    await admin(Effect.gen(function*() {
+      const sql = yield* SqlClient
+      yield* sql`CREATE SCHEMA ${sql(external)}`
+      yield* sql`CREATE SEQUENCE ${sql(external)}.counter`
+      yield* sql.unsafe(`CREATE TABLE "${prefix}_engine_db".counted (n BIGINT DEFAULT nextval('${external}.counter'))`)
+    }))
+    const summary = await Verify.verifyAll(root)
+    expect(summary.verdict).toBe("unverified")
+    expect(summary.reports).toEqual([])
+    expect(summary.unverified).toMatchObject([{ runId, code: "verify_copy_unsafe" }])
+    let output = ""
+    const codes: Array<number> = []
+    await appendHistoryCommands(Cli.create("runs"), { environment: {} }).serve(
+      ["verify", "--root", root, "--json"],
+      { stdout: (text) => void (output += text), exit: (code) => void codes.push(code) }
+    )
+    expect(codes).toEqual([1])
+    expect(output).toContain("verify_incomplete")
+    expect(output).toContain(runId)
+    expect(output).toContain("verify_copy_unsafe")
   } finally {
     await admin(Effect.gen(function*() {
       const sql = yield* SqlClient
