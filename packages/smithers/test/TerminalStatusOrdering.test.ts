@@ -31,6 +31,7 @@ import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Schedule, Scope } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Projection from "../src/internal/EngineJournalProjection.ts"
 import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
@@ -469,3 +470,30 @@ describe("a terminal control status ordered against the native projection", () =
     30_000
   )
 })
+
+it("bounds terminal ordering even when recording its timeout gap never responds", () =>
+  Effect.runPromise(
+    Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.create
+      const gapStarted = yield* Deferred.make<void>()
+      const supervisor = yield* f.make({
+        orderingGrace: Duration.seconds(1),
+        controlJournal: {
+          ...f.controlJournal,
+          emitDurableUnfenced: (input) =>
+            input.eventType === Projection.gapKind
+              ? Deferred.succeed(gapStarted, undefined).pipe(Effect.andThen(Effect.never))
+              : f.controlJournal.emitDurableUnfenced(input)
+        }
+      })
+      yield* supervisor.start(runId)
+      yield* Deferred.await(f.reached)
+      const ended = yield* Deferred.make<void>()
+      yield* Effect.forkScoped(supervisor.awaitSettled(runId).pipe(Effect.andThen(Deferred.succeed(ended, undefined))))
+      yield* TestClock.adjust("1 second")
+      yield* Deferred.await(gapStarted)
+      yield* TestClock.adjust("1 second")
+      expect(yield* Deferred.isDone(ended)).toBe(true)
+    })).pipe(Effect.provide(TestClock.layer()))
+  ))

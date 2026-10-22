@@ -166,3 +166,12 @@ describe("FeaturedFlows.apps", () => {
     )
   })
 })
+
+describe("listing guards on absent values", () => {
+  it.each([null, undefined])("apps accepts %s", (value) => {
+    expect(FeaturedFlows.appsOf(value)).toEqual([])
+  })
+  it.each([null, undefined])("warnings accepts %s", (value) => {
+    expect(FeaturedFlows.warningsOf(value)).toEqual([])
+  })
+})

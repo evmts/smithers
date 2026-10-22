@@ -274,6 +274,7 @@ export const make = (options: Options) =>
           if (!seen.has(edge.childId)) pending.push(edge.childId)
         }
       }
+      return seen
     }))
 
     // Exactly the journal's own wake/recheck pattern. Local notifications are
@@ -283,19 +284,25 @@ export const make = (options: Options) =>
       Effect.scoped(Effect.gen(function*() {
         const changes = yield* options.engineJournal.changes
         for (;;) {
-          yield* catchUp
+          const observed = yield* catchUp
           if (runs !== undefined) {
-            const row = yield* Effect.result(runs.get(options.executionId))
-            if (row._tag === "Failure") {
-              // A host can start observation when a launch is accepted, before
-              // the native run row exists. Every other store refusal is real.
-              if (row.failure.code !== "not_found_row") return yield* Effect.fail(row.failure)
-            } else if (RunStore.isTerminalRunStatus(row.success.status)) {
-              // The driver writes terminal evidence after the handler returns.
-              // Observing the committed terminal row THEN reading again closes
-              // the race where the preceding page was fetched before commit.
-              yield* catchUp
-              return
+            let allTerminal = true
+            for (const executionId of observed) {
+              const row = yield* Effect.result(runs.get(executionId))
+              if (row._tag === "Failure") {
+                // An accepted root or linked child may not have its row yet.
+                if (row.failure.code !== "not_found_row") return yield* Effect.fail(row.failure)
+                allTerminal = false
+              } else if (!RunStore.isTerminalRunStatus(row.success.status)) {
+                allTerminal = false
+              }
+            }
+            if (allTerminal) {
+              // Each terminal row commits after its last native evidence. Drain
+              // again, including children linked after the preceding page read.
+              const drained = yield* catchUp
+              if ([...drained].every((id) => observed.has(id))) return
+              continue
             }
           }
           yield* Effect.raceFirst(PubSub.take(changes), Effect.sleep("1 second"))

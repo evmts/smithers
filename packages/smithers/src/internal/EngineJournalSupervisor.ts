@@ -432,6 +432,16 @@ export const make = (options: Options) =>
                 entry.generation === unobserved ? null : entry.generation,
                 orderingPhase,
                 `No ${settledKind} within ${Duration.format(grace)}`
+              ).pipe(
+                // The destination can be the same wedged store that prevented
+                // settlement. Its diagnostic write must have a bound too.
+                Effect.timeout(grace),
+                Effect.catchCause(() =>
+                  Effect.logWarning("Terminal ordering gap could not be recorded", {
+                    runId: id,
+                    phase: orderingPhase
+                  })
+                )
               )
             ),
             Effect.ignore

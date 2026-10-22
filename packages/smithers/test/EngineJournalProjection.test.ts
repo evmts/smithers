@@ -640,3 +640,33 @@ describe("private engine journal projection", () => {
       ])
     }))))
 })
+
+it("keeps projecting detached descendants after the native root completes", () =>
+  Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const f = yield* setup
+    const state = JSON.stringify({ version: 1, flowName: "fixture", payload: {} })
+    yield* f.runs.create("native-root", state)
+    yield* f.runs.create("detached", state)
+    yield* f.engineState.recordRunParent("detached", "native-root")
+    yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'native-root'`
+    yield* f.sql`UPDATE flows_runs SET status = 'suspended' WHERE run_id = 'detached'`
+    const childRead = yield* Deferred.make<void>()
+    const projector = yield* Projection.make(f.options)
+    const follower = yield* Effect.forkScoped(projector.followUntilSettled({
+      get: (id) =>
+        f.runs.get(id).pipe(Effect.tap(() => id === "detached" ? Deferred.succeed(childRead, undefined) : Effect.void))
+    }))
+    const first = yield* Effect.raceFirst(
+      Fiber.join(follower).pipe(Effect.as("settled")),
+      Deferred.await(childRead).pipe(Effect.as("child-observed"))
+    )
+    expect(first).toBe("child-observed")
+    yield* f.engineJournal.transact(Effect.gen(function*() {
+      yield* emit(f.engineJournal, "detached", { late: "descendant output" })
+      yield* f.sql`UPDATE flows_runs SET status = 'completed' WHERE run_id = 'detached'`
+    }))
+    yield* Fiber.join(follower).pipe(Effect.timeout("5 seconds"))
+    expect((yield* rows(f.controlJournal)).map(record)).toMatchObject([
+      { executionId: "detached", payload: { late: "descendant output" } }
+    ])
+  }))))

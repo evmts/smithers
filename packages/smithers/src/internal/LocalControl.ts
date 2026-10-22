@@ -25,12 +25,12 @@ export type NotificationDecorator = (
  * @since 1.0.0
  * @private
  */
-export const layer = (
+export const layer = <Extra = never>(
   registry: Layer.Layer<Registry.Registry>,
   engine: Engine,
   executor:
     | Layer.Layer<
-      ControlExecutor.ControlExecutor,
+      ControlExecutor.ControlExecutor | Extra,
       never,
       ControlRuntime.ControlRuntime | Journal.Journal | NotificationQueue.NotificationQueue | Registry.Registry
     >

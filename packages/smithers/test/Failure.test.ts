@@ -248,3 +248,61 @@ describe("whitespace authorization diagnostics", () => {
     expect(Failure.causeLine(`Error: wrapper\n [cause]: Error: ${message}`)).toBe(`Error: ${header} ${value}`)
   })
 })
+
+describe("designed operator output safety", () => {
+  const unsafe = "\u001b[31mdenied\u001b[0m\u0007\nnext api_key=privatevalue123456"
+  it.each([
+    new Error(unsafe),
+    new ControlError.InvalidInput({ issue: unsafe }),
+    { _tag: "/control/Refused", message: unsafe }
+  ])("redacts and sanitizes designed sentences and reports", (error) => {
+    for (const verbose of [false, true]) {
+      for (
+        const text of [
+          Failure.operatorSentence(error),
+          Failure.operatorLine(error, verbose),
+          Failure.operatorReport(error, verbose)
+        ]
+      ) {
+        expect(text).not.toContain("privatevalue123456")
+        expect(text).not.toMatch(/[\p{Cc}\p{Cf}]/u)
+        expect(text).toContain("denied")
+      }
+    }
+  })
+  it("removes terminal controls even when there is no credential", () => {
+    for (
+      const error of [
+        new Error("\u001b[31mdenied\u001b[0m\u0007\nnext"),
+        new ControlError.InvalidInput({ issue: "\u001b[31mdenied\u001b[0m\u0007\nnext" })
+      ]
+    ) {
+      expect(Failure.operatorSentence(error)).toMatch(/denied +next/)
+      expect(Failure.operatorSentence(error)).not.toMatch(/[\p{Cc}\p{Cf}]/u)
+    }
+  })
+  it("redacts named sensitive fields before rendering and bounding them", () => {
+    const error = Object.assign(new Error(""), {
+      token: "privatevalue123456",
+      issue: "api_key=\"" + "x".repeat(400) + "\""
+    })
+    expect(Failure.operatorSentence(error)).not.toContain("privatevalue123456")
+    expect(Failure.operatorSentence(error)).not.toContain("x".repeat(20))
+  })
+  it("redacts credentials whose names are split by terminal formatting", () => {
+    expect(Failure.operatorSentence(new Error("api_\u001b[31mkey=privatevalue123456")))
+      .not.toContain("privatevalue123456")
+    expect(Failure.operatorSentence(new ControlError.InvalidInput({ issue: "api_\u001b[31mkey=privatevalue123456" })))
+      .not.toContain("privatevalue123456")
+  })
+  it("ignores circular structured metadata while reporting scalar fields", () => {
+    const error = Object.assign(new Error(""), { issue: "Denied", context: {} as unknown })
+    error.context = error
+    expect(Failure.operatorSentence(error)).toBe("issue=Denied")
+  })
+  it("sanitizes and redacts the displayed name too", () => {
+    const error = Object.assign(new Error("Denied"), { _tag: "/api_key=privatevalue123456\u001b[31m\u0007" })
+    expect(Failure.operatorLine(error, false)).not.toContain("privatevalue123456")
+    expect(Failure.operatorLine(error, false)).not.toMatch(/[\p{Cc}\p{Cf}]/u)
+  })
+})

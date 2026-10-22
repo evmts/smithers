@@ -1,11 +1,27 @@
-import { Control, Health } from "@smthrs/control"
+import { NodeCrypto, NodeFileSystem, NodePath } from "@effect/platform-node"
+import { ArtifactStore } from "@smthrs/artifacts"
+import { Control, ControlExecutor, ControlLive, ControlRuntime, Health, SqlControlRuntime } from "@smthrs/control"
 import type { RunSummary } from "@smthrs/control/ControlSchema"
 import * as TestControl from "@smthrs/control/test/TestControl"
+import { FlowEngine } from "@smthrs/engine"
+import { EngineStore, StepBoundary } from "@smthrs/engine-store"
+import * as TestStores from "@smthrs/engine-store/test/TestStores"
+import { FlowRuntime } from "@smthrs/flow"
+import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { Deferred, Effect, Fiber, Stream } from "effect"
+import { NotificationQueue } from "@smthrs/notifications"
+import { Registry } from "@smthrs/registry"
+import { RunStore } from "@smthrs/run-store"
+import { Context, Deferred, Effect, Fiber, Layer, Option, Stream } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as HealthHost from "../src/internal/HealthHost.ts"
+
+const testLayer = Layer.mergeAll(TestControl.layer(), FlowEngine.layerMemory, NodeCrypto.layer)
 
 const summaries: ReadonlyArray<RunSummary> = Array.from({ length: 4 }, (_, index) => ({
   runId: `health-${index}`,
@@ -36,11 +52,14 @@ describe("native health producer lifetime", () => {
         const failed = yield* Deferred.make<void>()
         const recorded = yield* Deferred.make<void>()
         let attempts = 0
+        let discoveryFlow: string | undefined
         const flaky: Control.Service = {
           ...control,
           list: (request) =>
             Effect.gen(function*() {
               attempts += 1
+              const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+              discoveryFlow = Option.isSome(instance) ? instance.value.flow._tag : undefined
               if (attempts === 1) {
                 yield* Deferred.succeed(failed, undefined)
                 return yield* Effect.die("temporary discovery failure")
@@ -69,10 +88,11 @@ describe("native health producer lifetime", () => {
         yield* TestClock.adjust(5_000)
         yield* Deferred.await(recorded)
         expect(attempts).toBeGreaterThan(1)
+        expect(discoveryFlow).toBe("smithers/health/Discovery")
         const page = yield* journal.entries({ runId: JournalEvent.RunId.make("health-0"), limit: 10 })
         expect(page.entries.some((entry) => entry.eventType === Health.statusObservedEventType)).toBe(true)
         yield* Fiber.interrupt(fiber)
-      }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.provide(TestClock.layer()))
+      }).pipe(Effect.provide(testLayer), Effect.scoped, Effect.provide(TestClock.layer()))
     )
   })
 
@@ -122,7 +142,7 @@ describe("native health producer lifetime", () => {
         const page = yield* journal.entries({ runId: JournalEvent.RunId.make("health-0"), limit: 10 })
         expect(page.entries.some((entry) => entry.eventType === Health.statusObservedEventType)).toBe(true)
         yield* Fiber.interrupt(fiber)
-      }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.provide(TestClock.layer()))
+      }).pipe(Effect.provide(testLayer), Effect.scoped, Effect.provide(TestClock.layer()))
     )
   })
 
@@ -143,7 +163,7 @@ describe("native health producer lifetime", () => {
         expect(statuses.length).toBeGreaterThan(1)
         expect(statuses.every((entry) => (entry.payload as { health: string }).health === "healthy")).toBe(true)
         yield* Fiber.interrupt(fiber)
-      }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.provide(TestClock.layer()))
+      }).pipe(Effect.provide(testLayer), Effect.scoped, Effect.provide(TestClock.layer()))
     )
   })
   it("enforces shared subject and probe admission and interrupts checks on host teardown", async () => {
@@ -169,15 +189,16 @@ describe("native health producer lifetime", () => {
           bindings: { checked: { checkerId: "bounded" } }
         })
         const control = source(yield* Control.Control)
-        const fiber = yield* Effect.scoped(
-          HealthHost.watch(registry).pipe(Effect.provideService(Control.Control, control))
-        ).pipe(Effect.forkChild({ startImmediately: true }))
+        const fiber = yield* HealthHost.watch(registry).pipe(
+          Effect.provideService(Control.Control, control),
+          Effect.forkChild({ startImmediately: true })
+        )
         yield* Deferred.await(began)
         expect(inFlight).toBe(2)
         yield* Fiber.interrupt(fiber)
         expect(inFlight).toBe(0)
         expect(finalized).toBe(2)
-      }).pipe(Effect.provide(TestControl.layer()), Effect.scoped)
+      }).pipe(Effect.provide(testLayer), Effect.scoped)
     )
   })
   it("executes trusted configured callbacks and persists status in the host journal", async () => {
@@ -220,7 +241,171 @@ describe("native health producer lifetime", () => {
           attention: "needs-input"
         })
         yield* Fiber.interrupt(fiber)
-      }).pipe(Effect.provide(TestControl.layer()), Effect.scoped)
+      }).pipe(Effect.provide(testLayer), Effect.scoped)
     )
   })
 })
+
+it("walks every status page beyond the first 500 real runs", () =>
+  Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime.ControlRuntime
+      const control = yield* Control.Control
+      const { card } = yield* runtime.plan({ flowId: "system/test", input: {} })
+      const token = yield* runtime.lookupApproval(card.approval.target)
+      yield* runtime.resolveApproval(token, "approved", yield* runtime.stampPrincipal())
+      for (let index = 0; index < 501; index++) {
+        yield* runtime.launch(card.planId, card.digest, card.envelope)
+      }
+      const discoveryDone = yield* Deferred.make<void>()
+      const discovered = new Set<string>()
+      const observed: Control.Service = {
+        ...control,
+        list: (request) =>
+          control.list(request).pipe(Effect.tap((page) => {
+            if (page._tag !== "runs" || request._tag !== "runs") return Effect.void
+            for (const run of page.items) discovered.add(run.runId)
+            return request.filters?.status === "parked" ? Deferred.succeed(discoveryDone, undefined) : Effect.void
+          }))
+      }
+      const fiber = yield* Effect.scoped(
+        HealthHost.watch(Health.makeRegistry({ limits: { maxSubjects: 1 } })).pipe(
+          Effect.provideService(Control.Control, observed)
+        )
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(discoveryDone)
+      yield* Fiber.interrupt(fiber)
+      expect(discovered.size).toBe(501)
+    }).pipe(Effect.provide(testLayer), Effect.scoped)
+  ))
+
+it("discovers runs committed through an independent SQLite journal instance", () =>
+  Effect.runPromise(
+    Effect.acquireUseRelease(
+      Effect.promise(() => mkdtemp(join(tmpdir(), "health-peer-"))),
+      (directory) =>
+        Effect.scoped(Effect.gen(function*() {
+          const stack = () =>
+            ControlLive.layer.pipe(
+              Layer.provideMerge(
+                Layer.mergeAll(
+                  SqlControlRuntime.layer().pipe(Layer.orDie),
+                  NotificationQueue.layer,
+                  ControlExecutor.layer(ControlExecutor.makeNoop()),
+                  Registry.layerNoop()
+                ).pipe(Layer.provideMerge(TestStores.layerAt(join(directory, "control.db"))))
+              ),
+              Layer.provide(NodeCrypto.layer)
+            )
+          const reader = yield* Layer.build(Layer.fresh(stack()))
+          const writer = yield* Layer.build(Layer.fresh(stack()))
+          const control = Context.get(reader, Control.Control)
+          const peer = Context.get(writer, Control.Control)
+          const scanned = yield* Deferred.make<void>()
+          const recorded = yield* Deferred.make<string>()
+          const observed: Control.Service = {
+            ...control,
+            list: (request) =>
+              control.list(request).pipe(Effect.tap(() =>
+                request._tag === "runs" && request.filters?.status === "parked"
+                  ? Deferred.succeed(scanned, undefined)
+                  : Effect.void
+              ))
+          }
+          const registry = Health.makeRegistry({
+            checkers: [{
+              id: "peer",
+              probe: (context) =>
+                Deferred.succeed(recorded, context.summary!.runId).pipe(
+                  Effect.as({ activity: "working" as const })
+                )
+            }],
+            bindings: { "system/test": { checkerId: "peer" } }
+          })
+          const fiber = yield* Effect.scoped(
+            HealthHost.watch(registry).pipe(
+              Effect.provideService(Control.Control, observed),
+              Effect.provideService(Journal.Journal, Context.get(reader, Journal.Journal))
+            )
+          ).pipe(Effect.forkChild({ startImmediately: true }))
+          yield* Deferred.await(scanned)
+          const card = yield* peer.plan({ flowId: "system/test", input: {} })
+          yield* peer.approve(card.approval)
+          const receipt = yield* peer.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "health-peer"
+          })
+          expect(receipt._tag).toBe("Accepted")
+          if (receipt._tag !== "Accepted") return yield* Effect.die("Expected accepted peer run")
+          yield* TestClock.adjust(5_000)
+          expect(yield* Deferred.await(recorded)).toBe(receipt.runId)
+          yield* Fiber.interrupt(fiber)
+        })).pipe(Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer))),
+      (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
+    ).pipe(Effect.provide(TestClock.layer()))
+  ))
+
+it("resumes one discovery lineage after reopening its persisted timer", () =>
+  Effect.runPromise(
+    Effect.acquireUseRelease(
+      Effect.promise(() => mkdtemp(join(tmpdir(), "health-restart-"))),
+      (directory) =>
+        Effect.gen(function*() {
+          const filename = join(directory, "engine.db")
+          const engine = () =>
+            EngineStore.layer({
+              owner: { hostId: "health-test" },
+              journalSource: JournalEvent.SourceId.make("health-host")
+            }).pipe(
+              Layer.provideMerge(TestStores.layerAt(filename)),
+              Layer.provide(StepBoundary.layer.pipe(Layer.provide(Layer.mergeAll(
+                ArtifactStore.layerMemory,
+                NodeFileSystem.layer,
+                NodePath.layer
+              )))),
+              Layer.provideMerge(NodeCrypto.layer),
+              Layer.provide(NodeJj.layerAt(process.cwd()))
+            )
+          const host = (resuming: boolean) =>
+            Effect.scoped(Effect.gen(function*() {
+              const services = yield* Layer.build(Layer.fresh(engine()))
+              const control = yield* Control.Control
+              const scanned = yield* Deferred.make<void>()
+              const observed: Control.Service = {
+                ...control,
+                list: (request) =>
+                  control.list(request).pipe(Effect.tap(() =>
+                    request._tag === "runs" && request.filters?.status === "parked"
+                      ? Deferred.succeed(scanned, undefined) :
+                      Effect.void
+                  ))
+              }
+              yield* Effect.forkScoped(
+                HealthHost.watch(Health.makeRegistry()).pipe(
+                  Effect.provideService(Control.Control, observed),
+                  Effect.provideService(FlowRuntime.FlowRuntime, Context.get(services, FlowRuntime.FlowRuntime))
+                )
+              )
+              if (resuming) yield* TestClock.adjust(5_000)
+              yield* Deferred.await(scanned)
+              const runs = Context.get(services, RunStore.RunStore)
+              // Close the host only once its durable timer and waiting row exist.
+              for (;;) {
+                const lineage = yield* runs.lineage("smithers-health-discovery")
+                if (lineage.some((run) => run.status === "suspended")) break
+                yield* Effect.yieldNow
+              }
+              const sql = Context.get(services, SqlClient)
+              const roots = yield* sql<{ readonly runId: string }>`SELECT run_id AS "runId" FROM flows_runs
+          WHERE json_extract(state_json, '$.flowName') = 'smithers/health/Discovery' AND round_ordinal = 0`
+              expect(roots.map((row) => row.runId)).toEqual(["smithers-health-discovery"])
+            }))
+          yield* host(false)
+          yield* host(true)
+        }).pipe(Effect.provide(testLayer), Effect.scoped),
+      (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
+    ).pipe(Effect.provide(TestClock.layer()))
+  ))

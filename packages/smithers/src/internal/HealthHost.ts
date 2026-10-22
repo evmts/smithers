@@ -3,22 +3,44 @@
  */
 
 import { Control, Health, Monitor } from "@smthrs/control"
+import { Action, FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import type { Journal } from "@smthrs/journal"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import { Cause, Effect, FiberMap, Metric, type Scope, Semaphore } from "effect"
+import { Node } from "@smthrs/plan"
+import { Cause, type Crypto, Effect, FiberMap, Layer, Metric, Schema, type Scope, Semaphore } from "effect"
 import { randomUUID } from "node:crypto"
 
 const activeSubjects = Metric.gauge("smithers.health.monitored_subjects")
 const refusedSubjects = Metric.counter("smithers.health.capacity_refusals")
 
+const Discover = Action.make("smithers/health/Discover", {
+  payload: { attempt: Schema.Number },
+  success: Poll.CheckResult(Schema.Number)
+})
+const Discovery = Poll.make("smithers/health/Discovery", {
+  input: {},
+  result: Schema.Number,
+  intervalMs: 5_000,
+  maxAttempts: Number.MAX_SAFE_INTEGER,
+  check: Node.capture(
+    { action: Discover.name, implementationVersion: "health-discovery/v1" },
+    ({ attempt }) => Discover.call({ attempt })
+  )
+})
+
 /** Run observations only on the host that owns the local journal; no control mutations.
- * Read failures leave the last observation to expire and are retried on the next scan.
+ * Discovery attempts and waits belong to the durable poll flow, including
+ * cross-process discovery and recovery after a failed read.
  * @since 1.0.0
  * @private
  */
 export const watch = (
   registry: Health.Registry
-): Effect.Effect<never, never, Control.Control | Journal.Journal | Scope.Scope> =>
+): Effect.Effect<
+  never,
+  never,
+  Control.Control | Journal.Journal | Scope.Scope | FlowRuntime.FlowRuntime | Crypto.Crypto
+> =>
   Effect.gen(function*() {
     const control = yield* Control.Control
     const gate = yield* Semaphore.make(registry.limits.maxConcurrentProbes)
@@ -27,55 +49,72 @@ export const watch = (
     const scan = Effect.gen(function*() {
       let admitted = 0
       for (const status of ["running", "accepted", "waiting-approval", "parked"] as const) {
-        const listed = yield* control.list({ _tag: "runs", filters: { status }, limit: 500 })
-        if (listed._tag !== "runs") continue
-        for (const run of listed.items) {
-          if (yield* FiberMap.has(active, run.runId)) continue
-          if ((yield* FiberMap.size(active)) >= registry.limits.maxSubjects) {
-            yield* Metric.update(refusedSubjects, 1)
-            continue
+        let cursor: string | undefined
+        do {
+          const listed = yield* control.list({ _tag: "runs", filters: { status }, limit: 500, cursor })
+          if (listed._tag !== "runs") break
+          for (const run of listed.items) {
+            if (yield* FiberMap.has(active, run.runId)) continue
+            if ((yield* FiberMap.size(active)) >= registry.limits.maxSubjects) {
+              yield* Metric.update(refusedSubjects, 1)
+              continue
+            }
+            const healthCheck = registry.resolve(run.flowId)
+            yield* Monitor.run({
+              runId: run.runId,
+              monitorId,
+              healthCheck,
+              stallBeats: Math.ceil(healthCheck.policy.stallAfterMs / healthCheck.policy.intervalMs),
+              withProbePermit: gate.withPermits(1),
+              maxChecks: Number.MAX_SAFE_INTEGER,
+              retainBeats: 1,
+              recordBeats: false,
+              // A health check never authorizes lifecycle changes.
+              autoHeal: []
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause) ?
+                  Effect.interrupt :
+                  Effect.logWarning("Health observation stopped; its last reading will expire", {
+                    operation: "health-monitor",
+                    runId: run.runId
+                  })
+                    .pipe(Effect.as({ runId: run.runId, beats: [], health: "unknown" as const }))
+              ),
+              FiberMap.run(active, run.runId, { onlyIfMissing: true })
+            )
+            admitted += 1
           }
-          const healthCheck = registry.resolve(run.flowId)
-          yield* Monitor.run({
-            runId: run.runId,
-            monitorId,
-            healthCheck,
-            stallBeats: Math.ceil(healthCheck.policy.stallAfterMs / healthCheck.policy.intervalMs),
-            withProbePermit: gate.withPermits(1),
-            maxChecks: Number.MAX_SAFE_INTEGER,
-            retainBeats: 1,
-            recordBeats: false,
-            // A health check never authorizes lifecycle changes.
-            autoHeal: []
-          }).pipe(
-            Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause) ?
-                Effect.interrupt :
-                Effect.logWarning("Health observation stopped; its last reading will expire", {
-                  operation: "health-monitor",
-                  runId: run.runId
-                })
-                  .pipe(Effect.as({ runId: run.runId, beats: [], health: "unknown" as const }))
-            ),
-            FiberMap.run(active, run.runId, { onlyIfMissing: true })
-          )
-          admitted += 1
-        }
+          cursor = listed.nextCursor
+        } while (cursor !== undefined)
       }
       yield* Metric.update(activeSubjects, yield* FiberMap.size(active))
       return admitted
-    }).pipe(Effect.catchCause((cause) =>
-      Cause.hasInterruptsOnly(cause) ?
-        Effect.interrupt :
-        Effect.logWarning("Health subject discovery failed; retrying", { operation: "health-discovery" }).pipe(
-          Effect.as(0)
-        )
-    ))
-    while (true) {
-      yield* scan
-      yield* Effect.sleep(5_000)
-    }
-  })
+    })
+    const layer = Interpreter.layerWithImplementations(
+      Discovery,
+      Layer.mergeAll(
+        Discover.toLayer(() =>
+          scan.pipe(
+            Effect.map((admitted) => ({ satisfied: false, output: admitted })),
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.interrupt
+                : Effect.logWarning("Health subject discovery failed; its durable poll will retry", {
+                  operation: "health-discovery"
+                }).pipe(Effect.as({ satisfied: false, output: -1 }))
+            )
+          )
+        ),
+        Poll.layer,
+        Sleep.layer
+      )
+    )
+    // A stable identity resumes the same poll after a host crash. A UUID here
+    // would leave another perpetual lineage for every interrupted host.
+    yield* Discovery.execute({}, { executionId: "smithers-health-discovery" }).pipe(Effect.provide(layer))
+    return yield* Effect.never
+  }).pipe(Effect.scoped, Effect.orDie)
 
 /** Validate trusted configuration before forking the lifetime-bound observer.
  * @since 1.0.0

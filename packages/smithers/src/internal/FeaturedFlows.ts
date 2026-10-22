@@ -155,6 +155,7 @@ export const isFlowPage = (
  * @since 1.0.0
  */
 export const appsOf = (value: unknown): ReadonlyArray<App> => {
+  if (typeof value !== "object" || value === null) return []
   const apps = (value as { apps?: unknown }).apps
   return Array.isArray(apps)
     ? apps.flatMap((app) =>
@@ -189,6 +190,7 @@ export interface Warning {
  * @since 1.0.0
  */
 export const warningsOf = (value: unknown): ReadonlyArray<Warning> => {
+  if (typeof value !== "object" || value === null) return []
   const warnings = (value as { warnings?: unknown }).warnings
   return Array.isArray(warnings)
     ? warnings.filter((warning): warning is Warning =>

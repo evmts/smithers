@@ -1375,7 +1375,7 @@ export const make = (
     options: ExecutorOptions,
     evaluator: Layer.Layer<Evaluator.Evaluator>
   ): Layer.Layer<
-    ControlExecutor.ControlExecutor,
+    ControlExecutor.ControlExecutor | FlowRuntime.FlowRuntime,
     never,
     ControlRuntime.ControlRuntime | Journal.Journal | NotificationQueue.NotificationQueue | Registry.Registry
   > => {
@@ -2258,11 +2258,13 @@ export const make = (
       Layer.orDie
     )
     // The runtime exposes its stores for native registrations. Only the
-    // executor crosses back into the control composition: leaking the native
-    // Journal or RunStore here silently redirects ControlLive to engine.db.
-    return Layer.effect(ControlExecutor.ControlExecutor)(ControlExecutor.ControlExecutor).pipe(
-      Layer.provide(nativeRuntime)
-    )
+    // executor and flow runtime cross back into the control composition:
+    // leaking the native Journal or RunStore redirects ControlLive to engine.db.
+    return Layer.effectContext(Effect.gen(function*() {
+      return Context.make(ControlExecutor.ControlExecutor, yield* ControlExecutor.ControlExecutor).pipe(
+        Context.add(FlowRuntime.FlowRuntime, yield* FlowRuntime.FlowRuntime)
+      )
+    })).pipe(Layer.provide(nativeRuntime))
   }
 
   /**
@@ -2302,9 +2304,14 @@ export const make = (
     // it live: a listing that dropped the port would answer about the control
     // plane's coordination copy alone. What it cannot do is launch or resume,
     // so the judge above it is never asked anything.
-    return Layer.effect(ControlExecutor.ControlExecutor)(
-      Effect.map(ControlExecutor.ControlExecutor, ControlExecutor.makeObserving)
-    ).pipe(Layer.provide(built))
+    return Layer.effectContext(Effect.gen(function*() {
+      return Context.make(
+        ControlExecutor.ControlExecutor,
+        ControlExecutor.makeObserving(yield* ControlExecutor.ControlExecutor)
+      ).pipe(
+        Context.add(FlowRuntime.FlowRuntime, yield* FlowRuntime.FlowRuntime)
+      )
+    })).pipe(Layer.provide(built))
   }
 
   const layerControlFromEngine = (
@@ -2342,7 +2349,9 @@ export const make = (
       config.remote !== undefined ? Effect.void : HealthHost.start(config.health).pipe(
         Effect.provide(evaluatorFor(process.env, config.evaluator, config.startsRuns)),
         Effect.provideService(Control.Control, Context.get(context, Control.Control)),
-        Effect.provide(engine.journal)
+        Effect.provide(engine.journal),
+        Effect.provideService(FlowRuntime.FlowRuntime, Context.getUnsafe(context, FlowRuntime.FlowRuntime)),
+        Effect.provide(native.crypto)
       )
     ))
   }

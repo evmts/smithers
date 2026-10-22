@@ -41,6 +41,9 @@ export const terminalSafe = (text: string): string => stripVTControlCharacters(t
 export const terminalSafeLines = (text: string): string =>
   stripVTControlCharacters(text).replace(/\r\n/g, "\n").replace(/(?![\n\t])[\p{Cc}\p{Cf}]/gu, "")
 
+const safeSentence = (text: string): string =>
+  terminalSafe(String(Redaction.redactDiagnostic(stripVTControlCharacters(text))))
+
 /**
  * Escape terminal controls JSON permits literally, preserving decoded data
  * and structural whitespace in JSON and JSONL documents.
@@ -107,7 +110,17 @@ export const fieldValueLimit = 256
  * @since 1.0.0
  */
 export const fields = (error: Error): string => {
-  const own = error as unknown as Readonly<Record<string, unknown>>
+  // Only scalar refusal fields are rendered. Do not traverse arbitrary error
+  // metadata (which can be cyclic) before the bounded diagnostic redactor.
+  const own = Redaction.redactDiagnostic(
+    Object.fromEntries(
+      Object.entries(error).flatMap(([key, value]) =>
+        typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+          ? [[stripVTControlCharacters(key), typeof value === "string" ? stripVTControlCharacters(value) : value]]
+          : []
+      )
+    )
+  ) as Readonly<Record<string, unknown>>
   const scalar = (value: unknown): string | undefined =>
     typeof value === "string" || typeof value === "number" || typeof value === "boolean"
       ? [...String(value)].slice(0, fieldValueLimit).join("")
@@ -127,7 +140,7 @@ export const fields = (error: Error): string => {
  * @category getters
  * @since 1.0.0
  */
-export const sentence = (error: Error): string => error.message === "" ? fields(error) : error.message
+export const sentence = (error: Error): string => safeSentence(error.message === "" ? fields(error) : error.message)
 
 /**
  * The sentence an operator reads for a failure nobody designed a sentence
@@ -209,7 +222,7 @@ export const operatorSentence = (error: unknown): string => {
     const tag = tagOf(error)
     const message = typeof error === "object" && error !== null ? ownValue(error, "message") : undefined
     return typeof tag === "string" && typeof message === "string" && message !== ""
-      ? terminalSafe(message)
+      ? safeSentence(message)
       : unknownSentence
   }
   const stated = sentence(error)
@@ -226,7 +239,7 @@ export const operatorSentence = (error: unknown): string => {
  */
 export const displayName = (error: Error): string => {
   const tag = tagOf(error)
-  return typeof tag === "string" && tag.length > 0 ? tag.slice(tag.lastIndexOf("/") + 1) : error.name
+  return safeSentence(typeof tag === "string" && tag.length > 0 ? tag.slice(tag.lastIndexOf("/") + 1) : error.name)
 }
 
 /**

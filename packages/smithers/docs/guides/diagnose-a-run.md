@@ -284,6 +284,16 @@ Node outputs are caller-controlled data, so they are rendered through
 `Output.renderValue`. That means a stored value shaped like a control receipt
 cannot change the command's exit status.
 
+Native journal projection follows the root, its durable children and trampoline
+rounds until every observed execution is terminal. Detached descendants can still
+publish output after the root completes. Terminal ordering waits at most its grace
+period plus one grace period for the gap receipt; a blocked receipt logs a warning
+and releases the terminal write. Operator error sentences and names, including
+designed refusals, pass through diagnostic redaction and terminal sanitization.
+
+Snapshot garbage collection refuses malformed live state before sweeping; a
+legacy state object without an execution digest remains valid.
+
 ## Report it
 
 ```bash

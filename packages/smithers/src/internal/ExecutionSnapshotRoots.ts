@@ -73,12 +73,19 @@ export const live = (files: ReadonlyArray<string>) =>
     const digests = new Set<string>()
     for (const row of rows) {
       if (!live.has(row.runId) || row.stateJson === null) continue
-      const state = yield* Effect.try(() => JSON.parse(row.stateJson!) as { readonly executionDigest?: unknown })
-      if (state.executionDigest === undefined) continue
-      if (typeof state.executionDigest !== "string" || !/^[a-f0-9]{64}$/.test(state.executionDigest)) {
+      const state: unknown = yield* Effect.try({
+        try: () => JSON.parse(row.stateJson!),
+        catch: () => new SnapshotRootError({ message: "Invalid live execution snapshot state" })
+      })
+      if (typeof state !== "object" || state === null || Array.isArray(state)) {
+        return yield* Effect.fail(new SnapshotRootError({ message: "Invalid live execution snapshot state" }))
+      }
+      const { executionDigest } = state as { readonly executionDigest?: unknown }
+      if (executionDigest === undefined) continue
+      if (typeof executionDigest !== "string" || !/^[a-f0-9]{64}$/.test(executionDigest)) {
         return yield* Effect.fail(new SnapshotRootError({ message: "Invalid live execution snapshot identity" }))
       }
-      digests.add(state.executionDigest)
+      digests.add(executionDigest)
     }
     return { runIds: [...live], digests: [...digests] }
   })

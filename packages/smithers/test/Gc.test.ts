@@ -25,6 +25,7 @@ import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
 import * as CliError from "../src/CliError.ts"
 import * as Gc from "../src/Gc.ts"
+import * as SnapshotRoots from "../src/internal/ExecutionSnapshotRoots.ts"
 
 const staged: Array<string> = []
 
@@ -458,5 +459,32 @@ describe("the sweep", () => {
 
     expect(result.failures.map((failure) => failure.database)).toEqual([join(root, ".flows", "objects")])
     expect(result.artifacts).toBeUndefined()
+  })
+})
+
+describe("snapshot marking state validation", () => {
+  it.each([null, [], 17, true, "broken"].map((state) => ({ state })))(
+    "refuses malformed non-null state JSON $state before sweeping",
+    async ({ state }) => {
+      const root = engineProject([{ runId: "live", status: "running", finishedAtMs: null }], [])
+      const filename = join(root, ".flows", "engine.db")
+      const db = new DatabaseSync(filename)
+      db.exec("ALTER TABLE flows_runs ADD COLUMN state_json TEXT")
+      db.prepare("UPDATE flows_runs SET state_json = ?").run(JSON.stringify(state))
+      db.close()
+      const result = await Effect.runPromise(Effect.result(SnapshotRoots.live([filename])))
+      expect(result._tag).toBe("Failure")
+    }
+  )
+  it("accepts a legacy object with no execution digest", async () => {
+    const root = engineProject([{ runId: "live", status: "parked", finishedAtMs: null }], [])
+    const filename = join(root, ".flows", "engine.db")
+    const db = new DatabaseSync(filename)
+    db.exec("ALTER TABLE flows_runs ADD COLUMN state_json TEXT")
+    db.prepare("UPDATE flows_runs SET state_json = ?").run(
+      JSON.stringify({ version: 1, flowName: "legacy", payload: {} })
+    )
+    db.close()
+    expect(await Effect.runPromise(SnapshotRoots.live([filename]))).toEqual({ runIds: ["live"], digests: [] })
   })
 })
