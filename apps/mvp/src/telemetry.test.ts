@@ -84,6 +84,12 @@ describe("the relay keeps everything the browser exports", () => {
     // Each worker's records name it, and what the end-to-end tests read arrives with its fields.
     const kept = (lines: typeof fromEngine.kept, name: string) => lines.filter((line) => line.name === name)
     expect(new Set(fromEngine.kept.map((line) => line.fields["service.name"]))).toEqual(new Set([ENGINE_SERVICE]))
+    // A run's admission and claim carry when each happened: the start-latency the dashboards read.
+    for (const [name, at] of [["flow.run.created", "createdAtMs"], ["flow.run.claimed", "claimedAtMs"]] as const) {
+      expect(kept(fromEngine.kept, name)).toContainEqual(
+        expect.objectContaining({ fields: expect.objectContaining({ "smithers.execution.id": expect.any(String), [at]: expect.any(Number) }) }),
+      )
+    }
     expect(kept(fromEngine.kept, "agent_model_step_calls")).toContainEqual(
       expect.objectContaining({
         fields: expect.objectContaining({ step: "harness/sealStep", outcome: "sealed", "otlp.value": expect.any(Number) }),
