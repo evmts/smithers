@@ -167,7 +167,20 @@ it(
       )
       expect(settled.batch.snapshots.find((row) => row.executionId === runId)).toEqual(releasedRoot)
       const nonChildren = settled.batch.snapshots.filter((row) => row.executionId !== child.executionId)
-      expect(nonChildren).toEqual(released.batch.snapshots.filter((row) => row.executionId !== child.executionId))
+      const beforeOthers = released.batch.snapshots.filter((row) => row.executionId !== child.executionId)
+      // Health facts advance the journal revision (4fe3f0724117); lifecycle
+      // observations of unrelated runs must remain exactly unchanged.
+      const lifecycle = (row: typeof nonChildren[number]) => {
+        if (row._tag === "Unavailable") return row
+        const { revision: _revision, ...observation } = row
+        return observation
+      }
+      expect(nonChildren.map(lifecycle)).toEqual(beforeOthers.map(lifecycle))
+      for (const row of nonChildren) {
+        const before = beforeOthers.find((value) => value.executionId === row.executionId)
+        if (row._tag !== "Observed" || before?._tag !== "Observed") throw Error("Native observation unavailable")
+        expect(row.revision).toBeGreaterThanOrEqual(before.revision)
+      }
       expect(nonChildren).toHaveLength(2)
       for (const row of nonChildren) {
         expect(row).toMatchObject({ _tag: "Observed", observation: { status: "suspended" } })
