@@ -151,3 +151,5 @@ No record carries a section, a block, a title, a text, a path, a link, a branch'
 
 
 Declaration reads are serialized per repository and commit, so concurrent warm and open calls share the cached result. Interrupting a Markdown read marks it failed and records `home.file.load` with outcome `interrupted`; opening the home again reads it again. Running actions and failures belong to the shown repository: navigation clears them, and a previous page's completion cannot update the new page or navigate it. Home pull-request entries link to the pull-request page.
+
+A branch action finishing after another repository opens keeps that repository selected. Its outcome is recorded; stale completion leaves the new home's running actions and failure state alone.

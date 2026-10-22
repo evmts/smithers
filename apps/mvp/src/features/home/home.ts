@@ -40,7 +40,7 @@ export interface HomeActions {
   readonly warm: (owner: string, name: string) => Promise<void>
   /**
    * An action block's button or key on the routed repository, as `login`: resolves once its flow settles with the page
-   * to open (New branch: the new branch's workspace), or nothing when it failed or isn't an action the home runs.
+   * to open (New branch: the new branch's workspace), or nothing when it failed, another repository is open, or it isn't an action the home runs.
    */
   readonly run: (flow: string, login: string | null) => Promise<string | undefined>
 }

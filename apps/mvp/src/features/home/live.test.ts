@@ -136,6 +136,22 @@ describe("a curated home in the app", () => {
     expect(tab.api.branches.github.repository(OWNER, NAME)!.branches[branch]).toBe(shaOf("main"))
   })
 
+  test("a completed branch action keeps the repository opened while it ran", { timeout: 240_000 }, async () => {
+    const tab = await open(person("maintainer"), "code-storage")
+    tab.api.branches.github.publish(OWNER, NAME, { defaultBranch: "main", branches: { main: shaOf("main") } })
+    tab.home.actions.open(OWNER, NAME)
+    await until(() => expect(tab.shown()).toEqual(["Today", "Your work", "everyone"]))
+    const pending = tab.home.actions.run("branch.new", "maya")
+    await until(() => expect(tab.state().current.running).toEqual(["branch.new"]))
+    tab.home.actions.open("octocat", "Spoon-Knife")
+    expect(await pending).toBeUndefined()
+    expect(tab.state().current).toMatchObject({
+      owner: "octocat", name: "Spoon-Knife", running: [], failure: null,
+    })
+    expect(Object.keys(tab.api.branches.github.repository(OWNER, NAME)!.branches))
+      .toEqual(expect.arrayContaining([expect.stringMatching(/^maya\/[0-9a-z]{6}$/)]))
+  })
+
   test("New branch where the forge can't make one says why, and a flow the home doesn't run does nothing", { timeout: 240_000 }, async () => {
     const tab = await open(person("maintainer"))
     tab.api.branches.github.publish(OWNER, NAME, { defaultBranch: "main", branches: { main: shaOf("main") } })
