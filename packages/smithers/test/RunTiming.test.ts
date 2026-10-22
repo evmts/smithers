@@ -757,6 +757,118 @@ describe("RunTiming.fold", () => {
     }
   })
 
+  it.each(["open", "settled"])("attributes scoped usage to its own %s call while another execution runs", (phase) => {
+    const j = journal()
+    const step = (executionId: string) => ({
+      executionId,
+      stepId: executionId,
+      attempt: 1,
+      ask: 1,
+      retry: 0,
+      generation: 0
+    })
+    j.requested(0, 0, { step: step("first") })
+    j.requested(1, 0, { step: step("second") })
+    if (phase === "settled") j.agent("model-settled", 2, { step: step("first"), durationMillis: 2 })
+    j.spend(3, "first-usage", 110, 0.01, { step: step("first"), purpose: "frame" })
+    j.spend(4, "second-usage", 220, 0.02, { step: step("second"), purpose: "frame" })
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.calls).toMatchObject([
+      { step: "first", spent: 110, costUsd: 0.01 },
+      { step: "second", spent: 220, costUsd: 0.02 }
+    ])
+    expect(report.total.spent).toBe(330)
+    expect(report.total.costUsd).toBeCloseTo(0.03)
+  })
+
+  it("uses a native usage envelope's execution and keeps ambiguous legacy spend unattributed", () => {
+    const j = journal()
+    const step = (executionId: string) => ({
+      executionId,
+      stepId: executionId,
+      attempt: 1,
+      ask: 1,
+      retry: 0,
+      generation: 0
+    })
+    j.requested(0, 0, { step: step("first") })
+    j.requested(1, 0, { step: step("second") })
+    j.spend(2, "legacy-usage", 30, 0.03)
+    j.push("control.engine.event", 3, {
+      version: 1,
+      executionId: "first",
+      eventType: "flows.agent.usage.v1",
+      payload: { stepKey: "first-usage", purpose: "frame", spent: 110, costUsd: 0.01 }
+    }, false)
+    j.push("control.engine.event", 4, {
+      version: 1,
+      executionId: "absent",
+      eventType: "flows.agent.usage.v1",
+      payload: { stepKey: "absent-usage", purpose: "frame", spent: 40, costUsd: 0.04 }
+    }, false)
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.calls[0]).toMatchObject({ step: "first", spent: 110, costUsd: 0.01 })
+    expect(report.calls[1]!.spent).toBeUndefined()
+    expect(report.spend).toEqual(expect.arrayContaining([
+      expect.objectContaining({ purpose: "unattributed", spent: 70, costUsd: 0.07 })
+    ]))
+    expect(report.ledger).toMatchObject({ spent: 180 })
+    expect(report.total.spent).toBe(180)
+  })
+
+  it("does not count ambiguous labelled usage again when concurrent calls settle with their own usage", () => {
+    const j = journal()
+    const step = (executionId: string) => ({
+      executionId,
+      stepId: executionId,
+      attempt: 1,
+      ask: 1,
+      retry: 0,
+      scope: executionId,
+      generation: 0
+    })
+    j.requested(0, 0, { step: step("first") })
+    j.requested(1, 0, { step: step("second") })
+    j.spend(2, "ambiguous-usage", 110, 0.01, { purpose: "frame" })
+    j.settled(3, 3, [100, 0, 10, 0], 0.01, { step: step("first") })
+    j.spend(4, "second-usage", 220, 0.02, { step: step("second"), purpose: "frame" })
+    j.settled(5, 4, [200, 0, 20, 0], 0.02, { step: step("second") })
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.ledger).toMatchObject({ spent: 330, costUsd: 0.03 })
+    expect(report.total).toEqual({ calls: 2, spent: 330, costUsd: 0.03 })
+    expect(report.spend).toMatchObject([{ purpose: "frame", calls: 2, spent: 330, costUsd: 0.03 }])
+  })
+
+  it("retains unmatched ledger dollars when settled calls already account for every token", () => {
+    const j = journal()
+    const step = (executionId: string) => ({
+      executionId,
+      stepId: executionId,
+      attempt: 1,
+      ask: 1,
+      retry: 0,
+      scope: executionId,
+      generation: 0
+    })
+    j.requested(0, 0, { step: step("first") })
+    j.requested(1, 0, { step: step("second") })
+    j.spend(2, "ambiguous-usage", 110, 0.01, { purpose: "frame" })
+    j.agent("model-settled", 3, {
+      step: step("first"),
+      durationMillis: 3,
+      usage: { inputTokens: 100, outputTokens: 10 }
+    })
+    j.spend(4, "second-usage", 220, 0.02, { step: step("second"), purpose: "frame" })
+    j.settled(5, 4, [200, 0, 20, 0], 0.02, { step: step("second") })
+    const report = RunTiming.fold(j.events, "run-1")
+    expect(report.total).toEqual({ calls: 2, spent: 330, costUsd: 0.03 })
+    expect(report.spend.find((row) => row.purpose === "unattributed")).toMatchObject({
+      calls: 0,
+      spent: 0,
+      costUsd: expect.closeTo(0.01, 12)
+    })
+  })
+
   it("keeps each step's frames apart in a run whose steps call the model side by side", () => {
     const j = journal()
     const step = (stepId: string) => ({

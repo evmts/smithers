@@ -112,6 +112,21 @@ describe("RunActivity.fold", () => {
     snapshots
   })
 
+  it("adds valid snapshot executions when the event window has no lifecycle observations", () => {
+    const events = [node("work-1", "scheduled", "fix", { kind: "ActionCall", action: "sweep/fix" })]
+    const snapshots = [batch([
+      observed(runId, "running", { flowName: "agent/run" }),
+      observed("work-1", "running"),
+      observed("work-2", "completed", { finished: 25 })
+    ])]
+    expect(RunActivity.fold(events, { runId, flowId: "sweep" }, snapshots).executions).toMatchObject([
+      { executionId: runId, flowName: "sweep", status: "running", running: null },
+      { executionId: "work-1", parent: runId, status: "running", running: "sweep/fix" },
+      { executionId: "work-2", parent: runId, status: "completed", running: null, finishedAtMs: 25 }
+    ])
+    expect(RunActivity.fold([], { runId, flowId: "sweep" }, snapshots).executions).toHaveLength(3)
+  })
+
   it("deduplicates exact journal identities in order without accepting unrelated or malformed events", () => {
     const events = [
       ...tree(),
@@ -169,7 +184,8 @@ describe("RunActivity.fold", () => {
       .toMatchObject({ status: "running", running: "sweep/fix" })
     expect(activity.executions.find((row) => row.executionId === "rounds")?.status).toBe("running")
     expect(activity.executions.find((row) => row.executionId === "work-2")?.status).toBe("completed")
-    expect(activity.executions.some((row) => row.executionId === "unknown")).toBe(false)
+    expect(activity.executions.find((row) => row.executionId === "unknown"))
+      .toMatchObject({ status: "cancelled", running: null })
   })
 
   it("refuses incompatible snapshot provenance without replacing a recorded lifecycle", () => {

@@ -78,6 +78,86 @@ describe("durable run progress projection", () => {
     expect(onlyFacts).toMatchObject({ started: 1, failed: 1, completed: 0, active: [] })
   })
 
+  it.each(["success", "failure"] as const)(
+    "corrects failed telemetry to native %s without subtracting an uncounted completion",
+    (outcome) => {
+      const callId = `cell-call-v1:${"b".repeat(64)}`
+      let state = RunProgress.initial()
+      const native = event(3, "control.engine.event", {
+        version: 1,
+        executionId: "native",
+        generation: 0,
+        sequence: 3,
+        emittedAtMs: 30,
+        sourceSequence: 0,
+        sourceId: `call-fact-v1:${callId}:settled`,
+        eventType: "flows.harness.call-fact.v1",
+        payload: {
+          version: 1,
+          phase: "settled",
+          callId,
+          identity: { runId: "run-test", frame: 0, cell: "cell", ordinal: 0, declaration: "d", layers: [] },
+          flowName: "lint",
+          outcome,
+          value: null
+        }
+      })
+      const telemetry = event(2, "control.agent.cell-call-settled", { callId, flowName: "lint", outcome: "failed" })
+      for (
+        const input of [
+          event(1, "control.agent.cell-call-started", { callId, flowName: "lint" }),
+          telemetry,
+          native,
+          native,
+          telemetry
+        ]
+      ) state = RunProgress.project(state, input).state
+      expect(state).toMatchObject({
+        started: 1,
+        completed: outcome === "success" ? 1 : 0,
+        failed: outcome === "failure" ? 1 : 0,
+        active: []
+      })
+      expect(RunProgress.running(state)).toBe(0)
+    }
+  )
+
+  it.each(["skipped", "deferred"])("settles an evicted scheduled node as %s without leaving it running", (outcome) => {
+    let state = RunProgress.initial()
+    for (let index = 0; index < 9; index++) {
+      state = RunProgress.project(
+        state,
+        event(index, "flows.engine.node-scheduled", {
+          nodeId: `task-${index}`,
+          attempt: 1
+        })
+      ).state
+    }
+    expect(state.active).not.toContain("task-0")
+    state = RunProgress.project(state, event(10, "flows.engine.node-settled", { nodeId: "task-0", outcome })).state
+    expect(state).toMatchObject({ started: 9, completed: 0, failed: 0, skipped: 1, skippedStarted: 1 })
+    expect(RunProgress.running(state)).toBe(8)
+    for (let index = 1; index < 9; index++) {
+      state = RunProgress.project(
+        state,
+        event(10 + index, "flows.engine.node-settled", {
+          nodeId: `task-${index}`,
+          outcome: "built"
+        })
+      ).state
+    }
+    expect(RunProgress.running(state)).toBe(0)
+    const unscheduled = RunProgress.project(
+      state,
+      event(20, "flows.engine.node-settled", {
+        nodeId: "never-scheduled",
+        outcome
+      })
+    ).state
+    expect(unscheduled.skippedStarted).toBe(1)
+    expect(RunProgress.running(unscheduled)).toBe(0)
+  })
+
   it("uses call identity for overlapping active calls and counts each lifecycle event once", () => {
     const first = { flowName: "lint", callId: "first" }
     const second = { flowName: "lint", callId: "second" }

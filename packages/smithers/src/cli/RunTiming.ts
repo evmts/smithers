@@ -401,6 +401,7 @@ interface Reading {
 
 /** One execution's position: the run itself, or one step of a module run. */
 interface Scope {
+  readonly executionId: string | undefined
   turns: number
   frame: number | undefined
   open: Call | undefined
@@ -602,10 +603,10 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   const noted = new Set<keyof typeof derivations>()
   const note = (field: keyof typeof derivations): void => void noted.add(field)
 
-  const scopeOf = (key: string): Scope => {
+  const scopeOf = (key: string, executionId: string | undefined): Scope => {
     let scope = scopes.get(key)
     if (scope === undefined) {
-      scope = { turns: 0, frame: undefined, open: undefined, last: undefined, cellAt: undefined }
+      scope = { executionId, turns: 0, frame: undefined, open: undefined, last: undefined, cellAt: undefined }
       scopes.set(key, scope)
     }
     return scope
@@ -738,7 +739,7 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
     startedAt = startedAt === undefined ? at : Math.min(startedAt, at)
     endedAt = endedAt === undefined ? at : Math.max(endedAt, at)
     const key = callScope(event) ?? ""
-    const scope = scopeOf(key)
+    const scope = scopeOf(key, asString(asRecord(payload.step).executionId) ?? event.runId)
     const step = asString(asRecord(payload.step).stepId)
 
     // The ledger journals a usage record on its own, or as an engine event
@@ -781,12 +782,20 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
         unpaid = []
         continue
       }
-      // Written while its call is still open, before the settle; else it is the last settled call's.
-      const all = [...scopes.values()]
-      const call = all.flatMap((entry) => entry.open ?? []).findLast((open) => !open.paid) ??
-        all.flatMap((entry) => entry.last ?? []).findLast((last) => !last.paid)
-      if (call === undefined) leave(purpose ?? "unattributed", spent, costUsd)
-      else {
+      // Prefer the exact step, then the native execution. Legacy records may
+      // pay only an unambiguous call; journal order cannot identify concurrent work.
+      const executionId = event.kind === "control.engine.event" ? asString(payload.executionId) : undefined
+      const candidates = (key !== "" ?
+        [scope] :
+        [...scopes.values()].filter((entry) => executionId === undefined || entry.executionId === executionId)).flatMap(
+          (entry) => entry.open ?? entry.last ?? []
+        ).filter((call) =>
+          !call.paid && (purpose === undefined || call.purpose === purpose) &&
+          (count(usage.frame) === undefined || call.frame === count(usage.frame))
+        )
+      const call = candidates.length === 1 ? candidates[0] : undefined
+      // Unmatched spend is reconciled against the ledger after call usage is folded.
+      if (call !== undefined) {
         call.paid = true
         call.spent ??= spent
         call.costUsd ??= costUsd
@@ -1109,14 +1118,17 @@ export const fold = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId?: 
   }
   const spend: Array<Spend> = [...rows.values()].sort((left, right) => rank(left.purpose) - rank(right.purpose))
     .map((row) => ({ ...row, purpose: terminalSafe(row.purpose) }))
-  const attributed = spend.reduce((total, row) => total + row.spent, 0)
-  if (ledger.entries > 0 && ledger.spent > attributed) {
+  const remainingSpent = Math.max(0, ledger.spent - spend.reduce((total, row) => total + row.spent, 0))
+  const remainingCost = Math.max(0, ledger.costUsd - spend.reduce((total, row) => total + row.costUsd, 0))
+  // Grouping costs by purpose changes addition order; ignore only summation round-off.
+  const costRounding = Number.EPSILON * ledger.costUsd * Math.max(ledger.entries, spend.length)
+  if (ledger.entries > 0 && (remainingSpent > 0 || remainingCost > costRounding)) {
     // Spend the ledger holds and no call or reading record explains.
     spend.push({
       purpose: "unattributed",
       calls: 0,
-      spent: ledger.spent - attributed,
-      costUsd: Math.max(0, ledger.costUsd - spend.reduce((total, row) => total + row.costUsd, 0))
+      spent: remainingSpent,
+      costUsd: remainingCost
     })
   }
   const total = {

@@ -144,6 +144,8 @@ const logLines = (value: unknown): ReadonlyArray<Line> => {
     : shown
 }
 
+const failedOutcome = (outcome: unknown): boolean => outcome === "failure" || outcome === "failed"
+
 const settledExecution: ReadonlySet<string> = new Set(["completed", "failed", "cancelled"])
 
 /**
@@ -183,7 +185,7 @@ const projectEngine = (
       if (!HashSet.has(state.engineNodes, key)) return { state, lines: [] }
       const name = text(payload["action"], 100) || text(nodeId, 100)
       const outcome = payload["outcome"]
-      const failed = outcome === "failure" || outcome === "failed"
+      const failed = failedOutcome(outcome)
       const skipped = outcome === "skipped" || outcome === "deferred"
       const index = state.activeCallIds.indexOf(key)
       const message = failed ? text(payload["message"]) : ""
@@ -261,7 +263,7 @@ export const project = (
       state = { ...state, nativeCalls: HashSet.add(state.nativeCalls, callKey) }
       if (event.kind === "control.agent.cell-call-settled") {
         const previous = HashMap.get(state.callFailures, callKey)
-        const failed = payload["outcome"] === "failure"
+        const failed = failedOutcome(payload["outcome"])
         if (previous._tag === "Some") {
           state = {
             ...state,
@@ -279,7 +281,7 @@ export const project = (
       nativeCalls: native === undefined ? state.nativeCalls : HashSet.add(state.nativeCalls, callKey),
       callFailures: event.kind !== "control.agent.cell-call-settled" ?
         state.callFailures :
-        HashMap.set(state.callFailures, callKey, payload["outcome"] === "failure")
+        HashMap.set(state.callFailures, callKey, failedOutcome(payload["outcome"]))
     }
   }
   switch (event.kind) {
@@ -311,12 +313,14 @@ export const project = (
       const node = event.kind === "flows.engine.node-scheduled"
       const name = text(node ? payload["nodeId"] : payload["flowName"], 100) || "task"
       const retry = node && typeof payload["attempt"] === "number" && payload["attempt"] > 1
+      const nodeKey = `${event.runId}\u0000${typeof payload["nodeId"] === "string" ? payload["nodeId"] : ""}`
       const alreadyActive = retry && state.active.includes(name)
       const callId = !node && typeof payload["callId"] === "string" ? payload["callId"] : undefined
       return {
         state: {
           ...state,
           started: state.started + (retry ? 0 : 1),
+          engineNodes: node ? HashSet.add(state.engineNodes, nodeKey) : state.engineNodes,
           active: alreadyActive ? state.active : [...state.active, name].slice(-8),
           activeCallIds: alreadyActive ? state.activeCallIds : [...state.activeCallIds, callId].slice(-8),
           status: name,
@@ -329,9 +333,10 @@ export const project = (
     case "control.agent.cell-call-settled": {
       const node = event.kind === "flows.engine.node-settled"
       const name = text(node ? payload["nodeId"] : payload["flowName"], 100) || "task"
-      const failed = payload["outcome"] === "failure" || payload["outcome"] === "failed"
+      const failed = failedOutcome(payload["outcome"])
       const skipped = node && (payload["outcome"] === "skipped" || payload["outcome"] === "deferred")
       const cached = node && payload["outcome"] === "clean"
+      const nodeKey = `${event.runId}\u0000${typeof payload["nodeId"] === "string" ? payload["nodeId"] : ""}`
       const callId = !node && typeof payload["callId"] === "string" ? payload["callId"] : undefined
       const index = openCallIndex(
         state.active.map((flowName, position) => ({ flowName, callId: state.activeCallIds[position] })),
@@ -345,7 +350,8 @@ export const project = (
           completed: state.completed + (failed || skipped ? 0 : 1),
           failed: state.failed + (failed ? 1 : 0),
           skipped: state.skipped + (skipped ? 1 : 0),
-          skippedStarted: state.skippedStarted + (skipped && index >= 0 ? 1 : 0),
+          skippedStarted: state.skippedStarted + (skipped && HashSet.has(state.engineNodes, nodeKey) ? 1 : 0),
+          engineNodes: node ? HashSet.remove(state.engineNodes, nodeKey) : state.engineNodes,
           active: index < 0 ? state.active : state.active.filter((_, position) => position !== index),
           activeCallIds: index < 0
             ? state.activeCallIds

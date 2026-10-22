@@ -43,7 +43,10 @@ journal events alone. It names the run by its flow: the engine runs every
 planned flow inside an `agent/run` execution, and `runs show` reports that
 wrapper under the flow's own name. `updatedAt` is the run's last recorded
 progress; status-monitor checks do not advance it. `diagnosis.endedAt` stays
-empty until the run settles.
+empty until the run settles. Validated native snapshots also supply execution
+rows whose lifecycle records fall outside the journal window. Attached progress
+counts scheduled work independently of its eight visible labels, and native
+call outcomes correct earlier telemetry counts.
 
 `health` is the run's health as the app's run card reads it: `health`,
 `attention`, and `reason`. A run parked over executions its owner released
@@ -156,7 +159,9 @@ smthrs runs show <run-id> --timing
 
 `--timing` returns a timing report in place of the run card, computed from the
 same journal events. A terminal shows tables in seconds; `--json` carries the
-same facts in whole milliseconds.
+same facts in whole milliseconds. Usage matches its recorded step or native
+execution; ambiguous legacy spend stays unattributed rather than being assigned
+to a concurrent call.
 
 ```text
 Run  run-1 · completed · 57.6 s wall · 2 model calls

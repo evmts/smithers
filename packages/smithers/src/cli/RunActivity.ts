@@ -208,9 +208,9 @@ export const fold = (
         batch.revision === null || snapshot.revision > batch.revision
       ) continue
       const previous = executions.get(snapshot.executionId)
-      if (previous === undefined) continue
       executions.set(snapshot.executionId, {
-        ...previous,
+        generation: previous?.generation ?? 0,
+        sequence: previous?.sequence ?? 0,
         flowName: observed.flowName,
         status: observed.status,
         parent: observed.parentRunId,
