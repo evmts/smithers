@@ -82,7 +82,7 @@ export interface LiveQuery<Q extends AnyQuery> {
   readonly toArray: Effect.Effect<ReadonlyArray<Row<Q>>>
   /** Starts the query and waits for its first result. */
   readonly preload: Effect.Effect<void, LoadFailed>
-  /** The rows when the stream starts, then again after every change. */
+  /** The rows when the stream starts, then the current rows after changes; pending notifications coalesce. */
   readonly rows: Stream.Stream<ReadonlyArray<Row<Q>>>
   /** The changes from the moment the stream starts; with `initial`, the current rows first. */
   readonly changes: (options?: { readonly initial?: boolean }) => Stream.Stream<ReadonlyArray<Change<Row<Q>>>>
@@ -96,17 +96,21 @@ export interface LiveQuery<Q extends AnyQuery> {
 
 /**
  * A live query over other collections, cleaned up when the scope closes. It
- * starts on its first read, `preload` or stream.
+ * starts on its first read, `preload` or stream. Construction exceptions fail
+ * with `Collection.LoadFailed`, preserving the original cause.
  *
  * @category constructors
  * @since 0.1.0
  */
 export const make = <Q extends AnyQuery>(
   query: (q: InitialQueryBuilder) => Q
-): Effect.Effect<LiveQuery<Q>, never, Scope.Scope> =>
+): Effect.Effect<LiveQuery<Q>, LoadFailed, Scope.Scope> =>
   Effect.acquireRelease(
     // Garbage collection is off: the scope owns the lifetime.
-    Effect.sync(() => createLiveQueryCollection({ query, gcTime: 0 }) as unknown as TanStackLiveQuery<Q>),
+    Effect.try({
+      try: () => createLiveQueryCollection({ query, gcTime: 0 }) as unknown as TanStackLiveQuery<Q>,
+      catch: (cause) => new LoadFailed({ cause })
+    }),
     release
   ).pipe(Effect.map((tanstack): LiveQuery<Q> => ({
     tanstack,
@@ -127,7 +131,8 @@ export const make = <Q extends AnyQuery>(
 const rows = <Q extends AnyQuery>(collection: TanStackLiveQuery<Q>): Stream.Stream<ReadonlyArray<Row<Q>>> =>
   // Subscribes first, then reads, so a change between the two is never lost; at worst a result repeats.
   Stream.unwrap(Effect.gen(function*() {
-    const queue = yield* Queue.unbounded<void>()
+    // Notifications only trigger a read of the current rows; one pending read covers every intervening change.
+    const queue = yield* Queue.sliding<void>(1)
     yield* Effect.acquireRelease(
       // Explicitly no initial state: TanStack DB then delivers every change, not only those to rows it sent.
       Effect.sync(() =>

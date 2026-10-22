@@ -28,7 +28,8 @@ scope.
   batches from the moment the stream starts. Without `initial`, it delivers
   every later change, including changes to rows that existed before. With
   `initial`, the current rows come first. `LiveQuery.rows` streams the whole
-  result: once when the stream starts, then after every change.
+  result: once when the stream starts, then the current result after changes.
+  Slow consumers coalesce pending notifications into one snapshot.
 - **Pure query expressions.** `Query` re-exports TanStack DB's comparisons,
   logic, null checks, `coalesce` and `caseWhen` as they are: they build data
   and run nothing. Nothing else from TanStack DB is re-exported.

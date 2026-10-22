@@ -1,4 +1,4 @@
-import { Persistence } from "@smthrs/effect-tanstack-db"
+import { type Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Effect, Layer, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { openTab, type Tab } from "../../test/repoDevice"
@@ -56,7 +56,7 @@ const cloning = (
 
 const open = async (
   client: Layer.Layer<RepoClient>,
-  options: { readonly auth?: Layer.Layer<AuthStore>; readonly engine?: "refusing" } = {},
+  options: { readonly auth?: Layer.Layer<AuthStore, Collection.LoadFailed>; readonly engine?: "refusing" } = {},
 ) => {
   const tab = await openTab({ origin: ORIGIN, client, shapes: "down", confirmWithin: "100 millis", ...options })
   tabs.push(tab)

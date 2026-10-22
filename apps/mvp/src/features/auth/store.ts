@@ -30,7 +30,7 @@ export class AuthStore extends Context.Service<
    * The store, `loading` until ChatApi says who is signed in, over the device's `Persistence`; its collections cleaned
    * up when the scope closes.
    */
-  static readonly layer: Layer.Layer<AuthStore, never, Persistence.Persistence> = Layer.effect(
+  static readonly layer: Layer.Layer<AuthStore, Collection.LoadFailed, Persistence.Persistence> = Layer.effect(
     AuthStore,
     Effect.gen(function* () {
       const session = yield* Collection.local<Session, string>({

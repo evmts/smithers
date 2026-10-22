@@ -206,11 +206,11 @@ type Key = string | number
 
 ### Errors
 
-| Error               | Fields                                                          | When                                                                                                                                                          |
-| ------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MutationRefused`   | `operation: "insert" \| "update" \| "delete"`, `cause: unknown` | TanStack DB refused a mutation before applying it: a duplicate key, a key that isn't there, a row the schema refused, or no handler for the operation.        |
-| `TransactionFailed` | `cause: unknown`                                                | A transaction rolled back because its handler failed; `cause` is the handler's failure.                                                                       |
-| `LoadFailed`        | `cause: unknown`                                                | Rows a collection or live query needed didn't load: its first sync failed, or a window's rows couldn't be fetched. `cause` is what the sync adapter reported. |
+| Error               | Fields                                                          | When                                                                                                                                                   |
+| ------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MutationRefused`   | `operation: "insert" \| "update" \| "delete"`, `cause: unknown` | TanStack DB refused a mutation before applying it: a duplicate key, a key that isn't there, a row the schema refused, or no handler for the operation. |
+| `TransactionFailed` | `cause: unknown`                                                | A transaction rolled back because its handler failed; `cause` is the handler's failure.                                                                |
+| `LoadFailed`        | `cause: unknown`                                                | A live query could not be constructed, or rows could not load. `cause` is the original construction or loading failure.                                |
 
 All three are `Data.TaggedError`s, so `Effect.catchTag` narrows them.
 
@@ -221,13 +221,14 @@ All three are `Data.TaggedError`s, so `Effect.catchTag` narrows them.
 ```ts
 const make: <Q extends AnyQuery>(
   query: (q: InitialQueryBuilder) => Q
-) => Effect.Effect<LiveQuery<Q>, never, Scope.Scope>
+) => Effect.Effect<LiveQuery<Q>, LoadFailed, Scope.Scope>
 ```
 
 A live query over other collections, built with TanStack DB's query builder and
 the expressions in `Query`, cleaned up when the scope closes. Name a source by
 its `tanstack` field: `q.from({ todo: todos.tanstack })`. It starts on its
-first read, `preload` or stream.
+first read, `preload` or stream. Query-construction exceptions fail with
+`Collection.LoadFailed`, preserving the original exception as `cause`.
 
 ### `LiveQuery.LiveQuery<Q>`
 
@@ -247,7 +248,7 @@ interface LiveQuery<Q extends AnyQuery> {
 | `tanstack`  | The TanStack DB collection behind the query.                                                                                                                                                                                                                                           |
 | `toArray`   | The result as it is now.                                                                                                                                                                                                                                                               |
 | `preload`   | Starts the query and waits for its first result. Fails with `LoadFailed`.                                                                                                                                                                                                              |
-| `rows`      | The result when the stream starts, then again after every change. A result can repeat; none is skipped.                                                                                                                                                                                |
+| `rows`      | The result when the stream starts, then the current result after changes. Slow consumers coalesce pending notifications into one snapshot; use `changes` for every change batch.                                                                                                       |
 | `changes`   | As `Collection.changes`, over the result.                                                                                                                                                                                                                                              |
 | `setWindow` | Moves the window of a query with `orderBy` and `limit`. The window moves when the Effect runs; the Effect succeeds once the rows it needs have loaded. It fails with `LoadFailed` when they don't load, or when the query has no window; the query then keeps its last settled window. |
 

@@ -1,3 +1,4 @@
+import { LimitOffsetRequireOrderByError } from "@tanstack/db"
 import { Effect, Exit, Fiber, Scope, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { Collection, LiveQuery, Query } from "../src/index.ts"
@@ -36,6 +37,15 @@ const onDemand = (rows: ReadonlyArray<Note>, serve: () => "rows" | "fail" = () =
   })
 
 describe("make", () => {
+  test("reports invalid query construction through the typed error channel", async () => {
+    const error = await run(Effect.gen(function*() {
+      const collection = yield* notes([note("a", 1)])
+      return yield* Effect.flip(LiveQuery.make((q) => q.from({ note: collection.tanstack }).limit(1)))
+    }))
+    expect(error).toBeInstanceOf(Collection.LoadFailed)
+    expect(error.cause).toBeInstanceOf(LimitOffsetRequireOrderByError)
+  })
+
   test("keeps a typed, ordered view of its sources, and is cleaned up with its scope", async () => {
     const result = await Effect.runPromise(Effect.gen(function*() {
       const scope = yield* Scope.make()
@@ -82,6 +92,28 @@ describe("make", () => {
 })
 
 describe("streams", () => {
+  test("rows coalesces a burst while the consumer is paused and keeps listening afterwards", async () => {
+    const result = await run(Effect.gen(function*() {
+      const collection = yield* notes([note("a", 0)])
+      const query = yield* LiveQuery.make((q) => q.from({ note: collection.tanstack }))
+      yield* query.preload
+      const pull = yield* Stream.toPull(query.rows.pipe(Stream.map((rows) => rows.map(({ n }) => n))))
+      const initial = yield* pull
+      for (let n = 1; n <= 256; n++) {
+        yield* collection.update("a", (row) => {
+          row.n = n
+        })
+      }
+      const latest = yield* pull
+      yield* collection.update("a", (row) => {
+        row.n = 257
+      })
+      const next = yield* pull
+      return { initial, latest, next }
+    }))
+    expect(result).toEqual({ initial: [[0]], latest: [[256]], next: [[257]] })
+  })
+
   test("rows emits the current result, then the result after each change", async () => {
     const results = await run(Effect.gen(function*() {
       const collection = yield* notes([note("a", 1)])

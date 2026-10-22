@@ -66,9 +66,9 @@ export class MutationRefused extends Data.TaggedError("MutationRefused")<{
 export class TransactionFailed extends Data.TaggedError("TransactionFailed")<{ readonly cause: unknown }> {}
 
 /**
- * Rows a collection or live query needed did not load: its first sync failed,
- * or a window's rows could not be fetched. `cause` is what the sync adapter
- * reported.
+ * A live query could not be constructed, or rows a collection or live query
+ * needed did not load: its first sync failed, or a window's rows could not be
+ * fetched. `cause` is the original construction or loading failure.
  *
  * @category errors
  * @since 0.1.0

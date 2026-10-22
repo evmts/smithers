@@ -94,7 +94,7 @@ const make = Effect.gen(function* () {
     homeState: yield* homeQuery(current, homes, curated),
     fileState: yield* filesQuery(current, files),
     /** The one load the routed page runs: opening another repository interrupts it. */
-    loader: yield* FiberHandle.make<void, never>(),
+    loader: yield* FiberHandle.make<void, Collection.LoadFailed>(),
     /** Where the loads an action starts run, closed with the store. */
     scope: yield* Effect.scope,
   }

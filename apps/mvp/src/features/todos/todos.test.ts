@@ -460,6 +460,8 @@ describe("from an issue", () => {
     expect(todosByIssue(REPO_ID, other.stack().todos, OWNER, NAME).get(7)).toEqual({
       links: [{ label: "T1", href: `/${OWNER}/${NAME}/stack/1` }],
     })
+    // Remote arrival can precede local cleanup; the next wait must observe a new draft.
+    await until(() => expect(tab.drafts()).toEqual([]))
     // T1 still open, Make TODO makes a second TODO from the same issue: one issue, a stack of TODOs, newest first.
     tab.actions.fromIssue(OWNER, NAME, 7)
     await until(() => expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([expect.objectContaining({ issue: 7 })]))

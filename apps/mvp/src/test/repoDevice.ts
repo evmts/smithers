@@ -7,7 +7,7 @@ import { FlowRegistry } from "../flows/registry"
 // faulty shape source, instead (test.faults-by-injection). Nothing here intercepts a request.
 import { Action } from "@smthrs/flow"
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Persistence } from "@smthrs/effect-tanstack-db"
+import { type Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { TabChannel } from "@smthrs/platform-browser"
 import { type Duration, Effect, Layer, Logger, ManagedRuntime, Metric, type Schedule } from "effect"
@@ -54,7 +54,7 @@ export interface DeviceOptions {
   /** The clipboard's write: kept in `copied` unless set. */
   readonly writeText?: (text: string) => Promise<void>
   /** Sign-in's store, when the app has sign-in. */
-  readonly auth?: Layer.Layer<AuthStore>
+  readonly auth?: Layer.Layer<AuthStore, Collection.LoadFailed>
   /** `refusing`: this tab's engine refuses every dispatch, as an engine that can't start a run does. */
   readonly engine?: "running" | "refusing"
   /** Code intelligence over these language servers (src/test/languageServer.ts); none unless set. */
@@ -133,7 +133,7 @@ export const openTab = async (options: DeviceOptions) => {
         Logger.layer([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))]),
       ),
     // AuthStore is there only when `auth` gave it; a test reads it only then.
-    ) as Layer.Layer<Repo | Home | RepoStore | AuthStore>,
+    ) as Layer.Layer<Repo | Home | RepoStore | AuthStore, Collection.LoadFailed>,
   )
   const repo = await runtime.runPromise(Effect.service(Repo))
   const home = await runtime.runPromise(Effect.service(Home))

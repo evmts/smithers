@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- `LiveQuery.rows` coalesces pending notifications for slow consumers instead of
+  accumulating repeated current snapshots. `LiveQuery.make` reports construction
+  exceptions as `Collection.LoadFailed` with the original cause.
 - Stored row encoding and decoding preserve own `__proto__` fields without changing object prototypes.
 
 ### Added

@@ -41,6 +41,7 @@ describe("types", () => {
     const projected = LiveQuery.make((q) =>
       q.from({ note: notes.tanstack }).select(({ note }) => ({ id: note.id, double: note.n }))
     )
+    expectTypeOf<Effect.Error<typeof projected>>().toEqualTypeOf<Collection.LoadFailed>()
     type Projected = Effect.Success<Effect.Success<typeof projected>["toArray"]>[number]
     // TanStack DB adds its virtual properties ($synced, $key, ...) to every result row.
     expectTypeOf<Projected>().toExtend<{ readonly id: string; readonly double: number; readonly $synced: boolean }>()

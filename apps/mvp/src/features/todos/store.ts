@@ -58,7 +58,7 @@ export interface RepoStack {
 export class TodosStore extends Context.Service<
   TodosStore,
   {
-    readonly stackOf: (repoId: string) => Effect.Effect<RepoStack>
+    readonly stackOf: (repoId: string) => Effect.Effect<RepoStack, Collection.LoadFailed>
     readonly opened: (repoId: string) => RepoStack | undefined
     readonly empty: RepoStack
     readonly sending: Collection.Collection<Sending, string>
