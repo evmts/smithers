@@ -5,7 +5,7 @@ import { Effect, Stream } from "effect"
 // `?agent=<script>`), so a needs-you path and a sandbox tool's resume run the same every time: the model is the only
 // scripted seam. The needs-you scripts ask with `app/agent/ask` until their cell has printed what it heard, then
 // finish with what it heard in their words; `queue` asks a question or an approval named for the person's message, so
-// several open at once tell apart; `sandbox-once` calls the sandbox tools; `todo-draft` drafts a TODO.
+// several open at once tell apart; `sandbox-once` and `sandbox-long` call the sandbox tools; `todo-draft` drafts a TODO.
 
 /** What the agent's cell printed it heard: `app/agent/ask`'s answer. */
 interface Heard {
@@ -80,6 +80,36 @@ const sandboxOnce = Model.make({
       )
     }
     return turn(`ctx.done(${JSON.stringify(`Counted ${ran}; the log has ${lines} line(s) for ${word}.`)})`)
+  },
+})
+
+/**
+ * `sandbox-long` (e2e/sandbox-tools.spec.ts): asked `sandbox-long <word> <seconds>`, the agent runs a command on the
+ * branch's machine that sleeps that long, appends a line to `runs-<word>.log` and prints `done-5`, with the longest
+ * timeout a command may have; then reads the log back and answers what it saw. A command that ran twice would leave two
+ * lines, and one lost would answer no `done-5`.
+ */
+const sandboxLong = Model.make({
+  stream: (request) => {
+    const text = textOf(request)
+    const [, word = "none", seconds = "1"] = [...JSON.stringify(request).matchAll(/sandbox-long ([a-z0-9-]+) (\d+)/g)].at(-1) ?? []
+    const out = text.match(/\{"out":"([^"]*)"\}/)?.[1]
+    const lines = text.match(/\{"lines":(\d+)\}/)?.[1]
+    const log = `runs-${word}.log`
+    if (out === undefined) {
+      const command = `sleep ${seconds}; echo ran >> ${log}; echo done-$((2+3))`
+      return turn(
+        `const r = await ctx.call("sandbox/run", { command: ${JSON.stringify(command)}, timeoutSeconds: 600 })\n` +
+          `console.log(JSON.stringify({ out: r.stdout.trim() }))`,
+      )
+    }
+    if (lines === undefined) {
+      return turn(
+        `const f = await ctx.call("sandbox/read", { path: ${JSON.stringify(log)} })\n` +
+          `console.log(JSON.stringify({ lines: f.content.split("\\n").filter(Boolean).length }))`,
+      )
+    }
+    return turn(`ctx.done(${JSON.stringify(`Ran ${out}; the log has ${lines} line(s) for ${word}.`)})`)
   },
 })
 
@@ -164,6 +194,7 @@ const queue = Model.make({
 /** The scripted model named `name`, or `undefined` for a name no script has. */
 export const scriptedModel = (name: string): Model.Model | undefined => {
   if (name === "sandbox-once") return sandboxOnce
+  if (name === "sandbox-long") return sandboxLong
   if (name === "todo-draft") return todoDraft
   if (name === "reasoning-order") return reasoningOrder
   if (name === "queue") return queue

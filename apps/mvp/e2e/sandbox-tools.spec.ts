@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from "@playwright/test"
 import { expect, type Tab, test } from "./devices"
-import { requires, scriptedAgent } from "./target"
+import { meets, requires, scriptedAgent } from "./target"
 
 // The sandbox tools, end to end (docs/features/sandbox-tools.md, decision 0005 §5): the browser's agent calls typed
 // tools that run on the branch's own machine, a real container under `alchemy dev` (local workerd and Docker), as the
@@ -109,3 +109,59 @@ test("closed tab: a command whose tab closed mid-run is recorded once, and the r
   expect(runs.length).toBeGreaterThanOrEqual(1)
   expect(new Set(runs.map((call) => call.callId)).size).toBe(1)
 })
+
+/**
+ * How long the long command sleeps: just under ten minutes, the longest a command may run (600 s), unless
+ * `E2E_LONG_COMMAND_SECONDS` says otherwise. It runs as its own `sandbox/Command` job through every real piece; a host
+ * that dies mid-command is worker/flows/SandboxCommand.test.ts's, since `alchemy dev` never cuts an alarm off.
+ */
+const LONG_SECONDS = Number(process.env.E2E_LONG_COMMAND_SECONDS ?? 570)
+
+test("long command: a ten-minute command on the branch's machine runs once, and its result arrives", {
+  annotation: {
+    type: "summary",
+    description: "A command that runs for minutes holds no host while it runs: it runs once, and the agent reads what it printed.",
+  },
+}, async ({ devices }) => {
+  test.setTimeout((LONG_SECONDS + 900) * 1000)
+  const word = devices.word
+  const [a] = await devices.open("A")
+  const tools = toolCalls(a.device.context)
+  const log = `runs-${word}.log`
+  const conversation = conversationOf(a.page)
+  // Locally the agent's model is scripted in the engine worker (`?agent=sandbox-long`); a deployment asks the real one.
+  if (meets("scriptedAgent")) {
+    await openBranch(a, scriptedAgent("sandbox-long", ""))
+    await ask(a.page, `sandbox-long ${word} ${LONG_SECONDS}`)
+    await expect(conversation.getByText(`Ran done-5; the log has 1 line(s) for ${word}.`)).toBeVisible({
+      timeout: (LONG_SECONDS + 600) * 1000,
+    })
+  } else {
+    await openBranch(a)
+    await ask(
+      a.page,
+      `Use the sandbox run tool exactly once, with timeoutSeconds 600, to run this command: ` +
+        `sleep ${LONG_SECONDS}; echo ran >> ${log}; echo done-$((2+3)). ` +
+        `Then read ${log} with the read tool and reply with its line count and what the command printed, verbatim.`,
+    )
+    await expect(conversation.getByText(/done-5/).first()).toBeVisible({ timeout: (LONG_SECONDS + 600) * 1000 })
+  }
+  // One call ran the command, however many times its tab's engine asked for it: one call id.
+  const runs = tools.filter((call) => call.tool === "run")
+  expect(runs.length).toBeGreaterThanOrEqual(1)
+  expect(new Set(runs.map((call) => call.callId)).size).toBe(1)
+
+  // The machine ran it once: its log has one line, in the checkout the person's own terminal shows.
+  await a.page.goto(`${BRANCH}?terminal=me`)
+  const rows = a.page.frameLocator('iframe[title="Terminal"]').locator("body")
+  const open = a.page.getByRole("button", { name: "Open terminal" })
+  await expect(async () => {
+    if ((await open.isVisible()) && (await open.isEnabled())) await open.click()
+    await expect(rows).toContainText("/workspace", { timeout: 15_000 })
+  }).toPass({ timeout: MACHINE })
+  await a.page.locator('iframe[title="Terminal"]').click()
+  await a.page.keyboard.type(`echo lines-$(wc -l < ${log})-$((40+2))`)
+  await a.page.keyboard.press("Enter")
+  await expect(rows).toContainText("lines-1-42", { timeout: 30_000 })
+})
+
