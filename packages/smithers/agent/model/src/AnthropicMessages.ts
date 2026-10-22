@@ -476,7 +476,7 @@ const effortSupport: ReadonlyArray<
     { levels: effortOrder, adaptive: true }
   ],
   [/^claude-(?:opus|sonnet)-4-6$/i, { levels: ["low", "medium", "high", "max"], adaptive: true }],
-  [/^claude-opus-4-5$/i, { levels: ["low", "medium", "high"], adaptive: false }]
+  [/^claude-opus-4-5(?:-20251101)?$/i, { levels: ["low", "medium", "high"], adaptive: false }]
 ]
 
 /**
@@ -699,7 +699,8 @@ const onContentBlockStart = (state: State, event: AnthropicEvent): StepResult | 
 
   if (content.type === "thinking") {
     const id = `thinking-${index}`
-    const started = content.signature !== undefined
+    // Anthropic starts unsigned thinking with an empty signature placeholder.
+    const started = content.signature !== undefined && content.signature !== ""
     return {
       state: startBlock(state, {
         type: "thinking",
@@ -786,6 +787,7 @@ const onContentBlockDelta = (state: State, event: AnthropicEvent): StepResult =>
   }
 
   if (delta.type === "signature_delta" && delta.signature !== undefined && block?.type === "thinking") {
+    if (delta.signature === "") return { state, events: [] }
     if (block.started) {
       return {
         state: startBlock(state, { ...block, signature: delta.signature }),

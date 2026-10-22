@@ -90,3 +90,7 @@ consumer's definition of "the turn that happened" identical. The events are
 the source of truth; the message is their projection.
 
 For the reading patterns, see [Read the stream](../guides/read-the-stream.md).
+
+Anthropic's empty initial thinking signature is a placeholder. The parser buffers
+thinking text until a nonempty signature arrives, or until the block closes or
+the stream halts, so consumers retain the signature needed to replay the block.

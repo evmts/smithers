@@ -491,7 +491,8 @@ export const fromEvaluatorError = (error: Evaluator.EvaluatorError): ClassifierE
 
 /**
  * Declares a classifier. The digest is computed here, once, from the id and
- * the questions.
+ * an immutable snapshot of the questions, including their criteria. Caller
+ * mutation cannot change the questions evaluated under that digest.
  *
  * @category constructors
  * @since 1.0.0-rc.0
@@ -500,7 +501,17 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
   id: Id,
   options: MakeOptions<State, Qs>
 ): Classifier<Id, State, Qs> => {
-  const { description, questions, seatNote, state } = options
+  const { description, seatNote, state } = options
+  // Rebuild the schema classes from their wire form so no caller-owned map,
+  // question or nested criteria remain reachable through this declaration.
+  const questions = Schema.decodeUnknownSync(Schema.Record(Schema.String, Question))(
+    Evaluator.encodeQuestions(options.questions)
+  ) as Qs
+  for (const question of Object.values(questions)) {
+    if (question.criteria !== undefined) Object.freeze(question.criteria)
+    Object.freeze(question)
+  }
+  Object.freeze(questions)
   // The encoded questions, not the questions: a class instance is not JSON,
   // and hashing the wire form is what keeps a digest — and every durable call
   // key and sealed-key preimage that folds it in — where it already is.

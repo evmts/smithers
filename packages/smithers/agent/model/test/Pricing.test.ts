@@ -107,6 +107,18 @@ describe("Pricing.costUsd", () => {
 })
 
 describe("Pricing.cost", () => {
+  it.each([
+    ["multiplication", { inputTokens: Number.MAX_VALUE, outputTokens: 0 }, 2],
+    ["addition", { inputTokens: Number.MAX_VALUE, outputTokens: Number.MAX_VALUE }, 1],
+    ["rounding", { inputTokens: Number.MAX_VALUE, outputTokens: 0 }, 1]
+  ])("leaves arithmetic %s overflow unpriced", (_name, usage, rate) => {
+    const rates = { input: rate, cacheRead: 0, cacheWrite: 0, output: rate }
+    expect(Pricing.cost(usage, "overflow", { table: { overflow: rates } })).toBeUndefined()
+    expect(Pricing.costUsd(usage, rates)).toBeNaN()
+    expect(Pricing.cost({ ...usage, costUsd: 0.25 }, "overflow", { table: { overflow: rates } }))
+      .toEqual({ costUsd: 0.25, costSource: "reported" })
+  })
+
   const usage = { inputTokens: million, outputTokens: 0 }
 
   it("prefers a valid reported charge", () => {

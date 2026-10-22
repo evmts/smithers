@@ -180,6 +180,71 @@ describe("Classifier question inference", () => {
 })
 
 describe("Classifier.make", () => {
+  it("snapshots caller-owned questions so evaluated questions still match their digest", async () => {
+    const booleanCriteria = { true: "ready", false: "blocked" }
+    const choiceCriteria = { keep: "useful", drop: "irrelevant" }
+    const scoreCriteria = ["low", "high"]
+    const questions = {
+      ready: Classifier.boolean({ instructions: "Ready?", criteria: booleanCriteria }),
+      role: Classifier.choice({ instructions: "Role?", criteria: choiceCriteria }),
+      risk: Classifier.score({ instructions: "Risk?", criteria: scoreCriteria })
+    }
+    const classifier = Classifier.make("snapshot", { description: "d", state: Schema.String, questions })
+    const original = CanonicalJson.stringify(Evaluator.encodeQuestions(questions))
+    const digest = classifier.digest
+
+    booleanCriteria.true = "changed"
+    choiceCriteria.keep = "changed"
+    scoreCriteria[0] = "changed"
+    Reflect.set(questions.ready.criteria!, "true", "changed")
+    Reflect.set(questions.role.criteria, "keep", "changed")
+    Reflect.set(questions.risk.criteria, "0", "changed")
+    Reflect.set(questions.role, "instructions", "Changed?")
+    questions.ready = Classifier.boolean({ instructions: "Replacement?" })
+
+    const unavailable = Layer.succeed(Evaluator.Evaluator)(Evaluator.Evaluator.of({
+      evaluate: (request) =>
+        Effect.gen(function*() {
+          expect(CanonicalJson.stringify(Evaluator.encodeQuestions(request.questions))).toBe(original)
+          return yield* Effect.fail(new Evaluator.EvaluatorError({ code: "unreachable", message: "offline" }))
+        })
+    }))
+    const result = await run(classifier.evaluate("state"), unavailable)
+    expect(Result.isFailure(result)).toBe(true)
+    expect(classifier.digest).toBe(digest)
+    expect(
+      digestSync(
+        CanonicalJson.stringify({ id: classifier.id, questions: Evaluator.encodeQuestions(classifier.questions) })
+      )
+    )
+      .toBe(digest)
+    const answers = Effect.runSync(Classifier.decodeAnswers(classifier.questions, {
+      ready: { type: "boolean", probability: 1 },
+      role: { type: "choice", choice: "keep", probabilities: { keep: 1, drop: 0 } },
+      risk: { type: "score", score: 0, probabilities: { "0": 1, "1": 0 } }
+    }))
+    expect(answers.risk.label).toBe("low")
+    expect(answers.role.value).toBe("keep")
+  })
+
+  it("protects the exposed snapshot and retains question class identity", () => {
+    const questions = {
+      ready: Classifier.boolean({ instructions: "Ready?" }),
+      role: Classifier.choice({ instructions: "Role?", criteria: { keep: "useful", drop: "irrelevant" } }),
+      risk: Classifier.score({ instructions: "Risk?", criteria: ["low", "high"] })
+    }
+    const classifier = Classifier.make("frozen", { description: "d", state: Schema.String, questions })
+    expect(Reflect.set(classifier.questions, "ready", questions.risk)).toBe(false)
+    expect(Reflect.set(classifier.questions.role, "instructions", "Changed?")).toBe(false)
+    expect(Reflect.set(classifier.questions.role.criteria, "keep", "changed")).toBe(false)
+    expect(Reflect.set(classifier.questions.risk.criteria, "0", "changed")).toBe(false)
+    expect(classifier.questions.ready).toBeInstanceOf(Classifier.BooleanQuestion)
+    expect(classifier.questions.role).toBeInstanceOf(Classifier.ChoiceQuestion)
+    expect(classifier.questions.risk).toBeInstanceOf(Classifier.ScoreQuestion)
+    expect(Object.isFrozen(questions)).toBe(false)
+    expect(Object.isFrozen(questions.role.criteria)).toBe(false)
+  })
+
   it("keeps the declaration and digests the id and questions canonically", () => {
     expect(Relevance.id).toBe("triage/relevance")
     expect(Relevance.description).toBe("Whether a file must change for the task, and its role.")

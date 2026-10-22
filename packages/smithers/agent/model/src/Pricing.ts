@@ -141,7 +141,8 @@ export const lookup = (modelId: string, options: Options = {}): Rates | Price | 
  *
  * Input and output counts are required, and every supplied counter must be
  * finite and non-negative, with cache reads and writes inside the input
- * count; anything else is `NaN`, so malformed usage is never priced low.
+ * count; anything else, including arithmetic overflow, is `NaN`, so malformed
+ * usage is never priced low.
  *
  * @category accounting
  * @since 1.0.0-rc.1
@@ -154,13 +155,15 @@ export const weigh = (usage: ModelEvent.Usage, rates: Rates): number => {
   const write = usage.cacheWriteTokens ?? 0
   const uncached = usage.inputTokens - read - write
   if (uncached < 0) return Number.NaN
-  return uncached * rates.input + read * rates.cacheRead + write * rates.cacheWrite + usage.outputTokens * rates.output
+  const weighted = uncached * rates.input + read * rates.cacheRead + write * rates.cacheWrite +
+    usage.outputTokens * rates.output
+  return Number.isFinite(weighted) ? weighted : Number.NaN
 }
 
 /**
  * The USD cost of one call under a rate card, `NaN` for malformed usage (see
- * {@link weigh}). A long-context card prices the whole call once the prompt
- * reaches its threshold.
+ * {@link weigh}) or arithmetic overflow. A long-context card prices the whole
+ * call once the prompt reaches its threshold.
  *
  * @category accounting
  * @since 1.0.0-rc.1
@@ -170,7 +173,8 @@ export const costUsd = (usage: ModelEvent.Usage, price: Rates | Price): number =
   const rates = card.longContext !== undefined && (usage.inputTokens ?? 0) >= Number(card.longContextFrom) ?
     card.longContext :
     card
-  return Math.round(weigh(usage, rates) / 1_000_000 * 1e9) / 1e9
+  const usd = Math.round(weigh(usage, rates) / 1_000_000 * 1e9) / 1e9
+  return Number.isFinite(usd) ? usd : Number.NaN
 }
 
 /**
@@ -188,5 +192,5 @@ export const cost = (usage: ModelEvent.Usage, modelId: string | undefined, optio
   const price = modelId === undefined ? undefined : lookup(modelId, options)
   if (price === undefined) return undefined
   const usd = costUsd(usage, price)
-  return Number.isNaN(usd) ? undefined : { costUsd: usd, costSource: "estimated" }
+  return Number.isFinite(usd) ? { costUsd: usd, costSource: "estimated" } : undefined
 }

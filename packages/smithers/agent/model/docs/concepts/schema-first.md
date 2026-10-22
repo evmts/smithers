@@ -33,7 +33,8 @@ are absent from both OpenAI bodies, and the ChatGPT backend refuses a stated
 `maxTokens` in `Route.prepare` rather than sending the request without it. On
 Anthropic, `reasoningEffort` becomes `output_config.effort` (clamped to the
 levels the model accepts, with adaptive thinking) and is dropped for a model
-with no effort control.
+with no effort control. Both `claude-opus-4-5` and `claude-opus-4-5-20251101`
+accept low, medium and high effort without adaptive thinking.
 
 ## Four pieces, four reasons to change
 

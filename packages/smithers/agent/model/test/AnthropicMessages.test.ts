@@ -275,6 +275,42 @@ describe("AnthropicMessages streaming", () => {
     }
   )
 
+  it.each(["block", "delta"] as const)("waits past an empty %s signature for the usable signature", (emptyAt) => {
+    const events = replay([
+      JSON.stringify({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "Inspect", ...(emptyAt === "block" ? { signature: "" } : {}) }
+      }),
+      ...(emptyAt === "delta" ?
+        [JSON.stringify({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "signature_delta", signature: "" }
+        })] :
+        []),
+      JSON.stringify({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: " carefully" }
+      }),
+      JSON.stringify({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "signature_delta", signature: "sig_final" }
+      }),
+      JSON.stringify({ type: "content_block_stop", index: 0 }),
+      JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" } }),
+      JSON.stringify({ type: "message_stop" })
+    ])
+    expect(ModelEvent.settledMessage(events).message.content).toEqual([
+      { type: "thinking", text: "Inspect carefully", signature: "sig_final" }
+    ])
+    expect(events.filter((event) => event.type === "thinking-start")).toEqual([
+      { type: "thinking-start", id: "thinking-0", signature: "sig_final" }
+    ])
+  })
+
   it("attaches a late signature to the complete thinking block", () => {
     const data = [
       "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}",
@@ -1214,6 +1250,22 @@ describe("AnthropicMessages generation budget and effort", () => {
     const lowered = body(request("claude-opus-5-5", { reasoningEffort: "xhigh" }))
     expect(lowered.output_config).toEqual({ effort: "xhigh" })
     expect(lowered.thinking).toEqual({ type: "adaptive" })
+  })
+
+  it.each(
+    [
+      ["none", "low"],
+      ["minimal", "low"],
+      ["low", "low"],
+      ["medium", "medium"],
+      ["high", "high"],
+      ["xhigh", "high"],
+      ["max", "high"]
+    ] as const
+  )("preserves dated Opus 4.5 effort %s as %s", (reasoningEffort, effort) => {
+    const lowered = body(request("claude-opus-4-5-20251101", { reasoningEffort }))
+    expect(lowered.output_config).toEqual({ effort })
+    expect(lowered.thinking).toBeUndefined()
   })
 
   it("clamps an effort the model does not accept to the nearest level below", () => {
