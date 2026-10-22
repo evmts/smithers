@@ -196,7 +196,11 @@ describe("Edit on a queued question", () => {
     await until(() => expect(tab.shown().slice(0, 1)).toEqual(["user done first question"]))
     const rows = await tab.run(api.rows)
     expect(rows.map(({ text }) => text).filter((text) => text !== "")).toEqual(["first question"])
-    expect((await tab.run(faults.asked)).map(({ text }) => text)).toEqual(["first question"])
+    // Only the edit was sent. Delivery slower than `confirmWithin` sends it again with the same ids, which Postgres
+    // stores once, so the client may have been given it more than once.
+    const asked = await tab.run(faults.asked)
+    expect([...new Set(asked.map(({ text }) => text))]).toEqual(["first question"])
+    expect(new Set(asked.map(({ id }) => id)).size).toBe(1)
 
     // The draft typed after it is the one a reload finds.
     await until(() => expect(tab.composer()).toMatchObject({ draft: "next", saved: true }))
