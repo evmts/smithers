@@ -3,6 +3,7 @@
 // the only scripted seam. The same registration runs in the browser's engine worker (src/flows/engine.worker.ts), so
 // passing here is the `sdk.host-agnostic-flows` proof for the agent.
 import { SeatResolver } from "@smthrs/agent"
+import { Sandbox } from "@smthrs/harness"
 import { ModelError, ModelRequest } from "@smthrs/model"
 import { Cause, Deferred, Effect, Exit, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -14,7 +15,7 @@ import { AnswerRun } from "../status/flows"
 import { AnswerSettled } from "./answers"
 import { MAX_FRAMES } from "./contract"
 import { WORD_CORRECTIONS } from "./flows"
-import { AGENT_SEAT, seats } from "./host"
+import { AGENT_SEAT, LIMITS, seats } from "./host"
 
 const runtime = testFile("agent")
 
@@ -659,6 +660,18 @@ describe("chat/Answer", () => {
 
     expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new AnswerSettled())
     expect(model.calls).toHaveLength(0)
+  })
+})
+
+describe("the agent's sandbox commands", () => {
+  test("a command's call is cut neither at its own timeout nor by the frame's backstop", () => {
+    // 2026-10-22: a 570 s command with timeoutSeconds 600 settled 37 s past its timeout; the call was cut at 600 s.
+    expect("callMs" in LIMITS).toBe(false)
+    const ceiling = Sandbox.callLimit(Sandbox.defaultLimits.callMs, {
+      input: { command: "sleep 570", timeoutSeconds: 600 },
+    })
+    expect(ceiling).toBe(1_200_000)
+    expect(LIMITS.pauseTotalMsFor).toEqual(["sandbox/run"])
   })
 })
 

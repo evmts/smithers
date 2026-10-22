@@ -1180,28 +1180,35 @@ describe("Sandbox.driveCell", () => {
 })
 
 describe("Sandbox.callLimit", () => {
-  it("holds a call that names no usable timeoutMs to callMs", () => {
+  it("holds a call that names no usable time of its own to callMs", () => {
     const inputs: ReadonlyArray<Schema.Json> = [
       null,
       "sleep 1",
       [300_000],
       {},
       { timeoutMs: "300000" },
+      { timeoutSeconds: "300" },
       { timeoutMs: Number.POSITIVE_INFINITY },
-      { timeoutMs: Number.NaN }
+      { timeoutMs: Number.NaN },
+      { timeoutMs: 0 },
+      { timeoutSeconds: -1 }
     ]
     expect(inputs.map((input) => Sandbox.callLimit(120_000, { input }))).toEqual(inputs.map(() => 120_000))
   })
 
-  it("gives a call the longer timeoutMs it asks for, and leaves a shorter one to the flow's own clock", () => {
-    expect(Sandbox.callLimit(120_000, { input: { command: "go test ./...", timeoutMs: 300_000 } })).toBe(300_000)
-    expect(Sandbox.callLimit(120_000, { input: { timeoutMs: 5_000 } })).toBe(120_000)
+  it("gives a call the time it names and callMs more, for the work its flow does around the command", () => {
+    expect(Sandbox.callLimit(120_000, { input: { command: "go test ./...", timeoutMs: 300_000 } })).toBe(420_000)
+    expect(Sandbox.callLimit(120_000, { input: { timeoutMs: 5_000 } })).toBe(125_000)
+    // A sandbox's `run` names seconds: a 600 s command whose job settles after its timeout is not cut at 600 s.
+    expect(Sandbox.callLimit(600_000, { input: { command: "sleep 570", timeoutSeconds: 600 } })).toBe(1_200_000)
+    expect(Sandbox.callLimit(600_000, { input: { timeoutMs: 1_000, timeoutSeconds: 2 } })).toBe(602_000)
   })
 
   it("holds a request to what the frame has left, less a second to read the timeout, never under callMs", () => {
     expect(Sandbox.callLimit(1_000, { input: { timeoutMs: 60_000 }, remainingMs: 10_000 })).toBe(9_000)
     expect(Sandbox.callLimit(1_000, { input: { timeoutMs: 60_000 }, remainingMs: 1_500 })).toBe(1_000)
-    expect(Sandbox.callLimit(1_000, { input: { timeoutMs: 5_000 }, remainingMs: 10_000 })).toBe(5_000)
+    expect(Sandbox.callLimit(1_000, { input: { timeoutMs: 5_000 }, remainingMs: 10_000 })).toBe(6_000)
+    expect(Sandbox.callLimit(1_000, { input: { timeoutSeconds: 60 }, remainingMs: 10_000 })).toBe(9_000)
   })
 
   it("tells a realm's handler what the frame has left, except for a flow that pauses the backstop", async () => {

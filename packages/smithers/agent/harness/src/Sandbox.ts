@@ -243,8 +243,9 @@ export interface Limits {
   readonly pauseTotalMsFor?: ReadonlyArray<string> | undefined
   /**
    * Maximum wall-clock time one flow call may take, in milliseconds; a
-   * non-negative safe integer. A call that asks for longer with its own
-   * `timeoutMs` gets that, within what its frame has left; see {@link callLimit}.
+   * non-negative safe integer. A call that names its own time with
+   * `timeoutMs` or `timeoutSeconds` gets that and this more, within what its
+   * frame has left; see {@link callLimit}.
    *
    * The per-call budget {@link totalMs} cannot supply. `totalMs` is the frame's
    * last resort, and a call that overruns it takes the whole frame down with a
@@ -746,27 +747,41 @@ export const callTimedOut = (flow: string, callMs: number): Cell.CallResult =>
  */
 const answerMs = 1_000
 
+/** The time a call's input names for its own work, in milliseconds: its `timeoutMs`, or its `timeoutSeconds`. */
+const askedMs = (input: Schema.Json): number | undefined => {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined
+  const { timeoutMs, timeoutSeconds } = input as Readonly<Record<string, unknown>>
+  const asked = [
+    typeof timeoutMs === "number" ? timeoutMs : NaN,
+    typeof timeoutSeconds === "number" ? timeoutSeconds * 1000 : NaN
+  ].filter((value) => Number.isFinite(value) && value > 0)
+  return asked.length === 0 ? undefined : Math.max(...asked)
+}
+
 /**
  * The wall-clock ceiling one call runs under, in milliseconds.
  *
- * `callMs` bounds a call that names no time of its own. A call that asks for
- * longer with `timeoutMs`, as `bash` and `test` take, runs that long instead,
- * because a ceiling under the call's own clock cuts work its flow promised to
- * wait for: on the 2026-10-14 SWE-bench Pro run, 9 of the 13 commands cut at a
- * 120 s ceiling had asked for 180 s or 600 s. The request is held to what the
- * frame has left, so the call settles as a timeout the cell reads instead of
- * taking its frame down unanswered.
+ * `callMs` bounds a call that names no time of its own. A call that names
+ * its own, with `timeoutMs` as `bash` and `test` take or `timeoutSeconds` as
+ * a sandbox's `run` does, runs that long and `callMs` more, for the work its
+ * flow does around the command: starting it, waking the machine it runs on,
+ * and collecting what it printed. A ceiling at or under the call's own clock
+ * cuts work its flow promised to wait for: on the 2026-10-14 SWE-bench Pro
+ * run, 9 of the 13 commands cut at a 120 s ceiling had asked for 180 s or
+ * 600 s, and on 2026-10-22 a 600 s ceiling answered a sandbox command whose
+ * job settled 37 s after its 600 s timeout as timed out. The request is held
+ * to what the frame has left, so the call settles as a timeout the cell reads
+ * instead of taking its frame down unanswered.
  *
  * @category constructors
  * @since 1.0.0-rc.8
  */
 export const callLimit = (callMs: number, invocation: Pick<Invocation, "input" | "remainingMs">): number => {
   const { input, remainingMs } = invocation
-  const asked = input !== null && typeof input === "object" && !Array.isArray(input)
-    ? (input as Readonly<Record<string, unknown>>).timeoutMs
-    : undefined
-  if (typeof asked !== "number" || !Number.isFinite(asked) || asked <= callMs) return callMs
-  return Math.max(callMs, Math.min(asked, remainingMs === undefined ? asked : remainingMs - answerMs))
+  const asked = askedMs(input)
+  if (asked === undefined) return callMs
+  const wanted = asked + callMs
+  return Math.max(callMs, Math.min(wanted, remainingMs === undefined ? wanted : remainingMs - answerMs))
 }
 
 /**

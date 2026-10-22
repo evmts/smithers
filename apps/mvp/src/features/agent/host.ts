@@ -6,6 +6,7 @@ import { Evaluator, type Model, ModelProxy } from "@smthrs/model"
 import { Registry } from "@smthrs/registry"
 import { Duration, Effect, Layer } from "effect"
 import * as Catalog from "../../flows/catalog"
+import { SandboxRun } from "../sandbox/flows"
 import { MODEL_ROUTE } from "../model/contract"
 import * as Close from "./close"
 import { AnswerApi, type NotYourTurn, TurnOutOfTime } from "./answers"
@@ -76,6 +77,13 @@ export const seats = (origin: string, scripted?: Model.Model) =>
     }),
   )
 
+/**
+ * The agent's cell limits: at most `MAX_CALLS_PER_CELL` calls, and a sandbox command's wait spends none of the frame's
+ * backstop, so a command may run as long as its own timeout says (up to an hour); its call's own ceiling is its timeout
+ * and the default call limit more (`Sandbox.callLimit`).
+ */
+export const LIMITS = { calls: MAX_CALLS_PER_CELL, pauseTotalMsFor: [SandboxRun._tag] }
+
 /** The host every `chat/Respond` shares: the app's catalog, the frame cap and the sandbox's limits. */
 export const agentHost = Layer.effect(
   AgentAction.Host,
@@ -83,7 +91,7 @@ export const agentHost = Layer.effect(
     AgentAction.makeHost({
       registry: Registry.makeNoop(),
       flows: [app],
-      limits: { calls: MAX_CALLS_PER_CELL },
+      limits: LIMITS,
       capabilityEnvelope: [],
       maxFrames: MAX_FRAMES,
     })),
