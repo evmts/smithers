@@ -440,7 +440,11 @@ describe("backend safety regressions", () => {
 
   it("surfaces a malformed SSH response immediately instead of retrying it", async () => {
     const { c, requests } = await fixture((_req, res) => res.end("invalid-json"))
-    await expect(workspaceSSH(c, "box", options)).rejects.toBeInstanceOf(SyntaxError)
+    await expect(workspaceSSH(c, "box", options)).rejects.toMatchObject({
+      _tag: "/cli/Refused",
+      code: "backend_protocol",
+      message: "API response was not valid JSON"
+    })
     expect(requests).toHaveLength(1)
   })
 

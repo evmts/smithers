@@ -4,7 +4,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
-import { unknownSentence } from "../src/internal/Failure.ts"
 
 // The backend command boundary: a real CLI invocation against a local HTTP
 // server, reporting through Presentation.guard.
@@ -76,15 +75,22 @@ describe("backend command refusals", () => {
     expect(result.output).not.toContain("Bad Gateway")
   })
 
-  it("prints the generic sentence for a response the CLI cannot parse, never the parser's text", async () => {
+  it("refuses an invalid JSON response without quoting server bytes", async () => {
+    const body = "<html>private-server-canary</html>"
     const run = await fixture((_req, res) => {
       res.setHeader("content-type", "application/json")
-      res.end("{not json")
+      res.end(body)
     })
     const result = await run(["issue", "view", "4", "--repo", "owner/repo"])
     expect(result.code).toBe(1)
-    expect(result.output).toContain(unknownSentence)
-    expect(result.output).not.toMatch(/Unexpected token|JSON at position|SyntaxError/)
+    expect(JSON.parse(result.output)).toMatchObject({
+      code: "backend_protocol",
+      message: "API response was not valid JSON"
+    })
+    expect(result.output).not.toContain("private-server-canary")
+    expect(result.output).not.toContain("<html>")
+    expect(result.output).not.toMatch(/Unexpected token|JSON at position|SyntaxError|Diagnostics:/)
+    expect(result.output).not.toMatch(/\n\s+at /)
   })
 
   it("exits 2 for an invocation the operator must retype", async () => {

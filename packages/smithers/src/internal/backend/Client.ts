@@ -81,6 +81,15 @@ export const positive = (value: unknown, label = "id"): number => {
   if (!Number.isSafeInteger(n) || n <= 0) throw new UsageError({ message: `Invalid ${label}` })
   return n
 }
+/** Parse backend data without retaining server bytes in diagnostic errors. */
+const parseResponse = (text: string): unknown => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Refused({ fault: "infra", code: "backend_protocol", message: "API response was not valid JSON" })
+  }
+}
+
 /** Bounds on one `--all` collection: pages requested and items held. */
 const maximumPages = 100
 const maximumItems = 10_000
@@ -705,7 +714,7 @@ export class Client {
   ): Promise<unknown> {
     const response = await this.response(method, path, body, options)
     const text = await this.text(response)
-    return text.trim() ? JSON.parse(text) : null
+    return text.trim() ? parseResponse(text) : null
   }
   async pages(path: (cursor: string) => string, cursor = "", all = false, key = "items"): Promise<unknown> {
     const items: Array<unknown> = [], seen = new Set<string>()
@@ -717,7 +726,7 @@ export class Client {
       seen.add(cursor)
       const requestPath = path(cursor)
       const response = await this.response("GET", requestPath, undefined, { origin })
-      const data: unknown = JSON.parse(await this.text(response))
+      const data: unknown = parseResponse(await this.text(response))
       cursor = paginationCursor(response.headers, new URL(requestPath, origin))
       if (cursor && seen.has(cursor)) {
         throw new Refused({ fault: "infra", code: "backend_protocol", message: "API repeated a pagination cursor" })
