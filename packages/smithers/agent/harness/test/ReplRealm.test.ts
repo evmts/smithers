@@ -1174,14 +1174,17 @@ describe("the realm's stack", () => {
           return depth
         }
       }
-      const burn = <A>(depth: number, run: () => A): A | undefined => {
+      // `depth` frames of this function, then `run` called with `slack` extra arguments, each a stack slot: frames
+      // step the host's stack coarsely, slots in 8 bytes.
+      const burn = <A>(depth: number, run: () => A, slack = 0): A | undefined => {
         try {
-          return depth === 0 ? run() : burn(depth - 1, run)
+          return depth === 0 ? pad(run, ...new Array<undefined>(slack)) : burn(depth - 1, run, slack)
         } catch {
           // The host overflowed before the cell reached the interpreter.
           return undefined
         }
       }
+      const pad = <A>(run: () => A, ..._slots: ReadonlyArray<undefined>): A => run()
 
       const variant = QuickJSSandbox.layerVariant(newVariant(singlefile as unknown as QuickJSSyncVariant, {}))
       await Effect.gen(function*() {
@@ -1190,18 +1193,42 @@ describe("the realm's stack", () => {
           realm.evaluate({ cell: Cell.source(text), frame, call: succeeds })
         const limit = deepest(0)
         let overflowed: Sandbox.RealmFrame | undefined
+        // Whether the cell, evaluated from `depth` frames and `slack` slots down, overflowed the host inside the
+        // interpreter (`overflowed`), the host before the interpreter (`host`), or only QuickJS's own bound
+        // (`raised`, the cell's to catch).
+        const attempt = (depth: number, slack = 0) =>
+          Effect.gen(function*() {
+            yield* evaluate(`var kept = 1`, 0)
+            const exit = burn(depth, () => Effect.runSyncExit(evaluate(`${prefix}${recursion}\nf(0)`, 1)), slack)
+            if (exit === undefined) return "host" as const
+            if (
+              Exit.isSuccess(exit) && exit.value.outcome._tag === "rejected" && exit.value.outcome.reason === "stack"
+            ) {
+              overflowed = exit.value
+              return "overflowed" as const
+            }
+            return "raised" as const
+          })
+        // The window between the host overflowing before the interpreter and QuickJS's bound catching the recursion
+        // is a few frames of the host's stack, narrower than a step of 1% and at times than one frame of `burn`, and
+        // where it falls depends on how those frames line up. So: steps of 1% until the host overflows no more; then
+        // frame by frame up from the first depth that raised to the last that overflowed; then, from the deepest
+        // depth that raised, slot by slot.
+        let host: number | undefined
         for (let percent = 97; overflowed === undefined && percent >= 40; percent--) {
-          yield* evaluate(`var kept = 1`, 0)
-          const exit = burn(
-            Math.floor(limit * percent / 100),
-            () => Effect.runSyncExit(evaluate(`${prefix}${recursion}\nf(0)`, 1))
-          )
-          if (
-            exit !== undefined && Exit.isSuccess(exit) && exit.value.outcome._tag === "rejected" &&
-            exit.value.outcome.reason === "stack"
-          ) {
-            overflowed = exit.value
+          const depth = Math.floor(limit * percent / 100)
+          const outcome = yield* attempt(depth)
+          if (outcome === "host") host = depth
+          if (outcome !== "raised" || host === undefined) continue
+          let raised = depth
+          for (let inner = depth + 1; overflowed === undefined && inner < host; inner++) {
+            if ((yield* attempt(inner)) !== "raised") break
+            raised = inner
           }
+          for (let slack = 1; overflowed === undefined && slack <= 256; slack++) {
+            if ((yield* attempt(raised, slack)) === "host") break
+          }
+          host = undefined
         }
 
         expect(overflowed?.outcome).toEqual(
