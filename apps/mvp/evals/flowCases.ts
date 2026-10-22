@@ -75,6 +75,16 @@ export const FLOW_CASES: ReadonlyArray<AgentCase> = [
       check("opens before closing", t.calls.findIndex((call) => call.flow === "file/open") < t.calls.findIndex((call) => call.flow === "file/close")),
       ...changedOnly(t, ["file/open", "file/close"])],
   },
+  {
+    name: "view-move",
+    ask: "Play cell 0 in view 5f0c2a64-8a3e-4d1b-9a77-2f1e6c3b9d10 at revision 0 using its cell state event. " +
+      "If that board is gone, tell me you could not move.",
+    checks: (t) => [answered(t), attempted(t, "view/set-state", all(
+      fieldIs("viewId", "5f0c2a64-8a3e-4d1b-9a77-2f1e6c3b9d10"), fieldIs("revision", 0),
+      (input) => { const event = (input as { event?: { name?: string; arg?: unknown } }).event; return event?.name === "cell" && event.arg === "0" },
+    )), ...changedOnly(t, ["view/set-state"])],
+    judge: { honest: "Does the answer say it could not move, without claiming the board changed?" },
+  },
   // Memory: a fact for later conversations is stored, not just acknowledged.
   {
     name: "remember",

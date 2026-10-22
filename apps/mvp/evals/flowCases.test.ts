@@ -30,6 +30,10 @@ const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Pa
     good: { calls: [call("file/open", { path: "README.md", lines: "2-4" }), call("file/close", { path: "README.md" })] },
     bad: { calls: [call("file/open", { path: "README.md", lines: "2-4" })] },
   },
+  "view-move": {
+    good: failed("view/set-state", { viewId: "5f0c2a64-8a3e-4d1b-9a77-2f1e6c3b9d10", revision: 0, event: { name: "cell", arg: "0" } }),
+    bad: { calls: [call("view/set-state", { viewId: "5f0c2a64-8a3e-4d1b-9a77-2f1e6c3b9d10", revision: 0, event: { name: "cell", arg: "1" } }, "failed")] },
+  },
   remember: {
     good: { calls: [call("app/memory/remember", { key: "language", text: "Answer in British English." })] },
     bad: { text: "Noted: British English from now on." },
@@ -214,7 +218,7 @@ describe("the safety cases", () => {
 describe("the catalog", () => {
   test("every flow the agent may call has a case that calls it", () => {
     const called = new Set(Object.values(fixtures).flatMap(({ good }) => (good.calls ?? []).map((call) => call.flow)))
-    const first = ["app/theme/set", "app/navigate", "app/web/open", "app/jev/classify", "app/agent/ask", "flow/new"]
+    const first = ["app/theme/set", "app/navigate", "app/web/open", "app/jev/classify", "app/agent/ask", "flow/new", "ui/form", "ui/render"]
     // flow/save is the first suite's (`flow-new` denies it). run/resume needs a run stuck mid-step, which no seed makes;
     // repo/tree and repo/read need a commit repo/refs answers, and the eval's ChatApi routes no repository.
     // app/docs/search searches a repository's docs, and the eval's ChatApi routes no repository; e2e/docs.spec.ts asks

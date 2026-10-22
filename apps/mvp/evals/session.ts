@@ -236,9 +236,12 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
       const ms = Date.now() - started
       const row = await answerRow(runtime, answerId)
       const inspection = await Effect.runPromise(device.engine.inspect(answerId))
-      const views = await query<{ readonly template: string; readonly props: { readonly url?: unknown } }>((sql) =>
-        sql`SELECT template, props FROM views ORDER BY position`
-      )
+      const views = await query<{
+        readonly template: string
+        readonly props: { readonly url?: unknown } & Record<string, unknown>
+        readonly html: string | null
+        readonly interactions: Record<string, { readonly kind: string }> | null
+      }>((sql) => sql`SELECT template, props, html, interactions FROM views ORDER BY position`)
       const drafts = await query<Omit<Draft, "source"> & { readonly files: ReadonlyArray<{ readonly text: string }> }>(
         (sql) => sql`SELECT name, status, checks, files FROM flow_drafts ORDER BY created_at`,
       )
@@ -265,6 +268,9 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
         views: views.map((view): View => ({
           template: view.template,
           url: typeof view.props.url === "string" ? view.props.url : null,
+          props: view.props,
+          html: view.html,
+          interactions: view.interactions,
         })),
         asked: asked ?? [],
         drafts: drafts.map(({ name, status, checks, files }) => ({

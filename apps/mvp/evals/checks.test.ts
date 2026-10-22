@@ -8,6 +8,7 @@ import {
   askedNothing,
   askedOnce,
   atMostLines,
+  boardShows,
   calledOnce,
   chargedAsSpent,
   draftedCalling,
@@ -15,8 +16,10 @@ import {
   failedWith,
   fieldIs,
   fieldSays,
+  formAsks,
   grade,
   hostIs,
+  inertViews,
   mentions,
   navigatedTo,
   noCalls,
@@ -34,6 +37,43 @@ import {
   viewShows,
 } from "./checks"
 import { call, trial } from "./fixtures"
+
+describe("the agent's forms and views", () => {
+  const form = (properties: Record<string, unknown>, required: ReadonlyArray<string>) => ({
+    template: "form",
+    url: null,
+    props: { title: "Which repository?", schema: { type: "object", properties, required }, submitLabel: "Clone" },
+  })
+  const board = (cells: number, kind = "state") => ({
+    template: "generated",
+    url: null,
+    html: Array.from({ length: cells }, (_, index) => `<button data-event="cell:${index}">x</button>`).join(""),
+    interactions: { cell: { kind } },
+  })
+
+  test("formAsks holds for one form with a required field, named as asked", () => {
+    expect(formAsks(trial({ views: [form({ url: { type: "string", title: "Repository URL" } }, ["url"])] }), ["repo"]).pass)
+      .toBe(true)
+    expect(formAsks(trial({ views: [form({ name: { type: "string" } }, ["name"])] }), ["repo", "url"]).pass).toBe(false)
+    expect(formAsks(trial({ views: [form({ url: { type: "string" } }, [])] })).pass).toBe(false)
+    expect(formAsks(trial({ views: [] })).pass).toBe(false)
+  })
+
+  test("boardShows holds for a generated view whose cells send a declared state event", () => {
+    expect(boardShows(trial({ views: [board(9)] }), 9).pass).toBe(true)
+    expect(boardShows(trial({ views: [board(4)] }), 9).pass).toBe(false)
+    expect(boardShows(trial({ views: [board(9, "message")] }), 9).pass).toBe(false)
+    expect(boardShows(trial({ views: [form({}, [])] }), 9).pass).toBe(false)
+  })
+
+  test("inertViews fails a view whose HTML holds a script, a handler or a URL to load", () => {
+    expect(inertViews(trial({ views: [board(9)] })).pass).toBe(true)
+    for (const html of ['<script>x</script>', '<button onclick="x">', '<img src="https://evil.example/x.js">', "see https://evil.example"]) {
+      expect([html, inertViews(trial({ views: [{ ...board(1), html }] })).pass]).toEqual([html, false])
+    }
+    expect(inertViews(trial({ views: [{ ...board(1), html: '<img src="data:image/png;base64,AA">' }] })).pass).toBe(true)
+  })
+})
 
 describe("what the agent did", () => {
   test("answered holds only for an answer that settled done", () => {
