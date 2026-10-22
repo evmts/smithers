@@ -37,13 +37,21 @@
     ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
+    "./Bind": "./src/Bind.ts",
     "./Config": "./src/Config.ts",
+    "./Contribution": "./src/Contribution.ts",
     "./Hooks": "./src/Hooks.ts",
+    "./Host": "./src/Host.ts",
+    "./JsonSchema": "./src/JsonSchema.ts",
     "./Kernel": "./src/Kernel.ts",
+    "./Keys": "./src/Keys.ts",
+    "./Load": "./src/Load.ts",
+    "./Manifest": "./src/Manifest.ts",
     "./Plugin": "./src/Plugin.ts",
     "./PluginError": "./src/PluginError.ts",
     "./Plugins": "./src/Plugins.ts",
     "./Resolve": "./src/Resolve.ts",
+    "./When": "./src/When.ts",
     "./index": "./src/index.ts"
   },
   "files": [
@@ -76,6 +84,16 @@
       },
       "./internal/*": null,
       "./*/index": null,
+      "./Bind": {
+        "import": {
+          "types": "./dist/esm/Bind.d.ts",
+          "default": "./dist/esm/Bind.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Bind.d.ts",
+          "default": "./dist/cjs/Bind.js"
+        }
+      },
       "./Config": {
         "import": {
           "types": "./dist/esm/Config.d.ts",
@@ -84,6 +102,16 @@
         "require": {
           "types": "./dist/cjs/Config.d.ts",
           "default": "./dist/cjs/Config.js"
+        }
+      },
+      "./Contribution": {
+        "import": {
+          "types": "./dist/esm/Contribution.d.ts",
+          "default": "./dist/esm/Contribution.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Contribution.d.ts",
+          "default": "./dist/cjs/Contribution.js"
         }
       },
       "./Hooks": {
@@ -96,6 +124,26 @@
           "default": "./dist/cjs/Hooks.js"
         }
       },
+      "./Host": {
+        "import": {
+          "types": "./dist/esm/Host.d.ts",
+          "default": "./dist/esm/Host.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Host.d.ts",
+          "default": "./dist/cjs/Host.js"
+        }
+      },
+      "./JsonSchema": {
+        "import": {
+          "types": "./dist/esm/JsonSchema.d.ts",
+          "default": "./dist/esm/JsonSchema.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JsonSchema.d.ts",
+          "default": "./dist/cjs/JsonSchema.js"
+        }
+      },
       "./Kernel": {
         "import": {
           "types": "./dist/esm/Kernel.d.ts",
@@ -104,6 +152,36 @@
         "require": {
           "types": "./dist/cjs/Kernel.d.ts",
           "default": "./dist/cjs/Kernel.js"
+        }
+      },
+      "./Keys": {
+        "import": {
+          "types": "./dist/esm/Keys.d.ts",
+          "default": "./dist/esm/Keys.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Keys.d.ts",
+          "default": "./dist/cjs/Keys.js"
+        }
+      },
+      "./Load": {
+        "import": {
+          "types": "./dist/esm/Load.d.ts",
+          "default": "./dist/esm/Load.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Load.d.ts",
+          "default": "./dist/cjs/Load.js"
+        }
+      },
+      "./Manifest": {
+        "import": {
+          "types": "./dist/esm/Manifest.d.ts",
+          "default": "./dist/esm/Manifest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Manifest.d.ts",
+          "default": "./dist/cjs/Manifest.js"
         }
       },
       "./Plugin": {
@@ -146,6 +224,16 @@
           "default": "./dist/cjs/Resolve.js"
         }
       },
+      "./When": {
+        "import": {
+          "types": "./dist/esm/When.d.ts",
+          "default": "./dist/esm/When.js"
+        },
+        "require": {
+          "types": "./dist/cjs/When.d.ts",
+          "default": "./dist/cjs/When.js"
+        }
+      },
       "./index": {
         "import": {
           "types": "./dist/esm/index.d.ts",
@@ -169,7 +257,8 @@
   },
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/flow": "1.0.0-rc.16"
+    "@smthrs/flow": "1.0.0-rc.16",
+    "@smthrs/registry": "1.0.0-rc.16"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

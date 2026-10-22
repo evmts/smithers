@@ -1,0 +1,31 @@
+/**
+ * Field paths as a refusal names them: `contributes.views[0].scope`.
+ *
+ * @private
+ * @since 1.1.0
+ */
+
+const identifier = /^[A-Za-z_$][A-Za-z0-9_$-]*$/
+
+/**
+ * Appends one segment to a path: a number as `[n]`, an identifier as `.name`
+ * (bare at the root), anything else as a quoted key.
+ *
+ * @private
+ * @since 1.1.0
+ */
+export const append = (path: string, segment: PropertyKey): string =>
+  typeof segment === "number"
+    ? `${path}[${segment}]`
+    : typeof segment === "string" && identifier.test(segment)
+    ? path === "" ? segment : `${path}.${segment}`
+    : `${path}[${JSON.stringify(String(segment))}]`
+
+/**
+ * Joins segments from the root.
+ *
+ * @private
+ * @since 1.1.0
+ */
+export const join = (segments: ReadonlyArray<PropertyKey>): string =>
+  segments.reduce<string>((path, segment) => append(path, segment), "")

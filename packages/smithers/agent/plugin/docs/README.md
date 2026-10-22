@@ -106,7 +106,19 @@ for the whole picture.
 The kernel depends on [`@smthrs/flow`](/api/flow) for the
 `Action.CacheEnvironment` schema used to
 [declare a cache identity](./guides/cache-identity.md), and
-[`@smthrs/canonical`](/api/canonical) for immutable catalog maps.
+[`@smthrs/canonical`](/api/canonical) for immutable catalog maps. The manifest
+loader checks `requires` ranges with `Pack.checkCompatible` from
+[`@smthrs/registry`](/api/registry).
+
+## Plugin manifests
+
+A plugin can also be data: a `plugin.json` manifest that declares views, slots,
+commands and keybindings for an app shell, read without running plugin code.
+`Manifest.decode` admits one or refuses it naming the field; `Load.load` checks
+a whole set against what the host implements and folds it into one
+`Contributions` value, refusing each bad plugin with a typed reason while the
+rest load. `PluginHost` is the contract a plugin's UI reads and dispatches
+through. See [Plugin manifests](./concepts/manifests.md).
 
 ## What this package does not do
 
@@ -128,6 +140,8 @@ imply otherwise.
   ordered, immutable catalog.
 - [Configuration](./concepts/configuration.md) for the config waterfall and the
   JSON boundary it enforces.
+- [Plugin manifests](./concepts/manifests.md) for `plugin.json`, the loader's
+  checks and refusals, and the host contract.
 - [API reference](./api.md) for every export, with signatures and limits.
 - [Troubleshooting](./troubleshooting.md) for each `PluginError` code, what
   causes it, and what to change.

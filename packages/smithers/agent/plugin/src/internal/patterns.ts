@@ -1,0 +1,31 @@
+/**
+ * The identifier grammars the manifest, the `when` grammar and the binding
+ * grammar share, kept in one place so a view id means the same thing in each.
+ *
+ * @private
+ * @since 1.1.0
+ */
+
+/**
+ * A plugin's id.
+ *
+ * @private
+ * @since 1.1.0
+ */
+export const pluginId = /^[a-z][a-z0-9-]{1,39}$/
+
+/**
+ * `<plugin>/<name>`, one to three name segments.
+ *
+ * @private
+ * @since 1.1.0
+ */
+export const qualified = /^[a-z][a-z0-9-]{1,39}(\/[a-z0-9][a-z0-9.-]{0,63}){1,3}$/
+
+/**
+ * A field name a reference or a `when` term may name.
+ *
+ * @private
+ * @since 1.1.0
+ */
+export const field = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/

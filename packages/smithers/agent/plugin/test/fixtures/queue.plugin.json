@@ -1,0 +1,115 @@
+{
+  "apiVersion": 1,
+  "id": "queue",
+  "version": "0.1.0",
+  "title": "Queue",
+  "description": "Everything that waits on you, one item at a time, full screen, by keyboard.",
+  "requires": { "api": "^1.0.0" },
+  "capabilities": [],
+  "uses": ["run/answer", "app/navigate"],
+  "$defs": {
+    "Option": {
+      "type": "object",
+      "properties": { "index": { "type": "integer", "minimum": 0, "maximum": 8 } },
+      "required": ["index"],
+      "additionalProperties": false
+    },
+    "Note": {
+      "type": "object",
+      "properties": { "note": { "type": "string", "maxLength": 4000 } },
+      "required": ["note"],
+      "additionalProperties": false
+    }
+  },
+  "contributes": {
+    "views": [{
+      "id": "queue/queue",
+      "title": "Queue",
+      "scope": "app",
+      "path": "",
+      "sizes": ["inline", "full"],
+      "minimum": "member",
+      "reads": ["core/waits"],
+      "render": { "kind": "component", "export": "Queue" },
+      "events": [
+        {
+          "name": "option",
+          "payload": { "$ref": "#/$defs/Option" },
+          "flow": "run/answer",
+          "args": {
+            "runId": "$item.runId",
+            "version": "$item.version",
+            "execution": "$item.execution",
+            "value": "$item.options[$event.index]"
+          }
+        },
+        {
+          "name": "approve",
+          "payload": { "$ref": "#/$defs/Note" },
+          "flow": "run/answer",
+          "args": {
+            "runId": "$item.runId",
+            "version": "$item.version",
+            "execution": "$item.execution",
+            "value": { "approved": true, "note": "$event.note" }
+          }
+        },
+        {
+          "name": "changes",
+          "payload": { "$ref": "#/$defs/Note" },
+          "flow": "run/answer",
+          "args": {
+            "runId": "$item.runId",
+            "version": "$item.version",
+            "execution": "$item.execution",
+            "value": { "approved": false, "note": "$event.note" }
+          }
+        },
+        {
+          "name": "reply",
+          "payload": { "$ref": "#/$defs/Note" },
+          "flow": "run/answer",
+          "args": {
+            "runId": "$item.runId",
+            "version": "$item.version",
+            "execution": "$item.execution",
+            "value": "$event.note"
+          }
+        },
+        { "name": "next", "local": true },
+        { "name": "previous", "local": true }
+      ]
+    }],
+    "slots": [{
+      "slot": "shell.nav",
+      "id": "queue/nav",
+      "order": 10,
+      "minimum": "member",
+      "reads": ["core/waits"],
+      "render": { "kind": "component", "export": "NavCount" }
+    }],
+    "commands": [{
+      "id": "queue/open",
+      "flow": "app/navigate",
+      "args": { "to": "/app/queue" },
+      "title": "Queue",
+      "minimum": "member",
+      "slash": { "name": "queue" },
+      "palette": true
+    }],
+    "keybindings": [
+      { "key": "g q", "command": "queue/open" },
+      {
+        "key": "digit",
+        "event": "option",
+        "fields": { "index": "$key.index" },
+        "when": "view == queue/queue && item.question && !focus.input"
+      },
+      { "key": "a", "event": "approve", "when": "view == queue/queue && item.approval && !focus.input" },
+      { "key": "r", "event": "changes", "when": "view == queue/queue && item.approval && !focus.input" },
+      { "key": "mod+enter", "event": "reply", "when": "view == queue/queue && item.question" },
+      { "key": "j", "event": "next", "when": "view == queue/queue && !focus.input" },
+      { "key": "k", "event": "previous", "when": "view == queue/queue && !focus.input" }
+    ]
+  }
+}

@@ -7,6 +7,8 @@ import * as Plugin from "@smthrs/plugin/Plugin"
 import * as PluginError from "@smthrs/plugin/PluginError"
 import * as Plugins from "@smthrs/plugin/Plugins"
 import * as Resolve from "@smthrs/plugin/Resolve"
+import * as Load from "@smthrs/plugin/Load"
+import * as Manifest from "@smthrs/plugin/Manifest"
 import manifest from "@smthrs/plugin/package.json" with { type: "json" }
 
 assert.strictEqual(manifest.name, "@smthrs/plugin")
@@ -17,6 +19,8 @@ assert.strictEqual(root.make, Plugin.make)
 assert.strictEqual(root.PluginError, PluginError.PluginError)
 assert.strictEqual(root.Plugins.make, Plugins.make)
 assert.strictEqual(root.Resolve.resolve, Resolve.resolve)
+assert.strictEqual(root.Load.load, Load.load)
+assert.strictEqual(root.Manifest.decode, Manifest.decode)
 
 const rootError = new root.PluginError({ code: "invalid_plugin", message: "identity" })
 assert.ok(rootError instanceof PluginError.PluginError)

@@ -2231,6 +2231,9 @@ importers:
       '@smthrs/flow':
         specifier: 1.0.0-rc.16
         version: link:../../flows/flow
+      '@smthrs/registry':
+        specifier: 1.0.0-rc.16
+        version: link:../registry
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2

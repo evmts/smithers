@@ -22,7 +22,10 @@ The package requires Node.js 22.19.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. Its runtime dependencies install with it:
 [`@smthrs/flow`](/api/flow) supplies `Action.CacheEnvironment` for
 [cache identity](./guides/cache-identity.md), and
-[`@smthrs/canonical`](/api/canonical) supplies immutable catalog maps.
+[`@smthrs/canonical`](/api/canonical) supplies immutable catalog maps and
+the bounded JSON admission manifests pass through, and
+[`@smthrs/registry`](/api/registry) supplies `Pack.checkCompatible`, the range
+grammar `requires` is checked with.
 
 ## Import forms
 
@@ -47,8 +50,11 @@ import * as Resolve from "@smthrs/plugin/Resolve"
 
 The full list of public subpaths is `@smthrs/plugin/Config`,
 `@smthrs/plugin/Hooks`, `@smthrs/plugin/Kernel`, `@smthrs/plugin/Plugin`,
-`@smthrs/plugin/PluginError`, `@smthrs/plugin/Plugins`, and
-`@smthrs/plugin/Resolve`. Two forms are blocked in the export map:
+`@smthrs/plugin/PluginError`, `@smthrs/plugin/Plugins`,
+`@smthrs/plugin/Resolve`, and the manifest modules `@smthrs/plugin/Manifest`,
+`@smthrs/plugin/Load`, `@smthrs/plugin/Contribution`,
+`@smthrs/plugin/JsonSchema`, `@smthrs/plugin/Host`, `@smthrs/plugin/Bind`,
+`@smthrs/plugin/When`, and `@smthrs/plugin/Keys`. Two forms are blocked in the export map:
 `@smthrs/plugin/internal/*` and `@smthrs/plugin/*/index`.
 `@smthrs/plugin/package.json` is exported.
 

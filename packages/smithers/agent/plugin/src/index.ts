@@ -89,3 +89,51 @@ export * as Plugins from "./Plugins.ts"
  * @category resolution
  */
 export * as Resolve from "./Resolve.ts"
+
+/**
+ * @since 1.1.0
+ * @category binding
+ */
+export * as Bind from "./Bind.ts"
+
+/**
+ * @since 1.1.0
+ * @category contributions
+ */
+export * as Contribution from "./Contribution.ts"
+
+/**
+ * @since 1.1.0
+ * @category host
+ */
+export * as Host from "./Host.ts"
+
+/**
+ * @since 1.1.0
+ * @category schemas
+ */
+export * as JsonSchema from "./JsonSchema.ts"
+
+/**
+ * @since 1.1.0
+ * @category keymap
+ */
+export * as Keys from "./Keys.ts"
+
+/**
+ * @since 1.1.0
+ * @category loading
+ */
+export * as Load from "./Load.ts"
+
+/**
+ * @since 1.1.0
+ * @category manifest
+ */
+export * as Manifest from "./Manifest.ts"
+
+/**
+ * @since 1.1.0
+ * @category keymap
+ */
+export * as When from "./When.ts"

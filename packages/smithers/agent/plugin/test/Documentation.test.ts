@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+import * as Manifest from "../src/Manifest.ts"
 import * as Resolve from "../src/Resolve.ts"
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))
@@ -114,5 +115,16 @@ describe("reference documentation matches admission", () => {
     for (const page of ["docs/README.md", "docs/installation.md", "docs/api.md"]) {
       for (const dependency of declared) expect(read(page), page).toContain(dependency)
     }
+  })
+
+  it("publishes every manifest limit with the value the decoder enforces", () => {
+    const table = /### Manifest limits\n\n((?:\|.*\n)+)/.exec(read("docs/api.md"))
+    expect(table, "docs/api.md must publish a manifest limits table").not.toBeNull()
+    const rows = table![1]!.split("\n").slice(2).filter((row) => row.startsWith("|")).map((row) => {
+      const [constant, value] = row.split("|").slice(1, 3).map((cell) => cell.trim())
+      return [constant!.replaceAll("`", ""), Number(value!.replaceAll(",", ""))] as const
+    })
+    const constants = Object.entries(Manifest).filter(([, value]) => typeof value === "number")
+    expect(Object.fromEntries(rows)).toEqual(Object.fromEntries(constants))
   })
 })

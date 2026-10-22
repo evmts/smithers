@@ -75,6 +75,25 @@ Configuration and cache identity are detached, bounded, strict JSON snapshots:
 an `undefined` member is refused, not dropped. Mutating a caller's objects after
 startup cannot change dispatch or sealed cache keys.
 
+## Plugin manifests
+
+A plugin can also be data. `Manifest.decode` admits a `plugin.json` that
+declares views, slots, commands and keybindings, or refuses it naming the field.
+`Load.load` checks a set of manifests against the host's facts, orders them by
+`requires.plugins`, and folds them into one `Contributions` value; a bad plugin
+is refused with a closed reason (`invalid`, `unsupported_point`,
+`undeclared_use`, `conflict`, and so on) and the rest load. It runs no plugin
+code. `PluginHost` is the contract a plugin's UI reads and dispatches through.
+
+```ts
+import { Load, Manifest } from "@smthrs/plugin"
+import { Effect } from "effect"
+
+const { contributions, refused } = await Effect.runPromise(Load.load(hostFacts, [
+  { tier: "built-in", manifest: queueManifest }
+]))
+```
+
 ## Documentation
 
 - [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/quickstart.md): build a host with a hook
@@ -83,6 +102,8 @@ startup cannot change dispatch or sealed cache keys.
   [Resolution](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/resolution.md), and
   [Configuration](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/configuration.md): the model
   behind the kernel.
+- [Plugin manifests](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/manifests.md):
+  `plugin.json`, the loader's checks, and the host contract.
 - [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/api.md): every export, with
   signatures and limits.
 - [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/troubleshooting.md): every error
