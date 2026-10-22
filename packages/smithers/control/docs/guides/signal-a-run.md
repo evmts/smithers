@@ -42,7 +42,15 @@ answer a human wait. Plain `WaitFor` events need no approval.
 
 A signal from a webhook channel carries the principal
 `{ id: <channel name>, kind: "channel" }`. It can answer a human wait only if
-the host delegates approval to that principal.
+the host delegates approval to that principal, and it can signal only runs
+launched by that same channel principal. Another caller’s run returns
+`RunNotFound` before command admission.
+
+`ControlClient` refuses locally attributed agent signals before RPC, just as it
+refuses agent approval decisions. The server authenticates and stamps the RPC
+credential; forwarding an agent signal through an operator client would lend
+that operator’s approval authority to the agent. Agent-attributed signals use
+the in-process control service or a separately authenticated agent boundary.
 
 `WaitFor` names one durable fact per `(flowName, executionId, name)`. Calling
 it twice with the same name in the same execution intentionally observes the

@@ -327,7 +327,8 @@ const approveAndRedeliver = (card: PlanCard) =>
         planId: card.planId,
         digest: card.digest,
         envelope: card.envelope,
-        idempotencyKey: "channel:4:hook:delivery-1"
+        idempotencyKey: "channel:4:hook:delivery-1",
+        principal: { id: "hook", kind: "channel", stampedAt: 0 }
       })
     ).toEqual({ _tag: "AlreadyApplied", receiptId: "channel:4:hook:delivery-1", runId: receipt.runId })
     return receipt.runId

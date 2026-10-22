@@ -43,11 +43,13 @@ own protocols.
 
 ## Connect a client
 
-`credential` authenticates HTTP requests only. Authenticated `watch` also
-requires an `Authorization` header on the WebSocket upgrade. An ordinary
-`NodeSocket.layerWebSocket` does not send it and watch fails with
-`Unauthorized`. This Node composition uses the `ws` constructor exported by
-`NodeSocket` to supply the upgrade header:
+`credential` authenticates every HTTP request, including `watch`: credentialed
+clients use HTTP for streams by default and need no Socket service. Set
+`watchTransport: "http"` to select HTTP explicitly, including without a credential.
+Without a credential, the default remains the platform Socket service.
+
+To select `watchTransport: "socket"` explicitly, authenticate its upgrade in
+the supplied Socket layer. This Node composition supplies that upgrade header:
 
 ```ts
 import { NodeHttpClient, NodeSocket } from "@effect/platform-node"
@@ -79,7 +81,8 @@ const authenticatedSocket = Socket.layerWebSocket("ws://127.0.0.1:4000/rpc/ws").
 
 const client = ControlClient.layer({
   url: "http://127.0.0.1:4000/rpc",
-  credential
+  credential,
+  watchTransport: "socket"
 }).pipe(
   Layer.provide([
     NodeHttpClient.layerUndici,

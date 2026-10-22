@@ -9,6 +9,11 @@ A channel turns an external request into a control mutation, once. It verifies
 opaque bytes before it decodes them, and it acquires no execution path of its
 own: everything it does, it does through `Control`.
 
+Starts carry `{ id: <channel name>, kind: "channel" }` as their launch
+principal, including a redelivery after plan approval. Signals are restricted
+to runs launched by that exact principal; sharing its id with another kind
+confers no access. Human waits also require the host’s approval delegation.
+
 ## Build a webhook channel
 
 ```ts

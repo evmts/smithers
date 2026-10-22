@@ -398,7 +398,7 @@ Tests are behavioral and can fail: no tautologies, no assertions that echo const
 
 - **Will:** "Also clearly your testing was not sufficient I found a bug immediately" (13:59). "We need e2e tests to be thorough unit tests to be thorough good architecture" (15:17).
 - **Scope:** `apps/mvp/**/*.test.ts`, `apps/mvp/e2e/**/*.spec.ts`; SDK-wide test files.
-- **Enforced:** `ImportRules` `forbidCalls` `setTimeout` and `*.waitForTimeout` (any receiver) in `*.test.ts` and `e2e/**`. Jev for the rest.
+- **Enforced:** `ImportRules` `forbidCalls` `setTimeout` and `*.waitForTimeout` (any receiver) in `*.test.ts` and `e2e/**`. `//packages/smithers/control:importRules` also guards the cancellation, channel, client and observing-executor regression files against fixed waits and mocks, and all control sources against host imports and Effect execution boundaries. Jev for the rest.
 - **Harness memory tests:** `packages/smithers/agent/harness:importRules` also forbids `*.sleep` in the memory admission, QuickJS sandbox and persistent-realm suites; they use conditions or `TestClock`.
 - **Jev asks:** Does this test file contain a test that cannot fail or does not test behavior: an assertion that only echoes a constant or the test's own setup, a tautology, a test with no meaningful assertion, a fixed sleep instead of waiting on a condition or `TestClock`, or a check that code was called rather than what it did?
 

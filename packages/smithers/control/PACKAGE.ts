@@ -12,19 +12,32 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   cwd: "packages/smithers/control"
 })
 
+/** Control remains host-free; these boundary regressions use no fixed waits. */
 const importRules = ImportRules({
   cwd: "packages/smithers/control",
   rules: [
     {
       kind: "forbidHostModules",
       files: ["src/**"],
-      because: "sdk.platform-neutral: control receives host services through Effect layers."
+      because: "sdk.platform-neutral: platform services are injected into the control library."
     },
     {
       kind: "forbidCalls",
       files: ["src/**"],
       callees: ["*.runPromise", "*.runPromiseExit", "*.runSync", "*.runSyncExit", "*.runFork", "*.runCallback"],
-      because: "effect.boundary-only: control returns Effects to its host."
+      because: "effect.boundary-only: the control library returns Effects and runs none."
+    },
+    {
+      kind: "forbidCalls",
+      files: [
+        "test/CancellationAttribution.test.ts",
+        "test/ChannelOwnership.test.ts",
+        "test/ChannelBoundary.test.ts",
+        "test/ControlClient.test.ts",
+        "test/ObservingExecutor.test.ts"
+      ],
+      callees: ["setTimeout", "*.waitForTimeout", "*.sleep", "vi.mock", "vi.doMock", "vi.stubGlobal", "jest.mock"],
+      because: "test.behavioral: use real services, wait on conditions or TestClock, and never fixed sleeps."
     }
   ]
 })

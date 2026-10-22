@@ -26,7 +26,7 @@ const mulberry32 = (seed: number) => () => {
 
 /**
  * The contract, restated: a run's own attributed request wins; otherwise the
- * nearest cancelled ancestor makes it a cascade, carrying the principal and
+ * nearest ancestor cancelled no later than the run makes it a cascade, carrying the principal and
  * reason of the nearest cancelled ancestor that carries a request at all;
  * otherwise the engine cancelled it on its own account.
  *
@@ -68,13 +68,31 @@ const oracle = (input: Cancellation.Input): Map<string, CancellationSummary> => 
       })
       continue
     }
-    const cancelledAncestors = chain(run).filter((id) => isCancelled(byId.get(id)!))
+    const firstEvidenceAt = (id: string) => {
+      const row = byId.get(id)!
+      return Math.min(
+        input.requests.get(id)?.requestedAt ?? Infinity,
+        row.cancelRequestedAt ?? Infinity,
+        row.cancelledAt ?? Infinity
+      )
+    }
+    let deadline = firstEvidenceAt(run.runId)
+    const causalDeadlines = new Map<string, number>()
+    const cancelledAncestors = chain(run).filter((id) => {
+      if (firstEvidenceAt(id) > deadline) return false
+      causalDeadlines.set(id, deadline)
+      deadline = firstEvidenceAt(id)
+      return true
+    })
     const nearest = cancelledAncestors[0]
     if (nearest === undefined) {
       answers.set(run.runId, { requestedAt, source: "engine" })
       continue
     }
-    const origin = cancelledAncestors.map((id) => input.requests.get(id)).find((request) => request !== undefined)
+    const origin = cancelledAncestors.map((id) => {
+      const request = input.requests.get(id)
+      return request !== undefined && request.requestedAt <= causalDeadlines.get(id)! ? request : undefined
+    }).find((request) => request !== undefined)
     answers.set(run.runId, {
       requestedAt,
       source: "cascade",
@@ -143,6 +161,62 @@ describe("Cancellation.attribute matches an independent oracle", () => {
         )
       }
     }
+  })
+
+  it.each(["request", "column", "interruption"] as const)(
+    "does not attribute an earlier engine cancellation to a later ancestor %s",
+    (source) => {
+      const parent = {
+        runId: "parent",
+        ...(source === "column" ? { cancelRequestedAt: 20 } : {}),
+        ...(source === "interruption" ? { cancelledAt: 20 } : {})
+      }
+      const child = { runId: "child", parentRunId: "parent", cancelledAt: 10 }
+      const before = Cancellation.attribute({ runs: [child, { runId: "parent" }], requests: new Map() })
+      const after = Cancellation.attribute({
+        runs: [child, parent],
+        requests: new Map(
+          source === "request" ?
+            [["parent", {
+              requestedAt: 20,
+              principal: principal(1),
+              reason: "later"
+            }]] :
+            []
+        )
+      })
+      expect(after.get("child")).toEqual(before.get("child"))
+      expect(after.get("child")).toEqual({ source: "engine", requestedAt: 10 })
+    }
+  )
+
+  it("keeps attribution when the engine request column precedes the control journal", () => {
+    const answers = Cancellation.attribute({
+      runs: [
+        { runId: "parent", cancelRequestedAt: 10 },
+        { runId: "child", parentRunId: "parent", cancelledAt: 12 }
+      ],
+      requests: new Map([["parent", { requestedAt: 11, principal: principal(1), reason: "budget" }]])
+    })
+    expect(answers.get("child")).toEqual({
+      source: "cascade",
+      requestedAt: 12,
+      cascadedFrom: "parent",
+      principal: principal(1),
+      reason: "budget"
+    })
+  })
+
+  it("does not borrow a later root request through an earlier cancelled parent", () => {
+    const answers = Cancellation.attribute({
+      runs: [
+        { runId: "root" },
+        { runId: "parent", parentRunId: "root", cancelledAt: 10 },
+        { runId: "child", parentRunId: "parent", cancelledAt: 15 }
+      ],
+      requests: new Map([["root", { requestedAt: 20, principal: principal(1), reason: "later" }]])
+    })
+    expect(answers.get("child")).toEqual({ source: "cascade", requestedAt: 15, cascadedFrom: "parent" })
   })
 
   it("survives a cyclic parent chain without hanging", () => {

@@ -96,6 +96,14 @@ const requestedAtOf = (evidence: Evidence, request: Request | undefined): number
   return request?.requestedAt ?? evidence.cancelRequestedAt ?? evidence.cancelledAt ?? 0
 }
 
+/** Earliest cancellation evidence bounds which ancestor could have caused it. */
+const cancelledAtOf = (evidence: Evidence, request: Request | undefined): number =>
+  Math.min(
+    request?.requestedAt ?? Infinity,
+    evidence.cancelRequestedAt ?? Infinity,
+    evidence.cancelledAt ?? Infinity
+  )
+
 const attributed = (
   source: Cancellation["source"],
   requestedAt: number,
@@ -116,7 +124,8 @@ const attributed = (
  *
  * 1. A `control.run.cancel-requested` entry names this run. Somebody asked for
  *    this run by name, and the entry says who and why.
- * 2. A cancelled ancestor exists. The run was swept up in that cancellation,
+ * 2. An ancestor was cancelled no later than this run. The run was swept up
+ *    in that cancellation,
  *    so it reports `cascade`, names the ancestor whose request started it, and
  *    inherits that request's principal and reason — the honest answer to "who
  *    cancelled this child" is the operator who cancelled its parent.
@@ -147,17 +156,23 @@ export const attribute = (input: Input): ReadonlyMap<string, Cancellation> => {
     let ancestorId = run.parentRunId
     let cascadedFrom: string | undefined
     let origin: Request | undefined
+    let latestCauseAt = cancelledAtOf(run, own)
     while (ancestorId !== undefined && !visited.has(ancestorId)) {
       visited.add(ancestorId)
       const ancestor = evidence.get(ancestorId)
       if (ancestor === undefined) break
-      if (cancelled(ancestor, input.requests)) {
+      const request = input.requests.get(ancestorId)
+      const ancestorAt = cancelledAtOf(ancestor, request)
+      if (ancestorAt <= latestCauseAt) {
         // The nearest cancelled ancestor is the run this one was swept up
         // with; the request that started it may be further up still, because
         // a cascade cascades.
         if (cascadedFrom === undefined) cascadedFrom = ancestorId
-        origin = input.requests.get(ancestorId)
-        if (origin !== undefined) break
+        if (request !== undefined && request.requestedAt <= latestCauseAt) {
+          origin = request
+          break
+        }
+        latestCauseAt = ancestorAt
       }
       ancestorId = ancestor.parentRunId
     }

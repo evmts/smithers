@@ -6,7 +6,8 @@
 
 import { Cause, Effect, Layer, Result, Schema, Stream } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { RpcClient, RpcClientError } from "effect/rpc"
+import { RpcClient, RpcClientError, type RpcSerialization } from "effect/rpc"
+import type { Socket } from "effect/socket"
 import { Control, make } from "./Control.ts"
 import { type ControlError, ControlErrorSchema, TransportError, Unauthorized } from "./ControlError.ts"
 import { ControlRpcs } from "./ControlRpcs.ts"
@@ -227,27 +228,21 @@ const normalizeStreamRequest = <A, E, R>(
 
 /**
  * Client transport configuration. Unary procedures use HTTP at this URL;
- * `watch` uses the abstract WebSocket supplied by the platform layer.
- *
- * `credential` reaches the HTTP protocol only. It is attached as a bearer
- * token on each HTTP RPC request; the `watch` stream rides a WebSocket whose
- * upgrade request a browser cannot add headers to, so the socket carries no
- * credential at all in a browser deployment. A deployment that authenticates
- * control traffic must therefore front the socket (terminate auth at a proxy
- * that injects the credential on the upgrade) or serve `watch` over the HTTP
- * protocol instead.
+ * `watch` uses HTTP when a credential is supplied, so the same bearer protects
+ * unary calls and streams without requiring a WebSocket service. Without a
+ * credential it defaults to the platform's abstract WebSocket. `watchTransport`
+ * selects either explicitly; a socket's upgrade authentication belongs to the
+ * supplied platform Socket layer.
  *
  * @category models
  * @since 0.1.0
  */
 export interface ClientConfig {
   readonly url: string
-  /**
-   * Bearer token attached to every HTTP RPC request when present.
-   *
-   * Not sent on the `watch` WebSocket: see {@link ClientConfig}.
-   */
+  /** Bearer token attached to every HTTP RPC request when present. */
   readonly credential?: string | undefined
+  /** Defaults to HTTP with a credential, socket otherwise. */
+  readonly watchTransport?: "http" | "socket" | undefined
 }
 
 /**
@@ -256,7 +251,18 @@ export interface ClientConfig {
  * @category layers
  * @since 0.1.0
  */
-export const layer = (config: ClientConfig) => {
+export function layer(
+  config:
+    & ClientConfig
+    & ({ readonly watchTransport: "http" } | {
+      readonly credential: string
+      readonly watchTransport?: "http" | undefined
+    })
+): Layer.Layer<Control, never, HttpClient.HttpClient | RpcSerialization.RpcSerialization>
+export function layer(
+  config: ClientConfig
+): Layer.Layer<Control, never, HttpClient.HttpClient | RpcSerialization.RpcSerialization | Socket.Socket>
+export function layer(config: ClientConfig) {
   const http = RpcClient.layerProtocolHttp({
     url: config.url,
     transformClient: (client) => {
@@ -269,16 +275,18 @@ export const layer = (config: ClientConfig) => {
         : HttpClient.mapRequest(checked, HttpClientRequest.bearerToken(config.credential))
     }
   })
-  const websocket = RpcClient.layerProtocolSocket()
+  const watchTransport = config.watchTransport ?? (config.credential === undefined ? "socket" : "http")
   return Layer.effect(
     Control,
     Effect.gen(function*() {
       // Built into the layer's own scope: `Effect.provide(layer)` would close
       // each protocol as soon as the client was constructed.
       const httpServices = yield* Layer.build(http)
-      const websocketServices = yield* Layer.build(websocket)
       const unary = yield* RpcClient.make(ControlRpcs).pipe(Effect.provide(httpServices))
-      const streaming = yield* RpcClient.make(ControlRpcs).pipe(Effect.provide(websocketServices))
+      const streaming = watchTransport === "http" ? unary : yield* Effect.gen(function*() {
+        const services = yield* Layer.build(RpcClient.layerProtocolSocket())
+        return yield* RpcClient.make(ControlRpcs).pipe(Effect.provide(services))
+      })
       return make({
         plan: Effect.fn("Control.plan")((input) => normalizeRequest(planEncoder, input, () => unary.Plan(input))),
         run: Effect.fn("Control.run")((input) => normalizeRequest(runEncoder, input, () => unary.Run(input))),
@@ -298,7 +306,10 @@ export const layer = (config: ClientConfig) => {
         ),
         steer: Effect.fn("Control.steer")((input) => normalizeRequest(steerEncoder, input, () => unary.Steer(input))),
         signal: Effect.fn("Control.signal")((input) =>
-          normalizeRequest(signalEncoder, input, () => unary.Signal(input))
+          normalizeRequest(signalEncoder, input, () =>
+            input.principal?.kind === "agent"
+              ? Effect.fail(new Unauthorized({ message: "Agent signals require an agent credential" }))
+              : unary.Signal(input))
         ),
         cancel: Effect.fn("Control.cancel")((input) =>
           normalizeRequest(cancelEncoder, input, () => unary.Cancel(input))
@@ -307,11 +318,6 @@ export const layer = (config: ClientConfig) => {
           normalizeRequest(resumeEncoder, input, () => unary.Resume(input))
         ),
         list: Effect.fn("Control.list")((input) => normalizeRequest(listEncoder, input, () => unary.List(input))),
-        // `watch` is the only procedure on the socket protocol, and the
-        // socket is why `credential` cannot protect it: a browser's WebSocket
-        // upgrade takes no headers, so the bearer token that authenticates
-        // every unary call above never reaches this stream. Credentialed
-        // deployments front the socket or use the HTTP protocol for watch.
         watch: (input) => normalizeStreamRequest(watchEncoder, input, () => streaming.Watch(input))
       })
     })

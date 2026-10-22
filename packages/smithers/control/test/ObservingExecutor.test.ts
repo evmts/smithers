@@ -13,6 +13,10 @@ import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import type { RunId } from "@smthrs/control/ControlSchema"
 import { Cause, Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
+import { Control } from "../src/Control.ts"
+import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { durable } from "./DurableStack.ts"
+import * as TestStack from "./TestStack.ts"
 
 const runId = "run-1" as RunId
 
@@ -64,9 +68,42 @@ describe("makeObserving", () => {
     expect(await Effect.runPromise(observing.deliverSignal({ runId, signal: { name: "go", payload: null } }))).toBe(
       "delivered"
     )
-    expect(await Effect.runPromise(observing.settleCancelledPark({ runId }))).toBeUndefined()
-    expect(calls).toEqual(["readExecution", "requestCancel", "deliverSignal", "settleCancelledPark"])
+    expect(calls).toEqual(["readExecution", "requestCancel", "deliverSignal"])
   })
+
+  it("leaves parked settlement to a driving host", async () => {
+    const { calls, observing } = spied()
+    expect(await Effect.runPromise(observing.settleCancelledPark({ runId }))).toBeUndefined()
+    expect(calls).toEqual([])
+  })
+
+  for (const [name, stack] of [["memory", TestStack.live], ["SQL", durable]] as const) {
+    it(`accepts durable cancellation on an observing host (${name})`, async () => {
+      const executor = ControlExecutor.makeObserving(ControlExecutor.makeNoop({
+        settleCancelledPark: () => Effect.die("settlement would drive execution")
+      }))
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const runtime = yield* ControlRuntime
+          const control = yield* Control
+          const { card } = yield* runtime.plan({ flowId: "system/test", input: {} })
+          const token = yield* runtime.lookupApproval(card.approval.target)
+          yield* runtime.resolveApproval(token, "approved", yield* runtime.stampPrincipal())
+          const launched = yield* runtime.launch(card.planId, card.digest, card.envelope)
+          if (launched._tag !== "Started") return yield* Effect.die("expected remote launch")
+          const runId = launched.run.runId
+          const receipt = yield* control.cancel({ runId, idempotencyKey: "cancel-on-observer" })
+          expect(receipt).toMatchObject({ _tag: "Terminal", runId, status: "cancelled" })
+          expect((yield* runtime.getRun(runId)).status).toBe("cancelled")
+          expect(yield* control.cancel({ runId, idempotencyKey: "repeat-cancel" })).toMatchObject({
+            _tag: "Terminal",
+            runId,
+            status: "cancelled"
+          })
+        }).pipe(Effect.provide(stack({ executor })), Effect.scoped)
+      )
+    })
+  }
 
   it.each(
     [

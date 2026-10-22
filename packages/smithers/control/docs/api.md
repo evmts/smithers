@@ -534,7 +534,7 @@ engine observations. Mutation methods remain refused.
 | `ControlExecutor` | class    | `Context.Service<ControlExecutor, Service>` at key `/control/ControlExecutor`                                                                            |
 | `make`            | function | `(implementation: Service) => Service`                                                                                                                   |
 | `makeNoop`        | function | `(overrides?: Partial<Service>) => Service`. Accepts every launch as `pending` and starts nothing.                                                       |
-| `makeObserving`   | function | `(service: Service) => Service`. The same executor with `launch` and `resumeRun` refused as defects, for a host composed to observe runs and drive none. |
+| `makeObserving`   | function | `(service: Service) => Service`. The same executor with `launch` and `resumeRun` refused as defects and parked settlement left to the driving host, for a host composed to observe runs and drive none. |
 | `layer`           | layer    | `(implementation: Service) => Layer<ControlExecutor>`                                                                                                    |
 | `layerNoop`       | layer    | `(overrides?: Partial<Service>) => Layer<ControlExecutor>`                                                                                               |
 
@@ -662,21 +662,21 @@ is `smt1.<claims>.<signature>`. `smthrs token mint` is the command over it.
 
 | Export           | Kind       | Signature                                                                                                     |
 | ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
-| `ClientConfig`   | interface  | `{ url: string; credential?: string }`. `credential` is attached as a bearer token on every HTTP RPC request. |
+| `ClientConfig`   | interface  | `{ url: string; credential?: string; watchTransport?: "http" \| "socket" }`. `credential` is attached as a bearer token on every HTTP RPC request. |
 | `layer`          | layer      | `(config: ClientConfig) => Layer<Control, ...>`                                                               |
 | `isControlError` | refinement | `(value: unknown) => value is ControlError`, derived from `ControlErrorSchema`.                               |
 
-Unary procedures use HTTP at `url`; `watch` uses the abstract WebSocket the
-platform layer supplies. Declared control failures cross the wire as
-themselves; everything else becomes a `TransportError` whose `retryable` flag
-classifies the transport phase.
+Unary procedures use HTTP at `url`. With a credential, `watch` uses the same
+HTTP protocol and bearer; without one it defaults to the platform Socket
+service. `watchTransport` explicitly selects either transport. An HTTP-only
+configuration requires no Socket service. For an explicit socket, its upgrade
+authentication belongs to the supplied platform Socket layer.
 
-In rc.0, `ClientConfig.credential` authenticates HTTP calls only; it does not
-authenticate the `watch` WebSocket upgrade. Authenticated remote watch requires
-a socket implementation that sends the Authorization header, or a trusted
-proxy that authenticates the caller and supplies it. The default client fails
-closed against a credentialed gateway. Tokens in URL query strings are not
-supported.
+Declared control failures cross the wire as themselves; everything else
+becomes a `TransportError` whose `retryable` flag classifies the transport
+phase. Locally agent-attributed approval decisions and signals fail
+`Unauthorized` before RPC, so an agent cannot borrow the client’s operator
+credential.
 
 ## Lineage
 
@@ -809,7 +809,9 @@ Out-of-range bounds fail with `InvalidInput` before the first beat.
 ## Channels
 
 Verified ingress. A channel verifies opaque transport data before it decodes or
-maps it, and dispatches the result through `Control`.
+maps it, and dispatches the result through `Control`. Starts record the channel
+principal in `launchedBy`; signals reach only runs launched by that same
+principal’s id and kind, with human waits additionally requiring approval authority.
 
 | Export               | Kind              | Signature                                                                                            |
 | -------------------- | ----------------- | ---------------------------------------------------------------------------------------------------- |

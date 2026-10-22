@@ -362,6 +362,51 @@ describe("ControlClient", () => {
     }
   )
 
+  it("does not elevate an agent signal through operator RPC credentials", async () => {
+    await run(Effect.gen(function*() {
+      const url = yield* baseUrl
+      yield* withClient(url, token, (control) =>
+        Effect.gen(function*() {
+          const card = yield* control.plan({ flowId: "system/test", input: {} })
+          yield* control.approve(card.approval)
+          const started = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: "agent-signal-start"
+          })
+          if (started._tag !== "Accepted" || started.runId === undefined) return yield* Effect.die("expected run")
+          const outcome = yield* Effect.result(control.signal({
+            runId: started.runId,
+            signal: { name: "sign-off", payload: true },
+            idempotencyKey: "agent-signal",
+            principal: { id: "mcp", kind: "agent", stampedAt: 0 }
+          }))
+          expect(outcome).toMatchObject({ _tag: "Failure", failure: { code: "unauthorized" } })
+          expect(yield* Effect.flip(control.signal(null as never))).toBeInstanceOf(TransportError)
+        }))
+    }))
+  })
+
+  it.each([undefined, "http"] as const)(
+    "authenticates watch over HTTP (%s) without a socket service",
+    async (watchTransport) => {
+      const events = await run(Effect.gen(function*() {
+        const url = yield* baseUrl
+        const httpClient = ControlClient.layer({ url: `${url}/rpc`, credential: token, watchTransport }).pipe(
+          Layer.provide([NodeHttpClient.layerUndici, RpcSerialization.layerNdjson])
+        )
+        return yield* Effect.gen(function*() {
+          const control = yield* Control
+          yield* control.plan({ flowId: "system/test", input: { source: "http-watch" } })
+          return yield* Stream.runCollect(control.watch({ follow: false }))
+        }).pipe(Effect.provide(httpClient))
+      }))
+      expect(events.length).toBeGreaterThan(0)
+    }
+  )
+
   it("projects every unary method through its request schema", async () => {
     const tags = await run(Effect.gen(function*() {
       const url = yield* baseUrl

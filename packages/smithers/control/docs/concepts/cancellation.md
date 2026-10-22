@@ -32,12 +32,17 @@ ancestors':
 
 1. **A `control.run.cancel-requested` entry names this run.** Somebody asked
    for it by name, and the entry says who and why.
-2. **A cancelled ancestor exists.** The run reports `cascade`, names the
+2. **An ancestor was cancelled no later than the run.** The run reports `cascade`, names the
    nearest cancelled ancestor, and inherits that ancestor's principal and
    reason. The honest answer to "who cancelled this child" is the operator who
    cancelled its parent.
 3. **Neither.** The engine cancelled the run on its own account. There is no
    principal to report, and inventing one would be worse than saying nothing.
+
+Attribution compares the earliest cancellation evidence along the ancestor
+chain. A later ancestor request cannot relabel an earlier engine cancellation
+or supply its principal and reason to an already cancelled descendant.
+Requests in the same millisecond remain eligible cascade causes.
 
 A run counts as cancelled when any of three things is true: the run store's
 `cancel_requested_at_ms` is set, the engine journaled

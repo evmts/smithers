@@ -374,6 +374,7 @@ const makeWith = (runtime: InboundReceiptStore) =>
 
             const mapped = yield* channel.decodeAndMap(snapshot.raw)
             const key = scopedKey(snapshot.channel, externalKey)
+            const principal = { id: snapshot.channel, kind: "channel", stampedAt: yield* Clock.currentTimeMillis }
             let receipt: Receipt
             if (mapped._tag === "Signal") {
               // The channel is the caller, not the local operator: a webhook
@@ -383,7 +384,8 @@ const makeWith = (runtime: InboundReceiptStore) =>
                 runId: mapped.runId,
                 signal: mapped.signal,
                 idempotencyKey: key,
-                principal: { id: snapshot.channel, kind: "channel", stampedAt: yield* Clock.currentTimeMillis }
+                principal,
+                reader: principal
               })
             } else {
               const plan = yield* control.plan({
@@ -396,7 +398,8 @@ const makeWith = (runtime: InboundReceiptStore) =>
                 planId: plan.planId,
                 digest: plan.digest,
                 envelope: plan.envelope,
-                idempotencyKey: key
+                idempotencyKey: key,
+                principal
               })
             }
             // A parked start has not launched. Leave ingress unsettled so a

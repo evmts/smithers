@@ -54,6 +54,11 @@ plane calls this _after_ the cancel mutation commits, never inside it: driving
 a run re-enters the engine, whose writes would wait on the writer the
 transaction holds.
 
+`ControlExecutor.makeObserving` refuses `launch` and `resumeRun` as composition
+defects. Its `settleCancelledPark` returns without driving execution: cleanup
+of a parked run remains pending for a driving host. Observation, durable
+cancellation requests, and signal delivery remain available.
+
 ## Start from the noop
 
 `ControlExecutor.makeNoop` answers the honest absence for every method, so an

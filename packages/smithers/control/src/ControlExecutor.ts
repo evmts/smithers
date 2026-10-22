@@ -424,10 +424,11 @@ export const layer = (implementation: Service): Layer.Layer<ControlExecutor> =>
  * prevent. Reaching either method is a composition defect, not an operator
  * error, so it dies rather than failing.
  *
- * Observation, cancellation and signal delivery stay live. A cancel and a
- * signal record a durable request that the process driving the run picks up,
- * so none of them reaches a completion, and refusing them would stop an
- * operator ending a run on a host with no gateway key, which is the whole
+ * Settling a cancelled park may resume execution for cleanup, so it is also
+ * left to the driving host. Observation, cancellation and signal delivery stay
+ * live. A cancel and a signal record a durable request that the process driving
+ * the run picks up, so neither reaches a completion. Refusing them would stop
+ * an operator ending a run on a host with no gateway key, which is the whole
  * reason a read host exists.
  *
  * @category constructors
@@ -445,7 +446,8 @@ export const makeObserving = (service: Service): Service => {
     ...service,
     requestComplete: undefined,
     launch: Effect.fn("ControlExecutor.launch")(() => refuse("launch")),
-    resumeRun: Effect.fn("ControlExecutor.resumeRun")(() => refuse("resumeRun"))
+    resumeRun: Effect.fn("ControlExecutor.resumeRun")(() => refuse("resumeRun")),
+    settleCancelledPark: Effect.fn("ControlExecutor.settleCancelledPark")(() => Effect.void)
   })
 }
 
