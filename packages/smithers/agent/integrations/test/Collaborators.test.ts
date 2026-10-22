@@ -45,11 +45,12 @@ const answer = (permission: string, roleName: string) => ({
 })
 
 describe("permission", () => {
-  it("answers the base permission and the role name, dropping GitHub's other fields", async () => {
+  it("answers the base permission, the role name and the account's id, dropping GitHub's other fields", async () => {
     await startGitHub({ maya: answer("write", "maintain") })
     expect(Option.getOrThrow(await run(Collaborators.permission("o", "r", "maya")))).toEqual({
       permission: "write",
-      roleName: "maintain"
+      roleName: "maintain",
+      userId: 1
     })
     expect(fixture!.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
       "GET /repos/o/r/collaborators/maya/permission"
@@ -61,6 +62,12 @@ describe("permission", () => {
     expect(Option.getOrThrow(await run(Collaborators.permission("o", "r", "dependabot[bot]"))).roleName).toBe("read")
     expect(Option.getOrThrow(await run(Collaborators.permission("o", "r", "sam_acme"))).permission).toBe("admin")
     expect(fixture!.requests[0]!.url).toBe("/repos/o/r/collaborators/dependabot%5Bbot%5D/permission")
+  })
+
+  it("answers no account id when GitHub names no account", async () => {
+    await startGitHub({ maya: { permission: "read", role_name: "read" }, sam: { permission: "read", role_name: "read", user: null } })
+    expect(Option.getOrThrow(await run(Collaborators.permission("o", "r", "maya")))).toEqual({ permission: "read", roleName: "read" })
+    expect(Option.getOrThrow(await run(Collaborators.permission("o", "r", "sam")))).toEqual({ permission: "read", roleName: "read" })
   })
 
   it("answers none when GitHub answers 404", async () => {

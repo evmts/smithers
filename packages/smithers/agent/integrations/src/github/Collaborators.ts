@@ -19,7 +19,9 @@ import { requireRepositoryPath } from "./Repository.ts"
  *
  * `permission` is GitHub's legacy base role (`admin`, `write`, `read` or
  * `none`); `roleName` is the role GitHub names, which may be a custom one
- * such as `maintain`, `triage` or an organization's own.
+ * such as `maintain`, `triage` or an organization's own. `userId` is the
+ * numeric id of the account GitHub answered for, when it names one: a login
+ * can change hands after a rename, an id never does.
  *
  * @category models
  * @since 1.0.0
@@ -27,6 +29,7 @@ import { requireRepositoryPath } from "./Repository.ts"
 export interface Permission {
   readonly permission: string
   readonly roleName: string
+  readonly userId?: number
 }
 
 /**
@@ -39,7 +42,11 @@ export interface Permission {
 export const LOGIN_PATTERN =
   /^(?=.{1,39}(?:\[bot\])?$)[A-Za-z0-9][A-Za-z0-9-]*(?:_[A-Za-z0-9][A-Za-z0-9-]*)?(?:\[bot\])?$/
 
-const PermissionAnswer = Schema.Struct({ permission: Schema.String, role_name: Schema.String })
+const PermissionAnswer = Schema.Struct({
+  permission: Schema.String,
+  role_name: Schema.String,
+  user: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.Number })))
+})
 
 const requireLogin = (login: string): Effect.Effect<string, IntegrationError> =>
   typeof login === "string" && LOGIN_PATTERN.test(login)
@@ -79,7 +86,13 @@ export const permission = (
       undefined,
       { schema: PermissionAnswer }
     ).pipe(
-      Effect.map((answer) => Option.some({ permission: answer.permission, roleName: answer.role_name })),
+      Effect.map((answer) =>
+        Option.some<Permission>({
+          permission: answer.permission,
+          roleName: answer.role_name,
+          ...(answer.user === undefined || answer.user === null ? {} : { userId: answer.user.id })
+        })
+      ),
       Effect.catchIf(
         (error) => error.details?.["status"] === 404,
         () => Effect.succeed(Option.none<Permission>())
