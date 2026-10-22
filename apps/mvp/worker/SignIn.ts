@@ -293,7 +293,7 @@ export const make = <E, R>(
       const returnTo = returnPath(url.searchParams.get("return"), origin)
       const state = yield* keys.token
       const stateDigest = SessionKeys.digest(state)
-      const pkce = yield* Core.Pkce.createPkcePair()
+      const pkce = yield* Core.Pkce.createPkcePair().pipe(Effect.orDie)
       const redirectUri = `${origin}${CALLBACK_ROUTE}`
       yield* SessionStore.beginAttempt({
         stateDigest,
@@ -561,7 +561,11 @@ export const make = <E, R>(
       )
     const runKeys = Option.isSome(setup)
       ? setup.value.keys
-      : yield* SessionKeys.make(Option.getOrElse(devSecret, () => Redacted.make(Core.Pkce.createCodeVerifier(48))))
+      : yield* SessionKeys.make(
+        Option.isSome(devSecret)
+          ? devSecret.value
+          : Redacted.make(yield* Core.Pkce.createCodeVerifier(48).pipe(Effect.orDie)),
+      )
     const local = [options.fallback, ...Object.values(options.teammates ?? {})]
 
     /** A credential's person as their session stands now: none once it ended, and with the role it has now. */

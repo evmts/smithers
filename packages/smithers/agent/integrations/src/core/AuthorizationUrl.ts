@@ -11,7 +11,7 @@
  * @since 1.0.0
  */
 export interface AuthorizationRequest {
-  /** An absolute `http:` or `https:` URL. Its own query parameters survive. */
+  /** An absolute HTTPS URL (HTTP only on loopback). Its own query parameters survive. */
   readonly authorizationEndpoint: string
   readonly clientId: string
   readonly redirectUri: string
@@ -51,7 +51,8 @@ export const RESERVED_PARAMS: ReadonlyArray<string> = [
 ]
 
 const parseEndpoint = (authorizationEndpoint: string): URL => {
-  const invalid = () => new TypeError("OAuth authorizationEndpoint must be an absolute http(s) URL")
+  const invalid = () =>
+    new TypeError("OAuth authorizationEndpoint must be an absolute HTTPS URL (HTTP is allowed only on loopback)")
   if (typeof authorizationEndpoint !== "string") throw invalid()
   let url: URL
   try {
@@ -59,7 +60,8 @@ const parseEndpoint = (authorizationEndpoint: string): URL => {
   } catch {
     throw invalid()
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw invalid()
+  const loopback = url.hostname === "localhost" || url.hostname === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(url.hostname)
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw invalid()
   return url
 }
 

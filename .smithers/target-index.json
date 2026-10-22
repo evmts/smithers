@@ -55089,6 +55089,44 @@
     }
   },
   {
+    "label": "//packages/smithers/agent/integrations:importRules",
+    "package": "packages/smithers/agent/integrations",
+    "name": "importRules",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/integrations/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs}",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/import-rules.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/src/ImportAnalysis.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/integrations/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/agent/integrations:lib",
     "package": "packages/smithers/agent/integrations",
     "name": "lib",

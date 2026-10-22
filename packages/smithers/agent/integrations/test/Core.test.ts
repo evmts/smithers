@@ -253,7 +253,7 @@ describe("SignalName conversions", () => {
     expect(notification).toHaveProperty("coalescingKey", "integration:github:issues.opened:smithersai/smithers#12")
   })
 
-  it("coalesces an uncorrelated event under an empty subject and takes an explicit id", () => {
+  it("does not coalesce an uncorrelated event and takes an explicit id", () => {
     const provenance = {
       sourceRunId: "run-1",
       sourceLineageId: "lineage-1",
@@ -266,7 +266,7 @@ describe("SignalName conversions", () => {
       provenance
     })
     expect(notification.id).toBe("explicit")
-    expect(notification).toHaveProperty("coalescingKey", "integration:github:issues.opened:")
+    expect(notification).not.toHaveProperty("coalescingKey")
   })
 })
 
@@ -278,17 +278,17 @@ describe("PKCE", () => {
   const oracle = (verifier: string) => createHash("sha256").update(verifier).digest("base64url")
 
   it("draws a 43-character verifier by default", () => {
-    const verifier = createCodeVerifier()
+    const verifier = Effect.runSync(createCodeVerifier())
     expect(verifier).toHaveLength(43)
     expect(verifier).toMatch(VERIFIER)
   })
 
   it("enforces the byte-length bounds", () => {
-    expect(createCodeVerifier(32)).toHaveLength(43)
-    expect(createCodeVerifier(96)).toHaveLength(128)
-    expect(() => createCodeVerifier(31)).toThrow(/32\.\.96/)
-    expect(() => createCodeVerifier(97)).toThrow(/32\.\.96/)
-    expect(() => createCodeVerifier(32.5)).toThrow(/integer/)
+    expect(Effect.runSync(createCodeVerifier(32))).toHaveLength(43)
+    expect(Effect.runSync(createCodeVerifier(96))).toHaveLength(128)
+    expect(() => Effect.runSync(createCodeVerifier(31))).toThrow(/32\.\.96/)
+    expect(() => Effect.runSync(createCodeVerifier(97))).toThrow(/32\.\.96/)
+    expect(() => Effect.runSync(createCodeVerifier(32.5))).toThrow(/integer/)
   })
 
   it("matches RFC 7636 Appendix B", async () => {
@@ -297,18 +297,18 @@ describe("PKCE", () => {
   })
 
   it("derives an unpadded base64url challenge", async () => {
-    const verifier = createCodeVerifier(96)
+    const verifier = Effect.runSync(createCodeVerifier(96))
     const challenge = await challengeOf(verifier)
     expect(challenge).toHaveLength(43)
     expect(challenge).toMatch(BASE64URL)
     expect(challenge).toBe(oracle(verifier))
   })
 
-  it("validates the verifier length and character set when called", async () => {
-    expect(() => deriveCodeChallenge("a".repeat(42))).toThrow(/43\.\.128/)
-    expect(() => deriveCodeChallenge("a".repeat(129))).toThrow(/43\.\.128/)
-    expect(() => deriveCodeChallenge(`${"a".repeat(42)}!`)).toThrow(/unreserved/)
-    expect(() => deriveCodeChallenge(7 as unknown as string)).toThrow(/must be a string/)
+  it("validates the verifier length and character set during execution", async () => {
+    expect(() => Effect.runSync(deriveCodeChallenge("a".repeat(42)))).toThrow(/43\.\.128/)
+    expect(() => Effect.runSync(deriveCodeChallenge("a".repeat(129)))).toThrow(/43\.\.128/)
+    expect(() => Effect.runSync(deriveCodeChallenge(`${"a".repeat(42)}!`))).toThrow(/unreserved/)
+    expect(() => Effect.runSync(deriveCodeChallenge(7 as unknown as string))).toThrow(/must be a string/)
     expect(await challengeOf(`${"a".repeat(41)}.~`)).toBe(oracle(`${"a".repeat(41)}.~`))
     expect(await challengeOf("a".repeat(128))).toBe(oracle("a".repeat(128)))
   })
@@ -320,9 +320,9 @@ describe("PKCE", () => {
     expect(pair.codeChallenge).toBe(oracle(pair.codeVerifier))
   })
 
-  it("validates the pair's byte length when called, and draws a fresh pair on every run", async () => {
-    expect(() => createPkcePair(31)).toThrow(/32\.\.96/)
-    expect(() => createPkcePair(97)).toThrow(/32\.\.96/)
+  it("validates the pair's byte length during execution, and draws a fresh pair on every run", async () => {
+    expect(() => Effect.runSync(createPkcePair(31))).toThrow(/32\.\.96/)
+    expect(() => Effect.runSync(createPkcePair(97))).toThrow(/32\.\.96/)
     const pair = createPkcePair()
     const [first, second] = await Effect.runPromise(Effect.all([pair, pair]))
     expect(first!.codeVerifier).toHaveLength(43)

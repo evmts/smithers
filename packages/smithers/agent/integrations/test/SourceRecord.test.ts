@@ -31,6 +31,20 @@ const record = (overrides: Partial<SourceRecord> = {}): SourceRecord => ({
 })
 
 describe("compareVersion", () => {
+  it("defines a total order across null, decimal spellings and opaque versions", () => {
+    const tokens = [null, "", "0", "00", "1", "1.0", "2", "10", "1x", "02", "0x2", "etag", "99999999999999999.1"]
+    for (const a of tokens) {
+      for (const b of tokens) {
+        expect(compareVersion(a, b) + compareVersion(b, a)).toBe(0)
+        for (const c of tokens) {
+          if (compareVersion(a, b) <= 0 && compareVersion(b, c) <= 0) {
+            expect(compareVersion(a, c)).toBeLessThanOrEqual(0)
+          }
+        }
+      }
+    }
+  })
+
   it("sorts a missing token first and equal tokens level", () => {
     expect(compareVersion(null, null)).toBe(0)
     expect(compareVersion(null, "1")).toBe(-1)

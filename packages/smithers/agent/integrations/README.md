@@ -50,7 +50,7 @@ matching marker, because the original may be older than the visible copy.
 `Core.Channel.make` binds verify, decode, map, and dispatch in that order.
 Verification reads the exact delivered bytes. The receiver bounds body size
 before `Channels.ingest`, and gives every delivery an `idempotencyKey` to
-prevent duplicate work. See [the receiver guide](docs/guides/webhook-ingress.md).
+prevent duplicate work. Decoder warnings omit raw errors and schema issues. See [the receiver guide](docs/guides/webhook-ingress.md).
 
 ## Tests
 
@@ -66,3 +66,8 @@ live suite requires an explicit test repository and credentials.
 
 [Quickstart](docs/quickstart.md) · [GitHub](docs/guides/github.md) ·
 [API](docs/api.md) · [Durable actions](docs/concepts/durable-actions.md)
+
+PKCE helpers return lazy Effects and fail validation during execution. Authorization
+URLs require HTTPS, except on loopback. `Core.Source.runWithCursor` requires a flow
+execution: poll, handler and commit receipts are journaled and spacing uses the
+durable clock. See [the API](docs/api.md) for its turn budget and recovery contract.

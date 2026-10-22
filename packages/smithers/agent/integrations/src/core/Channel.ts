@@ -146,11 +146,12 @@ export const make = (config: Config): Channel => {
   // An `IntegrationError` is provider-safe by construction, so its summary
   // crosses to the control plane. Anything else is internal text, a
   // `TypeError` message or a foreign error's docs-URL suffix, and only the
-  // channel name crosses; the detail stays in the log.
+  // channel name crosses. Raw errors and schema issues can contain payloads
+  // or credentials, so they never reach logs either.
   const decodeFailed = (cause: unknown): Effect.Effect<never, InvalidInput> =>
     isIntegrationError(cause)
       ? Effect.fail(toInvalidInput(cause))
-      : Effect.logWarning(`${config.name} webhook decoder failed`, cause).pipe(
+      : Effect.logWarning(`${config.name} webhook decoder failed`).pipe(
         Effect.andThen(
           Effect.fail(new InvalidInput({ issue: `${config.name} webhook payload could not be decoded.` }))
         )
@@ -181,8 +182,8 @@ export const make = (config: Config): Channel => {
             // triggered it rather than as a malformed signal three hops later.
             Effect.flatMap((event) =>
               decodeExternalEvent(event).pipe(
-                Effect.catch((issue) =>
-                  Effect.logWarning(`${config.name} webhook decoder produced a malformed event`, issue).pipe(
+                Effect.catch(() =>
+                  Effect.logWarning(`${config.name} webhook decoder produced a malformed event`).pipe(
                     Effect.andThen(
                       Effect.fail(
                         new InvalidInput({ issue: `${config.name} webhook decoder produced a malformed event.` })

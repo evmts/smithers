@@ -1,8 +1,15 @@
-import { Effect, Schedule } from "effect"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { it as effectIt } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Deferred, Effect, Fiber, Layer, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
+import { Failure, fromIntegrationError } from "../src/core/ActionFailure.ts"
 import { CursorStore, layerMemory } from "../src/core/CursorStore.ts"
 import type { ExternalEvent } from "../src/core/ExternalEvent.ts"
-import { type Batch, DEFAULT_SCHEDULE, runWithCursor } from "../src/core/Source.ts"
+import { IntegrationError } from "../src/core/IntegrationError.ts"
+import { type Batch, type RunContext, runWithCursor } from "../src/core/Source.ts"
 
 const event = (id: number): ExternalEvent => ({
   source: "example",
@@ -13,8 +20,36 @@ const event = (id: number): ExternalEvent => ({
   receivedAtMs: 1
 })
 
-const run = <A, E>(effect: Effect.Effect<A, E, CursorStore>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(layerMemory)))
+const runEffect = <A, E>(effect: Effect.Effect<A, E, RunContext>) => {
+  // The real engine executes the runner inside a flow action; callback and
+  // cursor observations below happen within that action's live services.
+  const step = Action.make("test/source/run", {
+    payload: {},
+    success: Schema.Unknown,
+    error: Failure,
+    tier: "irreversible"
+  })
+  const flow = Flow.make("test/source", {
+    payload: {},
+    success: Schema.Unknown,
+    error: Failure,
+    body: () => step.call({})
+  })
+  const layer = Layer.mergeAll(
+    step.toLayer(() => effect.pipe(Effect.mapError(fromIntegrationError))),
+    Interpreter.layer(flow)
+  ).pipe(
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, layerMemory))
+  )
+  return flow.execute({}, { executionId: "source-test" }).pipe(
+    Effect.provide(layer),
+    Effect.scoped,
+    Effect.map((value) => value as A)
+  )
+}
+
+const run = <A, E>(effect: Effect.Effect<A, E, RunContext>) => Effect.runPromise(runEffect(effect))
 
 describe("runWithCursor", () => {
   it("commits each proposed cursor only after the handler succeeds, turn after turn", async () => {
@@ -34,7 +69,7 @@ describe("runWithCursor", () => {
             return batches[cursor ?? "start"]!
           }),
         (events) => Effect.sync(() => void handled.push(events.map((found) => (found.payload as { id: number }).id))),
-        { schedule: Schedule.recurs(2) }
+        { maxTurns: 3, intervalMs: 0 }
       )
       return yield* Effect.flatMap(CursorStore, (cursors) => cursors.get("example"))
     }))
@@ -51,9 +86,9 @@ describe("runWithCursor", () => {
       const failure = yield* Effect.flip(runWithCursor(
         "example",
         () => Effect.succeed<Batch>({ events: [event(7)], cursor: "8" }),
-        () => Effect.fail("handler refused" as const)
+        () => Effect.fail(new IntegrationError("delivery-failed", "handler refused"))
       ))
-      return [failure, yield* cursors.get("example")] as const
+      return [failure.summary, yield* cursors.get("example")] as const
     }))
     expect(failure).toBe("handler refused")
     expect(cursor).toBe("7")
@@ -62,25 +97,68 @@ describe("runWithCursor", () => {
   it("ends with the poll's failure and commits nothing", async () => {
     const [failure, cursor] = await run(Effect.gen(function*() {
       const failure = yield* Effect.flip(
-        runWithCursor("example", () => Effect.fail("poll failed" as const), () => Effect.void)
+        runWithCursor(
+          "example",
+          () => Effect.fail(new IntegrationError("poll-failed", "poll failed")),
+          () => Effect.void
+        )
       )
-      return [failure, yield* Effect.flatMap(CursorStore, (cursors) => cursors.get("example"))] as const
+      return [failure.summary, yield* Effect.flatMap(CursorStore, (cursors) => cursors.get("example"))] as const
     }))
     expect(failure).toBe("poll failed")
     expect(cursor).toBeNull()
   })
 
-  it("polls forever by default, spaced by the default schedule", async () => {
+  it("continues until handler failure when no turn budget is supplied", async () => {
     let turns = 0
     const outcome = await run(
       runWithCursor(
         "example",
         () => Effect.sync(() => ({ events: [], cursor: String(++turns) })),
-        () => turns >= 3 ? Effect.fail("stop" as const) : Effect.void
-      ).pipe(Effect.flip)
+        () => turns >= 3 ? Effect.fail(new IntegrationError("delivery-failed", "stop")) : Effect.void,
+        { intervalMs: 0 }
+      ).pipe(Effect.flip, Effect.map((error) => error.summary))
     )
     expect(outcome).toBe("stop")
     expect(turns).toBe(3)
-    expect(DEFAULT_SCHEDULE).toBeDefined()
   })
 })
+
+it.each([
+  { intervalMs: -1 },
+  { intervalMs: Number.NaN },
+  { intervalMs: 0.5 },
+  { maxTurns: 0 },
+  { maxTurns: 1.5 },
+  { maxTurns: Number.POSITIVE_INFINITY }
+])("refuses an invalid polling budget before any callback: %j", async (options) => {
+  const error = await Effect.runPromise(
+    Effect.flip(
+      runWithCursor("example", () => Effect.die("must not poll"), () => Effect.die("must not handle"), options)
+    ).pipe(Effect.provide(layerMemory)) as Effect.Effect<IntegrationError>
+  )
+  expect(error.reason).toBe("invalid-config")
+})
+
+effectIt.effect(
+  "waits on the durable clock between turns, including the default interval",
+  () =>
+    Effect.gen(function*() {
+      const first = yield* Deferred.make<void>()
+      let handled = 0
+      const fiber = yield* runEffect(
+        runWithCursor("example", () => Effect.succeed({ events: [] }), () =>
+          Effect.andThen(
+            Effect.sync(() => {
+              handled++
+            }),
+            Deferred.succeed(first, undefined)
+          ), { maxTurns: 2 }).pipe(Effect.as(null))
+      ).pipe(Effect.forkChild)
+      yield* Deferred.await(first)
+      expect(handled).toBe(1)
+      yield* TestClock.adjust("250 millis")
+      yield* Fiber.join(fiber)
+      expect(handled).toBe(2)
+    })
+)

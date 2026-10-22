@@ -113,7 +113,9 @@ export const scriptedGitHub = (): ScriptedGitHub => {
           Effect.gen(function* () {
             const issued = codes.get(Redacted.value(code))
             codes.delete(Redacted.value(code))
-            const challenge = yield* Core.Pkce.deriveCodeChallenge(Redacted.value(codeVerifier))
+            const challenge = yield* Core.Pkce.deriveCodeChallenge(Redacted.value(codeVerifier)).pipe(
+              Effect.catch(() => rejected("exchange")),
+            )
             if (issued === undefined || issued.challenge !== challenge || issued.redirectUri !== redirectUri) {
               return yield* rejected("exchange")
             }

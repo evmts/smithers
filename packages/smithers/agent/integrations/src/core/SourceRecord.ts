@@ -149,9 +149,9 @@ const sign = (left: string, right: string): number => left === right ? 0 : left 
  *
  * A missing token sorts first. Two decimal tokens compare as numbers, digit by
  * digit, so `10.5` follows `9.75` without a floating-point round trip that
- * would merge two microsecond-distinct timestamps. Any other pair
- * compares by code unit: a total order, so the same pair always resolves the
- * same way whichever copy arrives first.
+ * would merge two microsecond-distinct timestamps. Decimal tokens sort before
+ * opaque tokens; opaque tokens and numerically equal decimal spellings compare
+ * by code unit. Ordering by token class first keeps mixed triples transitive.
  *
  * @category ordering
  * @since 1.0.0
@@ -162,6 +162,8 @@ export const compareVersion = (left: string | null, right: string | null): numbe
   if (right === null) return 1
   const leftDecimal = DECIMAL_VERSION.exec(left)
   const rightDecimal = DECIMAL_VERSION.exec(right)
+  if (leftDecimal !== null && rightDecimal === null) return -1
+  if (leftDecimal === null && rightDecimal !== null) return 1
   if (leftDecimal !== null && rightDecimal !== null) {
     const leftWhole = leftDecimal[1]!.replace(/^0+(?=\d)/, "")
     const rightWhole = rightDecimal[1]!.replace(/^0+(?=\d)/, "")

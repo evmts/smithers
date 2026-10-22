@@ -49,7 +49,7 @@ export const make = (secret: Redacted.Redacted<string>) =>
       Core.Signature.computeHmacSha256Hex(`${purpose}:${value}`, hmacSecret)
     return {
       // A PKCE verifier is 32 random bytes as base64url: exactly a session or `state` token.
-      token: Effect.sync(() => Core.Pkce.createCodeVerifier(32)),
+      token: Core.Pkce.createCodeVerifier(32).pipe(Effect.orDie),
       sign: (purpose, value) => Effect.map(signature(purpose, value), (mac) => `${value}.${mac}`),
       verify: (purpose, signed) => {
         const dot = signed?.lastIndexOf(".") ?? -1

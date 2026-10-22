@@ -9,8 +9,8 @@
  *
  * Randomness and SHA-256 are WebCrypto's, which a browser, a Cloudflare
  * Worker, Node and Bun all provide. The digest is asynchronous there, so the
- * challenge and the pair are Effects. Arguments are still checked when the
- * function is called, and an invalid one throws.
+ * helpers are lazy Effects. Validation failures are typed errors raised only
+ * when the Effect executes.
  *
  * @since 1.0.0
  */
@@ -27,22 +27,28 @@ const MAX_RANDOM_BYTES = 96
 const base64UrlNoPadding = (bytes: Uint8Array): string =>
   btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")
 
-const checkByteLength = (byteLength: number): void => {
-  if (!Number.isInteger(byteLength)) throw new TypeError("PKCE code_verifier byteLength must be an integer")
-  if (byteLength < MIN_RANDOM_BYTES || byteLength > MAX_RANDOM_BYTES) {
-    throw new RangeError("PKCE code_verifier byteLength must be 32..96 bytes")
-  }
-}
+const checkByteLength = (byteLength: number): Effect.Effect<void, TypeError | RangeError> =>
+  Effect.suspend(() => {
+    if (!Number.isInteger(byteLength)) {
+      return Effect.fail(new TypeError("PKCE code_verifier byteLength must be an integer"))
+    }
+    if (byteLength < MIN_RANDOM_BYTES || byteLength > MAX_RANDOM_BYTES) {
+      return Effect.fail(new RangeError("PKCE code_verifier byteLength must be 32..96 bytes"))
+    }
+    return Effect.void
+  })
 
-const checkVerifier = (codeVerifier: string): void => {
-  if (typeof codeVerifier !== "string") throw new TypeError("PKCE code_verifier must be a string")
-  if (codeVerifier.length < MIN_LENGTH || codeVerifier.length > MAX_LENGTH) {
-    throw new RangeError("PKCE code_verifier must be 43..128 characters")
-  }
-  if (!UNRESERVED.test(codeVerifier)) {
-    throw new TypeError("PKCE code_verifier must contain only RFC 7636 unreserved characters")
-  }
-}
+const checkVerifier = (codeVerifier: string): Effect.Effect<void, TypeError | RangeError> =>
+  Effect.suspend(() => {
+    if (typeof codeVerifier !== "string") return Effect.fail(new TypeError("PKCE code_verifier must be a string"))
+    if (codeVerifier.length < MIN_LENGTH || codeVerifier.length > MAX_LENGTH) {
+      return Effect.fail(new RangeError("PKCE code_verifier must be 43..128 characters"))
+    }
+    if (!UNRESERVED.test(codeVerifier)) {
+      return Effect.fail(new TypeError("PKCE code_verifier must contain only RFC 7636 unreserved characters"))
+    }
+    return Effect.void
+  })
 
 // A checked verifier is ASCII, so its UTF-8 bytes are its ASCII bytes.
 const challengeOf = (codeVerifier: string): Effect.Effect<string> =>
@@ -72,41 +78,43 @@ export interface PkcePair {
  * @category constructors
  * @since 1.0.0
  */
-export const createCodeVerifier = (byteLength: number = DEFAULT_RANDOM_BYTES): string => {
-  checkByteLength(byteLength)
-  return base64UrlNoPadding(crypto.getRandomValues(new Uint8Array(byteLength)))
-}
+export const createCodeVerifier = (
+  byteLength: number = DEFAULT_RANDOM_BYTES
+): Effect.Effect<string, TypeError | RangeError> =>
+  Effect.andThen(
+    checkByteLength(byteLength),
+    Effect.sync(() => base64UrlNoPadding(crypto.getRandomValues(new Uint8Array(byteLength))))
+  )
 
 /**
  * The S256 `code_challenge` for a verifier: base64url of its SHA-256, unpadded.
  *
- * Throws `TypeError` or `RangeError` when called with a verifier RFC 7636
- * does not allow.
+ * Fails with `TypeError` or `RangeError` during execution for a verifier
+ * RFC 7636 does not allow.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const deriveCodeChallenge = (codeVerifier: string): Effect.Effect<string> => {
-  checkVerifier(codeVerifier)
-  return challengeOf(codeVerifier)
-}
+export const deriveCodeChallenge = (codeVerifier: string): Effect.Effect<string, TypeError | RangeError> =>
+  Effect.andThen(checkVerifier(codeVerifier), challengeOf(codeVerifier))
 
 /**
  * A fresh verifier with its challenge, drawn each time the Effect runs.
  *
- * Throws `TypeError` or `RangeError` when called with a `byteLength` outside
- * 32..96.
+ * Fails with `TypeError` or `RangeError` during execution for a `byteLength`
+ * outside 32..96.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const createPkcePair = (byteLength: number = DEFAULT_RANDOM_BYTES): Effect.Effect<PkcePair> => {
-  checkByteLength(byteLength)
-  return Effect.suspend(() => {
-    const codeVerifier = createCodeVerifier(byteLength)
-    return Effect.map(
-      challengeOf(codeVerifier),
-      (codeChallenge): PkcePair => ({ codeVerifier, codeChallenge, codeChallengeMethod: "S256" })
-    )
-  })
-}
+export const createPkcePair = (
+  byteLength: number = DEFAULT_RANDOM_BYTES
+): Effect.Effect<PkcePair, TypeError | RangeError> =>
+  Effect.flatMap(
+    createCodeVerifier(byteLength),
+    (codeVerifier) =>
+      Effect.map(
+        challengeOf(codeVerifier),
+        (codeChallenge): PkcePair => ({ codeVerifier, codeChallenge, codeChallengeMethod: "S256" })
+      )
+  )

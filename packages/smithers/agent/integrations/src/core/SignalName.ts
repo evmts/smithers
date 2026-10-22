@@ -154,7 +154,8 @@ export interface NotificationOptions {
  * they reach the model when the run would otherwise idle, not by interrupting
  * the turn in flight. Consecutive events about the same thing coalesce on
  * `<eventName>:<correlationId>`, so a burst of edits to one issue leaves one
- * pending notification carrying the newest payload.
+ * pending notification carrying the newest payload. Without a correlation ID,
+ * events do not coalesce; their delivery IDs still deduplicate redeliveries.
  *
  * @category conversions
  * @since 1.0.0
@@ -166,5 +167,5 @@ export const toNotification = (event: ExternalEvent, options: NotificationOption
   provenance: options.provenance,
   payload: event.payload,
   delivery: "queue",
-  coalescingKey: `${event.eventName}:${event.correlationId ?? ""}`
+  ...(event.correlationId === null ? {} : { coalescingKey: `${event.eventName}:${event.correlationId}` })
 })

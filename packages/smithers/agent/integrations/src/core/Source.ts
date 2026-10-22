@@ -1,105 +1,141 @@
 /**
- * The polling source contract every long-poll integration shares.
- *
- * A source polls from a stored cursor, hands the events it found to the
- * caller, and proposes the cursor that acknowledges them. `runWithCursor` is
- * the loop around that: it reads the cursor, polls, runs the handler, and
- * commits the proposed cursor only after the handler succeeds. A process that
- * dies mid-batch therefore re-polls the batch instead of skipping it, and the
- * redelivered events are dropped downstream on their dedupe keys.
- *
- * A poll that finds nothing proposes no cursor, which leaves the stored one
- * alone.
+ * Polling sources composed inside a durable flow. Each turn journals its batch,
+ * handler receipt and cursor commit separately; waits use the engine's clock.
  *
  * @since 1.0.0
  */
 
-import { Effect, Schedule } from "effect"
+import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
+import { Effect, Schema } from "effect"
+import type * as Crypto from "effect/Crypto"
+import { Failure, fromIntegrationError, toIntegrationError } from "./ActionFailure.ts"
 import { CursorStore } from "./CursorStore.ts"
-import type { ExternalEvent } from "./ExternalEvent.ts"
-import type { IntegrationError } from "./IntegrationError.ts"
+import { ExternalEvent } from "./ExternalEvent.ts"
+import { IntegrationError } from "./IntegrationError.ts"
+
+/**
+ * One poll turn's result. The cursor is committed only after handling succeeds.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Batch = Schema.Struct({
+  events: Schema.Array(ExternalEvent),
+  cursor: Schema.optional(Schema.String)
+})
 
 /**
  * One poll turn's result.
  *
- * `cursor` is the position to commit once `events` are handled. It is absent
- * when the poll returned nothing, which leaves the stored cursor alone.
- *
  * @category models
  * @since 1.0.0
  */
-export interface Batch {
-  readonly events: ReadonlyArray<ExternalEvent>
-  readonly cursor?: string | undefined
-}
+export type Batch = typeof Batch.Type
 
 /**
- * How `run` repeats its turns.
+ * Durable spacing and an optional turn budget. Effect schedules are not durable.
  *
  * @category models
  * @since 1.0.0
  */
 export interface RunOptions {
-  /**
-   * The schedule between turns. Defaults to polling forever with 250
-   * milliseconds between turns; a finite schedule ends the loop normally.
-   */
-  readonly schedule?: Schedule.Schedule<unknown> | undefined
+  /** Milliseconds between turns, default 250. Zero skips waiting. */
+  readonly intervalMs?: number | undefined
+  /** Positive integer turn budget. Omitted means continue until failure or cancellation. */
+  readonly maxTurns?: number | undefined
 }
 
 /**
- * A polling source bound to one cursor.
+ * The context a polling runner requires inside a flow implementation.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type RunContext = CursorStore | Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+
+/**
+ * A polling source bound to one cursor. A source must have only one active driver.
  *
  * @category services
  * @since 1.0.0
  */
 export interface Source {
-  /** The source id, which is also the cursor key and the dedupe scope. */
   readonly sourceId: string
   /** One poll turn against `cursor`. Commits nothing. */
   readonly poll: (cursor: string | null) => Effect.Effect<Batch, IntegrationError>
-  /**
-   * Reads the cursor, polls, hands the batch to `onBatch`, and commits the
-   * proposed cursor only after `onBatch` succeeds, turn after turn.
-   */
-  readonly run: <E, R>(
-    onBatch: (events: ReadonlyArray<ExternalEvent>) => Effect.Effect<void, E, R>,
+  readonly run: <R>(
+    onBatch: (events: ReadonlyArray<ExternalEvent>) => Effect.Effect<void, IntegrationError, R>,
     options?: RunOptions | undefined
-  ) => Effect.Effect<void, IntegrationError | E, R | CursorStore>
+  ) => Effect.Effect<void, IntegrationError, R | RunContext>
 }
 
 /**
- * The default spacing between turns.
+ * Polls and handles batches as durable steps inside the current flow execution.
  *
- * @category constants
- * @since 1.0.0
- */
-export const DEFAULT_SCHEDULE: Schedule.Schedule<unknown> = Schedule.spaced("250 millis")
-
-/**
- * The commit-after-handle loop.
- *
- * Each turn reads `sourceId`'s cursor from the `CursorStore`, runs `poll`
- * (which owns its own retry policy), runs `onBatch` with the events, and only
- * then stores the proposed cursor. A failure in `poll` or `onBatch` ends the
- * loop with the cursor where it was.
+ * Completed polls and handlers replay from receipts. The cursor advances only
+ * after the handler succeeds. An interrupted unkeyed handler needs explicit
+ * recovery: this helper cannot promise an arbitrary external write is idempotent.
+ * Poll and cursor writes are keyed within the execution. The engine owns waits,
+ * recovery and observability; no process-local timer or retry loop is installed.
+ * Call once per source per execution and provide a persistent CursorStore and
+ * durable host in production. Callback failures must be IntegrationErrors so
+ * their safe classification can round-trip through the action failure schema.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const runWithCursor = <EP, RP, E, R>(
+export const runWithCursor = <RP, R>(
   sourceId: string,
-  poll: (cursor: string | null) => Effect.Effect<Batch, EP, RP>,
-  onBatch: (events: ReadonlyArray<ExternalEvent>) => Effect.Effect<void, E, R>,
+  poll: (cursor: string | null) => Effect.Effect<Batch, IntegrationError, RP>,
+  onBatch: (events: ReadonlyArray<ExternalEvent>) => Effect.Effect<void, IntegrationError, R>,
   options?: RunOptions | undefined
-): Effect.Effect<void, EP | E | IntegrationError, RP | R | CursorStore> =>
+): Effect.Effect<void, IntegrationError, RP | R | RunContext> =>
   Effect.gen(function*() {
+    const intervalMs = options?.intervalMs ?? 250
+    const maxTurns = options?.maxTurns
+    if (
+      !Number.isSafeInteger(intervalMs) || intervalMs < 0 ||
+      (maxTurns !== undefined && (!Number.isSafeInteger(maxTurns) || maxTurns < 1))
+    ) {
+      return yield* Effect.fail(
+        new IntegrationError(
+          "invalid-config",
+          "Polling requires a nonnegative integer intervalMs and a positive integer maxTurns."
+        )
+      )
+    }
+    const instance = yield* FlowRuntime.FlowInstance
     const cursors = yield* CursorStore
-    const turn = Effect.gen(function*() {
-      const cursor = yield* cursors.get(sourceId)
-      const batch = yield* poll(cursor)
-      yield* onBatch(batch.events)
-      if (batch.cursor !== undefined) yield* cursors.set(sourceId, batch.cursor)
-    })
-    return yield* Effect.asVoid(Effect.repeat(turn, options?.schedule ?? DEFAULT_SCHEDULE))
+    for (let turn = 0; maxTurns === undefined || turn < maxTurns; turn++) {
+      const name = `integrations/source/${encodeURIComponent(sourceId)}/${turn}`
+      const key = (phase: string) => `${instance.executionId}/${name}/${phase}`
+      const batch = yield* Action.make({
+        name: `${name}/poll`,
+        tier: "irreversible",
+        idempotencyKey: key("poll"),
+        success: Batch,
+        error: Failure,
+        execute: Effect.flatMap(cursors.get(sourceId), (cursor) => Effect.suspend(() => poll(cursor))).pipe(
+          Effect.mapError(fromIntegrationError)
+        )
+      }).pipe(Effect.mapError(toIntegrationError))
+      yield* Action.make({
+        name: `${name}/handle`,
+        tier: "irreversible",
+        error: Failure,
+        execute: Effect.suspend(() => onBatch(batch.events)).pipe(Effect.mapError(fromIntegrationError))
+      }).pipe(Effect.mapError(toIntegrationError))
+      if (batch.cursor !== undefined) {
+        yield* Action.make({
+          name: `${name}/commit`,
+          tier: "irreversible",
+          idempotencyKey: key("commit"),
+          error: Failure,
+          execute: cursors.set(sourceId, batch.cursor).pipe(Effect.mapError(fromIntegrationError))
+        }).pipe(Effect.mapError(toIntegrationError))
+      }
+      if (maxTurns === undefined || turn + 1 < maxTurns) {
+        yield* DurableClock.sleep({ name: `${name}/wait`, duration: intervalMs, inMemoryThreshold: 0 })
+      }
+    }
   })

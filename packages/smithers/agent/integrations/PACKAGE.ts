@@ -1,5 +1,6 @@
 import {
   BuildAndCheckTypeScriptPackage,
+  ImportRules,
   ReviewDocsAgainstCode,
   ReviewJsdocAgainstCode,
   ReviewTagsMigrationsAndKeys
@@ -158,8 +159,27 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+const importRules = ImportRules({
+  cwd: "packages/smithers/agent/integrations",
+  rules: [
+    {
+      kind: "forbidCalls",
+      files: ["src/core/Source.ts"],
+      callees: ["Effect.repeat", "Effect.retry", "Effect.sleep", "Schedule.spaced", "setTimeout", "setInterval"],
+      because: "DUR-2: polling steps and waits belong to the durable flow engine."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/Core*.test.ts", "test/SourceRecord.test.ts", "test/SourceResume.test.ts"],
+      callees: ["setTimeout", "setInterval", "Effect.sleep"],
+      because: "test.behavioral: wait for a condition or advance TestClock; never sleep to synchronize a test."
+    }
+  ]
+})
+
 export const Package = Smithers.Package({
   targets: {
+    importRules,
     check,
     circular,
     docs,

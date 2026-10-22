@@ -74,7 +74,8 @@ strip an optional `sha256=` and otherwise accept a bare digest.
 
 The binding between a provider webhook and a `@smthrs/control` `Channel`.
 [How adapters sit on the control plane](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/concepts/control-plane.md) explains
-the contract.
+the contract. Decoder warnings contain only the channel and failure category;
+raw exceptions and schema issues never enter logs.
 
 | Export             | Signature                                                                           | Notes                                                                                                                                                                                                                                                               |
 | ------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -113,17 +114,17 @@ or polling source id, defaulting to the provider name), `eventName`
 The reserved `integration:` namespace and the mapping onto control-plane
 signals and notifications.
 
-| Export                      | Signature                                                              | Notes                                                                                                                                                                                                                                |
-| --------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `eventName`                 | `(service: string, event: string) => string`                           | Builds `integration:<service>:<event>`. The event segment may contain dots (`pull_request.opened`); neither segment may contain `:`. Both are trimmed. Throws `SmithersError` `INVALID_INPUT` for an empty or colon-bearing segment. |
-| `parse`                     | `(name: string) => { service: string; event: string } \| null`         | Splits a name back into its parts. A name `eventName` could not have produced parses as `null`.                                                                                                                                      |
-| `receivedBy`                | `(service: string) => string`                                          | The attribution stamped on a delivered signal: `integration:<service>`. Throws `INVALID_INPUT` for an empty or colon-bearing service.                                                                                                |
-| `toSignalPayload`           | `(event: ExternalEvent) => SignalPayload`                              | The control-plane signal: name plus payload.                                                                                                                                                                                         |
-| `toNotification`            | `(event: ExternalEvent, options: NotificationOptions) => Notification` | A queued `system-event` that coalesces on `<eventName>:<correlationId>`. `options.id` defaults to the event's dedupe key; `targetLineageId` and `provenance` are required.                                                           |
-| `isSegment`                 | `(value: unknown) => value is string`                                  | The one refinement constructor and parser agree on.                                                                                                                                                                                  |
-| `isEventName`               | `(value: unknown) => value is string`                                  | Whether `parse` accepts the value.                                                                                                                                                                                                   |
-| `isIntegrationSignalName`   | `(name: unknown) => name is string`                                    | Whether the name carries the reserved prefix.                                                                                                                                                                                        |
-| `INTEGRATION_SIGNAL_PREFIX` | `"integration:"`                                                       | A workflow's own signals must not use it.                                                                                                                                                                                            |
+| Export                      | Signature                                                              | Notes                                                                                                                                                                                                                                               |
+| --------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `eventName`                 | `(service: string, event: string) => string`                           | Builds `integration:<service>:<event>`. The event segment may contain dots (`pull_request.opened`); neither segment may contain `:`. Both are trimmed. Throws `SmithersError` `INVALID_INPUT` for an empty or colon-bearing segment.                |
+| `parse`                     | `(name: string) => { service: string; event: string } \| null`         | Splits a name back into its parts. A name `eventName` could not have produced parses as `null`.                                                                                                                                                     |
+| `receivedBy`                | `(service: string) => string`                                          | The attribution stamped on a delivered signal: `integration:<service>`. Throws `INVALID_INPUT` for an empty or colon-bearing service.                                                                                                               |
+| `toSignalPayload`           | `(event: ExternalEvent) => SignalPayload`                              | The control-plane signal: name plus payload.                                                                                                                                                                                                        |
+| `toNotification`            | `(event: ExternalEvent, options: NotificationOptions) => Notification` | A queued `system-event` that coalesces on `<eventName>:<correlationId>` when a correlation ID exists. Uncorrelated events have no coalescing key. `options.id` defaults to the event's dedupe key; `targetLineageId` and `provenance` are required. |
+| `isSegment`                 | `(value: unknown) => value is string`                                  | The one refinement constructor and parser agree on.                                                                                                                                                                                                 |
+| `isEventName`               | `(value: unknown) => value is string`                                  | Whether `parse` accepts the value.                                                                                                                                                                                                                  |
+| `isIntegrationSignalName`   | `(name: unknown) => name is string`                                    | Whether the name carries the reserved prefix.                                                                                                                                                                                                       |
+| `INTEGRATION_SIGNAL_PREFIX` | `"integration:"`                                                       | A workflow's own signals must not use it.                                                                                                                                                                                                           |
 
 ### Core.CursorStore
 
@@ -210,15 +211,15 @@ not the class, and why it comes in two tags.
 ### Core.Pkce
 
 RFC 7636 PKCE parameters for the GitHub OAuth apps, drawn and hashed with
-WebCrypto. All three constructors throw `TypeError` or `RangeError` when
-called with invalid arguments. The SHA-256 is asynchronous, so the pair and
-the challenge are Effects.
+WebCrypto. All three helpers return lazy Effects. Invalid arguments fail with
+`TypeError` or `RangeError` during execution, so callers can recover through
+Effect. Randomness is drawn afresh on each execution.
 
-| Export                | Signature                                   | Notes                                                                                          |
-| --------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `createPkcePair`      | `(byteLength?: number) => Effect<PkcePair>` | A fresh verifier with its S256 challenge, drawn each time the Effect runs.                     |
-| `createCodeVerifier`  | `(byteLength?: number) => string`           | 32 to 96 bytes of entropy, producing the 43 to 128 characters RFC 7636 allows. Defaults to 32. |
-| `deriveCodeChallenge` | `(codeVerifier: string) => Effect<string>`  | Base64url of the verifier's SHA-256, unpadded.                                                 |
+| Export                | Signature                                                            | Notes                                                                                          |
+| --------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `createPkcePair`      | `(byteLength?: number) => Effect<PkcePair, TypeError \| RangeError>` | A fresh verifier with its S256 challenge, drawn each time the Effect runs.                     |
+| `createCodeVerifier`  | `(byteLength?: number) => Effect<string, TypeError \| RangeError>`   | 32 to 96 bytes of entropy, producing the 43 to 128 characters RFC 7636 allows. Defaults to 32. |
+| `deriveCodeChallenge` | `(codeVerifier: string) => Effect<string, TypeError \| RangeError>`  | Base64url of the verifier's SHA-256, unpadded.                                                 |
 
 `PkcePair` fields: `codeVerifier`, `codeChallenge`, and
 `codeChallengeMethod: "S256"`.
@@ -227,13 +228,13 @@ the challenge are Effects.
 
 The RFC 6749 authorization-code request URL, with PKCE.
 
-| Export                  | Signature                                   | Notes                                                                                                                                                                          |
-| ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `buildAuthorizationUrl` | `(request: AuthorizationRequest) => string` | Throws `TypeError` for a non-HTTP(S) endpoint, an empty required field, or an `extraParams` key in `RESERVED_PARAMS`. `response_type` stays overridable through `extraParams`. |
-| `RESERVED_PARAMS`       | `readonly string[]`                         | `client_id`, `redirect_uri`, `state`, `code_challenge`, `code_challenge_method`: the CSRF and PKCE bindings the builder validates.                                             |
+| Export                  | Signature                                   | Notes                                                                                                                                                                                               |
+| ----------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `buildAuthorizationUrl` | `(request: AuthorizationRequest) => string` | Throws `TypeError` for a non-HTTPS endpoint (except HTTP loopback), an empty required field, or an `extraParams` key in `RESERVED_PARAMS`. `response_type` stays overridable through `extraParams`. |
+| `RESERVED_PARAMS`       | `readonly string[]`                         | `client_id`, `redirect_uri`, `state`, `code_challenge`, `code_challenge_method`: the CSRF and PKCE bindings the builder validates.                                                                  |
 
-`AuthorizationRequest` fields: `authorizationEndpoint` (absolute `http:` or
-`https:` URL; its own query parameters survive), `clientId`, `redirectUri`,
+`AuthorizationRequest` fields: `authorizationEndpoint` (absolute HTTPS URL, allowing HTTP only for
+`localhost`, IPv4 loopback and `[::1]`; its own query parameters survive), `clientId`, `redirectUri`,
 `state`, `codeChallenge`, optional `scope` (a string, or scopes to
 space-join; omitted when empty), optional `codeChallengeMethod` (defaults to
 `S256`), and optional `extraParams` applied after the standard parameters.
@@ -317,8 +318,21 @@ driver that keeps them current.
 - `Sync.runSync(adapter, options)`: reads the committed cursor, asks the
   `SyncAdapter` for pages, and commits each. A `reset` listing tombstones
   whatever it did not contain. A revoked connection is refused first.
-- `Source.runWithCursor`: the polling-source loop over `CursorStore` that
-  commits a cursor only after the handler succeeds.
+- `Source.runWithCursor(sourceId, poll, onBatch, options)`: runs inside a flow
+  implementation with `RunContext`. It journals poll results, handler receipts
+  and cursor commits separately, committing only after the handler succeeds.
+  `options.intervalMs` defaults to 250 and uses the durable clock;
+  `options.maxTurns` optionally bounds the run. The former `schedule` option
+  and `DEFAULT_SCHEDULE` are removed. Callbacks fail with `IntegrationError`,
+  encoded by `ActionFailure.Failure`; arbitrary unencodable errors are not a
+  durable contract. Use a persistent cursor store and durable host in production,
+  with one active driver per source and one call per source per execution.
+  An enclosing orchestration action must be keyed for recovery. Handlers are
+  unkeyed irreversible actions: an unfinished handler is not automatically
+  retried, while a completed handler replays its receipt.
+- `SourceRecord.compareVersion`: missing tokens sort first, then decimals by
+  exact numeric value (code-unit spelling breaks numeric ties), then opaque
+  tokens by code unit. This is transitive across mixed token classes.
 
 ## Environment
 
@@ -350,11 +364,11 @@ headers and the body read. A retry policy sees only attempts that end, so
 without it a peer that answers and then trickles the body forever holds the
 call open. It must be a finite, positive `Duration.Input`.
 
-| Export                    | Signature                                               | Notes                                |
-| ------------------------- | ------------------------------------------------------- | ------------------------------------ |
+| Export                    | Signature                                               | Notes                                                        |
+| ------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
 | `resolve`                 | `(config?: GitHubConfig, env?) => ResolvedGitHubConfig` | Explicit token wins, including blank; fallbacks are trimmed. |
-| `DEFAULT_API_BASE_URL`    | `"https://api.github.com"`                              | The public REST endpoint.            |
-| `DEFAULT_REQUEST_TIMEOUT` | `Duration.seconds(30)`                                  | The default per-request deadline.    |
+| `DEFAULT_API_BASE_URL`    | `"https://api.github.com"`                              | The public REST endpoint.                                    |
+| `DEFAULT_REQUEST_TIMEOUT` | `Duration.seconds(30)`                                  | The default per-request deadline.                            |
 
 ### GitHub.GitHubClient
 
@@ -515,8 +529,8 @@ explains the pattern.
 | `UpsertComment`                                                                 | `Action`, tag `integrations/github/upsert-comment`            | Requires `author: { login }` for user tokens or `author: { appId }` for installation tokens. Adopts only that author’s comment whose first line is `stickyMarker(key)` (Apps also require `user.type: Bot`). Without `key`, the comment is the running execution’s (`runKey`): one per run, never another run’s. Pass `key` only for a domain key recorded before the write. Keyed. Fails without writing on a thread longer than `RECONCILE_PAGES` pages. Success: `id`, `url`, `outcome`. |
 | `stickyMarker`                                                                  | `(key: string) => string`                                     | `<!-- smithers:key=KEY -->`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `runKey`                                                                        | `(action: string) => Effect<string>`                          | `run:` and 32 hex of SHA-256 over the running execution’s id: the key `UpsertComment` and `CheckRun` use when the payload names none. Dies with `Action.EffectKeyUnavailable` outside a flow execution.                                                                                                                                                                                                                                                                                     |
-| `CheckRun`                                                                      | `Action`, tag `integrations/github/check-run`                 | Requires the authenticated App’s numeric `appId`. Creates or updates that App’s check run whose `external_id` is `key` on `headSha`; without `key`, the running execution’s (`runKey`), one per run and name. Keyed. Needs a GitHub App installation token. Success: `id`, `url`, `status`, `conclusion`, `created`.                                                                                                                                                                                                                                 |
-| `LinkPullRequest`                                                               | `Action`, tag `integrations/github/link-pr`                   | Adds a closing link through `addCloseIssueReferences`, preserving the description. Existing keywords or manual links are unchanged; unsupported servers fail without editing the body. Keyed. Success: `pullNumber`, `url`, `reference`, `updated`.                                                                                                                                                                                                                                                                                                                             |
+| `CheckRun`                                                                      | `Action`, tag `integrations/github/check-run`                 | Requires the authenticated App’s numeric `appId`. Creates or updates that App’s check run whose `external_id` is `key` on `headSha`; without `key`, the running execution’s (`runKey`), one per run and name. Keyed. Needs a GitHub App installation token. Success: `id`, `url`, `status`, `conclusion`, `created`.                                                                                                                                                                        |
+| `LinkPullRequest`                                                               | `Action`, tag `integrations/github/link-pr`                   | Adds a closing link through `addCloseIssueReferences`, preserving the description. Existing keywords or manual links are unchanged; unsupported servers fail without editing the body. Keyed. Success: `pullNumber`, `url`, `reference`, `updated`.                                                                                                                                                                                                                                         |
 | `closesIssue`                                                                   | `(body, issue, sameRepository) => boolean`                    | Whether a description closes the issue with any GitHub closing keyword.                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `layerAddLabels`, `layerUpsertComment`, `layerCheckRun`, `layerLinkPullRequest` | same as `layerCommentOnIssue`                                 | Implement each action over the client in context.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `layer`                                                                         | same                                                          | Every GitHub action's implementation in one layer.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
