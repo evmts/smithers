@@ -196,7 +196,8 @@ The defaults are:
 a budget of zero interrupts the binding's own scaffolding rather than the
 cell, so the boundary refuses it as `unsupported`. `memoryBytes` is a run
 budget because the realm outlives its frames; a frame that opens over the
-ceiling is refused before it runs and told which names to free. For the full
+ceiling is refused before it runs and reports the heaviest names. Admission
+stays closed; close the realm's scope to release its memory. For the full
 semantics, see the [limits reference](../api.md#limits). A flow result larger
 than the heap still available is not copied into the realm: the frame records a
 `limit_exceeded` rejection with `reason: "heap"` instead.

@@ -8,6 +8,7 @@
  */
 import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
 import { Cause, Deferred, Effect, Exit, Fiber, Option, Schema, Scope } from "effect"
+import { TestClock } from "effect/testing"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { newVariant } from "quickjs-emscripten-core"
 import { describe, expect, it, vi } from "vitest"
@@ -191,28 +192,41 @@ describe("QuickJSSandbox limits", () => {
   })
 
   it("pauses only the frame backstop during a named long wait", async () => {
-    const cell = `await ctx.call("fs/list", {}); ctx.done("child done")`
-    const call: Sandbox.Handler = () =>
-      Effect.sleep("80 millis").pipe(
-        Effect.as(new Cell.CallResult({ outcome: "success", value: null }))
+    const wait = (pauseTotalMsFor?: ReadonlyArray<string>) => {
+      let now = 0
+      return Effect.gen(function*() {
+        const entered = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const sandbox = yield* QuickJSSandbox.makeWithClock
+        const realm = yield* sandbox.openRealm!({
+          flows,
+          limits: { totalMs: 30, callMs: 1000, pauseTotalMsFor }
+        })
+        const fiber = yield* realm.evaluate({
+          cell: Cell.source(`await ctx.call("fs/list", {}); ctx.done("child done")`),
+          frame: 0,
+          call: () =>
+            Deferred.succeed(entered, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as(new Cell.CallResult({ outcome: "success", value: null }))
+            )
+        }).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Deferred.await(entered)
+        now = 80
+        yield* TestClock.adjust(80)
+        if (pauseTotalMsFor?.includes("fs/list")) expect(fiber.pollUnsafe()).toBeUndefined()
+        yield* Deferred.succeed(release, undefined)
+        return (yield* Fiber.join(fiber)).outcome
+      }).pipe(
+        Effect.provideService(QuickJSSandbox.ComputeClock, { now: () => now }),
+        Effect.scoped,
+        Effect.provide(TestClock.layer()),
+        Effect.runPromise
       )
-    const normal = await outcomeOf(cell, { call, limits: { totalMs: 30, callMs: 1000 } })
-    const unmatched = await outcomeOf(cell, {
-      call,
-      limits: {
-        totalMs: 30,
-        callMs: 1000,
-        pauseTotalMsFor: ["other"]
-      }
-    })
-    const paused = await outcomeOf(cell, {
-      call,
-      limits: {
-        totalMs: 30,
-        callMs: 1000,
-        pauseTotalMsFor: ["fs/list"]
-      }
-    })
+    }
+    const normal = await wait()
+    const unmatched = await wait(["other"])
+    const paused = await wait(["fs/list"])
     expect(normal).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
     expect(unmatched).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
     expect(paused).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "child done" } })
@@ -814,8 +828,8 @@ describe("QuickJSSandbox memory pressure", () => {
       for (
         const [frame, source] of [
           `var held = ${collection}
-         { let index = 0; let chunk = "a".repeat(2 * 1024 * 1024); ${retain} }`,
-          `{ let index = 1; let chunk = "b".repeat(2 * 1024 * 1024); ${retain} }`,
+         { let index = 0; let chunk = "a".repeat(1200 * 1024); ${retain} }`,
+          `{ let index = 1; let chunk = "b".repeat(1200 * 1024); ${retain} }`,
           `console.log("must be refused")`,
           `held.clear(); console.log("freed")`,
           `console.log("recovered")`
@@ -836,9 +850,10 @@ describe("QuickJSSandbox memory pressure", () => {
       message: expect.stringContaining("held (")
     })
     expect(frames[2]!.prints).toBe("")
-    expect(frames[3]!.prints).toBe("freed")
-    expect(frames[4]!.outcome._tag).toBe("settled")
-    expect(frames[4]!.prints).toBe("recovered")
+    for (const frame of frames.slice(3)) {
+      expect(frame.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+      expect(frame.prints).toBe("")
+    }
   })
 
   it("uses captured collection intrinsics without invoking cell accessors", async () => {
@@ -852,8 +867,8 @@ describe("QuickJSSandbox memory pressure", () => {
       for (
         const [frame, source] of [
           `var touched = false
-         var held = new Map([[0, new Set(["a".repeat(2 * 1024 * 1024)])]])`,
-          `held.set(1, new Set(["b".repeat(2 * 1024 * 1024)]))
+         var held = new Map([[0, new Set(["a".repeat(600 * 1024)])]])`,
+          `held.set(1, new Set(["b".repeat(600 * 1024)]))
          { let trap = function () { touched = true; throw new Error("probe ran cell code") }
            Object.getPrototypeOf(held.entries()).next = trap
            Object.getPrototypeOf(new Set().values()).next = trap
@@ -864,7 +879,7 @@ describe("QuickJSSandbox memory pressure", () => {
            Object.defineProperty(held, Symbol.iterator, { get: trap })
            globalThis.Map = null
            globalThis.Set = null }`,
-          `console.log("must be refused")`,
+          `console.log(String(touched))`,
           `held = null; console.log(String(touched))`
         ].entries()
       ) {
@@ -875,8 +890,9 @@ describe("QuickJSSandbox memory pressure", () => {
 
     expect(frames[0]!.outcome._tag).toBe("settled")
     expect(frames[1]!.outcome._tag).toBe("settled")
-    expect(frames[2]!.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
-    expect(frames[2]!.prints).toBe("")
+    expect(frames[2]!.outcome._tag).toBe("settled")
+    expect(frames[2]!.prints).toBe("false")
+    expect(frames[3]!.outcome._tag).toBe("settled")
     expect(frames[3]!.prints).toBe("false")
   })
 
@@ -922,7 +938,7 @@ describe("QuickJSSandbox memory pressure", () => {
       for (
         const [frame, source] of [
           `var held = new Map(); held.set(held, new Set([held]))`,
-          `held.payload = ["a".repeat(2 * 1024 * 1024), "b".repeat(2 * 1024 * 1024)]`,
+          `held.payload = ["a".repeat(1200 * 1024), "b".repeat(1200 * 1024)]`,
           `console.log("must be refused")`
         ].entries()
       ) {

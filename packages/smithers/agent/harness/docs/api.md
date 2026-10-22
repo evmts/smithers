@@ -150,8 +150,12 @@ document, so a command that names none is not cut sooner than its flow says.
 `memoryBytes` is a run budget rather than a frame budget because a realm outlives
 its frames. `runtime.setMemoryLimit` covers the object graph but does not count
 string data on the shipped QuickJS variant, so the panel probe weighs the realm's
-own names and a frame that opens over the ceiling is refused before it runs. The
-reading is cleared with the refusal, because freeing is itself done by a cell.
+own names and a frame that opens over the ceiling is refused before it runs.
+That refusal persists for the realm: allowing an arbitrary recovery cell would
+also allow further allocations. Close the realm's scope to release its memory.
+A missed or failed probe invalidates the last reading. Admission retries the
+probe under the next frame's budget and runs user code only after a complete
+reading within the ceiling.
 
 ## Bytes
 
@@ -161,8 +165,9 @@ this unit, including CJK and emoji payloads. Elision notices state the real
 UTF-8 byte count.
 
 The supplemental memory probe is a separate estimate, not a UTF-8 byte count or
-an exact heap measurement. Strings and property names contribute their UTF-16
-code-unit lengths. Objects have a base weight of 8; non-string scalars,
+an exact heap measurement. Strings and property names contribute twice their UTF-16
+code-unit lengths, a constant-time upper bound for QuickJS's one- or two-byte
+storage. Objects have a base weight of 8; non-string scalars,
 functions, accessors and cycle references have fixed weights of 8. The probe walks named globals, array indices,
 enumerable own string-keyed data properties, Map keys and values, and Set values.
 Collection entries use the same traversal budget as properties: 200,000 values

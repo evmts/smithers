@@ -667,8 +667,7 @@ const panelProbe = (baseline: string): string =>
     // never ends, and an ancestor list cuts it at the cost of the depth ceiling
     // rather than of the whole graph. Two siblings that share one object are
     // counted twice, which over-states such a realm: a ceiling that errs toward
-    // refusing is the safe direction, and the refusal is spent on the frame it
-    // lands in, so the next cell runs and can restructure. A Set or a WeakSet
+    // refusing is the safe direction. A Set or a WeakSet
     // would dedupe them properly and cannot be used here: allocating either
     // inside a realm that is at its heap ceiling, which is the realm this probe
     // exists to weigh, leaves the runtime unable to assert itself empty at
@@ -685,16 +684,10 @@ const panelProbe = (baseline: string): string =>
         return 0
       }
       budget = budget - 1
-      // Code units, not UTF-8 bytes, and deliberately: this walk answers "how
-      // much of the host's memory is this realm holding", and QuickJS stores a
-      // string as one or two bytes per code unit, so a unit count is the honest
-      // reading of the thing being bounded. It is also the only O(1) one, and
-      // that is load-bearing: the probe runs at frame close under the cell's own
-      // interrupt budget, so a scan of a two-hundred-megabyte realm is killed
-      // part way and a realm that cannot be weighed at all reads as weighing
-      // nothing. UTF-8 bytes are the unit of what the model is SHOWN, which is
-      // the print channel and the call ledger, not of what the realm holds.
-      if (kind === "string") return value.length
+      // QuickJS uses one or two bytes per code unit. Its storage width is not
+      // exposed to JavaScript, so use the conservative two-byte bound in O(1)
+      // rather than scanning every string under the frame's interrupt budget.
+      if (kind === "string") return 2 * value.length
       if (value === null || kind !== "object") return 8
       for (var up = 0; up < path.length; up++) if (path[up] === value) return 8
       path.push(value)
@@ -711,6 +704,17 @@ const panelProbe = (baseline: string): string =>
           // Holes and accessors consume a node just like a data slot. Never
           // invoke an accessor merely to account for its traversal cost.
           sum = sum + weigh(property !== undefined && "value" in property ? property.value : undefined, depth + 1)
+        }
+        // Enumerate extras without allocating an array of all the indices.
+        // Descriptors exclude inherited properties and never invoke accessors.
+        for (var key in value) {
+          if (partial) break
+          var numeric = +key
+          if (numeric >= 0 && numeric < count && numeric % 1 === 0 && String(numeric) === key) continue
+          var property = descriptorOf(value, key)
+          if (property === undefined) continue
+          sum = sum + 2 * key.length
+          sum = sum + weigh("value" in property ? property.value : undefined, depth + 1)
         }
         path.pop()
         return sum
@@ -743,7 +747,7 @@ const panelProbe = (baseline: string): string =>
       var keys = keysOf(value)
       for (var key = 0; key < keys.length && !partial; key++) {
         var property = descriptorOf(value, keys[key])
-        sum = sum + keys[key].length
+        sum = sum + 2 * keys[key].length
         if (property === undefined || !("value" in property)) sum = sum + 8
         else sum = sum + weigh(property.value, depth + 1)
       }
@@ -844,12 +848,9 @@ const decodeProbe = Schema.decodeUnknownSync(
  * States the run's memory ceiling in the terms the realm can act on.
  *
  * Written for the model, because the model is who reads it: the total, the
- * ceiling, and the three names to reassign. A `var`-created global is
- * non-configurable, so `delete` cannot remove one and assignment is the whole of
- * the recovery — which is also why the refusal has to be spent where it lands.
- * Freeing is done by a cell, and a cell that is refused cannot free anything, so
- * a ceiling that stayed shut would ask for the one act it had just made
- * impossible. See {@link openRealm}.
+ * ceiling, and the three heaviest names. The refusal persists: admitting an
+ * arbitrary recovery cell would also admit further allocations. The caller
+ * must close the realm to release its resources.
  */
 const overBudget = (
   held: number,
@@ -863,11 +864,8 @@ const overBudget = (
   return new Cell.Rejected({
     code: "limit_exceeded",
     message: `The names this realm holds weigh ${held} bytes, over this run's ceiling of ${ceiling}. ` +
-      `Nothing ran this frame, and your next cell does run: spend it freeing the largest by assigning over them — ${
-        heaviest.join(", ")
-      } — ` +
-      "because a name a cell bound can be reassigned but never deleted. Every other name is still bound, " +
-      "and a realm still over the ceiling after that cell is refused again."
+      `Largest names: ${heaviest.join(", ")}. Nothing ran this frame. Close this realm to release its memory; ` +
+      "further frames in this realm are refused."
   })
 }
 
@@ -878,7 +876,7 @@ const overBudget = (
  * somewhere inside one name, so what it counted is a floor and not a total. The
  * honest reading of a floor is "at least this much", and a ceiling that cannot
  * be shown to be respected is a ceiling that is spent: the frame is refused
- * exactly as an over-budget one is, and for the same recovery. Failing the other
+ * exactly as an over-budget one is. Failing the other
  * way is what let a realm holding eleven megabytes of string sit under a four
  * megabyte ceiling, because the budget ran out before the string was reached.
  *
@@ -890,9 +888,8 @@ const tooLargeToWeigh = (held: number, ceiling: number, root: string, bytes: num
     code: "limit_exceeded",
     message: `This realm is too large to measure: weighing it stopped inside ${root} (${bytes}) before it finished, ` +
       `so the ${held} bytes counted are a floor and not a total, and this run's ceiling of ${ceiling} is treated as spent. ` +
-      "Nothing ran this frame, and your next cell does run: spend it freeing that name by assigning over it, " +
-      "because a name a cell bound can be reassigned but never deleted. Every other name is still bound, " +
-      "and a realm still too large to weigh after that cell is refused again."
+      "Nothing ran this frame. Further frames require a complete reading within the ceiling. " +
+      "Close this realm to release its memory."
   })
 
 /**
@@ -924,20 +921,10 @@ const tooLargeToWeigh = (held: number, ceiling: number, root: string, bytes: num
  * ceiling; it does not count string data at all on the shipped variant, so
  * accumulation across frames escapes it entirely. The panel probe supplies that
  * half: it weighs what the realm's own names hold and a frame that opens over
- * the ceiling is refused before it runs, with the heaviest names stated, so the
- * next cell frees by assignment and the realm survives.
- *
- * The refusal is spent where it lands, and that is the load-bearing half of it.
- * Freeing is done by a cell, so a ceiling that stayed shut once it had fired
- * would refuse the freeing cell too, and the run would spend every remaining
- * frame being told to do the one thing it was being prevented from doing. So
- * the reading is cleared with the refusal: the next frame runs, the probe weighs
- * the realm again at its close, and a realm still over the ceiling is refused
- * again. The bound is therefore a pair of frames — a cell may allocate past the
- * ceiling and is told at the next frame, and a run that never frees alternates
- * between refusal and cell rather than growing every frame — which is what "the
- * names a run accumulates" can honestly mean when the harness never drops a
- * value behind the model's back.
+ * the ceiling is refused before it runs, with the heaviest names stated. Failed
+ * probes also close admission: the last reading predates the cell's mutations.
+ * Refusal persists until the caller closes the realm, because an arbitrary
+ * recovery cell could allocate instead of freeing memory.
  */
 const openRuntime = (
   module: QuickJSWASMModule,
@@ -990,47 +977,48 @@ const openRuntime = (
       }
     }
 
-    const acquired = yield* Effect.acquireRelease(
-      Effect.sync(() => {
-        const runtime: QuickJSRuntime = module.newRuntime()
-        /* v8 ignore else -- `withDefaults` fills `memoryBytes` whenever the `memoryBytes` capability is declared, and this binding declares it, so the heap ceiling is always set */
-        if (realmLimits.memoryBytes !== undefined) {
-          runtime.setMemoryLimit(realmLimits.memoryBytes)
-        }
-        runtime.setMaxStackSize(QuickJSLifecycle.stackBytes)
-        runtime.setInterruptHandler(() => {
-          const hit = interrupt.poll()
-          if (hit === "time") {
-            exhausted = exhausted ?? timeLimitExceeded(timeMs)
-            return true
-          }
-          if (hit === "steps") {
-            exhausted = exhausted ?? new Cell.Rejected({
-              code: "limit_exceeded",
-              message: `This cell exceeded its limit of ${stepBudget} interpreter steps`
-            })
-            return true
-          }
-          return false
-        })
-        const context: QuickJSContext = runtime.newContext()
-        return { runtime, context }
-      }),
-      ({ context, runtime }) =>
+    const runtime: QuickJSRuntime = yield* Effect.acquireRelease(
+      Effect.sync(() => module.newRuntime()),
+      (runtime) =>
         Effect.sync(() => {
-          if (broken) return
-          context.dispose()
-          runtime.dispose()
+          if (!broken) runtime.dispose()
         })
     )
-    const { context, runtime } = acquired
+    yield* Effect.sync(() => {
+      /* v8 ignore else -- `withDefaults` fills `memoryBytes` whenever the `memoryBytes` capability is declared, and this binding declares it, so the heap ceiling is always set */
+      if (realmLimits.memoryBytes !== undefined) {
+        runtime.setMemoryLimit(realmLimits.memoryBytes)
+      }
+      runtime.setMaxStackSize(QuickJSLifecycle.stackBytes)
+      runtime.setInterruptHandler(() => {
+        const hit = interrupt.poll()
+        if (hit === "time") {
+          exhausted = exhausted ?? timeLimitExceeded(timeMs)
+          return true
+        }
+        if (hit === "steps") {
+          exhausted = exhausted ?? new Cell.Rejected({
+            code: "limit_exceeded",
+            message: `This cell exceeded its limit of ${stepBudget} interpreter steps`
+          })
+          return true
+        }
+        return false
+      })
+    })
+    const context: QuickJSContext = yield* Effect.acquireRelease(
+      Effect.sync(() => runtime.newContext()),
+      (context) =>
+        Effect.sync(() => {
+          if (!broken) context.dispose()
+        })
+    )
 
-    // Its own scoped resource rather than part of the acquire above, and that
+    // Its own scoped resource rather than part of the context acquire, and that
     // is the whole point: a helper the realm cannot evaluate used to be caught
     // by hand, which meant a hand-written teardown and a branch no test could
-    // reach once a zero budget stopped being accepted. Registered as a second
-    // resource, the failure is ordinary: the scope closes, the finalizer above
-    // disposes the context and the runtime, and nothing leaks. Finalizers run
+    // reach once a zero budget stopped being accepted. With scoped ownership,
+    // failure closes the scope and disposes the context and runtime. Finalizers run
     // in reverse, so this handle is still released before them.
     const defineDataProperty = yield* Effect.acquireRelease(
       Effect.sync(() =>
@@ -1240,6 +1228,28 @@ const openRuntime = (
     let weighed: ReadonlyArray<typeof Weighed.Type> = []
     let held = 0
     let unweighed: { readonly root: string; readonly bytes: number } | undefined
+    let needsProbe = false
+
+    const readProbe = (): void => {
+      needsProbe = true
+      const read = enter(() => context.callFunction(probe, context.undefined))
+      if (read.error !== undefined) {
+        read.error.dispose()
+        return
+      }
+      try {
+        const measured = decodeProbe(JSON.parse(context.getString(read.value)))
+        weighed = measured.names
+        held = measured.bytes
+        unweighed = measured.partial ? { root: measured.partialRoot, bytes: measured.partialBytes } : undefined
+        bindings = measured.names.map((entry) =>
+          new VariablesPanel.Binding({ name: entry.name, type: entry.type, size: entry.size })
+        )
+        needsProbe = false
+      } finally {
+        read.value.dispose()
+      }
+    }
 
     const evaluateFrame = (
       evaluation: Sandbox.RealmEvaluation,
@@ -1298,23 +1308,18 @@ const openRuntime = (
 
         // The run's memory budget, judged against what the realm's own names
         // weigh rather than against a heap counter that cannot see them. A
-        // frame that opens over the ceiling runs nothing, so nothing is lost
-        // and the recovery is one assignment — and the reading is cleared with
-        // the refusal, because the cell that frees is a cell and has to run.
-        // Left standing, the ceiling would refuse that cell too, and every one
-        // after it, so the run would spend the rest of its frames being told to
-        // do the one thing it was being prevented from doing. Cleared, the next
-        // frame runs, the probe weighs the realm again at its close, and a realm
-        // still over the ceiling is refused again.
+        // frame that opens over the ceiling runs nothing. Keep the reading:
+        // admitting a recovery cell also admits arbitrary further allocations.
+        // A missed probe can be retried under this frame's fresh budget, but
+        // never admits user code on the strength of its stale reading.
+        if (needsProbe) readProbe()
+        if (needsProbe) return frameOf(tooLargeToWeigh(0, memoryBytes, "unknown", 0))
         if (unweighed !== undefined) {
           const refusal = tooLargeToWeigh(held, memoryBytes, unweighed.root, unweighed.bytes)
-          unweighed = undefined
-          held = 0
           return frameOf(refusal)
         }
         if (held > memoryBytes) {
           const refusal = overBudget(held, memoryBytes, weighed)
-          held = 0
           return frameOf(refusal)
         }
 
@@ -1322,6 +1327,9 @@ const openRuntime = (
         const compiled = evaluation.program ?? Sandbox.compile(evaluation.cell)
         if (compiled instanceof Cell.Rejected) return frameOf(compiled)
 
+        // From here a cell may mutate the realm. Only a completed probe can
+        // establish its weight again, including after interruption or timeout.
+        needsProbe = true
         const started = enter(() => context.evalCode(compiled, `cell-${evaluation.frame}.js`, 128))
         if (started.error !== undefined) {
           const failure = context.dump(started.error)
@@ -1446,30 +1454,18 @@ const openRuntime = (
         )
 
         if (evaluation.replay !== undefined) {
-          // A timed-out attempt never reached the probe below. Keep its realm
-          // accounting too, so the next frame sees the same memory admission.
+          // A timed-out attempt never reached the probe below. A later frame
+          // must measure its retained memory before admitting more user code.
           return { outcome: evaluation.replay.outcome, prints: "", bindings, boundary: evaluation.replay.boundary }
         }
 
         // The panel, read from the realm the cell just ran in. It shares the
-        // frame's remaining budget, so a cell that spent all of its own leaves
-        // the previous reading standing rather than an empty one. What a cell
+        // frame's remaining budget. A failed probe leaves admission closed
+        // rather than trusting the reading from before the cell. What a cell
         // cannot do is take the reading away: the probe holds its own
         // intrinsics from before any cell ran, so a realm whose `Object` a cell
         // has rebound is still weighed and still named.
-        const read = enter(() => context.callFunction(probe, context.undefined))
-        if (read.error === undefined) {
-          const measured = decodeProbe(JSON.parse(context.getString(read.value)))
-          read.value.dispose()
-          weighed = measured.names
-          held = measured.bytes
-          unweighed = measured.partial ? { root: measured.partialRoot, bytes: measured.partialBytes } : undefined
-          bindings = measured.names.map((entry) =>
-            new VariablesPanel.Binding({ name: entry.name, type: entry.type, size: entry.size })
-          )
-        } else {
-          read.error.dispose()
-        }
+        readProbe()
         return frameOf(outcome)
       }).pipe(
         limits.pauseTotalMsFor?.length && evaluation.replay === undefined

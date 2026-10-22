@@ -495,7 +495,7 @@ describe("QuickJSSandbox.openRealm", () => {
     expect(frames[1]!.prints).toBe("still here")
   })
 
-  it("keeps the realm alive after a heap exhaustion and frees it by assignment", async () => {
+  it("keeps admission closed after retained memory exceeds the ceiling", async () => {
     const frames = await session([
       "var big = []\ntry { while (true) big.push('x'.repeat(1024)) } catch (error) { console.log(error.name) }",
       "console.log('the frame the budget refuses')",
@@ -505,11 +505,12 @@ describe("QuickJSSandbox.openRealm", () => {
     // name the cell had already bound is still bound after it.
     expect(frames[0]!.prints).toContain("Error")
     // What that cell kept is what the run is now over its ceiling by, so the
-    // next frame is refused — naming `big`, which is the name the frame after
-    // it assigns over.
+    // next frame is refused, naming `big`. Arbitrary cells stay refused even
+    // when their source claims to release that binding.
     expect(frames[1]!.outcome._tag === "rejected" && frames[1]!.outcome.code).toBe("limit_exceeded")
     expect(frames[1]!.outcome._tag === "rejected" && frames[1]!.outcome.message).toContain("big (")
-    expect(frames[2]!.prints).toBe("recovered")
+    expect(frames[2]!.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+    expect(frames[2]!.prints).toBe("")
   })
 
   it("counts an aliased object once per reference, which over-states rather than under-states", async () => {
@@ -518,17 +519,16 @@ describe("QuickJSSandbox.openRealm", () => {
     // everything it has seen, because allocating a Set inside a realm at its
     // heap ceiling aborts the runtime at teardown. Two references to one object
     // are therefore weighed twice. A ceiling that errs toward refusing is the
-    // safe direction, and the refusal is spent where it lands, so the frame
-    // after it runs and can restructure.
+    // safe direction. The two-byte string estimate is conservative too.
     const frames = await session([
       `var shared = { payload: "x".repeat(2 * 1024 * 1024) }
        var aliases = [shared, shared]`,
       "console.log('measured')"
     ], { limits: { memoryBytes: 8 * 1024 * 1024, steps: Number.MAX_SAFE_INTEGER } })
 
-    // 2 MiB held once, aliased twice, weighed as 3 x 2 MiB against an 8 MiB
-    // ceiling: still under it, and visibly more than the realm holds.
-    expect(frames[1]!.outcome._tag).toBe("settled")
+    // 2 MiB held once, aliased twice, weighed as 3 x 4 MiB against an 8 MiB
+    // ceiling: conservative string width and repeated references both over-state.
+    expect(frames[1]!.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
     expect(named(frames[0]!.bindings, "aliases")).toBeDefined()
   }, 60_000)
 
@@ -600,10 +600,11 @@ describe("QuickJSSandbox.openRealm", () => {
     expect(open[0]!.outcome._tag).toBe("settled")
     expect(refusal).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
     expect(refusal._tag === "rejected" && refusal.message).toContain("target")
-    expect(open[2]!.prints).toBe("recovered")
+    expect(open[2]!.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+    expect(open[2]!.prints).toBe("")
   }, 60_000)
 
-  it("refuses a realm whose node budget cannot measure one root, then lets the freeing frame run", async () => {
+  it("keeps refusing a realm whose node budget cannot measure one root", async () => {
     const frames = await session([
       `var tooWide = []
        for (var index = 0; index < 200100; index++) tooWide.push({})`,
@@ -622,7 +623,8 @@ describe("QuickJSSandbox.openRealm", () => {
     expect(refusal._tag === "rejected" && refusal.message).toContain("tooWide")
     expect(refusal._tag === "rejected" && refusal.message).toContain("too large to measure")
     expect(frames[1]!.prints).toBe("")
-    expect(frames[2]!.prints).toBe("recovered")
+    expect(frames[2]!.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+    expect(frames[2]!.prints).toBe("")
   }, 60_000)
 
   it("refuses a root that exceeds the probe's depth ceiling", async () => {
@@ -641,11 +643,11 @@ describe("QuickJSSandbox.openRealm", () => {
 
   /** Two strings each under the ceiling, together over it. */
   const accumulate = [
-    "var first = 'w'.repeat(3 * 1024 * 1024)",
-    "var second = 'w'.repeat(3 * 1024 * 1024)"
+    "var first = 'w'.repeat(1536 * 1024)",
+    "var second = 'w'.repeat(1536 * 1024)"
   ]
 
-  it("spends the memory refusal on the frame it lands in, so the freeing cell runs", async () => {
+  it("preserves memory refusal across all subsequent frames", async () => {
     const frames = await session([
       ...accumulate,
       "console.log('this frame is refused')",
@@ -656,30 +658,26 @@ describe("QuickJSSandbox.openRealm", () => {
     // cell that made it has run.
     expect(frames[0]!.outcome._tag).toBe("settled")
     expect(frames[1]!.outcome._tag).toBe("settled")
-    // The frame that opens over the ceiling is refused, and the refusal is spent
-    // there: it says the next cell runs, and the next cell does.
     const refusal = frames[2]!.outcome
-    expect(refusal._tag === "rejected" && refusal.code).toBe("limit_exceeded")
-    expect(refusal._tag === "rejected" && refusal.message).toContain("your next cell does run")
-    expect(frames[2]!.prints).toBe("")
-    // Frame 3 is the freeing cell. It ran, which is the whole point: a refusal
-    // that stood would have refused this one too and asked it again to free.
-    expect(frames[3]!.prints).toBe("freed")
-    // And with the realm back under its ceiling, nothing is refused after it.
-    expect(frames[4]!.outcome._tag).toBe("settled")
-    expect(frames[4]!.prints).toBe("still open for business")
+    expect(refusal).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+    expect(refusal._tag === "rejected" && refusal.message).toContain("further frames in this realm are refused")
+    for (const frame of frames.slice(2)) {
+      expect(frame.outcome).toEqual(refusal)
+      expect(frame.prints).toBe("")
+    }
   })
 
-  it("refuses again when the frame it let through freed nothing", async () => {
+  it("refuses every later frame when the realm has not released its memory", async () => {
     const frames = await session([
       ...accumulate,
       "console.log('this frame is refused')",
       "console.log('and this cell frees nothing')",
       "console.log('so this frame is refused too')"
     ], { limits: { memoryBytes: 4 * 1024 * 1024 } })
-    expect(frames[2]!.outcome._tag === "rejected" && frames[2]!.outcome.code).toBe("limit_exceeded")
-    expect(frames[3]!.prints).toBe("and this cell frees nothing")
-    expect(frames[4]!.outcome._tag === "rejected" && frames[4]!.outcome.code).toBe("limit_exceeded")
+    for (const frame of frames.slice(2)) {
+      expect(frame.outcome).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+      expect(frame.prints).toBe("")
+    }
   })
 
   it("reports a cell that awaits something the realm can never settle", async () => {

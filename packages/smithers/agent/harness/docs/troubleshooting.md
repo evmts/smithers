@@ -51,10 +51,12 @@ continues unless the frame budget says otherwise.
 | `limit_exceeded`       | The cell spent a ceiling: `calls`, `steps`, `timeMs`, `totalMs`, or heap. A result refused before materialization carries `reason: "heap"`; a host stack overflow inside the interpreter carries `reason: "stack"` and quarantines its compiled module. | Raise the specific ceiling, narrow the cell's work, or request less output; see [limits](./api.md#limits).                                  |
 | `stalled`              | "The cell awaited something that never settles."                                                                                                                                                                                                        | Inside a cell the only thing worth awaiting is `ctx.call`; find the awaited promise that nothing settles.                                   |
 
-**A frame is refused before it runs, naming names to free.** The realm opened
+**A frame is refused before it runs, naming retained bindings.** The realm opened
 over its `memoryBytes` run budget, weighed by the panel probe at the previous
-frame's close. The refusal names what the realm's own names hold; freeing is
-itself done by a cell, so the next cell must drop or slim the named bindings.
+frame's close. The refusal names what the realm's own names hold and persists
+across subsequent frames. Close the realm's scope to release its memory. A
+failed or missed probe is retried before admission; user code cannot run while
+the reading is unknown.
 
 **`raised` instead of `settled`.** The cell threw. The outcome carries the
 thrown value projected into stable `name` and `message` text, and every name

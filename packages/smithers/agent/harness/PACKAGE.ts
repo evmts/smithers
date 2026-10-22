@@ -36,6 +36,12 @@ const importRules = ImportRules({
       files: ["test/**"],
       callees: ["setTimeout", "setInterval"],
       because: "test.behavioral: synchronize tests on conditions or Effect TestClock instead of timer waits."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/QuickJSMemoryAdmission.test.ts", "test/QuickJSSandbox.test.ts", "test/ReplRealm.test.ts"],
+      callees: ["setTimeout", "*.sleep", "*.waitForTimeout"],
+      because: "test.behavioral: memory admission regressions wait on execution, never a fixed sleep."
     }
   ]
 })
