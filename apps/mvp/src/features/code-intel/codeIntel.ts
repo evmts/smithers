@@ -1,8 +1,8 @@
-import { Context, Effect, Layer, Option, Stream } from "effect"
+import { Context, Effect, Layer, Option, Ref, Stream } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { RepoClient } from "../repo/api"
 import { RepoStore } from "../repo/store"
-import { follow, hover, keyAction, problem, select, definition, targetOf, togglePane, type Token } from "./actions"
+import { follow, hover, keyAction, problem, select, definition, targetOf, togglePane, type Token, type KeyModifiers } from "./actions"
 import { CODE_INTEL } from "./rows"
 import type { LanguageServers } from "./session"
 import { CodeIntelStore } from "./store"
@@ -29,7 +29,7 @@ export interface CodeIntelActions {
   /** ⌘-click or Ctrl-click on a token. */
   readonly activate: (token: Token) => void
   /** A key while the code has focus; `true` when it was the view's, so the caller keeps it from the page. */
-  readonly key: (key: string, shift: boolean) => boolean
+  readonly key: (key: string, shift: boolean, modifiers?: KeyModifiers) => boolean
   /** The toolbar's problem count: the next problem. */
   readonly nextProblem: () => void
   /** The toolbar's Symbols button, or the pane's Close. */
@@ -57,7 +57,7 @@ export class CodeIntel extends Context.Service<
       yield* Stream.zipLatest(repo.treeState.rows, repo.viewState.rows).pipe(
         Stream.map(([trees, views]) => targetOf(trees[0], views[0]?.repository?.defaultBranch ?? null)),
         Stream.changesWith((left, right) =>
-          left?.owner === right?.owner && left?.name === right?.name && left?.sha === right?.sha && left?.path === right?.path
+          left?.owner === right?.owner && left?.name === right?.name && left?.sha === right?.sha && left?.path === right?.path && left?.revision === right?.revision && left?.defaultBranch === right?.defaultBranch
         ),
         Stream.runForEach(follow),
         Effect.forkIn(store.scope),
@@ -69,9 +69,9 @@ export class CodeIntel extends Context.Service<
           move: (token) => background(hover(token, true)),
           select: (token) => background(select(token)),
           activate: (token) => background(definition(token)),
-          key: (key, shift) => {
+          key: (key, shift, modifiers) => {
             const row = Option.getOrThrow(run(store.state.get(CODE_INTEL)))
-            const action = keyAction(row, key, shift)
+            const action = keyAction(row, key, shift, modifiers, run(Ref.get(store.hovering)))
             if (action === undefined) return false
             background(action)
             return true

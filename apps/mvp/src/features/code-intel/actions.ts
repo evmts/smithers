@@ -125,11 +125,10 @@ const opened = Effect.gen(function* () {
 })
 
 /**
- * The 1-based line `line` of a file the session read. Every place a server names, and every cursor, is in a file the
- * server read through the session, so its text is there.
+ * The 1-based line `line` of a file the session read, or empty while its text is still loading.
  */
 export const lineOf = (texts: ReadonlyMap<string, string>, path: string, line: number) =>
-  texts.get(path)!.split(/\r\n|\r|\n/)[line - 1]!
+  texts.get(path)?.split(/\r\n|\r|\n/)[line - 1] ?? ""
 
 /** The identifier starting at a 1-based position of `line`: the keyboard cursor names no text of its own. */
 export const identifierAt = (line: string, column: number) => /^[\w$]+/.exec(line.slice(column - 1))?.[0] ?? ""
@@ -149,6 +148,9 @@ export const openFile = (target: Target | undefined) =>
   Effect.gen(function* () {
     const store = yield* CodeIntelStore
     yield* Ref.set(store.target, target)
+    yield* Ref.update(store.defining, (n) => n + 1)
+    yield* Ref.update(store.asked, (n) => n + 1)
+    yield* Ref.set(store.hovering, false)
     if (target === undefined) {
       yield* Effect.orDie(store.state.update(CODE_INTEL, (row) => void Object.assign(row, fresh(null, null, row.pane))))
       return
@@ -195,6 +197,7 @@ export const hover = (token: Token, cursor: boolean) =>
     const asked = yield* Ref.updateAndGet(store.asked, (n) => n + 1)
     const open = yield* opened
     if (open === undefined) return
+    yield* Ref.set(store.hovering, true)
     const at = { line: token.line, column: token.column }
     if (cursor) yield* writeIf(open.file, (row) => void (row.cursor = at))
     const info = yield* open.session.server.hover(positionOf(open.path, at)).pipe(
@@ -203,6 +206,7 @@ export const hover = (token: Token, cursor: boolean) =>
       Effect.orElseSucceed(() => null),
     )
     if ((yield* Ref.get(store.asked)) !== asked) return
+    yield* Ref.set(store.hovering, false)
     yield* writeIf(open.file, (row) => {
       row.hover = info === null && problemsAt(row as CodeIntelRow, at).length === 0
         ? null
@@ -247,6 +251,7 @@ export const select = (token: Token) =>
     )
     yield* writeIf(open.file, (row) => {
       if (row.symbol?.line !== at.line || row.symbol.column !== at.column) return
+      row.symbol.name = token.text === "" ? identifierAt(lineOf(open.session.texts, open.path, at.line), at.column) : token.text
       row.definitions = placeRows(open.session, definitions)
       row.references = placeRows(open.session, references)
       row.highlights = references
@@ -264,6 +269,7 @@ export const definition = (token: Token) =>
     const store = yield* CodeIntelStore
     const open = yield* opened
     if (open === undefined) return
+    const asked = yield* Ref.updateAndGet(store.defining, (n) => n + 1)
     const { root } = yield* LanguageServers
     const places = yield* open.session.server.definition(positionOf(open.path, token)).pipe(
       Effect.flatMap(placesIn(open.session, root)),
@@ -271,7 +277,7 @@ export const definition = (token: Token) =>
       Effect.orElseSucceed((): ReadonlyArray<Place> => []),
     )
     const place = places[0]
-    if (place === undefined) return
+    if (place === undefined || (yield* Ref.get(store.defining)) !== asked || (yield* Ref.get(store.target)) !== open.target) return
     if (place.path === open.path) yield* writeIf(open.file, (row) => void (row.cursor = { line: place.line, column: place.column }))
     else yield* Ref.set(store.landing, place)
     const { target } = open
@@ -311,8 +317,16 @@ export const togglePane = Effect.flatMap(CodeIntelStore, (store) =>
     }),
   ))
 
-/** What a key does, by name, while the code has focus: `undefined` for a key that isn't the view's. */
-export const keyAction = (row: CodeIntelRow, key: string, shift: boolean) => {
+/** Browser modifiers whose shortcuts remain owned by the browser. */
+export interface KeyModifiers {
+  readonly ctrlKey?: boolean
+  readonly metaKey?: boolean
+  readonly altKey?: boolean
+}
+
+/** What a key does while the code has focus; undefined leaves the key to the page. */
+export const keyAction = (row: CodeIntelRow, key: string, shift: boolean, modifiers: KeyModifiers = {}, hovering = false) => {
+  if (modifiers.ctrlKey || modifiers.metaKey || modifiers.altKey) return undefined
   const cursor = row.cursor === null ? undefined : { ...row.cursor, text: "" }
   switch (key) {
     case "Enter":
@@ -327,7 +341,12 @@ export const keyAction = (row: CodeIntelRow, key: string, shift: boolean) => {
       return togglePane
     case "Escape":
       // A card shows only on an open file.
-      if (row.hover !== null) return writeIf(row.file!, (current) => void (current.hover = null))
+      if (row.hover !== null || hovering) return Effect.gen(function* () {
+        const store = yield* CodeIntelStore
+        yield* Ref.update(store.asked, (n) => n + 1)
+        yield* Ref.set(store.hovering, false)
+        yield* writeIf(row.file!, (current) => void (current.hover = null))
+      })
       return row.pane ? togglePane : undefined
     default:
       return undefined

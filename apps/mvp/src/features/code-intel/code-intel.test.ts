@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { fixture } from "../../../worker/test/codeStorage"
 import { testFile } from "../../../worker/test/harness"
@@ -65,6 +65,105 @@ const seeded = async () => {
   await h.seed("octocat", "Spoon-Knife", fixture({ files: FILES }))
   return h
 }
+
+// Fault injection delays real server requests; their answers still come from TypeScript.
+const delayed = (method: "hover" | "definition" | "read") => {
+  let release!: () => void
+  let entered = false
+  let completed = false
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const layer = Layer.effect(LanguageServers, Effect.gen(function* () {
+    const real = yield* LanguageServers
+    return LanguageServers.of({ ...real, open: (workspace) => Effect.gen(function* () {
+      const server = yield* real.open(method === "read" ? { ...workspace, read: (path) =>
+        Effect.sync(() => { entered = true }).pipe(Effect.andThen(Effect.promise(() => gate)), Effect.andThen(workspace.read(path)))
+      } : workspace)
+      if (method === "read") return server
+      return { ...server, [method]: (...args: Parameters<typeof server.hover>) =>
+        Effect.sync(() => { entered = true }).pipe(
+          Effect.andThen(Effect.promise(() => gate)),
+          Effect.andThen(server[method](...args)),
+          Effect.tap(() => Effect.sync(() => { completed = true })),
+        ) }
+    }) })
+  })).pipe(Layer.provide(inProcessLanguageServers))
+  return { layer, release, entered: () => entered, completed: () => completed }
+}
+
+describe("code intelligence race regressions", () => {
+  test("a late definition cannot navigate after leaving the file", async () => {
+    const gate = delayed("definition")
+    const tab = await open(await seeded(), "src/main.ts", gate.layer)
+    await waitFor(() => expect(row(tab).outline).not.toBeNull())
+    actions(tab).activate({ line: 2, column: 22, text: "add" })
+    await waitFor(() => expect(gate.entered()).toBe(true))
+    route(tab, "README.md")
+    await waitFor(() => expect(row(tab).file).toBeNull())
+    gate.release()
+    await waitFor(() => expect(gate.completed()).toBe(true))
+    await waitFor(() => expect(tab.count(asks, { act: "definition", outcome: "answered" })).toBe(1))
+    expect(tab.navigated).toEqual([])
+  })
+
+  test("Escape dismisses an outstanding hover", async () => {
+    const gate = delayed("hover")
+    const tab = await open(await seeded(), "src/main.ts", gate.layer)
+    await waitFor(() => expect(row(tab).outline).not.toBeNull())
+    actions(tab).move({ line: 2, column: 22, text: "add" })
+    await waitFor(() => expect(gate.entered()).toBe(true))
+    expect(actions(tab).key("Escape", false)).toBe(true)
+    gate.release()
+    await waitFor(() => expect(gate.completed()).toBe(true))
+    await waitFor(() => expect(tab.count(asks, { act: "hover", outcome: "answered" })).toBe(1))
+    expect(row(tab).hover).toBeNull()
+  })
+
+  test("keyboard selection before the server reads the file resolves Symbols", async () => {
+    const gate = delayed("read")
+    const tab = await open(await seeded(), "src/main.ts", gate.layer)
+    await waitFor(() => expect(gate.entered()).toBe(true))
+    await waitFor(() => expect(row(tab).path).toBe("src/main.ts"))
+    actions(tab).move({ line: 2, column: 22, text: "" })
+    expect(actions(tab).key("r", false)).toBe(true)
+    gate.release()
+    await waitFor(() => expect(row(tab).references).not.toBeNull())
+    expect(row(tab).symbol?.name).toBe("add")
+    expect(row(tab).definitions?.[0]?.path).toBe("src/math.ts")
+  })
+
+  test("modified browser shortcuts remain unhandled", async () => {
+    const tab = await open(await seeded(), "src/main.ts")
+    await waitFor(() => expect(row(tab).outline).not.toBeNull())
+    actions(tab).move({ line: 2, column: 22, text: "add" })
+    for (const modifier of ["ctrlKey", "metaKey", "altKey"]) {
+      for (const key of ["o", "r", "Enter", "F12", "F8"]) {
+        expect(actions(tab).key(key, false, { [modifier]: true })).toBe(false)
+      }
+    }
+    expect(row(tab).pane).toBe(false)
+  })
+
+  test("switching refs at the same commit updates definition links", async () => {
+    const h = await repoHarness(server)
+    const source = fixture({ files: FILES })
+    await h.seed("octocat", "Spoon-Knife", { ...source, branches: [{ name: "other", sha: source.commit.sha, files: FILES }] })
+    const tab = await open(h, "src/main.ts")
+    await waitFor(() => expect(row(tab).outline).not.toBeNull())
+    tab.repo.actions.openRoute("blob", { owner: "octocat", repo: "Spoon-Knife", ref: "other", _splat: "src/main.ts" }, {})
+    await waitFor(() => expect(tab.view().view.revision).toBe("other"))
+    await waitFor(() => expect(tab.count(asks, { act: "outline", outcome: "answered" })).toBe(2))
+    actions(tab).activate({ line: 2, column: 22, text: "add" })
+    await waitFor(() => expect(tab.navigated).toEqual(["/octocat/Spoon-Knife/blob/other/src/math.ts?L=2"]))
+  })
+
+  test("malformed URI escapes are Unreadable failures", () => {
+    const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }
+    for (const uri of ["file:///bad%.ts", "file:///bad%E0%A4.ts"]) {
+      expect(Effect.runSync(Effect.result(placesOf({ uri, range }, "file:///", () => true))))
+        .toMatchObject({ _tag: "Failure", failure: { _tag: "Unreadable" } })
+    }
+  })
+})
 
 describe("a TypeScript file opens in its commit's language server", () => {
   test("its problems and outline load; another file of the commit reuses the server; a file it doesn't serve clears the row", async () => {

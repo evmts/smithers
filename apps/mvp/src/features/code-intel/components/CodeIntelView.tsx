@@ -47,7 +47,7 @@ export function codeIntelParts(
       onTokenActivate: actions.activate,
       onCursorMove: actions.move,
       onKeyDown: (event) => {
-        if (actions.key(event.key, event.shiftKey)) event.preventDefault()
+        if (actions.key(event.key, event.shiftKey, event)) event.preventDefault()
       },
     },
     aside: pane === undefined ? undefined : (

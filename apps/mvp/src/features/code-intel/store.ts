@@ -46,6 +46,10 @@ const make = Effect.gen(function* () {
     target: yield* Ref.make<Target | undefined>(undefined),
     /** The latest hover asked for: an answer to an older one is dropped. */
     asked: yield* Ref.make(0),
+    /** Whether the latest hover is still awaiting its answer. */
+    hovering: yield* Ref.make(false),
+    /** Invalidates definition navigation when a newer request starts. */
+    defining: yield* Ref.make(0),
     /** Where a definition in another file lands the cursor once that file opens. */
     landing: yield* Ref.make<Place | undefined>(undefined),
     /** The routed file's load: opening another interrupts it. */

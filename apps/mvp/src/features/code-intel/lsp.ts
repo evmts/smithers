@@ -99,15 +99,18 @@ export const hoverOf = (input: unknown) =>
  * `/`) that names a file `inRepository` knows. Definitions in a server's own library files are left out.
  */
 export const placesOf = (input: unknown, root: string, inRepository: (path: string) => boolean) =>
-  Effect.map(decode(Locations)(input), (found): ReadonlyArray<Place> => {
-    const list = found === null ? [] : Array.isArray(found) ? found : [found]
-    return list.flatMap((entry) => {
-      const [uri, range] = "uri" in entry ? [entry.uri, entry.range] : [entry.targetUri, entry.targetSelectionRange]
-      if (!uri.startsWith(root)) return []
-      const path = uri.slice(root.length).split("/").map(decodeURIComponent).join("/")
-      return inRepository(path) ? [{ path, line: range.start.line + 1, column: range.start.character + 1 }] : []
-    })
-  })
+  Effect.flatMap(decode(Locations)(input), (found) => Effect.try({
+    try: (): ReadonlyArray<Place> => {
+      const list = found === null ? [] : Array.isArray(found) ? found : [found]
+      return list.flatMap((entry) => {
+        const [uri, range] = "uri" in entry ? [entry.uri, entry.range] : [entry.targetUri, entry.targetSelectionRange]
+        if (!uri.startsWith(root)) return []
+        const path = uri.slice(root.length).split("/").map(decodeURIComponent).join("/")
+        return inRepository(path) ? [{ path, line: range.start.line + 1, column: range.start.character + 1 }] : []
+      })
+    },
+    catch: () => new Unreadable(),
+  }))
 
 const SEVERITY: Readonly<Record<number, Problem["severity"]>> = { 1: "error", 2: "warning" }
 

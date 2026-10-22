@@ -68,3 +68,9 @@ Content-free: acts, methods, outcomes and counts, never a path, a symbol or text
 ## Next
 
 The design's slices: the agent's `code/*` flows on the same server, package types, the branch box's servers for other languages, search-based navigation, and blame.
+
+## Response ordering and keyboard safety
+
+Definition navigation is discarded after another request or routed target replaces it. Escape invalidates a pending hover as well as dismissing a visible card. Keyboard selection tolerates text still loading and resolves its name after the server reads the file. Ref and default-branch changes refresh link metadata even at the same commit and path. Ctrl, Meta and Alt shortcuts stay with the browser. Malformed location URI escapes fail as `Unreadable`, through the existing failed-request metrics, span and warning.
+
+Regression evidence: `src/features/code-intel/code-intel.test.ts`, using delayed real TypeScript requests through `LanguageServers`.
