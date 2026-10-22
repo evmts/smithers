@@ -752,7 +752,8 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
       events: written.events,
       transactions: writes.transactions,
       schemaWide: writes.schemaWide,
-      lockWaitMs: Math.round(Duration.toMillis(writes.lockWait))
+      lockWaitMs: Math.round(Duration.toMillis(writes.lockWait)),
+      maxLockWaitMs: Math.round(Duration.toMillis(writes.maxLockWait))
     }
     yield* Effect.annotateCurrentSpan({ "smithers.execution.alarm": tag, ...failure, ...drove, ...cost })
     yield* Metric.update(Metric.withAttributes(alarms, { outcome: tag }), 1)

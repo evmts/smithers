@@ -177,13 +177,21 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
           ...ids,
           readyAtMs: expect.any(Number)
         })
-        const idle = { durationMs: expect.any(Number), events: 0, transactions: 0, schemaWide: 0, lockWaitMs: 0 }
+        const idle = {
+          durationMs: expect.any(Number),
+          events: 0,
+          transactions: 0,
+          schemaWide: 0,
+          lockWaitMs: 0,
+          maxLockWaitMs: 0
+        }
         const drove = {
           durationMs: expect.any(Number),
           events: written,
           transactions: expect.any(Number),
           schemaWide: expect.any(Number),
-          lockWaitMs: expect.any(Number)
+          lockWaitMs: expect.any(Number),
+          maxLockWaitMs: expect.any(Number)
         }
         expect(t.lines("cloudflare.execution.alarm").map((line) => line.annotations)).toEqual([
           expect.objectContaining({

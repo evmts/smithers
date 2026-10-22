@@ -125,3 +125,17 @@ waited, in total, for their locks (`lockWaitMs`). A `lockWaitMs` near
 `durationMs` means the alarm spent its time queued behind other writers, not
 running steps. Schema-wide transactions wait for every other execution's
 writes, so a drive should have none once the schema is installed.
+
+### Startup and cumulative acquisition time
+
+`cloudflare.execution.ready` follows runtime layer construction, including
+database opening, migration checks, store construction and flow registration.
+`engine-store.registration.recovered` reports each registration's recovery
+duration, so a large catalog's repeated reads are visible.
+
+`lockWaitMs` adds client-side acquisition durations. It includes BEGIN and
+network round trips, so dividing it by the transaction count is only an
+approximation (savepoints can acquire additional locks). It is not a single
+blocked-lock duration. Use `maxLockWaitMs`, the maximum acquisition observation, to distinguish
+a long acquisition from many short ones; database lock wait records are still
+needed to distinguish server contention from transport latency.

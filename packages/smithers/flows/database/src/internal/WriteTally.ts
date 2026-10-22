@@ -16,6 +16,7 @@ export interface Accumulator {
   transactions: number
   schemaWide: number
   lockWait: Duration.Duration
+  maxLockWait: Duration.Duration
 }
 
 /**
@@ -54,5 +55,9 @@ export const record = (waited: Duration.Duration, wait: Wait): Effect.Effect<voi
       if (wait === "schema" || wait === "partition") accumulator.transactions += 1
       if (wait === "schema" || wait === "widen") accumulator.schemaWide += 1
       accumulator.lockWait = Duration.sum(accumulator.lockWait, waited)
+      accumulator.maxLockWait = Duration.millis(Math.max(
+        Duration.toMillis(accumulator.maxLockWait),
+        Duration.toMillis(waited)
+      ))
     }
   })

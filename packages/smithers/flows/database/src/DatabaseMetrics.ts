@@ -38,9 +38,10 @@ export const writeRetries = Metric.counter("flows_db_write_retries", {
  * begins, each outermost `DurableWriter.write` and each `withTransaction`,
  * and one per savepoint that had to take a lock its transaction lacked.
  * Writes to one partition, and writes that name none, commit one at a time,
- * so a rising wait reads as that partition's or the schema's write throughput
- * binding. Read-only clients, statements outside a transaction, and SQLite
- * record nothing here.
+ * but this client-side timer includes BEGIN and network round trips as well
+ * as contention, timeouts and backoff. A rising sum alone does not prove that
+ * one lock was blocked for that duration. Read-only clients, statements outside
+ * a transaction, and SQLite record nothing here.
  *
  * @category metrics
  * @since 1.0.0
@@ -110,6 +111,8 @@ export interface WriteTally {
   readonly schemaWide: number
   /** Their summed {@link writerLockWait}, savepoints' locks included. */
   readonly lockWait: Duration.Duration
+  /** Longest single client-side acquisition, including its transaction open, retries and transport. */
+  readonly maxLockWait: Duration.Duration
 }
 
 /**
@@ -143,11 +146,21 @@ export const tally = <A, E, R>(
   effect: Effect.Effect<A, E, R>
 ): Effect.Effect<[tally: WriteTally, result: A], E, R> =>
   Effect.gen(function*() {
-    const accumulator: Tallies.Accumulator = { transactions: 0, schemaWide: 0, lockWait: Duration.zero }
+    const accumulator: Tallies.Accumulator = {
+      transactions: 0,
+      schemaWide: 0,
+      lockWait: Duration.zero,
+      maxLockWait: Duration.zero
+    }
     const open = yield* Tallies.Current
     const result = yield* Effect.provideService(effect, Tallies.Current, [...open, accumulator])
     return [
-      { transactions: accumulator.transactions, schemaWide: accumulator.schemaWide, lockWait: accumulator.lockWait },
+      {
+        transactions: accumulator.transactions,
+        schemaWide: accumulator.schemaWide,
+        lockWait: accumulator.lockWait,
+        maxLockWait: accumulator.maxLockWait
+      },
       result
     ]
   })

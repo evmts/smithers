@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-22",
+  "command": "pnpm coverage",
+  "runner": "Latitude via lat-run",
+  "receiptFile": "/tmp/todo-start-database-coverage.log",
+  "receiptSha256": "c3a3ab453282155ad8cfda6226bcd075bec51fbcc4f8b734c7af6267d8184589",
+  "method": "101 sequential real INSERT transactions under one partition, no competing writer, TCP proxy delay 20ms each way per chunk. Schema setup and cleanup excluded. Verify every returned id, row count 101, sum 5050.",
+  "observations": [
+    {
+      "benchmark": "uncontended-acquisition-transport",
+      "backend": "PgBouncer with pool_mode=transaction",
+      "transactions": 101,
+      "networkDelayEachWayMs": 20,
+      "lockWaitMs": 8279,
+      "maxLockWaitMs": 84
+    },
+    {
+      "benchmark": "uncontended-acquisition-transport",
+      "backend": "PostgreSQL",
+      "transactions": 101,
+      "networkDelayEachWayMs": 20,
+      "lockWaitMs": 8230,
+      "maxLockWaitMs": 82
+    },
+    {
+      "benchmark": "uncontended-acquisition-transport",
+      "backend": "PgBouncer with pool_mode=transaction",
+      "transactions": 101,
+      "networkDelayEachWayMs": 20,
+      "lockWaitMs": 8278,
+      "maxLockWaitMs": 86
+    }
+  ],
+  "limitations": [
+    "These timings include network delay and transaction open, not just blocked-lock time.",
+    "One sample per target per matrix leg; not percentiles.",
+    "Reproduces the scale of the production cumulative total without contention; does not establish the actual production blocker."
+  ]
+}

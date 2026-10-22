@@ -17,6 +17,7 @@ import { Clock, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Logger,
 import { SqlClient } from "effect/sql/SqlClient"
 import { randomUUID } from "node:crypto"
 import { DatabaseMetrics, DurableWriter, PostgresDatabase } from "../src/index.ts"
+import * as SlowNetwork from "../src/test/SlowNetwork.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 import { listening, pgbouncerUrl } from "./harness/listening.ts"
 
@@ -362,8 +363,56 @@ for (const endpoint of endpoints) {
         // None names a partition, so each holds the whole schema.
         expect([inner.transactions, inner.schemaWide]).toEqual([2, 2])
         expect(Duration.toMillis(inner.lockWait)).toBeGreaterThanOrEqual(held)
+        expect(Duration.toMillis(inner.maxLockWait)).toBeGreaterThanOrEqual(held)
+        expect(Duration.toMillis(inner.maxLockWait)).toBeLessThanOrEqual(Duration.toMillis(inner.lockWait))
+        expect(Duration.toMillis(outer.maxLockWait)).toBeGreaterThanOrEqual(Duration.toMillis(inner.maxLockWait))
         expect([outer.transactions, outer.schemaWide]).toEqual([3, 3])
         expect(Duration.toMillis(outer.lockWait)).toBeGreaterThanOrEqual(Duration.toMillis(inner.lockWait))
+      }))
+
+    // Retained transport benchmark: 101 independent writes, no competing writer.
+    // Real Postgres (and the pooler) behind a TCP proxy, never a mocked SQL service.
+    it.live("separates summed acquisition transport cost from the longest uncontended acquisition", () =>
+      Effect.gen(function*() {
+        const name = schema()
+        const direct = yield* client(name)
+        yield* direct`CREATE TABLE acquisition_receipts (id INTEGER PRIMARY KEY)`
+        const slowUrl = yield* SlowNetwork.proxy(url, { delayMs: 20 })
+        const sql = Context.get(
+          yield* Layer.build(PostgresDatabase.layer({
+            url: slowUrl,
+            driver: Pg,
+            schema: name,
+            postgres: { maxConnections: 1 }
+          })),
+          SqlClient
+        )
+        const writer = DurableWriter.make(sql)
+        const [cost] = yield* DatabaseMetrics.tally(Effect.gen(function*() {
+          for (let id = 0; id < 101; id++) {
+            const [row] = yield* writer.write(
+              sql<{ readonly id: number }>`
+              INSERT INTO acquisition_receipts (id) VALUES (${id}) RETURNING id
+            `,
+              { partition: "idle-run" }
+            )
+            expect(row!.id).toBe(id)
+          }
+        }))
+        const [stored] = yield* direct<{ readonly count: number; readonly sum: number }>`
+          SELECT count(*) AS count, sum(id) AS sum FROM acquisition_receipts
+        `
+        expect(stored).toEqual({ count: 101, sum: 5050 })
+        expect([cost.transactions, cost.schemaWide]).toEqual([101, 0])
+        expect(Duration.toMillis(cost.maxLockWait)).toBeLessThan(Duration.toMillis(cost.lockWait))
+        console.info(JSON.stringify({
+          benchmark: "uncontended-acquisition-transport",
+          backend: endpoint.name,
+          transactions: cost.transactions,
+          networkDelayEachWayMs: 20,
+          lockWaitMs: Math.round(Duration.toMillis(cost.lockWait)),
+          maxLockWaitMs: Math.round(Duration.toMillis(cost.maxLockWait))
+        }))
       }))
 
     it.live("runs a read-only client's statements in READ ONLY transactions on its schema", () =>

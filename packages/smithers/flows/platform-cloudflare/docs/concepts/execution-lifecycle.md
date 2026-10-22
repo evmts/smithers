@@ -72,13 +72,13 @@ that parks it again.
    other objects and hands each to `router`. See [Routing](#routing).
 5. **Arms the next wake.** The outcome decides it:
 
-| Outcome     | When                                                                                                                                        | Count   | Alarm                                       |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------- |
-| `Idle`      | No intent is stored.                                                                                                                        | kept    | deleted                                     |
-| `Settled`   | The run completed, failed or was cancelled. A flow's own failure is a settlement, not a retry. The object records when.                     | cleared | armed at `forgetAtMs`                       |
-| `Parked`    | The run waits. `wakeAtMs` is `EngineStore.nextWake`: its earliest pending timer, or `null` for an event wait.                               | cleared | armed at `wakeAtMs`, or deleted when `null` |
-| `Yielded`   | The drive spent its budget and released the run at a step boundary, with work still due.                                                    | cleared | armed at now                                |
-| `Retrying`  | Building the runtime, driving the run or routing failed.                                                                                    | kept    | armed one backoff away                      |
+| Outcome     | When                                                                                                                                                           | Count   | Alarm                                       |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------- |
+| `Idle`      | No intent is stored.                                                                                                                                           | kept    | deleted                                     |
+| `Settled`   | The run completed, failed or was cancelled. A flow's own failure is a settlement, not a retry. The object records when.                                        | cleared | armed at `forgetAtMs`                       |
+| `Parked`    | The run waits. `wakeAtMs` is `EngineStore.nextWake`: its earliest pending timer, or `null` for an event wait.                                                  | cleared | armed at `wakeAtMs`, or deleted when `null` |
+| `Yielded`   | The drive spent its budget and released the run at a step boundary, with work still due.                                                                       | cleared | armed at now                                |
+| `Retrying`  | Building the runtime, driving the run or routing failed.                                                                                                       | kept    | armed one backoff away                      |
 | `Forgotten` | The run settled and its retention window has passed. The object deleted its intent, its count and its settlement, and retains only any cancellation tombstone. | deleted | deleted                                     |
 
 `alarm` never fails. A failure becomes `Retrying` with the failure's tag, so
