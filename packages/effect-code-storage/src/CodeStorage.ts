@@ -42,7 +42,7 @@ import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { readAtMost } from "./internal/bounded.ts"
+import { isReadLimit, readAtMost } from "./internal/bounded.ts"
 import * as Token from "./internal/token.ts"
 import type * as GitRemote from "./GitRemote.ts"
 
@@ -74,7 +74,8 @@ export type Operation =
  *   couldn't read), `too_large` (a file over `maxBytes`) and `invalid_key`
  *   (the key didn't import). A code the docs don't list becomes the status's
  *   generic code, as the docs say to treat it.
- * - `unknownCode` is that undocumented code, kept for diagnosis only. Branch
+ * - `unknownCode` is that undocumented code, kept for diagnosis only. Messages
+ *   include it only as a lowercase identifier of at most 64 characters. Branch
  *   on `code`.
  * - `status` is the HTTP status, when there was one.
  * - `retryAfterMillis` is the server's `Retry-After` in milliseconds, when it
@@ -112,7 +113,9 @@ export class CodeStorageError extends Schema.TaggedError<CodeStorageError>()(
    * @since 0.1.0
    */
   override get message(): string {
-    const unknown = this.unknownCode === undefined ? "" : `, unknown code ${this.unknownCode}`
+    const unknown = this.unknownCode !== undefined && /^[a-z][a-z0-9_]{0,63}$/.test(this.unknownCode)
+      ? `, unknown code ${this.unknownCode}`
+      : ""
     return `Code Storage ${this.operation} failed: ${this.code}${
       this.status === undefined ? "" : ` (${this.status}${unknown})`
     }`
@@ -130,14 +133,14 @@ const transientCodes: ReadonlySet<string> = new Set([
 
 /**
  * Whether a failure may succeed when tried again unchanged: no answer, a
- * timeout, a 5xx, a rate limit, a sync or a thaw still running, or the server
+ * timeout, HTTP 500/502/503/504, a rate limit, a sync or a thaw still running, or the server
  * briefly unable to check credentials.
  *
  * @category errors
  * @since 0.1.0
  */
 export const isTransient = (error: CodeStorageError): boolean =>
-  transientCodes.has(error.code) || (error.status !== undefined && error.status >= 500)
+  transientCodes.has(error.code) || (error.status !== undefined && [500, 502, 503, 504].includes(error.status))
 
 /**
  * The organization a host acts as: its name, its ES256 signing key (a PKCS#8
@@ -258,6 +261,7 @@ export interface FilesPage {
 export interface ReadFileOptions {
   readonly path: string
   readonly ref?: string | undefined
+  /** Non-negative safe integer; invalid caps fail with invalid_argument before HTTP. */
   readonly maxBytes: number
 }
 
@@ -810,6 +814,9 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
           "readFile",
           repo,
           Effect.gen(function*() {
+            if (!isReadLimit(options.maxBytes)) {
+              return yield* new CodeStorageError({ operation: "readFile", code: "invalid_argument" })
+            }
             const request = HttpClientRequest.get(url(repo, "/file")).pipe(
               HttpClientRequest.setUrlParams(params({ path: options.path, ref: options.ref }))
             )

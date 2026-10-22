@@ -687,3 +687,25 @@ describe("gitRemote", () => {
     expect(upstream.url).toBe(`https://${ORG}.code.storage/github/o/a%20b.git`)
   })
 })
+
+
+describe("confirmed safety regressions", () => {
+  test.each(["secret\nforged log", "x".repeat(65), "\u001b[31m", "", "UPPER"])("omits unsafe public unknownCode %s", (unknownCode) => {
+    const error = new CodeStorage.CodeStorageError({ operation: "readFile", code: "bad_request", status: 400, unknownCode })
+    expect(error.message).toBe("Code Storage readFile failed: bad_request (400)")
+  })
+  test("retains bounded identifier diagnostics", () => {
+    expect(new CodeStorage.CodeStorageError({ operation: "readFile", code: "bad_request", status: 400, unknownCode: "future_code" }).message).toContain("unknown code future_code")
+  })
+  test.each([501, 505, 506, 507, 508, 510, 511, 600])("does not retry permanent HTTP %i", (status) => {
+    expect(CodeStorage.isTransient(new CodeStorage.CodeStorageError({ operation: "readFile", code: "http_error", status }))).toBe(false)
+  })
+  test.each([NaN, Infinity, -Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1])("rejects invalid read cap %s before HTTP with observable failure", async (maxBytes) => {
+    const h = harness()
+    h.faults.push(new Response("abc"))
+    const error = await h.fail((client) => client.readFile("r", { path: "x", maxBytes }))
+    expect(error.code).toBe("invalid_argument")
+    expect(h.seen).toHaveLength(0)
+    expect(h.count(CodeStorage.requests, { operation: "readFile", outcome: "invalid_argument" })).toBe(1)
+  })
+})

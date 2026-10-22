@@ -19,6 +19,9 @@ export interface Bounded {
   readonly truncated: boolean
 }
 
+/** Whether a cap is finite, integral and can be counted exactly. */
+export const isReadLimit = (maxBytes: number): boolean => Number.isSafeInteger(maxBytes) && maxBytes >= 0
+
 const concat = (chunks: ReadonlyArray<Uint8Array>, size: number): Uint8Array => {
   const bytes = new Uint8Array(size)
   let offset = 0
@@ -41,6 +44,7 @@ export const readAtMost = <E, R>(
   maxBytes: number
 ): Effect.Effect<Bounded, E, R> =>
   Effect.suspend(() => {
+    if (!isReadLimit(maxBytes)) return Effect.die(new RangeError("Invalid byte read limit"))
     const chunks: Array<Uint8Array> = []
     let size = 0
     let truncated = false
@@ -103,6 +107,7 @@ export const readPackets = <E, R>(
   onPacket: (payload: Uint8Array | null) => boolean
 ): Effect.Effect<PacketsRead, E, R> =>
   Effect.suspend(() => {
+    if (!isReadLimit(maxBytes)) return Effect.die(new RangeError("Invalid byte read limit"))
     // Bytes received and not yet delivered, kept as the chunks they came in until a step needs them joined.
     let parts: Array<Uint8Array> = []
     let size = 0

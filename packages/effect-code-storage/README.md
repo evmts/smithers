@@ -61,3 +61,12 @@ Effect.runPromise(program.pipe(Effect.provide(layer)))
 - [Overview](docs/README.md): what the package guarantees, and Code Storage's
   facts it relies on.
 - [API reference](docs/api.md): every export.
+
+Read limits are non-negative safe integers (zero permits only empty files).
+Invalid `readFile.maxBytes` fails with `invalid_argument` before any HTTP request,
+with the usual request span and outcome counter. Unknown codes appear in error
+messages only as lowercase identifiers of at most 64 characters. Transient HTTP
+statuses are 500, 502, 503 and 504; documented transient codes still apply.
+
+Library catalog entry: import a public GitHub repository into git hosting and
+read its files and commits (`@smthrs/effect-code-storage`).
