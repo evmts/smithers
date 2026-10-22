@@ -5227,6 +5227,39 @@ to compile WebAssembly from bytes, such as Cloudflare's workerd, provides
 `QuickJSSandbox.layerVariant(variant)` beneath this and builds that variant
 from a `.wasm` module import.
 
+### Agent.layerSandbox
+
+```ts
+const layerSandbox: Layer.Layer<Sandbox.Sandbox, Sandbox.SandboxError>
+```
+
+The sandbox half of `layerDefaults` alone, with no steering source. A host
+that takes people's messages while a run works provides its own
+`Steering.Source` beside it, such as `@smthrs/harness`'s
+`Notifications.layerForExecution()` over the durable notification queue.
+Merging `layerDefaults` with a real source instead leaves two providers of
+one service, and which one the agent drains depends on merge order.
+
+```ts
+const steered = Layer.mergeAll(
+  Agent.layerSandbox,
+  Notifications.layerForExecution().pipe(Layer.provide(NotificationQueue.layer))
+)
+```
+
+### Agent.layerSandboxWithVariant
+
+```ts
+const layerSandboxWithVariant: Layer.Layer<
+  Sandbox.Sandbox,
+  Sandbox.SandboxError,
+  QuickJSSandbox.Variant
+>
+```
+
+`layerSandbox` over the QuickJS build the host names, as
+`layerDefaultsWithVariant` is `layerDefaults` over it.
+
 ## AgentSession
 
 The production `ControlExecutor` for [`@smthrs/control`](/docs/reference/api/control/). When
@@ -19830,8 +19863,12 @@ A drain is idempotent in its boundary string: a second drain at one boundary
 promotes nothing and hands back exactly what the first promoted, with
 `Drain.duplicate` set. A resumed run re-drains the boundaries it already
 drained and must be told the same thing, or it rebuilds a different context
-and re-keys every later sealed step. The service tag is `Steering.Source`;
-`make`, `makeNoop`, `layer`, and `layerNoop` construct and provide it.
+and re-keys every later sealed step. `BoundaryInput` carries the boundary,
+whether the run would go idle, a park's question, and the agent `session`
+draining (`CellTurn` names it): a boundary is unique only within its session,
+so a source one run's several sessions share keys its drains by both. The
+service tag is `Steering.Source`; `make`, `makeNoop`, `layer`, and
+`layerNoop` construct and provide it.
 
 ## Notifications
 
@@ -19853,6 +19890,12 @@ export const make: (
 export const layer: (
   options: Options
 ) => Layer.Layer<Steering.Source, never, NotificationQueue.NotificationQueue>
+
+export const layerForExecution: () => Layer.Layer<
+  Steering.Source,
+  never,
+  NotificationQueue.NotificationQueue
+>
 ```
 
 `make` captures the journal-backed queue as the harness steering source for
@@ -19864,6 +19907,21 @@ person's message (a steer or a follow-up, not a system event) carries
 `Notifications.precedence` between the two, which tells the model it is a newer
 instruction that wins where it conflicts with earlier ones, the task's
 included.
+
+`layerForExecution` is the same source for a flow host, which builds an agent
+action's layer once and runs it for every execution it drives. It names its
+run at each read and drain: the current `FlowRuntime.FlowInstance`'s execution
+id is both the run and the lineage. A message admitted with
+`queue.admit(executionId, Notification.humanSteer({ runId: executionId, … }))`
+reaches that execution's agent at its next turn boundary and no other
+execution's. Outside a flow execution a read or a drain fails `engine_failed`.
+
+```ts
+const implement = Implement.layer.pipe(
+  Layer.provide(Notifications.layerForExecution()),
+  Layer.provide(NotificationQueue.layer) // over the engine's own Journal
+)
+```
 
 ## CellCalls
 
@@ -28565,6 +28623,34 @@ fact.
 | ---------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `admissionClass` | `(notification: Notification) => "steer" \| "queue"` | How the notification is allowed to reach the model. Steers are promoted in a batch at turn close; queued notifications one at a time at idle.    |
 | `coalesceKey`    | `(notification: Notification) => string \| null`     | The key the notification coalesces on, or `null` when it must never coalesce. Only a `system-event` that declares a `coalescingKey` returns one. |
+
+### humanSteer
+
+```ts
+const humanSteer: (input: {
+  readonly runId: string
+  readonly id: string
+  readonly actor: string
+  readonly payload: Schema.Json
+  readonly attribution?: Readonly<Record<string, string>>
+}) => HumanSteer
+```
+
+A person's steer to a run's own lineage: `targetLineageId`, `sourceRunId` and
+`sourceLineageId` are `runId`, `sourceTurn` is `0`, and `sourceActor` is
+`actor`. `id` is the caller's idempotency key. `Control.steer` builds its steer
+here, and so does any host that admits a person's message straight into a
+run's queue, so a steer reads the same in every transcript.
+
+```ts
+yield* queue.admit(runId, Notification.humanSteer({
+  runId,
+  id: messageId,
+  actor: `person:${login}`,
+  attribution: { login },
+  payload: SteerPayload.encode({ kind: "Message", body })
+}))
+```
 
 ## NotificationState
 
@@ -40895,21 +40981,23 @@ gone. `Identity.data` over `maxDataBytes`, or joining one socket twice, dies.
 Since 1.0.0-rc.17. [Shared text](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/shared-text.md) explains the design;
 this section lists the exports.
 
-| Export                              | What it is                                                                                                                  |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `make`                              | `Effect<SharedText, never, Scope>`: an empty replica, closed with its scope.                                                |
-| `SharedText.text`                   | `Effect<string>`: the text now.                                                                                             |
-| `SharedText.apply(update)`          | Merges another replica's update; fails `InvalidUpdate` (`malformed`) and changes nothing for bytes that aren't one.         |
-| `SharedText.edit(changes)`          | Makes `Change`s (`{ from, to, insert }`) in one transaction; answers the update, or `undefined` when nothing changed.        |
-| `SharedText.replace(next, options)` | Makes the text `next` with one change, placed by `caret` and moved past what arrived since `base`; answers as `edit` does. |
-| `SharedText.anchor(index)`          | `Effect<Uint8Array>`: a place other replicas resolve.                                                                       |
-| `SharedText.resolve(anchor)`        | `Effect<number \| undefined>`: where an anchor is now; `undefined` before its text arrives or for bytes that aren't one.     |
-| `SharedText.snapshot`               | `Effect<Uint8Array>`: everything the replica holds, as one update.                                                          |
-| `changeOf(before, after, caret?)`   | The one change between two texts, never splitting a surrogate pair.                                                         |
-| `seed(text)`                        | A document's first content, the same bytes for the same text.                                                               |
-| `validate(update, { seed })`        | Fails `InvalidUpdate` for malformed bytes, or `seed_client` for text written as `seedClient` outside a seed or a seed with anyone else's. |
-| `merge(updates)`                    | Several updates as one.                                                                                                     |
-| `textName`, `seedClient`            | `"text"`, the document's one text, and `0`, the replica only a seed writes as.                                              |
+| Export                                | What it is                                                                                                                                |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`                                | `Effect<SharedText, never, Scope>`: an empty replica, closed with its scope.                                                              |
+| `SharedText.text`                     | `Effect<string>`: the text now.                                                                                                           |
+| `SharedText.apply(update)`            | Merges another replica's update; fails `InvalidUpdate` (`malformed`) and changes nothing for bytes that aren't one.                       |
+| `SharedText.edit(changes)`            | Makes `Change`s (`{ from, to, insert }`) in one transaction; answers the update, or `undefined` when nothing changed.                     |
+| `SharedText.replace(next, options)`   | Makes the text `next` with one change, placed by `caret` and moved past what arrived since `base`; answers as `edit` does.                |
+| `SharedText.anchor(index)`            | `Effect<Uint8Array>`: a place other replicas resolve.                                                                                     |
+| `SharedText.resolve(anchor)`          | `Effect<number \| undefined>`: where an anchor is now; `undefined` before its text arrives or for bytes that aren't one.                  |
+| `SharedText.mark(name, value)`        | Sets a named string beside the text; answers the update, or `undefined` when the mark holds `value` already.                              |
+| `SharedText.marks`                    | `Effect<ReadonlyMap<string, string>>`: every mark the replica holds; marks never change the text.                                         |
+| `SharedText.snapshot`                 | `Effect<Uint8Array>`: everything the replica holds, as one update.                                                                        |
+| `changeOf(before, after, caret?)`     | The one change between two texts, never splitting a surrogate pair.                                                                       |
+| `seed(text)`                          | A document's first content, the same bytes for the same text.                                                                             |
+| `validate(update, { seed })`          | Fails `InvalidUpdate` for malformed bytes, or `seed_client` for text written as `seedClient` outside a seed or a seed with anyone else's. |
+| `merge(updates)`                      | Several updates as one.                                                                                                                   |
+| `textName`, `marksName`, `seedClient` | `"text"`, the document's one text; `"marks"`, its marks; and `0`, the replica only a seed writes as.                                      |
 
 ## Test helpers
 
