@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
+import { temporaryEnvironment } from "./temporaryEnvironment.ts"
 
 const roots: string[] = []
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
@@ -18,7 +19,7 @@ const fixture = async () => {
     XDG_CONFIG_HOME: join(root, "config"),
     PATH: process.env.PATH ?? "",
     SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
-    NODE_COMPILE_CACHE: process.env.NODE_COMPILE_CACHE
+    ...temporaryEnvironment()
   }
   const cli = (args: string[]) =>
     spawnSync(process.execPath, [bin, ...args], { cwd: root, env, encoding: "utf8", timeout: 20_000 })
@@ -86,12 +87,16 @@ describe("environment CLI process boundary", () => {
       "--",
       process.execPath,
       "-e",
-      "require('node:fs').writeFileSync(process.argv[1],JSON.stringify(process.argv.slice(2)));process.exit(19)",
+      "require('node:fs').writeFileSync(process.argv[1],JSON.stringify({ args: process.argv.slice(2), tmp: require('node:os').tmpdir(), compile: process.env.NODE_COMPILE_CACHE }));process.exit(19)",
       output,
       ...args
     ])
     expect(result.status, result.stdout + result.stderr).toBe(19)
-    expect(JSON.parse(await readFile(output, "utf8"))).toEqual(args)
+    expect(JSON.parse(await readFile(output, "utf8"))).toEqual({
+      args,
+      tmp: tmpdir(),
+      compile: process.env.NODE_COMPILE_CACHE
+    })
     await expect(readFile(join(root, "injected"))).rejects.toThrow()
   })
 

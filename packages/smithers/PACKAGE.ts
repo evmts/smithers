@@ -213,6 +213,10 @@ const test = Smithers.Shell.Test({
     Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
     Smithers.file("vitest.config.ts"),
     Smithers.file("test/support/configuration-race.mjs"),
+    Smithers.file("test/temporaryEnvironment.ts"),
+    Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
     // `EvaluationCli.test.ts` lists the repository's shipped suites.

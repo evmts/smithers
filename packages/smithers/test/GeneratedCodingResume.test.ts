@@ -1,3 +1,4 @@
+import { temporaryEnvironment } from "./temporaryEnvironment.ts"
 /** A generated captured coding flow survives loss of its CLI owner, offline. */
 import { execFileSync, spawn } from "node:child_process"
 import {
@@ -24,7 +25,7 @@ it("resumes the same generated coding run after SIGKILL during the agent step", 
   const children: Array<ReturnType<typeof spawn>> = []
   const env = {
     PATH: process.env.PATH,
-    NODE_COMPILE_CACHE: process.env.NODE_COMPILE_CACHE,
+    ...temporaryEnvironment(),
     HOME: join(root, "home"),
     XDG_CONFIG_HOME: join(root, "config"),
     XDG_DATA_HOME: join(root, "data"),

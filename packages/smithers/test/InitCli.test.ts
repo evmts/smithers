@@ -1,3 +1,4 @@
+import { temporaryEnvironment } from "./temporaryEnvironment.ts"
 /** Generated output crosses the source CLI, planner and durable engine offline. */
 import { execFile } from "node:child_process"
 import { existsSync } from "node:fs"
@@ -19,8 +20,7 @@ describe("init through the public CLI", () => {
     try {
       const env = {
         PATH: process.env.PATH,
-        TMPDIR: process.env.TMPDIR,
-        NODE_COMPILE_CACHE: process.env.NODE_COMPILE_CACHE,
+        ...temporaryEnvironment(),
         XDG_CONFIG_HOME: join(root, "config"),
         XDG_DATA_HOME: join(root, "data"),
         SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,

@@ -1,3 +1,4 @@
+import { temporaryEnvironment } from "./temporaryEnvironment.ts"
 /** File-flow payload failures are refused before durable plan or run admission. */
 import { execFile } from "node:child_process"
 import { access, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
@@ -59,7 +60,7 @@ export default Flow.make("echo", {
       cwd: root,
       env: {
         PATH: process.env["PATH"],
-        NODE_COMPILE_CACHE: process.env["NODE_COMPILE_CACHE"],
+        ...temporaryEnvironment(),
         HOME: join(root, "home"),
         XDG_CONFIG_HOME: join(root, "config"),
         SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"],
