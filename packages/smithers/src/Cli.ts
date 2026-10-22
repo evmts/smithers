@@ -85,37 +85,44 @@ export const makeCli = (
     silent: z.boolean().default(false),
     ui: z.enum(["auto", "tty", "stream", "plain"]).default("auto")
   })
-  const mcp = Cli.create("smthrs mcp", {
-    version: packageVersion,
-    description: "Register the Smithers MCP server with an agent",
-    globals: mcpGlobals
-  }).command("add", {
-    description: "Register with Claude Code or Codex; omit --agent to configure both",
-    mcp: false,
-    options: options.extend({ agent: z.string().optional() }),
-    run: (c) =>
-      Presentation.guard(c, async () => {
-        const requested = c.options.agent
-        const targets = requested === undefined
-          ? Agents.agents
-          : Agents.agents.filter((agent) => agent.id === requested)
-        if (targets.length === 0) {
-          throw new CliError.UsageError({
-            message: `Unknown agent ${requested}. Known agents: ${Agents.agents.map((agent) => agent.id).join(", ")}`
-          })
-        }
-        const environment = config.environment ?? process.env
-        const wired = targets.map((agent) => Agents.addMcp(agent, environment["HOME"], environment))
-        if (wired.every((entry) => entry.status === "failed")) {
-          const stderr = config.stderr ?? process.stderr
-          stderr.write(`${Agents.manualInstructions(targets.map((agent) => agent.id))}\n`)
-          throw new CliError.UnsupportedError({ message: "Could not register the MCP server" })
-        }
-        return wired
-      })
-  })
-  Positionals.guard(mcp, mcpGlobals)
-  mcp.use((context, next) => Presentation.scope(context, config, next))
+  const makeMcp = <Name extends string>(name: Name) => {
+    const mcp = Cli.create(name, {
+      version: packageVersion,
+      description: "Register the Smithers MCP server with an agent",
+      globals: mcpGlobals
+    }).command("add", {
+      description: "Register with Claude Code or Codex; omit --agent to configure both",
+      mcp: false,
+      options: options.extend({
+        agent: z.string().optional(),
+        verbose: z.boolean().default(false).describe("Show redacted diagnostic details")
+      }),
+      run: (c) =>
+        Presentation.guard(c, async () => {
+          const requested = c.options.agent
+          const targets = requested === undefined
+            ? Agents.agents
+            : Agents.agents.filter((agent) => agent.id === requested)
+          if (targets.length === 0) {
+            throw new CliError.UsageError({
+              message: `Unknown agent ${requested}. Known agents: ${Agents.agents.map((agent) => agent.id).join(", ")}`
+            })
+          }
+          const environment = config.environment ?? process.env
+          const wired = targets.map((agent) => Agents.addMcp(agent, environment["HOME"], environment))
+          if (wired.every((entry) => entry.status === "failed")) {
+            const stderr = config.stderr ?? process.stderr
+            stderr.write(`${Agents.manualInstructions(targets.map((agent) => agent.id))}\n`)
+            throw new CliError.UnsupportedError({ message: "Could not register the MCP server" })
+          }
+          return wired
+        })
+    })
+    Positionals.guard(mcp, mcpGlobals)
+    mcp.use((context, next) => Presentation.scope(context, config, next))
+    return mcp
+  }
+  const mcp = makeMcp("mcp")
   const cli = makeBuildCli({
     ...config,
     cliName: "smthrs",
@@ -598,7 +605,7 @@ export const makeCli = (
       ) {
         return invoke(argv, serveOptions)
       }
-      return mcp.serve([...argv.slice(0, index), ...argv.slice(index + 1)], serveOptions)
+      return makeMcp("smthrs mcp").serve([...argv.slice(0, index), ...argv.slice(index + 1)], serveOptions)
     }
     const typed = parsed.rest[offset]
     if (typed === undefined) return serve(argv, serveOptions)

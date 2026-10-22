@@ -278,6 +278,22 @@ const approvalEvents = [
 ]
 
 describe("unified control dispatch", () => {
+  it("preserves verbose options in direct MCP registration", async () => {
+    const result = await invoke(["mcp", "add", "--agent", "invalid", "--verbose", "--json"])
+    expect(result.codes).toEqual([2])
+    expect(result.stdout).toContain("Unknown agent invalid")
+    expect(result.stdout).not.toContain("Unknown option")
+    expect(ports.invoke).not.toHaveBeenCalled()
+  })
+
+  it("keeps the executable prefix in custom MCP add help", async () => {
+    const result = await invoke(["mcp", "add", "--help"])
+    expect(result.codes).toEqual([])
+    expect(result.stdout).toMatch(/Usage:\s+smthrs mcp add/)
+    expect(result.stdout).toContain("Register with Claude Code or Codex")
+    expect(ports.invoke).not.toHaveBeenCalled()
+  })
+
   it.each([
     ["mcp", "--help"],
     ["--help", "mcp"],
