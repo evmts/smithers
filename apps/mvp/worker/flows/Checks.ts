@@ -27,13 +27,16 @@ import { fetchPull, projectPull } from "../github/Pulls.ts"
 import { type GitHubTokens, TokenUnavailable } from "../github/Tokens.ts"
 import type { Seat } from "../ModelEndpoint.ts"
 import type { SandboxBranch } from "../branch/Sandboxes.ts"
+import * as SandboxCommand from "./SandboxCommand.ts"
 
 // A pull request's checks (decision 0012 decision 12, decision 0016's factory simplified): Smithers runs on its head
 // SHA, never GitHub check runs. `checks/Run` runs once per head (`check:<repo>:<sha>:all`), started when the `todo` run
 // publishes. Each check is a row of `runs` with the head's SHA, which the pull request's Checks tab reads:
 //
 //   checks/Scripts  each `.smithers/checks/<name>.sh` of the head, run with sh at the head on the head's own throwaway job
-//                   machine, one after another: `checks/<name>`, Passed when it exits 0, else Failed. The job machine
+//                   machine, one after another: `checks/<name>`, Passed when it exits 0, else Failed. Each script is a
+//                   `sandbox/Command` job (worker/flows/SandboxCommand.ts), so a lint of the whole monorepo holds no
+//                   step: the run parks while it runs, and a host that stops mid-script loses nothing. The job machine
 //                   reaches the package registry and nothing else (worker/branch/JobEgress.ts), and sleeps once done
 //   checks/Review   the `review` check: the judge model reads the diff and the App posts one comment review with its
 //                   findings, never an approval; Failed when the review couldn't be made
@@ -194,18 +197,19 @@ export const checkRunIdOf = (request: ChecksRequest, name: string) =>
     Effect.provide(WebCrypto.layer),
   )
 
-/** Records check `name` running on the head, once. */
+/** Records check `name` running on the head, once: whether this call recorded it. */
 const started = (request: ChecksRequest, id: string, name: string) =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
     sql`
       INSERT INTO runs (id, flow, status, launched_by, repo_id, sha)
       VALUES (${id}::uuid, ${checkFlowOf(name)}, 'working', ${request.ownerId}, ${request.repoId}, ${request.sha})
-      ON CONFLICT (id) DO NOTHING`)
+      ON CONFLICT (id) DO NOTHING RETURNING id`).pipe(Effect.map((rows) => rows.length > 0))
 
-/** Records how check `id` ended. */
+/** Records how check `id` ended, once: whether this call recorded it. */
 const ended = (id: string, status: "done" | "failed") =>
   Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`UPDATE runs SET status = ${status}, updated_at = now() WHERE id = ${id}::uuid AND status = 'working'`)
+    sql`UPDATE runs SET status = ${status}, updated_at = now() WHERE id = ${id}::uuid AND status = 'working' RETURNING id`)
+    .pipe(Effect.map((rows) => rows.length > 0))
 
 /** The review the judge is asked for, from the diff. */
 export const reviewRequest = (files: ReadonlyArray<GitHub.Commits.ChangedFile>): ModelRequest.ModelRequest => {
@@ -327,25 +331,27 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const done: Array<{ readonly name: string; readonly status: "done" | "failed" }> = []
       for (const name of names) {
         const id = yield* checkRunIdOf(request, name)
-        yield* started(request, id, name)
-        yield* pending(request, name)
-        const ran = yield* tool(`check:${name}`, {
+        // Each script runs as its own `sandbox/Command` job, so this step parks while it runs and runs again from the
+        // top once it ends: a check is announced, counted and logged only by the call that recorded its start or end.
+        if (yield* started(request, id, name)) yield* pending(request, name)
+        const callId = yield* Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:check:${name}`).pipe(
+          Effect.provide(WebCrypto.layer),
+        )
+        const ran = yield* SandboxCommand.run(machine, callId, {
           tool: "run",
           command: `sh ${CHECKS_DIRECTORY}/${name}.sh`,
           timeoutSeconds: CHECK_TIMEOUT_SECONDS,
         }).pipe(Effect.option)
         const status = Option.match(ran, {
           onNone: () => "failed" as const,
-          onSome: (result) => {
-            const run = result as typeof SandboxTools.RunResult.Type
-            return run.exitCode === 0 && !run.timedOut ? "done" as const : "failed" as const
-          },
+          onSome: (run) => (run.exitCode === 0 && !run.timedOut ? "done" as const : "failed" as const),
         })
-        yield* ended(id, status)
-        yield* Metric.update(Metric.withAttributes(checks, { check: "script", outcome: status }), 1)
-        yield* Effect.logInfo("checks.script").pipe(
-          Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, check: name, outcome: status }),
-        )
+        if (yield* ended(id, status)) {
+          yield* Metric.update(Metric.withAttributes(checks, { check: "script", outcome: status }), 1)
+          yield* Effect.logInfo("checks.script").pipe(
+            Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, check: name, outcome: status }),
+          )
+        }
         done.push({ name, status })
       }
       // Done with the job: its machine sleeps now rather than idling until its keep-alive gives up. Best effort.
