@@ -52,7 +52,7 @@ describe("durable execution revisions", () => {
             expect(yield* Migrations.run).toEqual([[1003, "run-store_execution_revisions"], [
               1004,
               "run-store_waiting_request"
-            ]])
+            ], [1005, "run-store_run_progress"]])
             const sql = yield* SqlClient.SqlClient
             expect(yield* sql`SELECT run_id, revision, deleted FROM flows_run_changes ORDER BY revision`).toEqual([
               { run_id: "a", revision: 1, deleted: 0 },

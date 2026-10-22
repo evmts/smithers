@@ -66,12 +66,13 @@ describe("run-store migrations", () => {
   it.effect("reserves its own migration id block above the journal's so ids cannot collide", () =>
     Effect.gen(function*() {
       const applied = yield* (Migrations.run.pipe(Effect.provide(TestDatabase.layer)))
-      expect(applied.map(([id]) => id)).toEqual([1, 2, 3, 4, 5, 6, 1001, 1002, 1003, 1004])
+      expect(applied.map(([id]) => id)).toEqual([1, 2, 3, 4, 5, 6, 1001, 1002, 1003, 1004, 1005])
       expect(applied.filter(([id]) => id >= 1000)).toEqual([
         [1001, "run-store_initial"],
         [1002, "run-store_lineage"],
         [1003, "run-store_execution_revisions"],
-        [1004, "run-store_waiting_request"]
+        [1004, "run-store_waiting_request"],
+        [1005, "run-store_run_progress"]
       ])
     }))
 

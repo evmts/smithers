@@ -1,44 +1,123 @@
----
-title: A run's change feed moves while an action attempt works
-status: in-progress
-area: sdk
+status: done
 owner: Codex GPT-6.1 Sol
 updated: 2026-10-22
-links: [todo-active-run-view.md, ../decisions/0026-watching-a-todo-run.md, ../features/runs.md]
----
+## Revised design — 2026-10-21
 
-## Design — 2026-10-21, 16:10 PDT
+**What:** Keep the run page and steer delivery current while `todo/Implement`
+works inside one action attempt.
 
-**What:** A run's row of the engine's change feed (`flows_run_changes`) moves while one action attempt works, so a page following a TODO's run sees the agent's turns, tool calls and a steer's delivery as they happen, not when the `todo/Implement` step settles.
+**Evidence:** the 2026-10-21 live steer test saw no change notification from
+22:31 to 22:41 UTC while the journal grew from 19 to 201 events. The run page
+and Delivered lagged for the whole attempt.
 
-**Why (evidence):** the live steer e2e on 2026-10-21 (stack `steer_williamcory`) read the run at 22:31 UTC and next at 22:41 UTC: ten minutes with no change notification while the agent worked inside `todo/Implement`, whose journal grew from 19 to 201 events. The run page and a steer's Delivered lagged by the whole step. Decision 0026 and `features/runs.md` say the feed moves "about once per step attempt"; it doesn't.
+**Cause:** `todo/Implement` is one action attempt. `AgentAction.record` and
+`AgentSession` emit the in-process model/tool trail through `journal.emitLossy`.
+Its background batch writer inserts `flows_journal_events`; there are no inner
+engine dispatches. `flows_attempts` changes only at attempt start and finish.
+Migration 0003 watches only `flows_runs`, so the feed stays silent during work.
 
-**Cause:** `@smthrs/run-store` migration `0003_execution_revisions` bumps a run's revision only from triggers on `flows_runs` (insert, update, delete). An agent's model turns, cell calls and steering drains are inner sealed steps: they write `flows_attempts` rows and journal events, never the run's row.
+**Fix:** migration `0005_run_progress` (1005, after base 1004) adds nullable
+integer `flows_runs.progress_at_ms` and an AFTER INSERT trigger on
+`flows_journal_events`, for SQLite and PostgreSQL:
 
-**Design (recommended):** the engine touches the run's row when an attempt starts or settles inside a run, at a bounded rate.
-
+```sql
+UPDATE flows_runs SET progress_at_ms = <now ms>
+WHERE run_id = NEW.run_id
+  AND (progress_at_ms IS NULL OR progress_at_ms <= <now ms> - 2000);
 ```
-attempt started/settled (run-store AttemptStore, the same transaction as its INSERT/UPDATE of flows_attempts)
-  └─ if now - run.progress_at_ms >= PROGRESS_EVERY_MS (2 000)
-       UPDATE flows_runs SET progress_at_ms = now WHERE run_id = ? AND (progress_at_ms IS NULL OR progress_at_ms <= now - 2000)
-         └─ existing trigger: flows_run_source.revision + 1 → flows_run_changes(run_id).revision
-```
 
-- **New column** `flows_runs.progress_at_ms INTEGER NULL` (run-store migration `0005_run_progress`). Row metadata only: it is not in the plan, the payload or any step key, so no plan digest or `implementationVersion` changes, and a run parked across a deploy replays unchanged.
-- **Bounded rate:** the conditional `UPDATE … WHERE progress_at_ms <= now - 2000` makes the bump at most once per 2 s per run whatever the attempt rate, and is a no-op inside the window (no trigger fires on zero rows). The interval is an engine option (`EngineStore.Options.progressEvery`), default 2 s.
-- **Same transaction as the attempt row,** under the engine's fenced writer: a stale owner can't bump, and a rolled-back attempt bumps nothing.
-- **Readers:** unchanged. Electric already follows `flows_run_changes`; `RunInspection` ignores the column.
-- **Contention:** every bump also updates the singleton `flows_run_source` row, which serializes writers across runs. At 0.5 Hz per running run that's small; the journal-latency builder's per-run writer lock (af234a6d6c5f5d459) should take this into account, and this design must take its lock order (attempt row, then run row, inside one writer transaction).
+Use database insertion time, not the event timestamp. Both lossy and durable
+entries participate. Zero matching rows fire no existing row revision trigger;
+journal-driven bumps are bounded to once per two seconds per run. Other run
+transitions still advance revisions immediately. Rollback undoes the event and
+its progress bump. No AttemptStore change, engine option, timer, new lock,
+plan digest change or implementation version change is needed. Readers stay
+unchanged.
 
-**Rejected:** a trigger on `flows_journal_events` (hundreds of writes per minute per run, every one bumping the global singleton); a trigger on `flows_attempts` without a rate bound (the same, at the attempt rate); a separate heartbeat flow or timer (a second scheduler beside the engine, DUR-2); polling from the tab (FE rule, decision 0026 §4).
+**Migration ordering:** journal owns the event table (migration 1).
+`RunStore.Migrations.run/layer` compose journal IDs 1–6 before run-store IDs
+1001–1005. `EngineStore.Migrations.sets` likewise lists journal before run-store.
+Manual compositions using the run-store set must include the journal set first.
 
-**Regression test (fails today):** `packages/smithers/flows/engine-store/test/RunChangeProgress.test.ts`, on SQLite and on Postgres under `SMITHERS_TEST_PG_URL`: run a flow whose one action performs three inner sealed steps (`Action.make(... tier: "sealed")` called from the action body), each waiting on a gate the test releases. After each release, read `flows_run_changes.revision` for the run: it must have moved at least once between the action's start and its settlement while the action is still running. Today the revision moves only at the action's start and end. A second case: ten inner steps within 2 s move it at most twice (the bound). A third: a fenced-out stale owner's attempt write doesn't move it.
+**Regression:** `engine-store/test/RunChangeProgress.test.ts` holds one action
+open, emits lossy entries through a test gate after the baseline read, proves the trail persists while
+only the outer attempt-start exists, and checks the revision before settlement.
+A burst must coalesce and a later entry must advance again. Run on SQLite and
+Postgres. Also cover durable entries, independent runs, absent runs and rollback.
 
-**App proof:** `apps/mvp/src/features/runs/remote.test.ts` "a Member watches it live" gains an assertion that a page reads the run again during `probe/Pause`'s long step with inner steps; the steer e2e's Delivered then appears within seconds of the agent's next turn.
+**App proof:** `src/features/runs/remote.test.ts` checks a page re-read after
+persisted trail progress during `probe/Pause`. It needs Postgres and Electric,
+but no browser. Live steer delivery remains separate end-to-end evidence.
 
-**Next step:** a builder takes this note: send the design to the journal-latency builder first, then the failing test, then the migration and the bump beside `AttemptStore`'s writes of `flows_attempts`. Mechanical parts (migration, option plumbing, docs) can go to Codex Sol.
+**Libraries:** catalog entries `@smthrs/engine-store`, `@smthrs/journal`, and
+`@smthrs/run-store`.
 
-**Open questions for Will:** None.
+**Earlier validation (2026-10-21):** restoring the run-store migration list from
+`123aac80af55` makes the live regression fail with revision 5 → 5. With 1005,
+the focused engine matrix passes all five tests on both SQLite and PostgreSQL,
+including the unsettled action regression. The full run-store matrix passes
+(313 passed and one skipped on SQLite; 314 passed on PostgreSQL), with merged
+100% statements, branches, functions and lines. The browser-free app proof
+passes all three tests against real Postgres and Electric. Both packages' type
+checks and the changed tests' formatting checks pass. `pnpm docs:sync` and
+`pnpm docs:check` pass, including all 51 published package tarballs.
+
+Astra identified timing assumptions in the burst assertions. They now use a
+single-statement burst and explicitly controlled eligibility, and gate the live action's next journal emission after its baseline read. Fable review was attempted
+but its configured accounts failed or were cooling down. Full engine suites,
+browser, production and live steer tests were not rerun after reboot; the
+pre-reboot note reported baseline/intermittent PostgreSQL engine failures.
+
+## Lander repair — 2026-10-22
+
+Restored D and F onto `main@origin` `7f16c873`. D is a work/design note,
+not a new numbered decision; the existing 0026 steering text and tracker
+history are retained. Site projections are regenerated from current sources.
+
+The app proof holds the last real probe action behind a gate, requires the
+persisted journal entry and a newer feed revision, and checks the journal
+insert advanced `progress_at_ms` independently of other run writes. It waits
+for the feed's final revision and two quiet long-poll responses before asserting
+no further reads. This removes the fixed sleep and the terminal read-count
+race. Gates are released on assertion failure and at scope cleanup.
+
+Astra's two test findings are fixed: require a newer feed revision, and gate
+the SDK's second emission after its baseline instead of sleeping. Fable review
+was attempted; all configured accounts were cooling down.
+
+Executed regression receipts: disabling migration 1005 made the original SDK
+case fail at revision 5 → 5; disabling the real journal trigger makes the
+strengthened app case fail with progress 1 → 1. The gated SDK case passes.
+The full run-store SQLite/PostgreSQL matrix passes (313 + 314 tests, one
+SQLite-only skip), with merged statements, branches, functions and lines 100%.
+Final tip commands and results (Node 26.5.0, frozen pnpm install):
+
+| Command | Result |
+| --- | --- |
+| `pnpm --filter @smthrs/run-store coverage` | SQLite 313 passed / 1 skipped; PostgreSQL 314 passed; merged coverage 100% in all four metrics |
+| `pnpm --filter @smthrs/engine-store coverage --fsModuleCache --maxWorkers=1` | SQLite 2,185 passed; PostgreSQL 2,185 passed; merged coverage 100% in all four metrics |
+| `pnpm --filter @smthrs/mvp exec vitest run --fsModuleCache src/features/runs --coverage.enabled=false --maxWorkers=1` | 120 passed, 11 files |
+| `pnpm --filter @smthrs/mvp typecheck` | Passed |
+| `pnpm exec smithers-build test '//apps/mvp:importRules'` | Passed; no rule changes or exceptions |
+| Both packages' `check` scripts and changed SDK tests' `dprint check` | Passed |
+| `pnpm docs:sync` and `pnpm docs:check` | Passed; 51 published-package tarballs checked |
+
+Build prerequisite: `cargo build --locked --release -p smithers-ffi --bin smithers-jj-export`.
+Early engine runs lacked that helper. An interim two-worker run then timed out
+in `ConnectionLoss.test.ts`; both cases passed when isolated on main and on
+the tip. The final one-worker matrix passes the complete suites and coverage
+gate, including connection-loss recovery. No assertion, timeout or threshold
+was relaxed.
+
+Plain `main@origin` (`7f16c873`, separate clean workspace): app typecheck,
+import rules and the original Member watch test passed. All 2,183 engine tests
+passed on its SQLite configuration. Its single-backend coverage command was
+red (99.96% lines; no PostgreSQL merge), so that is not a passing full coverage
+gate. The reported terminal read-count failure did not reproduce in that run;
+F's original assertion still left the terminal feed race unguarded, which the
+feed completion barrier above fixes.
+
+Browser, production and live steering tests were not run in this repair.
 
 ## Earlier tracker history from main
 

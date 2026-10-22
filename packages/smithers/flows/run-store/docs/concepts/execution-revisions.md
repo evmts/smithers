@@ -1,6 +1,6 @@
 ---
-title: "Execution revisions and cancellation acknowledgement"
-description: "Database-owned monotonic run revisions, retained deletion evidence, and fenced acknowledgement of cancellation intent."
+title: "Execution revisions, journal progress and cancellation acknowledgement"
+description: "Database-owned run revisions, coalesced journal progress, retained deletion evidence and fenced cancellation acknowledgement."
 ---
 
 Migration `0003_execution_revisions` adds `flows_run_source`,
@@ -51,3 +51,18 @@ database, and a projection's applied watermark can lag the engine's watermark.
 See [engine observation and listing](../../../engine-store/docs/guides/observe-executions.md)
 for bounded snapshots, keyset cursor semantics, live-page concurrency and the
 revision comparison that rejects stale projection updates.
+
+Migration `0005_run_progress` (1005) adds nullable `progress_at_ms` to
+`flows_runs`. An AFTER INSERT trigger on `flows_journal_events` touches that
+column using database insertion time when its previous value is null or at
+least 2,000 ms old. Both lossy agent trail batches and durable entries advance
+the existing revision feed during one open action attempt. Entries inside the
+window update no run row and do not advance the revision singleton. Other run
+state transitions still advance revisions immediately.
+
+The trigger participates in the journal insert's transaction: rollback undoes
+both the event and its progress revision. Events for absent runs change no run
+revision. Progress is row metadata, independent of plan digests and replay
+keys; no AttemptStore write, timer, engine option, or additional lock is needed.
+Run-store's `run` and `layer` install journal migrations before run-store's;
+manual migration-set compositions must likewise put the journal set first.

@@ -179,6 +179,7 @@ describe("durable engine migrations", () => {
           "owner_nonce",
           "owner_pid",
           "parent_run_id",
+          "progress_at_ms",
           "round_ordinal",
           "run_id",
           "started_at_ms",

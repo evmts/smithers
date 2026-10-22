@@ -8,7 +8,8 @@
  * The SQL `RunStore` arbitrates ownership through `@smthrs/journal`'s
  * `SqlConsensus`, whose lease table the journal's migration set creates, so
  * {@link run} and {@link layer} install the journal's set ahead of this one.
- * {@link set} stays scoped to the run-store tables for compositions that list
+ * Journal inserts also drive the run progress trigger, so journal migrations
+ * must precede this set. {@link set} owns run-store schema for compositions that list
  * every set themselves, such as `@smthrs/engine-store/Migrations`.
  *
  * @since 0.1.0
@@ -21,6 +22,7 @@ import { initial } from "./migrations/0001_initial.ts"
 import { lineage } from "./migrations/0002_lineage.ts"
 import { executionRevisions } from "./migrations/0003_execution_revisions.ts"
 import { waitingRequest } from "./migrations/0004_waiting_request.ts"
+import { runProgress } from "./migrations/0005_run_progress.ts"
 
 /**
  * The run store's namespaced migration set, for composition with the other
@@ -36,7 +38,8 @@ export const set: DatabaseMigrations.MigrationSet = {
     "0001_initial": initial,
     "0002_lineage": lineage,
     "0003_execution_revisions": executionRevisions,
-    "0004_waiting_request": waitingRequest
+    "0004_waiting_request": waitingRequest,
+    "0005_run_progress": runProgress
   }
 }
 

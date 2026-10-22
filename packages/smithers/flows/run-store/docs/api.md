@@ -927,6 +927,13 @@ as JSON text, enforced by `json_valid`. Existing rows read as having no declared
 request. The durable engine writes and clears it with the other waiting fields;
 human tasks use it to publish the prompt, answer kind, and attempt budget.
 
+Migration 1005 (`0005_run_progress`) adds nullable integer
+`flows_runs.progress_at_ms`. Journal inserts touch the run at most once per
+2,000 ms per run using database insertion time, advancing the existing change
+feed during long action attempts. Durable and lossy entries both participate;
+rollback undoes the progress update. Manual migration-set compositions must
+install journal migrations before the run-store set.
+
 ## Heartbeat
 
 `@smthrs/run-store/Heartbeat` is a leaf module re-exporting the four lease

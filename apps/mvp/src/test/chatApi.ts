@@ -1,3 +1,4 @@
+import { Journal as FlowJournal } from "@smthrs/flows"
 import { FLOW_DRAFTS_TABLE, FLOWS_TABLE } from "../features/flows-ui/contract"
 import { ImmutableCache } from "@smthrs/artifacts"
 import { Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
@@ -9,6 +10,7 @@ import {
   Cause,
   ConfigProvider,
   Context,
+  Deferred,
   Effect,
   Fiber,
   Layer,
@@ -295,7 +297,14 @@ export class TestChatApi extends Context.Service<
      */
     readonly remote: {
       readonly todoRun: (title: string) => Effect.Effect<string>
-      readonly start: (runId: string, payload: { readonly label: string; readonly pauseMs: number }) => Effect.Effect<void>
+      readonly progress: (runId: string) => Effect.Effect<number>
+      /** Controlled live-action gate and feed receipts, using the real engine and database. */
+      readonly ready: (runId: string) => Effect.Effect<void>
+      readonly release: (runId: string) => Effect.Effect<void>
+      readonly settled: (runId: string) => Effect.Effect<void>
+      readonly revision: (runId: string) => Effect.Effect<number>
+      readonly prepareProgress: (runId: string) => Effect.Effect<number>
+      readonly start: (runId: string, payload: { readonly label: string; readonly pauseMs: number; readonly hold?: boolean }) => Effect.Effect<void>
     }
   }
 >()("@smthrs/mvp/test/TestChatApi") {
@@ -471,12 +480,27 @@ export class TestChatApi extends Context.Service<
         const remoteSchema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
         stores.push(remoteSchema)
         const layerScope = yield* Effect.scope
+        const remoteGates = new Map<string, { label: string; ready: Deferred.Deferred<void>; release: Deferred.Deferred<void> }>()
+        const remoteFibers = new Map<string, Fiber.Fiber<void>>()
         const remoteEngine = yield* Effect.cached(
-          buildEngine(Pause.registration((label) => Effect.succeed(label)), { schema: remoteSchema }).pipe(
+          buildEngine(Pause.registration((label) => Effect.gen(function* () {
+            const gate = [...remoteGates.values()].find((gate) => gate.label === label)
+            if (gate !== undefined) {
+              yield* Deferred.succeed(gate.ready, undefined)
+              yield* Deferred.await(gate.release)
+            }
+            return label
+          })), { schema: remoteSchema }).pipe(
             Scope.provide(layerScope),
             Effect.orDie,
           ),
         )
+        const remoteWriter = PostgresDatabase.layer({
+          url: server,
+          driver: Pg,
+          schema: remoteSchema,
+          postgres: { maxConnections: 1, applicationName: remoteSchema },
+        })
         const remoteRuns = yield* RemoteRuns.make(database, {
           database: PostgresDatabase.layer({
             url: server,
@@ -485,12 +509,7 @@ export class TestChatApi extends Context.Service<
             readOnly: true,
             postgres: { maxConnections: 2, applicationName: remoteSchema },
           }),
-          writer: PostgresDatabase.layer({
-            url: server,
-            driver: Pg,
-            schema: remoteSchema,
-            postgres: { maxConnections: 1, applicationName: remoteSchema },
-          }),
+          writer: remoteWriter,
           schema: remoteSchema,
           flows: [Pause.Pause],
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
@@ -679,6 +698,39 @@ export class TestChatApi extends Context.Service<
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),
           },
           remote: {
+            ready: (runId) => Deferred.await(remoteGates.get(runId)!.ready),
+            release: (runId) => Deferred.succeed(remoteGates.get(runId)!.release, undefined).pipe(Effect.asVoid),
+            settled: (runId) => Fiber.join(remoteFibers.get(runId)!),
+            revision: (runId) => Effect.gen(function* () {
+              yield* remoteEngine
+              return yield* sql<{ revision: string }>`
+                SELECT revision FROM ${sql(remoteSchema)}.flows_run_changes WHERE run_id = ${runId}`.pipe(
+                Effect.map((rows) => Number(rows[0]!.revision)), Effect.orDie,
+              )
+            }),
+            prepareProgress: (runId) => Effect.gen(function* () {
+              yield* remoteEngine
+              const engineSql = yield* SqlClient.SqlClient
+              // Run the write with the engine's search_path: its triggers resolve their own tables there.
+              // Let the tab consume this eligibility change before requiring a new journal-driven revision.
+              yield* engineSql`UPDATE flows_runs SET progress_at_ms = 1 WHERE run_id = ${runId}`
+              return yield* engineSql<{ revision: string }>`SELECT revision FROM flows_run_changes WHERE run_id = ${runId}`.pipe(
+                Effect.map((rows) => Number(rows[0]!.revision)),
+              )
+            }).pipe(Effect.provide(remoteWriter), Effect.orDie),
+            progress: (runId) => Effect.gen(function* () {
+              const { context } = yield* remoteEngine
+              const journal = Context.get(context, FlowJournal.Journal.Journal)
+              yield* journal.emitLossy(new FlowJournal.JournalEvent.Input({
+                runId: FlowJournal.JournalEvent.RunId.make(runId), sourceId: FlowJournal.JournalEvent.SourceId.make("agent/trail"),
+                eventType: "agent.turn", payload: {},
+              }))
+              yield* journal.flush
+              return yield* sql<{ progress_at_ms: number }>`SELECT progress_at_ms
+                FROM ${sql(remoteSchema)}.flows_runs WHERE run_id = ${runId}`.pipe(
+                Effect.map((rows) => Number(rows[0]!.progress_at_ms)),
+              )
+            }).pipe(Effect.orDie),
             todoRun: (title) =>
               Effect.gen(function* () {
                 yield* remoteEngine
@@ -695,10 +747,18 @@ export class TestChatApi extends Context.Service<
               Effect.gen(function* () {
                 const { context } = yield* remoteEngine
                 const flows = Context.get(context, FlowRuntime.FlowRuntime)
-                yield* Effect.forkIn(
-                  Effect.ignore(flows.execute(Pause.Pause, { executionId: runId, payload }).pipe(Effect.provide(context))),
+                if (payload.hold) {
+                  const gate = { label: `${payload.label}:after`, ready: yield* Deferred.make<void>(), release: yield* Deferred.make<void>() }
+                  remoteGates.set(runId, gate)
+                  yield* Scope.addFinalizer(layerScope, Deferred.succeed(gate.release, undefined))
+                }
+                const fiber = yield* Effect.forkIn(
+                  Effect.ignore(flows.execute(Pause.Pause, {
+                    executionId: runId, payload: { label: payload.label, pauseMs: payload.pauseMs },
+                  }).pipe(Effect.provide(context))),
                   layerScope,
                 )
+                remoteFibers.set(runId, fiber)
               }),
           },
         })

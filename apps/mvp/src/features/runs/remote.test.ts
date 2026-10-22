@@ -9,6 +9,7 @@ import type * as Actor from "../../../worker/Actor.ts"
 import { asPerson, nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
 import { hostOf, missingOf, steerOpen, steersOf } from "./page"
 import { Runs } from "./runs"
+import { REMOTE_RUN_SHAPE_ROUTE } from "./contract"
 import { RunSteers } from "./steers"
 import type { Inspection, RunPage, SteerSending, SteerSent } from "./schema"
 
@@ -30,13 +31,29 @@ const open = async (person?: string, engine = false) => {
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const as = person === undefined ? api : asPerson(api, person)
-  const tab = openTab(as, { host: engine ? nodeDevice({ agent: as }) : nodeDevice() })
+  const revisions = new Map<string, number>()
+  let quiet = 0
+  const observed = { ...as, fetch: async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const response = await as.fetch(input, init)
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    if (url.pathname === REMOTE_RUN_SHAPE_ROUTE && response.ok) {
+      const messages = await response.clone().json() as Array<{ value?: { run_id?: string; revision?: string } }>
+      if (url.searchParams.get("live") === "true" && messages.every((message) => message.value === undefined)) quiet += 1
+      for (const { value } of messages) if (value?.run_id !== undefined && value.revision !== undefined) {
+        revisions.set(value.run_id, Number(value.revision))
+      }
+    }
+    return response
+  } }
+  const tab = openTab(observed, { host: engine ? nodeDevice({ agent: as }) : nodeDevice() })
   runtimes.push(tab)
   const runs = await tab.runPromise(Effect.service(Runs))
   for (const query of Object.values(runs.queries)) query.startSyncImmediate()
   return {
     api,
     tab,
+    revision: (runId: string) => revisions.get(runId),
+    quiet: () => quiet,
     runs,
     page: () => runs.queries.page.toArray[0]?.page,
     inspection: () => runs.queries.page.toArray[0]?.page.inspection as Inspection | undefined,
@@ -62,29 +79,59 @@ describe("a TODO's run on Cloudflare", () => {
     expect(missingOf(t.page()!)).toBe("Not started")
 
     // The run starts on the engine: its row of the change feed reads the page again, with no request of the tab's own.
-    await Effect.runPromise(t.api.remote.start(runId, { label: "watched", pauseMs: 2_000 }))
-    await until(() => expect(t.page()?.state).toBe("read"))
-    await until(() => {
-      const steps = t.inspection()!.steps.filter((step) => step.action === "probe/Mark")
-      expect(steps.map((step) => step.status)).toContain("completed")
-    })
-    // Mid-run, during its durable sleep: one Mark done, the run not settled.
-    expect(t.inspection()!.run.status).not.toBe("completed")
-    expect(hostOf(t.inspection()!.run.runId)).toBe("Cloud")
+    await Effect.runPromise(t.api.remote.start(runId, { label: "watched", pauseMs: 2_000, hold: true }))
+    try {
+      await until(() => expect(t.page()?.state).toBe("read"))
+      await until(() => {
+        const steps = t.inspection()!.steps.filter((step) => step.action === "probe/Mark")
+        expect(steps.map((step) => step.status)).toContain("completed")
+      })
+      // Mid-run: one Mark done, the last action held open, the run not settled.
+      expect(t.inspection()!.run.status).not.toBe("completed")
+      expect(hostOf(t.inspection()!.run.runId)).toBe("Cloud")
 
-    // The second Mark and the settling arrive the same way.
-    await until(() => expect(t.inspection()!.run.status).toBe("completed"))
-    expect(t.inspection()!.steps.filter((step) => step.action === "probe/Mark").map((step) => step.output?.text)).toEqual([
-      "\"watched:before\"",
-      "\"watched:after\"",
-    ])
-    expect(JSON.parse(t.inspection()!.run.result!.text)).toBe("watched:after")
+      // Hold the last action until its persisted trail has reached this tab.
+      await Effect.runPromise(t.api.remote.ready(runId))
+      const beforeEligibility = t.page()
+      const eligible = await Effect.runPromise(t.api.remote.prepareProgress(runId))
+      await until(() => {
+        expect(t.revision(runId)).toBe(eligible)
+        expect(t.page()).not.toBe(beforeEligibility)
+      })
+      const beforeProgress = t.reads()
+      expect(await Effect.runPromise(t.api.remote.progress(runId))).toBeGreaterThan(1)
+      await until(() => {
+        expect(t.revision(runId)).toBeGreaterThan(eligible)
+        expect(t.inspection()!.journal.events.some((event) => event.eventType === "agent.turn")).toBe(true)
+        expect(t.reads()).toBeGreaterThan(beforeProgress)
+      })
+      expect(t.inspection()!.run.status).not.toBe("completed")
 
-    // Nothing changes now, so nothing reads it again: the tab follows the run, never a clock.
-    await until(() => expect(t.page()?.state).toBe("read"))
-    const settled = t.reads()
-    await Effect.runPromise(Effect.sleep(2_500))
-    expect(t.reads()).toBe(settled)
+      // The second Mark and the settling arrive the same way.
+      await Effect.runPromise(t.api.remote.release(runId))
+      await Effect.runPromise(t.api.remote.settled(runId))
+      const finalRevision = await Effect.runPromise(t.api.remote.revision(runId))
+      await until(() => expect(t.revision(runId)).toBe(finalRevision))
+      await until(() => expect(t.inspection()!.run.status).toBe("completed"))
+      expect(t.inspection()!.steps.filter((step) => step.action === "probe/Mark").map((step) => step.output?.text)).toEqual([
+        "\"watched:before\"",
+        "\"watched:after\"",
+      ])
+      expect(JSON.parse(t.inspection()!.run.result!.text)).toBe("watched:after")
+
+      // Nothing changes now, so nothing reads it again: the tab follows the run, never a clock.
+      await until(() => expect(t.page()?.state).toBe("read"))
+      // A completed inspection can precede the last Electric update. Wait for the feed's own quiet long-poll
+      // response before taking the count, then another quiet response proves a silent feed causes no reads.
+      const catchingUp = t.quiet()
+      await until(() => expect(t.quiet()).toBeGreaterThan(catchingUp))
+      const settled = t.reads()
+      const quiet = t.quiet()
+      await until(() => expect(t.quiet()).toBeGreaterThan(quiet))
+      expect(t.reads()).toBe(settled)
+    } finally {
+      await Effect.runPromise(t.api.remote.release(runId))
+    }
   }, 120_000)
 
   test("a Member steers it while it works: Sending, then Sent from the run's queue; Not delivered once it ends", async () => {

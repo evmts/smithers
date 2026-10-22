@@ -771,13 +771,14 @@ describe("fence", () => {
 
   const upgrades: ReadonlyArray<readonly [string, ReadonlyArray<number>]> = [
     ["the same migration set", []],
+    ["run-store 1005 below the installed plan block", [1005]],
     ["a global suffix in the plan block", [4003]],
     ["engine-store 3010 below the installed plan block", [3010]],
     ["engine-store 3009 below the installed plan block", [3009, 3010]],
     ["engine-store 3008 below the installed plan block", [3008, 3009, 3010]],
     ["engine-store 3007 below the installed plan block", [3007, 3008, 3009, 3010]],
     ["engine-store 3006 below the installed plan block", [3006, 3007, 3008, 3009, 3010]],
-    ["the previous engine and run-store migration sets", [1003, 1004, 3006, 3007, 3008, 3009, 3010]]
+    ["the previous engine and run-store migration sets", [1003, 1004, 1005, 3006, 3007, 3008, 3009, 3010]]
   ]
   for (const [name, omitted] of upgrades) {
     it.effect(`restores, fences, and resumes with ${name}`, () =>
