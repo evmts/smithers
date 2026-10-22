@@ -35,6 +35,7 @@ const print = (environment: Record<string, string>, args: ReadonlyArray<string> 
     timeout: 120_000,
     env: {
       HOME: process.env["HOME"] ?? root,
+      NODE_OPTIONS: process.env["NODE_OPTIONS"] ?? "",
       SMITHERS_TUI_REPLAY: fixture,
       SMITHERS_TUI_SESSION_DIR: join(root, ".sessions"),
       ...environment
