@@ -22,6 +22,7 @@ import { actsOf, hostOf, journalOf, missingOf, selectedStep } from "../page"
 import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs"
 import type { Inspection, RunTab, RunPage, RunView } from "../schema"
+import { actionRunPath } from "../../actions/contract"
 import { useRuns } from "./RunsContext"
 import { RunSteers } from "./RunSteers"
 
@@ -34,7 +35,7 @@ export function RunPageView() {
   const { data } = useLiveQuery(queries.page)
   if (data === undefined) return null
   const { view, page } = data
-  if (page.state !== "read") return <EmptyState title={missingOf(page)} />
+  if (page.state !== "read") return <EmptyState title={missingOf(page, view.repo != null)} />
   return <ReadRunPage page={page} view={view} actions={actions} />
 }
 
@@ -44,11 +45,16 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
   const now = view.now ?? Date.now()
   const at = view.at ?? null
   // The evidence fold is independent of the presentation clock; open bars use the current time below.
-  const frame = useMemo(() => graphOf(page, at, run.createdAtMs), [page, at, run.createdAtMs])
+  const repo = view.repo ?? null
+  // A repository's run opens the runs it started, its jobs, on its own pages (docs/features/actions.md).
+  const frame = useMemo(
+    () => graphOf(page, at, run.createdAtMs, repo === null ? undefined : (id) => actionRunPath(repo.owner, repo.name, id)),
+    [page, at, run.createdAtMs, repo],
+  )
   const graph = { ...frame, time: at === null ? now : frame.time }
   const steps = graph.steps
   const shown = selectedStep(steps, view.selected)
-  const acts = actsOf(inspection, now, journalOf(page))
+  const acts = actsOf(inspection, now, journalOf(page), repo !== null)
   const busy = view.acting !== null
   return (
     <div className="run-page" tabIndex={-1} onKeyDown={(event) => {
@@ -70,7 +76,7 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
         startedAtMs={run.startedAtMs ?? run.createdAtMs}
         finishedAtMs={run.finishedAtMs}
         now={now}
-        host={hostOf(run.runId)}
+        host={hostOf(run.runId, repo !== null)}
         actions={
           <>
             {acts.stop ? <Button variant="outline" disabled={busy} onClick={actions.stop}>{STOP}</Button> : null}

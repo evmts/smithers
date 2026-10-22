@@ -9,6 +9,7 @@ import { codeOf } from "../ErrorCode.ts"
 import { withToken } from "../github/Calls.ts"
 import { repositoryOf } from "../github/Config.ts"
 import type { GitHubTokens } from "../github/Tokens.ts"
+import * as RepoRuns from "../RepoRuns.ts"
 import * as RepoFlow from "./RepoFlow.ts"
 import * as Triggers from "./Triggers.ts"
 
@@ -45,9 +46,15 @@ export type DispatchRequest = typeof DispatchRequest.Type
 
 /**
  * `REPO_FLOWS`: whether GitHub's pushes and pull requests start repositories' flows. Off unless set to `true`: each run
- * starts machines for every repository the App is installed on.
+ * starts machines only for repositories in `REPO_FLOWS_REPOSITORIES`.
  */
 export const enabled = Config.Boolean("REPO_FLOWS").pipe(Config.withDefault(false))
+
+/** Comma-separated owner/name allowlist; unset or blank allows no repositories. */
+export const repositories = Config.String("REPO_FLOWS_REPOSITORIES").pipe(
+  Config.withDefault(""),
+  Config.map((value) => new Set(value.split(",").map((name) => name.trim().toLowerCase()).filter((name) => /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(name)))),
+)
 
 /** The association GitHub gives a pull request's author who is Member or above: their head may have secrets. */
 export const TRUSTED_ASSOCIATIONS: ReadonlyArray<string> = ["OWNER", "MEMBER", "COLLABORATOR"]
@@ -134,7 +141,7 @@ export const RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_0
 /** What `triggers/Match` found: the flows to start, and why there are none when there are none. */
 export const Matched = Schema.Struct({
   flows: Schema.Array(Schema.String),
-  outcome: Schema.Literals(["matched", "none", "no_manifest", "unreadable"]),
+  outcome: Schema.Literals(["matched", "none", "no_manifest", "unreadable", "not_allowed"]),
 })
 export type Matched = typeof Matched.Type
 
@@ -171,7 +178,7 @@ export const Dispatch = Flow.make("triggers/Dispatch", {
     )),
 })
 
-/** Deliveries dispatched, by `event` and `outcome` (`matched`, `none`, `no_manifest`, `unreadable`). */
+/** Deliveries dispatched, by `event` and `outcome` (`matched`, `none`, `no_manifest`, `unreadable`, `not_allowed`). */
 export const dispatches = Metric.counter("smithers_ci_dispatches", {
   description: "GitHub push and pull request deliveries matched against repository flows' triggers, by event and outcome",
   incremental: true,
@@ -185,6 +192,7 @@ export const starts = Metric.counter("smithers_ci_starts", {
 
 /** What dispatching needs: Postgres (the App's installations), GitHub as the App, and where a run starts. */
 export interface Services<E, R> {
+  readonly repositories?: Effect.Effect<ReadonlySet<string>, Config.ConfigError>
   readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
   readonly tokens: GitHubTokens
   readonly http: HttpClient.HttpClient
@@ -197,6 +205,9 @@ export interface Services<E, R> {
 export const steps = <E, R>(services: Services<E, R>) => {
   const match = ({ request }: typeof Match.payloadSchema.Type) =>
     Effect.gen(function* () {
+      if (!(yield* (services.repositories ?? repositories)).has(request.repo.toLowerCase())) {
+        return { flows: [], outcome: "not_allowed" } satisfies Matched
+      }
       const repository = repositoryOf(request.repo)
       const token = yield* services.tokens.forInstallation(repository, "contents").pipe(Effect.result)
       if (token._tag === "Failure") {
@@ -245,37 +256,49 @@ export const steps = <E, R>(services: Services<E, R>) => {
     )
 
   const start = ({ flows, request }: typeof Start.payloadSchema.Type) =>
-    Effect.forEach(flows, (flow) => {
-      const executionId = runExecutionId(flow, request.delivery)
-      const payload: RepoFlow.RunRequest = {
-        run: executionId,
-        repo: request.repo,
-        flow,
-        sha: request.sha,
-        ref: request.ref,
-        event: request.event,
-        secrets: request.trusted,
+    Effect.gen(function* () {
+      if (!(yield* (services.repositories ?? repositories)).has(request.repo.toLowerCase())) {
+        yield* Metric.update(Metric.withAttributes(starts, { outcome: "not_allowed" }), 1)
+        yield* Effect.logInfo("ci.start").pipe(Effect.annotateLogs({ repo: request.repo, outcome: "not_allowed" }))
+        return []
       }
-      const record = (outcome: "started" | "not_started", errorCode?: string) =>
-        Effect.andThen(
-          Metric.update(Metric.withAttributes(starts, { outcome }), 1),
-          Effect.logWithLevel(outcome === "started" ? "Info" : "Warn")("ci.start").pipe(Effect.annotateLogs({
-            delivery: request.delivery,
-            repo: request.repo,
-            flow,
-            executionId,
-            outcome,
-            ...(errorCode === undefined ? {} : { errorCode }),
-          })),
+      return yield* Effect.forEach(flows, (flow) => {
+        const executionId = runExecutionId(flow, request.delivery)
+        const payload: RepoFlow.RunRequest = {
+          run: executionId,
+          repo: request.repo,
+          flow,
+          sha: request.sha,
+          ref: request.ref,
+          event: request.event,
+          secrets: request.trusted,
+        }
+        const record = (outcome: "started" | "not_started", errorCode?: string) =>
+          Effect.andThen(
+            Metric.update(Metric.withAttributes(starts, { outcome }), 1),
+            Effect.logWithLevel(outcome === "started" ? "Info" : "Warn")("ci.start").pipe(Effect.annotateLogs({
+              delivery: request.delivery,
+              repo: request.repo,
+              flow,
+              executionId,
+              outcome,
+              ...(errorCode === undefined ? {} : { errorCode }),
+            })),
+          )
+        return RepoRuns.record({
+          execution: executionId, repoId: `github/${request.repo.toLowerCase()}`, flow,
+          sha: request.sha, ref: request.ref, event: request.event, launchedBy: "github",
+        }).pipe(
+          Effect.provide(services.database),
+          Effect.andThen(services.start(RepoFlow.Run, { executionId, payload })),
+          Effect.tap(() => record("started")),
+          Effect.catchCause((cause) =>
+            record("not_started", codeOf(Cause.squash(cause))).pipe(Effect.andThen(Effect.fail(new DispatchUnavailable())))
+          ),
+          Effect.as(executionId),
         )
-      return services.start(RepoFlow.Run, { executionId, payload }).pipe(
-        Effect.tap(() => record("started")),
-        Effect.catchCause((cause) =>
-          record("not_started", codeOf(Cause.squash(cause))).pipe(Effect.andThen(Effect.fail(new DispatchUnavailable())))
-        ),
-        Effect.as(executionId),
-      )
-    }).pipe(Effect.withSpan("ci.dispatch.start", { attributes: { "smithers.ci.delivery": request.delivery } }))
+      })
+    }).pipe(Effect.mapError(() => new DispatchUnavailable()), Effect.withSpan("ci.dispatch.start", { attributes: { "smithers.ci.delivery": request.delivery } }))
 
   return { match, start }
 }

@@ -50,6 +50,7 @@ export default defineConfig({
         // runs only under Alchemy's bundle, so the workerd test proves it through ExecutionHost.ts instead.
         "worker/ExecutionHost.ts",
         "worker/index.ts",
+        "worker/ci/*.ts",
         "worker/flows/**/*.ts",
         // The metered model endpoint and admin/SetModel (docs/features/model-endpoint.md).
         "worker/Actor.ts",
@@ -145,6 +146,9 @@ export default defineConfig({
         // A TODO's run, watched from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare).
         "worker/RemoteRuns.ts",
         "db/migrations/0036_todo_run.ts",
+        // A repository's runs (docs/features/actions.md).
+        "worker/RepoRuns.ts",
+        "db/migrations/0053_repo_runs.ts",
         // The branch workspace: branches, their conversations and terminals (docs/features/branch-workspace.md).
         // worker/BranchSandboxes.ts and worker/BranchRooms.ts, the Cloudflare Durable Objects, run only under Alchemy's
         // bundle; e2e/branch-workspace.spec.ts and e2e/branch-sharing.spec.ts drive them, and

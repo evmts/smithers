@@ -4,14 +4,16 @@
 // `probe/Pause`, run under a TODO attempt's id by an engine on a schema of its own, as the Durable Object runs a TODO's
 // `todo` run: so what the tab reads, and when it reads it again, is what it does for a TODO's run.
 import { Effect } from "effect"
+import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type * as Actor from "../../../worker/Actor.ts"
-import { asPerson, nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
-import { hostOf, missingOf, steerOpen, steersOf } from "./page"
+import { asPerson, nodeDevice, openTab, openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { actionRunPath } from "../actions/contract"
+import { actsOf, hostOf, missingOf, repoRunRows, steerOpen, steersOf } from "./page"
 import { Runs } from "./runs"
 import { REMOTE_RUN_SHAPE_ROUTE } from "./contract"
 import { RunSteers } from "./steers"
-import type { Inspection, RunPage, SteerSending, SteerSent } from "./schema"
+import type { Inspection, RepoRunRow, RunPage, SteerSending, SteerSent } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -201,8 +203,96 @@ describe("a TODO's run on Cloudflare", () => {
 
   test("a run no TODO started reads Not found", async () => {
     const t = await open()
+    // The engine's schema exists, as it does deployed: a run no attempt holds may still be a repository's.
+    await Effect.runPromise(Effect.exit(t.api.remote.revision("none")))
     const runId = "todo:00000000-0000-4000-8000-000000000000"
     await t.runs.actions.openRun(runId)
     expect(t.page()).toMatchObject({ id: runId, state: "not_found" })
+  }, 60_000)
+})
+
+describe("a repository's run on Cloudflare", () => {
+  test("a Member finds it in the repository's runs, watches it on its page, and stops it there", async () => {
+    const t = await open(undefined, true)
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    const [owner, name] = TEST_REPOSITORY.split("/") as [string, string]
+
+    // The list: Electric's rows of the repository's runs, each opening its page.
+    await t.runs.actions.openRepoRuns()
+    await until(() =>
+      expect(repoRunRows(t.runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, owner, name)).toEqual([
+        expect.objectContaining({ flow: "ci · main", state: "running", href: actionRunPath(owner, name, runId) }),
+      ])
+    )
+
+    await t.runs.actions.openRun(runId, { owner, name })
+    expect(t.page()).toMatchObject({ id: runId, state: "not_started" })
+    await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
+    await until(() => expect(t.inspection()?.run.status).toBe("suspended"))
+    expect(hostOf(runId, true)).toBe("Cloud")
+    expect(actsOf(t.inspection()!, Date.now(), undefined, true)).toEqual({ stop: true, retry: false, resume: false })
+
+    // Stop: run/cancel on this device's engine, which asks ChatApi, whose object stops the run; the page follows it.
+    t.runs.actions.stop()
+    await until(() => expect(t.inspection()?.run.status).toBe("cancelled"))
+    expect(await Effect.runPromise(t.api.remote.status(runId))).toBe("cancelled")
+    expect(t.runs.queries.view.toArray[0]?.refusal).toBeNull()
+    expect(t.api.spans.filter((span) => span.name === "run.stop")).toHaveLength(1)
+
+    // A row gone from the repository's runs leaves the list; opening it again syncs nothing twice.
+    await t.runs.actions.openRepoRuns()
+    await Effect.runPromise(t.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`DELETE FROM runs WHERE execution = ${runId}`)))
+    await until(() => expect(repoRunRows(t.runs.queries.repoRuns.toArray as ReadonlyArray<RepoRunRow>, owner, name)).toEqual([]))
+  }, 120_000)
+
+  test("a job it started is followed too: the job's progress reads the run again", async () => {
+    const t = await open()
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    await Effect.runPromise(t.api.remote.start(runId, { label: "job", pauseMs: 0, hold: true, nested: true }))
+    try {
+      await Effect.runPromise(t.api.remote.ready(runId))
+      await t.runs.actions.openRun(runId, { owner: "octo", name: "hello" })
+      // The job holds its last step: the page shows it running under the run.
+      await until(() => expect(t.page()?.descendants?.map((child) => (child as Inspection).run.status)).toEqual(["running"]))
+      const reads = t.reads()
+      await Effect.runPromise(t.api.remote.release(runId))
+      // The job's own row moves first; the run's page reads it, and of its jobs, that one.
+      await until(() => expect(t.inspection()?.run.status).toBe("completed"))
+      expect(t.page()?.descendants?.map((child) => (child as Inspection).run.status)).toEqual(["completed"])
+      expect(t.reads()).toBeGreaterThan(reads)
+    } finally {
+      await Effect.runPromise(t.api.remote.release(runId))
+    }
+  }, 120_000)
+
+  test("a job opened from its run's page follows on its own page, with no Stop of its own", async () => {
+    const t = await open()
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    await Effect.runPromise(t.api.remote.start(runId, { label: "own", pauseMs: 0, hold: true, nested: true }))
+    try {
+      await Effect.runPromise(t.api.remote.ready(runId))
+      await t.runs.actions.openRun(runId, { owner: "octo", name: "hello" })
+      await until(() => expect(t.page()?.descendants).toHaveLength(1))
+      const jobId = (t.page()!.descendants![0] as Inspection).run.runId
+      t.runs.actions.closeRun(runId)
+      await t.runs.actions.openRun(jobId, { owner: "octo", name: "hello" })
+      await until(() => expect(t.inspection()?.run).toMatchObject({ runId: jobId, status: "running", parentRunId: runId }))
+      expect(actsOf(t.inspection()!, Date.now(), undefined, true).stop).toBe(false)
+      await Effect.runPromise(t.api.remote.release(runId))
+      // The job's change reads the job's own page, through the subscription its run's page made.
+      await until(() => expect(t.inspection()?.run).toMatchObject({ runId: jobId, status: "completed" }))
+    } finally {
+      await Effect.runPromise(t.api.remote.release(runId))
+    }
+  }, 120_000)
+
+  test("a Guest reads it as Not found and can't stop it", async () => {
+    const t = await open("gus")
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
+    await t.runs.actions.openRun(runId, { owner: "octo", name: "hello" })
+    expect(t.page()).toMatchObject({ id: runId, state: "not_found" })
+    expect(missingOf(t.page()!, true)).toBe("Not found")
   }, 60_000)
 })

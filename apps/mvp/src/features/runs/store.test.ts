@@ -3,6 +3,7 @@
 // and an engine that can't be reached would take a real engine minutes to produce. The real engine's answers are proved
 // in src/features/flows-ui/tab.test.ts. A run on Cloudflare's answers are a test `RemoteRunsClient` here, for each
 // refusal ChatApi can answer; ChatApi's real ones, and following a run live, are proved in remote.test.ts.
+import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Deferred, Effect, Layer, ManagedRuntime, Metric, Option, PubSub, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -63,11 +64,12 @@ const open = (answers: Answers) => {
   }))
   const remote = Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({
     inspect: (runId, options) => answers.remote === undefined ? Effect.die("unused") : answers.remote(runId, options),
-    // The store never steers: the outbox's mutation does (writes.ts).
+    // The store never steers or stops: the outbox's mutation does (writes.ts), and run/cancel's step (steps.ts).
     steer: () => Effect.die("unused"),
+    stop: () => Effect.die("unused"),
   }))
   const runtime = ManagedRuntime.make(
-    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provide(Layer.merge(engine, remote))),
+    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provide(Layer.mergeAll(engine, remote, Persistence.memory))),
   )
   runtimes.push(runtime as never)
   const store = runtime.runSync(Effect.service(RunsStore))

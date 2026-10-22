@@ -7,7 +7,7 @@ import { requires } from "./target"
 // CI on Smithers (docs/features/ci.md): a person pushes a branch to a test repository, and its own flow,
 // `.smithers/flows/ci/flow.ts` on the default branch's trigger, runs each job on its own machine at the pushed commit
 // and reports `smithers/ci` on it, as GitHub shows a check. The repository (`E2E_REPO_FLOWS_REPOSITORY`, never a
-// smithersai one) holds e2e/fixtures/ci-repo on its default branch; the instance runs with REPO_FLOWS=true and the
+// smithersai one) holds e2e/fixtures/ci-repo on its default branch; the instance runs with REPO_FLOWS=true, REPO_FLOWS_REPOSITORIES naming the fixture repository, and the
 // GitHub App installed there with Contents: read and Commit statuses: read and write.
 //
 // The push is real, as the test account (`E2E_GITHUB_TOKEN`). The App's one webhook URL points at production, so this
@@ -114,6 +114,16 @@ test("ci: a push runs the repository's flow, each job on its own machine, and Gi
         statuses: Array<{ context: string; state: string; description: string }>
       }
       expect(combined.statuses.find((status) => status.context === "smithers/ci")).toMatchObject({ state: "success", description: "Passed" })
+    })
+    await test.step("Watch the repository run on Smithers", async () => {
+      await a.page.goto(`/${REPOSITORY}/actions`)
+      const runLink = a.page.locator(`a[href$="/actions/runs/${encodeURIComponent(run)}"]`)
+      await expect(runLink).toBeVisible({ timeout: 30_000 })
+      await runLink.click()
+      await expect(a.page.getByRole("main", { name: "Run", exact: true })).toBeVisible()
+      await expect(a.page.getByRole("link", { name: "Runs", exact: true })).toBeVisible()
+      await a.page.reload()
+      await expect(a.page.getByRole("main", { name: "Run", exact: true })).toBeVisible()
     })
     await test.step("GitHub shows the check on the commit", async () => {
       await a.page.goto(`https://github.com/${REPOSITORY}/commit/${pushed.sha}`)

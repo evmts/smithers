@@ -4,7 +4,7 @@ import { InspectionJournal } from "@smthrs/gateway"
 // The acts on runs and the run reads (src/features/runs, decision 0014 §2 and §6, docs/features/runs.md#acts), on this
 // device's engine as the browser's engine worker registers them, over the compose Postgres, against ChatApi's real
 // handler. A person's flow is the run they act on; the model is the only scripted seam.
-import { Deferred, Effect, Exit, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { tracked } from "../../../worker/test/branch.ts"
@@ -154,6 +154,41 @@ describe("run/list and run/inspect", () => {
 
     expect(refusal(await d.run(d.engine.flows.execute(Inspect, { executionId: crypto.randomUUID(), payload: { runId: "nothing" } }))))
       .toBe("not_found")
+  }, SLOW)
+})
+
+describe("run/cancel on Cloudflare", () => {
+  test("Cloudflare's refusals: who may not stop it is forbidden, a run it doesn't hold not_found; no answer fails the step", async () => {
+    const agent = await openAgent(runtime, () => Stream.empty, { actor: member })
+    // ChatApi's stop route as a gateway answers it: each test case one answer (docs/features/actions.md#acts).
+    let answer = new Response(JSON.stringify({ code: "forbidden" }), { status: 403 })
+    const asked: Array<string> = []
+    const engine = await agent.engine(undefined, { fetch: async (input, init) => {
+      const request = new Request(input, init)
+      const url = new URL(request.url)
+      if (url.pathname.endsWith("/stop")) {
+        asked.push(`${request.method} ${url.pathname}`)
+        return answer.clone()
+      }
+      return agent.fetch(request)
+    } })
+    opened.push(engine.kill)
+    const stop = () =>
+      Effect.runPromise(Effect.exit(engine.flows.execute(Cancel, {
+        executionId: crypto.randomUUID(),
+        payload: { runId: "ci:delivery-1", seq: 3, host: "cloud" },
+      })))
+    /** The refusal's code a stop failed with. */
+    const refusal = (exit: Exit.Exit<unknown, unknown>) =>
+      Exit.isFailure(exit) ? (Cause.squash(exit.cause) as { readonly code?: string }).code : undefined
+    expect(refusal(await stop())).toBe("forbidden")
+    answer = new Response(JSON.stringify({ code: "not_found" }), { status: 404 })
+    expect(refusal(await stop())).toBe("not_found")
+    answer = new Response(JSON.stringify({ outcome: "requested" }), { status: 202 })
+    expect(await stop()).toEqual(Exit.succeed({ outcome: "requested" }))
+    answer = new Response("", { status: 503 })
+    expect((await stop())._tag).toBe("Failure")
+    expect(asked[0]).toBe(`POST /api/remote-runs/${encodeURIComponent("ci:delivery-1")}/stop`)
   }, SLOW)
 })
 

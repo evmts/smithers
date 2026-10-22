@@ -25,7 +25,7 @@ export const runTitle = (run: Inspection["run"]): string => {
   const name = record(parsed(run.input)).name
   return run.flowName === "flow/run" && typeof name === "string" && name.length > 0 ? name : run.flowName
 }
-export const graphOf = (page: RunPage, at: number | null, now: number) => {
+export const graphOf = (page: RunPage, at: number | null, now: number, pathOf: (runId: string) => string = runPath) => {
   const inspection = page.inspection as Inspection
   const descendants = (page.descendants ?? []) as ReadonlyArray<Inspection>
   const inspections = [inspection, ...descendants]
@@ -174,7 +174,7 @@ export const graphOf = (page: RunPage, at: number | null, now: number) => {
       output,
       attempts,
       wait: null,
-      href: ownerId === run.runId ? null : runPath(ownerId),
+      href: ownerId === run.runId ? null : pathOf(ownerId),
       logs
     }
   })

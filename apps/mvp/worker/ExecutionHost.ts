@@ -5,7 +5,7 @@ import type { Channels } from "@smthrs/notifications"
 import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare"
 import { CiJob } from "@smthrs/sandbox"
 import type { QuickJSVariant } from "@smthrs/harness"
-import { Effect, Exit, Layer, Schema } from "effect"
+import { Effect, Exit, Layer, Option, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import * as Dispatch from "./ci/Dispatch.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
@@ -299,9 +299,11 @@ export const readDatabase = (url: string, schema: string): Layer.Layer<SqlClient
  *
  * `database` is a layer, so each alarm opens its own connection and closes it when the alarm ends. `router` reaches
  * other objects of the same class by execution id. `afterAlarm` runs once each alarm is done, whatever it did, and
- * fails nothing: on Cloudflare it starts the window's `ops/DatabaseLoad` (`DatabaseLoad.sampler`).
+ * fails nothing: on Cloudflare it starts the window's `ops/DatabaseLoad` (`DatabaseLoad.sampler`). `settled` runs with
+ * the execution id after each alarm that finds the run settled, and the one that forgets it, and fails nothing: on
+ * Cloudflare it settles a repository run's row (worker/RepoRuns.ts `settle`).
  */
-export const make = <RS, RD, ROut, E, R, RE, RR, RA = never>(
+export const make = <RS, RD, ROut, E, R, RE, RR, RA = never, RT = never>(
   storage: ExecutionObject.Storage<RS>,
   options: {
     readonly hostId: string
@@ -309,12 +311,13 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never>(
     readonly flows: Flows<ROut, E, R>
     readonly router: ExecutionObject.Router<RE, RR>
     readonly afterAlarm?: Effect.Effect<void, never, RA>
+    readonly settled?: (executionId: string) => Effect.Effect<void, never, RT>
     readonly driveBudgetMs?: number | undefined
     readonly canStart?: ((intent: ExecutionObject.Intent) => Effect.Effect<boolean, never, RD>) | undefined
   },
 ) => {
   const { flows, registration } = options.flows
-  const host = ExecutionObject.make(storage, {
+  const object = ExecutionObject.make(storage, {
     flows,
     runtime: (intent) =>
       CloudflareRuntime.layer(
@@ -326,8 +329,13 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never>(
     driveBudgetMs: options.driveBudgetMs,
     afterAlarm: options.afterAlarm,
   })
+  /** The stored intent's execution id. */
+  const executionId = Effect.map(
+    storage.get<string>(ExecutionObject.intentKey),
+    (raw) => Option.flatMap(Option.fromNullishOr(raw), (text) => Option.map(decodeIntent(text), (intent) => intent.executionId)),
+  )
   return {
-    ...host,
+    ...object,
     /** Persist before waking: a delivery racing the park, or repeated after a crash, is not lost. */
     signal: (deferredName: string) => Effect.scoped(Effect.gen(function* () {
       const raw = yield* storage.get<string>(ExecutionObject.intentKey)
@@ -341,5 +349,19 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never>(
       ).pipe(Layer.provide(options.database))))
       yield* ExecutionObject.wake(storage)
     })).pipe(Effect.orDie),
+
+    alarm: () =>
+      Effect.gen(function* () {
+        const settled = options.settled
+        // Read before the alarm: the alarm that forgets the run deletes its intent.
+        const id = settled === undefined ? Option.none<string>() : yield* executionId
+        const outcome = yield* object.alarm()
+        if (settled !== undefined && Option.isSome(id) && (outcome._tag === "Settled" || outcome._tag === "Forgotten")) {
+          yield* settled(id.value)
+        }
+        return outcome
+      }),
   }
 }
+
+const decodeIntent = Schema.decodeUnknownOption(Schema.fromJsonString(ExecutionObject.Intent))

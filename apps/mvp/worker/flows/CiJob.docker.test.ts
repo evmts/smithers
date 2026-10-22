@@ -11,6 +11,7 @@ import { Effect, Exit, Layer, Schema } from "effect"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { WORKSPACE } from "../../src/features/terminal/contract.ts"
 import { checkoutArgv } from "../branch/Checkout.ts"
+import { noCommands } from "../test/commands.ts"
 import { Machines } from "../branch/Machines.ts"
 import { CheckoutFailed } from "../branch/Sandboxes.ts"
 import { runFlow } from "../test/flowHost.ts"
@@ -41,6 +42,7 @@ afterAll(() => {
 const dockerMachines = Layer.succeed(
   Machines,
   Machines.of({
+    commands: () => noCommands,
     tool: (branch, _owner, _callId, call) =>
       Effect.gen(function* () {
         let id = containers.get(branch.branchId)

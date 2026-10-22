@@ -1,4 +1,5 @@
 // Latency, interruption and refusal are injected through the action's Effect services.
+import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Deferred, Effect, Fiber, Layer, ManagedRuntime, Option, Stream } from "effect"
 import { afterEach, expect, test } from "vitest"
@@ -34,7 +35,7 @@ const setup = async (options: { dispatch?: Effect.Effect<unknown, DispatchFailed
     return Effect.andThen(Deferred.succeed(started, undefined), options.dispatch ?? Deferred.await(pending))
   }) as never }))
   const runtime = ManagedRuntime.make(Layer.mergeAll(
-    RunsStore.layer({ origin: "http://test" }).pipe(Layer.provide(Layer.merge(engine, Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({ inspect: () => Effect.die("unused"), steer: () => Effect.die("unused") }))))),
+    RunsStore.layer({ origin: "http://test" }).pipe(Layer.provide(Layer.mergeAll(engine, Persistence.memory, Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({ inspect: () => Effect.die("unused"), steer: () => Effect.die("unused"), stop: () => Effect.die("unused") }))))),
     dispatch, engine, Layer.succeed(actions.RunsNavigation, { navigate: (path) => { navigated.push(path) } }),
   ))
   opened.push(runtime)

@@ -2,8 +2,8 @@
 title: CI parity: a machine per job with toolchains
 status: in-progress
 area: sdk
-owner: ci-spine builder (Claude Opus), from 2026-10-22
-updated: 2026-10-22 PDT
+owner: Codex GPT-6.1 Sol (ci-spine)
+updated: 2026-10-23 PDT
 links: [../proposals/ci-cd-parity.md, ../features/ci.md, sandboxes.md, sandbox-budgets.md, ../features/sandbox-tools.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md]
 ---
 
@@ -56,3 +56,7 @@ Build now, 2 of 18. Matrix rows 16 to 19. Design: [the CI/CD parity proposal](..
 ## History
 
 2026-10-20 22:50 PDT: written by the Claude Opus merger from the merged CI/CD parity proposal (Opus and Codex Sol designs, ruling FLOW-8).
+
+## CI-spine rebase receipt, 2026-10-23
+
+Rebased on `eeb01ea499d0`; migration `0053_repo_runs`, generated device epoch 75, decision 0082. Latitude full app gate: 308 files passed, 4,014 tests passed, 2 expected failures and 17 skips; all four coverage metrics 100%, exit 0. Mini CI fixture: 1/1 passed. The grant-store summary integration test now verifies six real ModelStep attempts and allows 90 seconds because the unchanged retry policy can spend 31 seconds in delays. Sandbox: 61 files, 862 tests passed, 31 platform skips, all four coverage metrics 100%. Final typecheck and importRules passed. Docs site generation completed with no output changes; both docs CLI tails timed out after 180 seconds, so the lander runs docs:check on the MacBook as requested. This receipt supersedes the earlier rebase and coverage blockers in this note.

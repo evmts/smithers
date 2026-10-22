@@ -17,16 +17,20 @@ import {
   REMOTE_RUNS_ROUTE,
   RUN_CHANGE_COLUMNS,
   RUN_CHANGES_TABLE,
+  settled,
   steerable,
   type SteerRefusal,
+  type StopRefusal,
 } from "../src/features/runs/contract.ts"
 import { type Actor, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
+import * as RepoRuns from "./RepoRuns.ts"
 import { mayRead } from "./stack/Access.ts"
 
-// Runs Smithers runs on Cloudflare, read from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare).
+// Runs Smithers runs on Cloudflare, read from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and
+// a repository's runs (docs/features/actions.md): the synced repository's own, which a role on it reads and stops.
 // A TODO's `todo` run lives in the engine's Postgres schema, not on any device, so a person watches it through two
 // routes, both for a signed-in Member or above, as the TODO itself, and only for a run some TODO's attempt started:
 //
@@ -64,6 +68,12 @@ export const steers = Metric.counter("smithers_run_steers", {
   incremental: true,
 })
 
+/** Stops, by `outcome`: `requested`, `settled`, or the refusal's code. */
+export const stops = Metric.counter("smithers_run_stops", {
+  description: "POST /api/remote-runs/<runId>/stop requests, by outcome",
+  incremental: true,
+})
+
 /** Change shape requests, by `status` and `live`. */
 export const shapeRequests = Metric.counter("smithers_remote_run_shape_requests", {
   description: "GET /api/shapes/remote-runs requests, by status and live",
@@ -71,7 +81,7 @@ export const shapeRequests = Metric.counter("smithers_remote_run_shape_requests"
 })
 
 /** Where the runs are: the engine's own database, its schema (the shape's table lives there), and its flows. */
-export interface Engine<E, R> {
+export interface Engine<E, R, RS = never> {
   /** A reader of the engine's schema (worker/ExecutionHost.ts `readDatabase`). */
   readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
   /**
@@ -81,8 +91,14 @@ export interface Engine<E, R> {
   readonly writer: Layer.Layer<SqlClient.SqlClient, E, R>
   /** The engine's Postgres schema, `smithers_flows` when deployed (worker/ExecutionHost.ts `ENGINE_SCHEMA`). */
   readonly schema: string
-  /** The flows whose runs render through their own schemas: the remote flows a TODO starts. */
+  /** The flows whose runs render through their own schemas: the remote flows a TODO and a repository start. */
   readonly flows: ReadonlyArray<Flow.Any>
+  /**
+   * Stops a repository's run on the Durable Object that holds it (`ExecutionObject.make`'s `cancel`): a durable
+   * tombstone, then the engine's cancellation of the run and every run it started. A run its object hasn't begun is
+   * cancelled before it starts.
+   */
+  readonly stop: (runId: string) => Effect.Effect<void, unknown, RS>
 }
 
 /** A run route's run, from `/api/remote-runs/<runId>`: the id, as the path names it; none for any other path. */
@@ -101,9 +117,14 @@ export const parseRunPath = (path: string): string | undefined => {
 export const parseSteerPath = (path: string): string | undefined =>
   path.endsWith("/steers") ? parseRunPath(path.slice(0, -"/steers".length)) : undefined
 
+/** A stop route's run, from `/api/remote-runs/<runId>/stop`: the id, as the path names it; none for any other path. */
+export const parseStopPath = (path: string): string | undefined =>
+  path.endsWith("/stop") ? parseRunPath(path.slice(0, -"/stop".length)) : undefined
+
 /** Whether a path is one of the remote runs' routes. */
 export const handles = (path: string): boolean =>
-  path === REMOTE_RUN_SHAPE_ROUTE || parseRunPath(path) !== undefined || parseSteerPath(path) !== undefined
+  path === REMOTE_RUN_SHAPE_ROUTE || parseRunPath(path) !== undefined || parseSteerPath(path) !== undefined ||
+  parseStopPath(path) !== undefined
 
 /** A steer's body: the outbox's id for it, and the message. */
 const SteerBody = Schema.Struct({
@@ -165,7 +186,12 @@ const noStore = { "cache-control": "no-store" }
  * Reads Electric's connection and returns the routes over `database`, the app's tables (`todo_attempts`), and `engine`.
  * They read who is asking from `Sessions`.
  */
-export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E, R>, engine: Engine<EE, ER>) =>
+export const make = <E, R, EE, ER, RS>(
+  database: Layer.Layer<SqlClient.SqlClient, E, R>,
+  engine: Engine<EE, ER, RS>,
+  /** The repository sign-in reads roles on (`GITHUB_REPOSITORY`): only its runs are a Member's to watch and stop. */
+  repository: { readonly id: string },
+) =>
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const inspection = EngineStore.RunInspection.layerWith({ flows: engine.flows })
@@ -176,6 +202,83 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         Layer.provideMerge(Layer.provideMerge(Database.DurableWriter.layer(), engine.writer)),
       )),
     ))
+
+    /**
+     * Whether a Member may watch `runId`: a TODO's run, or a repository's run (worker/RepoRuns.ts) or a run it started,
+     * such as one of its jobs.
+     */
+    const watched = (runId: string) =>
+      Effect.gen(function* () {
+        // A TODO's attempt's run, or a repository's (whose flow may be named `todo` too).
+        if (isRemoteRun(runId) && Option.isSome(yield* attemptOf(runId))) return true
+        return Option.isSome(yield* repoRunOf(runId))
+      }).pipe(Effect.provide(database))
+
+    /**
+     * The repository run `runId` is or descends from, when it is the repository a role was read on: a role says nothing
+     * about any other repository's runs.
+     */
+    const repoRunOf = (runId: string) =>
+      Effect.map(
+        RepoRuns.admit(runId, engine.database),
+        Option.filter((admitted) => admitted.repoId === repository.id),
+      )
+
+    /** `POST /api/remote-runs/<runId>/stop`: a repository's run, stopped on its Durable Object. */
+    const stop = (runId: string) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const startedAt = yield* Clock.currentTimeMillis
+        const fields: Record<string, string | number> = { host: "remote", runId }
+        const refused = (status: number, code: StopRefusal) => {
+          fields.outcome = code
+          return HttpServerResponse.jsonUnsafe({ code }, {
+            status,
+            headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
+          })
+        }
+        const response = yield* Effect.gen(function* () {
+          if (request.method !== "POST") {
+            fields.outcome = "method"
+            return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
+          }
+          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          if (Option.isNone(actor)) return refused(503, "unavailable")
+          if (Option.isNone(actor.value)) return refused(401, "authentication")
+          // A Member or above, in person or through an agent acting for them (ruling FLOW-3): stopping neither
+          // approves nor merges.
+          if (!mayRead(actor.value)) return refused(403, "forbidden")
+          fields.via = actor.value.value.act === undefined ? "person" : "agent"
+          // Only a repository's run itself: a job stops with its run.
+          const admitted = yield* repoRunOf(runId).pipe(Effect.provide(database))
+          if (Option.isNone(admitted) || admitted.value.execution !== runId) return refused(404, "not_found")
+          // A run that ended has nothing to stop. One its object hasn't begun is stopped before it starts.
+          const status = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+            sql<{ readonly status: string }>`SELECT status FROM flows_runs WHERE run_id = ${runId}`).pipe(
+              Effect.provide(engine.database),
+            )
+          const outcome = status[0] !== undefined && settled(status[0].status) ? "settled" as const : "requested" as const
+          if (outcome === "requested") yield* engine.stop(runId)
+          fields.outcome = outcome
+          return HttpServerResponse.jsonUnsafe({ outcome }, { status: outcome === "requested" ? 202 : 200, headers: noStore })
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.sync(() => {
+              fields.errorCode = codeOf(Cause.squash(cause))
+              return refused(503, "unavailable")
+            })
+          ),
+        )
+        const outcome = String(fields.outcome)
+        fields.status = response.status
+        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+        yield* Metric.update(Metric.withAttributes(stops, { outcome }), 1)
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "smithers.run.host": "remote", outcome })
+        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+          "run.stop",
+        ).pipe(Effect.annotateLogs({ ...fields, outcome }))
+        return response
+      }).pipe(Effect.withSpan("run.stop", { kind: "server" }))
 
     /** `POST /api/remote-runs/<runId>/steers`. */
     const steer = (runId: string) =>
@@ -309,8 +412,7 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           const afterSeq = parameter(query, "afterSeq", decodeAfterSeq, -1)
           const limit = parameter(query, "limit", decodeLimit, JOURNAL_PAGE)
           if (Option.isNone(afterSeq) || Option.isNone(limit)) return refused(400, "invalid")
-          const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
-          if (Option.isNone(attempt)) return refused(404, "not_found")
+          if (!(yield* watched(runId))) return refused(404, "not_found")
           fields.runId = runId
           const read = yield* Effect.flatMap(
             EngineStore.RunInspection.RunInspection,
@@ -355,12 +457,9 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
         if (Option.isNone(actor)) return yield* new ShapeProxy.Refused({ status: 401 })
         if (!mayRead(actor)) return yield* new ShapeProxy.Refused({ status: 403 })
         const runId = new URL(request.url, "http://localhost").searchParams.get("run") ?? ""
-        const attempt = yield* attemptOf(runId).pipe(
-          Effect.provide(database),
-          Effect.mapError(() => ShapeAccess.unavailable),
-        )
-        // A run no TODO started is no Member's to follow.
-        if (Option.isNone(attempt)) return yield* new ShapeProxy.Refused({ status: 403 })
+        const followed = yield* watched(runId).pipe(Effect.mapError(() => ShapeAccess.unavailable))
+        // A run no TODO and no repository started is no Member's to follow.
+        if (!followed) return yield* new ShapeProxy.Refused({ status: 403 })
         return {
           table: `${engine.schema}.${RUN_CHANGES_TABLE}`,
           where: "run_id = $1",
@@ -378,6 +477,8 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
       if (path === REMOTE_RUN_SHAPE_ROUTE) return yield* changes
       const steered = parseSteerPath(path)
       if (steered !== undefined) return yield* steer(steered)
+      const stopped = parseStopPath(path)
+      if (stopped !== undefined) return yield* stop(stopped)
       const runId = parseRunPath(path)
       return runId === undefined ? HttpServerResponse.empty({ status: 404 }) : yield* read(runId)
     })

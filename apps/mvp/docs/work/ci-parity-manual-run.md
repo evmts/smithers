@@ -1,9 +1,9 @@
 ---
 title: CI parity: run a repository flow by hand with inputs
-status: todo
+status: in-progress
 area: sdk
-owner: none
-updated: 2026-10-20 22:50 PDT
+owner: ci-run-view
+updated: 2026-10-22 PDT
 links: [../proposals/ci-cd-parity.md, ../features/flows.md, flow-authoring.md]
 ---
 
@@ -27,6 +27,16 @@ Smithers, Tevm, Effect.
 
 Build now, 9 of 18. Matrix row 8. Design: [the CI/CD parity proposal](../proposals/ci-cd-parity.md).
 
+## Plan (ci-run-view, 2026-10-22)
+
+- `GET /api/repos/<owner>/<name>/flows/<flow>?ref=<branch>`: the flow's inputs as JSON Schema, read from its `flow.ts` at the branch's head in the realm.
+- `flow/run { repo, name, ref, input }`: the existing client flow (the person's Run, `/flow.run`, the agent), which with `repo` runs that repository's flow, through the outbox to `POST /api/repos/<owner>/<name>/runs`: a Member and up; the route records the run and starts `repo/Run` with `event: "manual"` at the branch's head.
+- The form is `FlowFormView` over that schema, on `/$owner/$repo/actions`.
+
 ## History
 
 2026-10-20 22:50 PDT: written by the Claude Opus merger from the merged CI/CD parity proposal (Opus and Codex Sol designs, ruling FLOW-8).
+
+## CI-spine rebase receipt, 2026-10-23
+
+Rebased on `eeb01ea499d0`; migration `0053_repo_runs`, generated device epoch 75, decision 0082. Latitude full app gate: 308 files passed, 4,014 tests passed, 2 expected failures and 17 skips; all four coverage metrics 100%, exit 0. Mini CI fixture: 1/1 passed. The grant-store summary integration test now verifies six real ModelStep attempts and allows 90 seconds because the unchanged retry policy can spend 31 seconds in delays. Sandbox: 61 files, 862 tests passed, 31 platform skips, all four coverage metrics 100%. Final typecheck and importRules passed. Docs site generation completed with no output changes; both docs CLI tails timed out after 180 seconds, so the lander runs docs:check on the MacBook as requested. This receipt supersedes the earlier rebase and coverage blockers in this note.

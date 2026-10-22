@@ -29,6 +29,8 @@ import * as Placement from "./Placement.ts"
 import * as Flows from "./Flows.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as Dispatch from "./ci/Dispatch.ts"
+import * as RepoFlow from "./ci/RepoFlow.ts"
+import { CiJob } from "@smthrs/sandbox"
 import * as GitHubApi from "./github/Api.ts"
 import * as DocsApi from "./docs/Api.ts"
 import * as DocsSource from "./docs/Source.ts"
@@ -140,9 +142,10 @@ export const program = (options: ProgramOptions = {}) =>
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
     const stack = yield* StackApi.make(database, roles)
-    // A TODO's run, watched from its page (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): the engine's own
-    // read of it, from the engine's schema, and its row of the engine's change feed through Electric. A Member steers
-    // its agent by admitting a message to the run's queue in the same schema (docs/features/runs.md#steering).
+    // A TODO's run, watched from its page (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and a repository's
+    // (docs/features/actions.md): the engine's own read of it, from the engine's schema, and its row of the engine's
+    // change feed through Electric. A Member steers a TODO's agent by admitting a message to the run's queue in the same
+    // schema (docs/features/runs.md#steering), and stops a repository's run on its Durable Object.
     const remoteRuns = yield* RemoteRuns.make(database, {
       database: Layer.unwrap(
         Effect.map(
@@ -157,8 +160,10 @@ export const program = (options: ProgramOptions = {}) =>
         ),
       ),
       schema: ExecutionHost.ENGINE_SCHEMA,
-      flows: [Todo.Todo],
-    })
+      flows: [Todo.Todo, RepoFlow.Run, RepoFlow.Jobs, CiJob.CiJob],
+      // A repository's run stops on the Durable Object that holds it (docs/features/actions.md#acts).
+      stop: (runId) => executions.getByName(runId).cancel(),
+    }, yield* GitHubConfig.repository)
     const githubApp = yield* GitHubConfig.configured
     const runTodos = yield* Todo.enabled
     // A repository's home (docs/features/home.md): who the asker is on it, and Smithers' curated home for it.

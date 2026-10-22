@@ -4,7 +4,7 @@ import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { RETRY_ID_SEARCH_LIMIT, retriedRunId, retryActId, runPath } from "./contract"
 import { todoRetryPayload } from "./retry"
 import { retriesOf } from "./page"
-import type { Inspection, RunTab, RunView } from "./schema"
+import type { Inspection, RepoName, RunTab, RunView } from "./schema"
 import { VIEW } from "./schema"
 import { RunsStore } from "./store"
 
@@ -47,11 +47,15 @@ export const closeRun = (runId: string) =>
     if (view.runId === runId) yield* setView({ runId: null, acting: null, actToken: null, refusal: null })
   })
 
-/** A run's route loader: shows `runId` with nothing selected, reads it, and follows it when it runs on Cloudflare. */
-export const openRun = (runId: string) =>
+/**
+ * A run's route loader: shows `runId` with nothing selected, reads it, and follows it when it runs on Cloudflare. A
+ * repository's run (`repo`, docs/features/actions.md) is read and followed there, with the runs it started.
+ */
+export const openRun = (runId: string, repo: RepoName | null = null) =>
   Effect.gen(function* () {
-    yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, actToken: null, refusal: null })
+    yield* setView({ runId, listOpen: false, selected: null, at: null, inspectorOpen: true, tab: "steps", acting: null, actToken: null, refusal: null, repo })
     const store = yield* RunsStore
+    if (repo !== null) yield* store.cloud(runId)
     yield* store.readRun(runId)
     yield* store.follow(runId)
   })
@@ -119,12 +123,17 @@ const acting = (
 const refusalOf = (dispatched: { readonly _tag: "Done" } | { readonly _tag: "Failed"; readonly error: { readonly code: string } | { readonly _tag: string } }) =>
   dispatched._tag === "Done" ? Option.none() : Option.some("code" in dispatched.error ? dispatched.error.code : "unavailable")
 
-/** Stop: `run/cancel` on the open run. */
+/** Stop: `run/cancel` on the open run; on Cloudflare for a repository's run. */
 export const stop = acting("stop", (inspection) =>
-  Effect.flatMap(FlowDispatch, (flows) =>
-    flows.dispatch("run/cancel", { runId: inspection.run.runId, seq: inspection.run.lastSeq }, { door: "button" })).pipe(
-      Effect.map(refusalOf),
-    ))
+  Effect.gen(function* () {
+    const view = Option.getOrThrow(yield* (yield* RunsStore).view.get(VIEW))
+    const payload = { runId: inspection.run.runId, seq: inspection.run.lastSeq }
+    return yield* (yield* FlowDispatch).dispatch(
+      "run/cancel",
+      view.repo == null ? payload : { ...payload, host: "cloud" as const },
+      { door: "button" },
+    )
+  }).pipe(Effect.map(refusalOf)))
 
 /** Resume: `run/resume` on the open run. */
 export const resume = acting("resume", (inspection) =>

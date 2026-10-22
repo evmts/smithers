@@ -867,3 +867,27 @@ test.each([undefined, "metadata-fixture-token"])("default metadata transport che
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
   }
 })
+
+test("the production metadata transport uses the configured read token and refuses a newly private repository", async () => {
+  const seen: Array<{ path: string | undefined; authorization: string | undefined }> = []
+  const server = createServer((request, response) => {
+    seen.push({ path: request.url, authorization: request.headers.authorization })
+    response.writeHead(200, { "content-type": "application/json" })
+    response.end(JSON.stringify({ private: true }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    const address = server.address()
+    if (address === null || typeof address === "string") throw new Error("No HTTP address")
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
+    const h = await githubHarness(runtime, { actor: null, app: null, metadata: {
+      url: `http://127.0.0.1:${address.port}`, token: "test-metadata-token",
+    } })
+    expect((await h.fetch(`${COMMENTS_SHAPE_ROUTE}?offset=-1`)).status).toBe(401)
+    expect(seen).toEqual([{ path: "/repos/acme/widgets", authorization: "Bearer test-metadata-token" }])
+    expect(h.count(Metrics.visibilityReads, { outcome: "private" })).toBe(1)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  }
+})

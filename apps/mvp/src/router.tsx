@@ -31,6 +31,8 @@ import { PullsScreen } from "./screens/pulls/PullsScreen"
 import { StackScreen } from "./screens/stack/StackScreen"
 import { TodoScreen } from "./screens/stack/TodoScreen"
 import { commitmentSearch } from "./features/issues/lifecycle"
+import { ActionRunScreen } from "./screens/actions/ActionRunScreen"
+import { ActionsScreen } from "./screens/actions/ActionsScreen"
 import { IssuesScreen } from "./screens/issues/IssuesScreen"
 import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
 import { Landing } from "./screens/landing/Landing"
@@ -426,6 +428,25 @@ const issueRoute = createRoute({
     ),
 })
 
+/** `/$owner/$repo/actions`: the repository's runs on Cloudflare (docs/features/actions.md); Electric keeps them. */
+const actionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/actions",
+  component: ActionsScreen,
+  beforeLoad: ({ context, ...load }) => enter(load, () => context.runs.actions.openRepoRuns(), local),
+})
+
+/** `/$owner/$repo/actions/runs/$runId`: one of them, its jobs and their logs, read and followed on Cloudflare. */
+const actionRunRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/actions/runs/$runId",
+  component: ActionRunScreen,
+  beforeLoad: (load) =>
+    enter(load, local, () =>
+      load.context.runs.actions.openRun(load.params.runId, { owner: load.params.owner, name: load.params.repo })),
+  onLeave: ({ context, params }) => context.runs.actions.closeRun(params.runId),
+})
+
 /** `/$owner/$repo/pulls`: the repository's pull requests (decision 0012 §6). */
 const pullsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -578,6 +599,8 @@ export const router = createRouter({
     newIssueRoute,
     issueRoute,
     pullsRoute,
+    actionsRoute,
+    actionRunRoute,
     pullRoute,
     pullTabRoute,
     stackRoute,

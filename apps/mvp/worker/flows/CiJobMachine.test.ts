@@ -3,6 +3,7 @@
 import { CiJob, type SandboxTools } from "@smthrs/sandbox"
 import { Effect, Exit, Layer } from "effect"
 import { describe, expect, test } from "vitest"
+import { noCommands } from "../test/commands.ts"
 import { Machines } from "../branch/Machines.ts"
 import { SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { runFlow } from "../test/flowHost.ts"
@@ -33,6 +34,7 @@ const machine = (options: {
   let unavailable = options.unavailable ?? 0
   const once = new Set(options.unavailableOnce)
   const service = Machines.of({
+    commands: () => noCommands,
     tool: (branch, owner, callId, call) => {
       if (unavailable > 0) {
         unavailable -= 1

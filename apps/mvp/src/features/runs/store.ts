@@ -1,10 +1,11 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
-import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
+import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Clock, Context, Duration, Effect, Layer, Metric, Option, Scope, Semaphore, Stream } from "effect"
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT } from "./contract"
-import { type Inspection, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
+import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"
+import { type Inspection, RepoRunRow, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
 
 // Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
 // open run's read, and the run view, all local collections read from this device's engine through `BrowserEngine`. A
@@ -60,6 +61,10 @@ export const viewQuery = (view: Collection.Collection<RunView, string>) =>
 /** Every run of the list. */
 export const runsQuery = (runs: Collection.Collection<RunRow, string>) => LiveQuery.make((q) => q.from({ run: runs.tanstack }))
 
+/** Every repository run the device holds: the list filters it to the repository it shows. */
+export const repoRunsQuery = (rows: Collection.Collection<RepoRunRow, string>) =>
+  LiveQuery.make((q) => q.from({ run: rows.tanstack }))
+
 /** A list row from the engine's summary of a run. */
 const rowOf = (run: Inspection["children"][number] | Omit<Inspection["run"], "input" | "result">): RunRow => ({
   id: run.runId,
@@ -111,15 +116,25 @@ export class RunsStore extends Context.Service<
     readonly page: Effect.Success<ReturnType<typeof pageQuery>>
     readonly viewRow: Effect.Success<ReturnType<typeof viewQuery>>
     readonly list: Effect.Success<ReturnType<typeof runsQuery>>
+    /**
+     * The repositories' runs on Cloudflare (docs/features/actions.md), as the device holds them: empty until a list
+     * opens (`openRepoRuns`), then synced by Electric and kept on the device.
+     */
+    readonly repoRunList: Effect.Success<ReturnType<typeof repoRunsQuery>>
+    /** Starts syncing the repositories' runs, once. */
+    readonly openRepoRuns: Effect.Effect<void>
     readonly readRun: (runId: string) => Effect.Effect<void>
     readonly readList: Effect.Effect<void>
     readonly warmList: Effect.Effect<void>
     readonly readMore: (runId: string) => Effect.Effect<void>
     /**
-     * Follows a run on Cloudflare (`isRemoteRun`) for as long as the store lives: each change of its row in the
-     * engine's change feed reads it again while the page shows it. Once per run; a local run needs none.
+     * Follows a run on Cloudflare (`isRemoteRun`, or one `cloud` marked) for as long as the store lives: each change of
+     * its row in the engine's change feed reads it again while the page shows it, and, for a repository's run, each run
+     * it started too. Once per run; a local run needs none.
      */
     readonly follow: (runId: string) => Effect.Effect<void>
+    /** Marks `runId` a repository's run, read and followed on Cloudflare (docs/features/actions.md). */
+    readonly cloud: (runId: string) => Effect.Effect<void>
   }
 >()("@smthrs/mvp/runs/RunsStore") {
   /**
@@ -137,7 +152,11 @@ export class RunsStore extends Context.Service<
        * else this device's engine.
        */
       const reader = (rootId: string): Reader => (id, read) =>
-        isRemoteRun(rootId) ? remote.inspect(id, read) : engine.inspect(id, read)
+        onCloud(rootId) ? remote.inspect(id, read) : engine.inspect(id, read)
+      /** Repository runs this tab opened: each, and the runs it started, read and followed on Cloudflare. */
+      const cloudRoots = new Set<string>()
+      /** Whether the page of `rootId` reads Cloudflare: a TODO's run, or a repository's. */
+      const onCloud = (rootId: string) => isRemoteRun(rootId) || cloudRoots.has(rootId)
       const runs = yield* Collection.local<RunRow, string>({ id: "runs", schema: RunRow, getKey: (row) => row.id })
       const pages = yield* Collection.local<RunPage, string>({ id: "run-pages", schema: RunPage, getKey: (row) => row.id })
       const view = yield* Collection.local<RunView, string>({
@@ -218,7 +237,11 @@ export class RunsStore extends Context.Service<
             if (latestView.runId === runId && latestView.at != null) return
             yield* put(pages, { id: runId, state: "read", inspection, ...kept, descendants })
             // A run on Cloudflare is never one of this device's runs.
-            if (!isRemoteRun(runId)) yield* put(runs, rowOf(inspection.run))
+            if (!onCloud(runId)) yield* put(runs, rowOf(inspection.run))
+            // A repository's run works in the runs it started, its jobs: each is followed, and its change reads the run.
+            if (cloudRoots.has(runId)) {
+              for (const child of descendants) yield* Effect.forkIn(follow(child.run.runId, runId), scope)
+            }
             return yield* recordRead("run", "read", startedAt, inspection.journal.events.length)
           }
           const state = stateOf(read.failure)
@@ -312,9 +335,14 @@ export class RunsStore extends Context.Service<
       // Each run on Cloudflare this tab opened, followed once: its row of the engine's change feed through Electric.
       const followed = new Set<string>()
       const following = yield* Semaphore.make(1)
-      const follow = (runId: string) =>
+      /** The pages each followed run's change reads again: its own, and those of the runs that started it. */
+      const readers = new Map<string, Set<string>>()
+      const follow = (runId: string, rootId: string = runId): Effect.Effect<void> =>
         Semaphore.withPermits(following, 1)(Effect.gen(function* () {
-          if (!isRemoteRun(runId) || followed.has(runId)) return
+          if (!onCloud(rootId)) return
+          const pagesOf = readers.get(runId) ?? new Set<string>()
+          readers.set(runId, pagesOf.add(rootId))
+          if (followed.has(runId)) return
           followed.add(runId)
           const changes = yield* ElectricCollection.make<RunChange>({
             id: `remote-run:${runId}`,
@@ -332,13 +360,46 @@ export class RunsStore extends Context.Service<
             Stream.runForEach(() =>
               Effect.gen(function* () {
                 const current = Option.getOrThrow(yield* view.get(VIEW))
-                yield* Metric.update(Metric.withAttributes(followChanges, { showing: current.runId === runId ? "true" : "false" }), 1)
-                if (current.runId === runId) yield* readRun(runId)
+                const shown = current.runId !== null && readers.get(runId)!.has(current.runId) ? current.runId : null
+                yield* Metric.update(Metric.withAttributes(followChanges, { showing: shown === null ? "false" : "true" }), 1)
+                // The shown run moved, or a run it started did: the shown run is read again, and of its runs only that one.
+                if (shown !== null) yield* readRun(shown, runId === shown ? undefined : new Set([runId]))
               })
             ),
             Effect.forkIn(scope, { startImmediately: true }),
           )
         }))
+
+      // A repository's runs sync only once a tab opens a repository's list: Electric's rows, kept on the device, shown
+      // through a collection of this tab's that follows them.
+      const persistence = yield* Persistence.Persistence
+      const shownRepoRuns = yield* Collection.local<RepoRunRow, string>({
+        id: "repo-runs-shown",
+        schema: RepoRunRow,
+        getKey: (row) => row.id,
+      })
+      const opening = yield* Semaphore.make(1)
+      let opened = false
+      const openRepoRuns = Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
+        if (opened) return
+        opened = true
+        const rows = yield* ElectricCollection.make<RepoRunRow>({
+          id: "repo-runs",
+          schema: RepoRunRow,
+          getKey: (row) => row.id,
+          syncMode: "eager",
+          persist: { schemaVersion: 1 },
+          shape: { url: `${config.origin}${ACTIONS_SHAPE_ROUTE}`, columnMapper: ElectricCollection.snakeCamelMapper() },
+        }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie)
+        yield* rows.changes({ initial: true }).pipe(
+          Stream.runForEach((batch) =>
+            Effect.forEach(batch, (change) =>
+              change.type === "delete" ? Effect.asVoid(shownRepoRuns.delete(String(change.key))) : put(shownRepoRuns, change.value))
+          ),
+          Effect.orDie,
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
+      }))
 
       return RunsStore.of({
         runs,
@@ -347,11 +408,14 @@ export class RunsStore extends Context.Service<
         page: yield* pageQuery(view, pages),
         viewRow: yield* viewQuery(view),
         list: yield* runsQuery(runs),
+        repoRunList: yield* repoRunsQuery(shownRepoRuns),
+        openRepoRuns,
         readRun,
         readList,
         warmList,
         readMore,
-        follow,
+        follow: (runId) => follow(runId),
+        cloud: (runId) => Effect.sync(() => void cloudRoots.add(runId)),
       })
     }),
   )

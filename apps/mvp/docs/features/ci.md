@@ -67,7 +67,7 @@ FlowExecution DO
 - **The flow's tag is its directory.** `.smithers/flows/ci/flow.ts` must declare `Flow.make("ci", …)`.
 - **Retries.** GitHub's or Postgres' outages are retried, 1 s doubling to a minute, for 30 minutes (the report: until GitHub takes it). A refusal (no Contents or Commit statuses permission, the App not installed) is recorded once and never retried; the jobs still run.
 
-Not yet: a repository flow imports nothing but the four modules (no shared `../_ci/target.ts`); `Node.all` is the only combinator, so jobs can't depend on one another; a person can't start a repository flow by hand (`ci-parity-manual-run`); runs show on no page yet (`ci-parity-run-view`).
+Not yet: a repository flow imports nothing but the four modules (no shared `../_ci/target.ts`); `Node.all` is the only combinator, so jobs can't depend on one another; a person can't start a repository flow by hand (`ci-parity-manual-run`). Runs are listed and watched on the [repository’s Actions page](actions.md), with Stop.
 
 ## Triggers
 
@@ -105,7 +105,7 @@ A repository says when its flows run in its plugin manifest, `.smithers/factory.
 - **Once per delivery.** The dispatch is `triggers/dispatch:<delivery>` and each run `<flow>:<delivery>` (a flow's name has no slash, so the two never meet), so a delivery GitHub sends again changes nothing.
 - **Unreadable is not an outage.** A manifest or a `flow.ts` GitHub refuses, or won't give as text (a directory, over 1 MB, not UTF-8), is read as absent at once; only an outage is retried. One unreadable flow never holds back the others.
 - **Secrets.** A fork's pull request, or one whose author is below Member (`author_association` not `OWNER`, `MEMBER` or `COLLABORATOR`), runs with `secrets: false`. Jobs get no secrets yet in any case ([job secrets](../work/ci-parity-job-secrets.md)).
-- **Off unless `REPO_FLOWS=true`.** Each run starts machines for every repository the App is installed on.
+- **Off unless `REPO_FLOWS=true`.** Only repositories in `REPO_FLOWS_REPOSITORIES` can start flows; the App must also have access.
 - Not yet: `trust: "base"` (`pull_request_target`), tags, issues, comments, labels and reviews as triggers; `concurrency`; path filters; a manifest written as `FACTORY.ts` with `Trigger.bind` (flows-as-code-api.md §5.7), which projects to the same JSON. `.smithers/factory.json` written by `S.Factory`, as smithersai/smithers' is today, has no `apiVersion` and starts nothing.
 
 ## Observability
@@ -141,3 +141,9 @@ No record carries a flow's source, a command, its output or a secret.
 | `worker/ci/Dispatch.test.ts` | a delivery as the webhook names it (push, tag, deleted, pull requests from the repository, a fork or below Member); `triggers/Dispatch` on the Node host: active flows started under `<flow>:<delivery>`, a fork without secrets, a trigger only the branch adds starting nothing, no manifest, unreadable, outages retried |
 | `worker/github/Api.test.ts` | with `REPO_FLOWS` on, a push of any installed repository starts its `triggers/Dispatch`; off, nothing |
 | `e2e/ci.spec.ts` | the whole loop against a live instance: a real push as the test account, the delivery signed as GitHub signs it, each job on its own machine, `smithers/ci` success on the commit as GitHub shows it. Needs `repoFlows` (e2e/target.ts) |
+
+### Repository rollout allowlist
+
+`REPO_FLOWS=true` enables dispatch admission. `REPO_FLOWS_REPOSITORIES` is a comma-separated list of `owner/name` values (for example `smithersai/smithers,acme/widgets`), trimmed and case-insensitive. Unset or blank allows none; invalid entries authorize nothing. Matching records `not_allowed` in the durable step result, `ci.dispatch` log and dispatch counter before reading GitHub. Starting checks the allowlist again, so a repository removed between matching and starting is skipped with a `ci.start` log. GitHub installation access alone never authorizes repository flows.
+
+The legacy `summary`/`flows`/`on`/`github` factory format in smithersai/smithers at `eeb01ea499d0` produces no triggers. Only supported plugin manifest trigger rows are eligible; the committed exact fixture proves legacy data never runs silently.

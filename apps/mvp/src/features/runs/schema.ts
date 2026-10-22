@@ -51,6 +51,10 @@ export type RunTab = (typeof RUN_TABS)[number]
 export const Acting = Schema.NullOr(Schema.Literals(["stop", "retry", "resume"]))
 
 /** This tab's run view (`runPage`): the run it shows, the step selected, the tab, an act in flight and a refusal. */
+/** A repository, by owner and name. */
+export const RepoName = Schema.Struct({ owner: Schema.String, name: Schema.String })
+export type RepoName = typeof RepoName.Type
+
 export const RunView = Schema.Struct({
   id: Schema.Literal("view"),
   runId: Schema.NullOr(Schema.String),
@@ -68,6 +72,8 @@ export const RunView = Schema.Struct({
   refusal: Schema.NullOr(Schema.String),
   /** What the steer composer holds (docs/features/runs.md#steering): kept with the view, never on the device. */
   steerDraft: Schema.optionalKey(Schema.String),
+  /** The repository whose run this is, read on Cloudflare (docs/features/actions.md); none for any other run. */
+  repo: Schema.optionalKey(Schema.NullOr(RepoName)),
 })
 export type RunView = typeof RunView.Type
 
@@ -117,3 +123,21 @@ export type RunsCall = typeof RunsCall.Type
 
 /** What the tab answered: whether its outbox took the message. */
 export const SteerKept = Schema.Struct({ kept: Schema.Boolean })
+
+/**
+ * One of a repository's runs, as `ACTIONS_SHAPE_ROUTE` syncs it (docs/features/actions.md): a `runs` row with the
+ * engine's run id (`execution`), its flow, state, commit, ref and what started it. Postgres timestamps arrive as text.
+ */
+export const RepoRunRow = Schema.Struct({
+  id: Schema.String,
+  repoId: Schema.String,
+  execution: Schema.String,
+  flow: Schema.String,
+  status: Schema.String,
+  sha: Schema.String,
+  ref: Schema.String,
+  event: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+})
+export type RepoRunRow = typeof RepoRunRow.Type

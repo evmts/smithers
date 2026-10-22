@@ -6,6 +6,7 @@ import { Effect } from "effect"
 import { HttpClient } from "effect/http"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import { ACTIONS_SHAPE_ROUTE } from "../../src/features/actions/contract.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { applyExecutionId, GITHUB_WEBHOOK_ROUTE, writesRoute } from "../../src/features/issues/contract.ts"
 import {
@@ -17,6 +18,7 @@ import {
   REVIEWS_SHAPE_ROUTE,
 } from "../../src/features/pulls/contract.ts"
 import * as Actor from "../Actor.ts"
+import * as RepoRuns from "../RepoRuns.ts"
 import { testFile } from "../test/harness.ts"
 import { handles } from "./Api.ts"
 import * as Compare from "./Compare.ts"
@@ -303,8 +305,38 @@ describe("GET .../compare/<base>...<head>", () => {
   })
 })
 
+describe("the repository's runs", () => {
+  test("the actions shape carries its flows' runs and the Checks shape its checks, never who launched one", async () => {
+    await sql(runtime, `DELETE FROM runs WHERE repo_id = '${REPOSITORY.id}'`)
+    await runtime.runPromise(RepoRuns.record({
+      execution: "ci:delivery-1",
+      repoId: REPOSITORY.id,
+      flow: "ci",
+      sha: "c".repeat(40),
+      ref: "main",
+      event: "push",
+      launchedBy: "github",
+    }))
+    await sql(runtime, `
+      INSERT INTO runs (id, flow, status, launched_by, repo_id, sha)
+      VALUES ('${crypto.randomUUID()}', 'check/lint', 'working', 'person-1', '${REPOSITORY.id}', '${"c".repeat(40)}')`)
+    const h = await githubHarness(runtime)
+    const rows = async (route: string) => {
+      const response = await h.fetch(`${route}?offset=-1`)
+      const messages = (await response.json()) as Array<{ value?: Record<string, unknown> }>
+      return messages.flatMap((message) => (message.value === undefined ? [] : [message.value]))
+    }
+    const actions = await rows(ACTIONS_SHAPE_ROUTE)
+    expect(actions.map((row) => [row.execution, row.flow, row.status, row.event, row.ref])).toEqual([
+      ["ci:delivery-1", "ci", "working", "push", "main"],
+    ])
+    expect(actions.every((row) => !("launched_by" in row))).toBe(true)
+    expect((await rows(CHECKS_SHAPE_ROUTE)).map((row) => row.flow)).toEqual(["check/lint"])
+  })
+})
+
 describe("the pull request shapes", () => {
-  test.each([PULLS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE, CHECKS_SHAPE_ROUTE])(
+  test.each([PULLS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE, CHECKS_SHAPE_ROUTE, ACTIONS_SHAPE_ROUTE])(
     "%s serves a person with a role, and refuses one signed out",
     async (route) => {
       const h = await githubHarness(runtime)

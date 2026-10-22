@@ -8,12 +8,14 @@ import type { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Exit, Layer } from "effect"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { beforeEach, describe, expect, test } from "vitest"
+import { noCommands } from "../test/commands.ts"
 import { Machines } from "../branch/Machines.ts"
 import * as CiJobMachine from "../flows/CiJobMachine.ts"
 import { REPOSITORY, reset, services as githubServices } from "../github/test/fixtures.ts"
 import { BOT_LOGIN, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
+import * as ExecutionHost from "../ExecutionHost.ts"
 import * as RepoFlow from "./RepoFlow.ts"
 
 const runtime = testFile("repo_flow")
@@ -27,6 +29,7 @@ const machine = (exits: Readonly<Record<string, number>> = {}) => {
   const layer = Layer.succeed(
     Machines,
     Machines.of({
+    commands: () => noCommands,
       tool: (branch, _owner, _callId, call) => {
         const command = (call as typeof SandboxTools.Run.Type).command
         commands.push({ branchId: branch.branchId, command })
@@ -89,10 +92,10 @@ const run = async (
   return runFlow(
     RepoFlow.Run,
     input,
-    Layer.mergeAll(
-      RepoFlow.registration({ ...services, database }, variant),
-      CiJobMachine.registration(box.layer),
-    ),
+    ExecutionHost.withRepoFlows(
+      ExecutionHost.withCiJobs({ flows: [], registration: Layer.empty }, box.layer),
+      Effect.succeed({ ...services, database }), variant,
+    ).registration,
     { executionId: input.run },
   )
 }

@@ -20,6 +20,7 @@ import todoRetry from "./migrations/0044_todo_retry.ts"
 import domains from "./migrations/0046_domains.ts"
 import githubRepoRoles from "./migrations/0051_github_repo_roles.ts"
 import agentViews from "./migrations/0052_agent_views.ts"
+import repoRuns from "./migrations/0053_repo_runs.ts"
 import { PgClient } from "@effect/sql-pg"
 import { Config, Effect, Layer, Redacted } from "effect"
 import { Migrator } from "effect/sql"
@@ -141,6 +142,7 @@ export const migrations = {
   "0050_drop_merge_unknown": dropMergeUnknown,
   "0051_github_repo_roles": githubRepoRoles,
   "0052_agent_views": agentViews,
+  "0053_repo_runs": repoRuns,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

@@ -487,6 +487,59 @@ describe("ExecutionHost over the compose Postgres", () => {
       })
     ))
 
+  test("each alarm that finds the run settled, and the one that forgets it, hands its execution id to settled", () =>
+    withSchema(({ name, url }) =>
+      Effect.gen(function* () {
+        const object = memory()
+        const settled: Array<string> = []
+        const executionId = crypto.randomUUID()
+        const host = ExecutionHost.make(object.storage, {
+          hostId: `object-${executionId}`,
+          database: ExecutionHost.database(url, name),
+          flows: { flows: [Pause.Pause], registration: Pause.registration((label) => Effect.succeed(label)) },
+          router: recording().router,
+          settled: (id) => Effect.sync(() => void settled.push(id)),
+        })
+        expect((yield* host.alarm())._tag).toBe("Idle")
+        yield* host.start(yield* ExecutionHost.intent(Pause.Pause, { executionId, payload: { label: "a", pauseMs: 60_000 } }))
+        expect((yield* host.alarm())._tag).toBe("Parked")
+        expect(settled).toEqual([])
+        // Stopped: the next alarm settles it cancelled and hands it over; a duplicate alarm hands it over again.
+        yield* host.cancel()
+        const done = yield* host.alarm()
+        expect(done._tag).toBe("Settled")
+        expect((yield* host.alarm())._tag).toBe("Settled")
+        expect(settled).toEqual([executionId, executionId])
+        // The alarm that forgets the run hands it over once more.
+        const forgotten = yield* Effect.gen(function* () {
+          yield* TestClock.setTime(done._tag === "Settled" ? done.forgetAtMs : 0)
+          return yield* host.alarm()
+        }).pipe(Effect.provide(TestClock.layer()))
+        expect(forgotten._tag).toBe("Forgotten")
+        expect(settled).toEqual([executionId, executionId, executionId])
+      })
+    ))
+
+  test("a settled object whose stored intent doesn't decode hands settled nothing", () =>
+    withSchema(({ name, url }) =>
+      Effect.gen(function* () {
+        const object = memory()
+        const settled: Array<string> = []
+        const host = ExecutionHost.make(object.storage, {
+          hostId: "object-undecodable",
+          database: ExecutionHost.database(url, name),
+          flows: { flows: [Pause.Pause], registration: Pause.registration((label) => Effect.succeed(label)) },
+          router: recording().router,
+          settled: (id) => Effect.sync(() => void settled.push(id)),
+        })
+        // The keys `ExecutionObject` stores its intent and its settlement under.
+        object.values.set("smithers/intent", "not an intent")
+        object.values.set("smithers/settled", Date.now())
+        expect((yield* host.alarm())._tag).toBe("Settled")
+        expect(settled).toEqual([])
+      })
+    ))
+
   test("the deployed flows run ops/DatabaseLoad: an alarm starts its window's sample, which samples once", async () => {
     const services = await appServices()
     const samples: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
@@ -884,3 +937,19 @@ test.each([0, 600_000])("webhook delivery leaves cancelled work for its budgeted
     expect(actions).toBe(0)
   })),
 )
+
+test("a signal before any execution intent does not create state or schedule work", () =>
+  withSchema(({ name, sql, url }) => Effect.gen(function* () {
+    const object = memory()
+    const routes = recording()
+    const host = ExecutionHost.make(object.storage, {
+      hostId: "not-started", database: ExecutionHost.database(url, name),
+      flows: { flows: [Pause.Pause], registration: Pause.registration(Pause.logged) },
+      router: routes.router,
+    })
+    yield* host.signal(WaitFor.deferred("merge").name)
+    expect(object.values.size).toBe(0)
+    expect(object.alarm()).toBeNull()
+    expect(routes.routed).toEqual([])
+    expect(yield* sql`SELECT schema_name FROM information_schema.schemata WHERE schema_name = ${name}`).toEqual([])
+  })))

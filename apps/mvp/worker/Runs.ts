@@ -422,7 +422,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       ...connection,
       shape: Effect.map(ShapeAccess.actor, (actor) => ({
         table: RUNS_TABLE,
-        where: "launched_by = $1",
+        // A repository's runs are its own list's (docs/features/actions.md), not the person's agent's.
+        where: "launched_by = $1 AND execution IS NULL",
         params: { "1": Option.match(actor, { onNone: () => NOBODY, onSome: (actor) => actor.subject.id }) },
         columns: SYNCED_RUN_COLUMNS,
       })),

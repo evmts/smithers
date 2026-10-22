@@ -108,6 +108,8 @@ export interface Options {
   /** Who has which role where: the real `RepoRoles` unless set, as a test of a faulty one sets it. */
   readonly roles?: RepoRoles.RepoRoles<never>
   readonly repoFlows?: boolean
+  /** Exercise the production fetch transport against a test HTTP server. */
+  readonly metadata?: { readonly url: string; readonly token: string }
 }
 
 let harnessKey: Promise<Redacted.Redacted<string>> | undefined
@@ -128,7 +130,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   const logs: Array<StructuredLog> = []
   const logger = Logger.make((logOptions) => void logs.push(StructuredLogger.formatStructured.log(logOptions)))
   const registry: Metric.MetricRegistry = new Map()
-  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: LOCAL_ELECTRIC_URL })
+  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: LOCAL_ELECTRIC_URL, ...(options.metadata === undefined ? {} : { GITHUB_API_URL: options.metadata.url, GITHUB_TOKEN: options.metadata.token }) })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),
@@ -192,7 +194,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     http: github.http,
   })))
   const routes = await runtime.runPromise(
-    observed(Api.make(database, { repository: own, app: configured, roles, http: github.http, repoFlows: options.repoFlows === true }).pipe(Effect.provideService(Scope.Scope, scope))),
+    observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true }).pipe(Effect.provideService(Scope.Scope, scope))),
   )
   // Electric, as the routes call it: each table in this file's schema.
   const tables = new Set([

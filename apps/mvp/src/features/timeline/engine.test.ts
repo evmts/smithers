@@ -114,7 +114,8 @@ test("a model grant-store failure leaves the summary unavailable without exposin
     _tag: "@smthrs/capability/GrantStoreError", code: "journal_failed", message: "private grant detail",
   })
   if (error._tag !== "@smthrs/capability/GrantStoreError") throw new Error("Expected grant-store failure")
-  const model = Model.make({ stream: () => Stream.fail(error) })
+  let attempts = 0
+  const model = Model.make({ stream: () => { attempts++; return Stream.fail(error) } })
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
   const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
     Layer.provide(SummarySeat.layer("https://summary.test", model)), Layer.provideMerge(Action.layerImplementations),
@@ -122,4 +123,7 @@ test("a model grant-store failure leaves the summary unavailable without exposin
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
   const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "grant-unavailable", payload })).pipe(Effect.provide(context)))
   expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
-})
+  expect(attempts).toBe(6)
+// ModelStep retries this unsealed failure six times: its five delays alone can take 31 seconds.
+// Keep the real retry policy and allow bounded overhead for the SQL-backed host.
+}, 90_000)

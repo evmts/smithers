@@ -1,8 +1,9 @@
 // A run's page as a frontend draws it (src/features/runs/page.ts, decision 0014 §5): the steps a person reads, the
 // selected one, the journal with what More read, the acts a run offers, and the list's rows.
 import { describe, expect, test } from "vitest"
-import { actsOf, hostOf, journalOf, listRows, missingOf, retriesOf, selectedStep, STALLED_AFTER_MS } from "./page"
-import type { Inspection, RunRow } from "./schema"
+import { ACTIONS_LIMIT } from "../actions/contract"
+import { actsOf, hostOf, journalOf, listRows, missingOf, repoRunRows, retriesOf, selectedStep, STALLED_AFTER_MS } from "./page"
+import type { Inspection, RepoRunRow, RunRow } from "./schema"
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
 
@@ -125,6 +126,56 @@ describe("a run on Cloudflare", () => {
     expect(missingOf({ id: "run-1", state: "not_found" })).toBe("On another device")
     expect(missingOf({ id: TODO_RUN, state: "unavailable" })).toBe("Couldn't read this run")
     expect(missingOf({ id: "run-1", state: "unavailable" })).toBe("Couldn't read this run")
+  })
+})
+
+describe("a repository's run", () => {
+  test("Stop while it runs and no stop was asked; nothing else, on Cloudflare", () => {
+    const live = inspection({ run: run({ runId: "ci:1", status: "running", finishedAtMs: null }) })
+    expect(actsOf(live, 1_000 + STALLED_AFTER_MS, undefined, true)).toEqual({ stop: true, retry: false, resume: false })
+    const asked = inspection({ run: run({ runId: "ci:1", status: "running", cancelRequestedAtMs: 1_500 }) })
+    expect(actsOf(asked, 0, undefined, true).stop).toBe(false)
+    expect(actsOf(inspection({ run: run({ runId: "ci:1" }) }), 0, undefined, true).stop).toBe(false)
+    // A job stops with its run: its own page offers no Stop.
+    const job = inspection({ run: run({ runId: "job-1", parentRunId: "ci:1", status: "running", finishedAtMs: null }) })
+    expect(actsOf(job, 0, undefined, true).stop).toBe(false)
+    expect(hostOf("ci:1", true)).toBe("Cloud")
+    expect(missingOf({ id: "ci:1", state: "not_found" }, true)).toBe("Not found")
+  })
+
+  const repoRun = (overrides: Partial<RepoRunRow>): RepoRunRow => ({
+    id: "row-1",
+    repoId: "github/octo/hello",
+    execution: "ci:1",
+    flow: "ci",
+    status: "working",
+    sha: "a".repeat(40),
+    ref: "main",
+    event: "push",
+    createdAt: "2026-10-22 10:00:00+00",
+    updatedAt: "2026-10-22 10:00:05+00",
+    ...overrides,
+  })
+
+  test("the repository's list: its runs only, newest first, each its flow and ref, its state and its page", () => {
+    const rows = [
+      repoRun({ id: "old", execution: "ci:old", status: "done", createdAt: "2026-10-22 09:00:00+00", updatedAt: "2026-10-22 09:01:00+00" }),
+      repoRun({ id: "new", execution: "release:new", flow: "release", ref: "v1.2.0" }),
+      repoRun({ id: "failed", execution: "ci:failed", status: "failed", createdAt: "2026-10-22T09:30:00Z" }),
+      repoRun({ id: "stopped", execution: "ci:stopped", status: "stopped", createdAt: "2026-10-22 09:15:00+00" }),
+      repoRun({ id: "other", repoId: "github/octo/other" }),
+    ]
+    expect(repoRunRows(rows, "Octo", "Hello")).toEqual([
+      { id: "new", flow: "release · v1.2.0", state: "running", startedAtMs: Date.parse("2026-10-22T10:00:00+00:00"), finishedAtMs: null, href: "/Octo/Hello/actions/runs/release%3Anew" },
+      { id: "failed", flow: "ci · main", state: "failed", startedAtMs: Date.parse("2026-10-22T09:30:00Z"), finishedAtMs: Date.parse("2026-10-22T10:00:05+00:00"), href: "/Octo/Hello/actions/runs/ci%3Afailed" },
+      { id: "stopped", flow: "ci · main", state: "cancelled", startedAtMs: Date.parse("2026-10-22T09:15:00+00:00"), finishedAtMs: Date.parse("2026-10-22T10:00:05+00:00"), href: "/Octo/Hello/actions/runs/ci%3Astopped" },
+      { id: "old", flow: "ci · main", state: "completed", startedAtMs: Date.parse("2026-10-22T09:00:00+00:00"), finishedAtMs: Date.parse("2026-10-22T09:01:00+00:00"), href: "/Octo/Hello/actions/runs/ci%3Aold" },
+    ])
+    // At most ACTIONS_LIMIT, the newest.
+    const many = Array.from({ length: ACTIONS_LIMIT + 5 }, (_, i) =>
+      repoRun({ id: `r${i}`, createdAt: new Date(Date.UTC(2026, 9, 22, 0, 0, i)).toISOString() }))
+    const shown = repoRunRows(many, "octo", "hello")
+    expect([shown.length, shown[0]!.id]).toEqual([ACTIONS_LIMIT, `r${ACTIONS_LIMIT + 4}`])
   })
 })
 

@@ -18,7 +18,10 @@ import {
   THIS_DEVICE,
 } from "./contract"
 import { failedTodoRun, retryable, todoRetryPayload } from "./retry"
-import type { Inspection, RunPage, RunRow, SteerSending, SteerSent } from "./schema"
+import { ACTIONS_LIMIT, actionRunPath } from "../actions/contract"
+import { isoOf } from "../pulls/view"
+import { repoId } from "../repo/contract"
+import type { Inspection, RepoRunRow, RunPage, RunRow, SteerSending, SteerSent } from "./schema"
 
 // A run's page as a frontend draws it (decision 0014 §5, docs/features/runs.md#the-run-page): pure functions from the
 // engine's read of a run to `@smthrs/ui`'s run-page rows. The steps are the plan's action calls and child boundaries,
@@ -61,8 +64,22 @@ export const STALLED_AFTER_MS = 60_000
  * A Cloudflare TODO offers Retry through todo/Retry, which allocates its attempt through the stack writer.
  * Stop and Resume remain local-engine acts; a remote TODO stops when its TODO drops.
  */
-export const actsOf = (inspection: Inspection, now: number, events: ReadonlyArray<Pick<JournalRow, "emittedAtMs">> = inspection.journal.events) => {
+export const actsOf = (
+  inspection: Inspection,
+  now: number,
+  events: ReadonlyArray<Pick<JournalRow, "emittedAtMs">> = inspection.journal.events,
+  cloud = false,
+) => {
   const { run } = inspection
+  // A repository's run stops on Cloudflare (docs/features/actions.md#acts), and its jobs with it; a TODO's stops when its
+  // TODO is dropped.
+  if (cloud) {
+    return {
+      stop: run.parentRunId === null && !settled(run.status) && run.cancelRequestedAtMs === null,
+      retry: false,
+      resume: false,
+    }
+  }
   if (isRemoteRun(run.runId)) return { stop: false, retry: failedTodoRun(run) && todoRetryPayload(run.input) !== undefined, resume: false }
   const last = events.at(-1)?.emittedAtMs ?? run.createdAtMs
   return {
@@ -72,15 +89,15 @@ export const actsOf = (inspection: Inspection, now: number, events: ReadonlyArra
   }
 }
 
-/** Where a run runs, as its header says: this device, or Cloudflare. */
-export const hostOf = (runId: string): string => (isRemoteRun(runId) ? CLOUD : THIS_DEVICE)
+/** Where a run runs, as its header says: this device, or Cloudflare (a TODO's run, or a repository's: `cloud`). */
+export const hostOf = (runId: string, cloud = false): string => (cloud || isRemoteRun(runId) ? CLOUD : THIS_DEVICE)
 
 /** What a page says when it has no run to show, by why. */
-export const missingOf = (page: Pick<RunPage, "id" | "state">): string =>
+export const missingOf = (page: Pick<RunPage, "id" | "state">, cloud = false): string =>
   page.state === "not_started"
     ? NOT_STARTED
     : page.state === "not_found"
-    ? isRemoteRun(page.id) ? NOT_FOUND : ON_ANOTHER_DEVICE
+    ? cloud || isRemoteRun(page.id) ? NOT_FOUND : ON_ANOTHER_DEVICE
     : COULDNT_READ
 
 /** The runs a person's list shows, newest first: work, never an act on a run. */
@@ -225,3 +242,37 @@ export const responseStep = (steps: ReadonlyArray<PageStep>, deliveredAtMs: numb
   [...steps].filter((step) => step.row.startedAtMs >= deliveredAtMs).sort((left, right) =>
     left.row.startedAtMs - right.row.startedAtMs
   )[0]?.row.id ?? null
+
+/** A repository run's state, as `RunList` draws it, from its row's status. */
+export const repoRunStateOf = (status: string) =>
+  status === "done"
+    ? "completed" as const
+    : status === "failed"
+    ? "failed" as const
+    : status === "stopped"
+    ? "cancelled" as const
+    : "running" as const
+
+/**
+ * `/$owner/$repo/actions`: the repository's runs, newest first, at most `ACTIONS_LIMIT`, each named by its flow and
+ * ref and opening its run page (docs/features/actions.md).
+ */
+export const repoRunRows = (rows: ReadonlyArray<RepoRunRow>, owner: string, name: string): ReadonlyArray<UiRunRow> => {
+  const id = repoId(owner, name)
+  return rows
+    .filter((row) => row.repoId === id)
+    .map((row) => ({ row, startedAtMs: Date.parse(isoOf(row.createdAt)) }))
+    .sort((left, right) => right.startedAtMs - left.startedAtMs)
+    .slice(0, ACTIONS_LIMIT)
+    .map(({ row, startedAtMs }) => {
+      const state = repoRunStateOf(row.status)
+      return {
+        id: row.id,
+        flow: `${row.flow} · ${row.ref}`,
+        state,
+        startedAtMs,
+        finishedAtMs: state === "running" ? null : Date.parse(isoOf(row.updatedAt)),
+        href: actionRunPath(owner, name, row.execution),
+      }
+    })
+}

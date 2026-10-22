@@ -16,10 +16,17 @@ import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { todoExecutionId } from "../src/features/pulls/contract.ts"
-import { MAX_STEER_CHARS, REMOTE_RUN_SHAPE_ROUTE, remoteRunRoute, steersRoute } from "../src/features/runs/contract.ts"
+import {
+  MAX_STEER_CHARS,
+  REMOTE_RUN_SHAPE_ROUTE,
+  remoteRunRoute,
+  steersRoute,
+  stopRoute,
+} from "../src/features/runs/contract.ts"
 import * as Actor from "./Actor.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as RemoteRuns from "./RemoteRuns.ts"
+import * as RepoRuns from "./RepoRuns.ts"
 import * as Stack from "./stack/Stack.ts"
 import { build } from "./test/flowHost.ts"
 import { eventually, recorded, signedIn, testFile, uuid } from "./test/harness.ts"
@@ -27,7 +34,7 @@ import { eventually, recorded, signedIn, testFile, uuid } from "./test/harness.t
 const runtime = testFile("remote_runs")
 beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks`))
+    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, runs`))
 )
 
 const member: Actor.Actor = { subject: { kind: "person", id: "person-member" }, role: "member", login: "maya" }
@@ -114,6 +121,8 @@ interface Engine {
   readonly review: (executionId: string, pauseMs: number) => Promise<void>
   /** A run's status in the engine. */
   readonly status: (executionId: string) => Promise<string | undefined>
+  /** The runs a run started. */
+  readonly children: (executionId: string) => Promise<ReadonlyArray<string>>
 }
 
 const withEngine = <A>(body: (engine: Engine) => Promise<A>): Promise<A> =>
@@ -141,6 +150,14 @@ const withEngine = <A>(body: (engine: Engine) => Promise<A>): Promise<A> =>
                 scope,
               ))),
             status: (executionId) => Effect.runPromise(engine.status(executionId)),
+            children: (executionId) =>
+              Effect.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+                sql<{ readonly run_id: string }>`
+                  SELECT run_id FROM flows_runs WHERE parent_run_id = ${executionId}
+                  UNION SELECT child_id FROM flows_run_parents WHERE parent_id = ${executionId}`).pipe(
+                  Effect.map((rows) => rows.map((row) => row.run_id)),
+                  Effect.provide(ExecutionHost.readDatabase(server.toString(), engine.schema)),
+                )),
             cancel: (executionId) => Effect.runPromise(flows.interrupt(Watched, executionId).pipe(Effect.provide(context))),
             run: (executionId, pauseMs = 0) => Effect.runPromise(Effect.asVoid(Effect.orDie(execute(executionId, pauseMs)))),
             start: (executionId, pauseMs) =>
@@ -161,6 +178,8 @@ const routes = async (
     readonly sessions?: Layer.Layer<Actor.Sessions>
     /** The app's tables: the file's schema unless set. */
     readonly database?: Layer.Layer<SqlClient.SqlClient>
+    /** What the run's Durable Object does with a stop; nothing unless set. */
+    readonly stop?: (runId: string) => Effect.Effect<void, unknown>
   } = {},
 ) => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
@@ -196,7 +215,8 @@ const routes = async (
         writer: engine.writer,
         schema: engine.schema,
         flows: [Watched, Reviewed],
-      }),
+        stop: options.stop ?? (() => Effect.void),
+      }, { id: "github/octo/hello" }),
     ),
   )
   const handler = HttpEffect.toWebHandler(
@@ -604,6 +624,8 @@ describe("POST /api/remote-runs/<runId>/steers", () => {
         [{ actor: member }, runId, post({ id: uuid(), body: "\u0001".repeat(MAX_STEER_CHARS) }), 413, "too_large"],
         [{ actor: member }, runId, post({ id: uuid(), body: "x".repeat(40_000) }), 413, "too_large"],
         [{ actor: member }, todoExecutionId(uuid()), post(body), 404, "not_found"],
+        // A repository's run has no agent to steer.
+        [{ actor: member }, `ci:${uuid()}`, post(body), 404, "not_found"],
         [{ actor: member }, runId, post(body), 409, "not_working"],
       ]
       for (const [options, target, init, status, code] of cases) {
@@ -703,6 +725,182 @@ describe("POST /api/remote-runs/<runId>/steers", () => {
   }, 60_000)
 })
 
+/** A repository's run recorded under `execution`, as a trigger or a person's Run records it. */
+const recordRepoRun = (execution: string) =>
+  runtime.runPromise(RepoRuns.record({
+    execution,
+    repoId: "github/octo/hello",
+    flow: "ci",
+    sha: "b".repeat(40),
+    ref: "main",
+    event: "push",
+    launchedBy: "github",
+  }))
+
+describe("a repository's run", () => {
+  test("a Member reads it and the runs it started, and follows each; a run no repository recorded stays refused", async () => {
+    const runId = `ci:${uuid()}`
+    await recordRepoRun(runId)
+    await withEngine(async (engine) => {
+      await engine.run(runId)
+      await engine.run(`unrecorded:${uuid()}`)
+      const [job] = await engine.children(runId)
+      const h = await routes(engine, { actor: member })
+      const [status, read] = await json(await h.fetch(remoteRunRoute(runId)))
+      expect([status, read.run.runId, read.run.status, read.children.map((child) => child.runId)]).toEqual([
+        200,
+        runId,
+        "completed",
+        [job],
+      ])
+      const [childStatus, child] = await json(await h.fetch(remoteRunRoute(job!)))
+      expect([childStatus, child.run.parentRunId]).toEqual([200, runId])
+      expect((await firstShape(h, job!)).rows).toEqual([{ run_id: job, revision: expect.any(String) }])
+      expect((await firstShape(h, runId)).status).toBe(200)
+
+      expect((await h.fetch(remoteRunRoute(`ci:${uuid()}`))).status).toBe(404)
+      expect((await firstShape(h, `ci:${uuid()}`)).status).toBe(403)
+      const guest_ = await routes(engine, { actor: guest })
+      expect((await guest_.fetch(remoteRunRoute(runId))).status).toBe(403)
+      expect(recorded(h)).not.toContain(SENTINEL)
+    })
+  })
+
+  test("another repository's run is no Member's here: a role is read on the synced repository only", async () => {
+    const runId = `ci:${uuid()}`
+    await runtime.runPromise(RepoRuns.record({
+      execution: runId,
+      repoId: "github/octo/private",
+      flow: "ci",
+      sha: "e".repeat(40),
+      ref: "main",
+      event: "push",
+      launchedBy: "github",
+    }))
+    await withEngine(async (engine) => {
+      await engine.run(runId)
+      const h = await routes(engine, { actor: member, stop: () => Effect.die("never asked") })
+      expect([(await h.fetch(remoteRunRoute(runId))).status, (await firstShape(h, runId)).status]).toEqual([404, 403])
+      const stopped = await h.fetch(stopRoute(runId), { method: "POST" })
+      expect([stopped.status, await stopped.json()]).toEqual([404, { code: "not_found" }])
+    })
+  })
+
+  test("a repository's flow named todo is the repository's run, not a TODO's", async () => {
+    const runId = `todo:${uuid()}`
+    await recordRepoRun(runId)
+    await withEngine(async (engine) => {
+      await engine.run(runId)
+      const h = await routes(engine, { actor: member })
+      expect((await h.fetch(remoteRunRoute(runId))).status).toBe(200)
+      expect((await firstShape(h, runId)).status).toBe(200)
+    })
+  })
+
+  test("a recorded run the engine hasn't begun reads not_started", async () => {
+    const runId = `ci:${uuid()}`
+    await recordRepoRun(runId)
+    await withEngine(async (engine) => {
+      const h = await routes(engine, { actor: member })
+      const response = await h.fetch(remoteRunRoute(runId))
+      expect([response.status, await response.json()]).toEqual([404, { code: "not_started" }])
+    })
+  })
+})
+
+describe("POST /api/remote-runs/<runId>/stop", () => {
+  test("a Member stops a working run on its object, once it is recorded; the engine settles it cancelled", async () => {
+    const runId = `ci:${uuid()}`
+    await recordRepoRun(runId)
+    await withEngine(async (engine) => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) === "suspended", 10_000)
+      const asked: Array<string> = []
+      const h = await routes(engine, {
+        actor: member,
+        // What the object does (worker/ExecutionHost.ts `cancel`): the engine's own interrupt of the run.
+        stop: (id) =>
+          Effect.promise(async () => {
+            asked.push(id)
+            await engine.cancel(id)
+          }),
+      })
+      const response = await h.fetch(stopRoute(runId), { method: "POST" })
+      expect([response.status, await response.json(), response.headers.get("cache-control")]).toEqual([
+        202,
+        { outcome: "requested" },
+        "no-store",
+      ])
+      expect(asked).toEqual([runId])
+      await eventually(async () => (await engine.status(runId)) === "cancelled", 10_000)
+      expect(h.line("run.stop").map((line) => line.annotations)).toEqual([
+        expect.objectContaining({ host: "remote", runId, via: "person", outcome: "requested", status: 202 }),
+      ])
+      expect(h.count(RemoteRuns.stops, { outcome: "requested" })).toBe(1)
+      expect(h.spans.filter((span) => span.name === "run.stop")).toHaveLength(1)
+    })
+  })
+
+  test("an agent acting for a Member stops one too; a run that ended answers settled, and its object is never asked", async () => {
+    const runId = `ci:${uuid()}`
+    await recordRepoRun(runId)
+    await withEngine(async (engine) => {
+      const unbegun = `ci:${uuid()}`
+      await recordRepoRun(unbegun)
+      const asked: Array<string> = []
+      const h = await routes(engine, {
+        actor: { ...member, act: { kind: "agent", id: "chat-run-1" } },
+        stop: (id) => Effect.sync(() => void asked.push(id)),
+      })
+      // Recorded and not begun: its object stops it before it starts.
+      expect(await json(await h.fetch(stopRoute(unbegun), { method: "POST" }))).toEqual([202, { outcome: "requested" }])
+      await engine.run(runId)
+      const response = await h.fetch(stopRoute(runId), { method: "POST" })
+      expect([response.status, await response.json()]).toEqual([200, { outcome: "settled" }])
+      expect(asked).toEqual([unbegun])
+      expect(h.line("run.stop").map((line) => [line.annotations.via, line.annotations.outcome])).toEqual([
+        ["agent", "requested"],
+        ["agent", "settled"],
+      ])
+    })
+  })
+
+  test("refuses who may not stop it, a job, a run no repository recorded, and an object that couldn't take it", async () => {
+    const runId = `ci:${uuid()}`
+    await recordRepoRun(runId)
+    const down = `ci:${uuid()}`
+    await recordRepoRun(down)
+    const sessionsDown = Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }))
+    await withEngine(async (engine) => {
+      await engine.run(runId)
+      const [job] = await engine.children(runId)
+      const cases: ReadonlyArray<[Parameters<typeof routes>[1], string, number, string]> = [
+        [{}, runId, 401, "authentication"],
+        [{ actor: guest }, runId, 403, "forbidden"],
+        [{ sessions: sessionsDown }, runId, 503, "unavailable"],
+        [{ actor: member }, job!, 404, "not_found"],
+        [{ actor: member }, `ci:${uuid()}`, 404, "not_found"],
+        [{ actor: member, stop: () => Effect.fail("object down") }, down, 503, "unavailable"],
+        [{ actor: member, database: missing("remote_runs_no_app_stop") }, runId, 503, "unavailable"],
+      ]
+      for (const [options, id, status, code] of cases) {
+        const h = await routes(engine, options)
+        const response = await h.fetch(stopRoute(id), { method: "POST" })
+        expect([id === job ? "job" : id, response.status, await response.json()]).toEqual([
+          id === job ? "job" : id,
+          status,
+          { code },
+        ])
+        expect(response.headers.get("retry-after")).toBe(status === 503 ? "5" : null)
+        expect(h.line("run.stop").map((line) => line.annotations.outcome)).toEqual([code])
+      }
+      const h = await routes(engine, { actor: member })
+      expect((await h.fetch(stopRoute(runId))).status).toBe(405)
+      expect(h.line("run.stop").map((line) => line.annotations.outcome)).toEqual(["method"])
+    })
+  })
+})
+
 describe("the routes", () => {
   test("handle the run route and the shape, and nothing else", () => {
     const runId = todoExecutionId(uuid())
@@ -716,6 +914,9 @@ describe("the routes", () => {
       expect([path, RemoteRuns.handles(path)]).toEqual([path, false])
     }
     expect(RemoteRuns.parseRunPath(remoteRunRoute(runId))).toBe(runId)
+    expect(RemoteRuns.handles(stopRoute(runId))).toBe(true)
+    expect(RemoteRuns.parseStopPath(stopRoute(runId))).toBe(runId)
+    expect(RemoteRuns.parseStopPath(steersRoute(runId))).toBeUndefined()
   })
 
   test("a path the module doesn't serve is 404", async () => {

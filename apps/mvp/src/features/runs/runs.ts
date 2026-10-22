@@ -20,7 +20,7 @@ import {
   stop,
   warmList,
 } from "./actions"
-import type { RunTab } from "./schema"
+import type { RepoName, RunTab } from "./schema"
 import { RunsStore } from "./store"
 import { SteerWrites } from "./writes"
 
@@ -34,6 +34,8 @@ export interface RunsQueries {
   readonly page: Store["page"]["tanstack"]
   readonly view: Store["viewRow"]["tanstack"]
   readonly runs: Store["list"]["tanstack"]
+  /** Every repository run the device holds (docs/features/actions.md), from when a list opened. */
+  readonly repoRuns: Store["repoRunList"]["tanstack"]
   /** This device's steers the outbox holds, and those the route answered (docs/features/runs.md#steering). */
   readonly steerSending: Effect.Success<ReturnType<typeof sendingQuery>>["tanstack"]
   readonly steerSent: Effect.Success<ReturnType<typeof sentQuery>>["tanstack"]
@@ -49,7 +51,10 @@ const sentQuery = (writes: SteerWrites["Service"]) => LiveQuery.make((q) => q.fr
 export interface RunsActions {
   readonly warmList: () => Promise<void>
   readonly openList: () => Promise<void>
-  readonly openRun: (runId: string) => Promise<void>
+  /** A repository's list's route loader: syncs the repositories' runs, once (docs/features/actions.md). */
+  readonly openRepoRuns: () => Promise<void>
+  /** Opens `runId`; a repository's run with its `repo`, read on Cloudflare. */
+  readonly openRun: (runId: string, repo?: RepoName) => Promise<void>
   /** The run route's `onLeave` for `runId`. */
   readonly closeRun: (runId: string) => void
   readonly scrub: (at: number | null) => void
@@ -85,13 +90,15 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
           page: store.page.tanstack,
           view: store.viewRow.tanstack,
           runs: store.list.tanstack,
+          repoRuns: store.repoRunList.tanstack,
           steerSending: steerSending.tanstack,
           steerSent: steerSent.tanstack,
         },
         actions: {
           warmList: () => promise(warmList),
           openList: () => promise(openList),
-          openRun: (runId) => promise(openRun(runId)),
+          openRepoRuns: () => promise(store.openRepoRuns),
+          openRun: (runId, repo) => promise(openRun(runId, repo ?? null)),
           closeRun: (runId) => fork(closeRun(runId)),
           scrub: (at) => fork(scrub(at)),
           inspectStep: (stepId) => fork(inspectStep(stepId)),

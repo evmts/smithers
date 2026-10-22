@@ -18,6 +18,7 @@ import * as Navigation from "../features/navigation/flows"
 import { RepoClient, REQUEST_WITHIN } from "../features/repo/api"
 import { TabClipboard } from "../features/repo/copy"
 import * as Repo from "../features/repo/steps"
+import { RemoteRunsClient } from "../features/runs/api"
 import * as Runs from "../features/runs/steps"
 import * as SharingSteps from "../features/sharing/steps"
 import * as SpendSteps from "../features/spend/steps"
@@ -118,7 +119,11 @@ export const registrations = (options: HostOptions) =>
     jev(options.origin),
     Status.registration,
     PersonalFlows.layer(options.origin),
-    Runs.registration.pipe(Layer.provide(AnswerApi.layerHttp(options.origin))),
+    // Stop on a repository's run goes to ChatApi, which its Durable Object answers (docs/features/actions.md#acts).
+    Runs.registration.pipe(
+      Layer.provide(AnswerApi.layerHttp(options.origin)),
+      Layer.provide(RemoteRunsClient.layer({ origin: options.origin, within: REQUEST_WITHIN })),
+    ),
     BranchSteps.registrationAt(options.origin),
     ConversationSteps.registrationAt(options.origin),
     SharingSteps.registrationAt(options.origin),

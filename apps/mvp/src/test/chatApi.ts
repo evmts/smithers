@@ -26,10 +26,13 @@ import {
   Queue,
   Redacted,
   Schedule,
+  Schema,
   Scope,
   Stream,
   Tracer
 } from "effect"
+import { Flow, Interpreter, Sleep } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import { FetchHttpClient, type HttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import * as Socket from "effect/socket/Socket"
 import { SqlClient } from "effect/sql"
@@ -116,6 +119,7 @@ import type { ThemeMode } from "../features/theme/contract"
 import type { StackClient } from "../features/todos/api"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
 import * as RepoRoles from "../../worker/github/RepoRoles.ts"
+import * as RepoRuns from "../../worker/RepoRuns.ts"
 import { VIEWS_TABLE } from "../features/views/contract"
 import { clientFlows } from "../flows/declarations"
 import { workerRegistrations } from "../flows/registrations"
@@ -192,6 +196,16 @@ export interface ChatApiOptions {
 
 /** The header a test device's requests name their person with (`ChatApiOptions.people`). */
 const PERSON_HEADER = "x-test-person"
+
+/** A run that starts one job, `probe/Pause`, as a repository's run starts its jobs (docs/features/actions.md). */
+const Nested = Flow.make("test/Nested", {
+  description: "Starts probe/Pause as its job.",
+  modelInvocable: false,
+  payload: Pause.Pause.payloadSchema.fields,
+  success: Schema.String,
+  error: Sleep.SleepRequestInvalid,
+  body: Node.capture({}, (payload) => Pause.Pause.child(payload)),
+})
 
 /** A remote flow a route started: the git loop's routes start them, and no remote host runs here. */
 export interface Started {
@@ -333,6 +347,10 @@ export class TestChatApi extends Context.Service<
      */
     readonly remote: {
       readonly todoRun: (title: string) => Effect.Effect<string>
+      /** A repository's run of `flow` recorded on `TEST_REPOSITORY`, as a trigger records one: its execution id. */
+      readonly repoRun: (flow: string) => Effect.Effect<string>
+      /** The run's status in the engine. */
+      readonly status: (runId: string) => Effect.Effect<string | undefined>
       readonly progress: (runId: string) => Effect.Effect<number>
       /** Controlled live-action gate and feed receipts, using the real engine and database. */
       readonly ready: (runId: string) => Effect.Effect<void>
@@ -340,9 +358,10 @@ export class TestChatApi extends Context.Service<
       readonly settled: (runId: string) => Effect.Effect<void>
       readonly revision: (runId: string) => Effect.Effect<number>
       readonly prepareProgress: (runId: string) => Effect.Effect<number>
+      /** With `nested`, a run that starts `probe/Pause` as its job (`test/Nested`), as a repository's run starts jobs. */
       readonly start: (
         runId: string,
-        payload: { readonly label: string; readonly pauseMs: number; readonly hold?: boolean }
+        payload: { readonly label: string; readonly pauseMs: number; readonly hold?: boolean; readonly nested?: boolean },
       ) => Effect.Effect<void>
     }
   }
@@ -544,19 +563,14 @@ export class TestChatApi extends Context.Service<
         >()
         const remoteFibers = new Map<string, Fiber.Fiber<void>>()
         const remoteEngine = yield* Effect.cached(
-          buildEngine(
-            Pause.registration((label) =>
-              Effect.gen(function*() {
-                const gate = [...remoteGates.values()].find((gate) => gate.label === label)
-                if (gate !== undefined) {
-                  yield* Deferred.succeed(gate.ready, undefined)
-                  yield* Deferred.await(gate.release)
-                }
-                return label
-              })
-            ),
-            { schema: remoteSchema }
-          ).pipe(
+          buildEngine(Interpreter.layer(Nested, { callbackIdentity: "stable" }).pipe(Layer.provideMerge(Pause.registration((label) => Effect.gen(function* () {
+            const gate = [...remoteGates.values()].find((gate) => gate.label === label)
+            if (gate !== undefined) {
+              yield* Deferred.succeed(gate.ready, undefined)
+              yield* Deferred.await(gate.release)
+            }
+            return label
+          })))), { schema: remoteSchema }).pipe(
             Scope.provide(layerScope),
             Effect.orDie
           )
@@ -577,8 +591,14 @@ export class TestChatApi extends Context.Service<
           }),
           writer: remoteWriter,
           schema: remoteSchema,
-          flows: [Pause.Pause]
-        }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+          flows: [Pause.Pause],
+          // What the run's Durable Object does (`ExecutionObject.make`'s `cancel`): the engine's own interrupt of the run.
+          stop: (runId) =>
+            Effect.gen(function* () {
+              const { context } = yield* remoteEngine
+              yield* Context.get(context, FlowRuntime.FlowRuntime).interrupt(Pause.Pause, runId).pipe(Effect.provide(context))
+            }),
+        }, { id: `github/${TEST_REPOSITORY}` }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
 
         // Custom domains, as ChatApi routes them (worker/domains/Api.ts), with `domain/Verify` and `domain/Remove` run
         // for real on an engine of their own, started and not awaited as the Cloudflare host does, and the real `dns`
@@ -942,10 +962,31 @@ export class TestChatApi extends Context.Service<
                 }, { runs: true }).pipe(Effect.provide(database), Effect.orDie)
                 return applied.kind === "applied" ? todoExecutionId(applied.receipt.starts[0]!.attemptId) : ""
               }),
+            repoRun: (flow) =>
+              Effect.gen(function* () {
+                yield* remoteEngine
+                const execution = `${flow}:${crypto.randomUUID()}`
+                yield* RepoRuns.record({
+                  execution,
+                  repoId: `github/${TEST_REPOSITORY}`,
+                  flow,
+                  sha: "d".repeat(40),
+                  ref: "main",
+                  event: "push",
+                  launchedBy: "github",
+                }).pipe(Effect.provide(database), Effect.orDie)
+                return execution
+              }),
+            status: (runId) =>
+              sql<{ status: string }>`SELECT status FROM ${sql(remoteSchema)}.flows_runs WHERE run_id = ${runId}`.pipe(
+                Effect.map((rows) => rows[0]?.status),
+                Effect.orDie,
+              ),
             start: (runId, payload) =>
               Effect.gen(function*() {
                 const { context } = yield* remoteEngine
                 const flows = Context.get(context, FlowRuntime.FlowRuntime)
+                const flow = payload.nested === true ? Nested : Pause.Pause
                 if (payload.hold) {
                   const gate = {
                     label: `${payload.label}:after`,
@@ -956,13 +997,10 @@ export class TestChatApi extends Context.Service<
                   yield* Scope.addFinalizer(layerScope, Deferred.succeed(gate.release, undefined))
                 }
                 const fiber = yield* Effect.forkIn(
-                  Effect.ignore(
-                    flows.execute(Pause.Pause, {
-                      executionId: runId,
-                      payload: { label: payload.label, pauseMs: payload.pauseMs }
-                    }).pipe(Effect.provide(context))
-                  ),
-                  layerScope
+                  Effect.ignore(flows.execute(flow, {
+                    executionId: runId, payload: { label: payload.label, pauseMs: payload.pauseMs },
+                  }).pipe(Effect.provide(context))),
+                  layerScope,
                 )
                 remoteFibers.set(runId, fiber)
               })

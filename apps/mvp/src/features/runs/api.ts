@@ -2,12 +2,13 @@ import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { renewed, withBearer, withoutCookie } from "../../flows/bearer"
-import { remoteRunRoute, steersRoute } from "./contract"
+import { remoteRunRoute, steersRoute, stopRoute } from "./contract"
 import type { Inspection } from "./schema"
 
 // ChatApi's remote runs route as the browser calls it (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): a run
 // Smithers runs on Cloudflare, as the engine's `RunInspection` reads it there, through Effect's HttpClient with one
-// deadline over the whole exchange, decoded with the engine's own wire shape (`BrowserEngine.Inspection`).
+// deadline over the whole exchange, decoded with the engine's own wire shape (`BrowserEngine.Inspection`). A
+// repository's run is stopped there too (docs/features/actions.md#acts).
 
 /**
  * ChatApi didn't answer with the run: no whole answer within the deadline, or no network (`status` absent), any status
@@ -108,6 +109,41 @@ export const postSteer = (
   )
 
 /**
+ * ChatApi didn't stop the run: no whole answer within the deadline, or no network (`status` absent), or any status but
+ * 200 and 202 (`status`, and the refusal's `code` when its body names one).
+ */
+export class StopFailed extends Data.TaggedError("StopFailed")<{
+  readonly status?: number
+  readonly code?: string
+}> {}
+
+const decodeStopped = Schema.decodeUnknownOption(Schema.Struct({ outcome: Schema.Literals(["requested", "settled"]) }))
+
+/** `POST /api/remote-runs/<runId>/stop`: a repository's run, stopped on its Durable Object. */
+export const postStop = (origin: string, runId: string, within: Duration.Input) =>
+  Effect.gen(function* () {
+    const client = yield* HttpClient.HttpClient
+    const response = yield* client.execute(HttpClientRequest.post(`${origin}${stopRoute(runId)}`)).pipe(
+      Effect.mapError(() => new StopFailed({})),
+    )
+    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    const body = yield* response.json.pipe(Effect.option)
+    if (response.status === 200 || response.status === 202) {
+      const stopped = Option.flatMap(body, decodeStopped)
+      if (Option.isSome(stopped)) return stopped.value
+      return yield* new StopFailed({ status: response.status })
+    }
+    const refused = Option.flatMap(body, decodeRefusal)
+    return yield* new StopFailed({
+      status: response.status,
+      ...(Option.isSome(refused) ? { code: refused.value.code } : {}),
+    })
+  }).pipe(
+    Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new StopFailed({})) }),
+    Effect.withSpan("run.stop.post"),
+  )
+
+/**
  * ChatApi's remote runs routes, as a service: how this tab reads a run Smithers runs on Cloudflare, and steers its
  * agent. Tests of a route that fails provide a faulty one; every other test uses the real one.
  */
@@ -124,6 +160,8 @@ export class RemoteRunsClient extends Context.Service<
       steer: { readonly id: string; readonly body: string },
       credential?: string,
     ) => Effect.Effect<SteerTaken, SteerFailed>
+    /** Stops a repository's run on Cloudflare: `requested`, or `settled` when it had ended. */
+    readonly stop: (runId: string) => Effect.Effect<{ readonly outcome: "requested" | "settled" }, StopFailed>
   }
 >()("@smthrs/mvp/runs/RemoteRunsClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
@@ -138,6 +176,8 @@ export class RemoteRunsClient extends Context.Service<
             postSteer(options.origin, runId, steer, options.within, credential).pipe(
               Effect.provideService(HttpClient.HttpClient, client),
             ),
+          stop: (runId) =>
+            postStop(options.origin, runId, options.within).pipe(Effect.provideService(HttpClient.HttpClient, client)),
         })),
     )
 }

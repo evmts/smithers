@@ -26,6 +26,7 @@ import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubHost from "./github/Host.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as Placement from "./Placement.ts"
+import * as RepoRuns from "./RepoRuns.ts"
 import * as RepoConfig from "./RepoConfig.ts"
 import * as SignIn from "./SignIn.ts"
 import { keepExecutionId } from "../src/features/sandbox/contract.ts"
@@ -36,7 +37,7 @@ import { keepExecutionId } from "../src/features/sandbox/contract.ts"
 
 /**
  * What a caller sees: `start` records an intent and wakes the object; `wake` makes its execution due again, for
- * another object whose drive left it due; `alarm` is Cloudflare's wake-up.
+ * another object whose drive left it due; `alarm` is Cloudflare's wake-up; `cancel` stops its run.
  */
 export interface FlowExecutionShape {
   readonly start: (
@@ -178,6 +179,18 @@ const object = <E, R>(
             },
             afterAlarm: Effect.flatMap(flowStarter, (started) =>
               sampleLoad.pipe(Effect.provideService(Flows.FlowStarter, started))),
+            // A repository's run settles its row from the engine's status (docs/features/actions.md).
+            settled: (executionId) =>
+              RepoRuns.settle(executionId, database).pipe(
+                Effect.provide(appDatabase),
+                Effect.asVoid,
+                // The alarm that forgets the run a day later tries once more.
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("repo.run.settle").pipe(
+                    Effect.annotateLogs({ runId: executionId, outcome: "failed", errorCode: codeOf(Cause.squash(cause)) }),
+                  )
+                ),
+              ),
           })
         // Each wake of a branch's machine starts that generation's `sandbox/Keep` on its own object, once
         // (docs/features/sandbox-tools.md#sleep-and-wake).

@@ -4981,7 +4981,7 @@ importers:
         specifier: 1.0.0-rc.16
         version: link:../kernel
       '@smthrs/plan':
-        specifier: 1.0.0-rc.16
+        specifier: workspace:*
         version: link:../plan
     devDependencies:
       '@effect/language-service':

@@ -1,4 +1,5 @@
 // When a repository's flows run (worker/ci/Triggers.ts): the manifest's trigger rows, and which GitHub events match.
+import { readFileSync } from "node:fs"
 import { describe, expect, test } from "vitest"
 import * as Triggers from "./Triggers.ts"
 
@@ -102,4 +103,13 @@ describe("flowsFor", () => {
     expect(Triggers.flowsFor(triggers, push("main"))).toEqual(["lint", "ci"])
     expect(Triggers.flowsFor(triggers, pull("main"))).toEqual(["review"])
   })
+})
+
+test("smithersai/smithers factory at main eeb01ea499d0 is legacy data and never triggers runs", () => {
+  const source = readFileSync(new URL("./test/smithers-factory.json", import.meta.url), "utf8")
+  expect(Object.keys(JSON.parse(source))).toEqual(expect.arrayContaining(["summary", "flows", "on", "github"]))
+  const triggers = Triggers.triggersOf(source)
+  expect(triggers).toEqual([])
+  expect(Triggers.flowsFor(triggers, push("main"))).toEqual([])
+  expect(Triggers.flowsFor(triggers, pull("main"))).toEqual([])
 })

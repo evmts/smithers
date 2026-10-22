@@ -36,6 +36,7 @@ import {
   Steer,
   SteerStepRefused,
 } from "./flows"
+import { RemoteRunsClient } from "./api"
 import { steersQueued } from "./metrics"
 import { type RunsCall, SteerKept } from "./schema"
 import { retryable } from "./retry"
@@ -54,12 +55,12 @@ export const acts = Metric.counter("smithers_run_acts", {
 type Act = "cancel" | "retry" | "resume"
 
 /** Records an act: `run.act` with its outcome, and its count. Ids and codes only. */
-const recordAct = (act: Act, runId: string, outcome: string) =>
+const recordAct = (act: Act, runId: string, outcome: string, host: "local" | "remote" = "local") =>
   Effect.andThen(
-    Metric.update(Metric.withAttributes(acts, { act, host: "local", outcome }), 1),
+    Metric.update(Metric.withAttributes(acts, { act, host, outcome }), 1),
     Effect.logWithLevel(outcome === "requested" || outcome === "retried" || outcome === "resumed" || outcome === "settled"
       ? "Info"
-      : "Warn")("run.act").pipe(Effect.annotateLogs({ feature: "runs", act, runId, outcome })),
+      : "Warn")("run.act").pipe(Effect.annotateLogs({ feature: "runs", act, runId, outcome, host })),
   )
 
 /** Refuses `act` on `runId` with `code`, recorded. */
@@ -84,9 +85,36 @@ const summaryOf = (act: Act | undefined, runId: string) =>
 const declarationOf = (flow: string) =>
   (names as ReadonlyArray<string>).includes(flow) ? declared(flow as FlowName) : undefined
 
-/** `run/cancel/request`: Stop. A settled run answers its status; a fence from the future is stale. */
-export const cancel = ({ runId, seq }: { readonly runId: string; readonly seq: number }) =>
+/**
+ * Stop on a repository's run on Cloudflare: ChatApi's stop route, which its Durable Object answers
+ * (docs/features/actions.md#acts). A refusal for who asks is `forbidden`, one for the run `not_found`; a route that
+ * couldn't answer fails the step, and the page says the engine couldn't be reached.
+ */
+const cancelCloud = (runId: string) =>
   Effect.gen(function* () {
+    const answer = yield* Effect.result((yield* RemoteRunsClient).stop(runId))
+    if (answer._tag === "Success") {
+      yield* recordAct("cancel", runId, answer.success.outcome, "remote")
+      return { outcome: answer.success.outcome }
+    }
+    const { status } = answer.failure
+    if (status === 401 || status === 403) {
+      return yield* Effect.andThen(recordAct("cancel", runId, "forbidden", "remote"), new RunActRefused({ code: "forbidden" }))
+    }
+    if (status === 404) {
+      return yield* Effect.andThen(recordAct("cancel", runId, "not_found", "remote"), new RunActRefused({ code: "not_found" }))
+    }
+    yield* recordAct("cancel", runId, "unavailable", "remote")
+    return yield* Effect.die(answer.failure)
+  })
+
+/**
+ * `run/cancel/request`: Stop. A settled run answers its status; a fence from the future is stale. A run on Cloudflare
+ * (`host: "cloud"`) is stopped there.
+ */
+export const cancel = ({ runId, seq, host }: { readonly runId: string; readonly seq: number; readonly host?: "cloud" }) =>
+  Effect.gen(function* () {
+    if (host === "cloud") return yield* cancelCloud(runId)
     const { run } = yield* summaryOf("cancel", runId)
     if (settled(run.status)) {
       if (run.flowName === AnswerReference._tag) yield* closeAnswer({ answerId: runId })

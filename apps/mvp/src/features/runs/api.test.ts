@@ -201,3 +201,43 @@ test("a steer with nothing listening, or no answer in time, fails with no status
   const nothing = await steer(gone.origin)
   expect(nothing._tag === "Failure" && nothing.failure.status).toBe(undefined)
 })
+
+const stop = (origin: string) =>
+  Effect.runPromise(
+    Effect.result(Effect.flatMap(RemoteRunsClient, (client) => client.stop(RUN))).pipe(
+      Effect.provide(RemoteRunsClient.layer({ origin, within: "300 millis" })),
+      Effect.provide(FetchHttpClient.layer),
+    ),
+  )
+
+test("a stop goes to its run's route: requested, or the run had ended", async () => {
+  const requested = await serve(json(202, { outcome: "requested" }))
+  expect(await stop(requested.origin)).toMatchObject({ _tag: "Success", success: { outcome: "requested" } })
+  expect(requested.asked).toEqual([`POST /api/remote-runs/${encodeURIComponent(RUN)}/stop`])
+  const ended = await serve(json(200, { outcome: "settled" }))
+  expect(await stop(ended.origin)).toMatchObject({ _tag: "Success", success: { outcome: "settled" } })
+})
+
+test("a refused stop fails with its status and the code its body names; an answer that isn't one, with its status", async () => {
+  const named = await serve(json(404, { code: "not_found" }))
+  expect(await stop(named.origin)).toMatchObject({ _tag: "Failure", failure: { status: 404, code: "not_found" } })
+  const bare = await serve((_, response) => {
+    response.writeHead(503)
+    response.end()
+  })
+  const refused = await stop(bare.origin)
+  expect(refused).toMatchObject({ _tag: "Failure", failure: { status: 503 } })
+  expect(refused._tag === "Failure" && refused.failure.code).toBe(undefined)
+  const odd = await serve(json(202, { outcome: "maybe" }))
+  expect(await stop(odd.origin)).toMatchObject({ _tag: "Failure", failure: { status: 202 } })
+})
+
+test("a stop with nothing listening, or no answer in time, fails with no status", async () => {
+  const silent = await serve(() => undefined)
+  const late = await stop(silent.origin)
+  expect(late._tag === "Failure" && late.failure.status).toBe(undefined)
+  const closed = await serve(() => undefined)
+  await servers.splice(0).reduce((done, close) => done.then(close), Promise.resolve())
+  const nothing = await stop(closed.origin)
+  expect(nothing._tag === "Failure" && nothing.failure.status).toBe(undefined)
+})

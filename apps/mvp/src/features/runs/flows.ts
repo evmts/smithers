@@ -9,7 +9,8 @@ import { ACT_REFUSALS, MAX_STEER_CHARS } from "./contract"
 // run page and the agent's cell run the same declarations. Each is one step on this device's engine, which holds the
 // runs it acts on:
 //
-//   run/cancel { runId, seq }     Stop: the engine records the cancellation and interrupts the run
+//   run/cancel { runId, seq }     Stop: the engine records the cancellation and interrupts the run; with
+//                                 host "cloud", a repository's run, which its Durable Object stops
 //   run/retry { runId, version }  Retry: a new run of the same flow with the same payload, pinned or current
 //   run/resume { runId, seq }     Resume: the engine drives a run again that hasn't settled; a durable timer stays
 //   run/list {}                   the newest runs
@@ -30,11 +31,20 @@ const Fenced = {
   seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(-1)),
 }
 
+/** Where a run runs, when it isn't this device: `cloud`, a repository's run on Cloudflare (docs/features/actions.md). */
+const Host = Schema.optionalKey(Schema.Literal("cloud"))
+
+/** Stop's payload: the run, the last journal sequence the page read, and where it runs. */
+const CancelPayload = { ...Fenced, host: Host }
+
 /** The engine's statuses. */
 export const RunStatus = Schema.Literals(["pending", "running", "suspended", "completed", "failed", "cancelled"])
 
-/** What Stop answers: the cancellation was recorded, or the run had settled, with its status. */
-export const Stopped = Schema.Struct({ outcome: Schema.Literals(["requested", "settled"]), status: RunStatus })
+/**
+ * What Stop answers: the cancellation was recorded, or the run had settled, with its status on this device. Cloudflare
+ * answers no status: the run's page reads it.
+ */
+export const Stopped = Schema.Struct({ outcome: Schema.Literals(["requested", "settled"]), status: Schema.optionalKey(RunStatus) })
 
 /** Cancellation is recorded, but its engine cleanup has not produced a terminal receipt yet. */
 export class CancelPending extends Schema.TaggedError<CancelPending>()("@smthrs/mvp/runs/CancelPending", {}) {}
@@ -43,7 +53,7 @@ const CancelError = Schema.Union([RunActRefused, CancelPending, AnswersUnavailab
 
 /** The step: record the cancellation. */
 export const CancelRun = Action.make("run/cancel/request", {
-  payload: Fenced,
+  payload: CancelPayload,
   success: Stopped,
   error: CancelError,
   tier: "sealed",
@@ -52,13 +62,13 @@ export const CancelRun = Action.make("run/cancel/request", {
 
 /** `run/cancel`: Stop a run on this device. */
 export const Cancel = Flow.make("run/cancel", {
-  description: "Stop a run on this device. seq is the run's last journal sequence you read. Answers whether the " +
-    "stop was recorded, or the run had already settled, with its status.",
+  description: "Stop a run on this device, or with host \"cloud\" a repository's run on Cloudflare. seq is the run's " +
+    "last journal sequence you read. Answers whether the stop was recorded, or the run had already settled.",
   modelInvocable: true,
-  payload: Fenced,
+  payload: CancelPayload,
   success: Stopped,
   error: CancelError,
-  body: Node.capture({ cancel: CancelRun.name }, ({ runId, seq }) => CancelRun.call({ runId, seq })),
+  body: Node.capture({ cancel: CancelRun.name }, (payload) => CancelRun.call(payload)),
 }).annotate(Flow.Placement, Placement.client())
 
 /** Which flow a retry runs: the revision the run pinned, or the current one. */

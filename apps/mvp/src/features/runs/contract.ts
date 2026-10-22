@@ -22,6 +22,16 @@ export const remoteRunRoute = (runId: string): string => `${REMOTE_RUNS_ROUTE}/$
  */
 export const steersRoute = (runId: string): string => `${remoteRunRoute(runId)}/steers`
 
+/** `POST <route>/<runId>/stop`: Stop a repository's run on Cloudflare (docs/features/actions.md#acts). */
+export const stopRoute = (runId: string): string => `${remoteRunRoute(runId)}/stop`
+
+/**
+ * Why the stop route refused, as `{ code }`: `authentication` (401), `forbidden` (403: not a Member), `not_found` (404:
+ * no repository's run has that id) and `unavailable` (503).
+ */
+export const STOP_REFUSALS = ["authentication", "forbidden", "not_found", "unavailable"] as const
+export type StopRefusal = (typeof STOP_REFUSALS)[number]
+
 /** The step whose agent a steer reaches: the `todo` run's agent (worker/flows/TodoAgent.ts `Implement`). */
 export const STEERED_ACTION = "todo/Implement"
 
@@ -143,12 +153,13 @@ export const settled = (status: string): boolean => (SETTLED as ReadonlyArray<st
  * - `settled`: it has settled, so there is nothing to stop or resume;
  * - `not_settled`: it hasn't settled, so there is nothing to retry yet;
  * - `not_retryable`: its flow is never retried with its own payload;
- * - `not_here`: this engine doesn't run its flow.
+ * - `not_here`: this engine doesn't run its flow;
+ * - `forbidden`: Cloudflare refused it: only a Member stops a repository's run.
  *
  * A store that can't be read or can't record the act fails the act's step instead; the page says the engine couldn't
  * be reached (`unavailable` in `REFUSAL_WORDS`).
  */
-export const ACT_REFUSALS = ["not_found", "stale", "settled", "not_settled", "not_retryable", "not_here"] as const
+export const ACT_REFUSALS = ["not_found", "stale", "settled", "not_settled", "not_retryable", "not_here", "forbidden"] as const
 
 /** The new run a retry starts for the act `actId`: one per act, so a repeated Retry starts one run. */
 export const retriedRunId = (actId: string): string => `${actId}/run`
@@ -236,6 +247,7 @@ export const REFUSAL_WORDS: Readonly<Record<string, string>> = {
   not_retryable: "This run can't be retried.",
   not_here: "This device can't run it.",
   not_found: "Not on this device.",
+  forbidden: "Members only.",
   invalid: "Invalid action.",
   refused: "Action refused.",
   interrupted: "Action interrupted.",

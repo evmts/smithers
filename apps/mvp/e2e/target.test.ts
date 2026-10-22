@@ -106,10 +106,19 @@ describe("needs", () => {
       "githubScratch",
       "secondRepository",
       "dogfood",
+      "repoFlows",
       "githubApp",
       "longRun",
       "docsSite",
     ])
+  })
+
+  it("requires a deployment and a non-production repository with push credentials for CI", () => {
+    const env = { E2E_REPO_FLOWS_REPOSITORY: "acme/ci-tests", E2E_GITHUB_TOKEN: "test-only" }
+    expect(NEEDS.repoFlows.met(deployedAs("admin", env))).toBe(true)
+    expect(NEEDS.repoFlows.met({ ...local, env })).toBe(false)
+    expect(NEEDS.repoFlows.met(deployedAs("admin", { ...env, E2E_GITHUB_TOKEN: "" }))).toBe(false)
+    expect(NEEDS.repoFlows.met(deployedAs("admin", { ...env, E2E_REPO_FLOWS_REPOSITORY: "SmithersAI/smithers" }))).toBe(false)
   })
 
   it("for the docs site, are met only by a deployment at its custom domain", () => {

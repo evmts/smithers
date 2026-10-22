@@ -1,12 +1,15 @@
 // GitHub's events start a repository's flows (worker/ci/Dispatch.ts): a delivery as the webhook names it, and
 // `triggers/Dispatch` on the Node host's engine against the scripted GitHub, with the starts it asks for recorded: the
 // only stand-in besides GitHub.
-import { Effect, Exit, Option } from "effect"
+import { Config, ConfigProvider, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
+import { SqlClient } from "effect/sql"
+import * as SchemaIssue from "effect/SchemaIssue"
 import { beforeEach, describe, expect, test } from "vitest"
 import { REPOSITORY, reset, services as githubServices } from "../github/test/fixtures.ts"
 import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
+import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Dispatch from "./Dispatch.ts"
 
 const runtime = testFile("ci_dispatch")
@@ -94,18 +97,19 @@ const FLOW = `export default {}`
 const dispatch = async (
   github: ReturnType<typeof scriptedGitHub>,
   request: Dispatch.DispatchRequest,
-  options: { readonly start?: (executionId: string) => Effect.Effect<void, unknown> } = {},
+  options: { readonly repositories?: string; readonly start?: (executionId: string) => Effect.Effect<void, unknown> } = {},
 ) => {
   const { services } = await githubServices(runtime, github)
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
   const ran = await runFlow(
     Dispatch.Dispatch,
     request,
-    Dispatch.registration({
+    ExecutionHost.withTriggers({ flows: [], registration: Layer.empty }, Effect.succeed({
       ...services,
+      repositories: Dispatch.repositories.pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ REPO_FLOWS_REPOSITORIES: options.repositories ?? "acme/widgets" }))),
       start: (flow, started) =>
         Effect.andThen(options.start?.(started.executionId) ?? Effect.void, Effect.sync(() => void starts.push({ flow: flow._tag, ...started }))),
-    }),
+    })).registration,
     { executionId: Dispatch.dispatchExecutionId(request.delivery) },
   )
   return { ran, starts }
@@ -132,6 +136,10 @@ describe("triggers/Dispatch", { timeout: 60_000 }, () => {
     const request = pushed(sha)
     const { ran, starts } = await dispatch(github, request)
     expect(ran.exit).toEqual(Exit.succeed([`ci:${request.delivery}`]))
+    const rows = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT execution, repo_id, flow, sha, ref, event, launched_by FROM runs WHERE execution = ${`ci:${request.delivery}`}`))
+    expect(rows).toEqual([{ execution: `ci:${request.delivery}`, repo_id: "github/acme/widgets", flow: "ci", sha,
+      ref: "refs/heads/feature/x", event: "push", launched_by: "github" }])
     // `unmerged` has a trigger but no flow.ts on the default branch: not active, never started.
     expect(starts).toEqual([{
       flow: "repo/Run",
@@ -236,4 +244,57 @@ describe("triggers/Dispatch", { timeout: 60_000 }, () => {
     github.faults.push({ match: (method, path) => method === "GET" && path.includes("/contents/"), status: 451 })
     expect((await dispatch(github, pushed(sha))).starts).toEqual([])
   })
+})
+
+test.each(["", "other/widgets", "acme/widgets-extra", "invalid"])("repository allowlist %s skips dispatch before reading GitHub", async (repositories) => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const { ran, starts } = await dispatch(github, pushed(SHA), { repositories })
+  expect(Exit.isSuccess(ran.exit)).toBe(true)
+  expect(starts).toEqual([])
+  expect(github.calls).toEqual([])
+})
+
+test("repository allowlist defaults closed and trims case-insensitive names", async () => {
+  const read = (config: Record<string, string>) => runtime.runPromise(Dispatch.repositories.pipe(
+    Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)),
+  ))
+  expect(await read({})).toEqual(new Set())
+  expect(await read({ REPO_FLOWS_REPOSITORIES: " Acme/Widgets, other/repo " })).toEqual(new Set(["acme/widgets", "other/repo"]))
+})
+
+test("a denied repository has a visible match receipt and cannot start precomputed flows", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const { services } = await githubServices(runtime, github)
+  const logs: unknown[] = []
+  const impl = Dispatch.steps({ ...services, start: () => Effect.die("must not start") })
+  const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(
+    Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
+    Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((options) => { logs.push(options.message) })])),
+  )
+  expect(await runtime.runPromise(run(impl.match({ request: pushed(SHA) })))).toEqual({ flows: [], outcome: "not_allowed" })
+  expect(await runtime.runPromise(run(impl.start({ request: pushed(SHA), flows: ["ci"] })))).toEqual([])
+  expect(logs.flat()).toEqual(expect.arrayContaining(["ci.dispatch", "ci.start"]))
+  expect(github.calls).toEqual([])
+})
+
+test("an unreadable allowlist fails closed at both steps", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const { services } = await githubServices(runtime, github)
+  const impl = Dispatch.steps({
+    ...services,
+    repositories: Effect.fail(new Config.ConfigError(new Schema.SchemaError(
+      new SchemaIssue.InvalidValue({ message: "allowlist unavailable" }),
+    ))),
+    start: () => Effect.die("must not start"),
+  })
+  const checks: ReadonlyArray<Effect.Effect<unknown, Dispatch.DispatchUnavailable>> = [
+    impl.match({ request: pushed(SHA) }), impl.start({ request: pushed(SHA), flows: ["ci"] }),
+  ]
+  for (const effect of checks) {
+    const result = await runtime.runPromise(effect.pipe(
+      Effect.result,
+    ))
+    expect(result._tag).toBe("Failure")
+  }
+  expect(github.calls).toEqual([])
 })

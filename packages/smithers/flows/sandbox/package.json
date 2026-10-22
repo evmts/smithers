@@ -367,7 +367,7 @@
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/jj": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/plan": "1.0.0-rc.16"
+    "@smthrs/plan": "workspace:*"
   },
   "devDependencies": {
     "@smthrs/engine": "1.0.0-rc.16",

@@ -42,6 +42,7 @@ import {
   WRITES_SHAPE_ROUTE,
   WRITES_TABLE,
 } from "../../src/features/issues/contract.ts"
+import { ACTION_COLUMNS, ACTIONS_SHAPE_ROUTE } from "../../src/features/actions/contract.ts"
 import {
   CHECK_COLUMNS,
   CHECKS_SHAPE_ROUTE,
@@ -246,6 +247,7 @@ const SHAPES: ReadonlySet<string> = new Set([
   PULL_COMMITS_SHAPE_ROUTE,
   REVIEWS_SHAPE_ROUTE,
   CHECKS_SHAPE_ROUTE,
+  ACTIONS_SHAPE_ROUTE,
 ])
 
 /** Whether ChatApi routes `path` here. */
@@ -713,7 +715,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (path === PULLS_SHAPE_ROUTE) return yield* readable(PULLS_TABLE, PULL_COLUMNS)
       if (path === PULL_COMMITS_SHAPE_ROUTE) return yield* readable(PULL_COMMITS_TABLE, PULL_COMMIT_COLUMNS)
       if (path === REVIEWS_SHAPE_ROUTE) return yield* readable(REVIEWS_TABLE, REVIEW_COLUMNS)
-      if (path === CHECKS_SHAPE_ROUTE) return yield* readable(RUNS_TABLE, CHECK_COLUMNS, "repo_id = $1 AND sha IS NOT NULL")
+      // A pull request's checks are its head's `checks/Run` rows; a repository flow's runs are the repository's runs
+      // (docs/features/actions.md), whose states the Checks tab doesn't read.
+      if (path === CHECKS_SHAPE_ROUTE) {
+        return yield* readable(RUNS_TABLE, CHECK_COLUMNS, "repo_id = $1 AND sha IS NOT NULL AND execution IS NULL")
+      }
+      if (path === ACTIONS_SHAPE_ROUTE) return yield* readable(RUNS_TABLE, ACTION_COLUMNS, "repo_id = $1 AND execution IS NOT NULL")
       const compared = Compare.parseComparePath(path)
       if (compared !== undefined) {
         if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })

@@ -344,6 +344,7 @@ The `FlowExecution` Durable Object ([remote-flows.md](features/remote-flows.md))
 |---|---|---|---|
 | `cloudflare.execution.start` | every `start` | Info `accepted` and `duplicate`, Warn `conflict` and `failed` | `outcome`; `error.type`, the failure's tag, for `failed` |
 | `cloudflare.execution.alarm` | every alarm | Info `idle`, `settled`, `parked` and `forgotten`, Warn `retrying` | `outcome`; for `retrying`, `error.type` (the failure's tag) and `smithers.execution.attempt` |
+| `repo.run.settle` | an alarm that finds a repository's run settled ([actions.md](features/actions.md)) | Info; Warn when the row couldn't be written | `runId`, `outcome` (`done`, `failed`, `stopped`, or `failed` with `errorCode`) |
 | `probe.mark` | each step of `probe/Pause` | Info | `label` |
 | `chat.answer.expire` | each step of `chat/Expire` that decided or failed ([agent.md](features/agent.md#settling)) | Info `abandoned`, `settled`, `missing`, and `waiting` (a round that found the queue moved, so the next round waits again); Warn `failed` (one attempt) | `answerId`, `outcome`; `errorCode` (`sql:<reason>`) when it failed |
 
@@ -353,6 +354,7 @@ Spans `cloudflare.execution.start` and `cloudflare.execution.alarm` carry `smith
 |---|---|---|---|
 | `smithers_cloudflare_execution_starts` | counter | `outcome`: `accepted`, `duplicate`, `conflict` or `failed` | `cloudflare.execution.start` `outcome` |
 | `smithers_cloudflare_execution_alarms` | counter | `outcome`: `idle`, `settled`, `parked`, `retrying` or `forgotten` | `cloudflare.execution.alarm` `outcome` |
+| `smithers_repo_run_writes` | counter | `op` (`record`, `settle`), `outcome` (`recorded`, `existing`; `done`, `failed`, `stopped`) | `repo.run.record`, `repo.run.settle` `outcome` |
 | `smithers_answer_expiries` | counter | `outcome`: `abandoned`, `settled`, `missing`, `waiting`, `failed`, or `not_started` (counted by ChatApi) | `chat.answer.expire` `outcome` |
 
 An answer stuck `streaming` shows as no `chat.answer.write` for its `answerId` after its `chat.question`, then, 25 minutes after its queue last moved, `chat.answer.expire` `abandoned` for it, after a `waiting` line for each round that found the queue moved. A `not_started` line comes with a `503`, so the outbox sends the question again.
@@ -673,6 +675,8 @@ Watching a TODO's run ([runs.md](features/runs.md#a-run-on-cloudflare)): ChatApi
 | `smithers_remote_run_reads` | counter | ChatApi | `outcome` |
 | `runs.shape.remote`; `smithers_remote_run_shape_requests` | log, span; counter | ChatApi | `status`, `live` |
 | `run.read`, `smithers_run_reads` | browser | the tab | as for this device's runs, `outcome` also `not_started` |
+| `run.stop`; `smithers_run_stops` | log, span; counter | ChatApi, each `POST /api/remote-runs/<run id>/stop` ([actions.md](features/actions.md#acts)) | `host` (`remote`), `runId`, `via`, `outcome` (`requested`, `settled`, or the refusal's code), `status`, `durationMs`, `errorCode` |
+| `repo.run.record` | log, span | ChatApi or a remote flow, each repository run recorded | `runId`, `repoId`, `flow`, `event`, `outcome` (`recorded`, `existing`) |
 | `run.steer`; `smithers_run_steers` | log, span; counter | ChatApi, each `POST /api/remote-runs/<run id>/steers` | `host` (`remote`), `runId`, `steerId`, `via`, `outcome` (`taken`, `existing`, or the refusal's code), `bytes`, `status`, `durationMs`, `errorCode` |
 | `runs.steer.queue`; `smithers_run_steers_queued` | log, span; counter | the engine worker | `steerId`, `runId`, `via`, `door`, `outcome` (`kept`, `not_kept`, `tab_gone`, `no_credential`) |
 | `run.steer.send`; `smithers_run_steer_sends` | log, span; counter | the tab | `steerId`, `runId`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code` |
@@ -779,3 +783,5 @@ Browser `chat load failed` / `chat load recovered` records, `chat.load` spans an
 Proof: `worker/ShapeProxy.test.ts`, `worker/SpendAlerts.test.ts`, `worker/AlertChannels.test.ts`, `src/features/branch/conversation.test.ts`, `src/features/spend/spend.test.ts` and `e2e/shape-recovery.spec.ts`. The e2e uses a faulty Effect ShapeSource that answers 503 three times for a new branch, then delegates to the real proxy and Electric; it also checks a Member never subscribes to Admin shapes. No browser route interception or UI copy is added.
 
 The browser relay retains `flows_engine_replay_seeds` and the engine lifecycle records `engine-store.registration.recovered`, `flow.run.created` and `flow.run.claimed`, including `createdAtMs` and `claimedAtMs`. These records carry operational counters, identifiers and times, never user content. The relay integration test checks that these records and fields survive export.
+
+Repository trigger admission records `not_allowed` in `ci.dispatch` and `smithers_ci_dispatches` when `REPO_FLOWS_REPOSITORIES` excludes the repository. The durable `triggers/Match` receipt has that outcome and an empty flow list. `triggers/Start` checks the allowlist again and logs `ci.start` with `not_allowed` if it has changed.
