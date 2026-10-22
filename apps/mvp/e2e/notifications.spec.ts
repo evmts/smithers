@@ -17,7 +17,7 @@ const PROMPT = "Which branch should I deploy?"
  */
 const SYNCED_WITHIN = 15_000
 
-/** The stack on `tab`: the inline one over the home conversation, or the floating one on any other page. */
+/** The stack on `tab`: the inline one over the home conversation, or the page stack. */
 const stack = (tab: Tab) => tab.page.getByRole("region", { name: "Smithers" })
 
 /** The toast about `subject` on `tab`. */
@@ -71,8 +71,8 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
     })
     await expect(entry(tab, subject).getByRole("button", { name: "Answer" })).toBeVisible()
   }
-  // Ben, on another page, sees her run waiting, named, in the floating stack, with no Answer of his own.
-  await expect(stack(b)).toHaveAttribute("data-placement", "fixed")
+  // Ben, on another page, sees her run waiting, named, in the page stack, with no Answer of his own.
+  await expect(stack(b)).toHaveAttribute("data-placement", "inline")
   await expect(entry(b, subject), "Ben: Ann's run on his branch toasts").toContainText("Waiting · local-developer", {
     timeout: SYNCED_WITHIN,
   })

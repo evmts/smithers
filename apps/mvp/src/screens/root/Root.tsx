@@ -19,13 +19,13 @@ export function Root() {
     <>
       <LoadingBar loading={loading} label="Loading page" />
       <IntentPreload>
+        <PageNotices />
         <Outlet />
         {floatsBell(routeId) ? (
           <div className="root-bell">
             <NotificationsBell />
           </div>
         ) : null}
-        <PageNotices />
         <NotificationsPanel />
       </IntentPreload>
     </>
