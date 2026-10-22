@@ -175,6 +175,15 @@ describe("repo/Clone on the Node host", () => {
     expect(indexed).toContain(`octocat/Installed@${fixture().commit.sha}`)
   })
 
+  test("an unavailable App installation lookup never makes a synced repository reclaimable", async () => {
+    const provider = scripted({ syncPolls: 0 })
+    provider.publish("octocat", "Installed")
+    const payload = await request("octocat", "Installed")
+    const ran = await clone(provider, payload, { installed: "failing" })
+    expect(ran.exit).toEqual(Exit.succeed({ status: "ready", settled: true }))
+    expect(await repositoryRow(runtime, payload.id)).toMatchObject({ status: "ready", reclaimable: false })
+  }, 180_000)
+
   test("a failed clone's entry says why, and Try again's new attempt raises it again", async () => {
     const provider = scripted()
     const payload = await request("octocat", "Gone")
@@ -459,8 +468,11 @@ describe("the steps alone", () => {
       failure: "unavailable",
     })
     const head = { sha: "a".repeat(40), message: "m", author: "a", at: "2026-10-20T12:00:00Z" }
-    // Without Index's answer, or with the App unknown, a ready copy is reclaimable; with the App installed, it isn't.
-    expect(RepoClone.outcomeOf(admitted, { status: "ready", head })).toMatchObject({ status: "ready", reclaimable: true })
+    // Only a confirmed absent App makes a ready copy reclaimable.
+    expect(RepoClone.outcomeOf(admitted, { status: "ready", head })).toMatchObject({ status: "ready", reclaimable: false })
+    expect(RepoClone.outcomeOf(admitted, { status: "ready", head }, { files: null, installed: false })).toMatchObject({
+      reclaimable: true,
+    })
     expect(RepoClone.outcomeOf(admitted, { status: "ready", head }, { files: 3, installed: true })).toMatchObject({
       reclaimable: false,
     })

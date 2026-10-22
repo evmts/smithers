@@ -150,13 +150,13 @@ export const AwaitSync = Action.make("repo/AwaitSync", {
 
 /**
  * What Index found: how many files the head commit has (`null` when its list couldn't be read), and whether the Smithers
- * GitHub App is installed on the repository.
+ * GitHub App is installed on the repository (`null` when unknown).
  */
-export const Indexed = Schema.Struct({ files: Schema.NullOr(Schema.Number), installed: Schema.Boolean })
+export const Indexed = Schema.Struct({ files: Schema.NullOr(Schema.Number), installed: Schema.NullOr(Schema.Boolean) })
 export type Indexed = typeof Indexed.Type
 
 /** Index's answer when nothing was synced, or it couldn't run: no files read, and no App known. */
-export const NOT_INDEXED: Indexed = { files: null, installed: false }
+export const NOT_INDEXED: Indexed = { files: null, installed: null }
 
 /**
  * Once the head commit is in: moves the row to stage `indexing`, reads the file list at the head into the shared cache
@@ -433,7 +433,7 @@ export const outcomeOf = (inspection: Inspection, synced: Synced, indexed: Index
       status: "ready",
       defaultBranch: inspection.defaultBranch!,
       head: synced.head!,
-      reclaimable: !indexed.installed,
+      reclaimable: indexed.installed === false,
     }
   }
   return { status: "failed", failure: synced.status === "timed_out" ? "timed_out" : "unavailable" }
