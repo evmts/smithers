@@ -255,6 +255,7 @@ for (
     "SleepRequestInvalid",
     "DurableDeferred/TokenInvalid",
     "ExecutionIdRequired",
+    "EffectKeyUnavailable",
     "FlowCycleDetected",
     "CancelRequestFailed",
     "Action/DuplicateImplementation",

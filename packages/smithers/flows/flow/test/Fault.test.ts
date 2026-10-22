@@ -90,6 +90,12 @@ describe("register and of", () => {
 })
 
 describe("the flow's own rows", () => {
+  it("classifies a missing durable write identity as a registered bug", () => {
+    const unavailable = new Action.EffectKeyUnavailable({ name: "write", message: "outside a dispatch" })
+    expect(Fault.of(unavailable)).toEqual({ class: "bug", tag: "@smthrs/flow/EffectKeyUnavailable" })
+    expect(Fault.registered().has(unavailable._tag)).toBe(true)
+  })
+
   it("classifies the flow errors a run can fail with", () => {
     expect(Fault.of(new Action.InfraInterrupt({})))
       .toEqual({ class: "infra", tag: "@smthrs/flow/InfraInterrupt/infra_interrupt" })
