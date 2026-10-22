@@ -394,6 +394,7 @@ gate_tools() {
     flows-release-steps) echo 'js jj rust' ;;
     flows) echo 'js' ;;
     flows-egress) echo 'js' ;;
+    flows-coding-host-size) echo 'js' ;;
     flows-repository) echo 'js jj' ;;
     flows-fixtures) echo 'js jj' ;;
     flows-lint) echo 'js' ;;
@@ -565,6 +566,9 @@ run_gate() {
       ;;
     flows-egress)
       pnpm exec smthrs test '//.smithers/flows:egress' --known-red '.github/ci-known-red.json' --verbose
+      ;;
+    flows-coding-host-size)
+      pnpm exec smthrs test '//.smithers/flows:codingHostSize' --known-red '.github/ci-known-red.json' --verbose
       ;;
     flows-repository)
       pnpm exec smthrs test '//.smithers/flows:repository' --known-red '.github/ci-known-red.json' --verbose

@@ -136,6 +136,10 @@ The native acceptance fixture uses a scripted model behind the existing `SeatRes
 
 ## Deployment artifact
 
+The `//.smithers/flows:codingHostSize` CI and release gate builds the real
+artifact and enforces its 128 MiB staging limit. Run it locally through
+`bash .github/scripts/ci/cloud.sh flows-coding-host-size`.
+
 `node .smithers/flows/coding/build.mjs /path/to/smithers-coding-host` uses the repository's existing esbuild dependency to emit one executable ESM file. `build.mjs` refuses an artifact over its staging limit of eight 16 MiB chunks. The Node shebang selects the default runtime; `bun smithers-coding-host ...` uses the Bun adapters in the same artifact. A build-only lazy wrapper keeps the Bun SQLite builtin behind the existing dynamic platform import, preventing an eager Node import of `bun:sqlite`. It changes no SQL or gateway protocol.
 
 QuickJS's existing single-file variant is bundled. SQLite remains the runtime's native builtin, and process containment programs remain their existing embedded source. The deployment provisions JJ, the owning coding configuration and the packaged `smithers-jj-export` workspace helper separately. Declared repository modules resolve their own project dependencies as usual, except `effect` and the `@smthrs` packages the host runs: their public entry points resolve to the host's bundled instances (`host-modules.ts`, built by `host-modules-build.mjs` from the modules the host evaluates at start), because the host decodes a flow's schemas, graph and errors with its own copies. The coding package's TODO step flows are one of them: `@smthrs/coding` (`steps.ts`) exports `Request`, `TodoDelivery`, `Vibe` and their schemas, so a repository that copies only `.smithers/flows/todo/flow.ts` runs the host's steps and needs no `.smithers/flows/coding` tree. An entry point of such a package that the host does not run is refused, not loaded as a second copy. This artifact is private deployment composition.
