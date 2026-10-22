@@ -220,12 +220,17 @@ describe("the project root", () => {
 /** The repository root, two levels above this package's `test/` directory. */
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..")
 
+const trackedSourceFile = process.env.SMITHERS_TEST_TRACKED_SOURCE_FILE
+
 /**
  * Every path the checkout tracks under `.smithers/`. A jj checkout is read from
  * its last snapshot without snapshotting edits; a plain Git checkout (CI) from
  * its index.
  */
 const trackedUnderDotSmithers = (): ReadonlyArray<string> => {
+  if (trackedSourceFile !== undefined) {
+    return readFileSync(trackedSourceFile, "utf8").split("\n").filter((path) => path.startsWith(".smithers/"))
+  }
   const jj = existsSync(join(repositoryRoot, ".jj"))
   const result = spawnSync(
     jj ? "jj" : "git",
@@ -236,8 +241,13 @@ const trackedUnderDotSmithers = (): ReadonlyArray<string> => {
   return result.stdout.split("\n").filter((path) => path.startsWith(".smithers/"))
 }
 
-describe.skipIf(!existsSync(join(repositoryRoot, ".jj")) && !existsSync(join(repositoryRoot, ".git")))(
-  "a fresh clone of this repository (needs .jj or .git metadata; source mirrors omit both)",
+// Excluded metadata can survive an earlier user's slot; it is not this source's inventory.
+describe.skipIf(
+  trackedSourceFile === undefined &&
+    (process.env.SMITHERS_TEST_SOURCE_MIRROR === "1" ||
+      (!existsSync(join(repositoryRoot, ".jj")) && !existsSync(join(repositoryRoot, ".git"))))
+)(
+  "a fresh clone of this repository (needs tracked-source inventory from jj/Git or SMITHERS_TEST_TRACKED_SOURCE_FILE)",
   () => {
     it("has tracked source under .smithers/, so the check below has files to cover", () => {
       expect(trackedUnderDotSmithers()).toContain(".smithers/WORKSPACE.ts")
@@ -259,6 +269,14 @@ describe.skipIf(!existsSync(join(repositoryRoot, ".jj")) && !existsSync(join(rep
 )
 
 describe("Smithers 0.x detection", () => {
+  it.each([".smithers/checks/", ".smithers/front-door.json"])(
+    "recognizes current tracked %s beside the build definitions",
+    (marker) => {
+      const root = project(".smithers/", ".smithers/WORKSPACE.ts", ".smithers/FACTORY.ts", marker)
+      expect(Project.legacyState(root)).toEqual([])
+    }
+  )
+
   it("reports every 0.x marker beside a project", () => {
     const root = project(".smithers/", "smithers.db", "smithers.db-wal")
 

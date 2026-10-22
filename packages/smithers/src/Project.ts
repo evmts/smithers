@@ -202,6 +202,7 @@ const buildDefinitionFiles = new Set([
   "cross-package-globs.json",
   "environment.nix",
   "coding-project.json",
+  "front-door.json",
   "memory-thresholds.json",
   "memory-thresholds.receipt.json"
 ])
@@ -222,9 +223,10 @@ const currentDatabaseFiles = new Set([
 
 /**
  * The `.smithers` subdirectories 1.0 owns: the project's flows (M-49) and the
- * wiki, whose decisions pages agent memory writes under `wiki/decisions/`.
+ * wiki, whose decisions pages agent memory writes under `wiki/decisions/`, and
+ * the project's declared check scripts.
  */
-const currentDirectories = new Set([basename(Descriptor.projectFlowsDirectory), "wiki"])
+const currentDirectories = new Set([basename(Descriptor.projectFlowsDirectory), "wiki", "checks"])
 
 /**
  * Whether a `.smithers` directory holds only what 1.0 writes there: the

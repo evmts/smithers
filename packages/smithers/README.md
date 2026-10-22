@@ -229,3 +229,15 @@ Finite CLI history projections retain at most 50,000 events and 16 MiB, with a 1
 `smthrs bug "summary" --run <id> --dry-run` previews the redacted payload and endpoint. Only the named run is included; omitting `--run` includes no runs. Posting requires `--yes` or confirmation on a TTY, after the exact payload is printed.
 
 `approvals approve`, `approvals deny`, and `flow start` are absent from MCP discovery and dispatch, so an agent cannot approve or launch its own plan.
+
+## Integration test inputs
+
+History PostgreSQL cases need `SMITHERS_HISTORY_TEST_PG_URL` (or
+`SMITHERS_TEST_DATABASE_URL`) pointing to a reachable disposable test server;
+without a URL, only those cases skip with that reason. Tracked-source cases
+need checkout metadata or `SMITHERS_TEST_TRACKED_SOURCE_FILE`, a newline-separated
+inventory produced by `jj file list --ignore-working-copy .smithers` in the
+source checkout. A runner that excludes VCS metadata sets
+`SMITHERS_TEST_SOURCE_MIRROR=1` so stale slot metadata cannot substitute for the
+source inventory. Latitude supplies both the inventory and a real PostgreSQL
+server; its CLI suite executes these cases.
