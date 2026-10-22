@@ -195,3 +195,61 @@ effect(
       yield* engine.interruptUnsafe(flow, "closed")
     })).pipe(Effect.provide(FlowEngine.layerMemory))
 )
+
+effect(
+  "interrupted admission leaves no parent edge that rejects a later reverse edge",
+  () =>
+    Effect.scoped(Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const value = Schema.declareConstructor<number>()([], () => (input) =>
+        input === 1
+          ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+          : Effect.succeed(input as number))
+      const flow = Flow.make("MemoryAdmission/orphan-edge", {
+        payload: { value },
+        success: Schema.Number,
+        body: () => Node.succeed(0)
+      })
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* engine.register(flow, () => Effect.succeed(42))
+      const pending = yield* engine.execute(flow, { executionId: "child", payload: { value: 1 } }).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "parent")),
+        Effect.forkScoped
+      )
+      yield* Deferred.await(entered)
+      yield* Fiber.interrupt(pending)
+      const exit = yield* engine.execute(flow, { executionId: "parent", payload: { value: 2 } }).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "child")),
+        Effect.exit
+      )
+      expect(Exit.isSuccess(exit) && exit.value).toBe(42)
+    })).pipe(Effect.provide(FlowEngine.layerMemory))
+)
+
+effect(
+  "failed admission leaves no parent edge that rejects a later reverse edge",
+  () =>
+    Effect.scoped(Effect.gen(function*() {
+      const value = Schema.declareConstructor<number>()([], () => (input) =>
+        input === 1
+          ? Effect.die("rejected payload")
+          : Effect.succeed(input as number))
+      const flow = Flow.make("MemoryAdmission/failed-edge", {
+        payload: { value },
+        success: Schema.Number,
+        body: () => Node.succeed(0)
+      })
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* engine.register(flow, () => Effect.succeed(42))
+      const failed = yield* engine.execute(flow, { executionId: "child", payload: { value: 1 } }).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "parent")),
+        Effect.exit
+      )
+      expect(Exit.isFailure(failed)).toBe(true)
+      const exit = yield* engine.execute(flow, { executionId: "parent", payload: { value: 2 } }).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "child")),
+        Effect.exit
+      )
+      expect(Exit.isSuccess(exit) && exit.value).toBe(42)
+    })).pipe(Effect.provide(FlowEngine.layerMemory))
+)

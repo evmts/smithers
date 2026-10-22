@@ -1,7 +1,7 @@
 import { expect } from "@effect/vitest"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Effect, Exit, Fiber, Scheduler, Schema } from "effect"
+import { Deferred, Effect, Exit, Fiber, Scheduler, Schema } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { effect } from "./Harness.ts"
 
@@ -59,4 +59,45 @@ effect("interruption during same-key admission never leaves an unresolved owner"
         )
       }
     }
+  }).pipe(Effect.provide(FlowEngine.layerMemory)))
+
+effect("duplicate dispatch survives interruption of its owner", () =>
+  Effect.gen(function*() {
+    const engine = yield* FlowRuntime.FlowRuntime
+    const entered = yield* Deferred.make<void>()
+    const waiting = yield* Deferred.make<void>()
+    let calls = 0
+    const action = Action.make({
+      name: "ActionAdmissionConcurrency/owner-cancel",
+      success: Schema.Number,
+      idempotencyKey: "shared",
+      execute: Effect.suspend(() =>
+        ++calls === 1
+          ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+          : Effect.succeed(42)
+      )
+    })
+    const flow = Flow.make("ActionAdmissionConcurrency/owner-cancel-flow", {
+      payload: {},
+      success: Schema.Number,
+      body: () => Node.succeed(0)
+    })
+    yield* Effect.gen(function*() {
+      const owner = yield* engine.actionExecute(action, 1).pipe(Effect.forkChild)
+      yield* Deferred.await(entered)
+      const duplicate = yield* Deferred.succeed(waiting, undefined).pipe(
+        Effect.andThen(engine.actionExecute(action, 1)),
+        Effect.exit,
+        Effect.forkChild
+      )
+      yield* Deferred.await(waiting)
+      yield* Effect.yieldNow
+      yield* Fiber.interrupt(owner)
+      const exit = yield* Fiber.join(duplicate)
+      expect(Exit.isSuccess(exit)).toBe(true)
+      if (Exit.isSuccess(exit)) {
+        expect(exit.value._tag === "Complete" && Exit.isSuccess(exit.value.exit) && exit.value.exit.value).toBe(42)
+      }
+      expect(calls).toBe(2)
+    }).pipe(Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "cancel-owner")))
   }).pipe(Effect.provide(FlowEngine.layerMemory)))

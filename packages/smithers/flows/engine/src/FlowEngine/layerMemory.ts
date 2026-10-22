@@ -85,7 +85,7 @@ interface ExecutionState {
 
 /** One action dispatch by key and attempt, and its settlement once it has one. */
 interface ActionState {
-  readonly settlement: Deferred.Deferred<Result>
+  readonly settlement: Deferred.Deferred<Exit.Exit<Result>>
   exit: Exit.Exit<Result> | undefined
 }
 
@@ -250,20 +250,22 @@ const addEdge = (edges: Map<string, Set<string>>, from: string, to: string): voi
   edges.set(from, linked)
 }
 
+/** Validates and records an ownership edge without an asynchronous publication gap. */
+const linkParent = (memory: Memory, child: string, parent: string): FlowRuntime.FlowCycleDetected | undefined => {
+  const path = ancestorPath(memory.parents, child, parent)
+  if (path !== undefined) {
+    return new FlowRuntime.FlowCycleDetected({ code: "flow_cycle_detected", path: [...path].reverse() })
+  }
+  addEdge(memory.parents, child, parent)
+  addEdge(memory.children, parent, child)
+  return undefined
+}
+
 /** Records `child` under `parent`, refusing an edge that would close a cycle. */
-const recordParent = (
-  memory: Memory,
-  child: string,
-  parent: string
-): Effect.Effect<void, FlowRuntime.FlowCycleDetected> =>
+const recordParent = (memory: Memory, child: string, parent: string) =>
   Effect.suspend(() => {
-    const path = ancestorPath(memory.parents, child, parent)
-    if (path !== undefined) {
-      return Effect.fail(new FlowRuntime.FlowCycleDetected({ code: "flow_cycle_detected", path: [...path].reverse() }))
-    }
-    addEdge(memory.parents, child, parent)
-    addEdge(memory.children, parent, child)
-    return Effect.void
+    const error = linkParent(memory, child, parent)
+    return error === undefined ? Effect.void : Effect.fail(error)
   })
 
 const parentCancelled = (memory: Memory, parent: Instance): boolean => {
@@ -306,8 +308,9 @@ const requestCancellation = (memory: Memory, executionId: string): ReadonlyArray
   }
   for (let index = 0; index < pending.length; index++) {
     const id = pending[index]!
-    const state = memory.executions.get(id)
-    const rounds = state === undefined ? [] : cancelState(memory, state, visitedLineages)
+    // Ownership edges and round membership are published only with their execution.
+    const state = memory.executions.get(id)!
+    const rounds = cancelState(memory, state, visitedLineages)
     for (const round of rounds) admit(round)
     for (const child of memory.children.get(id) ?? []) admit(child)
   }
@@ -539,8 +542,7 @@ const interruptBody = (state: ExecutionState) => {
 /** Cancels `executionId` and everything it owns: live rounds are interrupted, parked ones re-driven to settle. */
 const interruptExecution = Effect.fnUntraced(function*(memory: Memory, executionId: string) {
   for (const target of requestCancellation(memory, executionId)) {
-    const state = memory.executions.get(target)
-    if (state === undefined) continue
+    const state = memory.executions.get(target)!
     // `execute` installs the state and synchronously starts `resume`
     // before it can return its execution id, so every publicly
     // observable execution has a round fiber to inspect.
@@ -605,10 +607,14 @@ const refuseJoin = Effect.fnUntraced(function*(
 })
 
 /** Publishes an admitted execution and installs its driver in one step. */
-const publish = (memory: Memory, executionId: string, state: ExecutionState) =>
+const publish = (memory: Memory, executionId: string, state: ExecutionState, parent?: Instance) =>
   Effect.uninterruptible(Effect.suspend(() => {
     const entry = memory.flows.get(state.instance.flow._tag)?.at(-1)
     if (entry === undefined) return Effect.die(registrationMissing(state.instance.flow))
+    if (parent !== undefined) {
+      const error = linkParent(memory, executionId, parent.executionId)
+      if (error !== undefined) return Effect.fail(error)
+    }
     memory.executions.set(executionId, state)
     const members = memory.rounds.get(state.rootExecutionId) ?? new Set<string>()
     members.add(executionId)
@@ -645,7 +651,7 @@ const install = Effect.fnUntraced(function*(
   }
   // All asynchronous payload rebuilding now belongs to the driver, inside
   // `Flow.intoResult`.
-  yield* publish(memory, options.executionId, state)
+  yield* publish(memory, options.executionId, state, parent)
   return state
 })
 
@@ -661,8 +667,8 @@ const admit = Effect.fnUntraced(function*(memory: Memory, flow: Flow.Any, option
   if (existing !== undefined) yield* refuseForeignFlow(existing, flow, options.executionId)
   const requested = yield* requestedAuthority(flow)
   if (existing !== undefined) yield* refuseJoin(existing, flow, options, requested)
-  if (options.parent !== undefined) yield* recordParent(memory, options.executionId, options.parent.executionId)
   if (existing === undefined) return { state: yield* install(memory, flow, options, requested), cancelJoined: false }
+  if (options.parent !== undefined) yield* recordParent(memory, options.executionId, options.parent.executionId)
   return { state: existing, cancelJoined: options.parent !== undefined && parentCancelled(memory, options.parent) }
 })
 
@@ -713,8 +719,8 @@ const interruptUnsafe = Effect.fnUntraced(function*(memory: Memory, flow: Flow.A
   // can return its execution id. `resume` assigns this fiber without
   // yielding, so every publicly observable execution has one.
   yield* Effect.forEach(requestCancellation(memory, executionId), (target) => {
-    const state = memory.executions.get(target)
-    return state === undefined ? Effect.void : Fiber.interrupt(state.fiber!)
+    const state = memory.executions.get(target)!
+    return Fiber.interrupt(state.fiber!)
   }, { concurrency: "unbounded", discard: true })
 })
 
@@ -740,11 +746,22 @@ const resumeSignal = (memory: Memory, executionId: string) =>
  * The settlement an earlier dispatch of the same key and attempt owns, or
  * awaits. A suspended one is retired, so this dispatch runs the action again.
  */
-const priorSettlement = (memory: Memory, actionId: string, restore: Restore) => {
+const priorSettlement = (
+  memory: Memory,
+  actionId: string,
+  restore: Restore,
+  retry: () => Effect.Effect<Result>
+) => {
   const prior = memory.actions.get(actionId)
   if (prior === undefined) return undefined
   const exit = prior.exit
-  if (exit === undefined) return restore(Deferred.await(prior.settlement))
+  if (exit === undefined) {
+    // The owner's cancellation is data for waiters, not their own interruption.
+    // A removed owner leaves this dispatch free to claim the key again.
+    return restore(Deferred.await(prior.settlement)).pipe(
+      Effect.flatMap((settled) => Exit.isFailure(settled) ? restore(retry()) : settled)
+    )
+  }
   if (exit._tag === "Success" && exit.value._tag === "Suspended") {
     memory.actions.delete(actionId)
     return undefined
@@ -756,7 +773,7 @@ const priorSettlement = (memory: Memory, actionId: string, restore: Restore) => 
 const recordSettlement = (memory: Memory, owner: ActionState, actionId: string, exit: Exit.Exit<Result>) => {
   if (Exit.isSuccess(exit)) owner.exit = exit
   else memory.actions.delete(actionId)
-  return Deferred.done(owner.settlement, exit)
+  return Deferred.succeed(owner.settlement, exit)
 }
 
 /** Runs an action as the owner of its key and attempt, on an instance of its own. */
@@ -767,7 +784,7 @@ const runAction = (
   actionId: string,
   restore: Restore
 ) => {
-  const owner: ActionState = { exit: undefined, settlement: Deferred.makeUnsafe<Result>() }
+  const owner: ActionState = { exit: undefined, settlement: Deferred.makeUnsafe<Exit.Exit<Result>>() }
   memory.actions.set(actionId, owner)
   const actionInstance = makeInstance(instance.flow, instance.executionId)
   actionInstance.interrupted = instance.interrupted
@@ -795,7 +812,10 @@ const runAction = (
 }
 
 // Untraced because action execution is a retry-loop hot path.
-const actionExecute = Effect.fnUntraced(function*(memory: Memory, options: ActionExecuteOptions) {
+const actionExecute = Effect.fnUntraced(function*(
+  memory: Memory,
+  options: ActionExecuteOptions
+): Effect.fn.Return<Result, never, FlowRuntime.FlowInstance> {
   const instance = yield* FlowRuntime.FlowInstance
   // Publish ownership and install its settlement finalizer without an
   // interruptible gap. Even a scheduler yield during Deferred allocation
@@ -803,8 +823,11 @@ const actionExecute = Effect.fnUntraced(function*(memory: Memory, options: Actio
   return yield* Effect.uninterruptibleMask((restore) =>
     Effect.suspend(() => {
       const actionId = JSON.stringify([options.key, options.attempt])
-      const prior = priorSettlement(memory, actionId, restore)
-      if (prior !== undefined) return prior
+      const prior = priorSettlement(memory, actionId, restore, () =>
+        actionExecute(memory, options).pipe(Effect.provideService(FlowRuntime.FlowInstance, instance)))
+      if (prior !== undefined) {
+        return prior
+      }
       return runAction(memory, instance, options.action, actionId, restore)
     })
   )

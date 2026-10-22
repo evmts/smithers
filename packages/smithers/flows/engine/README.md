@@ -14,6 +14,11 @@ projections that expose them. It implements `FlowRuntime`, the port
 volatile in-memory implementation of it; `@smthrs/engine-store` supplies
 durable persistence over the same seam.
 
+In-memory admission publishes a parent ownership edge only with its execution.
+Rejected or interrupted payload construction leaves no edge behind. Concurrent
+action dispatches share a settlement; if its owner is interrupted, surviving
+dispatches can claim the key again without inheriting that interruption.
+
 ```bash
 npm install @smthrs/engine@next effect
 ```
