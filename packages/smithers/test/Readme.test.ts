@@ -112,10 +112,12 @@ describe("the CLI documentation contracts", () => {
     expect(Object.keys(manifest.peerDependencies).sort()).toEqual([
       "@effect/sql-pg",
       "@effect/sql-sqlite-node",
+      "@smthrs/platform-bun",
       "effect"
     ])
     expect(manifest.dependencies["@effect/sql-sqlite-node"]).toBe(manifest.peerDependencies.effect)
     expect(manifest.peerDependenciesMeta["@effect/sql-pg"].optional).toBe(true)
+    expect(manifest.peerDependenciesMeta["@smthrs/platform-bun"].optional).toBe(true)
     expect(introduction).toContain(
       `\`effect\` as an exact \`${manifest.peerDependencies.effect}\` peer dependency`
     )
