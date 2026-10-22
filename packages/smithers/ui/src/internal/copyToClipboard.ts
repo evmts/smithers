@@ -40,7 +40,7 @@ function legacyCopy(text: string): CopyResult {
   field.setAttribute("aria-hidden", "true");
   field.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
   try {
-    document.body.append(field);
+    document.body.appendChild(field);
     field.focus({ preventScroll: true });
     field.select();
     return document.execCommand("copy")
