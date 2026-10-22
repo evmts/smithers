@@ -17,6 +17,7 @@ import {
   FlowAnswer,
   FlowDelete,
   FlowDraftDelete,
+  FlowDrafts,
   FlowList,
   FlowNew,
   FlowPrompt,
@@ -30,6 +31,7 @@ import {
   type Opened,
   PromptAgent,
   ReadCode,
+  ReadDrafts,
   ReadFlows,
   RecordAnswers,
   RemoveDraft,
@@ -330,6 +332,14 @@ export const removeDraft = ({ draftId }: { readonly draftId: string }) =>
     return { deleted: yield* client.deleteDraft(draftId) }
   })
 
+/** `flow/drafts/read`: the person's drafts not saved yet, each named by the id its delete or save takes. */
+export const drafts = () =>
+  Effect.flatMap(FlowsClient, (client) => client.drafts).pipe(
+    Effect.map(({ drafts }) => ({
+      drafts: drafts.map(({ id, name, request, status }) => ({ draftId: id, name, request, status })),
+    })),
+  )
+
 /** `flow/list/read`: the person's flows. */
 export const list = () =>
   Effect.flatMap(FlowsClient, (client) => client.list).pipe(
@@ -359,6 +369,7 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(FlowDelete, RemoveFlow.toLayer(remove)),
   Interpreter.layerWithImplementations(FlowDraftDelete, RemoveDraft.toLayer(removeDraft)),
   Interpreter.layerWithImplementations(FlowList, ReadFlows.toLayer(list)),
+  Interpreter.layerWithImplementations(FlowDrafts, ReadDrafts.toLayer(drafts)),
 )
 
 /**

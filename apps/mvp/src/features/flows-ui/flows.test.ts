@@ -18,7 +18,7 @@ import { Layer } from "effect"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import * as Catalog from "../../flows/catalog"
 import { cell, member, openAgent } from "../../test/agent"
-import { FlowAnswer, FlowDelete, FlowDraftDelete, FlowList, FlowNew, FlowRead, FlowRun, FlowSave, FlowWrite } from "./flows"
+import { FlowAnswer, FlowDelete, FlowDraftDelete, FlowDrafts, FlowList, FlowNew, FlowRead, FlowRun, FlowSave, FlowWrite } from "./flows"
 import { DRAFT_ID_NAMESPACE } from "./contract"
 import { roundExecutionId, roundOf } from "./round"
 import { renderSource, SOURCE_PATH } from "./source"
@@ -589,6 +589,31 @@ describe("removeDraft", () => {
     expect(JSON.stringify(await signedOut.exit)).toContain('"status":401')
     expect(signedOut.deleted).toEqual([])
   })
+})
+
+describe("flow/drafts", () => {
+  test("lists your drafts not saved yet, newest first, by the id flow/draft/delete takes; saved or deleted ones drop out", async () => {
+    const d = await device(scripted(() => drafted()).script)
+    const list = () => d.run(d.engine.flows.execute(FlowDrafts, { executionId: crypto.randomUUID(), payload: {} }))
+    expect(await list()).toEqual(Exit.succeed({ drafts: [] }))
+    const [older, newer] = [crypto.randomUUID(), crypto.randomUUID()]
+    expect((await writeRound(d, older, readyRound("dark-mode"))).status).toBe(200)
+    expect((await writeRound(d, newer, readyRound(null as never, { status: "drafting", request: "Open the docs" })))
+      .status).toBe(200)
+    const saved = await saveFlow(d, "light-mode")
+
+    expect(await list()).toEqual(Exit.succeed({
+      drafts: [
+        { draftId: newer, name: null, request: "Open the docs", status: "drafting" },
+        { draftId: older, name: "dark-mode", request: "Switch to dark mode", status: "ready" },
+      ],
+    }))
+    expect(saved.draftId).not.toBe(older)
+    await d.run(d.engine.flows.execute(FlowDraftDelete, { executionId: crypto.randomUUID(), payload: { draftId: older } }))
+    expect(await list()).toEqual(Exit.succeed({
+      drafts: [{ draftId: newer, name: null, request: "Open the docs", status: "drafting" }],
+    }))
+  }, SLOW)
 })
 
 describe("flow/list and flow/delete", () => {

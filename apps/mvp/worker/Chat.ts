@@ -335,6 +335,7 @@ export const make = <E, R>(
       if (path === FLOW_DRAFTS_SHAPE_ROUTE) return yield* personalFlows.draftsShape
       if (path === FLOWS_ROUTE) return yield* personalFlows.flows("")
       if (path.startsWith(`${FLOWS_ROUTE}/`)) return yield* personalFlows.flows(path.slice(FLOWS_ROUTE.length + 1))
+      if (path === FLOW_DRAFTS_ROUTE) return yield* personalFlows.drafts("")
       if (path.startsWith(`${FLOW_DRAFTS_ROUTE}/`)) {
         return yield* personalFlows.drafts(path.slice(FLOW_DRAFTS_ROUTE.length + 1))
       }

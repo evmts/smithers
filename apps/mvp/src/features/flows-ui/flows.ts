@@ -11,6 +11,7 @@ import {
   FlowDeleteReference,
   FlowDraftDeleteReference,
   FlowInvalid,
+  FlowDraftsReference,
   FlowListReference,
   FlowNeedsSandbox,
   FlowNewReference,
@@ -396,6 +397,24 @@ export const FlowWrite = Flow.make(FlowWriteReference._tag, {
   success: FlowWriteReference.successSchema,
   error: FlowWriteReference.errorSchema,
   body: Node.capture({ admit: AdmitWrite.name }, ({ name, revision, source }) => AdmitWrite.call({ name, revision, source })),
+}).annotate(Flow.Placement, Placement.client())
+
+/** `flow/drafts/read`: your drafts not saved yet. */
+export const ReadDrafts = Action.make("flow/drafts/read", {
+  payload: {},
+  success: FlowDraftsReference.successSchema,
+  error: RouteFailure,
+  retryPolicy: ROUTE_RETRY,
+})
+
+/** `flow/drafts`: your drafts not saved yet, so a draft can be named to delete or save it. */
+export const FlowDrafts = Flow.make(FlowDraftsReference._tag, {
+  description: FlowDraftsReference.description!,
+  modelInvocable: true,
+  payload: FlowDraftsReference.payloadSchema,
+  success: FlowDraftsReference.successSchema,
+  error: FlowDraftsReference.errorSchema,
+  body: Node.capture({ read: ReadDrafts.name }, () => ReadDrafts.call({})),
 }).annotate(Flow.Placement, Placement.client())
 
 /** `flow/list/read`: your flows. */

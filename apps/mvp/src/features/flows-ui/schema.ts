@@ -129,6 +129,17 @@ export const FlowList = Schema.Struct({
 })
 export type FlowList = typeof FlowList.Type
 
+/** `GET /api/flow-drafts`: the person's drafts not saved yet, newest first. */
+export const DraftList = Schema.Struct({
+  drafts: Schema.Array(Schema.Struct({
+    id: Schema.String,
+    name: Schema.NullOr(Schema.String),
+    request: Schema.String,
+    status: Schema.String,
+  })),
+})
+export type DraftList = typeof DraftList.Type
+
 /**
  * `POST /api/flows/save`: a ready draft's source, as `flow/save` read it from the draft, with its name, its description
  * and its SHA-256. ChatApi admits it only when it is the draft's own file, unchanged.

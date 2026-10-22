@@ -23,6 +23,7 @@ import {
   FlowAnswerReference,
   FlowDeleteReference,
   FlowDraftDeleteReference,
+  FlowDraftsReference,
   FlowListReference,
   FlowNewReference,
   FlowPromptReference,
@@ -195,6 +196,7 @@ export const registry = {
     changes: "deletes a draft of the person's",
     confirm: "Delete this draft?",
   },
+  "flow/drafts": { flow: FlowDraftsReference },
   "flow/list": { flow: FlowListReference },
   // Runs (decision 0014 §2): the acts on a run this device holds, and the reads. Their results show on the run page.
   "run/cancel": { flow: Cancel, changes: "cancels a run" },

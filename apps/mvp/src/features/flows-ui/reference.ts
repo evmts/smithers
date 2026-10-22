@@ -200,6 +200,25 @@ export const FlowDraftDeleteReference = described(
   "Delete a draft of yours that isn't saved yet.",
 )
 
+/** `flow/drafts`: your drafts not saved yet. */
+export const FlowDraftsReference = described(
+  {
+    _tag: "flow/drafts",
+    payloadSchema: Schema.Struct({}),
+    successSchema: Schema.Struct({
+      drafts: Schema.Array(Schema.Struct({
+        draftId: Schema.String,
+        name: Schema.NullOr(Schema.String),
+        request: Schema.String,
+        status: Schema.String,
+      })),
+    }),
+    errorSchema: RouteFailure,
+  },
+  "List your drafts that aren't saved yet, newest first: each one's draftId, name (null before its first round " +
+    "named it), what you asked for, and its status.",
+)
+
 /** `flow/list`: your flows. */
 export const FlowListReference = described(
   {

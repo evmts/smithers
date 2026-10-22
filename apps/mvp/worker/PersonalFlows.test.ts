@@ -99,6 +99,7 @@ describe("who may use the routes", () => {
     for (const [actor, status] of [[null, 401], [guest, 403]] as const) {
       const h = await open(actor)
       expect((await send(h, "GET", "/api/flows")).status).toBe(status)
+      expect((await send(h, "GET", "/api/flow-drafts")).status).toBe(status)
       expect((await writeRound(h, draftId, round("notes"))).status).toBe(status)
       expect((await send(h, "POST", "/api/flows/save", saving(draftId, "notes"))).status).toBe(status)
       expect((await send(h, "POST", "/api/flows/write", writing("notes", 1))).status).toBe(status)
@@ -194,6 +195,26 @@ describe("drafts", () => {
     expect(await json(await writeRound(h, draftId, round("notes", { round: 3 })))).toEqual([409, { code: "settled" }])
     expect(await json(await send(h, "POST", `/api/flow-drafts/${draftId}/answers`, { round: 0, answers: [{ id: "q1", value: "v2*" }] })))
       .toEqual([409, { code: "settled" }])
+  })
+})
+
+describe("GET /api/flow-drafts", () => {
+  test("lists the person's own drafts not saved yet, newest first; another's, a deleted and a saved one never", async () => {
+    const h = await open()
+    const [kept, deleted, saved, theirs] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
+    expect((await writeRound(h, kept, round("notes"))).status).toBe(200)
+    expect((await writeRound(h, deleted, round("other", { status: "drafting", files: [], checks: [] }))).status).toBe(200)
+    expect((await writeRound(h, saved, round("saved"))).status).toBe(200)
+    expect((await writeRound(await open(other), theirs, round("theirs"))).status).toBe(200)
+    expect((await send(h, "POST", `/api/flow-drafts/${deleted}/delete`)).status).toBe(200)
+    expect((await send(h, "POST", "/api/flows/save", saving(saved, "saved"))).status).toBe(200)
+
+    expect(await json(await send(h, "GET", "/api/flow-drafts"))).toEqual([
+      200,
+      { drafts: [{ id: kept, name: "notes", request: expect.any(String), status: "ready" }] },
+    ])
+    expect(h.line("flow.route").at(-1)).toMatchObject({ annotations: { route: "draft_list", status: 200 } })
+    expect((await send(h, "POST", "/api/flow-drafts")).status).toBe(405)
   })
 })
 

@@ -40,6 +40,7 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 // - `POST /api/flows/write {name, revision, description, source, digest}`: source the person wrote becomes the next
 //   revision of their flow `name`, admitted only while `revision` is still its latest (`409 stale` otherwise).
 // - `POST /api/flows/<id>/delete`: deletes one; its name is free again.
+// - `GET /api/flow-drafts`: the person's drafts not saved yet, newest first.
 // - `GET` and `POST /api/flow-drafts/<id>`: a draft round, which only `flow/new`'s steps write. A write for an older
 //   round than the row's is stale, a saved draft never changes, and a deleted one is gone (`404`).
 // - `POST /api/flow-drafts/<id>/delete`: deletes a draft not saved yet; a round still running can't write it back.
@@ -363,6 +364,21 @@ const listFlows = (actorId: string) =>
       ORDER BY updated_at DESC, id`
   })
 
+/** The person's drafts not saved yet, newest first. */
+const listDrafts = (actorId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    return yield* sql<{
+      readonly id: string
+      readonly name: string | null
+      readonly request: string
+      readonly status: string
+    }>`
+      SELECT id, name, request, status FROM flow_drafts
+      WHERE actor_id = ${actorId} AND deleted_at IS NULL AND status <> 'saved'
+      ORDER BY updated_at DESC, id`
+  })
+
 /** One revision of the person's flow `name`: the latest live one, or `revision` of any of their flows by that name. */
 const sourceOf = (actorId: string, name: string, revision: number | undefined, flowId?: string) =>
   Effect.gen(function* () {
@@ -673,8 +689,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           return ok({ txid: deleted.txid })
         }))
 
-    /** `/api/flow-drafts/<rest>`. */
+    /** `GET /api/flow-drafts`. */
+    const draftList = routed("draft_list", (request, actor) =>
+      Effect.gen(function* () {
+        if (request.method !== "GET") return methodNot("GET")
+        return ok({ drafts: yield* listDrafts(actor.subject.id) })
+      }))
+
+    /** `/api/flow-drafts` and `/api/flow-drafts/<rest>`. */
     const drafts = (rest: string) => {
+      if (rest === "") return draftList
       const [id = "", tail, ...more] = rest.split("/")
       if (!isUuid(id) || more.length > 0) return Effect.succeed(refusal(404, "not_found"))
       if (tail === undefined) return draft(id.toLowerCase())

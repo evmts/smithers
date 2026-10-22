@@ -5,6 +5,7 @@ import { FlowNotFound, FlowsRefused, FlowsUnavailable } from "./reference"
 import {
   Draft,
   type DraftAnswers,
+  DraftList,
   type DraftWrite,
   FlowList,
   FlowSource,
@@ -39,6 +40,8 @@ export class FlowsClient extends Context.Service<
       flowId?: string,
     ) => Effect.Effect<FlowSource, FlowsUnavailable | FlowsRefused | FlowNotFound>
     readonly draft: (draftId: string) => Effect.Effect<Draft, FlowsUnavailable | FlowsRefused>
+    /** The person's drafts not saved yet, newest first. */
+    readonly drafts: Effect.Effect<DraftList, FlowsUnavailable | FlowsRefused>
     readonly writeDraft: (draftId: string, write: DraftWrite) => Effect.Effect<void, FlowsUnavailable | FlowsRefused>
     readonly answer: (draftId: string, answers: DraftAnswers) => Effect.Effect<void, FlowsUnavailable | FlowsRefused>
     readonly save: (request: SaveRequest) => Effect.Effect<Saved, FlowsUnavailable | FlowsRefused>
@@ -103,6 +106,7 @@ export class FlowsClient extends Context.Service<
               new FlowNotFound(),
             ).pipe(Effect.withSpan("flow.client.source")),
           draft: (draftId) => exchange(get(`${FLOW_DRAFTS_ROUTE}/${draftId}`), Draft).pipe(Effect.withSpan("flow.client.draft")),
+          drafts: exchange(get(FLOW_DRAFTS_ROUTE), DraftList).pipe(Effect.withSpan("flow.client.drafts")),
           writeDraft: (draftId, write) =>
             exchange(post(`${FLOW_DRAFTS_ROUTE}/${draftId}`, write), Written).pipe(
               Effect.asVoid,
