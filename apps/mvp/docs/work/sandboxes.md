@@ -2,10 +2,32 @@
 title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
-owner: agent-in-the-sandbox builder (from 13:43:30 on 2026-10-20) keeps a sandbox awake while something runs; the per-branch `SandboxObject` and container shipped with the branch slice (13:42:00). Until 13:46: unassigned; from 13:21:12 on 2026-10-20 it waits for the [branch terminal](branch-terminal.md) slice. Until 13:21: Panel S (Opus lead, Sol)
-updated: 2026-10-21 21:34 PDT
+owner: sandboxes builder (Opus, from 20:40 on 2026-10-21)
+updated: 2026-10-22 01:20 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
+
+## Works in production on the new image — 2026-10-22 01:20 PDT
+
+**State:** works. Production (smithers.sh) runs main `6ea8caeea2fa`, deployed 00:20 to 00:22 PDT with the image whose
+PID 1 is tini and which carries Node 26.5.0 and pnpm 11.25.0. `e2e/sandbox-lifecycle.spec.ts` passed against it from
+00:32 to 01:02: the terminal opened as the person's own uid (5.5 minutes: the first open after the deploy, on the new
+image's first pull), a commit in it, a command past the idle time kept the machine awake for 16.5 minutes, the idle
+machine slept, reopening woke it in 52 s with the working copy and the commit, and the agent's tool ran on the same
+machine, its file in the terminal's checkout. GIF: `sandbox-lifecycle-sandbox-lifecycle.gif` from the production run.
+It had also passed on `81a8e357` (the zombie-skipping probe, old image) from 21:06 to 21:27 PDT on 2026-10-21.
+
+**Image push:** a network that breaks large TLS uploads to Cloudflare makes Alchemy's push of a big layer fail with
+`use of closed network connection`; this image's main layer is 107 MB. The private deploy runbook's image-push step
+pushes the layers from a host with a steady uplink, after which the deploy itself sends only small blobs and manifests.
+
+**Open:**
+- The first terminal open after the deploy waited 5 minutes before its Wake step began (run created 07:30:19 UTC, Wake
+  07:35:33). The records don't say why; that is an observability gap to close before guessing.
+- Landing: session stage logs and a 60 s bound (`89f373ae`), the Terminal link showing the terminal at once
+  (`a2c7b533`), and Open terminal offered again for a stuck `opening` row (`8f76cf84`).
+- The Mac mini's e2e slots share one Postgres but not their Durable Object state, so generation-numbered runs such as
+  `sandbox-keep:<branch>:<generation>` collide across slots; the farm's owner is giving each slot its own database.
 
 ## PID 1 reaps orphans — 2026-10-21 21:00 PDT
 
