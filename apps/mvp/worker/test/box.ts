@@ -55,6 +55,12 @@ export const down = (workdir: string): Sandbox.Session => ({
   spawn: () => Effect.fail(new ProviderError({ code: "unavailable", message: "down" })),
 })
 
+/** A session whose commands start and never exit, as an exec whose exit is lost. */
+export const hung = (workdir: string): Sandbox.Session => ({
+  ...sessionAt(workdir, workdir),
+  spawn: () => Effect.succeed({ stdout: Stream.never, stderr: Stream.never, exitCode: Effect.never }),
+})
+
 /** The object's storage, in memory. */
 export const memory = (entries: Record<string, unknown> = {}) => {
   const map = new Map<string, unknown>(Object.entries(entries))
@@ -78,6 +84,8 @@ export interface BoxOptions {
   readonly root?: (argv: ReadonlyArray<string>) => Effect.Effect<number, unknown>
   /** The users whose sessions can't run anything. */
   readonly downFor?: ReadonlyArray<string>
+  /** The users whose sessions' commands never exit. */
+  readonly hungFor?: ReadonlyArray<string>
 }
 
 /** A machine's box over its checkout, recording every root command, session and stop. */
@@ -91,7 +99,11 @@ export const boxAt = (options: BoxOptions) => {
     sessionAs: (user) =>
       Effect.sync(() => {
         sessions.push(user)
-        return options.downFor?.includes(user) === true ? down(workdir) : sessionAt(workdir, homes)
+        return options.downFor?.includes(user) === true
+          ? down(workdir)
+          : options.hungFor?.includes(user) === true
+          ? hung(workdir)
+          : sessionAt(workdir, homes)
       }),
     run: (argv, user) =>
       Effect.suspend(() => {

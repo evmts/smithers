@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
 import {
   asUser, configuredSessionOn, runOn, sandboxSessionTimeoutSeconds, sessionOn,
-  type Container, type SessionOptions, type UserOptions,
+  type Container, type ExecOptions, type SessionOptions,
 } from "./Session.ts"
 import { envOf, idOf, provisionArgv, userOf } from "./Users.ts"
 
@@ -30,7 +30,7 @@ const container = (
   answer: (argv: Array<string>) => Effect.Effect<number, unknown> = () => Effect.succeed(0),
   ensure: (options: SessionOptions) => Effect.Effect<unknown, unknown> = () => Effect.void,
 ) => {
-  const commands: Array<{ argv: Array<string>; options: UserOptions }> = []
+  const commands: Array<{ argv: Array<string>; options: ExecOptions }> = []
   const sessions: Array<SessionOptions> = []
   let released = 0
   const box: Container<unknown> = {
@@ -105,7 +105,7 @@ test("a started session logs each stage's elapsed time and runs as the person's 
   expect(sessionLine(lines, "INFO")).toEqual({ outcome: "started", startMs: 3000, provisionMs: 5000, sessionMs: 18000 })
   const name = userOf("person-content-sentinel")
   expect(host.commands).toEqual([
-    { argv: provisionArgv(name), options: { user: "0:0", env: envOf("root") } },
+    { argv: provisionArgv(name), options: { user: "0:0", env: envOf("root"), stdout: "ignore", stderr: "ignore" } },
   ])
   expect(host.sessions).toEqual([
     { name: TERMINAL, user: idOf(name), cwd: "/workspace", env: envOf(name) },
@@ -233,4 +233,23 @@ test("a command refuses an unknown user before launching a process", async () =>
   expect(Exit.isFailure(Effect.runSyncExit(asUser("unknown-user")))).toBe(true)
   await expect(Effect.runPromise(runOn(host.box, ["true"], "unknown-user"))).rejects.toThrow("the machine has no uid for this user")
   expect(host.commands).toHaveLength(0)
+})
+
+/**
+ * An injected container that answers as `alchemy dev`'s does (workerd over Docker): a process with a piped stream
+ * nobody reads never reports its exit. On 2026-10-22 every first provision of a person's user hung there, because
+ * `useradd` warns on stderr that the person's uid is outside UID_MIN..UID_MAX.
+ */
+const unreadPipesHold = (): Container => ({
+  exec: (_argv, options) =>
+    Effect.succeed({
+      exitCode: options.stdout === "ignore" && options.stderr === "ignore" ? Effect.succeed(0) : Effect.never,
+    }),
+})
+
+test("a command whose output nobody reads still answers its exit: its streams are never piped", async () => {
+  const exit = await Effect.runPromise(
+    runOn(unreadPipesHold(), provisionArgv(userOf("person")), "root").pipe(Effect.timeout("2 seconds")),
+  )
+  expect(exit).toBe(0)
 })

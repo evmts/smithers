@@ -1,5 +1,5 @@
 import { type Sandbox, SandboxTools } from "@smthrs/sandbox"
-import { Cause, Clock, Effect, Metric } from "effect"
+import { Cause, Clock, Duration, Effect, Metric } from "effect"
 import { SANDBOX_USER } from "../../src/features/terminal/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { CommandOutcome, CommandRequest, SleepOutcome, ToolOutcome } from "./Machines.ts"
@@ -303,63 +303,104 @@ export const command = <R>(
   box: Box<R>,
   options: { readonly ownerId: string; readonly request: CommandRequest; readonly generation: number | undefined },
 ): Effect.Effect<CommandOutcome, never, R> =>
-  Effect.gen(function* () {
-    const { generation, request } = options
-    const user = userOf(options.ownerId)
-    let started = startedOf(yield* box.storage.get<RunStarted | number>(`run:${request.key}`))
-    if (request.op === "start" && generation !== undefined) {
-      if (
-        started === undefined && request.callId !== undefined &&
-        (yield* box.storage.get<RunStarted | number>(`run:${request.callId}`)) !== undefined
-      ) {
-        return { _tag: "Lost" } as const
+  Effect.suspend(() => {
+    // Where the operation is, so the line of one that failed or hung says where.
+    let stage: CommandStage = "provision"
+    return Effect.gen(function* () {
+      const { generation, request } = options
+      const user = userOf(options.ownerId)
+      const starting = request.op === "start" && generation !== undefined
+      if (starting && (yield* bounded(box.run(provisionArgv(user), "root"))) !== 0) return { _tag: "Unavailable" } as const
+      stage = "record"
+      // Read after the provisioning's exec, during which the object takes other requests: a cancel that came then is
+      // seen.
+      let started = startedOf(yield* box.storage.get<RunStarted | number>(`run:${request.key}`))
+      if (starting) {
+        if (
+          started === undefined && request.callId !== undefined &&
+          (yield* box.storage.get<RunStarted | number>(`run:${request.callId}`)) !== undefined
+        ) {
+          return { _tag: "Lost" } as const
+        }
+        if (started === undefined) {
+          started = { generation, at: yield* Clock.currentTimeMillis }
+          yield* dropOldRuns(box, started.at)
+          yield* box.storage.put(`run:${request.key}`, started)
+        }
       }
-      if ((yield* box.run(provisionArgv(user), "root")) !== 0) return { _tag: "Unavailable" } as const
-      if (started === undefined) {
-        started = { generation, at: yield* Clock.currentTimeMillis }
-        yield* dropOldRuns(box, started.at)
-        yield* box.storage.put(`run:${request.key}`, started)
+      if (generation === undefined || started?.generation !== generation) {
+        // Generation 0 is none: a key cancelled before it started stays gone.
+        if (request.op === "cancel" && started === undefined) {
+          yield* box.storage.put(`run:${request.key}`, { generation: 0, at: yield* Clock.currentTimeMillis } satisfies RunStarted)
+        }
+        return request.op === "observe"
+          ? { _tag: "Observed", observed: { state: "lost" } } as const
+          : request.op === "cancel"
+          ? { _tag: "Cancelled" } as const
+          : { _tag: "Lost" } as const
       }
-    }
-    if (generation === undefined || started?.generation !== generation) {
-      // Generation 0 is none: a key cancelled before it started stays gone.
-      if (request.op === "cancel" && started === undefined) {
-        yield* box.storage.put(`run:${request.key}`, { generation: 0, at: yield* Clock.currentTimeMillis } satisfies RunStarted)
+      stage = "session"
+      const session = yield* bounded(box.sessionAs(user))
+      const at = { key: request.key, callsDirectory: callsDirectory(user) }
+      yield* touch(box)
+      stage = "script"
+      const ran = yield* bounded(Effect.result(
+        request.op === "start"
+          ? Effect.map(SandboxTools.start(session, request.call, at), (value): CommandOutcome => ({
+            _tag: "Started",
+            started: value,
+            generation,
+          }))
+          : request.op === "observe"
+          ? Effect.map(SandboxTools.observe(session, at), (observed): CommandOutcome => ({ _tag: "Observed", observed }))
+          : request.op === "collect"
+          ? Effect.map(SandboxTools.collect(session, at), (result): CommandOutcome => ({ _tag: "Collected", result }))
+          : Effect.as(SandboxTools.cancel(session, at), { _tag: "Cancelled" } as const),
+      ))
+      if (ran._tag === "Failure") return failedCommand(ran.failure)
+      if (request.op === "collect") {
+        stage = "save"
+        yield* save(box, generation)
       }
-      return request.op === "observe"
-        ? { _tag: "Observed", observed: { state: "lost" } } as const
-        : request.op === "cancel"
-        ? { _tag: "Cancelled" } as const
-        : { _tag: "Lost" } as const
-    }
-    const session = yield* box.sessionAs(user)
-    const at = { key: request.key, callsDirectory: callsDirectory(user) }
-    yield* touch(box)
-    const ran = yield* Effect.result(
-      request.op === "start"
-        ? Effect.map(SandboxTools.start(session, request.call, at), (value): CommandOutcome => ({
-          _tag: "Started",
-          started: value,
-          generation,
-        }))
-        : request.op === "observe"
-        ? Effect.map(SandboxTools.observe(session, at), (observed): CommandOutcome => ({ _tag: "Observed", observed }))
-        : request.op === "collect"
-        ? Effect.map(SandboxTools.collect(session, at), (result): CommandOutcome => ({ _tag: "Collected", result }))
-        : Effect.as(SandboxTools.cancel(session, at), { _tag: "Cancelled" } as const),
+      return ran.success
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.as(
+          Effect.logWarning("sandbox.object.command").pipe(Effect.annotateLogs({
+            op: options.request.op,
+            stage,
+            errorCode: Cause.isTimeoutError(Cause.squash(cause)) ? "timeout" : codeOf(Cause.squash(cause)),
+          })),
+          { _tag: "Unavailable" } as const,
+        )
+      ),
+      // Each operation's line says what it answered and how long the box took, so a slow start or probe shows which.
+      Effect.timed,
+      Effect.flatMap(([took, outcome]) =>
+        Effect.as(
+          Effect.logInfo("sandbox.object.command").pipe(Effect.annotateLogs({
+            op: options.request.op,
+            outcome: outcome._tag === "Observed" ? outcome.observed.state : outcome._tag,
+            durationMs: Duration.toMillis(took),
+          })),
+          outcome,
+        )
+      ),
+      Effect.withSpan("sandbox.object.command", { attributes: { "smithers.sandbox.command.op": options.request.op } }),
     )
-    if (ran._tag === "Failure") return failedCommand(ran.failure)
-    if (request.op === "collect") yield* save(box, generation)
-    return ran.success
-  }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.as(
-        Effect.logWarning("sandbox.object.command").pipe(Effect.annotateLogs({ errorCode: codeOf(Cause.squash(cause)) })),
-        { _tag: "Unavailable" } as const,
-      )
-    ),
-    Effect.withSpan("sandbox.object.command", { attributes: { "smithers.sandbox.command.op": options.request.op } }),
-  )
+  })
+
+/** Where a command operation is: provisioning the person's user, reading its record, opening a session, its script. */
+type CommandStage = "provision" | "record" | "session" | "script" | "save"
+
+/**
+ * The longest one exec of a command operation takes: provisioning a user, opening a session or one of the command
+ * scripts, each of which answers in seconds. One that takes longer answers `Unavailable`, which its job asks again;
+ * the start's fence starts the command once however many times it is asked.
+ */
+export const COMMAND_EXEC_MS = 2 * 60_000
+
+const bounded = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.timeout(effect, COMMAND_EXEC_MS)
 
 /**
  * What a person's processes are doing: exit 3 when a terminal had input within `$1` seconds, or a non-root process

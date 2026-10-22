@@ -6,7 +6,8 @@
 // root commands, provisioning a person's user and the idle probe, from the test, because they need root, tmux and
 // Linux's /proc; this host has none of them.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Effect, Exit, Logger, Metric } from "effect"
+import { Effect, Exit, Fiber, Logger, Metric } from "effect"
+import { TestClock } from "effect/testing"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -175,6 +176,11 @@ describe("command", () => {
     })
     const collected = await observed(command(machine.box, { op: "collect", key: "job#g1" }))
     expect(collected.value).toMatchObject({ _tag: "Collected", result: { exitCode: 0, stdout: "done\n" } })
+    expect(collected.lines.at(-1)).toMatchObject({
+      message: "sandbox.object.command",
+      level: "INFO",
+      annotations: { op: "collect", outcome: "Collected", durationMs: expect.any(Number) },
+    })
     // A collected command changed the working copy, which is saved as a tool call's is.
     expect(collected.counted("save", "saved")).toBe(1)
     expect(await Effect.runPromise(command(machine.box, { op: "cancel", key: "job#g1" }))).toEqual({ _tag: "Cancelled" })
@@ -220,6 +226,14 @@ describe("command", () => {
     expect(await Effect.runPromise(command(machine.box, { op: "start", key: "abandoned#g1", call }))).toEqual({
       _tag: "Lost",
     })
+    // An abandon that comes while the start provisions the person's user, as the object takes requests between execs.
+    const raced: { box?: Machine.Box<never> } = {}
+    const racing = boxOf({
+      root: () => Effect.as(command(raced.box!, { op: "cancel", key: "raced#g1" }), 0),
+    })
+    raced.box = racing.box
+    expect(await Effect.runPromise(command(racing.box, { op: "start", key: "raced#g1", call }))).toEqual({ _tag: "Lost" })
+    expect(existsSync(join(racing.workdir, "runs.log"))).toBe(false)
     // A tool call whose command an earlier attempt ran as a tool call: its job never runs it again.
     await Effect.runPromise(tool(machine.box, call, 1, "call-1"))
     expect(await Effect.runPromise(command(machine.box, { op: "start", key: "job#g1", call, callId: "call-1" }))).toEqual({
@@ -266,8 +280,33 @@ describe("command", () => {
     const broken = boxOf({ root: () => Effect.fail(new Error("container gone")) })
     const logged = await observed(command(broken.box, { op: "start", key: "k#g1", call: run }))
     expect(logged.value).toEqual({ _tag: "Unavailable" })
-    expect(logged.lines).toMatchObject([{ message: "sandbox.object.command", level: "WARN" }])
-    expect(logged.lines[0]!.annotations).toHaveProperty("errorCode")
+    // The failure by its code, then the operation's line: what it answered and how long it took, never the command.
+    expect(logged.lines).toMatchObject([
+      { message: "sandbox.object.command", level: "WARN" },
+      { message: "sandbox.object.command", level: "INFO", annotations: { op: "start", outcome: "Unavailable" } },
+    ])
+    expect(logged.lines[0]!.annotations).toMatchObject({ op: "start", stage: "provision", errorCode: expect.any(String) })
+    expect(logged.lines[1]!.annotations).toHaveProperty("durationMs", expect.any(Number))
+    expect(JSON.stringify(logged.lines)).not.toContain("touch ran")
+
+    // An exec whose exit never comes answers Unavailable once COMMAND_EXEC_MS passed, so the job asks again, and its
+    // line names the stage it hung in.
+    for (const [stage, hung] of [
+      ["provision", boxOf({ root: () => Effect.never })],
+      ["script", boxOf({ hungFor: [USER] })],
+    ] as const) {
+      const timedOut = await observed(Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(command(hung.box, { op: "start", key: "k#g1", call: run }))
+        yield* TestClock.adjust(Machine.COMMAND_EXEC_MS)
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(TestClock.layer())))
+      expect(timedOut.value).toEqual({ _tag: "Unavailable" })
+      expect(timedOut.lines[0]).toMatchObject({
+        message: "sandbox.object.command",
+        level: "WARN",
+        annotations: { op: "start", stage, errorCode: "timeout" },
+      })
+    }
   })
 })
 

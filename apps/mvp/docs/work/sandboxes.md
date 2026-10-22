@@ -3,7 +3,7 @@ title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
 owner: sandboxes builder (Opus, from 20:40 on 2026-10-21)
-updated: 2026-10-22 04:15 PDT
+updated: 2026-10-22 08:20 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
 
@@ -17,6 +17,12 @@ branch agent) is now its own `sandbox/Command` job (`worker/flows/SandboxCommand
 ([long commands](../features/sandbox-tools.md#long-commands)). Regression tests kill the host mid-command on the Durable
 Object handlers and on the Node engine; the command runs once and its result arrives. `e2e/sandbox-tools.spec.ts`
 "long command" runs a 9.5-minute command end to end; it runs in production after the deploy.
+Known: a run cancelled while its job is parked leaves the command to its own timeout (at most 600 s), because the
+job's rollback lives in the host that parked; and a check job's scripts still run as one synchronous step (next).
+The long-command e2e found every first provision of a person's user hung under `alchemy dev`: `useradd` warns on
+stderr that the uid is outside UID_MIN..UID_MAX, and there a piped stream nobody reads holds the exec's exit. Commands
+the object runs for their exit alone now pipe no output, each exec of a command operation answers within 2 minutes or
+the job asks again, and the e2e passes on the mini farm with the 570 s command.
 
 ## Works in production on the new image — 2026-10-22 01:20 PDT
 

@@ -6,9 +6,19 @@ import { envOf, idOf, provisionArgv, userOf } from "./Users.ts"
 
 /** The command boundary session provisioning needs; the host owns the scoped process. */
 export interface Container<E = never, R = never> {
-  exec(argv: Array<string>, options: UserOptions): Effect.Effect<{
+  exec(argv: Array<string>, options: ExecOptions): Effect.Effect<{
     readonly exitCode: Effect.Effect<number, E, R>
   }, E, R | Scope.Scope>
+}
+
+/**
+ * How `runOn` runs a command: as a user, with neither output stream piped, since it reads neither. A piped stream
+ * nobody reads holds the exit under `alchemy dev` (workerd over Docker), so a command that printed anything, such as
+ * `useradd`'s warning that a person's uid is outside UID_MIN..UID_MAX, never answered its exit there.
+ */
+export interface ExecOptions extends UserOptions {
+  readonly stdout: "ignore"
+  readonly stderr: "ignore"
 }
 
 export interface UserOptions {
@@ -58,10 +68,13 @@ export const asUser = (name: string) => {
     : Effect.succeed({ user, env: envOf(name) })
 }
 
-/** Runs a command on the container as its numeric user, waiting for its scoped process to exit. */
+/** Runs a command on the container as its numeric user, its output discarded, waiting for its scoped process to exit. */
 export const runOn = <E, R>(box: Container<E, R>, argv: Array<string>, name: string) =>
   Effect.flatMap(asUser(name), (options) =>
-    Effect.scoped(Effect.flatMap(box.exec(argv, options), (process) => process.exitCode)))
+    Effect.scoped(Effect.flatMap(
+      box.exec(argv, { ...options, stdout: "ignore", stderr: "ignore" }),
+      (process) => process.exitCode,
+    )))
 
 /** The object's terminal session boundary, over its injected container and lifecycle services. */
 export const sessionOn = <R>(options: Services<R> & { readonly timeoutMs: number }) => (terminalId: string, ownerId: string) =>

@@ -7,7 +7,7 @@ browser (leader tab's engine)                 ChatApi                        Flo
  agent cell ─ ctx.call("sandbox/run") ┐
  /run in the composer ────────────────┼─▶ sandbox/run ─ start ─▶ POST /api/sandbox/calls ─▶ sandbox/Call ─▶ tool(): wake, SandboxTools.execute
  POST /api/sandbox/calls (API) ───────┘                result ─▶ GET  /api/sandbox/calls/<id>   │ settle      as the person's user
-                                                                    ▲ sandbox_calls row ◀────────┘
+                                                                    ▲ sandbox_calls row ◀────────┘   a run: sandbox/Command
 ```
 
 ## The tools
@@ -62,14 +62,14 @@ a run: sandbox/Command (its own job, below) ────────────
      └ refused, lost, no machine, no checkout ─▶ sandbox/ToolFailed ─▶ sandbox/Settle (failed, with why)
 ```
 
-The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it and never runs the tool again. Refusals, a refused checkout and a start that ran past `SANDBOX_START_TIMEOUT_SECONDS` (`start_timeout`) aren't retried; an unreachable machine is, for 2 minutes. A `run` is a [long command](#long-commands): its child `sandbox/Command` job settles the call with the command's result, or `lost`. A command settles with no `generation`.
+The tool's result is `sandbox/Tool`'s journaled success, so a replay reads it and never runs the tool again. Refusals, a refused checkout and a start that ran past `SANDBOX_START_TIMEOUT_SECONDS` (`start_timeout`) aren't retried; an unreachable machine is, for 2 minutes. A `run` is a [long command](#long-commands): its child `sandbox/Command` job settles the call with the command's result, or `lost`, and an unreachable machine is tried again within the job's deadline. A command settles with no `generation`.
 
 ## Long commands
 
 A command can run for minutes (`pnpm install` of a monorepo) and a host's drive can't: Cloudflare ends a Durable Object alarm at 15 minutes of wall time, and a host can stop at any moment. On 2026-10-22 a TODO's `pnpm install` failed twice in production with `ToolLost`, because the alarm driving the run ended while the command held one of its steps. So a command holds no step: it is its own `sandbox/Command` job (`worker/flows/SandboxCommand.ts`), `@smthrs/sandbox`'s `SandboxCommand` over `@smthrs/flow`'s `ExternalJob`.
 
 ```
-sandbox/Command { target: { branch, ownerId }, call }
+sandbox/Command { target: { branch, ownerId, callId }, call }
   start   wake the machine; start the command detached as the person's user, once per key ─▶ its pid
   probe   its runner alive, or its exit ─▶ park on a durable timer: 1 s, doubling to 20 s ─▶ probe ...
   collect the RunResult; the working copy is saved, as after a tool call
@@ -77,10 +77,12 @@ sandbox/Command { target: { branch, ownerId }, call }
 ```
 
 - **Who runs it:** the TODO agent's `sandbox/run` tool (`worker/flows/TodoAgent.ts`) runs the job as a child of the `todo` run, named for the call (`sandbox-command:<call id>`), and `sandbox/Call` runs it as a child boundary. The parent parks while the command runs; asked again after its host died, it joins the same job.
-- **Once:** the job's key is `<job execution id>#g1`. The machine starts a key once (`SandboxTools.start`: its fence in `~/.smithers/calls/command-<key>`), and the object records the generation that started it (`run:<key>`, as for a tool's command). A key an earlier generation started is `lost`; it never starts again, and the job fails `ExternalJobLost`, which the call settles as `lost` and the agent reads as `ToolLost`. No replacement is started (`restarts` 0).
+- **Once:** the job's key is `<job execution id>#g1`. The machine starts a key once (`SandboxTools.start`: its fence in `~/.smithers/calls/command-<key>`, the key's bytes outside `[A-Za-z0-9.-]` written `_` and two hex digits), and the object records the generation that started it (`run:<key>`, as for a tool's command). A key an earlier generation started is `lost`; it never starts again, and the job fails `ExternalJobLost`, which the call settles as `lost` and the agent reads as `ToolLost`. No replacement is started (`restarts` 0). A call whose command an attempt from before jobs ran as a tool call (`run:<call id>`) is `lost` too, and a key cancelled before its start reached the object never starts.
 - **Never wakes for a probe:** only `start` wakes the machine. A probe, a collect and a cancel answer for the generation running now, and a machine that stopped answers its command `lost`. Every operation is use of the machine, so a machine whose command runs isn't put to sleep.
-- **Bounded:** the command stops at its own `timeoutSeconds` (600 at most); the job's deadline, 15 minutes, cancels it after that.
-- **Records:** `sandbox.object.command` spans with the operation, and a warning by error code when the machine couldn't answer; `sandbox.command` spans in the SDK with the operation and its outcome. Never the command or its output.
+- **Bounded:** the command stops at its own `timeoutSeconds` (600 at most); the job's deadline, 30 minutes from before the start's wake, cancels it after that. Each exec of an operation (provisioning the person's user, opening their session, a command script) answers within 2 minutes (`COMMAND_EXEC_MS`) or the operation answers `Unavailable`, and the job asks again; the fence starts the command once however often the start is asked.
+- **Output nobody reads isn't piped:** a command the object runs for its exit code alone (the checkout, provisioning, the idle probe) runs with its output discarded (`runOn`). Under `alchemy dev` a piped stream nobody reads holds the exec's exit, and `useradd` warns that a person's uid is outside UID_MIN..UID_MAX, so every first provision hung there until 2026-10-22.
+- **Cancelled runs:** a run cancelled while its job is parked leaves the command to its own timeout: the job's rollback is the host's, and a parked job's host is gone.
+- **Records:** a `sandbox.object.command` line and span per operation with what it answered and how long it took, and a warning with the stage it was in (`provision`, `record`, `session`, `script`, `save`) and its error code (`timeout` for an exec past `COMMAND_EXEC_MS`) when the machine couldn't answer; `sandbox.command` spans in the SDK with the operation and its outcome. Never the command or its output.
 
 `sandbox_calls` (`db/migrations/0024_sandbox_calls.ts`) keeps one row per call: the branch, the person, the answer for the agent's calls, the tool, `running`, `done` with the result, or `failed` with why. The result is content for the person who asked; nothing logs it, and it isn't synced.
 
@@ -132,10 +134,10 @@ Content-free: ids, tools, outcomes, exit codes, statuses, counts and durations; 
 
 | Kind | Where |
 |---|---|
-| SDK | `@smthrs/sandbox`'s `test/SandboxTools.test.ts` (real shell and git in a scratch directory); `@smthrs/platform-cloudflare`'s `test/ContainerSession.test.ts` |
+| SDK | `@smthrs/sandbox`'s `test/SandboxTools.test.ts` and `test/SandboxCommand.test.ts` (real shell and git in a scratch directory), `test/SandboxCommand.container.test.ts` (the command scripts in a real container: Docker or Podman); `@smthrs/platform-cloudflare`'s `test/ContainerSession.test.ts` |
 | Container | `worker/branch/Probe.docker.test.ts`: the idle probe in a real branch-sandbox container (skips without Docker): a zombie doesn't keep the machine awake, a running process does |
-| Unit | `worker/branch/SandboxCalls.test.ts`, `worker/branch/Machine.test.ts`, `worker/flows/SandboxCall.test.ts`, `worker/flows/SandboxKeep.test.ts`, `src/features/sandbox/sandbox.test.ts` |
-| End to end | `e2e/sandbox-tools.spec.ts` against `alchemy dev` with Docker: the agent writes a file, runs a test command and shows the diff; a command whose tab closed mid-run is recorded once |
+| Unit | `worker/branch/SandboxCalls.test.ts`, `worker/branch/Machine.test.ts`, `worker/branch/Machines.test.ts`, `worker/flows/SandboxCall.test.ts`, `worker/flows/SandboxCommand.test.ts` (a host killed mid-command on the Durable Object handlers), `worker/flows/Todo.test.ts` (the same for the TODO agent on the Node engine), `worker/flows/SandboxKeep.test.ts`, `src/features/sandbox/sandbox.test.ts` |
+| End to end | `e2e/sandbox-tools.spec.ts` against `alchemy dev` with Docker: the agent writes a file, runs a test command and shows the diff; a command whose tab closed mid-run is recorded once; a ten-minute command runs once through its job and its result arrives (`E2E_LONG_COMMAND_SECONDS`) |
 
 ## What's not built
 
