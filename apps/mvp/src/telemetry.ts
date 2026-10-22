@@ -17,6 +17,7 @@ import { COMMANDS_TELEMETRY } from "./features/commands/contract"
 import { NAVIGATION_TELEMETRY } from "./features/navigation/contract"
 import { REPO_TELEMETRY } from "./features/repo/contract"
 import { THEME_TELEMETRY } from "./features/theme/contract"
+import { TIMELINE_TELEMETRY } from "./features/timeline/contract"
 import { WEB_TELEMETRY } from "./features/web/contract"
 import { FLOWS_TELEMETRY } from "./flows/contract"
 import { FLOWS_UI_TELEMETRY } from "./features/flows-ui/contract"
@@ -25,7 +26,6 @@ import { RUNS_TELEMETRY } from "./features/runs/contract"
 import { SPEND_TELEMETRY } from "./features/spend/contract"
 import { STATUS_TELEMETRY } from "./features/status/contract"
 import { TERMINAL_TELEMETRY } from "./features/terminal/contract"
-import { TIMELINE_TELEMETRY } from "./features/timeline/contract"
 import { PRESENCE_TELEMETRY } from "./features/presence/contract"
 import { COEDIT_TELEMETRY } from "./features/coedit/contract"
 import { SHARING_TELEMETRY } from "./features/sharing/contract"
@@ -36,6 +36,13 @@ export interface Telemetry {
   readonly records: ReadonlyArray<string>
   readonly fields: ReadonlyArray<string>
 }
+
+/**
+ * What one browser telemetry export may carry, which ChatApi's relay reads (worker/Chat.ts) and the tab's and engine's
+ * exporters split their batches under (src/boot.ts, src/flows/engine.ts): 128 KiB and 200 records. A larger request
+ * would be answered 413 and lost whole; records past the count would be dropped.
+ */
+export const TELEMETRY_LIMITS = { maxRequestBytes: 128 * 1024, maxRecords: 200 } as const
 
 /** The tab's `service.name` on every record it exports. */
 export const WEB_SERVICE = "smithers-mvp-web"

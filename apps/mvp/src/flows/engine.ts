@@ -4,7 +4,7 @@ import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Deferred, Effect, Fiber, Layer } from "effect"
 import { TELEMETRY_ROUTE } from "../features/chat/contract"
 import { tabHandlers } from "../features/theme/store"
-import { ENGINE_SERVICE, EXPORTED_SPANS } from "../telemetry"
+import { ENGINE_SERVICE, EXPORTED_SPANS, TELEMETRY_LIMITS } from "../telemetry"
 import { ENGINE_NAME } from "./contract"
 import { ClientEngine } from "./dispatch"
 import { answer, type Endpoint } from "./tabPort"
@@ -20,7 +20,12 @@ import { answer, type Endpoint } from "./tabPort"
  * engine's storage spans and one span per poll, hundreds per answer, stay in the worker.
  */
 export const engineTelemetry = (origin: string) =>
-  Otlp.layerFetch({ baseUrl: `${origin}${TELEMETRY_ROUTE}`, serviceName: ENGINE_SERVICE, spans: EXPORTED_SPANS })
+  Otlp.layerFetch({
+    baseUrl: `${origin}${TELEMETRY_ROUTE}`,
+    serviceName: ENGINE_SERVICE,
+    spans: EXPORTED_SPANS,
+    ...TELEMETRY_LIMITS,
+  })
 
 /** The engine worker this tab started: the other end of its tab port, which `tabAnswers` answers. */
 export class TabWorker extends Context.Service<TabWorker, Endpoint>()("@smthrs/mvp/flows/TabWorker") {}

@@ -18,7 +18,7 @@ import { TELEMETRY_ROUTE } from "./features/chat/contract"
 import { Chat } from "./features/chat/chat"
 import { ChatStore } from "./features/chat/store"
 import { engineTelemetry } from "./flows/engine"
-import { BROWSER_TELEMETRY, ENGINE_SERVICE, EXPORTED_SPANS, RELAY_FIELDS, WEB_SERVICE, WITHHELD } from "./telemetry"
+import { BROWSER_TELEMETRY, ENGINE_SERVICE, EXPORTED_SPANS, RELAY_FIELDS, TELEMETRY_LIMITS, WEB_SERVICE, WITHHELD } from "./telemetry"
 import { cell, openAgent } from "./test/agent"
 import { nodeDevice, openFaultyApp, TestChatApi } from "./test/chatApi"
 import { openDevice } from "./test/device"
@@ -54,7 +54,7 @@ const relay = (exports: ReadonlyArray<Export>) => Effect.runPromise(relayed(expo
 const bytes = (exports: ReadonlyArray<Export>) => exports.map(({ body }) => new TextEncoder().encode(body).byteLength)
 
 /** ChatApi's limit on one export (worker/Chat.ts): a larger one is answered 413 and relays nothing. */
-const RELAY_MAX_BODY_BYTES = 128 * 1024
+const RELAY_MAX_BODY_BYTES = TELEMETRY_LIMITS.maxRequestBytes
 
 describe("the relay keeps everything the browser exports", () => {
   test("the engine worker: an answer whose agent calls a flow, with every model call and step", async () => {
@@ -65,7 +65,7 @@ describe("the relay keeps everything the browser exports", () => {
       return Stream.make({ type: "text-delta" as const, id: "t", text: cell(source) }, usage, stop)
     })
     // The tab's exporter as src/boot.ts installs it, and the engine worker's as src/flows/engine.worker.ts does.
-    const tab = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}${TELEMETRY_ROUTE}`, serviceName: WEB_SERVICE }))
+    const tab = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}${TELEMETRY_ROUTE}`, serviceName: WEB_SERVICE, ...TELEMETRY_LIMITS }))
     const engine = captured(engineTelemetry(ORIGIN))
     const device = await openDevice(agent.fetch, { tab: tab.layer, engine: engine.layer })
     closing.push(device.close)
@@ -174,7 +174,7 @@ test("the relay retains real session lifecycle diagnostics and counters without 
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
   )
-  const exported = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}${TELEMETRY_ROUTE}`, serviceName: WEB_SERVICE }))
+  const exported = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}${TELEMETRY_ROUTE}`, serviceName: WEB_SERVICE, ...TELEMETRY_LIMITS }))
   const app = ManagedRuntime.make(Auth.layer.pipe(
     Layer.provideMerge(AuthStore.layer),
     Layer.provideMerge(Persistence.memory),
@@ -202,6 +202,26 @@ test("the relay retains real session lifecycle diagnostics and counters without 
   expect(drift(fromTab.dropped)).toEqual({ records: [], fields: [] })
   expect(JSON.stringify(fromTab.kept)).not.toContain(privateLogin)
   for (const line of diagnostics) for (const forbidden of ["login", "personId", "token", "cookie"]) expect(line.fields).not.toHaveProperty(forbidden)
+})
+
+test("a burst larger than the relay reads reaches it whole, in exports under its limits", async () => {
+  // A reload woke 60 runs at once on smithers.sh and the engine exported 616 KB of spans in one request: answered 413,
+  // the records that would explain the slow page were lost.
+  const engine = captured(engineTelemetry(ORIGIN))
+  await Effect.runPromise(
+    Effect.forEach(Array.from({ length: 600 }, (_, n) => n), (n) =>
+      Effect.void.pipe(Effect.withSpan("browser.runtime.wake", { attributes: { n, pad: "x".repeat(600) } })), {
+      discard: true,
+    }).pipe(Effect.provide(engine.layer)),
+  )
+  const traces = engine.exports.filter(({ path }) => path.endsWith("/v1/traces"))
+  const spans = traces.map(({ body }) =>
+    (JSON.parse(body) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<unknown> }> }> }).resourceSpans
+      .flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans)).length
+  )
+  expect(spans.reduce((sum, count) => sum + count, 0)).toBe(600)
+  expect(Math.max(...spans)).toBeLessThanOrEqual(TELEMETRY_LIMITS.maxRecords)
+  expect(Math.max(...bytes(traces))).toBeLessThanOrEqual(TELEMETRY_LIMITS.maxRequestBytes)
 })
 
 describe("the contract", () => {

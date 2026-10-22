@@ -29,7 +29,7 @@ import {
   FLOWS_ROUTE,
   FLOWS_SHAPE_ROUTE,
 } from "../src/features/flows-ui/contract.ts"
-import { BROWSER_TELEMETRY } from "../src/telemetry.ts"
+import { BROWSER_TELEMETRY, TELEMETRY_LIMITS } from "../src/telemetry.ts"
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
 import * as Answers from "./Answers.ts"
 import { branchAccess, canEdit, canView } from "./branch/Access.ts"
@@ -79,12 +79,6 @@ export const SYNCED_MESSAGE_COLUMNS = [
   "updated_at",
   "parts",
 ]
-
-/** The largest browser telemetry export ChatApi reads: 128 KiB. A larger one is answered 413 and not relayed. */
-const TELEMETRY_MAX_BODY_BYTES = 128 * 1024
-
-/** The most records one telemetry export relays; the rest are dropped and counted. */
-const TELEMETRY_MAX_RECORDS = 200
 
 /**
  * A W3C `traceparent` of version `00` as the spec writes it: 55 characters of lowercase hex, neither id all zeros.
@@ -199,8 +193,9 @@ export const make = <E, R>(
       metric: ChatMetrics.shapes,
     })
     const telemetry = OtlpRelay.serve({
-      maxBodyBytes: TELEMETRY_MAX_BODY_BYTES,
-      maxRecords: TELEMETRY_MAX_RECORDS,
+      // The browser's exporters split their batches under the same limits (src/telemetry.ts).
+      maxBodyBytes: TELEMETRY_LIMITS.maxRequestBytes,
+      maxRecords: TELEMETRY_LIMITS.maxRecords,
       // Exactly the records and fields the browser's features declare (src/telemetry.ts); the rest is dropped.
       allow: BROWSER_TELEMETRY,
     })

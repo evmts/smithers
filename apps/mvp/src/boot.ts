@@ -82,7 +82,7 @@ import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
 import { deviceRegistry } from "./device/registry"
 import { Page } from "./page"
-import { EXPORTED_SPANS, WEB_SERVICE } from "./telemetry"
+import { EXPORTED_SPANS, TELEMETRY_LIMITS, WEB_SERVICE } from "./telemetry"
 
 /** From the page's start to the conversation shown from the device (`performance.timeOrigin` to restored). */
 export const bootTime = Metric.histogram("smithers_web_boot_ms", {
@@ -297,7 +297,12 @@ export const appLayer = <S = never>(
     Layer.provide(FetchHttpClient.layer),
     // Only the spans the relay keeps: a tab's engine requests, hundreds per answer, stay in the tab.
     Layer.provideMerge(
-      Otlp.layerFetch({ baseUrl: `${origin}${TELEMETRY_ROUTE}`, serviceName: WEB_SERVICE, spans: EXPORTED_SPANS }),
+      Otlp.layerFetch({
+        baseUrl: `${origin}${TELEMETRY_ROUTE}`,
+        serviceName: WEB_SERVICE,
+        spans: EXPORTED_SPANS,
+        ...TELEMETRY_LIMITS,
+      }),
     ),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.fetch)),
   )
