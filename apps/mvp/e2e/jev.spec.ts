@@ -7,7 +7,7 @@ import { requires } from "./target"
 // never names Jev. The agent picks `app/jev/classify` on its own, from the flow's description in its catalog, and the
 // judgment goes through ChatApi's metered endpoint as role `judge` (`POST /api/model/judge`, the real model). The
 // answer's debug info opens the run that answered it: its flow view shows the Jev step, whose output holds the
-// verdicts, and the step's own run holds its input. No mocks. One question: a few agent calls and one judge call.
+// verdicts, and the step's own run holds its input. Opening memory may also call `judge` (docs/features/memory.md).
 
 /** Every model call this browser context made, by role: the engine worker's requests to the model endpoint. */
 const modelCalls = (context: BrowserContext) => {
@@ -70,9 +70,10 @@ test("jev: asked to sort issue titles, the agent uses Jev unasked, and debug inf
     await expect(answer).toContainText(/bug/i)
     await expect(answer).toContainText(/feature/i)
     await expect(answer).toContainText(/question/i)
-    // The agent called Jev once and it settled; its judgment went through the endpoint's `judge` role, once.
+    // Exactly one classification settled. Browser-wide judge traffic also includes `chat/Opening/model`
+    // for memory and skill selection (docs/features/memory.md); it isn't a second classification.
     expect(stepsOf(await allServerRows(request), question)).toEqual([expect.objectContaining({ flow: "app/jev/classify", status: "done" })])
-    expect(calls.filter((role) => role === "judge")).toHaveLength(1)
+    expect(calls.filter((role) => role === "judge").length).toBeGreaterThan(0)
   })
 
   await step("Open debug info", async () => {
@@ -90,11 +91,12 @@ test("jev: asked to sort issue titles, the agent uses Jev unasked, and debug inf
   const jev = graph.getByRole("button", { name: /^app\/jev\/classify\/judge, Done$/ })
   await step("See the Jev step in the flow view", async () => {
     await expect(jev, "the flow view shows the Jev step").toBeVisible({ timeout: 30_000 })
-    // Down moves the highlight through the steps in order, from the answer's own to the Jev step its call ran.
+    // Down traverses recorded steps, including opening memory and settlement cleanup, to the Jev step.
     await graph.focus()
-    for (const label of ["chat/LoadTurn", "chat/Respond", "chat/Settle", "app/jev/classify/judge"]) {
+    for (const node of await graph.getByRole("button").all()) {
       await a.page.keyboard.press("ArrowDown")
-      await expect(graph.getByRole("button", { name: `${label}, Done` }), `${label} is highlighted`).toHaveAttribute("data-selected", "true")
+      await expect(node, "Down highlights the next step").toHaveAttribute("data-selected", "true")
+      if (await node.getAttribute("aria-label") === "app/jev/classify/judge, Done") break
     }
     await expect(jev, "the Jev step is highlighted").toHaveAttribute("data-selected", "true")
     await a.page.keyboard.press("Enter")

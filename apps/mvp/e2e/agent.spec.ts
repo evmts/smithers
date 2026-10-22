@@ -44,8 +44,9 @@ test("ask: the browser's agent answers through the model endpoint, and the answe
   await a.askAndWaitTaken(question)
   await a.expectAnswered(question, `agent-${word}`)
   // `timeline/summarize` independently calls the `summary` role for settled entries (docs/features/timeline.md).
+  // `chat/Opening/model` uses `judge` to select memories and skills before responding (docs/features/memory.md).
   // The answer's own calls still come from this device, only through `agent`; ChatApi answers none of its own.
-  const answerCalls = calls.filter((role) => role !== "summary")
+  const answerCalls = calls.filter((role) => role !== "summary" && role !== "judge")
   expect(answerCalls.length, "the browser's agent called the model endpoint").toBeGreaterThan(0)
   expect(new Set(answerCalls)).toEqual(new Set(["agent"]))
 })
