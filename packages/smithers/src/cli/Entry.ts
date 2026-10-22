@@ -110,7 +110,7 @@ export const main = async (host: Host): Promise<void> => {
     if (mcp) await host.waitForDisconnect?.(controller.signal)
   } catch (cause) {
     if (interrupted === undefined) {
-      const text = Failure.operatorReport(cause, Argv.parse(host.argv).verbose)
+      const text = Failure.commandReport(cause, Argv.parse(host.argv).verbose)
       host.stderr.write(`${String(Redaction.redactDiagnostic(text))}\n`)
       exit(1)
     }

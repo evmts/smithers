@@ -1,5 +1,5 @@
 /**
- * Side-effect-free rendering of values that cross a failure boundary.
+ * Bounded failure rendering and private command diagnostic receipts.
  *
  * A rejected promise may carry any JavaScript value. Calling `String` on an
  * object, reading an accessor-backed `message`, or inspecting a Proxy can run
@@ -10,7 +10,11 @@
  * @since 0.1.0
  */
 
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import * as NodeUtil from "node:util/types"
+import { redactor } from "./OutputStream.ts"
 
 /**
  * Maximum UTF-16 code units admitted into one rendered failure.
@@ -164,4 +168,44 @@ export const error = (cause: unknown, fallback = "operation failed"): Error => {
     }
   }
   return new Error(message(cause, fallback), { cause })
+}
+
+/**
+ * Reports an unexpected failure with a redacted, bounded diagnostic receipt.
+ * Only tag and message are admitted; payloads, stacks and environment are omitted.
+ * @category rendering
+ * @since 1.0.0
+ */
+export const unexpected = (cause: unknown, directory: string = tmpdir()): string => {
+  const object = typeof cause === "object" && cause !== null && !NodeUtil.isProxy(cause) ? cause : undefined
+  const tag = object === undefined ?
+    "UnknownFailure" :
+    ownString(object, "_tag") ?? (NodeUtil.isNativeError(object)
+      ? ownString(object, "name") ?? ownString(Object.getPrototypeOf(object), "name") ?? "Error"
+      : "UnknownFailure")
+  const clean = redactor()
+  const detail = [
+    ...clean(
+      `${tag}: ${object === undefined ? "No diagnostic message" : message(object, "No diagnostic message")}`
+    )
+      .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+  ].slice(0, 4096).join("")
+  const report = `${unknownFailure}\n${detail}`
+  try {
+    const path = join(mkdtempSync(join(directory, "smthrs-diagnostic-")), "failure.log")
+    writeFileSync(path, `${detail}\n`, { mode: 0o600 })
+    return `${report}\nDiagnostics: ${path}`
+  } catch {
+    return `${report}\nDiagnostics: unavailable (could not write log)`
+  }
+}
+
+/**
+ * Command-boundary rendering, retaining diagnostics even without verbose output.
+ * @category rendering
+ * @since 1.0.0
+ */
+export const report = (cause: unknown, options: { readonly verbose: boolean }): string => {
+  const rendered = present(cause, options)
+  return rendered.startsWith(unknownFailure) ? unexpected(cause) : rendered
 }

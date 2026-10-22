@@ -17,6 +17,7 @@
  * @since 1.0.0
  */
 
+import * as Diagnostic from "@smthrs/build-cli/Diagnostic"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { stripVTControlCharacters } from "node:util"
 
@@ -303,3 +304,11 @@ export const operatorDetail = (error: unknown): string => {
     return "Unprintable error"
   }
 }
+
+/**
+ * A command failure with a diagnostic receipt for unexpected errors.
+ * @category getters
+ * @since 1.0.0
+ */
+export const commandReport = (error: unknown, verbose: boolean): string =>
+  operatorSentence(error) === unknownSentence ? Diagnostic.unexpected(error) : operatorReport(error, verbose)

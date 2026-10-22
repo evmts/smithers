@@ -166,7 +166,7 @@ describe("evaluation CLI", () => {
       expect(failed.code, failed.output).toBe(5)
       expect(failed.json).toMatchObject({
         code: "eval_run_failed",
-        message: "Something went wrong on our side. Not your fault."
+        message: expect.stringContaining("Diagnostics: ")
       })
     }
   })

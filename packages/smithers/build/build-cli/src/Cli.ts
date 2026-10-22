@@ -207,7 +207,7 @@ type SuccessResult = (data: unknown, meta?: { cta: { commands: Array<NextCommand
 
 /** The operator-facing sentence for a failed command; raw detail only under `--verbose`. */
 const failureText = (context: { readonly options?: unknown }, cause: unknown): string =>
-  Diagnostic.present(cause, {
+  Diagnostic.report(cause, {
     verbose: (context.options as { readonly verbose?: unknown } | undefined)?.verbose === true
   })
 

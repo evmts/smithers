@@ -82,7 +82,10 @@ describe("public executable bootstrap", () => {
     await boot(["--json", "ps"])
     expect(legacy).toEqual(["--json", "ps"])
     expect(main).not.toHaveBeenCalled()
-    expect(install).toHaveBeenCalledExactlyOnceWith({ "@smthrs/agent": new URL("../src/bin.ts", import.meta.url).href })
+    expect(install).toHaveBeenCalledExactlyOnceWith({
+      "@smthrs/agent": new URL("../src/bin.ts", import.meta.url).href,
+      "@smthrs/registry/Prompt/jsx-runtime": new URL("../src/bin.ts", import.meta.url).href
+    })
   })
 
   it("maps agent aliases without rewriting the process's original arguments", async () => {
@@ -140,10 +143,10 @@ describe("public executable bootstrap", () => {
       main.mockRejectedValue(failure)
       await boot()
       expect(process.exitCode).toBe(1)
-      expect(stderr).toBe(
+      expect(stderr).toEqual(
         failure instanceof Error
           ? "Authorization: Bearer [REDACTED_TOKEN]\n"
-          : "Something went wrong on our side. Not your fault.\n"
+          : expect.stringContaining("Diagnostics: ")
       )
       expect(stderr).not.toContain("fixture-bootstrap-secret")
     }
@@ -157,6 +160,14 @@ describe("public executable bootstrap", () => {
     expect(main).not.toHaveBeenCalled()
     expect(process.exitCode).toBe(1)
     expect(stderr).toBe("bootstrap refused\n")
+  })
+
+  it("retains a diagnostic receipt when command startup throws a runtime error", async () => {
+    main.mockRejectedValue(new TypeError("Cannot load removed scorer module"))
+    await boot()
+    expect(process.exitCode).toBe(1)
+    expect(stderr).toContain("TypeError: Cannot load removed scorer module")
+    expect(stderr).toContain("Diagnostics: ")
   })
 })
 

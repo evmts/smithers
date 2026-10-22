@@ -78,7 +78,7 @@ const start = async (): Promise<void> => {
 }
 
 void start().catch((cause: unknown) => {
-  const text = Failure.operatorReport(cause, Argv.parse(process.argv.slice(2)).verbose)
+  const text = Failure.commandReport(cause, Argv.parse(process.argv.slice(2)).verbose)
   process.stderr.write(`${String(Redaction.redactDiagnostic(text))}\n`)
   process.exitCode = 1
 })

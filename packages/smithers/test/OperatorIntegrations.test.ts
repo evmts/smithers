@@ -281,7 +281,7 @@ describe("integration CLI", () => {
     expect(upstream.requests).toEqual([])
   })
 
-  it("prints the generic sentence for a non-Error failure at the operator boundary", async () => {
+  it("prints a diagnostic receipt for a non-Error failure at the operator boundary", async () => {
     let rendered: unknown
     const result = await Presentation.guard({
       error: (error) => {
@@ -295,7 +295,7 @@ describe("integration CLI", () => {
     expect(rendered).toEqual({
       code: "operator_failed",
       exitCode: 1,
-      message: "Something went wrong on our side. Not your fault."
+      message: expect.stringContaining("Diagnostics: ")
     })
   })
 

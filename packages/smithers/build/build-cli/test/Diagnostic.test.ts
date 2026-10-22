@@ -1,3 +1,5 @@
+import { readFileSync, rmSync, statSync } from "node:fs"
+import { dirname } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Diagnostic from "../src/Diagnostic.ts"
 
@@ -89,4 +91,75 @@ describe("Diagnostic", () => {
     const error = Diagnostic.error(new Error(oversized))
     expect(error.message.isWellFormed()).toBe(true)
   })
+})
+
+describe("unexpected failure diagnostics", () => {
+  it("prints the tag, redacted message and a private log receipt without error payloads", () => {
+    const failure = Object.assign(new TypeError("Cannot load module; token=fixture-secret"), {
+      _tag: "ModuleLoadError",
+      payload: "private user content"
+    })
+    const rendered = Diagnostic.unexpected(failure)
+    const path = rendered.split("Diagnostics: ")[1]!
+    try {
+      expect(rendered).toContain("ModuleLoadError: Cannot load module")
+      expect(path).toMatch(/failure\.log$/)
+      expect(statSync(path).mode & 0o777).toBe(0o600)
+      expect(statSync(dirname(path)).mode & 0o777).toBe(0o700)
+      const log = readFileSync(path, "utf8")
+      expect(log).toContain("ModuleLoadError: Cannot load module")
+      expect(log).not.toContain("fixture-secret")
+      expect(log).not.toContain("private user content")
+      expect(rendered).not.toContain("fixture-secret")
+    } finally {
+      rmSync(dirname(path), { recursive: true, force: true })
+    }
+  })
+})
+
+it("reports unexpected runtime bugs without verbose and retains designed refusals", () => {
+  const rendered = Diagnostic.report(new TypeError("Cannot load declaration"), { verbose: false })
+  const path = rendered.split("Diagnostics: ")[1]!
+  try {
+    expect(rendered).toContain("TypeError: Cannot load declaration")
+    expect(readFileSync(path, "utf8")).toContain("TypeError: Cannot load declaration")
+    expect(Diagnostic.report(new Error("No targets selected"), { verbose: false })).toBe("No targets selected")
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
+})
+
+it("retains diagnostics when the log directory is unavailable and never invokes error accessors", () => {
+  let reads = 0
+  const failure = Object.defineProperties(new TypeError("Declaration failed"), {
+    name: {
+      get: () => {
+        reads += 1
+        return "private user content"
+      }
+    },
+    _tag: {
+      get: () => {
+        reads += 1
+        return "private user content"
+      }
+    }
+  })
+  const rendered = Diagnostic.unexpected(failure, "/dev/null/unavailable")
+  expect(rendered).toContain("TypeError: Declaration failed")
+  expect(rendered).toContain("Diagnostics: unavailable (could not write log)")
+  expect(reads).toBe(0)
+})
+
+it("bounds a Unicode diagnostic without splitting an astral character", () => {
+  const rendered = Diagnostic.unexpected(new TypeError("🙂".repeat(5000)))
+  const path = rendered.split("Diagnostics: ")[1]!
+  try {
+    const log = readFileSync(path, "utf8").trimEnd()
+    expect([...log]).toHaveLength(4096)
+    expect(log.isWellFormed()).toBe(true)
+    expect(rendered.isWellFormed()).toBe(true)
+  } finally {
+    rmSync(dirname(path), { recursive: true, force: true })
+  }
 })

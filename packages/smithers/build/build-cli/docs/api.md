@@ -898,3 +898,11 @@ Both `Owners.renderCodeowners` and `Owners.renderOwnersTree` compute each
 relevant upstream claimant's dependency closure and package owners once per
 render call. Review-only claims appear in the OWNERS tree and are omitted
 from CODEOWNERS.
+
+`Diagnostic.report(cause, { verbose })` preserves designed refusals and gives
+unexpected command failures a redacted tag, message and private log receipt.
+`Diagnostic.unexpected(cause, directory?)` writes only that bounded diagnostic to
+`failure.log` in a fresh private temporary directory (or the supplied parent).
+If writing fails, it returns the diagnostic with `Diagnostics: unavailable`.
+Neither function serializes error payloads, stacks, arguments or environment.
+The side-effect-free `Diagnostic.present` remains available for rendering alone.

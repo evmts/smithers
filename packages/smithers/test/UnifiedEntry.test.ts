@@ -108,10 +108,10 @@ describe("unified process entry", () => {
       serve.mockRejectedValue(failure)
       await main(host)
       expect(result.codes.at(-1)).toBe(1)
-      expect(result.stderr).toBe(
+      expect(result.stderr).toEqual(
         failure instanceof Error
           ? "Authorization: Bearer [REDACTED_TOKEN]\n"
-          : "Something went wrong on our side. Not your fault.\n"
+          : expect.stringContaining("Diagnostics: ")
       )
       expect(result.stderr).not.toContain("fixture-private-token")
       clean(signals)
@@ -131,14 +131,14 @@ describe("unified process entry", () => {
     clean(signals)
   })
 
-  it.each([false, true])("keeps generic defaults and redacts explicit verbose diagnostics (%s)", async (verbose) => {
+  it.each([false, true])("prints redacted diagnostics with verbose=%s", async (verbose) => {
     const { host, signals, result } = fixture(verbose ? ["--help", "--verbose"] : ["--help"])
     serve.mockRejectedValue(new TypeError("sshpass -p ZqSynthetic7Secret4Value9 ssh host"))
     await main(host)
     expect(result.stderr).toContain("Something went wrong on our side. Not your fault.")
     expect(result.stderr).not.toContain("ZqSynthetic7Secret4Value9")
     if (verbose) expect(result.stderr).toContain("sshpass -p [REDACTED] ssh host")
-    else expect(result.stderr).not.toContain("sshpass")
+    else expect(result.stderr).toContain("Diagnostics: ")
     expect(result.codes.at(-1)).toBe(1)
     clean(signals)
   })

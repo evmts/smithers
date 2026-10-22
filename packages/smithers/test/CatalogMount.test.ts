@@ -68,7 +68,7 @@ it.each(["missing binding", "ambiguous binding", "invalid payload"])(
           ? { code: "not_available", message: "Not available yet" }
           : boundary === "ambiguous binding"
           ? { code: "UsageError", message: "This HTTP door has no unique payload variant" }
-          : { code: "command_failed", message: "Something went wrong on our side. Not your fault." }
+          : { code: "command_failed", message: expect.stringContaining("Diagnostics: ") }
       )
       if (boundary === "invalid payload") {
         await expect(dispatchCatalog(client, row, { text: 42 })).rejects.toMatchObject({

@@ -571,8 +571,11 @@ has already explained what failed, only the exit code remains to record, so
 the envelope's error block is not printed twice.
 
 A refused command prints the refusal's own sentence. A failure the CLI did not
-design prints `Something went wrong on our side. Not your fault.`; add
-`--verbose` on an execution command to append its raw message.
+design prints `Something went wrong on our side. Not your fault.`, followed by
+the redacted failure tag, message and `Diagnostics:` log path. Logs are private
+temporary files containing only that bounded diagnostic, without stacks, error
+payloads, command arguments or environment dumps. A failed log write is reported
+as `Diagnostics: unavailable`; the original failure still exits 1.
 
 `SIGINT` and `SIGTERM` abort every running target and set the exit code to 1,
 whatever the command was about to report. The second interrupt stops the

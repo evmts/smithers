@@ -340,7 +340,7 @@ export const fail = (context: Failing, cause: unknown, refusal: Refusal = {}): n
       cause.code :
       refusal.code ?? tag?.split("/").pop() ?? "command_failed",
     message: String(
-      Redaction.redactDiagnostic(Failure.operatorReport(cause, context.options?.verbose === true))
+      Redaction.redactDiagnostic(Failure.commandReport(cause, context.options?.verbose === true))
     ),
     exitCode: tag === "/cli/UsageError" ? 2 : refusal.exitCode ?? 1
   })
