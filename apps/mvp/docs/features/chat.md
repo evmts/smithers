@@ -99,7 +99,7 @@ A question ChatApi didn't take has no row and no `failure`: the asking tab shows
 
 Rules:
 - An answer only changes while `streaming`, through the answer routes, and only for the person who asked its question; settling is one update to `done` or `failed` ([agent.md](agent.md#the-answer-routes)).
-- A question and its answer are inserted in one statement (`Messages.ask`). The question draws its `position` from the identity, which steps by 2, and the answer takes the next one, so no other row lands between them and asking takes no lock. Asks can commit out of `position` order; Electric delivers a row that commits late in its place.
+- A question and its answer are inserted in one statement (`Messages.ask`). The question draws its `position` from the identity, which steps by 2, and the answer takes the next one, so no other row lands between them. Asking locks the conversation before allocating positions and holds that lock through commit; later asks and answer turns cannot overtake an uncommitted pair.
 - Ids are stored lowercase, as Postgres prints a `uuid`.
 - `db/migrations/0001_messages.ts` creates the table, with these values as `CHECK` constraints; `0003_paired_positions.ts` makes `position` step by 2; `0006_answer_parts.ts` adds `parts` and `unfinished`; `0008_browser_answering.ts` drops `attempts` (added by `0002`), settles answers the server left `streaming`, and indexes streaming answers by `position` for the turn wait; `0011_question_askers.ts` adds `asked_by`, checked null on an answer, and settles `abandoned` the answers still `streaming`, since no one may write them.
 
@@ -213,3 +213,5 @@ to remove the capture listener on both browsers and the Node test host.
   - A device's first page waits for the service worker and loads again online, the one earlier visit an offline reload needs: under the dev server the service worker keeps only what a page it controls fetched.
 - **Benchmarks (`pnpm bench`):** see [benchmarks.md](../benchmarks.md).
 - **Observability:** see [observability.md](../observability.md).
+
+IPv4-mapped IPv6 addresses use the IPv4 /24 throttle key in dotted, hexadecimal and fully expanded forms.

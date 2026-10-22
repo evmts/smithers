@@ -45,10 +45,11 @@ const notAsker = (fields: Fields) => {
 
 /**
  * The answer's row, who asked its question (`null` for a question asked before askers were recorded), and whether it
- * must wait: an earlier answer in its own conversation still streams and was written in the last `liveSeconds`. Two
- * conversations' turns never wait for each other (decision 0013 §1). An earlier answer whose device went away keeps streaming but stops holding up later turns once it
- * is that old. Before admission the route fences expired predecessors; `chat/Expire` also settles answers without a later turn. `waitedMs` is how long its turn has waited since the queue before it last moved: since the
- * latest earlier answer settled, or since it was asked if that is later, on Postgres' clock.
+ * must wait: an earlier answer in its conversation still streams and has a live host lease or awaits a person.
+ * Conversations never wait for each other (decision 0013 §1). Before admission the route fences expired predecessors;
+ * human waits retain their place regardless of age. `chat/Expire` also settles answers without a later turn.
+ * `waitedMs` is how long this turn has waited since the queue last moved: since the latest earlier answer settled,
+ * or since it was asked if that is later, on Postgres' clock.
  */
 const target = (answerId: string, liveSeconds: number) =>
   Effect.gen(function* () {
@@ -67,8 +68,9 @@ const target = (answerId: string, liveSeconds: number) =>
           SELECT 1 FROM messages e
           WHERE e.conversation_id = a.conversation_id AND e.role = 'assistant' AND e.status = 'streaming'
             AND e.position < a.position
-            AND GREATEST(e.updated_at, (SELECT r.updated_at FROM runs r WHERE r.id = e.id AND r.status = 'working'))
-              > now() - make_interval(secs => ${liveSeconds})
+            AND (EXISTS (SELECT 1 FROM runs r WHERE r.id = e.id AND r.status = 'needs_you')
+              OR GREATEST(e.updated_at, (SELECT r.updated_at FROM runs r WHERE r.id = e.id AND r.status = 'working'))
+                > now() - make_interval(secs => ${liveSeconds}))
         ) AS waiting,
         GREATEST(0, floor(extract(epoch FROM now() - GREATEST(a.created_at, (
           SELECT e.updated_at FROM messages e

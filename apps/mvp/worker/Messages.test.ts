@@ -84,74 +84,41 @@ describe("ask", () => {
     })
   })
 
-  test("takes no lock: an ask held mid-statement while another transaction asks keeps its answer next", async () => {
-    // The ask of "held" waits, after its question has drawn a position, until another transaction lets it go: a
-    // trigger in this file's schema only, on an advisory lock that transaction holds.
-    const key = 4_242_001
+  test("a later pair cannot commit ahead of an earlier allocated pair", async () => {
     const first = { id: uuid(), answerId: uuid() }
     const second = { id: uuid(), answerId: uuid() }
-    const held = { id: uuid(), answerId: uuid() }
     const locked = await runtime.runPromise(Deferred.make<void>())
     const go = await runtime.runPromise(Deferred.make<void>())
-    await runtime.runPromise(
-      Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient
-        yield* sql.unsafe(`CREATE FUNCTION hold() RETURNS trigger LANGUAGE plpgsql AS $$
-          BEGIN IF NEW.text = 'held' THEN PERFORM pg_advisory_xact_lock(${key}); END IF; RETURN NEW; END $$`)
-        yield* sql.unsafe(`CREATE TRIGGER hold BEFORE INSERT ON messages FOR EACH ROW EXECUTE FUNCTION hold()`)
-      }),
-    )
-    // The other transaction asks, takes the lock, stays open until `go`, asks again, then commits.
-    const other = runtime.runFork(
-      Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient
-        yield* sql.withTransaction(
-          Effect.gen(function* () {
-            yield* Messages.ask({ ...first, text: "first", askedBy: asker, conversationId })
-            yield* sql`SELECT pg_advisory_xact_lock(${key})`
-            yield* Deferred.succeed(locked, undefined)
-            yield* Deferred.await(go)
-            yield* Messages.ask({ ...second, text: "second", askedBy: asker, conversationId })
-          }),
-        )
-      }),
-    )
+    const other = runtime.runFork(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql.withTransaction(Effect.gen(function* () {
+        yield* Messages.ask({ ...first, text: "first", askedBy: asker, conversationId })
+        yield* Deferred.succeed(locked, undefined)
+        yield* Deferred.await(go)
+      }))
+    }))
     await runtime.runPromise(Deferred.await(locked))
-    const asking = alone(Messages.ask({ ...held, text: "held", askedBy: asker, conversationId }))
+    const asking = alone(Messages.ask({ ...second, text: "second", askedBy: asker, conversationId }))
     try {
-      // What this file's connections wait on.
-      const waiting = () =>
-        runtime.runPromise(
-          Effect.gen(function* () {
-            const sql = yield* SqlClient.SqlClient
-            const scratch = yield* TestDatabase.Scratch
-            return yield* sql<{ readonly locktype: string; readonly objid: string }>`
-              SELECT l.locktype, l.objid::int8::text AS objid
-              FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
-              WHERE NOT l.granted AND a.application_name = ${scratch.name}`
-          }),
-        )
-      await eventually(async () => (await waiting()).length > 0)
-      // It waits in the trigger, on the other transaction's lock: no lock of asking's own held it back.
-      expect(await waiting()).toEqual([{ locktype: "advisory", objid: String(key) }])
+      // Wait for the second connection either to block or to commit. The old
+      // implementation commits, making an invisible predecessor bypassable.
+      await eventually(async () => {
+        if ((await order()).includes(second.id)) return true
+        return runtime.runPromise(Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient
+          const scratch = yield* TestDatabase.Scratch
+          const rows = yield* sql`SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+            WHERE NOT l.granted AND a.application_name = ${scratch.name}`
+          return rows.length > 0
+        }))
+      })
+      expect(await order()).not.toContain(second.id)
     } finally {
       await runtime.runPromise(Deferred.succeed(go, undefined))
-      await runtime.runPromise(Fiber.await(other))
-      await asking.catch(() => undefined)
-      await runtime.runPromise(
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient
-          yield* sql.unsafe(`DROP TRIGGER hold ON messages`)
-          yield* sql.unsafe(`DROP FUNCTION hold()`)
-        }),
-      )
+      await runtime.runPromise(Fiber.join(other))
+      await asking
     }
-    expect((await asking).txid).toEqual(expect.any(Number))
-    // "held" drew its position before "second" did, and its answer still comes right after it.
-    expect(await order()).toEqual([first.id, first.answerId, held.id, held.answerId, second.id, second.answerId])
-    for (const ids of [first, held, second]) {
-      expect((await row(runtime, ids.answerId)).position).toBe((await row(runtime, ids.id)).position + 1)
-    }
+    expect(await order()).toEqual([first.id, first.answerId, second.id, second.answerId])
   })
 
   test("a retry of the same question changes nothing, whether its answer streams or has settled", async () => {

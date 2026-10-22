@@ -175,7 +175,7 @@ describe("GET /api/answers/<id>: the turn", () => {
     expect(report.status).toBe(200)
     await quiet(first, AGENT_LIVE_SECONDS + 1)
     const second = await ask(h, "Another question")
-    expect((await turn(h, second)).status).toBe(200)
+    expect((await turn(h, second)).status).toBe(409)
     expect(await row(runtime, first)).toMatchObject({ status: "streaming" })
     expect((await h.fetch(`/api/runs/${first}/answer`, { method: "POST", body: JSON.stringify({ version: 1, value: "This one" }) })).status).toBe(200)
     expect((await h.fetch(`/api/runs/${first}`, { method: "POST", body: JSON.stringify({ status: "working" }) })).status).toBe(200)

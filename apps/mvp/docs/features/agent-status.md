@@ -109,7 +109,7 @@ No record carries a question, an option or an answer (tests read the logs for th
 ## Limits
 
 - **Ten minutes to answer.** A question closes after `ASK_WITHIN_MS`, inside `chat/Expire`'s 25 minutes; a longer one needs `chat/Expire` to read the run's row (0015 phase 2).
-- **A waiting run writes nothing**, so after `ANSWER_TURN_LIVE_SECONDS` a later question starts beside it, as for any quiet answer.
+- **A run awaiting a person keeps its turn**, even after `ANSWER_TURN_LIVE_SECONDS`, until it resumes and settles ([0028](../decisions/0028-worker-admission-consistency.md)).
 - **A tab closed while a question is open costs one model call.** The frame that asked was in flight, so the next tab's engine asks its model again; the call it makes joins the question already parked (`flows.test.ts`).
 - **Only the asker answers**, and only their own runs sync. Other people see a run on their branch through the feed ([notifications.md](notifications.md)).
 - **No browser notification yet**: 0015 phase 2. A failed answer toasts for 4 s through the feed.

@@ -104,7 +104,7 @@ Electric ─▶ an answered row still needs_you ─▶ run/deliver (door sync) o
 ```
 
 - A question is open at most 10 minutes (`ASK_WITHIN_MS`), inside `chat/Expire`'s 25-minute expiry. Then `app/agent/ask` fails `timeout`, the agent answers without it, and the card closes. Longer questions need `chat/Expire` to read the `runs` row first (phase 2).
-- A run waiting on a person writes nothing, so after `ANSWER_TURN_LIVE_SECONDS` a later question starts beside it, as for any quiet answer.
+- Superseded by [0028](0028-worker-admission-consistency.md): a run waiting on a person retains its turn regardless of lease age.
 - A tab closed while a question is open costs one model call: the frame that asked was in flight, so the next tab's engine asks its model again, and the call it makes joins the question already parked.
 
 ## Reusable pieces in `@smthrs/ui`

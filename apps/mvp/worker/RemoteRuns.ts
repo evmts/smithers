@@ -2,7 +2,7 @@ import { ShapeProxy } from "@smthrs/effect-electric"
 import type { Flow } from "@smthrs/flow"
 import { Database, EngineStore, Journal } from "@smthrs/flows"
 import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
-import { Cause, Clock, Effect, Layer, Metric, Option, Predicate, Schema } from "effect"
+import { Cause, Clock, Data, Effect, Layer, Metric, Option, Predicate, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
@@ -157,6 +157,8 @@ const clippedValues = (inspection: EngineStore.RunInspection.Inspection): number
     ...inspection.journal.events.map((event) => event.payload),
   ].filter((value) => value?.clipped === true).length
 
+class NotWorking extends Data.TaggedError("NotWorking")<{}> {}
+
 const noStore = { "cache-control": "no-store" }
 
 /**
@@ -169,10 +171,11 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
     const inspection = EngineStore.RunInspection.layerWith({ flows: engine.flows })
     // The run's queue, over the engine's own journal in its schema. The route runs no migrations (the engine owns
     // them) and remembers one journal event at startup, not the journal's default thousands: it admits one steer.
-    const queue = NotificationQueue.layer.pipe(
-      Layer.provide(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject", sourceEventCache: 1 })),
-      Layer.provide(Layer.provideMerge(Database.DurableWriter.layer(), engine.writer)),
-    )
+    const queue = Layer.provideMerge(inspection, NotificationQueue.layer.pipe(
+      Layer.provideMerge(Journal.SqlJournal.layer({ capacity: 1024, overflow: "reject", sourceEventCache: 1 }).pipe(
+        Layer.provideMerge(Layer.provideMerge(Database.DurableWriter.layer(), engine.writer)),
+      )),
+    ))
 
     /** `POST /api/remote-runs/<runId>/steers`. */
     const steer = (runId: string) =>
@@ -216,29 +219,39 @@ export const make = <E, R, EE, ER>(database: Layer.Layer<SqlClient.SqlClient, E,
           const attempt = yield* attemptOf(runId).pipe(Effect.provide(database))
           if (Option.isNone(attempt)) return refused(404, "not_found")
           fields.runId = runId
-          const read = yield* Effect.flatMap(
-            EngineStore.RunInspection.RunInspection,
-            (reads) => reads.inspect(runId, { limit: 1 }),
-          ).pipe(Effect.provide(inspection), Effect.provide(engine.database), Effect.result)
-          if (read._tag === "Failure") {
-            if (Predicate.isTagged(read.failure, "@smthrs/engine-store/RunNotFound")) return refused(409, "not_working")
-            fields.errorCode = codeOf(read.failure)
-            return refused(503, "unavailable")
-          }
-          if (!steerable(read.success.run, read.success.steps)) return refused(409, "not_working")
-          const admitted = yield* Effect.flatMap(NotificationQueue.NotificationQueue, (notifications) =>
-            notifications.admit(
-              runId,
-              Notification.humanSteer({
+          const admitted = yield* Effect.gen(function* () {
+            const journal = yield* Journal.Journal.Journal
+            const notifications = yield* NotificationQueue.NotificationQueue
+            const reads = yield* EngineStore.RunInspection.RunInspection
+            return yield* journal.transact(Effect.gen(function* () {
+              // Admission resolves durable identity first. A duplicate keeps its
+              // receipt even after completion; a new steer is rolled back unless
+              // the run is steerable under this same engine writer transaction.
+              const receipt = yield* notifications.admit(
                 runId,
-                id,
-                actor: steerer.actor,
-                attribution: { login: steerer.login, via: steerer.via },
-                payload: SteerPayload.encode({ kind: "Message", body: body.value.body }),
-              }),
-            )).pipe(Effect.provide(queue), Effect.scoped, Effect.result)
+                Notification.humanSteer({
+                  runId,
+                  id,
+                  actor: steerer.actor,
+                  attribution: { login: steerer.login, via: steerer.via },
+                  payload: SteerPayload.encode({ kind: "Message", body: body.value.body }),
+                }),
+              )
+              if (!receipt.duplicate) {
+                const read = yield* reads.inspect(runId, { limit: 1 }).pipe(
+                  Effect.catchIf(
+                    (error) => Predicate.isTagged(error, "@smthrs/engine-store/RunNotFound"),
+                    () => Effect.fail(new NotWorking()),
+                  ),
+                )
+                if (!steerable(read.run, read.steps)) return yield* new NotWorking()
+              }
+              return receipt
+            }))
+          }).pipe(Effect.provide(queue), Effect.scoped, Effect.result)
           if (admitted._tag === "Failure") {
             const failure = admitted.failure
+            if (Predicate.isTagged(failure, "NotWorking")) return refused(409, "not_working")
             if (Predicate.isTagged(failure, "/notifications/NotificationError") && failure.code === "notification_id_reused") {
               return refused(409, "conflict")
             }

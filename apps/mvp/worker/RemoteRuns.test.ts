@@ -106,6 +106,7 @@ interface Engine {
   readonly run: (executionId: string, pauseMs?: number) => Promise<void>
   /** Starts `Watched` as `executionId` and returns at once; the run goes on until the engine closes. */
   readonly start: (executionId: string, pauseMs: number) => Promise<void>
+  readonly cancel: (executionId: string) => Promise<void>
   /** Starts `Reviewed` as `executionId` and returns at once. */
   readonly review: (executionId: string, pauseMs: number) => Promise<void>
   /** A run's status in the engine. */
@@ -137,6 +138,7 @@ const withEngine = <A>(body: (engine: Engine) => Promise<A>): Promise<A> =>
                 scope,
               ))),
             status: (executionId) => Effect.runPromise(engine.status(executionId)),
+            cancel: (executionId) => Effect.runPromise(flows.interrupt(Watched, executionId).pipe(Effect.provide(context))),
             run: (executionId, pauseMs = 0) => Effect.runPromise(Effect.asVoid(Effect.orDie(execute(executionId, pauseMs)))),
             start: (executionId, pauseMs) =>
               Effect.runPromise(Effect.asVoid(Effect.forkIn(Effect.ignore(execute(executionId, pauseMs)), scope))),
@@ -513,6 +515,52 @@ describe("POST /api/remote-runs/<runId>/steers", () => {
     })
   }, 60_000)
 
+  test("a steer waiting for its writer refuses a run that ends before admission", async () => {
+    const runId = todoExecutionId((await attempt()).attemptId)
+    await withEngine(async (engine) => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) === "suspended", 10_000)
+      let entered!: () => void
+      let release!: () => void
+      const waiting = new Promise<void>((resolve) => { entered = resolve })
+      const go = new Promise<void>((resolve) => { release = resolve })
+      const writer = Layer.unwrap(Effect.promise(async () => {
+        entered()
+        await go
+        return engine.writer
+      }))
+      const h = await routes({ ...engine, writer }, { actor: member })
+      const pending = h.fetch(steersRoute(runId), post({ id: uuid(), body: "Too late" }))
+      try {
+        await waiting
+        await engine.cancel(runId)
+        await eventually(async () => (await engine.status(runId)) === "cancelled", 10_000)
+      } finally {
+        release()
+      }
+      const response = await pending
+      expect([response.status, await response.json()]).toEqual([409, { code: "not_working" }])
+      expect(await pendingOf(engine, runId)).toEqual([])
+    })
+  }, 60_000)
+
+  test("an admitted steer retains its receipt after completion", async () => {
+    const runId = todoExecutionId((await attempt()).attemptId)
+    await withEngine(async (engine) => {
+      await engine.start(runId, 60_000)
+      await eventually(async () => (await engine.status(runId)) === "suspended", 10_000)
+      const h = await routes(engine, { actor: member })
+      const message = { id: uuid(), body: "Keep this receipt" }
+      const taken = await h.fetch(steersRoute(runId), post(message))
+      expect(taken.status).toBe(202)
+      const receipt = await taken.json()
+      await engine.cancel(runId)
+      await eventually(async () => (await engine.status(runId)) === "cancelled", 10_000)
+      const again = await h.fetch(steersRoute(runId), post(message))
+      expect([again.status, await again.json()]).toEqual([200, receipt])
+    })
+  }, 60_000)
+
   test("an agent acting for a Member steers too, and the run's model reads that it came through an agent", async () => {
     const start = await attempt()
     const runId = todoExecutionId(start.attemptId)
@@ -616,12 +664,6 @@ describe("POST /api/remote-runs/<runId>/steers", () => {
       const cases: ReadonlyArray<[Awaited<ReturnType<typeof routes>>, string | undefined]> = [
         [await routes(engine, { sessions: sessionsDown }), undefined],
         [await routes(engine, { actor: member, database: missing("remote_runs_no_app") }), "sql:"],
-        [
-          await routes({ schema: engine.schema, database: missing("remote_runs_no_engine"), writer: engine.writer }, {
-            actor: member,
-          }),
-          "@smthrs/",
-        ],
         [
           await routes({ schema: engine.schema, database: engine.database, writer: missing("remote_runs_no_writer") }, {
             actor: member,

@@ -46,8 +46,17 @@ const ipv4Network = (address: string) => {
 
 const HEXTET = /^[0-9a-f]{1,4}$/
 
-/** An IPv6 address's /48 with each group in its shortest form, or `undefined` when it isn't one. */
+/** An IPv6 /48, a mapped IPv4 /24, or `undefined` when the address is invalid. */
 const ipv6Network = (address: string) => {
+  // Expand a dotted suffix before parsing, so every mapped representation
+  // reaches the same numeric groups (including fully expanded IPv6).
+  if (address.includes(".")) {
+    const colon = address.lastIndexOf(":")
+    const dotted = address.slice(colon + 1)
+    if (colon < 0 || ipv4Network(dotted) === undefined) return undefined
+    const octets = dotted.split(".").map(Number)
+    address = `${address.slice(0, colon + 1)}${(octets[0]! * 256 + octets[1]!).toString(16)}:${(octets[2]! * 256 + octets[3]!).toString(16)}`
+  }
   const halves = address.toLowerCase().split("::")
   if (halves.length > 2) return undefined
   const head = halves[0] === "" ? [] : halves[0]!.split(":")
@@ -56,7 +65,11 @@ const ipv6Network = (address: string) => {
   if (halves.length === 1 ? missing !== 0 : missing < 1) return undefined
   const groups = [...head, ...Array<string>(halves.length === 1 ? 0 : missing).fill("0"), ...tail]
   if (!groups.every((group) => HEXTET.test(group))) return undefined
-  return `${groups.slice(0, 3).map((group) => parseInt(group, 16).toString(16)).join(":")}::/48`
+  const values = groups.map((group) => parseInt(group, 16))
+  if (values.slice(0, 5).every((value) => value === 0) && values[5] === 0xffff) {
+    return `${values[6]! >> 8}.${values[6]! & 255}.${values[7]! >> 8}.0/24`
+  }
+  return `${values.slice(0, 3).map((value) => value.toString(16)).join(":")}::/48`
 }
 
 /**
@@ -65,8 +78,7 @@ const ipv6Network = (address: string) => {
  */
 export const networkOf = (headers: Readonly<Record<string, string | undefined>>): string => {
   const address = headers["cf-connecting-ip"]?.trim() ?? ""
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(address)?.[1]
-  return ipv4Network(mapped ?? address) ?? ipv6Network(address) ?? "unknown"
+  return ipv4Network(address) ?? ipv6Network(address) ?? "unknown"
 }
 
 /**
