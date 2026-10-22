@@ -21,6 +21,7 @@ import { FlowDispatch } from "../flows/dispatch"
 import { clientFlows } from "../flows/declarations"
 import { tabAnswers, tabEngine } from "../flows/engine"
 import { tabNavigation } from "../features/navigation/tab"
+import { tabDoors } from "../flows/doors"
 import { workerRegistrations } from "../flows/registrations"
 import type { Endpoint } from "../flows/tabPort"
 import { ORIGIN } from "./agent"
@@ -34,11 +35,15 @@ export interface DeviceTelemetry {
   readonly engine?: Layer.Layer<never>
 }
 
-/** A tab's navigation answers on engine `name`, recording where it went in `navigated`, as src/boot.ts composes them. */
+/**
+ * A tab's navigation answers on engine `name`, recording where it went in `navigated`, and which door its runs came
+ * through, so only its own press of a person's flow runs in the person's session, as src/boot.ts composes them.
+ */
 const navigation = (name: string, navigated: Array<string>) =>
-  tabNavigation({ name, origin: ORIGIN, navigate: (path) => void navigated.push(path) }).pipe(
-    Layer.provide(TabChannel.layer),
-  )
+  Layer.mergeAll(
+    tabNavigation({ name, origin: ORIGIN, navigate: (path) => void navigated.push(path) }),
+    tabDoors({ name }),
+  ).pipe(Layer.provide(TabChannel.layer))
 
 /** An engine worker that never leads: a second tab's, waiting its turn. */
 const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({

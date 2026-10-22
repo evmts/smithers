@@ -42,6 +42,22 @@ describe("the device's engine", () => {
     expect(await Effect.runPromise(device.store.current)).toBe("light")
   })
 
+  test("the tab says which door its press came through, so a person-only press goes in the person's session", async () => {
+    const agent = await openAgent(runtime, () => Stream.empty)
+    const device = await openDevice(agent.fetch)
+    devices.push(device)
+
+    // Answering a run that doesn't exist reaches ChatApi as the person and reads `404`; as anyone acting for them, the
+    // server refuses it `403 person_only` before it looks for the run.
+    const answered = await Effect.runPromise(device.dispatch.dispatch(
+      "run/answer",
+      { runId: crypto.randomUUID(), version: 1, execution: "none", value: true },
+      { door: "button" },
+    ))
+
+    expect(answered).toMatchObject({ _tag: "Failed", error: { _tag: "@smthrs/mvp/status/AnswerRefused", status: 404 } })
+  })
+
   test("the agent answers on the leader's engine, and its theme call paints this tab", async () => {
     let calls = 0
     const agent = await openAgent(runtime, () => {
