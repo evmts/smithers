@@ -164,6 +164,34 @@ describe("NodeWorkspaceObservation.changes", () => {
 
   const count = (answer: Option.Option<number>): number => Option.getOrThrow(answer)
 
+  it.for([".git\\kept.ts", "node_modules\\kept.ts", "out\\run/kept.ts"])(
+    "counts measured POSIX backslash path %s before reusing a cached observation",
+    patient,
+    async (name, context) => {
+      if (process.platform === "win32") context.skip("backslashes separate paths on Windows")
+      const root = checkout()
+      write(root, name, "one")
+      const options = { excludePaths: ["out/run"] }
+      const { feed, settled, close } = await feedOver(root, options)
+      try {
+        const beforeCount = await settled()
+        const cached = WorkspaceObservation.cached(WorkspaceObservation.observeHost(host, root, options), feed)
+        const before = await Effect.runPromise(cached)
+        expect(before.paths).toBe(3)
+        write(root, name, "changed size")
+        const afterCount = await settled()
+        if (Option.isSome(beforeCount) && Option.isSome(afterCount)) {
+          expect(afterCount.value).toBeGreaterThan(beforeCount.value)
+        }
+        const after = await Effect.runPromise(cached)
+        expect(after.digest).not.toBe(before.digest)
+        expect(after).toEqual(await native(root, options))
+      } finally {
+        await close()
+      }
+    }
+  )
+
   // Whether this host delivers change events at all. macOS routes them through
   // one system daemon, which a host under heavy file churn can starve for many
   // seconds; the feed then never vouches and every measurement walks, which the

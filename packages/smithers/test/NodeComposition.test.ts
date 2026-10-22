@@ -330,6 +330,27 @@ describe("NodeControl.checkpointStore", () => {
 })
 
 describe("NodeControl.testRunner", () => {
+  it.each(["..foo", "..foo/nested"])("keeps the configured runner for descendant %s", (descendant) => {
+    expect(NodeControl.testRunner(
+      { SMITHERS_TEST_COMMAND: "pytest -q", SMITHERS_TEST_CWD: "/testbed/" },
+      "/work/repo",
+      `/work/repo/${descendant}`
+    )).toEqual({
+      command: "pytest -q",
+      baseline: false,
+      cwd: `/testbed/${descendant}`,
+      root: `/work/repo/${descendant}`
+    })
+  })
+
+  it.each(["/work", "/work/sibling", "/work/repository"])("refuses a runner outside the mount at %s", (directory) => {
+    expect(NodeControl.testRunner(
+      { SMITHERS_TEST_COMMAND: "pytest -q", SMITHERS_TEST_CWD: "/testbed" },
+      "/work/repo",
+      directory
+    )).toBeUndefined()
+  })
+
   it("declares no runner until the host names a command", () => {
     // A `test` flow bound over a declaration that can only refuse is worse than
     // no flow at all: the catalog then advertises a call whose every answer is

@@ -18,7 +18,7 @@ import { LanguageServer } from "@smthrs/std"
 import { Context, Effect, type Scope } from "effect"
 import { accessSync, constants, realpathSync } from "node:fs"
 import { createRequire } from "node:module"
-import { delimiter, isAbsolute, join, relative, resolve } from "node:path"
+import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path"
 
 /**
  * The files typescript-language-server answers for.
@@ -71,7 +71,7 @@ const realPath = (path: string): string => {
 
 const within = (root: string, path: string): boolean => {
   const inside = relative(root, path)
-  return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside))
+  return inside !== ".." && !inside.startsWith(`..${sep}`) && !isAbsolute(inside)
 }
 
 /** The real path of the executable `name` on `PATH`, skipping relative entries. */

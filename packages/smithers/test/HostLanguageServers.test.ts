@@ -96,6 +96,26 @@ const install = (prefix: string, options?: { readonly typescript?: boolean }) =>
 }
 
 describe("HostLanguageServers.typescript", () => {
+  it("refuses a server under a workspace directory named ..tools", () => {
+    const planted = install(join(workspace, "..tools"))
+    expect(HostLanguageServers.typescript(workspace, { PATH: planted.bin })).toBeUndefined()
+  })
+
+  it("refuses host TypeScript linked into a workspace directory named ..tools", () => {
+    install(join(workspace, "..tools"))
+    const host = install(join(root, "host"), { typescript: false })
+    symlinkSync(
+      join(workspace, "..tools", "node_modules", "typescript"),
+      join(root, "host", "node_modules", "typescript")
+    )
+    expect(HostLanguageServers.typescript(workspace, { PATH: host.bin })).toBeUndefined()
+  })
+
+  it("accepts a sibling host directory whose name starts with ..", () => {
+    const host = install(join(root, "..host"))
+    expect(HostLanguageServers.typescript(workspace, { PATH: host.bin })?.command).toBe(host.cli)
+  })
+
   it("binds the host server pinned to the TypeScript beside it", () => {
     const host = install(join(root, "host"))
     expect(HostLanguageServers.typescript(workspace, { PATH: ["relative/bin", "", host.bin].join(":") })).toEqual({

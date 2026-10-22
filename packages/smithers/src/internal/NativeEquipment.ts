@@ -31,7 +31,7 @@ import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import { statSync } from "node:fs"
 import { homedir } from "node:os"
-import { isAbsolute, join, relative } from "node:path"
+import { isAbsolute, join, relative, sep } from "node:path"
 import type * as Application from "../Application.ts"
 import * as CliError from "../CliError.ts"
 import * as Environment_ from "../Environment.ts"
@@ -347,7 +347,6 @@ const poolRouteOf = (
     return origin(Environment_.read(environment, accountPoolVariable)) === undefined ? undefined : "anthropic"
   }
   if (provider !== "openai") return undefined
-  if (origin(Environment_.read(environment, accountPoolVariable)) !== undefined) return "chatgpt"
   const configured = Environment_.read(environment, openaiAuthVariable)
   return configured === undefined || configured === "" || configured === "chatgpt" ? "chatgpt" : undefined
 }
@@ -848,7 +847,7 @@ export const cellLimits: Sandbox.Limits = {
 const mountedAs = (mount: string, root: string, directory: string): string | undefined => {
   const inside = relative(root, directory)
   if (inside === "") return mount
-  if (inside.startsWith("..") || isAbsolute(inside)) return undefined
+  if (inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) return undefined
   return `${mount.replace(/\/+$/, "")}/${inside}`
 }
 

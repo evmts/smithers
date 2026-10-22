@@ -713,14 +713,37 @@ describe("NodeControl.seatResolver behind SMITHERS_ACCOUNT_POOL_URL", () => {
     expect(calls).toBe(1)
   })
 
-  it("keeps a configured pool on subscriptions even with stale api-key mode", async () => {
-    const { executor } = poolExecutor(() => ["anthropic", "chatgpt"])
-    const resolved = await Effect.runPromise(
-      resolveWith({ ...pooled, SMITHERS_OPENAI_AUTH: "api-key" }, executor, "openai:gpt-6-luna")
-    )
-    expect((await prepared(resolved, resolved.modelId)).url).toBe(
-      "https://cloud.example.test/provider-pool/chatgpt/codex/responses"
-    )
+  it.each(["pool-token", undefined])(
+    "honors explicit api-key mode with pool key %s without querying the pool",
+    async (key) => {
+      const resolved = await Effect.runPromise(
+        resolveWith(
+          { ...pooled, SMITHERS_ACCOUNT_POOL_KEY: key, SMITHERS_OPENAI_AUTH: "api-key" },
+          executor,
+          "openai:gpt-6-luna"
+        )
+      )
+      expect((await prepared(resolved, resolved.modelId)).url).toBe(
+        "https://cloud.example.test/model-proxy/openai/v1/responses"
+      )
+    }
+  )
+
+  it.each([
+    ["api-key", undefined, "Set OPENAI_API_KEY"],
+    ["invalid", "repository-key", "SMITHERS_OPENAI_AUTH must be"]
+  ])("validates explicit %s mode before a configured pool", async (mode, key, message) => {
+    const error = await Effect.runPromise(Effect.flip(resolveWith(
+      {
+        ...pooled,
+        SMITHERS_OPENAI_AUTH: mode,
+        OPENAI_API_KEY: key
+      },
+      executor,
+      "openai:gpt-6-luna"
+    )))
+    expect(error).toBeInstanceOf(Seat.SeatUnresolved)
+    expect(error.message).toContain(message)
   })
 
   it("asks the pool again once its answer is 30 seconds old, without a restart", async () => {

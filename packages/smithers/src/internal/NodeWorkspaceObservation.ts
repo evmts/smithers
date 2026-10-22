@@ -26,6 +26,7 @@ import * as PlatformError from "effect/PlatformError"
 import { randomUUID } from "node:crypto"
 import { type Dirent, type FSWatcher, rmSync, watch } from "node:fs"
 import { lstat, readdir, rm, writeFile } from "node:fs/promises"
+import { sep } from "node:path"
 
 /** The reason tags `@effect/platform-node`'s `handleErrnoException` assigns. */
 const reason = (code: unknown): PlatformError.SystemErrorTag => {
@@ -172,7 +173,7 @@ export const changes = (
       Effect.sync((): FSWatcher | undefined => {
         try {
           return watch(base, { recursive: true, persistent: false }, (_event, filename) => {
-            const relative = filename === null ? undefined : String(filename).replaceAll("\\", "/")
+            const relative = filename === null ? undefined : String(filename).split(sep).join("/")
             if (relative !== undefined) {
               const arrive = waiters.get(relative)
               if (arrive !== undefined) {

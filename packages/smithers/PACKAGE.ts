@@ -84,6 +84,12 @@ const importRules = ImportRules({
       files: ["src/internal/backend/ProductApi.ts", "test/fixtures/workflow-rpc-types.ts"],
       packages: ["@smthrs/*"],
       because: "SDK-5: the relay uses the public control and gateway contracts."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/ControlSurface.test.ts"],
+      callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.doMock", "jest.mock"],
+      because: "test.behavioral: control HTTP host tests use real services and completion signals."
     }
   ]
 })
@@ -110,16 +116,6 @@ const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeSc
   tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
   // Runnable examples are linted and type-checked with the sources.
   sources: Smithers.glob("{src,examples}/**/*.ts")
-})
-
-const importRules = ImportRules({
-  cwd: "packages/smithers",
-  rules: [{
-    kind: "forbidCalls",
-    files: ["test/ControlSurface.test.ts"],
-    callees: ["setTimeout", "*.sleep", "*.waitForTimeout", "vi.mock", "vi.doMock", "jest.mock"],
-    because: "test.behavioral: control HTTP host tests use real services and completion signals."
-  }]
 })
 
 /**
@@ -504,7 +500,6 @@ export const Package = Smithers.Package({
     cliInstall,
     lib,
     lint,
-    importRules,
     nativeSources,
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
