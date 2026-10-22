@@ -38926,7 +38926,7 @@ https://smithers.sh/docs/reference/api/sandbox/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/docs)
 
-> **Related APIs:** [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/)
+> **Related APIs:** [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 `@smthrs/sandbox` adapts a provider a caller hands it onto Effect's host
 services. The smallest composition adapts a spawn-only provider onto
@@ -38977,6 +38977,7 @@ Every namespace is also its own subpath, and `./internal/*` is null mapped.
 | `@smthrs/sandbox/TerminalProtocol`          | [src/TerminalProtocol/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/TerminalProtocol)                   |
 | `@smthrs/sandbox/SandboxTools`              | [src/SandboxTools/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxTools)                           |
 | `@smthrs/sandbox/SandboxCommand`            | [src/SandboxCommand/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/SandboxCommand)                       |
+| `@smthrs/sandbox/CiJob`                     | [src/CiJob/](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/src/CiJob)                                         |
 
 ## RemoteChildProcessSpawner
 
@@ -39282,6 +39283,43 @@ session and a step, still stop at `SandboxTools.limits.maxTimeoutSeconds` (600).
 
 A lost command is cancelled and the job fails `ExternalJobLost` once `restarts` are spent (zero unless set, so a
 command runs at most once). Past the deadline the job cancels the command and fails `ExternalJobTimedOut`.
+
+## CiJob
+
+One CI job on one machine: the commit checked out, its steps run in order as durable actions, and an outcome. A
+repository's CI calls `ci/job` once per job; `Node.all` over several jobs is a matrix, and every row reports.
+
+```ts
+import { Node } from "@smthrs/plan"
+import { CiJob } from "@smthrs/sandbox"
+
+const lint = CiJob.make("lint", {
+  steps: [{ name: "install", run: "pnpm install --frozen-lockfile" }, { name: "lint", run: "pnpm lint" }]
+})
+const test = CiJob.make("test", { steps: [{ name: "test", run: "pnpm test" }] })
+// in a flow's body:
+Node.all({ lint: lint.call(target), test: test.call(target) })
+// each settles { outcome: "passed" | "failed" | "cancelled" | "skipped", steps: [{ name, outcome, exitCode }] }
+```
+
+| Name                    | What it is                                                                                                |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- |
+| `CiJob`                 | the `ci/job` flow: payload `{ target, job }`, success `Result`; it never fails                            |
+| `make(name, { steps })` | a job's declaration; `.call(target)` starts it as a child run                                             |
+| `Target`                | `{ run, repo, sha, ref }`: the run it belongs to, `owner/name`, the 40-hex commit, the ref                |
+| `Job`, `Step`           | a job's name and 1 to 32 steps; a step's name, `run` (a `sh -c` command) and `timeoutSeconds?`            |
+| `Result`, `Outcome`     | the job's outcome, then the `checkout` and each step's outcome and exit code                              |
+| `Machine`               | the host's service: `checkout(target, job)`, `run(target, job, index, step)`, `release(target, job)`      |
+| `layer`                 | the actions `ci/job/Checkout`, `ci/job/Step` and `ci/job/Release` over `Machine`                          |
+| `MachineUnavailable`    | the machine couldn't start or answer; retried 1 s doubling to a minute for 30 minutes, then the job fails |
+
+- **An outcome, never a failure.** A step that exits non-zero, or runs past its time (600 s at most), fails the job and
+  skips the steps after it without running them. A machine that never answers fails the job.
+- **Exactly the commit.** A checkout that isn't exactly `target.sha` fails the job before any step runs.
+- **At most once.** Each step is its own durable action, so a resumed job never runs a step that ran; the host's
+  machine runs each `(run, job, index)` once.
+- **The host owns the machine.** One machine per `(target.run, job)`. The Smithers app's is a container of the branch
+  sandbox's image that reaches the package registry and nothing else.
 
 ## SandboxMerge
 
