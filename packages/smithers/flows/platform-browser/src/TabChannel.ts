@@ -24,7 +24,6 @@ import * as Metric from "effect/Metric"
 import * as Queue from "effect/Queue"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import * as Stream from "effect/Stream"
 
 /**
  * The slice of `BroadcastChannel` this service uses.
@@ -133,9 +132,13 @@ export const make = (
               )
             )
           )
-        // What the channel ended and has not recorded yet, as when the overflow ends the scope, is recorded as it closes.
+        // Each overflow is taken and recorded whole, or left for the finalizer to record as the channel closes, as when
+        // the overflow itself ends the scope: never lost, never twice.
         yield* Effect.addFinalizer(() => Effect.flatMap(Queue.clear(ended), Effect.forEach(record, { discard: true })))
-        yield* Stream.fromQueue(ended).pipe(Stream.runForEach(record), Effect.forkScoped)
+        yield* Effect.uninterruptibleMask((restore) => Effect.flatMap(restore(Queue.take(ended)), record)).pipe(
+          Effect.forever,
+          Effect.forkScoped
+        )
         const channel = yield* Effect.acquireRelease(
           Effect.sync(() => {
             const channel = construct(name)

@@ -71,6 +71,25 @@ describe("TabChannel's bound", () => {
     })))
   })
 
+  it.effect("counts and logs every subscriber it ended exactly once, however soon the channel closes", () => {
+    const telemetry = Telemetry.make()
+    return telemetry.observed(
+      Effect.gen(function*() {
+        const { construct, deliver } = handMade()
+        yield* Effect.scoped(Effect.gen(function*() {
+          const port = yield* TabChannel.make(construct, { capacity: 1 }).open("busy")
+          for (let n = 0; n < 1_000; n++) yield* port.subscribe
+          deliver(1)
+          deliver(2)
+          yield* Effect.yieldNow
+        }))
+      })
+    ).pipe(Effect.andThen(Effect.sync(() => {
+      expect(telemetry.count(TabChannel.overflows, { channel: "busy" })).toBe(1_000)
+      expect(telemetry.lines("browser.tab_channel.overflow")).toHaveLength(1_000)
+    })))
+  })
+
   it.effect("keeps 10,000 messages for a subscriber by default", () =>
     Effect.gen(function*() {
       const { construct, deliver } = handMade()

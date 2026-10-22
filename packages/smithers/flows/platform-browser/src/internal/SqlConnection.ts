@@ -179,7 +179,9 @@ interface Guard {
 
 /** SQLite's authorizer action codes this connection reads (https://sqlite.org/c3ref/c_alter_table.html). */
 const action = {
+  createIndex: 1,
   createTable: 2,
+  createTempIndex: 3,
   createTempTable: 4,
   createTempTrigger: 5,
   createTempView: 6,
@@ -188,6 +190,7 @@ const action = {
   delete: 9,
   dropTable: 11,
   insert: 18,
+  pragma: 19,
   transaction: 22,
   update: 23,
   alterTable: 26,
@@ -262,7 +265,13 @@ export const make = (database: Statements.Database): Effect.Effect<Service, neve
         case action.alterTable:
         case action.createTrigger:
         case action.createTempTrigger:
+        // A unique index would make one tab's receipt replace another's.
+        case action.createIndex:
+        case action.createTempIndex:
           return isLeaders(second) ? 1 : 0
+        // A writable schema could give the leader's storage another name.
+        case action.pragma:
+          return String(first).toLowerCase() === "writable_schema" ? 1 : 0
         case action.transaction:
           if (first === "COMMIT") guard.ends = true
           return 0

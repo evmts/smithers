@@ -18,7 +18,7 @@ outside a transaction and opens one of its own fails as a nested `BEGIN` does.
 The commit hook also refuses a commit before a request's last statement, so a
 request commits at most once; a rollback to a savepoint that takes the receipt
 writes it again; SQLite's authorizer refuses a tab's statement that would
-change the leader's tables, hang a trigger on them or create a table or view by
-their names, and the leader names them as `main.` tables; replies keep
+change the leader's tables, hang a trigger or an index on them, create a table
+or view by their names or set `PRAGMA writable_schema`, and the leader names them as `main.` tables; replies keep
 infinities; and a receipt is kept,
 however old, until its tab's Web Lock comes free, instead of for a day.

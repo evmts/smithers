@@ -306,6 +306,12 @@ describe("SqlConnection receipts", () => {
           `CREATE TRIGGER quiet BEFORE INSERT ON ${SqlProtocol.commits} BEGIN SELECT RAISE(IGNORE); END`,
           `CREATE TEMP TRIGGER quiet BEFORE INSERT ON ${SqlProtocol.commits} BEGIN SELECT RAISE(IGNORE); END`,
           `DROP TABLE ${SqlProtocol.replies}`,
+          // A unique index would make one tab's receipt replace another's.
+          `CREATE UNIQUE INDEX main.one ON ${SqlProtocol.commits.toUpperCase()} ((1))`,
+          `CREATE INDEX temp_one ON ${SqlProtocol.replies} (rows)`,
+          // A writable schema could give the leader's storage another, unguarded name.
+          "PRAGMA writable_schema = ON",
+          "PRAGMA main.WRITABLE_SCHEMA",
           // A temporary table or view by a leader table's name would take the leader's unqualified statements.
           `CREATE TEMP TABLE ${SqlProtocol.commits} (client TEXT PRIMARY KEY, opened INTEGER NOT NULL, at INTEGER NOT NULL)`,
           `CREATE TEMP VIEW ${SqlProtocol.replies} AS SELECT 1`
@@ -327,6 +333,8 @@ describe("SqlConnection receipts", () => {
       )
       yield* service.run("a", "DROP TRIGGER sneak; COMMIT", [], true, decided(4))
       expect(yield* receipts(service)).toEqual([{ client: "a", opened: 0, at: 1_000 }])
+      // Other pragmas run, as TanStack DB's reads of a table's columns do.
+      expect((yield* service.run("a", "PRAGMA table_info(t)", [], false, decided(5))).rows).toHaveLength(1)
       // The leader's own statements may.
       yield* service.run("leader", `DELETE FROM ${SqlProtocol.commits}`, [], false)
       expect(yield* receipts(service)).toEqual([])

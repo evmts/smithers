@@ -105,9 +105,9 @@ browser persistence, so it loads one SQLite build and opens one pool.
   request's last statement, so a request commits at most once. A read commits
   nothing and pays for no receipt. The rows a committed request returned are
   kept beside its receipt, in `shared_sqlite_replies`. A tab's statement may
-  not change either table, hang a trigger on it, or create a table or view
-  by its name: SQLite's authorizer refuses it, and the leader names them as
-  `main.` tables.
+  not change either table, hang a trigger or an index on it, create a table
+  or view by its name, or set `PRAGMA writable_schema`: SQLite's authorizer
+  refuses it, and the leader names them as `main.` tables.
 - So a handover never runs a committed request twice. A statement that
   committed a transaction just as the old leader ended is answered as
   committed by the new one when the receipt names the request that opened
