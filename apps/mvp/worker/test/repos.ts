@@ -50,17 +50,57 @@ type Runtime = ReturnType<typeof testFile>
 /** The person a harness signs every request in as, unless told otherwise. */
 export const member: Actor.Actor = { subject: { kind: "person", id: "octocat" }, role: "member" }
 
-/** Empties the repository tables and the clones' feed rows, and resumes imports, for a test that starts from nothing. */
+/**
+ * Electric's shape of `table` in this file's schema: open (created if need be) at its latest offset. A truncate reaches
+ * it as `409 must-refetch` once Electric has replicated it, which `truncated` waits for.
+ */
+const openShape = (table: string) =>
+  Effect.gen(function* () {
+    const { name } = yield* TestDatabase.Scratch
+    const shape = `${yield* TestDatabase.electricUrl}/v1/shape?table=${name}.${table}`
+    let at = "offset=-1"
+    for (;;) {
+      const response = yield* Effect.promise((signal) => fetch(`${shape}&${at}`, { signal }))
+      if (!response.ok) return yield* Effect.die(new Error(`Electric answered ${response.status} for ${table}`))
+      const body = (yield* Effect.promise(() => response.json())) as ReadonlyArray<{ readonly headers?: { readonly control?: string } }>
+      at = `offset=${response.headers.get("electric-offset")}&handle=${response.headers.get("electric-handle")}`
+      if (body.some((message) => message.headers?.control === "up-to-date")) return { shape, at }
+    }
+  })
+
+/** Waits until Electric has replicated a truncate of the shape `openShape` opened: it answers 409 must-refetch. */
+const truncated = ({ shape, at }: { readonly shape: string; readonly at: string }) =>
+  Effect.gen(function* () {
+    let next = at
+    for (;;) {
+      const response = yield* Effect.promise((signal) => fetch(`${shape}&${next}&live=true`, { signal }))
+      yield* Effect.promise(() => response.text())
+      if (response.status === 409) return
+      if (!response.ok) return yield* Effect.die(new Error(`Electric answered ${response.status} after a truncate`))
+      next = `offset=${response.headers.get("electric-offset")}&handle=${response.headers.get("electric-handle")}`
+    }
+  })
+
+/**
+ * Empties the repository tables and the clones' feed rows, and resumes imports, for a test that starts from nothing.
+ * It returns once Electric has replicated the truncate: until then Electric still serves the shapes it had, so a tab
+ * the next test opens would start from the last test's rows.
+ */
 export const resetRepos = (runtime: Runtime) =>
   runtime.runPromise(
-    Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      Effect.andThen(
-        sql`TRUNCATE repositories, code_storage_usage`,
-        Effect.andThen(
-          sql`TRUNCATE clone_requests`,
-          Effect.andThen(sql`DELETE FROM notifications WHERE kind = 'clone'`, sql`UPDATE repo_imports SET paused = false`),
-        ),
-      )),
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      const shapes = yield* Effect.forEach([REPOSITORIES_TABLE], openShape)
+      yield* sql`TRUNCATE repositories, code_storage_usage`
+      yield* sql`TRUNCATE clone_requests`
+      yield* sql`DELETE FROM notifications WHERE kind = 'clone'`
+      yield* sql`UPDATE repo_imports SET paused = false`
+      yield* Effect.forEach(shapes, truncated, { discard: true })
+    }).pipe(
+      // Inside the hook's 30 s, so a stalled Electric fails the hook with this, and its requests are cancelled.
+      Effect.timeout("20 seconds"),
+      Effect.orDie,
+    ),
   )
 
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
