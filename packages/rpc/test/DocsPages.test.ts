@@ -42,6 +42,13 @@ describe("parseDocsArgs", () => {
 })
 
 describe("readDocsPage", () => {
+  test.each(["quickstart#put-https-in-front", " quickstart#missing-heading ", "quickstart#"])(
+    "an anchored page reads the same complete page: %s",
+    (page) => {
+      expect(readDocsPage(PAGES, page)).toEqual(readDocsPage(PAGES, "quickstart"))
+    }
+  )
+
   test("a page reads as its title, summary and Markdown verbatim", () => {
     expect(readDocsPage(PAGES, " flows ")).toEqual({
       value: JSON.stringify({ title: "Flows reference", summary: "Every flow.", markdown: "# Flows reference\n" })

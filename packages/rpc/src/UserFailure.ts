@@ -6,8 +6,8 @@
  * `Data.TaggedError`, so it carries `_tag`). A surface lists the tags it can
  * receive in a `UserFailureRegistry`, a mapped type over the tag union: a tag
  * with no entry does not compile, and neither does an entry for a tag the
- * union lacks. The raw message and stack travel as `detail`, which a surface
- * shows only behind a collapsed Details control.
+ * union lacks. Exception detail is redacted before it reaches any surface;
+ * a collapsed Details control is still a disclosure of that text.
  *
  * An error with no registered tag is unknown. It gets one generic sentence,
  * the surface's fallback actions, and a report to `onUnknown`, and its message
@@ -66,7 +66,7 @@ export interface UserFailureCopy {
 export interface UserFailure extends UserFailureCopy {
   /** The registered `_tag`, or `null` for an unknown error. */
   readonly tag: string | null
-  /** Raw message and stack. Render only behind a collapsed Details control. */
+  /** Redaction placeholder. Exception messages, stacks and causes never reach the surface. */
   readonly detail: string
 }
 
@@ -140,30 +140,16 @@ const causeOf = (value: unknown): unknown => {
 }
 
 /**
- * The raw text of any thrown value: its stack, or its name and message, or its
- * string form. Never throws.
+ * A redaction placeholder for any thrown value. Exception messages, stacks,
+ * causes and arbitrary objects can all contain credentials or user content;
+ * without a secret inventory they cannot be safely partially redacted.
+ * Never inspects or serializes the value, and never throws. The presentation's
+ * registered tag, fault and actions remain available for diagnostics.
  *
  * @since 1.0.0
  * @category utils
  */
-export const failureDetail = (error: unknown, depth = 0): string => {
-  try {
-    if (error instanceof Error) {
-      const head = `${error.name}: ${error.message}`
-      const stack = typeof error.stack === "string" && error.stack.length > 0 ? error.stack : head
-      const text = stack.includes(error.message) ? stack : `${head}\n${stack}`
-      const cause = causeOf(error)
-      return cause === undefined || depth + 1 >= MAX_CAUSE_DEPTH
-        ? text
-        : `${text}\nCaused by: ${failureDetail(cause, depth + 1)}`
-    }
-    if (typeof error === "string") return error
-    const json = JSON.stringify(error)
-    return json === undefined ? String(error) : json
-  } catch {
-    return "Unprintable error"
-  }
-}
+export const failureDetail = (_error: unknown): string => "[REDACTED]"
 
 /**
  * Present one thrown value.

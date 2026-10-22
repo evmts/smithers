@@ -887,6 +887,19 @@ describe("a composed call", () => {
     expect(modelStateFieldsOf("just text")).toEqual([{ key: "state", kind: "text", value: "just text" }])
   })
 
+  test.each([
+    { state: "original", "invalid key": "first", "another invalid key": "second" },
+    { "invalid key": "first", state: "original" },
+    JSON.parse("{\"__proto__\":{\"kept\":true},\"state\":\"original\",\"1\":\"numbered\"}"),
+    { ["k".repeat(65)]: "long", state: "original", deep: { kept: true } }
+  ])("recorded keys that cannot be field names survive together without collisions: %j", (recorded) => {
+    const fields = modelStateFieldsOf(recorded)
+    expect(fields).toEqual([{ key: "state", kind: "json", value: JSON.stringify(recorded) }])
+    expect(modelStateOf(fields)).toEqual({ state: recorded })
+    expect(modelCallProblemOf({ ...decision, state: [...fields] })).toBeUndefined()
+    expect(fields.every((field) => ModelStateFieldSchema.safeParse(field).success)).toBe(true)
+  })
+
   test("malformed authored fields do not become state values, while primitive recorded state keeps its type", () => {
     expect(modelStateOf([
       { key: "valid", kind: "boolean", value: "false" },
@@ -911,7 +924,9 @@ describe("a composed call", () => {
     )
     expect(ModelStateFieldSchema.safeParse({ key: "constructor", kind: "text", value: "x" }).success).toBe(true)
     expect(modelStateOf([{ key: "constructor", kind: "text", value: "x" }])).toEqual({ constructor: "x" })
-    expect(modelStateFieldsOf({ ["__proto__"]: 1 })).toEqual([{ key: "state", kind: "number", value: "1" }])
+    expect(modelStateFieldsOf({ ["__proto__"]: 1 })).toEqual([
+      { key: "state", kind: "json", value: "{\"__proto__\":1}" }
+    ])
   })
 
   test("an option or rung name is bounded by the one constant the composer refuses it with", () => {
@@ -1057,6 +1072,18 @@ describe("a composed call", () => {
       ]
     ) expect(decodeModelAnswers(decision.questions, raw)).toEqual({ ok: false })
   })
+
+  test.each([-0.1, 1.1, Number.NaN, Number.POSITIVE_INFINITY, "not a probability"])(
+    "choice answers reject invalid probabilities for undeclared options: %s",
+    (probability) => {
+      for (const key of ["undeclared", "__proto__"]) {
+        const probabilities = { blue: 0.7, red: 0.3, [key]: probability }
+        expect(decodeModelAnswers({ which: choice }, {
+          which: { type: "choice", choice: "blue", probabilities }
+        })).toEqual({ ok: false })
+      }
+    }
+  )
 
   test("decision distributions reject invalid mass and mixed key spaces", () => {
     const questions = { which: choice, sure: score }

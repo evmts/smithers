@@ -955,7 +955,9 @@ export const modelStateOf = (fields: ReadonlyArray<ModelStateField>): Record<str
 /**
  * A recorded JSON state back as authored fields, one per top-level key: a
  * string is text, a boolean and a number their own kinds, anything nested is
- * json. A state that is not an object is one `state` field.
+ * json. A state that is not an object, or has a key that cannot be a field
+ * name, is one `state` field. Keeping that object whole preserves every key
+ * instead of renaming distinct keys to the same field.
  *
  * @since 1.0.0
  * @category conversions
@@ -968,14 +970,17 @@ export const modelStateFieldsOf = (state: unknown): ReadonlyArray<ModelStateFiel
         : { key: "state", kind: "json", value: JSON.stringify(state ?? null) }
     ]
   }
-  return Object.entries(state).map(([key, value]) => {
-    const safeKey = MODEL_FIELD_KEY.test(key) ? key : "state"
-    if (typeof value === "string") return { key: safeKey, kind: "text", value }
-    if (typeof value === "boolean") return { key: safeKey, kind: "boolean", value: String(value) }
+  const entries = Object.entries(state)
+  if (entries.some(([key]) => !MODEL_FIELD_KEY.test(key))) {
+    return [{ key: "state", kind: "json", value: JSON.stringify(state) }]
+  }
+  return entries.map(([key, value]) => {
+    if (typeof value === "string") return { key, kind: "text", value }
+    if (typeof value === "boolean") return { key, kind: "boolean", value: String(value) }
     if (typeof value === "number" && Number.isFinite(value)) {
-      return { key: safeKey, kind: "number", value: String(value) }
+      return { key, kind: "number", value: String(value) }
     }
-    return { key: safeKey, kind: "json", value: JSON.stringify(value ?? null) }
+    return { key, kind: "json", value: JSON.stringify(value ?? null) }
   })
 }
 
@@ -1167,7 +1172,7 @@ const RawAnswerSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("choice"),
     choice: z.string(),
-    probabilities: distributionSchema(z.number()).optional()
+    probabilities: distributionSchema(Probability).optional()
   }),
   z.object({ type: z.literal("score"), score: z.number(), probabilities: distributionSchema(z.number()).optional() })
 ])

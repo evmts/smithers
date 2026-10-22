@@ -67,13 +67,34 @@ describe("isCloudScopeRefusal", () => {
 })
 
 describe("upstream refusal boundary", () => {
-  test("accepts only a nonblank sentence field, preferring the top-level message", () => {
+  test.each([
+    { message: "Authorization: Bearer upstream-private-value" },
+    { error: "request failed for password=upstream-private-value" },
+    { error: { message: "query failed: customer private document upstream-private-value" } }
+  ])("withholds untrusted error prose before presentation: %j", (envelope) => {
+    const body = JSON.stringify(envelope)
+    expect(upstreamProse(body)).toBeUndefined()
+    expect(upstreamRefusalMessage("Cloud", 503, body)).toBe("Cloud is having trouble right now (HTTP 503).")
+  })
+
+  test("withholds even plausible prose: a sentence field is no guarantee it is safe", () => {
     expect(upstreamProse(JSON.stringify({ message: "  Account limit reached. \n", error: { message: "Other error" } })))
-      .toBe("Account limit reached.")
+      .toBeUndefined()
     expect(upstreamProse(JSON.stringify({ message: "  ", error: { message: "  Nested refusal  " } })))
-      .toBe("Nested refusal")
-    expect(upstreamProse(JSON.stringify({ error: "  Plain refusal  " }))).toBe("Plain refusal")
-    expect(upstreamProse(JSON.stringify({ message: "x".repeat(205) }))).toBe("x".repeat(200))
+      .toBeUndefined()
+    expect(upstreamProse(JSON.stringify({ error: "  Plain refusal  " }))).toBeUndefined()
+    expect(upstreamProse(JSON.stringify({ message: "x".repeat(205) }))).toBeUndefined()
+  })
+
+  test("only the pinned scope sentence may survive each supported envelope", () => {
+    for (
+      const body of [
+        { message: SCOPE_SENTENCE },
+        { error: { message: SCOPE_SENTENCE } },
+        { error: ` ${SCOPE_SENTENCE}\n` }
+      ]
+    ) expect(upstreamProse(JSON.stringify(body))).toBe(SCOPE_SENTENCE)
+    expect(upstreamProse(JSON.stringify({ message: `${SCOPE_SENTENCE} password=private` }))).toBeUndefined()
   })
 
   test.each([
@@ -137,8 +158,8 @@ describe("upstream refusal boundary", () => {
     expect(upstreamRefusalMessage("Cloud", status, "<html>internal error</html>")).toBe(expected)
   })
 
-  test("uses a safe upstream sentence ahead of a status fallback", () => {
+  test("uses the status fallback for arbitrary upstream sentences", () => {
     expect(upstreamRefusalMessage("Cloud", 503, JSON.stringify({ message: "  Maintenance in progress. " })))
-      .toBe("Maintenance in progress.")
+      .toBe("Cloud is having trouble right now (HTTP 503).")
   })
 })

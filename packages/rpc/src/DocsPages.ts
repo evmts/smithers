@@ -89,8 +89,9 @@ export const parseDocsArgs = (
 }
 
 /**
- * `docs {mode:"read", page}`: the page's title, summary and Markdown as the
- * JSON the agent reads, or the refusal naming every page.
+ * `docs {mode:"read", page}`: the page's title, summary and complete Markdown
+ * as the JSON the agent reads, or the refusal naming every page. An optional
+ * anchor identifies a position within the same page and does not filter it.
  * @since 1.0.0
  * @category constructors
  */
@@ -98,7 +99,7 @@ export const readDocsPage = (
   pages: ReadonlyArray<DocsPage>,
   page: string
 ): { readonly value: string } | { readonly error: string } => {
-  const slug = page.trim()
+  const [slug = ""] = page.trim().split("#", 1)
   if (slug === "") return { error: `Name a docs page to read. Pages: ${pageList(pages)}.` }
   const found = pages.find((candidate) => candidate.slug === slug)
   if (found === undefined) return { error: unknownDocsPage(pages, slug) }

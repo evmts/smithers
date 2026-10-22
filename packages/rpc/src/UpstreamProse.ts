@@ -18,9 +18,11 @@
 import { plueFailureCode } from "./Refusal.ts"
 
 /**
- * The prose inside an upstream error body, or undefined when the body was
- * written for a machine. Only a `message`/`error` string — a field an upstream
- * fills with a sentence — survives.
+ * A recognized, fixed sentence from an upstream error body, or undefined.
+ * A `message`/`error` field is untrusted even when it looks like prose: it
+ * can contain credentials, user content or internal diagnostics. Only the
+ * pinned scope-gate sentence survives, as our own constant rather than the
+ * upstream's text. Other refusals use the HTTP status fallback.
  *
  * @since 1.0.0
  * @category constants
@@ -42,7 +44,7 @@ export const upstreamProse = (body: string): string | undefined => {
   const prose = [record.message, nested].find(
     (value): value is string => typeof value === "string" && value.trim() !== ""
   )
-  return prose === undefined ? undefined : prose.trim().slice(0, 200)
+  return prose?.trim() === CLOUD_SCOPE_REFUSAL ? CLOUD_SCOPE_REFUSAL : undefined
 }
 
 /**
@@ -137,8 +139,8 @@ export const isCloudScopeRefusal = (body: string): boolean =>
   plueFailureCode(machineReadableRefusal(body).code) === "forbidden" && upstreamProse(body) === CLOUD_SCOPE_REFUSAL
 
 /**
- * One sentence a reader can act on for a named upstream that refused, when its
- * own body carries none. The seam's name is the subject, so the reader is told
+ * One sentence a reader can act on for a named upstream that refused, without
+ * forwarding arbitrary body text. The seam's name is the subject, so the reader is told
  * WHICH upstream said no rather than being handed its status alone.
  *
  * @since 1.0.0

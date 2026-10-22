@@ -31,4 +31,8 @@ Each route family has one home module, and a route constant is declared only the
 
 These are public product contracts even while the package is private. Preserve wire fields and route strings when changing implementation details. All exported declarations carry descriptions, `@since`, and `@category`.
 
+`UpstreamProse` withholds arbitrary upstream sentences and uses status fallbacks; only the pinned scope-gate sentence is recognized. `UserFailure` keeps registered copy, tags and actions, while `failureDetail` returns `[REDACTED]` for every thrown value. A collapsed details control does not make exception text safe to disclose.
+
+`ConfiguredModel.modelStateFieldsOf` keeps a recorded object with any invalid field name whole in one JSON `state` field, preserving all its keys. Choice answers validate every supplied probability, including entries for undeclared options. `DocsPages.readDocsPage` accepts `page#anchor` and returns the complete page.
+
 Run `pnpm run check`, `pnpm run lint`, and `pnpm run test` here. Sources use the standard NodeNext configuration with unchecked indexed access enabled; an array or dictionary lookup must handle absence. Tests live in `test/` and run under Vitest, matching the other packages. `IndexAccess.types.ts` pins the compiler contract.

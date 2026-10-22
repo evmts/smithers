@@ -43,11 +43,11 @@ describe("presentUserFailure", () => {
     expect([missing, extra]).toHaveLength(2)
   })
 
-  test("fixed and derived entries give their copy and keep the raw text as detail only", () => {
+  test("fixed and derived entries give their copy and redact detail", () => {
     const busy = presentUserFailure(registry, new Busy("b"))
     expect(busy).toMatchObject({ tag: "Busy", fault: "infra", sentence: "Busy in another tab.", actions: ["use-here"] })
     expect(busy.sentence).not.toContain("lease")
-    expect(busy.detail).toContain("internal lease b held")
+    expect(busy.detail).toBe("[REDACTED]")
     expect(presentUserFailure(registry, new Gone("x"))).toMatchObject({
       tag: "Gone",
       fault: "user",
@@ -61,8 +61,7 @@ describe("presentUserFailure", () => {
     })
     const shown = presentUserFailure(registry, wrapped)
     expect(shown.tag).toBe("Gone")
-    expect(shown.detail).toContain("prepare runtime")
-    expect(shown.detail).toContain("Caused by")
+    expect(shown.detail).toBe("[REDACTED]")
   })
 
   for (
@@ -116,16 +115,33 @@ describe("presentUserFailure", () => {
 })
 
 describe("failureDetail", () => {
-  test("prints errors, strings, objects and unprintable values without throwing", () => {
-    expect(failureDetail(new TypeError("bad"))).toContain("bad")
-    expect(failureDetail("plain")).toBe("plain")
-    expect(failureDetail({ a: 1 })).toBe("{\"a\":1}")
-    expect(failureDetail(undefined)).toBe("undefined")
+  test.each([
+    new Error("Authorization: Bearer exception-private-value", {
+      cause: new Error("customer private document exception-private-value")
+    }),
+    "password=exception-private-value",
+    { apiKey: "exception-private-value" },
+    new Gone("exception-private-value")
+  ])("withholds arbitrary exception details, including registered errors: %j", (error) => {
+    expect(failureDetail(error)).toBe("[REDACTED]")
+    expect(presentUserFailure(registry, error).detail).toBe("[REDACTED]")
+  })
+
+  test("redacts errors, strings, objects and unprintable values without inspecting them", () => {
+    expect(failureDetail(new TypeError("bad"))).toBe("[REDACTED]")
+    expect(failureDetail("plain")).toBe("[REDACTED]")
+    expect(failureDetail({ a: 1 })).toBe("[REDACTED]")
+    expect(failureDetail(undefined)).toBe("[REDACTED]")
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic
-    expect(failureDetail(cyclic)).toBe("Unprintable error")
+    expect(failureDetail(cyclic)).toBe("[REDACTED]")
     const stackless = new Error("no stack")
     stackless.stack = ""
-    expect(failureDetail(stackless)).toBe("Error: no stack")
+    expect(failureDetail(stackless)).toBe("[REDACTED]")
+    expect(failureDetail({
+      toJSON: () => {
+        throw new Error("must not serialize exception data")
+      }
+    })).toBe("[REDACTED]")
   })
 })
