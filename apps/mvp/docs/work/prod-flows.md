@@ -2,8 +2,8 @@
 title: Remote flows and their features in production
 status: in-progress
 area: platform
-owner: prod-flows builder (Claude Opus)
-updated: 2026-10-21 10:31 PDT
+owner: prodflows-store (Codex)
+updated: 2026-10-21 23:30 PDT
 links: [../features/remote-flows.md, ../features/todos.md, ../features/spend-alerts.md, ../features/repo.md, ../features/branch-workspace.md, ../infrastructure.md, prod-e2e.md, land-and-deploy-mvp.md]
 ---
 
@@ -26,3 +26,5 @@ links: [../features/remote-flows.md, ../features/todos.md, ../features/spend-ale
 **Not built, by decision (merged plan):** durable spend-alert admission after a failed start, keeping sign-out's tokens past five failed revocations, an authority re-check before a TODO's Publish, and a staging stage.
 
 **Waiting on:** the migration fix and these commits on main, a deploy, then the smoke checks: a TODO's checkout from GitHub, a server seat's alert recorded, a clone's size read with the App's token, the Electric container's environment names without `DATABASE_URL` and shapes answering 200, and `e2e/remote-flows.spec.ts` against production, `E2E_LONG=1` included.
+
+**Device store correction:** Repository cache v4 resyncs through `Migrations.synced` (`@smthrs/effect-tanstack-db`, library catalog: carry device stores across deploys), per decision 0021. The deployed v3 schema and fixture remain immutable and validated against their recorded fingerprint. No local row migration applies to this server-backed cache.

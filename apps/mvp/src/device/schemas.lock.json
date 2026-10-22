@@ -1,5 +1,5 @@
 {
-  "epoch": 59,
+  "epoch": 60,
   "stores": {
     "chat-unsent": {
       "kind": "local",
@@ -110,7 +110,8 @@
     "repo-repositories": {
       "kind": "synced",
       "versions": {
-        "3": "8c608a025f56038b"
+        "3": "8c608a025f56038b",
+        "4": "9778251e67d4d6e9"
       }
     },
     "issue-items": {

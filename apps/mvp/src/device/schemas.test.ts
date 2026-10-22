@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { describe, expect, test } from "vitest"
 import { Unsent } from "../features/chat/schema"
 import { listed } from "../features/runs/contract"
+import { RepositoryV3 } from "./repo-history"
 import { ChatUnsentStore, deviceRegistry, IssueRequestedStore } from "./registry"
 
 // The check that fails a persisted schema changed without a new version (decision 0021 §5): every store and outbox
@@ -31,6 +32,10 @@ const explain = (problems: ReadonlyArray<Migrations.Problem>) =>
   problems.map(({ problem, store, version }) => `${store}${version === undefined ? "" : ` v${version}`}: ${advice[problem]}`)
 
 describe("the device's stores", () => {
+  test("preserves the deployed repository v3 schema", () => {
+    expect(Migrations.fingerprint(RepositoryV3)).toBe(read()!.stores["repo-repositories"]!.versions["3"])
+  })
+
   test("match the lock: no persisted schema changed without a new version, and none disappeared", () => {
     if (process.env["UPDATE_DEVICE_SCHEMAS"] === "1") {
       const { lock, refused } = Migrations.lock(deviceRegistry, read())

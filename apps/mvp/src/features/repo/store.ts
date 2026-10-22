@@ -36,8 +36,8 @@ const make = Effect.fnUntraced(function* (config: RepoConfig) {
     schema: Repository,
     getKey: (row) => row.id,
     syncMode: "eager",
-    // Version 2 added `cloneId` (migration 0009); version 3 `stage` and `reclaimable` (migration 0028).
-    persist: { schemaVersion: 3 },
+    // Version 4 adds `refsChangedAt`; synced caches resync on a version change (decision 0021).
+    persist: { schemaVersion: 4 },
     shape: {
       url: `${config.origin}${REPOSITORIES_SHAPE_ROUTE}`,
       columnMapper: ElectricCollection.snakeCamelMapper(),

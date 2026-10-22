@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { Asking, Message } from "../features/chat/schema"
 import { Sending as IssueSending } from "../features/issues/schema"
+import { Repository } from "../features/repo/schema"
 import { View } from "../features/views/schema"
 import {
   deviceFrom,
@@ -13,6 +14,7 @@ import {
   prepare,
   syncedCollection
 } from "../test/deviceFixture"
+import { RepositoryV3 } from "./repo-history"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
@@ -71,7 +73,9 @@ test("the c6940ac53e5a fixture uses that deployed build's recorded schemas and v
   for (const [id, collection] of Object.entries(currentDeployed.collections)) {
     const store = deviceRegistry.stores.find((entry) => entry.id === id.split(":")[0])
     if (store === undefined) throw new Error(`Missing fixture store ${id}`)
-    const schema = store._tag === "Local" ? store.versions[collection.version - store.first]! : store.schema
+    const schema = id === "repo-repositories" && collection.version === 3
+      ? RepositoryV3
+      : store._tag === "Local" ? store.versions[collection.version - store.first]! : store.schema
     expect(Migrations.fingerprint(schema), id).toBe(
       currentDeployed.schemaFingerprints[id as keyof typeof currentDeployed.schemaFingerprints]
     )
@@ -107,7 +111,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       "issue-items": legacy ? "resync 1→3 migrated 0 kept 0" : "current 3→3 migrated 0 kept 0",
       "issue-requested": legacy ? "migrated 1→2 migrated 2 kept 0" : "current 2→2 migrated 0 kept 0",
       preferences: "current 1→1 migrated 0 kept 0",
-      "repo-repositories": legacy ? "resync 2→3 migrated 0 kept 0" : "current 3→3 migrated 0 kept 0",
+      "repo-repositories": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
       runs: "current 1→1 migrated 0 kept 0",
       views: legacy ? "resync 1→2 migrated 0 kept 0" : "current 2→2 migrated 0 kept 0"
     })
@@ -159,6 +163,21 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
     expect(await synced(path, ViewsStore, "views", [view])).toEqual([view])
     const fresh = await deviceFrom({ ...fixture, collections: {}, outbox: {} })
     expect(await synced(fresh.path, MessagesStore, "chat-messages", server)).toEqual(server)
+  })
+
+  test("resyncs repository v4 without retaining stale repository rows", async () => {
+    const { path } = await deviceFrom(fixture)
+    await prepare(path, deviceRegistry)
+    const store = deviceRegistry.stores.find((entry) => entry.id === "repo-repositories") as Migrations.Synced<typeof Repository.Type>
+    expect(await synced(path, store, store.id, [])).toEqual([])
+    const server = [{
+      ...rowsOf(fixture, "repo-repositories")[0] as typeof Repository.Type,
+      refsChangedAt: "2026-10-21 23:45:00+00"
+    }]
+    expect(await synced(path, store, store.id, server)).toEqual(server)
+    const fresh = await deviceFrom({ ...fixture, collections: {}, outbox: {} })
+    expect(await synced(fresh.path, store, store.id, server)).toEqual(server)
+    expect(await keptRows(path)).toEqual([])
   })
 
   test("carries every pending write across: each one this build can send is upgraded, the rest parked", () => {

@@ -175,7 +175,7 @@ Its step runs in the leader tab's engine worker, which has no clipboard, so it a
 
 | Piece | What it is |
 |---|---|
-| `repositories` | Electric collection over `/api/shapes/repositories`, decoded by `schema.ts` `Repository`, kept on the device (`schemaVersion` 3 since `stage` and `reclaimable`, which a database before migration 0028 lacks and the device reads as none) |
+| `repositories` | Electric collection over `/api/shapes/repositories`, decoded by `schema.ts` `Repository`, kept on the device (`schemaVersion` 4 for `refsChangedAt`; older device caches are dropped and resynced by `device/prepare` (decision 0021), with their deployed schemas and fingerprints preserved) |
 | `trees`, `blobs` | local-only collections keyed `<id>@<sha>` and `<id>@<sha>:<path>`, in the states `RepoView` takes |
 | `clones` | this tab's clone requests while they are on their way or were refused |
 | `abouts` | local-only, keyed by the repository's id: what GitHub says of it ([About](#about)), `loading`, `ready`, `missing` or `failed` |
