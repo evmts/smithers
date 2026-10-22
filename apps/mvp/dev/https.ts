@@ -12,7 +12,8 @@
  * so the Workers see the URL the browser asked for. A WebSocket comes over HTTP/1.1 (this server offers HTTP/2's
  * extended CONNECT to nobody, so a browser opens a connection of its own for each socket) and is piped as bytes.
  */
-import { execFileSync } from "node:child_process"
+import { execFile } from "node:child_process"
+import { Effect } from "effect"
 import { X509Certificate } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import * as http from "node:http"
@@ -34,12 +35,22 @@ export interface Certificate {
   readonly key: Buffer
 }
 
-/** Runs a program to completion, throwing if it can't start or fails. `execFileSync` unless a test injects one. */
-export type Run = (file: string, args: ReadonlyArray<string>) => void
+/** Runs a program asynchronously to completion, throwing if it cannot start or fails. */
+export type Run = (file: string, args: ReadonlyArray<string>) => void | Promise<void>
 
 /** The runner `makeCertificate` uses unless given another: a missing program fails with the code `ENOENT`. */
-export const runProgram: Run = (file, args) => {
-  execFileSync(file, args, { stdio: "ignore" })
+export const runProgram = async (file: string, args: ReadonlyArray<string>): Promise<void> => {
+  // This process boundary preserves native error codes for the mkcert fallback.
+  const result = await Effect.runPromise(Effect.tryPromise({
+    try: () => new Promise<void>((resolve, reject) => {
+      execFile(file, args, (error) => error ? reject(error) : resolve())
+    }),
+    catch: (error) => error,
+  }).pipe(
+    Effect.withSpan("dev.https.certificate.program", { attributes: { program: file } }),
+    Effect.match({ onFailure: (error) => ({ error }), onSuccess: () => ({}) }),
+  ))
+  if ("error" in result) throw result.error
 }
 
 /**
@@ -47,14 +58,14 @@ export const runProgram: Run = (file, args) => {
  * mkcert, whose certificates browsers trust once `mkcert -install` added its CA to the system's store, or else
  * openssl, whose self-signed certificate a browser trusts only when told to.
  */
-export const makeCertificate = (certFile: string, keyFile: string, run: Run = runProgram): "mkcert" | "openssl" => {
+export const makeCertificate = async (certFile: string, keyFile: string, run: Run = runProgram): Promise<"mkcert" | "openssl"> => {
   try {
-    run("mkcert", ["-cert-file", certFile, "-key-file", keyFile, "localhost", "127.0.0.1", "::1"])
+    await run("mkcert", ["-cert-file", certFile, "-key-file", keyFile, "localhost", "127.0.0.1", "::1"])
     return "mkcert"
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
   }
-  run("openssl", [
+  await run("openssl", [
     "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "825", "-subj", "/CN=localhost",
     "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1",
     "-keyout", keyFile, "-out", certFile,
@@ -69,10 +80,10 @@ const fresh = (cert: Buffer, now: Date) => new X509Certificate(cert).validToDate
  * The dev certificate: the files `DEV_HTTPS_CERT` and `DEV_HTTPS_KEY` name when both are set, else `cert.pem` and
  * `key.pem` in `directory`, made (`makeCertificate`) when they are missing or expire within a day.
  */
-export const certificate = (
+export const certificate = async (
   directory: string,
   options: { readonly env?: NodeJS.ProcessEnv; readonly now?: Date; readonly run?: Run } = {},
-): Certificate => {
+): Promise<Certificate> => {
   const env = options.env ?? process.env
   if (env.DEV_HTTPS_CERT && env.DEV_HTTPS_KEY) {
     return { cert: readFileSync(env.DEV_HTTPS_CERT), key: readFileSync(env.DEV_HTTPS_KEY) }
@@ -81,7 +92,7 @@ export const certificate = (
   const keyFile = join(directory, "key.pem")
   if (!existsSync(certFile) || !existsSync(keyFile) || !fresh(readFileSync(certFile), options.now ?? new Date())) {
     mkdirSync(directory, { recursive: true })
-    makeCertificate(certFile, keyFile, options.run)
+    await makeCertificate(certFile, keyFile, options.run)
   }
   return { cert: readFileSync(certFile), key: readFileSync(keyFile) }
 }
@@ -293,6 +304,8 @@ export const portFor = (env: NodeJS.ProcessEnv): number => {
 export const devHttps = (directory: string, options: { readonly port?: number; readonly env?: NodeJS.ProcessEnv } = {}): Plugin => {
   const env = options.env ?? process.env
   let front: Front | undefined
+  let starting: Promise<void> | undefined
+  let closed = false
   return {
     name: "smithers-dev-https",
     apply: "serve",
@@ -303,18 +316,23 @@ export const devHttps = (directory: string, options: { readonly port?: number; r
       const port = options.port ?? portFor(env)
       vite.once("listening", () => {
         const upstream = new URL(`http://${hostOf(vite.address() as net.AddressInfo)}`)
-        Promise.resolve()
-          .then(() =>
+        if (closed) return
+        starting = Promise.resolve()
+          .then(async () =>
             serve({
               port,
               upstream,
-              certificate: certificate(directory),
+              certificate: await certificate(directory),
               onUnanswered: ({ method, path, code }) =>
                 server.config.logger.warn(`HTTPS and HTTP/2: ${method} ${path} got no answer from Vite: ${code}`),
             })
           )
           .then(
-            (started) => {
+            async (started) => {
+              if (closed) {
+                await started.close()
+                return
+              }
               front = started
               server.config.logger.info(`  ➜  HTTPS and HTTP/2: ${started.url.href}`)
             },
@@ -323,6 +341,8 @@ export const devHttps = (directory: string, options: { readonly port?: number; r
       })
     },
     closeBundle: async () => {
+      closed = true
+      await starting
       const closing = front
       front = undefined
       await closing?.close()

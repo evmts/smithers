@@ -41,104 +41,150 @@ let made = 0
 const directory = () => join(scratch, `certificate-${made++}`)
 
 let cert: Certificate
-beforeAll(() => {
-  cert = certificate(directory(), { run: opensslOnly })
+beforeAll(async () => {
+  cert = await certificate(directory(), { run: opensslOnly })
 })
 
 describe("makeCertificate", () => {
-  it("uses mkcert when it is installed, for the loopback names", () => {
+  it("uses mkcert when it is installed, for the loopback names", async () => {
     const calls: Array<[string, ReadonlyArray<string>]> = []
-    expect(makeCertificate("c.pem", "k.pem", (file, args) => void calls.push([file, args]))).toBe("mkcert")
+    expect(await makeCertificate("c.pem", "k.pem", (file, args) => void calls.push([file, args]))).toBe("mkcert")
     expect(calls).toEqual([["mkcert", ["-cert-file", "c.pem", "-key-file", "k.pem", "localhost", "127.0.0.1", "::1"]]])
   })
 
-  it("falls back to a self-signed openssl certificate for localhost, 127.0.0.1 and ::1", () => {
+  it("falls back to a self-signed openssl certificate for localhost, 127.0.0.1 and ::1", async () => {
     const dir = directory()
     mkdirSync(dir)
     const files = { cert: join(dir, "localhost.pem"), key: join(dir, "localhost-key.pem") }
-    expect(makeCertificate(files.cert, files.key, opensslOnly)).toBe("openssl")
+    expect(await makeCertificate(files.cert, files.key, opensslOnly)).toBe("openssl")
     const made = new X509Certificate(readFileSync(files.cert))
     expect(made.subjectAltName).toBe("DNS:localhost, IP Address:127.0.0.1, IP Address:0:0:0:0:0:0:0:1")
     expect(made.checkPrivateKey(createPrivateKey(readFileSync(files.key)))).toBe(true)
   })
 
-  it("fails as mkcert failed when mkcert is there but can't make one", () => {
+  it("fails as mkcert failed when mkcert is there but can't make one", async () => {
     const failed = new Error("mkcert exited 1")
-    expect(() => makeCertificate("c.pem", "k.pem", () => {
+    await expect(makeCertificate("c.pem", "k.pem", async () => {
       throw failed
-    })).toThrow(failed)
+    })).rejects.toThrow(failed)
   })
 })
 
 
+describe("startup regressions", () => {
+  it("keeps the event loop responsive while a certificate program runs", async () => {
+    let answered = false
+    const responder = http.createServer((_request, response) => {
+      answered = true
+      response.end()
+    })
+    responder.listen(0, "127.0.0.1")
+    await once(responder, "listening")
+    const { port } = responder.address() as net.AddressInfo
+    try {
+      await runProgram(process.execPath, ["-e", `require("node:http").get("http://127.0.0.1:${port}", (response) => response.resume())`])
+      expect(answered).toBe(true)
+    } finally {
+      await new Promise<void>((resolve) => responder.close(() => resolve()))
+    }
+  })
+
+  it("waits for pending HTTPS startup when closed", async () => {
+    const certificates = directory()
+    await certificate(certificates, { run: opensslOnly, env: {} })
+    const plugin = devHttps(certificates, { port: 0 })
+    let closing: Promise<void> | undefined
+    const server = await createServer({
+      configFile: false,
+      root: scratch,
+      logLevel: "silent",
+      plugins: [plugin, { name: "close-during-startup", configureServer: (vite) => {
+        vite.httpServer!.once("listening", () => {
+          closing = (plugin.closeBundle as () => Promise<void>)()
+        })
+      } }],
+      server: { host: "127.0.0.1", port: 0, ws: false, watch: null },
+    })
+    try {
+      await server.listen()
+      await closing
+      // Wait for closed handles to leave Node's resource list; only Vite may remain.
+      await expect.poll(() => process.getActiveResourcesInfo().filter((name) => name === "TCPServerWrap").length).toBe(1)
+    } finally {
+      await server.close()
+      await (plugin.closeBundle as () => Promise<void>)()
+    }
+  })
+})
+
 describe("runProgram", () => {
-  it("runs a program to its end, and fails on a missing one with ENOENT, which makeCertificate falls back on", () => {
+  it("runs a program to its end, and fails on a missing one with ENOENT, which makeCertificate falls back on", async () => {
     const file = join(scratch, "ran")
-    runProgram("touch", [file])
+    await runProgram("touch", [file])
     expect(readFileSync(file, "utf8")).toBe("")
-    expect(() => runProgram("smithers-no-such-program", [])).toThrow(expect.objectContaining({ code: "ENOENT" }))
-    expect(() => runProgram("false", [])).toThrow(expect.objectContaining({ status: 1 }))
+    await expect(runProgram("smithers-no-such-program", [])).rejects.toThrow(expect.objectContaining({ code: "ENOENT" }))
+    await expect(runProgram("false", [])).rejects.toThrow(expect.objectContaining({ code: 1 }))
   })
 })
 
 describe("certificate", () => {
-  it("makes one into the directory the first time, then reads it back without making another", () => {
+  it("makes one into the directory the first time, then reads it back without making another", async () => {
     const dir = directory()
     const runs: Array<string> = []
     const run: Run = (file, args) => {
       runs.push(file)
       opensslOnly(file, args)
     }
-    const first = certificate(dir, { env: {}, run })
+    const first = await certificate(dir, { env: {}, run })
     expect(runs).toEqual(["mkcert", "openssl"])
     expect(first.cert.equals(readFileSync(join(dir, "cert.pem")))).toBe(true)
     expect(first.key.equals(readFileSync(join(dir, "key.pem")))).toBe(true)
-    const again = certificate(dir, { env: {}, run })
+    const again = await certificate(dir, { env: {}, run })
     expect(runs).toHaveLength(2)
     expect(again.cert.equals(first.cert)).toBe(true)
   })
 
-  it("makes a new one when the one there expires within a day", () => {
+  it("makes a new one when the one there expires within a day", async () => {
     const dir = directory()
-    const first = certificate(dir, { env: {}, run: opensslOnly })
+    const first = await certificate(dir, { env: {}, run: opensslOnly })
     const expires = new X509Certificate(first.cert).validToDate
-    const kept = certificate(dir, { env: {}, now: new Date(expires.getTime() - 2 * 86_400_000), run: opensslOnly })
+    const kept = await certificate(dir, { env: {}, now: new Date(expires.getTime() - 2 * 86_400_000), run: opensslOnly })
     expect(kept.cert.equals(first.cert)).toBe(true)
-    const renewed = certificate(dir, { env: {}, now: new Date(expires.getTime() - 3_600_000), run: opensslOnly })
+    const renewed = await certificate(dir, { env: {}, now: new Date(expires.getTime() - 3_600_000), run: opensslOnly })
     expect(renewed.cert.equals(first.cert)).toBe(false)
   })
 
-  it("makes one when only the certificate or only the key is there", () => {
+  it("makes one when only the certificate or only the key is there", async () => {
     const dir = directory()
-    certificate(dir, { env: {}, run: opensslOnly })
+    await certificate(dir, { env: {}, run: opensslOnly })
     rmSync(join(dir, "key.pem"))
     const runs: Array<string> = []
-    certificate(dir, { env: {}, run: (file, args) => (runs.push(file), opensslOnly(file, args)) })
+    await certificate(dir, { env: {}, run: (file, args) => (runs.push(file), opensslOnly(file, args)) })
     expect(runs).toEqual(["mkcert", "openssl"])
   })
 
-  it("reads DEV_HTTPS_CERT and DEV_HTTPS_KEY when both are set, and makes nothing", () => {
+  it("reads DEV_HTTPS_CERT and DEV_HTTPS_KEY when both are set, and makes nothing", async () => {
     const certFile = join(scratch, "named-cert.pem")
     const keyFile = join(scratch, "named-key.pem")
     writeFileSync(certFile, cert.cert)
     writeFileSync(keyFile, cert.key)
     const never: Run = () => expect.fail("nothing is made")
-    const named = certificate(join(scratch, "unused"), { env: { DEV_HTTPS_CERT: certFile, DEV_HTTPS_KEY: keyFile }, run: never })
+    const named = await certificate(join(scratch, "unused"), { env: { DEV_HTTPS_CERT: certFile, DEV_HTTPS_KEY: keyFile }, run: never })
     expect(named.cert.equals(cert.cert)).toBe(true)
     expect(named.key.equals(cert.key)).toBe(true)
   })
 
-  it("ignores DEV_HTTPS_CERT without DEV_HTTPS_KEY", () => {
+  it("ignores DEV_HTTPS_CERT without DEV_HTTPS_KEY", async () => {
     const dir = directory()
     const runs: Array<string> = []
-    certificate(dir, { env: { DEV_HTTPS_CERT: "/nowhere.pem" }, run: (file, args) => (runs.push(file), opensslOnly(file, args)) })
+    await certificate(dir, { env: { DEV_HTTPS_CERT: "/nowhere.pem" }, run: (file, args) => (runs.push(file), opensslOnly(file, args)) })
     expect(runs).toEqual(["mkcert", "openssl"])
   })
 
-  it("reads the process's environment and clock by default", () => {
+  it("reads the process's environment and clock by default", async () => {
     const dir = directory()
-    const made = certificate(dir, { env: {}, run: opensslOnly })
-    expect(certificate(dir).cert.equals(made.cert)).toBe(true)
+    const made = await certificate(dir, { env: {}, run: opensslOnly })
+    expect((await certificate(dir)).cert.equals(made.cert)).toBe(true)
   })
 })
 
@@ -595,7 +641,7 @@ describe("devHttps", () => {
   it("serves the dev server over HTTP/2 once it listens, and stops with it", async () => {
     const log = logger()
     const certificates = directory()
-    certificate(certificates, { run: opensslOnly, env: {} })
+    await certificate(certificates, { run: opensslOnly, env: {} })
     const server = await createServer({
       configFile: false,
       root: root(),
@@ -626,7 +672,7 @@ describe("devHttps", () => {
     const port = (holder.address() as net.AddressInfo).port
     const log = logger()
     const certificates = directory()
-    certificate(certificates, { run: opensslOnly, env: {} })
+    await certificate(certificates, { run: opensslOnly, env: {} })
     const server = await createServer({
       configFile: false,
       root: root(),

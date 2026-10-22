@@ -42,7 +42,7 @@ let tabs: Server
 let local: string
 test.beforeAll(async () => {
   if (!meets("localServer")) return
-  const { cert, key } = certificate(DEV_CERTIFICATE)
+  const { cert, key } = await certificate(DEV_CERTIFICATE)
   framed = createHttpsServer({ cert, key }, (request, response) => {
     const path = new URL(request.url ?? "/", "https://127.0.0.1").pathname
     if (path === "/icon.svg") {

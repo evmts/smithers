@@ -53,7 +53,7 @@ export const serveBuilds = async (options: { readonly old: string }) => {
   const front = await serve({
     port: 0,
     upstream: new URL(process.env.DEV_UPSTREAM ?? "http://localhost:1337"),
-    certificate: certificate(join(import.meta.dirname, "..", "node_modules", ".dev-https")),
+    certificate: await certificate(join(import.meta.dirname, "..", "node_modules", ".dev-https")),
     answer: (request, response) => {
       const path = new URL(request.url, "https://localhost").pathname
       if (build === "new" || path.startsWith("/api/")) return false

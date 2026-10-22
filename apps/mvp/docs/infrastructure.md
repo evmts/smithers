@@ -40,6 +40,11 @@ You need Docker with Compose v2, Node 26 (it runs the TypeScript scripts directl
 
 ### HTTPS and HTTP/2
 
+Certificate programs run asynchronously so first startup leaves the event loop responsive. Closing the plugin waits
+for pending startup and closes its listeners before returning. `certificate` and `makeCertificate` return promises.
+Program runs emit the `dev.https.certificate.program` span with the program name, without arguments or output.
+The existing Vite logger reports readiness, startup failure, and unanswered requests.
+
 `alchemy dev` serves only plain HTTP/1.1, and a browser opens at most six HTTP/1.1 connections to one origin. Each Electric shape a tab follows holds one of them in a long poll for up to 20 seconds, and a tab follows 11 to 15 shapes on every page, so at http://localhost:1337 the rest wait in the browser's queue: a change took up to 40 seconds to reach another device. Cloudflare serves the deployed app over HTTP/2 and HTTP/3, which carry every request on one connection. Electric's guidance is the same: serve shapes over HTTP/2 ([Electric: slow shapes in local development](https://electric-sql.com/r/electric-http2)).
 
 So `pnpm dev` also serves the app at **https://localhost:1443** over HTTP/2, as production does. The Vite plugin `dev/https.ts` starts it when Vite listens and stops it with Vite:
