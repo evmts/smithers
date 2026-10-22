@@ -73,8 +73,11 @@ const Reviewed = Flow.make("remote-runs-test/Reviewed", {
   body: Node.capture({}, ({ pauseMs }) => Implemented.call({}).pipe(Node.andThen(Sleep.action.call({ millis: pauseMs })))),
 })
 
+/** While set, `Produce` waits for it: a run holds in its first step until the test releases it. */
+let producing: Promise<void> | undefined
+
 const registration = Layer.mergeAll(
-  Produce.toLayer(({ size }) => Effect.succeed("x".repeat(size))),
+  Produce.toLayer(({ size }) => Effect.promise(() => producing ?? Promise.resolve()).pipe(Effect.as("x".repeat(size)))),
   Implemented.toLayer(() => Effect.succeed("done")),
   Interpreter.layer(Child, { callbackIdentity: "stable" }),
   Interpreter.layer(Watched, { callbackIdentity: "stable" }),
@@ -389,13 +392,21 @@ describe("GET /api/shapes/remote-runs", () => {
     const runId = todoExecutionId(start.attemptId)
     await withEngine(async (engine) => {
       const h = await routes(engine, { actor: member })
-      // Started, then caught in its durable sleep: the row exists and stands still.
-      await engine.start(runId, 1_500)
-      let first = await firstShape(h, runId)
-      await eventually(async () => {
+      // Started, then held in its first step until the shape has its row: the run can't finish before it is followed.
+      let release = () => {}
+      producing = new Promise<void>((resolve) => (release = resolve))
+      let first: Awaited<ReturnType<typeof firstShape>>
+      try {
+        await engine.start(runId, 0)
         first = await firstShape(h, runId)
-        return first.rows.length === 1
-      }, 10_000)
+        await eventually(async () => {
+          first = await firstShape(h, runId)
+          return first.rows.length === 1
+        }, 10_000)
+      } finally {
+        producing = undefined
+        release()
+      }
       const before = Number(first.rows[0]!.revision)
       // Follow it live until the revision moves on.
       let offset = first.offset!
