@@ -75,7 +75,7 @@ describe("NodeControl.seatCandidates", () => {
       await ids({ ...pool, SMITHERS_ACCOUNT_POOL_KEY: "pool-credential", SMITHERS_ACCOUNT_POOL_PROVIDERS: "chatgpt" })
     )
       .toEqual(["luna", "sol"])
-    // The configured subscription pool takes precedence over stale API-key mode.
+    // Explicit API-key mode excludes the subscription pool (a8f8b32afd0b).
     expect(
       await ids({
         ...pool,
@@ -84,10 +84,7 @@ describe("NodeControl.seatCandidates", () => {
         SMITHERS_OPENAI_AUTH: "api-key"
       })
     )
-      .toEqual([
-        "luna",
-        "sol"
-      ])
+      .toEqual([])
     // A route the pool is not offered keeps the host's own key.
     expect(
       await ids({
