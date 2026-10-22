@@ -513,8 +513,8 @@ cannot supply stable directory identities. When `confinementRoot` is set,
 discovery checks the source root, every descended directory, and every selected
 entry file before reading it. A real path outside the confinement root, or one
 that cannot be resolved once the root resolves, produces `outside_root` and is
-skipped. Hosts that cannot resolve the confinement root retain lexical manifest
-validation.
+skipped. If the configured confinement root cannot resolve, discovery refuses the
+source with `outside_root` before reading any directory contents.
 
 ### Discovery.make
 
@@ -555,12 +555,11 @@ entry file discovery admits; a larger one is skipped with `entry_too_large` and
 contributes no descriptor, so a stray build artifact under a source root cannot
 exhaust the process at layer construction.
 
-The size ceiling is checked twice, because the first check trusts the host. A
-`stat` size past the limit skips the file unread, which is the fast path an
-ordinary file system takes; the bytes actually read are then measured against
-the same limit, so a host whose `stat` under-reports or omits a size still gets
-`entry_too_large` with the true byte count, and the entry is refused before it
-is hashed, decoded, or parsed.
+A `stat` size past the limit skips the file unread. Otherwise discovery reads
+at most `entrySizeLimit + 1` bytes through `FileSystem.stream`, independently
+of the reported size. The extra byte detects overflow; `entry_too_large`
+reports this measured lower bound without consuming the rest of the file.
+Oversized entries are refused before hashing, decoding, or parsing.
 
 `maximumTraversalDepth` bounds how many entry-name segments a walk descends.
 The entry-name path is the flow name, so a deeper tree is a loop or a mistake,
