@@ -60,6 +60,17 @@ const payload = (node: Graph.GraphNode): unknown => payloadOf(node)
 const leafCalls = (graph: Graph.Graph): ReadonlyArray<Graph.GraphNode> => callsTo(graph, "leaf")
 
 describe("Trellis", () => {
+  it.effect("omits an absent seat from executed leaves", () =>
+    Effect.gen(function*() {
+      const seen: Array<Trellis.Leaf> = []
+      yield* Trellis.execute({ sequence: [{ agent: { goal: "a" } }, { agent: { goal: "b", seat: "reviewer" } }] }, {
+        concurrency: 1,
+        leaf: (input) => Effect.sync(() => seen.push(input))
+      })
+      expect(Object.hasOwn(seen[0]!, "seat")).toBe(false)
+      expect(seen[1]!.seat).toBe("reviewer")
+    }))
+
   it("reports depth, fan-out, and fuel overruns at the offending path", () => {
     expect(Trellis.validate(nested, envelope)).toEqual([])
     expect(reported(Trellis.validate(nested, { fuel: 3, depth: 2, fanout: 2 }))).toEqual([
@@ -155,6 +166,17 @@ describe("Trellis", () => {
     for (const value of accepted) {
       const decoded = Schema.decodeUnknownSync(Trellis.Plan)(value)
       expect(Trellis.validate(decoded, generous)).toEqual([])
+    }
+    const excess = [
+      { agent: { goal: "g" }, extra: true },
+      { sequence: [{ agent: { goal: "g" } }], extra: true },
+      { parallel: [{ agent: { goal: "g" } }], extra: true },
+      { sequence: [{ agent: { goal: "g" }, extra: true }] },
+      { parallel: [{ sequence: [{ agent: { goal: "g" } }], extra: true }] }
+    ]
+    for (const value of excess) {
+      expect(Trellis.validate(value, generous)[0]?.code).toBe("invalid_plan")
+      expect(Schema.decodeUnknownResult(Trellis.Plan)(value)._tag).toBe("Failure")
     }
   })
 

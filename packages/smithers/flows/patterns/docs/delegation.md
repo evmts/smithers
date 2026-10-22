@@ -41,7 +41,11 @@ exactly one of:
 
 A container holds at least one member. An empty one names no work and costs no
 fuel, so a round built from it makes no progress; the type and the codec both
-refuse it.
+refuse it. Both decoding and runtime validation reject excess properties on a
+plan node, including nested nodes.
+
+`execute` copies plans before running them and omits `seat` when it is absent.
+Leaf payloads also omit an absent seat.
 
 Declare `Trellis.Plan` as the output schema of the author flow so the model is
 shown that grammar rather than asked for prose.

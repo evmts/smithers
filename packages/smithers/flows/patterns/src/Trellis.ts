@@ -109,25 +109,36 @@ export type Plan =
   | { readonly sequence: readonly [Plan, ...ReadonlyArray<Plan>] }
   | { readonly parallel: readonly [Plan, ...ReadonlyArray<Plan>] }
 
+// Keep excess keys until the one-key check can reject them instead of
+// letting Struct decoding discard them. Child plans use this same codec.
 const PlanSchema: Schema.Codec<Plan> = Schema.suspend(
   (): Schema.Codec<Plan> =>
     Schema.Union([
-      Schema.Struct({
-        agent: Agent,
-        sequence: Schema.optionalKey(Schema.Never),
-        parallel: Schema.optionalKey(Schema.Never)
-      }),
-      Schema.Struct({
-        sequence: Schema.NonEmptyArray(PlanSchema),
-        agent: Schema.optionalKey(Schema.Never),
-        parallel: Schema.optionalKey(Schema.Never)
-      }),
-      Schema.Struct({
-        parallel: Schema.NonEmptyArray(PlanSchema),
-        agent: Schema.optionalKey(Schema.Never),
-        sequence: Schema.optionalKey(Schema.Never)
-      })
-    ])
+      Schema.StructWithRest(
+        Schema.Struct({
+          agent: Agent,
+          sequence: Schema.optionalKey(Schema.Never),
+          parallel: Schema.optionalKey(Schema.Never)
+        }),
+        [Schema.Record(Schema.String, Schema.Unknown)]
+      ),
+      Schema.StructWithRest(
+        Schema.Struct({
+          sequence: Schema.NonEmptyArray(PlanSchema),
+          agent: Schema.optionalKey(Schema.Never),
+          parallel: Schema.optionalKey(Schema.Never)
+        }),
+        [Schema.Record(Schema.String, Schema.Unknown)]
+      ),
+      Schema.StructWithRest(
+        Schema.Struct({
+          parallel: Schema.NonEmptyArray(PlanSchema),
+          agent: Schema.optionalKey(Schema.Never),
+          sequence: Schema.optionalKey(Schema.Never)
+        }),
+        [Schema.Record(Schema.String, Schema.Unknown)]
+      )
+    ]).check(Schema.isMaxProperties(1))
 )
 
 /**
@@ -198,7 +209,7 @@ const copiedPlan = (plan: Plan): Plan => {
   const members = container(plan)
   if (members === undefined) {
     const agent = (plan as { readonly agent: { readonly goal: string; readonly seat?: string | undefined } }).agent
-    return { agent: { goal: agent.goal, seat: agent.seat } }
+    return { agent: agent.seat === undefined ? { goal: agent.goal } : { goal: agent.goal, seat: agent.seat } }
   }
   const copies: readonly [Plan, ...ReadonlyArray<Plan>] = [copiedPlan(members[0]!), ...members.slice(1).map(copiedPlan)]
   return "sequence" in plan ? { sequence: copies } : { parallel: copies }
