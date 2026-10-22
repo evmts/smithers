@@ -1,3 +1,4 @@
+import { mayRetry } from "./view"
 // What the stack's screens show (src/features/todos/view.ts) and the contract's helpers, as pure functions over rows;
 // and how a send's refusal and a shape's answer read (writes.ts `reasonOf`, store.ts `accessOf`). The rows they read
 // come from real devices in todos.test.ts.
@@ -79,7 +80,7 @@ const sending = (fields: Partial<Sending> & Pick<Sending, "id" | "op">): Sending
   number: 0,
   repoId: REPO,
   queuedAt: 1,
-  v: 1,
+  v: 2,
   ...fields,
 })
 
@@ -612,4 +613,14 @@ describe("TODO boundary regressions", () => {
   test("a refused change with no reason still has a badge label", () => {
     expect(notSentRows(REPO, [requested({ id: "refused", op: "drop", status: "not_sent", reason: null })])[0]?.reason).toBe("Not sent")
   })
+})
+
+test("Retry names the least role: own Member or anyone Maintainer", () => {
+  const todo = { state: "failed" as const, createdLogin: "maya" }
+  const session = { status: "signed_in", role: "member" as const, login: "maya" }
+  expect(mayRetry(todo, session)).toBe(true)
+  expect(mayRetry(todo, { ...session, role: "guest" })).toBe(false)
+  expect(mayRetry(todo, { ...session, login: "other" })).toBe(false)
+  expect(mayRetry(todo, { ...session, role: "maintainer", login: "other" })).toBe(true)
+  expect(mayRetry({ ...todo, state: "working" }, session)).toBe(false)
 })

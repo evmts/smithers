@@ -99,7 +99,7 @@ export const Sending = Schema.Struct({
   ...QueuedOp.fields,
   repoId: Schema.String,
   queuedAt: Schema.Number,
-  v: Schema.Literal(1),
+  v: Schema.Literal(2),
 })
 export type Sending = typeof Sending.Type
 

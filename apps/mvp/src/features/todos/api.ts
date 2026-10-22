@@ -27,7 +27,7 @@ export type ChangeRequest =
     /** The issue it was made from. */
     readonly issue?: number
   }
-  | { readonly opId: string; readonly op: "drop"; readonly number: number }
+  | { readonly opId: string; readonly op: "drop" | "retry"; readonly number: number }
 
 const decodeTaken = Schema.decodeUnknownEffect(Taken)
 const decodeRefusal = Schema.decodeUnknownOption(Refusal)

@@ -43,8 +43,11 @@ export interface Change {
       /** The issue in the same repository it was drafted from (`todos.issue_number`). */
       readonly issue?: number
     }
-    | { readonly kind: "drop"; readonly number: number }
+    | { readonly kind: "drop" | "retry"; readonly number: number }
+  readonly retryAny?: boolean
 }
+
+export class RetryForbidden extends Schema.TaggedError<RetryForbidden>()("@smthrs/mvp/stack/RetryForbidden", {}) {}
 
 /** An attempt the writer recorded: Track B's `todo` run starts under its id, once per attempt. */
 export const AttemptStart = Schema.Struct({
@@ -93,6 +96,7 @@ export class TodoRuns extends Context.Service<
   {
     readonly start: (attempt: AttemptStart) => Effect.Effect<void, RunsUnavailable>
     readonly stop: (attempt: AttemptStop) => Effect.Effect<void, RunsUnavailable>
+    readonly isStopped?: (attemptId: string) => Effect.Effect<boolean, RunsUnavailable>
   }
 >()("@smthrs/mvp/stack/TodoRuns") {}
 
@@ -115,7 +119,7 @@ export const transitions = Metric.counter("smithers_todo_transitions", {
 
 /** A change's payload hash: the repository, who it acts for and the change, never its op id. */
 export const payloadHash = (change: Change): string =>
-  digestSync(JSON.stringify({ repoId: change.repoId, via: change.via, ...change.op }))
+  digestSync(JSON.stringify({ repoId: change.repoId, ...(change.op.kind === "retry" ? { actorId: change.actor.id } : {}), via: change.via, ...change.op }))
 
 /**
  * Records on the TODO the run its new attempt starts, `todo:<attempt id>` (`todos.run_id`, ruling TODO-3), in the
@@ -140,7 +144,7 @@ interface Loaded extends Row {
  * `TodoRuns` is provided), and without it no TODO starts. Records a span `stack.apply`, a log line and a count of
  * `changes` by op and outcome, with the repository, op id, number and version: never a title or a prompt.
  */
-export const apply = (change: Change, options: { readonly runs: boolean }) =>
+export const apply = (change: Change, options: { readonly runs: boolean; readonly stoppedAttemptId?: string }) =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
     const sql = yield* SqlClient.SqlClient
@@ -157,7 +161,14 @@ export const apply = (change: Change, options: { readonly runs: boolean }) =>
           ? ({ kind: "repeated", receipt: decodeReceipt(prior.result) } satisfies Applied)
           : ({ kind: "conflict" } satisfies Applied)
       }
-      const named = change.op.kind === "drop" ? change.op.number : 0
+      const named = change.op.kind !== "commit" ? change.op.number : 0
+      if (change.op.kind === "retry" && !change.retryAny) {
+        const [owner] = yield* sql<{ readonly createdBy: string }>`
+          SELECT created_by AS "createdBy" FROM todos WHERE repo_id = ${change.repoId} AND number = ${named}`
+        if (owner !== undefined && owner.createdBy !== change.actor.id) {
+          return yield* new RetryForbidden({})
+        }
+      }
       const rows = yield* sql<Loaded>`
         SELECT t.id, t.number, t.state, t.position, t.attempt, t.revision, a.id AS "attemptId"
         FROM todos t LEFT JOIN todo_attempts a ON a.todo_id = t.id AND a.ordinal = t.attempt
@@ -166,7 +177,9 @@ export const apply = (change: Change, options: { readonly runs: boolean }) =>
         nextNumber: locked!.nextNumber,
         lanes: options.runs ? locked!.lanes : 0,
         maxOpen: locked!.maxOpen,
-        todos: rows.map(({ attemptId: _, ...row }) => row),
+        todos: rows.map(({ attemptId, ...row }) =>
+          change.op.kind === "retry" && row.number === change.op.number && attemptId === options.stoppedAttemptId &&
+          (row.state === "working" || row.state === "in_review") ? { ...row, state: "failed" as const } : row),
       }
       const { stack: after, result } = applyRules(
         before,
@@ -197,6 +210,19 @@ export const apply = (change: Change, options: { readonly runs: boolean }) =>
         ...(result.kind === "refused" ? {} : { number: result.number }),
         starts: [...starts, ...inherited],
         ...(stopped === undefined ? {} : { stopped }),
+      }
+      if (change.op.kind === "retry" && result.kind === "retried") {
+        // Preserve the dependency identity before replacing the current projection. A published descendant may
+        // still await this old branch after the replacement attempt publishes on a different branch.
+        yield* sql`UPDATE todo_attempts a SET branch = t.branch, pr_number = t.pr_number
+          FROM todos t WHERE a.todo_id = t.id AND a.ordinal = t.attempt
+            AND a.branch IS NULL AND t.branch IS NOT NULL
+            AND t.repo_id = ${change.repoId} AND t.number = ${change.op.number}`
+        yield* sql`UPDATE todo_attempts SET status = 'failed', settled_at = coalesce(settled_at, now())
+          WHERE id = ${options.stoppedAttemptId ?? null}::uuid AND todo_id = ${rows.find((row) => row.number === named)?.id ?? null}::uuid`
+        yield* sql`UPDATE todos SET failure = NULL, step = NULL, branch = NULL, base_sha = NULL, base_ref = NULL,
+          head_sha = NULL, pr_number = NULL, pr_draft = NULL, note = NULL
+          WHERE repo_id = ${change.repoId} AND number = ${change.op.number}`
       }
       if (change.op.kind === "commit" && result.kind === "committed") {
         const created = after.todos.find((todo) => todo.id === change.opId)!
@@ -285,8 +311,8 @@ export const apply = (change: Change, options: { readonly runs: boolean }) =>
   }).pipe(Effect.withSpan("stack.apply"))
 
 /** The outcomes a stack refuses a change with: what the route answers instead of the change. */
-export const isRefusal = (outcome: StackOutcome): outcome is "stack_full" | "merged" | "not_found" =>
-  outcome === "stack_full" || outcome === "merged" || outcome === "not_found"
+export const isRefusal = (outcome: StackOutcome): outcome is "stack_full" | "merged" | "not_found" | "not_retryable" =>
+  outcome === "stack_full" || outcome === "merged" || outcome === "not_found" || outcome === "not_retryable"
 
 /** The attempt a `todo` run reports for: every report is fenced by its TODO and ordinal. */
 export interface RunAttempt {
@@ -562,6 +588,7 @@ export const belowOf = (attempt: RunAttempt) =>
 
 /** How the TODO a stacked TODO's branch was made from stands: its state and, once merged, its merge commit. */
 export interface BaseTodo {
+  readonly prNumber: number | null
   readonly number: number
   readonly state: TodoState
   readonly mergeSha: string | null
@@ -572,7 +599,29 @@ export const baseTodoOf = (repoId: string, branch: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<BaseTodo>`
-      SELECT number, state, merge_sha AS "mergeSha" FROM todos
-      WHERE repo_id = ${repoId} AND branch = ${branch} ORDER BY number DESC LIMIT 1`
+      WITH bases AS (
+        SELECT t.number, t.pr_number, t.state, t.merge_sha, t.attempt AS ordinal
+        FROM todos t WHERE t.repo_id = ${repoId} AND t.branch = ${branch}
+        UNION ALL
+        SELECT t.number, a.pr_number, 'failed' AS state, NULL::text AS merge_sha, a.ordinal
+        FROM todo_attempts a JOIN todos t ON t.id = a.todo_id AND t.repo_id = a.repo_id
+        WHERE a.repo_id = ${repoId} AND a.branch = ${branch} AND a.ordinal <= t.attempt
+      )
+      SELECT b.number, b.pr_number AS "prNumber",
+        CASE WHEN p.merged THEN 'merged' WHEN i.state = 'closed' THEN 'dropped' ELSE b.state END AS state,
+        coalesce(p.merge_sha, b.merge_sha) AS "mergeSha"
+      FROM bases b LEFT JOIN pulls p ON p.repo_id = ${repoId} AND p.number = b.pr_number
+      LEFT JOIN items i ON i.id = p.item_id
+      ORDER BY b.number DESC, b.ordinal DESC LIMIT 1`
     return Option.fromNullishOr(row)
+  })
+
+/** Read the current active attempt before probing its engine; the writer checks this id again under its lock. */
+export const retryCandidate = (repoId: string, number: number) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly attemptId: string }>`
+      SELECT a.id AS "attemptId" FROM todos t JOIN todo_attempts a ON a.todo_id = t.id AND a.ordinal = t.attempt
+      WHERE t.repo_id = ${repoId} AND t.number = ${number} AND t.state IN ('working', 'in_review')`
+    return row?.attemptId
   })

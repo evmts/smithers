@@ -25,6 +25,7 @@ const failed = (flow: string, input: unknown) => ({ calls: [call(flow, input, "f
 
 /** For each case: what the agent should do, and something it might do instead. */
 const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Partial<Trial> }> = {
+  "todo-retry": { good: failed("todo/Retry", { repo: REPO, number: 1 }), bad: steps },
   remember: {
     good: { calls: [call("app/memory/remember", { key: "language", text: "Answer in British English." })] },
     bad: { text: "Noted: British English from now on." },

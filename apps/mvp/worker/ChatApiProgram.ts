@@ -240,7 +240,8 @@ export const program = (options: ProgramOptions = {}) =>
           return yield* (Option.isSome(githubApp) && runTodos
             ? stack.fetch.pipe(Effect.provideService(Stack.TodoRuns, TodoRuns.make(starter, (executionId) => executions.getByName(executionId).cancel().pipe(
               Effect.provideService(RuntimeContext, requestRuntime),
-            ))))
+            ), (attemptId) => TodoRuns.isStopped(Layer.unwrap(Effect.map(hyperdrive.connectionString,
+              (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA))))(attemptId).pipe(Effect.provideService(RuntimeContext, requestRuntime)))))
             : stack.fetch).pipe(Effect.provide(signedIn))
         }
         if (RemoteRuns.handles(path)) return yield* remoteRuns.fetch.pipe(Effect.provide(signedIn))

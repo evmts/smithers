@@ -181,3 +181,13 @@ export const edit = (opId: string) => handle(opId, "edit")
 
 /** Discard on a change that wasn't sent: it goes. */
 export const discard = (opId: string) => Effect.asVoid(handle(opId, "discard"))
+
+/** Retry returns once the durable launch is requested; the outbox sends in the background. */
+export const retry = (owner: string, name: string, number: number) =>
+  Effect.gen(function* () {
+    const store = yield* TodosStore
+    yield* Effect.forkIn(
+      Effect.ignore((yield* FlowDispatch).dispatch("todo/Retry", { repo: `${owner}/${name}`, number }, { door: "button" })),
+      store.scope, { startImmediately: true },
+    )
+  })

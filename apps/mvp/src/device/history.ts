@@ -73,3 +73,19 @@ export const IssueSendingV2 = Schema.Struct({
   credential: Schema.optional(Schema.String),
   repoId: Schema.String, queuedAt: Schema.Number, v: Schema.Literal(2),
 })
+
+/** TODO writes before retry was added (2026-10-22). */
+const TodoQueuedV1 = {
+  id: Schema.String, repo: Schema.String, op: Schema.Literals(["commit", "drop"]),
+  title: Schema.String, prompt: Schema.String, acceptance: Schema.Array(Schema.String),
+  number: Schema.Number, issue: Schema.optionalKey(Schema.Number),
+}
+export const TodoSendingV1 = Schema.Struct({
+  ...TodoQueuedV1, repoId: Schema.String, queuedAt: Schema.Number, v: Schema.Literal(1),
+})
+export const TodoRequestedV1 = Schema.Struct({
+  ...TodoQueuedV1, repoId: Schema.String, queuedAt: Schema.Number,
+  status: Schema.Literals(["requested", "not_sent"]),
+  reason: Schema.NullOr(Schema.Literals(["invalid", "authentication", "forbidden", "not_found", "conflict", "stack_full", "merged", "too_large"])),
+  taken: Schema.NullOr(Schema.Number),
+})

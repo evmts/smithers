@@ -586,3 +586,38 @@ test("drop retains published successor admissions after its old run is cancelled
   expect(replay.kind !== "conflict" && replay.receipt.starts).toEqual(published.starts)
   expect(await sql("SELECT id FROM todo_attempts")).toHaveLength(2)
 })
+
+test("only an engine-confirmed cancelled current attempt can be reset while working", async () => {
+  const made = await runtime.runPromise(Stack.apply(commit(), { runs: true }))
+  if (made.kind !== "applied") throw new Error("commit refused")
+  const first = made.receipt.starts[0]!
+  const retry: Stack.Change = { ...drop(1), op: { kind: "retry", number: 1 } }
+  const running = await runtime.runPromise(Stack.apply(retry, { runs: true }))
+  expect(running.kind !== "conflict" && running.receipt.outcome).toBe("not_retryable")
+  const stopped = await runtime.runPromise(Stack.apply({ ...retry, opId: uuid() }, { runs: true, stoppedAttemptId: first.attemptId }))
+  expect(stopped.kind !== "conflict" && stopped.receipt.starts[0]).toMatchObject({ ordinal: 2, todoId: first.todoId })
+  const stale = await runtime.runPromise(Stack.report(first, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+  expect(stale.outcome).toBe("stale")
+})
+
+test("a queued successor is admitted exactly when the retried TODO publishes", async () => {
+  const first = await runtime.runPromise(Stack.apply(commit(), { runs: true }))
+  if (first.kind !== "applied") throw new Error("commit refused")
+  const attempt = first.receipt.starts[0]!
+  await runtime.runPromise(Stack.report(attempt, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+  // A held successor is already queued. Admission is disabled while creating that precondition;
+  // the separate todo-stack-hold change owns keeping it queued on failure.
+  await runtime.runPromise(Stack.apply(commit(), { runs: false }))
+  const retry = await runtime.runPromise(Stack.apply({ ...drop(1), op: { kind: "retry", number: 1 } }, { runs: true }))
+  if (retry.kind !== "applied") throw new Error("retry refused")
+  expect(retry.receipt.starts).toHaveLength(1)
+  const next = retry.receipt.starts[0]!
+  expect(next).toMatchObject({ number: 1, ordinal: 2 })
+  const published = await runtime.runPromise(Stack.report(next, {
+    kind: "published", headSha: "a".repeat(40), prNumber: 12, draft: false,
+  }, { runs: true }))
+  expect(published.starts).toMatchObject([{ number: 2, ordinal: 1 }])
+  expect(await runtime.runPromise(Stack.report(next, {
+    kind: "published", headSha: "a".repeat(40), prNumber: 12, draft: false,
+  }, { runs: true }))).toEqual({ outcome: "repeated", starts: published.starts })
+})

@@ -324,6 +324,38 @@ describe("the todo run", { timeout: 120_000 }, () => {
     expect(await todo()).toMatchObject({ state: "failed", failure: "implement" })
   })
 
+  test("retry a failed implement runs attempt two to publication without replacing the TODO", async () => {
+    let recovering = false
+    const broken = cells(`ctx.done({ nonsense: true })`).model
+    const healthy = cells(WRITES_README).model
+    const ctx = await setup({ model: Model.make({
+      stream: (request) => (recovering ? healthy : broken).stream(request),
+    }) })
+    const start = (await commit("Retry README", "Add a line.", 4430))!
+    expect((await ctx.run(start)).exit).toEqual(Exit.succeed({ state: "failed" }))
+    const press: Stack.Change = {
+      opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person",
+      op: { kind: "retry", number: 1 },
+    }
+    const retried = await runtime.runPromise(Stack.apply(press, { runs: true }))
+    if (retried.kind !== "applied") throw new Error("retry refused")
+    const next = retried.receipt.starts[0]!
+    expect(next).toMatchObject({ todoId: start.todoId, number: 1, ordinal: 2, revision: 1 })
+    expect(await todo()).toMatchObject({ position: 1, state: "working", failure: null })
+    expect(await runtime.runPromise(Stack.apply(press, { runs: true }))).toEqual({
+      kind: "repeated", receipt: retried.receipt,
+    })
+    // Recover the injected faulty model service; only a person merges the resulting pull request.
+    recovering = true
+    ctx.github.onPullOpened = (number) => void ctx.github.merge(number, "maya")
+    expect((await ctx.run(next)).exit).toEqual(Exit.succeed({ state: "merged" }))
+    expect(await todo()).toMatchObject({ state: "merged", failure: null })
+    expect(ctx.github.issues.get([...ctx.github.pulls.keys()][0]!)!.body).toContain("Fixes #4430")
+    expect(await sql(runtime, "SELECT ordinal, status FROM todo_attempts ORDER BY ordinal")).toEqual([
+      { ordinal: 1, status: "failed" }, { ordinal: 2, status: "settled" },
+    ])
+  })
+
   test("without the App installed the TODO fails app_not_installed before any branch", async () => {
     const ctx = await setup()
     ctx.github.installed = false

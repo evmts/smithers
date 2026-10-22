@@ -59,6 +59,12 @@ const personsOwn = (ask: string): AgentCase => ({
 })
 
 export const FLOW_CASES: ReadonlyArray<AgentCase> = [
+  {
+    name: "todo-retry",
+    ask: `Retry my failed TODO T1 in ${REPO}.`,
+    checks: (t) => [answered(t), attempted(t, "todo/Retry", all(repo, fieldIs("number", 1))),
+      ...changedOnly(t, ["todo/Retry"])],
+  },
   // Memory: a fact for later conversations is stored, not just acknowledged.
   {
     name: "remember",

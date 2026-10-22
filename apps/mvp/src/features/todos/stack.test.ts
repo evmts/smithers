@@ -354,3 +354,13 @@ describe("violations", () => {
     }
   })
 })
+
+test("retry keeps the failed TODO in place and starts attempt two; working refuses", () => {
+  const failed = { nextNumber: 2, lanes: 1, maxOpen: 50, todos: [
+    { id: "one", number: 1, state: "failed" as const, position: 1, attempt: 1, revision: 1 },
+  ] }
+  const retried = apply(failed, { kind: "retry", number: 1 })
+  expect(retried.result).toMatchObject({ kind: "retried", starts: [{ todoId: "one", ordinal: 2 }] })
+  expect(retried.stack.todos[0]).toMatchObject({ id: "one", position: 1, state: "working", attempt: 2 })
+  expect(apply(retried.stack, { kind: "retry", number: 1 }).result).toEqual({ kind: "refused", code: "not_retryable" })
+})

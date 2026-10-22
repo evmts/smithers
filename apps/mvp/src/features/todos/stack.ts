@@ -43,6 +43,7 @@ export interface Stack {
 export type Op =
   | { readonly kind: "commit"; readonly id: string }
   | { readonly kind: "drop"; readonly number: number }
+  | { readonly kind: "retry"; readonly number: number }
   | { readonly kind: "publish"; readonly id: string; readonly ordinal: number }
   | { readonly kind: "finish"; readonly id: string; readonly ordinal: number; readonly state: FinishedState }
 
@@ -86,7 +87,8 @@ export type Result =
     readonly state: FinishedState
     readonly starts: ReadonlyArray<Start>
   }
-  | { readonly kind: "refused"; readonly code: "stack_full" | "merged" | "not_found" | "stale" }
+  | { readonly kind: "retried"; readonly number: number; readonly starts: ReadonlyArray<Start> }
+  | { readonly kind: "refused"; readonly code: "stack_full" | "merged" | "not_found" | "stale" | "not_retryable" }
 
 const settled = (state: TodoState): boolean => (SETTLED_STATES as ReadonlyArray<TodoState>).includes(state)
 const inLane = (state: TodoState): boolean => (LANE_STATES as ReadonlyArray<TodoState>).includes(state)
@@ -137,6 +139,11 @@ export const apply = (stack: Stack, op: Op): { readonly stack: Stack; readonly r
   if (op.kind === "publish") return publish(stack, op)
   const target = stack.todos.find((todo) => todo.number === op.number)
   if (target === undefined) return { stack, result: { kind: "refused", code: "not_found" } }
+  if (op.kind === "retry") {
+    if (target.state !== "failed") return { stack, result: { kind: "refused", code: "not_retryable" } }
+    const filled = fill(stack.todos.map((todo) => todo.id === target.id ? { ...todo, state: "queued" as const } : todo), stack.lanes)
+    return { stack: { ...stack, todos: filled.todos }, result: { kind: "retried", number: target.number, starts: filled.starts } }
+  }
   if (target.state === "merged") return { stack, result: { kind: "refused", code: "merged" } }
   if (target.state === "dropped") {
     return { stack, result: { kind: "dropped", number: op.number, changed: false, stopped: undefined, starts: [] } }

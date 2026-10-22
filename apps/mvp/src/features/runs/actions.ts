@@ -2,6 +2,7 @@ import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Effect, Metric, Option } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { RETRY_ID_SEARCH_LIMIT, retriedRunId, retryActId, runPath } from "./contract"
+import { todoRetryPayload } from "./retry"
 import { retriesOf } from "./page"
 import type { Inspection, RunTab, RunView } from "./schema"
 import { VIEW } from "./schema"
@@ -141,6 +142,11 @@ export const retry = (version: "pinned" | "current") =>
     Effect.gen(function* () {
       const store = yield* RunsStore
       const runId = inspection.run.runId
+      if (inspection.run.flowName === "todo") {
+        const payload = todoRetryPayload(inspection.run.input)
+        if (payload === undefined) return Option.some("not_retryable")
+        return refusalOf(yield* (yield* FlowDispatch).dispatch("todo/Retry", payload, { door: "button" }))
+      }
       // The list holds this device's earlier retries of the run: read it now, so the act is the next one.
       yield* store.readList
       const engine = yield* BrowserEngine.BrowserEngine

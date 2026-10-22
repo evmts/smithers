@@ -22,7 +22,7 @@ const row: Sending = {
   acceptance: [],
   number: 0,
   queuedAt: 1,
-  v: 1,
+  v: 2,
 }
 
 /** Keeps `row` as Requested on a device whose store fails its writes when `failing`; answers how the send settles. */
@@ -34,7 +34,7 @@ const keepOn = (failing: boolean) => {
         id: "todo-requested",
         schema: RequestedRow,
         getKey: (kept) => kept.id,
-        schemaVersion: 1,
+        schemaVersion: 2,
       })
       yield* requested.preload
       if (failing) store.failWrites()

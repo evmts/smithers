@@ -1,5 +1,5 @@
 {
-  "epoch": 64,
+  "epoch": 66,
   "stores": {
     "branch-conversations": {
       "kind": "local",
@@ -86,7 +86,8 @@
     "todo-requested": {
       "kind": "local",
       "versions": {
-        "1": "dabd1d95e7d0a02f"
+        "1": "dabd1d95e7d0a02f",
+        "2": "3bc5b0ecf965a1b5"
       }
     },
     "steer-sent": {
@@ -263,7 +264,8 @@
     "todo-sending": {
       "kind": "payload",
       "versions": {
-        "1": "3c0ca8e41d1eb3d4"
+        "1": "3c0ca8e41d1eb3d4",
+        "2": "84684138fa1a48e3"
       }
     },
     "steer-sending": {

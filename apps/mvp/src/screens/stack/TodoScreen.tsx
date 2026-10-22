@@ -1,11 +1,11 @@
-import { Breadcrumbs, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon } from "@smthrs/ui"
+import { Button, Breadcrumbs, ConfirmButton, EmptyState, ItemAsideSection, ItemConversation, ItemStateIcon } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
 import { SignInButton } from "../../features/auth/components/SignInButton"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import { BRANCH, DROP, ISSUE, NOT_FOUND, PULL_REQUEST, RUN, STACK, stackPath } from "../../features/todos/contract"
-import { accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf } from "../../features/todos/view"
+import { mayRetry, accessFor, dropConfirm, mayChange, stackRows, todoCardOf, todoScreenOf } from "../../features/todos/view"
 import "./stack-screen.css"
 
 // /$owner/$repo/stack/$number (decision 0016 §4): one TODO as GitHub's issue page. Its title and T<n>, its state pill,
@@ -33,6 +33,8 @@ export function TodoScreen() {
   if (status === "sign_in") return <main className="stack-screen" aria-label="TODO"><SignInButton /></main>
   const card = todoCardOf(number, stackRows(repoId, todos, sending, requested), todos, requests)
   const screen = status === "forbidden" ? { kind: "missing" as const } : todoScreenOf(card, number, todos, status, owner, repo)
+  const todo = todos.find((todo) => todo.number === number)
+  const retryable = todo !== undefined && session !== undefined && mayRetry(todo, session)
   const may = session !== undefined && mayChange(session, confirmed)
   return (
     <main className="stack-screen" aria-label="TODO">
@@ -59,7 +61,7 @@ export function TodoScreen() {
           comments={[]}
           {...(screen.page.pending === undefined ? {} : { pending: screen.page.pending })}
           aside={screen.page.issue === undefined && screen.page.branch === undefined &&
-              screen.page.pullRequest === undefined && screen.page.run === undefined && !(may && screen.page.droppable)
+              screen.page.pullRequest === undefined && screen.page.run === undefined && !(may && screen.page.droppable) && !retryable
             ? undefined
             : (
               <>
@@ -75,6 +77,7 @@ export function TodoScreen() {
                 {screen.page.run === undefined ? null : (
                   <ItemAsideSection title={RUN} links={[screen.page.run]} onNavigate={(href) => void navigate({ href })} />
                 )}
+                {retryable ? <Button size="sm" onClick={() => actions.retry(owner, repo, number)}>Retry</Button> : null}
                 {may && screen.page.droppable ? (
                   <ConfirmButton
                     variant="ghost"

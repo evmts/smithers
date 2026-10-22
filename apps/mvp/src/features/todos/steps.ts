@@ -21,6 +21,8 @@ import {
   KeepIssueDraft,
   QueueCommit,
   QueueDrop,
+  QueueRetry,
+  TodoRetry,
   TodoCommit,
   TodoDraft,
   TodoDrop,
@@ -163,12 +165,12 @@ type Fields =
     readonly acceptance?: ReadonlyArray<string> | undefined
     readonly issue?: number | undefined
   }
-  | { readonly op: "drop"; readonly repo: string; readonly number: number }
+  | { readonly op: "drop" | "retry"; readonly repo: string; readonly number: number }
 
 /**
- * What `todo/commit/queue` and `todo/drop/queue` do: derive the change's op id from the run, ask the tab that started it
+ * What the commit, drop and retry queue steps do: derive the change's op id from the run, ask the tab that started it
  * to queue the change in the device's outbox, and answer `requested`. A commit's op id is its TODO's id. Only a person's
- * own door queues a change: a run that is the agent's call is refused before any tab is asked, whatever its catalog
+ * own door commits or drops: an agent may retry, but is otherwise refused before any tab is asked, whatever its catalog
  * offered (decision 0016 §3). Records a span `todos.queue`, a log line and a count of `queued` by operation, door and
  * outcome, never the text. The agent's call, a tab gone, or an outbox that wouldn't take it, fails `TodoStepRefused`.
  */
@@ -188,8 +190,8 @@ export const queueChange = (fields: Fields) =>
         number: 0,
         ...(fields.issue === undefined ? {} : { issue: fields.issue }),
       }
-      : { id: opId, repo: fields.repo, op: "drop", title: "", prompt: "", acceptance: [], number: fields.number }
-    const { door, outcome } = via === "agent"
+      : { id: opId, repo: fields.repo, op: fields.op, title: "", prompt: "", acceptance: [], number: fields.number }
+    const { door, outcome } = via === "agent" && fields.op !== "retry"
       ? { door: "agent" as const, outcome: "agent" as const }
       : yield* askTab(requester, via, { kind: "queue", op })
     yield* Metric.update(Metric.withAttributes(queued, { op: fields.op, door, outcome }), 1)
@@ -217,5 +219,6 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(TodoDraft, KeepDraft.toLayer(keepDraft)),
   Interpreter.layerWithImplementations(TodoIssue, KeepIssueDraft.toLayer(keepDraft)),
   Interpreter.layerWithImplementations(TodoCommit, QueueCommit.toLayer((payload) => queueChange({ op: "commit", ...payload }))),
+  Interpreter.layerWithImplementations(TodoRetry, QueueRetry.toLayer((payload) => queueChange({ op: "retry", ...payload }))),
   Interpreter.layerWithImplementations(TodoDrop, QueueDrop.toLayer((payload) => queueChange({ op: "drop", ...payload }))),
 )

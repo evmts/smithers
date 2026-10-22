@@ -10,6 +10,7 @@ import { describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.ts"
+import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as Pause from "./flows/Pause.ts"
@@ -669,3 +670,30 @@ describe("ExecutionHost over the compose Postgres", () => {
     expect((await terminalRows(app, branchId))[0]).toMatchObject({ status: "open", generation: "7" })
   })
 })
+
+
+test("retry requires the engine cancellation receipt, not the object's stop request", () =>
+  withSchema(({ name, url }) => Effect.gen(function* () {
+    const attemptId = crypto.randomUUID()
+    const executionId = `todo:${attemptId}`
+    const object = memory()
+    const database = ExecutionHost.database(url, name)
+    const host = ExecutionHost.make(object.storage, {
+      hostId: executionId, database,
+      flows: { flows: [Pause.Pause], registration: Pause.registration(Pause.logged) },
+      router: recording().router,
+    })
+    const stopped = TodoRuns.isStopped(database)
+    yield* host.start(yield* ExecutionHost.intent(Pause.Pause, {
+      executionId, payload: { label: "cancel-retry", pauseMs: 60_000 },
+    }))
+    yield* host.alarm()
+    expect(yield* stopped(crypto.randomUUID())).toBe(false)
+    expect(yield* stopped(attemptId)).toBe(false)
+    yield* host.cancel()
+    // Persisting a cancellation request does not settle a parked execution.
+    expect(yield* stopped(attemptId)).toBe(false)
+    yield* host.alarm()
+    expect(yield* stopped(attemptId)).toBe(true)
+  })),
+)

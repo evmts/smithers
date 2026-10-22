@@ -18,3 +18,6 @@ export const mayChange = (actor: Actor): boolean => canAsk(actor) && actor.act =
 
 /** Who a change acts for, as the session says: the person, unless an agent, flow or sandbox acts for them. */
 export const viaOf = (actor: Actor): StackVia => (actor.act === undefined ? "person" : "agent")
+
+/** Least role for retry: Member for their own TODO; Maintainer for anyone's. Ownership stays under the writer lock. */
+export const mayRetryAny = (actor: Actor): boolean => actor.role === "maintainer" || actor.role === "admin"

@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setPrompt, setTitle, warm } from "./actions"
+import { retry, commit, discard, discardDraft, drop, edit, fromIssue, newDraft, open, setPrompt, setTitle, warm } from "./actions"
 import { type RepoStack, TodosStore } from "./store"
 
 // TODOs as a frontend sees it: live queries to read and plain functions to act, with no Effect in sight. React renders
@@ -42,6 +42,7 @@ export interface TodosActions {
   /** Commit on a draft: the stack's page to show, or nothing when it didn't run. */
   readonly commit: (draftId: string) => string | undefined
   readonly discardDraft: (draftId: string) => void
+  readonly retry: (owner: string, name: string, number: number) => void
   readonly drop: (owner: string, name: string, number: number) => void
   /** Make TODO on an issue: drafts a TODO from it; answers the stack's page, where the draft shows. */
   readonly fromIssue: (owner: string, name: string, number: number) => string
@@ -83,6 +84,7 @@ export class Todos extends Context.Service<Todos, { readonly queries: TodosQueri
           setPrompt: (draftId, prompt) => run(setPrompt(draftId, prompt)),
           commit: (draftId) => run(commit(draftId)),
           discardDraft: (draftId) => run(discardDraft(draftId)),
+          retry: (owner, name, number) => run(retry(owner, name, number)),
           drop: (owner, name, number) => run(drop(owner, name, number)),
           fromIssue: (owner, name, number) => run(fromIssue(owner, name, number)),
           edit: (opId) => run(edit(opId)),

@@ -25,7 +25,7 @@ import { refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
-import { mayChange, mayRead, viaOf } from "./Access.ts"
+import { mayChange, mayRead, mayRetryAny, viaOf } from "./Access.ts"
 import * as Stack from "./Stack.ts"
 
 // The stack's routes in ChatApi (decision 0016 §1, docs/features/todos.md#routes):
@@ -76,7 +76,7 @@ const Body = Schema.Union([
     acceptance: Schema.optional(Acceptance),
     issue: Schema.optional(IssueNumber),
   }),
-  Schema.Struct({ opId: Uuid, op: Schema.Literal("drop"), number: TodoNumber }),
+  Schema.Struct({ opId: Uuid, op: Schema.Literals(["drop", "retry"]), number: TodoNumber }),
 ])
 const decodeBody = Schema.decodeUnknownOption(Schema.fromJsonString(Body))
 
@@ -170,14 +170,20 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           // Committing and dropping are the person's presses: anyone acting for them is refused, and counted as such
           // (decision 0017 slice 0).
           const act = admitted.op === "commit" ? "todo/commit" : "todo/drop"
-          if (yield* refusesPersonOnly(who, act)) return refused("forbidden")
-          if (!mayChange(who)) return refused("forbidden")
+          if (admitted.op !== "retry" && (yield* refusesPersonOnly(who, act))) return refused("forbidden")
+          if (admitted.op === "retry" ? !mayRead(Option.some(who)) : !mayChange(who)) return refused("forbidden")
+          let stoppedAttemptId: string | undefined
+          if (admitted.op === "retry" && Option.isSome(runs) && runs.value.isStopped !== undefined) {
+            const candidate = yield* Stack.retryCandidate(repoId(target.owner, target.name), admitted.number).pipe(Effect.provide(database))
+            if (candidate !== undefined && (yield* runs.value.isStopped(candidate))) stoppedAttemptId = candidate
+          }
           const applied = yield* Stack.apply(
             {
               opId: admitted.opId.toLowerCase(),
               repoId: repoId(target.owner, target.name),
               actor: { id: who.subject.id, login: who.login ?? who.subject.id },
               via,
+              retryAny: mayRetryAny(who),
               op: admitted.op === "commit"
                 ? {
                   kind: "commit",
@@ -186,10 +192,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
                   acceptance: admitted.acceptance ?? [],
                   ...(admitted.issue === undefined ? {} : { issue: admitted.issue }),
                 }
-                : { kind: "drop", number: admitted.number },
+                : { kind: admitted.op, number: admitted.number },
             },
-            { runs: Option.isSome(runs) },
-          ).pipe(Effect.provide(database))
+            { runs: Option.isSome(runs), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },
+          ).pipe(Effect.provide(database), Effect.catchTag("@smthrs/mvp/stack/RetryForbidden", () => Effect.succeed({ kind: "forbidden" as const })))
+          if (applied.kind === "forbidden") return refused("forbidden")
           if (applied.kind === "conflict") return refused("conflict")
           const receipt = applied.receipt
           if (Stack.isRefusal(receipt.outcome)) return refused(receipt.outcome)

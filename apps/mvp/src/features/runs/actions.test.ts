@@ -220,3 +220,16 @@ for (const error of [new CancelPending(), new AnswersUnavailable({ status: 503 }
     expect((await t.view()).refusal).toBe("unavailable")
   })
 }
+
+test("the run page retries a system TODO through todo/Retry instead of replaying the old attempt", async () => {
+  const t = await setup({ dispatch: Effect.succeed({ _tag: "Done", value: { opId: "press", status: "requested" } }) })
+  const read = inspection("a")
+  const text = JSON.stringify({ repoId: "github/octo/hello", number: 1, attemptId: "old-attempt" })
+  await t.runtime.runPromise(t.store.pages.update("a", (row) => {
+    row.inspection = { ...read, run: { ...read.run, flowName: "todo", status: "failed", input: { text, bytes: text.length, clipped: false } } }
+  }))
+  await t.runtime.runPromise(actions.retry("pinned"))
+  expect(t.calls).toEqual([{ name: "todo/Retry", payload: { repo: "octo/hello", number: 1 }, executionId: undefined }])
+  expect(t.navigated).toEqual([])
+  expect(t.inspections.some((id) => id.startsWith("retry:"))).toBe(false)
+})

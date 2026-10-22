@@ -41,7 +41,7 @@ export class StackWrites extends Context.Service<
         id: "todo-requested",
         schema: RequestedRow,
         getKey: (row) => row.id,
-        schemaVersion: 1,
+        schemaVersion: 2,
       })
       const context = yield* Effect.context<StackClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(requested, params).pipe(Effect.provideContext(context))
@@ -88,7 +88,7 @@ export const requestOf = (row: Sending): ChangeRequest =>
       acceptance: row.acceptance,
       ...(row.issue === undefined ? {} : { issue: row.issue }),
     }
-    : { opId: row.id, op: "drop", number: row.number }
+    : { opId: row.id, op: row.op, number: row.number }
 
 /**
  * Why the route refused a change for good: the code its body names, else its status. Anything else (no answer, a

@@ -163,3 +163,14 @@ export const TodoDrop = Flow.make("todo/drop", {
   error: TodoStepRefused,
   body: Node.capture({ action: QueueDrop.name }, (payload) => QueueDrop.call(payload)),
 }).annotate(Flow.Placement, Placement.client())
+
+/** Restart a failed TODO in place, keeping its immutable attempts. */
+export const QueueRetry = Action.make("todo/Retry/queue", {
+  payload: dropPayload, success: ChangeRequested, error: TodoStepRefused, retryPolicy: ASK_RETRY,
+})
+export const TodoRetry = Flow.make("todo/Retry", {
+  description: "Retry a failed or stopped TODO in repo (owner/name), by TODO number. Starts a new attempt in its existing stack position. Member may retry their own TODO; Maintainer may retry anyone's. Answers requested, not completed.",
+  modelInvocable: true,
+  payload: dropPayload, success: ChangeRequested, error: TodoStepRefused,
+  body: Node.capture({ action: QueueRetry.name }, (payload) => QueueRetry.call(payload)),
+}).annotate(Flow.Placement, Placement.client())

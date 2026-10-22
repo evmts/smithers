@@ -38,7 +38,7 @@ import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet } from "../features/spend/flows"
 import { SetTheme } from "../features/theme/flows"
-import { TodoCommit, TodoDraft, TodoDrop, TodoIssue } from "../features/todos/flows"
+import { TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
 import { type FlowName, type FlowOf, names } from "./registry"
@@ -103,6 +103,7 @@ export const declarations = {
   "todo/draft": TodoDraft,
   "todo/issue": TodoIssue,
   "todo/commit": TodoCommit,
+  "todo/Retry": TodoRetry,
   "todo/drop": TodoDrop,
   "watch/set": WatchSet,
   "notification/ack": Ack,

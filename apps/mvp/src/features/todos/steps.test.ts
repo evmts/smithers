@@ -174,3 +174,15 @@ test("permanent TODO refusals stop on the first attempt; transport failures retr
   }
   expect(RetryPolicy.decide(ASK_RETRY, { attempt: 1, error: { _tag: "TransportUnavailable" } })).toEqual({ _tag: "RetryAfter", delayMs: 1000 })
 })
+
+test("the agent retries through the same durable queue and replays the same press id", async () => {
+  const registry: Metric.MetricRegistry = new Map()
+  const tab = recordingTab(true)
+  const retry = queueChange({ op: "retry", repo: "octo/hello", number: 1 })
+  const first = await run(retry, AGENT, tab.layer, registry)
+  const again = await run(retry, AGENT, tab.layer, registry)
+  expect(Exit.isSuccess(first)).toBe(true)
+  expect(again).toEqual(first)
+  expect(tab.asked[0]!.call).toMatchObject({ kind: "queue", op: { op: "retry", number: 1 } })
+  expect(tab.asked[1]!.call).toEqual(tab.asked[0]!.call)
+})

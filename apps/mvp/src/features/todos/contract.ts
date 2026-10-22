@@ -113,9 +113,9 @@ export type TodoNote = (typeof TODO_NOTES)[number]
 
 /**
  * The changes a person makes to a stack in slice 1 (decision 0016 §1): `commit` appends a TODO, `drop` takes one out.
- * Slice 2 adds `move` and `amend`, which the `stack_ops` table already admits.
+ * Retry resets a failed TODO in place. Slice 2 also adds `move` and `amend`.
  */
-export const STACK_OPS = ["commit", "drop"] as const
+export const STACK_OPS = ["commit", "drop", "retry"] as const
 export type StackOp = (typeof STACK_OPS)[number]
 
 /** Who a change acts for: a person's own press, or the agent's call for them (decision 0016 Appendix B). */
@@ -159,6 +159,7 @@ export const STACK_REFUSALS = [
   "conflict",
   "stack_full",
   "merged",
+  "not_retryable",
   "too_large",
   "unavailable",
 ] as const
@@ -173,12 +174,13 @@ export const REFUSAL_STATUS: Readonly<Record<StackRefusal, number>> = {
   conflict: 409,
   stack_full: 409,
   merged: 409,
+  not_retryable: 409,
   too_large: 413,
   unavailable: 503,
 }
 
 /** What a stack's writer settles a change as: done (`committed`, `dropped`), or refused for the stack's state. */
-export const STACK_OUTCOMES = ["committed", "dropped", "stack_full", "merged", "not_found"] as const
+export const STACK_OUTCOMES = ["committed", "dropped", "retried", "stack_full", "merged", "not_found", "not_retryable"] as const
 export type StackOutcome = (typeof STACK_OUTCOMES)[number]
 
 /**
@@ -193,6 +195,7 @@ export const NOT_SENT_REASONS = [
   "conflict",
   "stack_full",
   "merged",
+  "not_retryable",
   "too_large",
 ] as const satisfies ReadonlyArray<Exclude<StackRefusal, "unavailable">>
 export type NotSentReason = (typeof NOT_SENT_REASONS)[number]
@@ -210,6 +213,7 @@ export const NOT_SENT_COPY: Readonly<Record<NotSentReason, string>> = {
   conflict: "Conflict",
   stack_full: "Stack full",
   merged: "Merged",
+  not_retryable: "Can’t retry",
   too_large: "Too long",
 }
 

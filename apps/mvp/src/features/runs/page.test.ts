@@ -162,3 +162,12 @@ test("stall detection uses the latest event from More as well as the first journ
   expect(actsOf(live, 61_000, journalOf(page)).resume).toBe(false)
   expect(actsOf(live, 50_000 + STALLED_AFTER_MS, journalOf(page)).resume).toBe(true)
 })
+
+test("failed system TODO runs have Retry while remote running TODOs do not", () => {
+  const input = { repoId: "github/octo/hello", number: 1 }
+  const base = { runId: "todo:12345678-1234-1234-1234-123456789abc", flowName: "todo", input: value(JSON.stringify(input)), status: "running", result: null }
+  const inspection = { run: base, journal: { events: [] } } as unknown as Parameters<typeof actsOf>[0]
+  expect(actsOf(inspection, 0).retry).toBe(false)
+  expect(actsOf({ ...inspection, run: { ...inspection.run, status: "completed", result: value(JSON.stringify({ state: "failed" })) } }, 0).retry).toBe(true)
+  expect(actsOf({ ...inspection, run: { ...inspection.run, status: "completed", result: value(JSON.stringify({ state: "merged" })) } }, 0).retry).toBe(false)
+})

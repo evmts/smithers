@@ -639,7 +639,7 @@ describe("the device", () => {
       number: 0,
       repoId: REPO_ID,
       queuedAt: 1,
-      v: 1,
+      v: 2,
     }
     await tab.runtime.runPromise(keep(tab.store.requested, row, "requested", null, 4))
     await tab.runtime.runPromise(keep(tab.store.requested, row, "not_sent", "stack_full", null))

@@ -87,7 +87,7 @@ export const stackRows = (
 /** A change this device made that the route refused, with Edit (a commit's) and Discard. */
 export interface NotSentRow {
   readonly id: string
-  readonly op: "commit" | "drop"
+  readonly op: "commit" | "drop" | "retry"
   /** What it was: a commit's title, or `Drop T4`. */
   readonly label: string
   readonly reason: string
@@ -101,7 +101,7 @@ export const notSentRows = (repoId: string, requested: ReadonlyArray<Requested>)
     .map((row) => ({
       id: row.id,
       op: row.op,
-      label: row.op === "commit" ? row.title : `Drop T${row.number}`,
+      label: row.op === "commit" ? row.title : `${row.op === "retry" ? "Retry" : "Drop"} T${row.number}`,
       reason: NOT_SENT_COPY[row.reason as NotSentReason] ?? "Not sent",
     }))
 
@@ -118,7 +118,7 @@ export const deliveredOf = (
   const ids = new Set(repository.map((todo) => todo.id))
   const dropped = new Set(repository.filter((todo) => todo.state === "dropped").map((todo) => todo.number))
   return requested
-    .filter((row) => row.repoId === repoId && (row.op === "commit" ? ids.has(row.id) : dropped.has(row.number)))
+    .filter((row) => row.repoId === repoId && (row.op === "commit" ? ids.has(row.id) : row.op === "retry" ? row.status === "requested" : dropped.has(row.number)))
     .map((row) => row.id)
 }
 
@@ -446,3 +446,11 @@ export const withTodos = (
       ...(mayMakeTodo(may, issue) ? { menu: [...(issue.menu ?? []), { label: MAKE_TODO, onSelect: () => make(number) }] } : {}),
     }
   })
+
+/** The server rechecks ownership by stable person id inside its stack transaction. */
+export const mayRetry = (
+  todo: Pick<Todo, "state" | "createdLogin">,
+  session: { readonly status: string; readonly role: Role | null; readonly login: string | null },
+): boolean => todo.state === "failed" && session.status === "signed_in" &&
+  (session.role === "maintainer" || session.role === "admin" ||
+    (session.role === "member" && session.login === todo.createdLogin))

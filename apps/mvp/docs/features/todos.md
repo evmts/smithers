@@ -32,6 +32,8 @@ Drop ─▶ todo/drop ─▶ the same outbox and route
 | Read a repository's TODOs and prompts | a signed-in Member or above (like a branch's live workspace, 0013); signed out `401`, a Guest `403` |
 | Draft a TODO | the agent, for a Member who asked; a Member with New TODO or `/todo.new`. A draft lives on that person's device only |
 | Commit, Drop | a Member or above, in person (`repo:todo-commit`, `repo:todo-drop`); never the agent |
+| Retry own TODO | Member or above, in person or through the agent |
+| Retry anyone’s TODO | Maintainer or above, in person or through the agent |
 
 ## Routes
 
@@ -67,6 +69,7 @@ A shape request whose `repo` names no repository reads no repository's rows; ses
 | `todo/issue` | `{ repo, issue, title?, prompt?, acceptance? }` | Make TODO in an issue's menu or on its page, and its key `t`; `/todo.issue owner/repo <n>` (Member) | yes: with a better title and prompt than the issue's, if it has them |
 | `todo/commit` | `{ repo, title, prompt, acceptance?, issue? }` | Commit on a draft card | never |
 | `todo/drop` | `{ repo, number }` | Drop on a row or the TODO's card; `/todo.drop owner/repo <n>` (Member) | never |
+| `todo/Retry` | `{ repo, number }` | Retry on a failed TODO or its run | yes, with the same ownership and role checks |
 
 Each is one step (`src/features/todos/steps.ts`) that asks, over the engine's todos channel, the tab that started the request (`TabTodos`, `src/flows/askingTab.ts`) to keep the draft or queue the change. `todo/issue` fails `issue_not_found` when the device doesn't have the issue. The draft's and the change's ids are UUIDv5s of the execution id, so a step run again names the same draft or change, and the tab keeps it once. A draft without a title takes the prompt's first line.
 
@@ -244,3 +247,39 @@ Run with the compose Postgres and Electric up (`pnpm db:up`).
 Titles count Unicode code points and truncate only between them. The request body allowance covers JSON's six-byte escapes for every permitted prompt byte and title or criterion character; decoded field limits still apply. A missing refusal reason displays “Not sent”. Delivery receipts match the requested repository before comparing TODO ids or numbers.
 
 Client steps use the catalog's `@smthrs/flow` `RetryPolicy`: declared `TodoStepRefused` errors stop immediately, while transport failures retain bounded retries. Stack access combines both Electric shapes; a successful shape cannot erase the other shape's authorization refusal. Failed initialization is evicted from the Effect cache so another open can recover. Existing step and shape telemetry records these outcomes without prompt text.
+
+
+## Retry
+
+Retry on a failed TODO's page or run dispatches the model-invocable system flow
+`todo/Retry { repo, number }`. The agent uses the same flow for “retry my failed
+TODO”. The least role is **Member** for one's own TODO and **Maintainer** for
+anyone's; Guests cannot retry. The server checks the creator's stable person id
+under the stack lock, not a login supplied by a client.
+
+The browser engine derives one outbox operation id from the flow execution id.
+Replaying that press returns its persisted stack receipt and admits the same
+attempt again, never a second attempt. A new press while working, queued or in
+review is refused. A cancelled engine run may be retried only after the server
+confirms cancellation and the writer rechecks its current attempt id; a live
+run cannot be reset by claiming it stopped.
+
+Retry resets the failed attempt's branch and publication projection and queues
+a new attempt at the same stack position. The TODO's number, title, prompt
+revision and issue stay intact; previous attempts and durable run records stay
+readable. Publishing follows the normal stack report path, freeing the lane for
+a held successor (the failure hold policy is owned by `todo-stack-hold`).
+Merged and dropped TODOs cannot be retried.
+
+This uses the library catalog's durable workflow and retry entries
+(`@smthrs/flow`) and UI entry (`@smthrs/ui`). It extends the existing
+non-overridable stack infrastructure rather than defining a separate writer.
+Existing `todos.queue`, `todos.send`, `stack.request`, `stack.apply` and
+transition metrics record `op=retry`, without titles or prompts.
+
+The mini farm's model-free local stack cannot run a TODO: the existing factory
+tests require a deployed GitHub App and live model. Retry's browser-to-publication
+Playwright proof therefore requires that deployment; a local passing browser
+test would not prove the TODO ran.
+
+Retry uses the same `worker/stack/TodoRuns.ts` adapter as durable Drop and admission. A cancellation tombstone or a missing engine run is insufficient: only a recorded engine status of `cancelled` allows a stopped current attempt to retry. Drop cleanup and delayed admission fencing remain unchanged.

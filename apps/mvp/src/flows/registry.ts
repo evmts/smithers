@@ -39,7 +39,7 @@ import { AnswerRun, Ask, Deliver } from "../features/status/flows"
 import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet } from "../features/spend/flows"
 import { SetTheme } from "../features/theme/flows"
-import { TodoCommit, TodoDraft, TodoDrop, TodoIssue } from "../features/todos/flows"
+import { TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
 
@@ -285,6 +285,7 @@ export const registry = {
     flow: TodoCommit,
     userOnlyReason: "A person commits a TODO from its draft card; the agent drafts and never commits one.",
   },
+  "todo/Retry": { flow: TodoRetry, changes: "retries a failed TODO in place" },
   "todo/drop": {
     flow: TodoDrop,
     userOnlyReason: "Dropping a TODO is a person's press; the agent never drops one.",

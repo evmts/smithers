@@ -23,6 +23,7 @@ import { SteerSending, SteerSent } from "../features/runs/schema"
 import { Run } from "../features/status/schema"
 import { Preference } from "../features/theme/schema"
 import { Summary } from "../features/timeline/store"
+import { TodoSendingV1, TodoRequestedV1 } from "./history"
 import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending, Todo, TodoRequest } from "../features/todos/schema"
 import { View } from "../features/views/schema"
 import { CuratedRowV1, HomeRowV2 } from "./home-history"
@@ -108,7 +109,8 @@ export const TodoDraftsStore = Migrations.local({ id: "todo-drafts", versions: [
 /** Changes to a stack the server took or refused. */
 export const TodoRequestedStore = Migrations.local({
   id: "todo-requested",
-  versions: [TodoRequested],
+  versions: [TodoRequestedV1, TodoRequested],
+  migrations: [Migrations.step(TodoRequestedV1, TodoRequested, (row) => row)],
   getKey: (row) => row.id,
 })
 
@@ -180,7 +182,7 @@ export const IssueSendingPayload = Migrations.payload({
 export const TextSendingPayload = Migrations.payload({ key: "text-sending", versions: [TextSending] })
 
 /** Changes to a stack (src/features/todos/writes.ts, mutation `todo-op`). */
-export const TodoSendingPayload = Migrations.payload({ key: "todo-sending", versions: [TodoSending] })
+export const TodoSendingPayload = Migrations.payload({ key: "todo-sending", versions: [TodoSendingV1, TodoSending], migrations: [Migrations.step(TodoSendingV1, TodoSending, (row) => ({ ...row, v: 2 as const }))] })
 
 /** Steers of a TODO's agent (src/features/runs/writes.ts, mutation `run-steer`). */
 export const SteerSendingPayload = Migrations.payload({ key: "steer-sending", versions: [SteerSending] })

@@ -381,3 +381,43 @@ test("a valid prompt survives worst-case JSON escaping at its byte limit", async
   const body = commitBody({ prompt: "x" + "\u0001".repeat(MAX_PROMPT_BYTES - 1) })
   expect((await post(h, body)).status).toBe(202)
 })
+
+test("retry after failed implement keeps identity and history, deduplicates, publishes attempt two", async () => {
+  const host = runs()
+  const h = await stackHarness(runtime, { actor: member, runs: host })
+  const body = commitBody({ issue: 4430 })
+  expect((await post(h, body)).status).toBe(202)
+  const first = host.started[0]!
+  await runtime.runPromise(Stack.report(first, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+  const press = { opId: uuid(), op: "retry", number: 1 }
+  expect((await post(h, press)).status).toBe(202)
+  expect((await post(h, press)).status).toBe(200)
+  const second = host.started[1]!
+  expect(second).toMatchObject({ todoId: first.todoId, ordinal: 2, revision: 1 })
+  expect(host.started[2]).toEqual(second)
+  expect((await post(h, { ...press, opId: uuid() })).status).toBe(409)
+  await runtime.runPromise(Stack.report(second, { kind: "published", headSha: "b".repeat(40), prNumber: 22, draft: false }, { runs: true }))
+  expect(await sql('SELECT title, issue_number, position, attempt, state, failure FROM todos')).toEqual([
+    { title: body.title, issue_number: 4430, position: 1, attempt: 2, state: "in_review", failure: null },
+  ])
+  expect(await sql('SELECT ordinal, status FROM todo_attempts ORDER BY ordinal')).toEqual([
+    { ordinal: 1, status: "failed" }, { ordinal: 2, status: "published" },
+  ])
+})
+
+test("Guest cannot retry; Member retries own, Maintainer anyone; agent uses same route", async () => {
+  const host = runs()
+  const h = await stackHarness(runtime, { actor: member, runs: host })
+  await post(h, commitBody())
+  await runtime.runPromise(Stack.report(host.started[0]!, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+  for (const actor of [guest, { ...member, subject: { kind: "person" as const, id: "other" } }]) {
+    const denied = await stackHarness(runtime, { actor, runs: host })
+    expect((await post(denied, { opId: uuid(), op: "retry", number: 1 })).status).toBe(403)
+  }
+  const agent = await stackHarness(runtime, { actor: agentForMember, runs: host })
+  expect((await post(agent, { opId: uuid(), op: "retry", number: 1 })).status).toBe(202)
+  await runtime.runPromise(Stack.report(host.started[1]!, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+  const maintainer = await stackHarness(runtime, { actor: noLogin, runs: host })
+  expect((await post(maintainer, { opId: uuid(), op: "retry", number: 1 })).status).toBe(202)
+  expect(host.started[2]).toMatchObject({ ordinal: 3 })
+})

@@ -208,7 +208,7 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
       if (Option.isSome(yield* sending.get(op.id)) || Option.isSome(yield* requested.get(op.id))) return { kept: true }
       yield* chat.lead
       const [owner, name] = op.repo.split("/") as [string, string]
-      const row: Sending = { ...op, repoId: repoId(owner, name), queuedAt: yield* Clock.currentTimeMillis, v: 1 }
+      const row: Sending = { ...op, repoId: repoId(owner, name), queuedAt: yield* Clock.currentTimeMillis, v: 2 }
       const admitted = yield* chat.outbox
         .transact(TODO_OP, { idempotencyKey: op.id }, Effect.asVoid(sending.insert(row)))
         .pipe(Effect.flatMap((taken) => taken.admitted), Effect.result)
