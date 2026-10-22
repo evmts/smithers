@@ -1,8 +1,10 @@
 import { afterAll, expect, it } from "@effect/vitest"
+import type { Sandbox } from "@smthrs/sandbox"
+import { Cause, Effect, Exit, Stream } from "effect"
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { main } from "../../examples/41-sandboxed-flow.ts"
+import { initialize, main } from "../../examples/41-sandboxed-flow.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-sandboxed-flow-"))
 
@@ -32,3 +34,22 @@ it("runs the child's code in a scratch machine and journals it as one action", a
   expect(second.result).toEqual(first.result)
   expect(second.acquisitions).toBe(0)
 }, 60_000)
+
+it.effect("reports unsuccessful repository initialization as a provider failure", () => {
+  const session: Sandbox.Session = {
+    id: "faulty",
+    remoteId: "faulty",
+    workdir: "/sandbox",
+    readFile: () => Effect.die("unused"),
+    writeFile: () => Effect.die("unused"),
+    spawn: () => Effect.succeed({ stdout: Stream.empty, stderr: Stream.empty, exitCode: Effect.succeed(128) })
+  }
+  return Effect.gen(function*() {
+    const result = yield* initialize(session).pipe(Effect.exit)
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) {
+      expect(Cause.hasFails(result.cause)).toBe(true)
+      expect(Cause.squash(result.cause)).toMatchObject({ code: "spawn_error" })
+    }
+  })
+})

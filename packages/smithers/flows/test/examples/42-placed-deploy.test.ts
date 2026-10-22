@@ -1,15 +1,15 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { afterAll, expect, it } from "@effect/vitest"
 import { SecretUnavailable } from "@smthrs/targets/SecretProxy"
-import { Cause, Context, Effect, Exit, Layer } from "effect"
-import { HttpServer } from "effect/http"
+import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { FetchHttpClient, HttpClient, HttpServer } from "effect/http"
 import { randomBytes } from "node:crypto"
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { caller, holder, Ship } from "../../examples/42-placed-deploy.ts"
+import { caller, holder, push, Ship } from "../../examples/42-placed-deploy.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-placed-deploy-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
@@ -19,19 +19,22 @@ const holderEnv = (name: string) => (name === "DEPLOY_TOKEN" ? token : undefined
 const callerEnv = () => undefined
 
 /** An HTTP endpoint that records the Authorization header of every request. */
-const endpoint = Effect.acquireRelease(
-  Effect.promise(async () => {
-    const seen: Array<string | undefined> = []
-    const server = createServer((request, response) => {
-      seen.push(request.headers.authorization)
-      request.resume()
-      response.writeHead(201).end()
-    })
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-    return { seen, server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }
-  }),
-  ({ server }) => Effect.promise(() => new Promise<void>((resolve) => server.close(() => resolve())))
-)
+const deploymentEndpoint = (status = 201) =>
+  Effect.acquireRelease(
+    Effect.promise(async () => {
+      const seen: Array<string | undefined> = []
+      const server = createServer((request, response) => {
+        seen.push(request.headers.authorization)
+        request.resume()
+        response.writeHead(status).end()
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      return { seen, server, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }
+    }),
+    ({ server }) => Effect.promise(() => new Promise<void>((resolve) => server.close(() => resolve())))
+  )
+
+const endpoint = deploymentEndpoint()
 
 /** Every byte a SQLite engine file and its sidecars hold. */
 const journalText = (file: string) =>
@@ -50,7 +53,8 @@ it.effect(
           holderFile,
           holderEnv,
           deployEndpoint.url,
-          NodeHttpServer.layer(createServer, { port: 0, host: "127.0.0.1" })
+          NodeHttpServer.layer(createServer, { port: 0, host: "127.0.0.1" }),
+          "holder-credential"
         )
       )
       const address = Context.get(held, HttpServer.HttpServer).address
@@ -59,7 +63,7 @@ it.effect(
 
       const first = join(directory, "caller.sqlite")
       const shipped = yield* Ship.execute({ version: "1.2.3" }, { executionId: "ship-1" }).pipe(
-        Effect.provide(caller(first, callerEnv, callerEndpoint.url, holderUrl)),
+        Effect.provide(caller(first, callerEnv, callerEndpoint.url, holderUrl, "holder-credential")),
         Effect.scoped
       )
       expect(shipped).toEqual({ version: "1.2.3", status: 201 })
@@ -69,7 +73,9 @@ it.effect(
       // A caller that lost its journal before recording the reply asks again
       // under the same invocation key; the holder answers from its record.
       const again = yield* Ship.execute({ version: "1.2.3" }, { executionId: "ship-1" }).pipe(
-        Effect.provide(caller(join(directory, "caller-again.sqlite"), callerEnv, callerEndpoint.url, holderUrl)),
+        Effect.provide(
+          caller(join(directory, "caller-again.sqlite"), callerEnv, callerEndpoint.url, holderUrl, "holder-credential")
+        ),
         Effect.scoped
       )
       expect(again).toEqual(shipped)
@@ -99,4 +105,77 @@ it.effect("fails with SecretUnavailable when the table runs the action on the ca
       message: new SecretUnavailable({ env: "DEPLOY_TOKEN" }).message
     })
     expect(callerEndpoint.seen).toEqual([])
+  }).pipe(Effect.scoped), 60_000)
+
+it.effect("rejects unauthenticated holder requests before dispatch", () =>
+  Effect.gen(function*() {
+    const target = yield* endpoint
+    const held = yield* Layer.build(
+      holder(
+        join(directory, "unauthorized.sqlite"),
+        holderEnv,
+        target.url,
+        NodeHttpServer.layer(createServer, { port: 0, host: "127.0.0.1" }),
+        "holder-credential"
+      )
+    )
+    const address = Context.get(held, HttpServer.HttpServer).address
+    if (address._tag !== "InetAddressV4") return yield* Effect.die("expected TCP")
+    const response = yield* Effect.promise(() =>
+      fetch(`http://127.0.0.1:${address.port}/`, { method: "POST", body: "[]" })
+    )
+    expect(response.status).toBe(401)
+    expect(target.seen).toEqual([])
+  }).pipe(Effect.scoped))
+
+it.effect("rejects HTTP deployment failures through the typed channel", () =>
+  Effect.gen(function*() {
+    const target = yield* deploymentEndpoint(503)
+    const result = yield* push(holderEnv, target.url)({ version: "failed" }).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.exit
+    )
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) expect(Cause.hasFails(result.cause)).toBe(true)
+  }).pipe(Effect.scoped))
+
+it.effect("reports transport rejection through the typed channel", () =>
+  Effect.gen(function*() {
+    const result = yield* push(holderEnv, "http://127.0.0.1:1")({ version: "failed" }).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.exit
+    )
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) expect(Cause.hasFails(result.cause)).toBe(true)
+  }))
+
+it.effect("interrupts the injected deployment transport and aborts its signal", () =>
+  Effect.gen(function*() {
+    const started = yield* Deferred.make<AbortSignal>()
+    const client = HttpClient.make((_request, _url, signal) =>
+      Deferred.succeed(started, signal).pipe(Effect.andThen(Effect.never))
+    )
+    const fiber = yield* push(holderEnv, "https://deploy.example.test")({ version: "cancel" }).pipe(
+      Effect.provideService(HttpClient.HttpClient, client),
+      Effect.forkChild
+    )
+    const signal = yield* Deferred.await(started)
+    yield* Fiber.interrupt(fiber)
+    expect(signal.aborted).toBe(true)
+  }))
+
+it.effect("journals HTTP refusal as a durable failure", () =>
+  Effect.gen(function*() {
+    const target = yield* deploymentEndpoint(503)
+    const exit = yield* Ship.execute({ version: "refused" }, { executionId: "ship-refused" }).pipe(
+      Effect.provide(caller(join(directory, "refused.sqlite"), holderEnv, target.url)),
+      Effect.scoped,
+      Effect.exit
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.squash(exit.cause)).toMatchObject({ _tag: "DeploymentError", reason: "status", status: 503 })
+    }
+    expect(target.seen).toEqual([`Bearer ${token}`])
+    expect(journalText(join(directory, "refused.sqlite"))).not.toContain(token)
   }).pipe(Effect.scoped), 60_000)

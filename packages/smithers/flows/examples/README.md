@@ -36,3 +36,16 @@ a 60-second grace period, so only the replacement's reaper can end this tree
 within the example. Startup failures print the Effect cause to
 stderr and exit with status 1. The example summary preserves `hostStderr`,
 including Node runtime warnings such as an experimental-feature notice.
+
+## Placed deployment
+
+Example 42 requires a separate holder bearer credential in `holder` and in the
+remote `caller`. The holder refuses missing or invalid credentials before RPC
+dispatch. Keep this credential separate from `DEPLOY_TOKEN` and out of journals.
+`push` uses the injected Effect `HttpClient`; the host layers supply
+`FetchHttpClient.layer`. Interruption aborts the request. Transport failures and
+non-2xx statuses fail with the serializable `DeploymentError`, without request
+headers, endpoint URLs or response bodies in the error.
+
+Example 41 reports unsuccessful repository initialization as the sandbox
+provider's typed `spawn_error`, preserving normal acquisition failure handling.

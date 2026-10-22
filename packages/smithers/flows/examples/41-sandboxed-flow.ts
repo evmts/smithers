@@ -16,7 +16,7 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import { SandboxedFlow, TestNodeRuntime } from "@smthrs/platform-node"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
-import { DirectorySandbox, type Sandbox } from "@smthrs/sandbox"
+import { DirectorySandbox, RemoteChildProcessSpawner, type Sandbox } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -51,7 +51,7 @@ export interface MainResult {
 }
 
 /** Makes a fresh scratch workdir a git repository with one empty commit, the base its work is measured from. */
-const initialize = (session: Sandbox.Session) =>
+export const initialize = (session: Sandbox.Session) =>
   Effect.scoped(Effect.gen(function*() {
     const process = yield* session.spawn(
       "git init -q && git -c user.name=Example -c user.email=example@example.test -c commit.gpgsign=false " +
@@ -62,7 +62,14 @@ const initialize = (session: Sandbox.Session) =>
       [Stream.runDrain(process.stdout), Stream.runDrain(process.stderr), process.exitCode],
       { concurrency: "unbounded" }
     )
-    if (code !== 0) return yield* Effect.die(`git could not initialize ${session.workdir}`)
+    if (code !== 0) {
+      return yield* Effect.fail(
+        new RemoteChildProcessSpawner.ProviderError({
+          code: "spawn_error",
+          message: `Repository initialization exited with status ${code}`
+        })
+      )
+    }
     return session
   }))
 

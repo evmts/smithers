@@ -8,9 +8,7 @@
  * its own vault and its own deploy endpoint. The caller names a version and
  * journals the result; the value and the endpoint never enter its process.
  *
- * The holder here listens without authentication to keep the example short.
- * A real holder serves the group behind a bearer, as `@smthrs/gateway` serves
- * `/rpc` behind `ControlAuth`: anyone who reaches it can ship a version.
+ * The holder requires a separate bearer credential before RPC dispatch.
  */
 import { FlowProxy, FlowProxyServer, Hosts, PlacedAction } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
@@ -19,20 +17,36 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Secret from "@smthrs/targets/Secret"
 import * as SecretProxy from "@smthrs/targets/SecretProxy"
 import * as Effect from "effect/Effect"
-import { FetchHttpClient, HttpRouter, type HttpServer } from "effect/http"
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+  HttpRouter,
+  type HttpServer,
+  HttpServerRequest,
+  HttpServerResponse
+} from "effect/http"
 import * as Layer from "effect/Layer"
 import { RpcClient, RpcSerialization, RpcServer } from "effect/rpc"
 import * as Schema from "effect/Schema"
 
+/** A safe, serializable deployment failure; never contains request credentials. */
+export class DeploymentError extends Schema.TaggedError<DeploymentError>()("DeploymentError", {
+  reason: Schema.Literals(["transport", "status"]),
+  status: Schema.optional(Schema.Number)
+}) {}
+
 /** Sends one release to the deploy endpoint with the deploy token. */
 export const PushRelease = Action.make("examples/PlacedDeploy/PushRelease", {
   payload: { version: Schema.String },
+  error: DeploymentError,
   success: Schema.Struct({ version: Schema.String, status: Schema.Number })
 })
 
 /** The flow a caller runs. Nothing in it names a machine or an endpoint. */
 export const Ship = Flow.make("examples/PlacedDeploy/Ship", {
   payload: { version: Schema.String },
+  error: DeploymentError,
   success: Schema.Struct({ version: Schema.String, status: Schema.Number }),
   body: (payload) => PushRelease.call(payload)
 })
@@ -47,17 +61,22 @@ export const deploy = Placement.remote({ target: "deploy" })
  * there. A host without the variable fails with `SecretUnavailable`.
  */
 export const push = (read: SecretProxy.Read, endpoint: string) => ({ version }: { readonly version: string }) =>
-  Effect.promise(async () => {
+  Effect.gen(function*() {
     const vault = SecretProxy.makeVault({ read })
     const placeholder = vault.mint(Secret.HttpSecret(Secret.Secret("DEPLOY_TOKEN"), [endpoint]))
     const boundary = vault.request(new URL(endpoint).origin)
-    const response = await fetch(new URL("/release", endpoint), {
-      method: "POST",
-      headers: { authorization: boundary.substitute(`Bearer ${placeholder}`) },
-      body: version
-    })
+    const client = yield* HttpClient.HttpClient
+    const response = yield* client.execute(
+      HttpClientRequest.post(new URL("/release", endpoint).href).pipe(
+        HttpClientRequest.setHeader("authorization", boundary.substitute(`Bearer ${placeholder}`)),
+        HttpClientRequest.bodyText(version)
+      )
+    ).pipe(Effect.mapError(() => new DeploymentError({ reason: "transport" })))
+    if (response.status < 200 || response.status >= 300) {
+      return yield* Effect.fail(new DeploymentError({ reason: "status", status: response.status }))
+    }
     return { version, status: response.status }
-  })
+  }).pipe(Effect.withSpan("examples.deploy.push"))
 
 /**
  * The holder: a durable engine that serves `PushRelease` over HTTP on
@@ -68,13 +87,25 @@ export const holder = <E, R>(
   filename: string,
   read: SecretProxy.Read,
   endpoint: string,
-  server: Layer.Layer<HttpServer.HttpServer, E, R>
+  server: Layer.Layer<HttpServer.HttpServer, E, R>,
+  credential: string
 ) => {
   const served = PlacedAction.served(PushRelease)
   return HttpRouter.serve(
     RpcServer.layerHttp({ group: FlowProxy.toRpcGroup([served]), path: "/", protocol: "http" }).pipe(
       Layer.provide(FlowProxyServer.layerRpcHandlers([served])),
-      Layer.provide(RpcSerialization.layerJson)
+      Layer.provide(RpcSerialization.layerJson),
+      Layer.provide(
+        HttpRouter.middleware(Effect.succeed((handler) =>
+          Effect.gen(function*() {
+            const request = yield* HttpServerRequest.HttpServerRequest
+            if (!credential || request.headers.authorization !== `Bearer ${credential}`) {
+              return HttpServerResponse.empty({ status: 401 })
+            }
+            return yield* handler
+          })
+        )).layer
+      )
     )
   ).pipe(
     Layer.provideMerge(
@@ -83,7 +114,8 @@ export const holder = <E, R>(
         Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-placed-deploy-holder"))
       )
     ),
-    Layer.provideMerge(server)
+    Layer.provideMerge(server),
+    Layer.provide(FetchHttpClient.layer)
   )
 }
 
@@ -92,7 +124,13 @@ export const holder = <E, R>(
  * holder at `holderUrl`. Without one, `deploy` runs here, with `read` and
  * `endpoint` standing for this host's own environment and endpoint.
  */
-export const caller = (filename: string, read: SecretProxy.Read, endpoint: string, holderUrl?: string) =>
+export const caller = (
+  filename: string,
+  read: SecretProxy.Read,
+  endpoint: string,
+  holderUrl?: string,
+  holderCredential?: string
+) =>
   Layer.mergeAll(PlacedAction.layer(PushRelease, deploy, push(read, endpoint)), Interpreter.layer(Ship)).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-placed-deploy-caller")),
@@ -103,7 +141,12 @@ export const caller = (filename: string, read: SecretProxy.Read, endpoint: strin
           connect: (group) =>
             RpcClient.make(group).pipe(
               Effect.provide(
-                RpcClient.layerProtocolHttp({ url: holderUrl }).pipe(
+                RpcClient.layerProtocolHttp({
+                  url: holderUrl,
+                  transformClient: HttpClient.mapRequest(
+                    HttpClientRequest.setHeader("authorization", `Bearer ${holderCredential ?? ""}`)
+                  )
+                }).pipe(
                   Layer.provide(RpcSerialization.layerJson),
                   Layer.provide(FetchHttpClient.layer)
                 )
@@ -111,5 +154,6 @@ export const caller = (filename: string, read: SecretProxy.Read, endpoint: strin
             )
         }
       })
-    )
+    ),
+    Layer.provide(FetchHttpClient.layer)
   )
