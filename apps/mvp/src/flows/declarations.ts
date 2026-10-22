@@ -14,6 +14,7 @@ import {
   SandboxWrite,
 } from "../features/sandbox/flows"
 import { Close } from "../features/agent/close"
+import { AuthRefresh } from "../features/auth/flows"
 import { ChatCopy, ChatEdit } from "../features/chat/flows"
 import { Answer } from "../features/agent/flows"
 import {
@@ -52,6 +53,7 @@ import { type FlowName, type FlowOf, names } from "./registry"
 /** Each registered flow's declaration, by name: one per registry entry, with that entry's tag and schemas. */
 export const declarations = {
   "timeline/summarize": Summarize,
+  "auth/refresh": AuthRefresh,
   "app/theme/set": SetTheme,
   "app/navigate": Navigate,
   "app/web/open": OpenWebPage,

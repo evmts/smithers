@@ -91,6 +91,8 @@ Logs:
 | `sign out failed` | ChatApi didn't end it; the person stays signed in | Warn | `feature: auth`, `status` when ChatApi answered |
 | `device wiped` | after a sign-out ChatApi took, the host wiped this device's synced data and outbox (the browser's reloads, and its next boot deletes them) | Info | `feature: auth` |
 | `device wipe failed` | the host couldn't wipe the device; the person is still signed out | Warn | `feature: auth` |
+| `auth.session_refresh` | a session check starts: as the app opens, when the browser comes back online, or when `auth/refresh` asks again ([sign-in](features/sign-in.md#when-chatapi-cant-say)) | Info | `via` (`startup`, `online`, `retry`) |
+| `auth.refresh` | a check ChatApi couldn't answer started `auth/refresh`; how it ended is dispatch's `flow.dispatch` line | Info | `feature: auth`, `stage: started` |
 | `slash.run` | a slash command ran its flow from the composer ([slash commands](features/slash-commands.md)); the flow's own record is `flow.dispatch`, door `slash` | Info | `feature: commands`, `command`, `flow`; never the arguments |
 | `slash.refused` | a line naming no command, or missing or misusing an argument, stayed in the composer | Warn | `feature: commands`, `outcome` (`unknown`, `missing`, `invalid`), `command` when the app offers it; never what was typed |
 
@@ -108,6 +110,7 @@ Spans:
 | `chat.question.post` | internal, child of `chat.ask.send` | `http.response.status_code` |
 | `POST` | client (Effect `HttpClient`), child of `chat.question.post` | `url.full`, `http.response.status_code`; sends `traceparent`, which parents ChatApi's `chat.question` |
 | `auth.session.get`, `auth.sign_out.post` | internal: asking who is signed in, signing out (`features/auth/api.ts`) | `http.response.status_code` |
+| `auth.refresh.check` | internal, in the engine worker: `auth/refresh`'s step asking the tab that started the run to check its session ([sign-in](features/sign-in.md#when-chatapi-cant-say)); also a log line of the same name, Info, Warn for `unreachable` (the engine asks again) | `smithers.auth.outcome`; the log line's `outcome` (`signed_in`, `signed_out`, `unreachable`, `gone`), `executionId`, `durationMs` |
 | `GET`, `POST` | client (Effect `HttpClient`), children of the two above | `url.full`, `http.response.status_code` |
 
 Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smthrs/effect-tanstack-db`'s `Outbox` and `Persistence`):

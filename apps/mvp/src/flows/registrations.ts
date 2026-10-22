@@ -6,6 +6,7 @@ import { Layer } from "effect"
 import { AnswerApi } from "../features/agent/answers"
 import * as AgentHost from "../features/agent/host"
 import * as Attention from "../features/attention/steps"
+import * as AuthSteps from "../features/auth/steps"
 import * as BranchSteps from "../features/branch/steps"
 import * as ChatSteps from "../features/chat/steps"
 import * as PersonalFlows from "../features/flows-ui/steps"
@@ -79,15 +80,16 @@ export interface HostOptions extends AgentHost.HostOptions {
 export const jev = (origin: string) => Jev.registration.pipe(Layer.provide(Jev.JudgeSeat.layer(origin)))
 
 /**
- * Every client flow, registered with its steps: the theme's, navigation's, web pages', docs search's, the agent's, the repository's,
- * Jev's, agent status's, your own flows', the acts on runs, the issue writes, chat's Copy and Edit, the feed's, and
- * spend alerts' channels. Needs the
- * host's `FlowRuntime`, `Crypto`, `HttpClient` and `RunInspection`, the theme's `Preferences`, navigation's `Tabs`, the
- * repository's `TabClipboard`, the issues' `TabIssues`, the TODOs' `TabTodos` and chat's `TabChat`.
+ * Every client flow, registered with its steps: sign-in's refresh, the theme's, navigation's, web pages', docs search's,
+ * the agent's, the repository's, Jev's, agent status's, your own flows', the acts on runs, the issue writes, chat's Copy
+ * and Edit, the feed's, and spend alerts' channels. Needs the host's `FlowRuntime`, `Crypto`, `HttpClient` and
+ * `RunInspection`, the theme's `Preferences`, navigation's `Tabs`, the repository's `TabClipboard`, the issues'
+ * `TabIssues`, the TODOs' `TabTodos`, chat's `TabChat` and sign-in's `TabSession`.
  */
 export const registrations = (options: HostOptions) =>
   Layer.mergeAll(
     Timeline.registration.pipe(Layer.provide(Timeline.SummarySeat.layer(options.origin, options.summaryModel))),
+    AuthSteps.registration,
     Theme.registration,
     Navigation.registration,
     webPages(options.origin, options.localHttp ?? false),
@@ -143,5 +145,6 @@ export const workerRegistrations = (scope: Endpoint, options: WorkerOptions) =>
     Layer.provide(TodoSteps.TabTodos.layerChannel({ name: options.name })),
     Layer.provide(Runs.TabRuns.layerChannel({ name: options.name })),
     Layer.provide(ChatSteps.TabChat.layerChannel({ name: options.name })),
+    Layer.provide(AuthSteps.TabSession.layerChannel({ name: options.name })),
     Layer.provide(TabChannel.layer),
   )

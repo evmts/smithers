@@ -30,6 +30,7 @@ import { tabDoors } from "../flows/doors"
 import { registrations } from "../flows/registrations"
 import { TabRequests } from "../flows/requests"
 import { TabClipboard } from "../features/repo/copy"
+import { TabSession } from "../features/auth/steps"
 import { TabChat } from "../features/chat/steps"
 import { TabIssues } from "../features/issues/steps"
 import { TabRuns } from "../features/runs/steps"
@@ -150,14 +151,15 @@ export const openAgent = async (
       // Every request goes as the run that made it, as in the browser's engine worker.
       Layer.provide(RunCredentials.layer({ origin: ORIGIN, name: doors, flows: clientFlows }).pipe(Layer.provide(FlowRegistry.layer))),
       Layer.provide(tabPreferences),
-      // No tab listens on this engine's navigation, clipboard, issues, TODOs or chat channels: a navigation, a copy, an
-      // issue or TODO write or a message's Copy or Edit here finds its tab gone.
+      // No tab listens on this engine's navigation, clipboard, issues, TODOs, chat or session channels: a navigation, a copy, an
+      // issue or TODO write, a message's Copy or Edit, or a session refresh here finds its tab gone.
       Layer.provide(Tabs.layerChannel({ name: `agent-${crypto.randomUUID()}`, origin: ORIGIN })),
       Layer.provide(TabClipboard.layerChannel({ name: `agent-${crypto.randomUUID()}`, origin: ORIGIN })),
       Layer.provide(TabIssues.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabTodos.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabRuns.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChat.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
+      Layer.provide(TabSession.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChannel.layer),
       // The run reads the acts on runs need, which the browser's engine provides (decision 0014 §3).
       Layer.provideMerge(EngineStore.RunInspection.layer),

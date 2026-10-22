@@ -1,0 +1,20 @@
+import { Effect, Layer } from "effect"
+import { answerAskingTab } from "../../flows/askingTab"
+import { check } from "./actions"
+import { sessionChannel } from "./contract"
+import { SessionCall } from "./schema"
+
+// The tab's side of `auth/refresh` (docs/features/sign-in.md#when-chatapi-cant-say): every tab listens on the engine's
+// session channel, and only the tab that started a refresh answers its step (src/flows/askingTab.ts), by checking its
+// session as it does when it opens (`check("retry")`, counted and logged as `retry`). Every other tab, and every other
+// device, does nothing.
+
+/** Answers the session channel of engine `name` for this tab's refreshes until its scope closes. */
+export const tabSession = (host: { readonly name: string }) =>
+  Layer.effectDiscard(
+    answerAskingTab({
+      channel: sessionChannel(host.name),
+      input: SessionCall,
+      answer: () => Effect.map(check("retry"), (outcome) => ({ outcome })),
+    }),
+  )

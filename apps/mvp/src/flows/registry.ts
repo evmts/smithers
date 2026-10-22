@@ -14,6 +14,7 @@ import {
   SandboxWrite,
 } from "../features/sandbox/flows"
 import { Close } from "../features/agent/close"
+import { AuthRefresh } from "../features/auth/flows"
 import { ChatCopy, ChatEdit } from "../features/chat/flows"
 import { AnswerReference } from "../features/agent/reference"
 import { Navigate } from "../features/navigation/flows"
@@ -116,6 +117,12 @@ export interface Entry {
 /** Every flow the app declares, by name. */
 export const registry = {
   "timeline/summarize": { flow: Summarize, acts: "flow", userOnlyReason: "The conversation projection requests summaries; the agent does not summarize itself." },
+  // A tab's failed session check, asked again until ChatApi answers (docs/features/sign-in.md#when-chatapi-cant-say).
+  "auth/refresh": {
+    flow: AuthRefresh,
+    acts: "flow",
+    userOnlyReason: "A tab whose session check failed starts it; it asks that tab again and grants nothing.",
+  },
   "app/theme/set": { flow: SetTheme, changes: "sets this device's theme", slash: { command: "theme", minimum: "anyone" } },
   "app/navigate": { flow: Navigate, changes: "moves the person's tab", slash: { command: "navigate", minimum: "anyone" } },
   // Adding a view writes the shared conversation, which only a Member or above may (decision 0007).

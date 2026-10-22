@@ -1,5 +1,5 @@
 import { Collection, LiveQuery, type Persistence } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, PubSub, type Scope, Stream } from "effect"
+import { Context, Effect, Layer, PubSub, Ref, type Scope, Semaphore, Stream } from "effect"
 import { Confirmed, Session } from "./schema"
 
 // Sign-in's state on this tab: one local row saying who is signed in, the last session ChatApi confirmed, kept on the
@@ -28,6 +28,10 @@ export class AuthStore extends Context.Service<
     readonly sessionConfirmed: Effect.Effect<void>
     /** Where requests an action starts run, closed with the store. */
     readonly scope: Scope.Scope
+    /** One session check at a time on this tab: a check waits for the one already asking ChatApi. */
+    readonly checking: Semaphore.Semaphore
+    /** Whether this tab's `auth/refresh` is running: a check that fails meanwhile starts no second one. */
+    readonly refreshing: Ref.Ref<boolean>
   }
 >()("@smthrs/mvp/auth/AuthStore") {
   /**
@@ -70,6 +74,8 @@ export class AuthStore extends Context.Service<
         confirmation: Effect.sync(() => confirmation),
         sessionConfirmed: Effect.sync(() => { PubSub.publishUnsafe(confirmations, ++confirmation) }),
         scope: yield* Effect.scope,
+        checking: yield* Semaphore.make(1),
+        refreshing: yield* Ref.make(false),
       }
     }),
   )

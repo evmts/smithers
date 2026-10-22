@@ -1,28 +1,52 @@
+import { FlowRegistry } from "../../flows/registry"
 import { Persistence } from "@smthrs/effect-tanstack-db"
+import { Action, type FlowRuntime } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Deferred, Effect, Layer, Logger, ManagedRuntime, Metric, Redacted } from "effect"
+import { TabChannel } from "@smthrs/platform-browser"
+import { type Context, Deferred, Effect, Exit, Layer, Logger, ManagedRuntime, Metric, Redacted, Ref, Scope } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import * as Database from "../../../db/Database"
+import { build } from "../../../worker/test/flowHost"
 import { testFile } from "../../../worker/test/harness"
 import { signInHarness } from "../../../worker/test/signIn"
+import { ClientEngine, FlowDispatch } from "../../flows/dispatch"
 import { type NodeDevice, nodeDevice } from "../../test/chatApi"
 import { Auth, bindSessionConnectivity } from "./auth"
 import { AuthClient, AuthUnreachable } from "./api"
 import { type ComposerAccess, composerAccess, DEVICE_PERSON_HEADER, signInHref } from "./contract"
 import { DeviceWipe } from "./device"
+import { AuthRefresh } from "./flows"
 import { deviceWipes, sessionRefreshes, signInPresses, signOuts } from "./metrics"
+import * as Steps from "./steps"
 import { AuthStore } from "./store"
+import { tabSession } from "./tab"
 
 // Sign-in's state machine, driven as React drives it: through the auth layer's plain actions, reading its live query,
 // with no React. The tab reaches sign-in's real routes (worker/SignIn.ts) over the compose Postgres, through a fetch
 // that hands each request to the handler in this process and keeps cookies as a browser does. GitHub is the scripted
 // one (worker/test/github.ts). An unhappy path gives the tab a faulty `AuthClient`; nothing intercepts a request. Each
 // tab runs on a Node device (src/test/chatApi.ts `nodeDevice`): a SQLite file it keeps the confirmed session in, and
-// the outbox a sign-out wipes.
+// the outbox a sign-out wipes. Every tab dispatches to one durable engine on the Node host, which runs `auth/refresh`
+// and asks the tab that started it over Node's own `BroadcastChannel`, as the leader tab's engine worker does.
 
 const server = testFile("auth_client")
+
+/** The engine every tab of this file dispatches to: its name, its scope and what it built. */
+const ENGINE = `auth-${crypto.randomUUID()}`
+const engineScope = Effect.runSync(Scope.make())
+let engine: Context.Context<FlowRuntime.FlowRuntime>
+beforeAll(async () => {
+  const registration = Steps.registration.pipe(
+    // A tab that closed answers nothing: its refresh ends 2 s later, not a minute, so the file's runs settle quickly.
+    Layer.provide(Steps.TabSession.layerChannel({ name: ENGINE, within: "2 seconds" })),
+    Layer.provide(TabChannel.layer),
+    Layer.provideMerge(Action.layerImplementations),
+  )
+  engine = (await Effect.runPromise(Scope.provide(engineScope)(build(registration)))).context
+})
+afterAll(() => Effect.runPromise(Scope.close(engineScope, Exit.void)))
 
 beforeEach(() =>
   server.runPromise(
@@ -87,11 +111,18 @@ const openTab = async (client: Layer.Layer<AuthClient>, device: NodeDevice = nod
   const logs: Array<StructuredLog> = []
   const registry: Metric.MetricRegistry = new Map()
   const runtime = ManagedRuntime.make(
-    Auth.layer.pipe(
+    Layer.merge(Auth.layer, tabSession({ name: ENGINE }).pipe(Layer.provide(TabChannel.layer))).pipe(
       Layer.provideMerge(AuthStore.layer),
       Layer.provideMerge(Persistence.layer(device.persistence)),
       Layer.provideMerge(DeviceWipe.layer(wipe)),
       Layer.provideMerge(client),
+      Layer.provideMerge(
+        FlowDispatch.layer.pipe(
+          Layer.provide(FlowRegistry.layer),
+          Layer.provide(ClientEngine.layerRuntime([AuthRefresh])),
+          Layer.provide(Layer.succeedContext(engine)),
+        ),
+      ),
       Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, registry)),
       Layer.provideMerge(
         Logger.layer([Logger.make((options) => void logs.push(StructuredLogger.formatStructured.log(options)))]),
@@ -124,6 +155,8 @@ const openTab = async (client: Layer.Layer<AuthClient>, device: NodeDevice = nod
     count,
     device,
     dispose: () => runtime.dispose(),
+    /** Whether this tab's `auth/refresh` is running. */
+    refreshing: () => runtime.runSync(Effect.flatMap(Effect.service(AuthStore), (store) => Ref.get(store.refreshing))),
     /** Waits until the session row says `status`. */
     settled: (status: string) => vi.waitFor(() => expect(queries.session.toArray[0]!.status).toBe(status), { interval: 10 }),
   }
@@ -562,9 +595,84 @@ test("an online check waits for the unresolved startup check instead of overlapp
   expect(tab.count(sessionRefreshes, { via: "online" })).toBe(0)
   await Effect.runPromise(Deferred.succeed(release, undefined))
   await tab.settled("signed_in")
-  expect(calls).toBe(2)
+  // The failed startup check also started `auth/refresh`, whose check waits its turn behind the online one too.
+  await vi.waitFor(() => expect(tab.count(sessionRefreshes, { via: "retry" })).toBe(1), { interval: 10, timeout: 10_000 })
+  expect(calls).toBe(3)
   expect(maximum).toBe(1)
-  expect(b.sessionRequests()).toBe(1)
+  expect(b.sessionRequests()).toBe(2)
   expect(tab.count(sessionRefreshes, { via: "startup" })).toBe(1)
   expect(tab.count(sessionRefreshes, { via: "online" })).toBe(1)
+})
+
+/** The real client for a tab in `b`'s browser behind a switch: ChatApi answers 503 until `heal`, as a gateway does. */
+const healingClient = (b: ReturnType<typeof browser>) => {
+  let healed = false
+  return {
+    heal: () => void (healed = true),
+    fail: () => void (healed = false),
+    layer: Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+      ...real,
+      session: Effect.suspend(() => healed ? real.session : Effect.fail(new AuthUnreachable({ status: 503 }))),
+    }))).pipe(Layer.provide(realClient(b))),
+  }
+}
+
+/** The tab's log lines named `message`, by their annotations. */
+const lines = (tab: Awaited<ReturnType<typeof openTab>>, message: string) =>
+  tab.logs.filter((log) => log.message === message).map((log) => log.annotations)
+
+describe("a session check ChatApi couldn't answer", () => {
+  test("recovers by itself: auth/refresh asks the tab again until ChatApi answers, with no event, click or reload", async () => {
+    const h = await signInHarness(server)
+    const b = browser(h)
+    await b.signIn()
+    const fault = healingClient(b)
+    const device = nodeDevice()
+    const tab = await openTab(fault.layer, device, device.wipe, new EventTarget())
+    await tab.settled("unreachable")
+    await restored(tab)
+    expect(tab.access()).toBe("sign_in")
+    // The engine has asked the tab again at least once, and ChatApi still can't say.
+    await vi.waitFor(() => expect(tab.count(sessionRefreshes, { via: "retry" })).toBeGreaterThanOrEqual(1), { interval: 10, timeout: 10_000 })
+    expect(tab.session().status).toBe("unreachable")
+    fault.heal()
+    await vi.waitFor(() => expect(tab.session().status).toBe("signed_in"), { interval: 10, timeout: 10_000 })
+    expect(tab.access()).toBe("ask")
+    expect(tab.session().login).toBe("octocat")
+    expect(tab.count(sessionRefreshes, { via: "startup" })).toBe(1)
+    expect(tab.count(sessionRefreshes, { via: "online" })).toBe(0)
+    expect(lines(tab, "auth.refresh")).toEqual([{ stage: "started", feature: "auth" }])
+    await vi.waitFor(() =>
+      expect(lines(tab, "flow.dispatch")).toEqual([
+        expect.objectContaining({ flow: "auth/refresh", door: "sync", outcome: "done" }),
+      ]), { interval: 10, timeout: 10_000 })
+    expect(JSON.stringify(tab.logs)).not.toContain("octocat")
+  }, 20_000)
+
+  test("starts one refresh for a run of failures: a check that fails while it runs starts no second one", async () => {
+    const h = await signInHarness(server)
+    const b = browser(h)
+    await b.signIn()
+    const fault = healingClient(b)
+    const target = new EventTarget()
+    const device = nodeDevice()
+    const tab = await openTab(fault.layer, device, device.wipe, target)
+    await vi.waitFor(() => expect(tab.count(sessionRefreshes, { via: "retry" })).toBeGreaterThanOrEqual(1), { interval: 10, timeout: 10_000 })
+    target.dispatchEvent(new Event("online"))
+    await vi.waitFor(() => expect(tab.count(sessionRefreshes, { via: "online" })).toBe(1), { interval: 10, timeout: 10_000 })
+    expect(tab.session().status).toBe("unreachable")
+    expect(lines(tab, "auth.refresh")).toHaveLength(1)
+    fault.heal()
+    await vi.waitFor(() => expect(tab.session().status).toBe("signed_in"), { interval: 10, timeout: 10_000 })
+    expect(lines(tab, "auth.refresh")).toHaveLength(1)
+    // Once the refresh has ended, the next run of failures starts a new one.
+    await vi.waitFor(() => expect(tab.refreshing()).toBe(false), { interval: 10, timeout: 10_000 })
+    expect(lines(tab, "flow.dispatch")).toEqual([expect.objectContaining({ flow: "auth/refresh", outcome: "done" })])
+    fault.fail()
+    target.dispatchEvent(new Event("online"))
+    await vi.waitFor(() => expect(lines(tab, "auth.refresh")).toHaveLength(2), { interval: 10, timeout: 10_000 })
+    fault.heal()
+    await vi.waitFor(() => expect(lines(tab, "flow.dispatch")).toHaveLength(2), { interval: 10, timeout: 10_000 })
+    expect(tab.session().status).toBe("signed_in")
+  }, 30_000)
 })

@@ -21,5 +21,8 @@ export const deviceWipes = Metric.counter("smithers_web_device_wipes", {
   incremental: true,
 })
 
-/** Session checks triggered by the device reconnecting. */
+/**
+ * Session checks, by what started them (`via`): the app opening (`startup`), the browser coming back online (`online`),
+ * or `auth/refresh` asking again after a check ChatApi couldn't answer (`retry`).
+ */
 export const sessionRefreshes = Metric.counter("smithers_auth_session_refreshes", { incremental: true })

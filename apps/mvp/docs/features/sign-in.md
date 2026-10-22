@@ -232,7 +232,8 @@ The local developer can sign out, so the end-to-end suite tests a signed-out pag
 | `schema.ts` | `SessionState` as it arrives, the tab's `Session` row, and the device's `Confirmed` row |
 | `api.ts` | `AuthClient`: `session` (`GET /api/auth/session`) and `signOut` (`POST /api/auth/sign-out`), each under one deadline, failing with `AuthUnreachable` |
 | `store.ts` | `AuthStore`: one local row, `loading` until ChatApi answers, then `signed_in`, `signed_out` or `unreachable`; and `auth-confirmed`, the last session ChatApi confirmed, kept on the device (`Persistence`) |
-| `actions.ts` | `load` (keeps or forgets the confirmed session), `pressSignIn` (counted) and `signOut` (`signingOut` at once, once at a time; after a `204`, forgets the confirmed session and wipes the device, counted) |
+| `actions.ts` | `load` (keeps or forgets the confirmed session, and answers how the check ended), `check` (one session check at a time, counted by what started it), `refresh` (starts `auth/refresh` after a failed check), `pressSignIn` (counted) and `signOut` (`signingOut` at once, once at a time; after a `204`, forgets the confirmed session and wipes the device, counted) |
+| `flows.ts`, `steps.ts`, `tab.ts` | `auth/refresh`: the durable flow that asks again after a failed check, its step in the engine worker, and the tab's answer ([when ChatApi can't say](#when-chatapi-cant-say)) |
 | `device.ts` | `DeviceWipe`: the host's `wipe` as a service, failing with `WipeFailed` |
 | `auth.ts` | `Auth`: the `session` and `confirmed` queries and the plain actions; reads the device's confirmed session and asks who is signed in as the app opens |
 | `components/` | `AuthProvider`/`useAuth`, `SignInButton` (a link returning to this page; hidden where sign-in is off), `Account` (the login and Sign out, or the button with "Couldn't sign in." after `?sign_in=failed`), `ComposerGate` (what `composerAccess` says: the composer, "Members can ask Smithers.", or "Sign in to ask Smithers." and the button) |
@@ -242,6 +243,24 @@ The local developer can sign out, so the end-to-end suite tests a signed-out pag
 **Signed out, nothing leaves the browser.** `ComposerGate` replaces the composer, so a signed-out person has nowhere to type an ask, and the model endpoint refuses a signed-out call with `401` either way. A question already in the outbox that ChatApi refuses with `401` (signed out since) or `403` (not a Member) stays on the device as Not sent (`refused`), with Edit and Discard, and is never sent again.
 
 `appLayer` (`src/boot.ts`) builds `Auth` over `AuthStore`, the device's `Persistence` and `DeviceWipe.layer(host.wipe)`, with `AuthClient` among the browser's services (`realServices`); `boot` renders it, and main.tsx gives it to React through `AuthProvider`. The app's header shows `Account`, and `ComposerGate` wraps the composer (`src/screens/app/AppShell.tsx`).
+
+### When ChatApi can't say
+
+A device that never confirmed a session shows "Sign in to ask Smithers." while ChatApi can't say who is signed in (`composerAccess`). It recovers by itself once ChatApi answers, with no click, no `online` event and no reload:
+
+```
+check (startup or online) ── unreachable ──▶ refresh: dispatch auth/refresh { } (door sync), once per run of failures
+                                                │
+engine worker: auth/refresh/check ── asks the tab that started it, on <name>/auth-session ──▶ tab: check("retry")
+      ▲                                                                                        │
+      └── SessionUnreachable: the engine tries again, 1 s doubling to 30 s, no give-up ◀── unreachable
+          signed_in or signed_out: the run ends; the tab already shows what ChatApi said
+```
+
+- `auth/refresh` is a durable client flow (`src/features/auth/flows.ts`). Its one step asks the tab that started the run (`src/flows/askingTab.ts`) to check its session as it does when it opens; the tab answers how the check ended. The step fails `SessionUnreachable` while ChatApi can't say, and the engine's retry policy (`REFRESH_RETRY`) asks again. The app writes no retry loop.
+- A tab starts one refresh per run of failures: a check that fails while its refresh runs starts no second one (`AuthStore.refreshing`). Checks run one at a time on a tab (`AuthStore.checking`), so a retry waits for a startup or `online` check already asking.
+- A tab that closes answers nothing; after 60 s (`ASK_SESSION_WITHIN`) the step settles the run `gone`.
+- Records: the tab logs `auth.refresh` (`stage: started`) and dispatch's `flow.dispatch` line; each check it runs is `auth.session_refresh` and `smithers_auth_session_refreshes` with `via: retry`; the engine worker records `auth.refresh.check` (span and log line, `outcome`, `executionId`, `durationMs`). None carries a login.
 
 ## Not built yet
 
@@ -269,7 +288,8 @@ Run with the compose Postgres up (`pnpm db:up`). GitHub is the second scripted s
 | `worker/PersonOnly.test.ts` | every person-only flow with a route and every protected act, keyed by the list itself: an agent's, a flow's and a frame's request refused `403` and counted |
 | `src/flows/credentials.test.ts` | on the Node engine against ChatApi's routes: the agent's run sends its credential and no cookie, and its nested `run/answer` is refused before anything is sent; the person's press goes in their session, a root person-only press from a busy or reloaded tab still goes in the session and logs `door_timeout`, while a tab answering with another door is refused; one credential however many requests; a declared ceiling sent; signed out, no credential and no cookie; a mint unreachable or not a credential, and a lineage unreadable, send nothing; a run with no recorded parent nested in the run it is named after; a credential the server no longer reads asked for again once; a run's credential for the tab's outbox |
 | `src/device/identity.test.ts` | the owner check on the deployed builds' device stores (7b96f878 and production's c6940ac5), built by TanStack DB from their fixtures: the confirmed person opens it with every row kept (the regression that wiped it); a confirmed stable id matched by id, any case; another login, or no confirmed login, leaves it sealed and whole; offline or signed out it waits; a new device, a visitor's device adopted at sign-in, the owner's data offline, signed out and under another person; after the wipe the next person owns a new device; an interrupted registration; a missing stable person, an unknown record version and a broken store refused and counted by stage; every outcome counted, no login or person logged; each tab's decision, its session check, receipts, bound requests and reopening once, and the activation's deadline |
-| `src/features/auth/auth.test.ts` | the tab on a Node device: signed out, signed in through GitHub, signing out, sign-in off, ChatApi unreachable, refused or silent; `composerAccess` for every status and role; a Member reloading offline or before ChatApi answers still asking; a Guest or no role seeing the line; ChatApi saying signed out keeping the confirmed session; another person signing in wiping nothing; a sign-out ChatApi takes leaving no stored rows and an empty outbox, a failed one leaving both; a wipe the host couldn't do counted; no login in its log lines |
+| `src/features/auth/auth.test.ts` | the tab on a Node device: signed out, signed in through GitHub, signing out, sign-in off, ChatApi unreachable, refused or silent; `composerAccess` for every status and role; a Member reloading offline or before ChatApi answers still asking; a Guest or no role seeing the line; ChatApi saying signed out retaining device ownership while the online tab gates asks; a sign-out ChatApi takes leaving no stored rows and an empty outbox, a failed one leaving both; a wipe the host couldn't do counted; no login in its log lines; a failed first check recovering through `auth/refresh` on a Node engine once ChatApi answers, with no event or click, and one refresh per run of failures |
+| `src/features/auth/steps.test.ts` | `auth/refresh` on the Node host: the tab's `signed_in` or `signed_out` settling the run; `unreachable` asked again 1 s and then 2 s later; a tab that is gone settling it `gone` |
 
 The browser half of signing in, pressing Approve on GitHub, belongs to the end-to-end suite with the `codeplanesmithers` test account (decision 0008, E2).
 
@@ -287,6 +307,6 @@ A driver outside the suite does the browser half, since GitHub's own pages are n
 
 Queued agent issue writes renew their original signed run proof at delivery through `POST /api/runs/<run>/credential {flow, renew}`. Renewal verifies the old signature and the still-live original session and requires the same current person, session and run. Only expiry changes: attribution, run, root, chain and ceiling are copied exactly. A forged/revoked proof, another session/person/run or an acting caller is refused. The write itself uses the renewed bearer without cookies. Outbox payload version 3 migrates version 2 by retaining its signed proof and write id; replay remains the same idempotent operation. A refusal never falls back to the person's cookie, and transient renewal failures use the outbox's existing retry policy.
 
-Reconnection diagnostics record `auth.session_subscription` (`listening`/`stopped`), `auth.session_refresh` (`via: startup`/`online`) and `smithers_auth_session_refreshes`. These distinguish browser event delivery, subscription lifetime and the next session check without recording identities or content.
+Reconnection diagnostics record `auth.session_subscription` (`listening`/`stopped`), `auth.session_refresh` (`via: startup`/`online`/`retry`) and `smithers_auth_session_refreshes`. These distinguish browser event delivery, subscription lifetime and the next session check without recording identities or content.
 
-The scoped auth lifecycle owns the initial session read: it subscribes to network events first, queues one startup check, and consumes startup and online checks serially. Boot waits only for registration before rendering, never for HTTP. A network transition before subscription is covered by that initial read, without a duplicate request during layer construction.
+The scoped auth lifecycle owns the initial session read: it subscribes to network events first, queues one startup check, and consumes startup and online checks serially; a check that fails starts `auth/refresh` ([when ChatApi can't say](#when-chatapi-cant-say)). Boot waits only for registration before rendering, never for HTTP. A network transition before subscription is covered by that initial read, without a duplicate request during layer construction.

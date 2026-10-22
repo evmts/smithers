@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { ROLES } from "./contract"
+import { CHECK_OUTCOMES, ROLES } from "./contract"
 
 // Sign-in's row on the tab and ChatApi's answer, as the Effect Schemas they are checked with. Constants the browser
 // shares with ChatApi live in contract.ts.
@@ -39,3 +39,12 @@ export const Confirmed = Schema.Struct({
   role: Schema.NullOr(Schema.Literals(ROLES)),
 })
 export type Confirmed = typeof Confirmed.Type
+
+// What `auth/refresh`'s step asks the tab that started its run (src/flows/askingTab.ts), and what it answers.
+
+/** The step's call: check your session. */
+export const SessionCall = Schema.Struct({})
+
+/** The tab's answer: how its check ended. */
+export const SessionAnswer = Schema.Struct({ outcome: Schema.Literals(CHECK_OUTCOMES) })
+export type SessionAnswer = typeof SessionAnswer.Type

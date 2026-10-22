@@ -1,18 +1,26 @@
+import { FlowRegistry } from "./flows/registry"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { FetchHttpClient } from "effect/http"
 import { signInHarness } from "../worker/test/signIn"
-import { AuthClient } from "./features/auth/api"
+import { AuthClient, AuthUnreachable } from "./features/auth/api"
 import { DeviceWipe } from "./features/auth/device"
+import { Action } from "@smthrs/flow"
 import { Otlp } from "@smthrs/observability"
-import { Effect, Exit, Fiber, Layer, ManagedRuntime, Metric, Stream } from "effect"
+import { TabChannel } from "@smthrs/platform-browser"
+import { Effect, Exit, Fiber, Layer, ManagedRuntime, Metric, Scope, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { build } from "../worker/test/flowHost"
 import { stop, testFile, usage } from "../worker/test/harness.ts"
 import { Auth, bindSessionConnectivity } from "./features/auth/auth"
+import { AuthRefresh } from "./features/auth/flows"
 import { sessionRefreshes } from "./features/auth/metrics"
+import * as AuthSteps from "./features/auth/steps"
 import { AuthStore } from "./features/auth/store"
+import { tabSession } from "./features/auth/tab"
+import { ClientEngine, FlowDispatch } from "./flows/dispatch"
 import { Answer } from "./features/agent/flows"
 import { TELEMETRY_ROUTE } from "./features/chat/contract"
 import { Chat } from "./features/chat/chat"
@@ -176,15 +184,42 @@ test("the relay retains real session lifecycle diagnostics and counters without 
       headers: { cookie: Object.entries(cookies).map(([name, value]) => `${name}=${value}`).join("; ") },
     })
   }
-  const client = AuthClient.layer({ origin: ORIGIN, within: "5 seconds" }).pipe(
+  // The first check finds ChatApi unable to say, as a gateway's 503: `auth/refresh` asks again, and ChatApi answers.
+  let failures = 1
+  const client = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+    ...real,
+    session: Effect.suspend(() => failures-- > 0 ? Effect.fail(new AuthUnreachable({ status: 503 })) : real.session),
+  }))).pipe(Layer.provide(AuthClient.layer({ origin: ORIGIN, within: "5 seconds" }).pipe(
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
-  )
+  )))
+  // The engine `auth/refresh` runs on, asking this tab over Node's own `BroadcastChannel`.
+  const name = `telemetry-${crypto.randomUUID()}`
+  const engineScope = Effect.runSync(Scope.make())
+  closing.push(() => Effect.runPromise(Scope.close(engineScope, Exit.void)))
+  const { context: engine } = await Effect.runPromise(Scope.provide(engineScope)(build(AuthSteps.registration.pipe(
+    Layer.provide(AuthSteps.TabSession.layerChannel({ name })),
+    Layer.provide(TabChannel.layer),
+    Layer.provideMerge(Action.layerImplementations),
+  ))))
   const exported = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}${TELEMETRY_ROUTE}`, serviceName: WEB_SERVICE, ...TELEMETRY_LIMITS }))
-  const app = ManagedRuntime.make(Auth.layer.pipe(
+  const app = ManagedRuntime.make(Layer.merge(Auth.layer, tabSession({ name }).pipe(Layer.provide(TabChannel.layer))).pipe(
     Layer.provideMerge(AuthStore.layer),
     Layer.provideMerge(Persistence.memory),
     Layer.provideMerge(DeviceWipe.layer(nodeDevice().wipe)),
+    Layer.provideMerge(
+      FlowDispatch.layer.pipe(
+          Layer.provide(FlowRegistry.layer),
+        // In a browser the engine runs in its worker, whose exporter its own spans go to; in this process they would
+        // reach the tab's, so the engine's calls run untraced. Dispatch's own span and the tab's records stay traced.
+        Layer.provide(Layer.effect(ClientEngine, Effect.map(ClientEngine, (real) => ClientEngine.of({
+          start: (flow, run) => real.start(flow, run).pipe(Effect.withTracerEnabled(false)),
+          result: (flow, run) => real.result(flow, run).pipe(Effect.withTracerEnabled(false)),
+        })))),
+        Layer.provide(ClientEngine.layerRuntime([AuthRefresh])),
+        Layer.provide(Layer.succeedContext(engine)),
+      ),
+    ),
     // Auth and OTLP intentionally have different real HTTP destinations; isolate the SDK client layer's memo.
     Layer.provideMerge(Layer.fresh(client)),
     Layer.provideMerge(exported.layer),
@@ -201,10 +236,11 @@ test("the relay retains real session lifecycle diagnostics and counters without 
   await app.runPromise(Fiber.interrupt(fiber))
   await closing.pop()!()
   const fromTab = await relay(exported.exports)
-  const diagnostics = fromTab.kept.filter((line) => ["auth.session_subscription", "auth.session_refresh", "smithers_auth_session_refreshes"].includes(line.name))
+  const diagnostics = fromTab.kept.filter((line) => ["auth.session_subscription", "auth.session_refresh", "auth.refresh", "smithers_auth_session_refreshes"].includes(line.name))
   expect(diagnostics.filter((line) => line.name === "auth.session_subscription").map((line) => line.fields.stage)).toEqual(["listening", "stopped"])
-  expect(diagnostics.filter((line) => line.name === "auth.session_refresh").map((line) => line.fields.via)).toEqual(["startup", "online"])
-  expect(diagnostics.filter((line) => line.name === "smithers_auth_session_refreshes").map((line) => ({ via: line.fields.via, value: line.fields["otlp.value"] }))).toEqual(expect.arrayContaining([{ via: "startup", value: 1 }, { via: "online", value: 1 }]))
+  expect(diagnostics.filter((line) => line.name === "auth.session_refresh").map((line) => line.fields.via)).toEqual(["startup", "retry", "online"])
+  expect(diagnostics.filter((line) => line.name === "auth.refresh").map((line) => line.fields.stage)).toEqual(["started"])
+  expect(diagnostics.filter((line) => line.name === "smithers_auth_session_refreshes").map((line) => ({ via: line.fields.via, value: line.fields["otlp.value"] }))).toEqual(expect.arrayContaining([{ via: "startup", value: 1 }, { via: "retry", value: 1 }, { via: "online", value: 1 }]))
   expect(drift(fromTab.dropped)).toEqual({ records: [], fields: [] })
   expect(JSON.stringify(fromTab.kept)).not.toContain(privateLogin)
   for (const line of diagnostics) for (const forbidden of ["login", "personId", "token", "cookie"]) expect(line.fields).not.toHaveProperty(forbidden)

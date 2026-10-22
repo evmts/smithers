@@ -1,7 +1,9 @@
-import { Effect, Metric, Option } from "effect"
+import { Effect, Metric, Option, Ref } from "effect"
+import { FlowDispatch } from "../../flows/dispatch"
 import { AuthClient } from "./api"
+import type { CheckOutcome } from "./contract"
 import { DeviceWipe } from "./device"
-import { deviceWipes, signInPresses, signOuts } from "./metrics"
+import { deviceWipes, sessionRefreshes, signInPresses, signOuts } from "./metrics"
 import type { Confirmed, Session } from "./schema"
 import { AuthStore, SESSION } from "./store"
 
@@ -41,15 +43,19 @@ export const restore = Effect.gen(function* () {
   yield* change({ restored: true })
 })
 
-/** Asks ChatApi who this browser is signed in as, and shows it: `unreachable` when ChatApi couldn't say. */
+/**
+ * Asks ChatApi who this browser is signed in as, and shows it: `unreachable` when ChatApi couldn't say. Answers how the
+ * check ended.
+ */
 export const load = Effect.gen(function* () {
   const client = yield* AuthClient
   const answer = yield* Effect.result(client.session)
   if (answer._tag === "Failure") {
     yield* change({ status: "unreachable" })
-    return yield* Effect.logWarning("session unreachable").pipe(
+    yield* Effect.logWarning("session unreachable").pipe(
       Effect.annotateLogs(answer.failure.status === undefined ? {} : { status: answer.failure.status }),
     )
+    return "unreachable" as CheckOutcome
   }
   const state = answer.success
   // Whose data this page opened is the device's owner check's to decide (src/device/identity.ts): a page never shows
@@ -62,6 +68,42 @@ export const load = Effect.gen(function* () {
   yield* (yield* AuthStore).sessionConfirmed
   if (state.signedIn) yield* confirm({ login: state.login, role: state.role, ...(state.personId === undefined ? {} : { personId: state.personId }) })
   yield* Effect.logInfo("session loaded").pipe(Effect.annotateLogs({ signedIn: state.signedIn }))
+  return (state.signedIn ? "signed_in" : "signed_out") as CheckOutcome
+}).pipe(Effect.annotateLogs({ feature: "auth" }))
+
+/** What started a session check: the app opening, the browser coming back online, or `auth/refresh` asking again. */
+export type CheckVia = "startup" | "online" | "retry"
+
+/**
+ * A session check started by `via`: counted in `sessionRefreshes` and logged by `via`, then `load`. One runs at a time
+ * on a tab, so a check waits for the one already asking ChatApi. Answers how it ended.
+ */
+export const check = (via: CheckVia) =>
+  Effect.gen(function* () {
+    const { checking } = yield* AuthStore
+    return yield* checking.withPermits(1)(
+      Metric.update(Metric.withAttributes(sessionRefreshes, { via }), 1).pipe(
+        Effect.andThen(Effect.logInfo("auth.session_refresh").pipe(Effect.annotateLogs({ via }))),
+        Effect.andThen(load),
+      ),
+    )
+  })
+
+/**
+ * After a check ChatApi couldn't answer: dispatches `auth/refresh` (src/features/auth/flows.ts), whose step asks this
+ * tab to check again (`check("retry")`) until ChatApi answers, unless this tab's refresh is already running. Returns at
+ * once; the run goes on in the store's scope, and dispatch logs how it ended (`flow.dispatch`).
+ */
+export const refresh = Effect.gen(function* () {
+  const { refreshing, scope } = yield* AuthStore
+  if (yield* Ref.getAndSet(refreshing, true)) return
+  const flows = yield* FlowDispatch
+  yield* Effect.logInfo("auth.refresh").pipe(Effect.annotateLogs({ stage: "started" }))
+  yield* flows.dispatch("auth/refresh", {}, { door: "sync" }).pipe(
+    Effect.ignore,
+    Effect.ensuring(Ref.set(refreshing, false)),
+    Effect.forkIn(scope, { startImmediately: true }),
+  )
 }).pipe(Effect.annotateLogs({ feature: "auth" }))
 
 /** "Sign in with GitHub" pressed: counted. The link it is takes the browser to GitHub. */

@@ -81,6 +81,25 @@ export type SessionState =
   | { readonly signedIn: false; readonly available: boolean }
   | { readonly signedIn: true; readonly personId?: string; readonly login: string; readonly role: Role | null }
 
+/** How a tab's session check ended: ChatApi said signed in or signed out, or couldn't say (`unreachable`). */
+export const CHECK_OUTCOMES = ["signed_in", "signed_out", "unreachable"] as const
+export type CheckOutcome = (typeof CHECK_OUTCOMES)[number]
+
+/**
+ * How `auth/refresh` ended: the tab's check answered (every outcome but `unreachable`, which the engine tries again), or
+ * no tab answered because the one that asked is gone (`gone`).
+ */
+export const REFRESH_OUTCOMES = ["signed_in", "signed_out", "gone"] as const
+
+/** The channel `auth/refresh`'s step asks the tabs of engine `name` on (src/flows/askingTab.ts). */
+export const sessionChannel = (name: string): string => `${name}/auth-session`
+
+/**
+ * How long `auth/refresh`'s step waits for the tab that asked: its check waits for one already running, and each gives
+ * ChatApi 15 s, so an open tab answers well within this.
+ */
+export const ASK_SESSION_WITHIN = "60 seconds"
+
 // The app's sign-in copy. No other sign-in copy exists.
 
 /** The button that starts signing in. */
@@ -106,6 +125,8 @@ export const AUTH_TELEMETRY = {
   records: [
     "auth.session_subscription",
     "auth.session_refresh",
+    "auth.refresh",
+    "auth.refresh.check",
     "smithers_auth_session_refreshes",
     "session loaded",
     "session unreachable",
@@ -121,5 +142,5 @@ export const AUTH_TELEMETRY = {
     "smithers_web_device_wipes",
   ],
   // `stage`, `reason` and `via` also carry the engine worker's owner check (src/device/identity.ts, FLOWS_TELEMETRY).
-  fields: ["signedIn", "status", "outcome", "stage", "reason", "via"],
+  fields: ["signedIn", "status", "outcome", "stage", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome"],
 } as const

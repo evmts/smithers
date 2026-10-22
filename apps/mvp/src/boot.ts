@@ -25,6 +25,7 @@ import { QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "./features/chat/contract"
 import { storagePersisted } from "./features/chat/metrics"
 import { chatShortcuts } from "./features/chat/shortcuts"
 import { buttonShortcuts } from "./features/keys/keys"
+import { tabSession } from "./features/auth/tab"
 import { tabChat } from "./features/chat/tab"
 import { type ChatConfig, type ChatHost, ChatStore, chatConfig } from "./features/chat/store"
 import { CodeIntel, type CodeIntelView } from "./features/code-intel/codeIntel"
@@ -174,7 +175,11 @@ export const appLayer = <S = never>(
   services: Layer.Layer<ChatClient | AuthClient | S, never, HttpClient.HttpClient | ClientEngine>,
 ) => {
   const { origin, reload, host, fetch: _fetch, answerWithin: _answerWithin, ...chat } = options
-  const auth = Auth.layer.pipe(Layer.provideMerge(DeviceWipe.layer(host.wipe)))
+  // Sign-in, and this tab's answers to the `auth/refresh` it starts when a session check fails: both check the session,
+  // which may wipe the device.
+  const auth = Layer.merge(Auth.layer, tabSession({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer))).pipe(
+    Layer.provideMerge(DeviceWipe.layer(host.wipe)),
+  )
   return Layer.mergeAll(
     Chat.layer,
     auth,
