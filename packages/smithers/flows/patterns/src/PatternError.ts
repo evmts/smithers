@@ -42,8 +42,8 @@ export type PatternErrorCode = typeof PatternErrorCode.Type
 /**
  * A typed pattern declaration or execution failure.
  *
- * `cause` carries the error or errors this failure reports on. It never carries
- * the input that produced them.
+ * `cause` preserves the error or errors this failure reports on. Member errors
+ * can contain caller input; patterns do not redact those values.
  *
  * @category errors
  * @since 0.1.0

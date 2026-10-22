@@ -40,6 +40,16 @@ const joined = (node: Node.Node<unknown, unknown, any>) =>
   )
 
 describe("Quarantine", () => {
+  it.effect("preserves input-bearing member errors in the settlement cause", () =>
+    Effect.gen(function*() {
+      const input = { value: "caller data" }
+      const memberError = { reason: "refused", input }
+      const outcomes = yield* Quarantine.run({ member: Effect.fail(memberError) }, { policy: "quarantine" })
+      const failure = yield* Quarantine.settle(outcomes).pipe(Effect.flip)
+      expect(failure.cause).toEqual([{ member: "member", error: memberError }])
+      expect((failure.cause as ReadonlyArray<{ readonly error: unknown }>)[0]!.error).toBe(memberError)
+    }))
+
   it("declares one catch per member", () => {
     const graph = joined(Quarantine.all(members, { policy: "quarantine" }))
 

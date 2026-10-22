@@ -9,7 +9,7 @@
  *
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 import * as Node from "@smthrs/plan/Node"
@@ -24,7 +24,7 @@ import { PatternError } from "./PatternError.ts"
  * interrupts every sibling still running.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Policy = "quarantine" | "halt"
 
@@ -36,7 +36,7 @@ export type Policy = "quarantine" | "halt"
  * values can never collide with this protocol tag.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Quarantined<E> {
   readonly _tag: "Quarantined"
@@ -72,7 +72,7 @@ export type Settled<A, E> = Succeeded<A> | Quarantined<E>
  * Configuration for {@link all}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface AllOptions {
   readonly policy: Policy
@@ -85,7 +85,7 @@ export interface AllOptions {
  * unbounded.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface RuntimeOptions {
   readonly policy: Policy
@@ -100,7 +100,7 @@ export interface RuntimeOptions {
  * own shape is never interpreted as protocol metadata.
  *
  * @category refinements
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const isQuarantined = (value: unknown): value is Quarantined<unknown> => outcome(value, "Quarantined", "error")
 
@@ -167,7 +167,7 @@ const nonEmpty = (names: ReadonlyArray<string>): void => {
  * plain `Node.all` and preserves raw successful values.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export function all(
   members: Readonly<Record<string, Node.Any>>,
@@ -214,7 +214,7 @@ export function all(
  * flight and the whole join fails.
  *
  * @category combinators
- * @since 0.1.0
+ * @since 1.0.0
  */
 export function run<A, E, R>(
   members: Readonly<Record<string, Effect.Effect<A, E, R>>>,
@@ -268,9 +268,10 @@ export function run<A, E, R>(
  * do not wrap their values. An entry that is neither envelope, such as a raw
  * success value, fails `PatternError` with code `invalid_input` naming the
  * offending members, and a quarantined entry fails with code `quarantined`.
+ * Its cause preserves each member error, including any input the error holds.
  *
  * @category combinators
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const settle = <A, E>(
   result: Readonly<Record<string, Settled<A, E>>>
