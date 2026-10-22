@@ -16,6 +16,8 @@ import { ALERT_WORD, alertDetail, alertMessage, receiptText } from "./copy"
 import { RECEIPTS_SHOWN } from "./queries"
 import { Spend } from "./spend"
 import { AuthStore, SESSION } from "../auth/store"
+import { check } from "../auth/actions"
+import type { AuthClient } from "../auth/api"
 import { hidden, shown, SpendStore } from "./store"
 
 const admin: Actor = { subject: { kind: "person", id: "person-admin" }, role: "admin" }
@@ -37,7 +39,7 @@ const openApi = async (actor: Actor, people?: Record<string, Actor>) => {
 
 /** A tab on `device` (a reload when the device had one open before), its open alerts syncing. */
 const openSpendTab = async (api: TestChatApi["Service"], device: NodeDevice = nodeDevice(), role: Actor["role"] = "admin", options: TabOptions = {}) => {
-  const runtime: ManagedRuntime.ManagedRuntime<Spend | SpendStore | AuthStore, unknown> = openTab(api, { ...options, host: device })
+  const runtime: ManagedRuntime.ManagedRuntime<Spend | SpendStore | AuthStore | AuthClient, unknown> = openTab(api, { ...options, host: device })
   runtimes.push(runtime)
   const auth = await runtime.runPromise(Effect.service(AuthStore))
   await until(() => expect(auth.session.tanstack.get(SESSION)?.status).not.toBe("loading"))
@@ -106,7 +108,8 @@ describe("an Admin's tab", { timeout: 90_000 }, () => {
   })
 
   test("demotion hides restored Admin alerts, settings and receipts on this device", async () => {
-    const api = await openApi(admin)
+    const people = { reader: admin }
+    const api = asPerson(await openApi(admin, people), "reader")
     const device = nodeDevice()
     const tab = await openSpendTab(api, device)
     const id = await alert(api, "before-demotion", "agent", 100)
@@ -118,13 +121,46 @@ describe("an Admin's tab", { timeout: 90_000 }, () => {
     const store = await tab.runtime.runPromise(Effect.service(SpendStore))
     for (const query of [store.channelList, store.receipts]) query.tanstack.startSyncImmediate()
     await until(() => expect([tab.open().length, store.channelList.tanstack.size, store.receipts.tanstack.size]).toEqual([1, 1, 1]))
-    const auth = await tab.runtime.runPromise(Effect.service(AuthStore))
-    await tab.runtime.runPromise(auth.session.update(SESSION, (row) => { row.role = "member" }))
+    // Revoke authority at the server, then let the real session check update this tab.
+    // Mutating only its local row would let startup on reload grant Admin again.
+    people.reader = { ...admin, role: "member" }
+    await tab.runtime.runPromise(check("online"))
     await until(() => expect([tab.open().length, store.channelList.tanstack.size, store.receipts.tanstack.size]).toEqual([0, 0, 0]))
+    await until(() => expect([
+      device.stored("spend-alerts"), device.stored("alert-channels"), device.stored("alert-deliveries"),
+    ]).toEqual([1, 1, 1]))
     await tab.runtime.dispose()
-    const restored = await openSpendTab(api, device, "member")
-    expect(restored.open()).toEqual([])
-    expect(restored.shown()).toBe(0)
+    // No test-authored session row on reload: observe the real startup confirmation and the persisted rows.
+    const restored = openTab(api, { host: device })
+    runtimes.push(restored)
+    const auth = await restored.runPromise(Effect.service(AuthStore))
+    await until(async () => expect(await restored.runPromise(auth.confirmation)).toBeGreaterThan(0))
+    expect(auth.session.tanstack.get(SESSION)).toMatchObject({ status: "signed_in", role: "member" })
+    const restoredStore = await restored.runPromise(Effect.service(SpendStore))
+    await restored.runPromise(Effect.all([
+      restoredStore.alerts.restored, restoredStore.channels.restored, restoredStore.deliveries.restored,
+    ]))
+    for (const query of [restoredStore.open, restoredStore.channelList, restoredStore.receipts]) query.tanstack.startSyncImmediate()
+    await until(() => expect([
+      restoredStore.open.tanstack.size, restoredStore.channelList.tanstack.size, restoredStore.receipts.tanstack.size,
+    ]).toEqual([0, 0, 0]))
+    expect(restored.runSync(Metric.value(shown)).count).toBe(0)
+  })
+
+  test("separate Admin devices never reuse another deployment's alert replay state", async () => {
+    const first = await openApi(admin)
+    const second = await openApi(admin)
+    expect(first.origin).toBe(second.origin)
+    const firstId = await alert(first, "first-deployment", "agent", 100)
+    const secondId = await alert(second, "second-deployment", "agent", 200)
+    const firstTab = await openSpendTab(first)
+    const secondTab = await openSpendTab(second)
+    await until(() => expect(firstTab.open()).toEqual([firstId]))
+    await until(() => expect(secondTab.open()).toEqual([secondId]))
+    await firstTab.runtime.dispose()
+    const reopened = await openSpendTab(first)
+    await until(() => expect(reopened.open()).toEqual([firstId]))
+    expect(secondTab.open()).toEqual([secondId])
   })
 
   test("a Member's tab syncs no alerts", async () => {

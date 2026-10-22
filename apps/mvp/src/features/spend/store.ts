@@ -5,6 +5,7 @@ import { AuthStore, SESSION } from "../auth/store"
 import { ALERT_CHANNELS_SHAPE_ROUTE, ALERT_DELIVERIES_SHAPE_ROUTE, SPEND_ALERTS_SHAPE_ROUTE } from "./contract"
 import { adminQuery, channelsQuery, deliveriesQuery, openQuery, savesQuery } from "./queries"
 import { AlertChannel, AlertDelivery, ChannelSave, Seen, SpendAlert } from "./schema"
+import { adminShapeSource } from "./source"
 
 // Spend alerts on this tab (docs/features/spend-alerts.md): the deployment's model spend alerts, which only an Admin's
 // devices sync, kept on the device; this device's mark of what it has seen; and the live query the toasts read. While
@@ -57,19 +58,8 @@ export class SpendStore extends Context.Service<
         const source = yield* ShapeSource.ShapeSource
         // Permission is a prerequisite, not a failed request. No Admin shape reaches the network until the
         // session is confirmed; subsequent requests recheck it. Sign-out wipes the device's collections.
-        const allowed = auth.sessionState.rows.pipe(
-          Stream.filter((rows) => rows.some((row) => row.status === "signed_in" && row.role === "admin")),
-          Stream.take(1),
-          Stream.runDrain,
-        )
         const deniedAt = new Map<string, number>()
-        const adminSource = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.gen(function* () {
-          yield* allowed
-          const confirmation = yield* auth.confirmation
-          const response = yield* source.request(url, init)
-          if (response.status === 403) deniedAt.set(new URL(url).pathname, confirmation)
-          return response
-        }) })
+        const adminSource = adminShapeSource(source, auth, deniedAt)
         const alerts = yield* ElectricCollection.make<SpendAlert>({
           id: "spend-alerts",
           schema: SpendAlert,

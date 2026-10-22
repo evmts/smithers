@@ -560,13 +560,20 @@ export class TestChatApi extends Context.Service<
         // Who a browser is signed in as (`GET /api/auth/session`), from sign-in's own route as `alchemy dev` serves it
         // without the GitHub App (worker/DevChatApi.ts): the request's person as the fallback, or signed out with no actor.
         // No role goes stale without the App, so no role check starts.
-        const signInOf = (person: Actor.Actor | null) =>
-          SignIn.make(database, person === null ? {} : { fallback: { actor: person, login: person.login ?? person.subject.id } }).pipe(
+        const signInOf = (person: Actor.Actor | null, name?: string) =>
+          SignIn.make(database, person === null ? {} : {
+            // Session checks and person-authenticated routes read current authority. A snapshot here
+            // would re-grant a demoted person's old role on refresh or reload.
+            get fallback() {
+              const current = (name === undefined ? undefined : people[name]) ?? person
+              return { actor: current, login: current.login ?? current.subject.id }
+            },
+          }).pipe(
             Effect.provide(FetchHttpClient.layer),
             Effect.provideService(ConfigProvider.ConfigProvider, config),
           )
         const signedIn = new Map([[undefined as string | undefined, yield* signInOf(actor)]])
-        for (const [name, person] of Object.entries(people)) signedIn.set(name, yield* signInOf(person))
+        for (const [name, person] of Object.entries(people)) signedIn.set(name, yield* signInOf(person, name))
         const roleChecks = SignIn.RoleChecks.of({ start: () => Effect.void })
 
         const routed = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {

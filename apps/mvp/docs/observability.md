@@ -663,6 +663,7 @@ Which flows run, and how (Will, 2026-10-20: "Everything is a flow so the most ob
 
 | Record | Kind | Fields |
 |---|---|---|
+| `flow.run.created`, `flow.run.claimed` | log (Info) | `smithers.execution.id`, `smithers.flow` on creation, `createdAtMs` or `claimedAtMs`; no identity or payload |
 | `flow.run.started`, `flows_runs_started` | log (Info), counter | `flow`, `door`, `actor`, `placement`; the line adds `executionId` |
 | `flow.run.settled`, `flows_runs_settled` | log (Info `succeeded`, else Warn), counter | the same, `outcome` (`succeeded`, `failed`, `refused`, `cancelled`, `lost`) and `code` (`none`, the refusal's or failure's code, `defect`, `interrupted`, `cancelled`); the line adds `durationMs` |
 | `flows_run_duration_ms` | histogram | `flow`, `outcome`, `placement`: from admission to the lineage's settlement |

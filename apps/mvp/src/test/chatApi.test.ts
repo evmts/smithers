@@ -3,7 +3,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { expect, test, vi } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase"
 import { Chat } from "../features/chat/chat"
-import { openTab, TestChatApi } from "./chatApi"
+import { asPerson, member, openTab, TestChatApi } from "./chatApi"
 
 // A scratch database is a separate deployment, including Electric's URL-keyed replay state. Simulated tabs also need separate cache keys because real
 // tabs have separate JavaScript realms; no fixture or tab may inherit another realm's cursor or handle.
@@ -50,5 +50,24 @@ test("independent ChatApis and tabs sync independently, including a reopened API
   } finally {
     for (const tab of tabs.reverse()) await tab.dispose()
     for (const server of servers.reverse()) await server.dispose()
+  }
+})
+
+// The session endpoint and protected routes must read the same live authority, across tabs and reloads.
+test("session reads follow a person's changed role without changing identity", async () => {
+  const people = { reader: { ...member, role: "admin" as const } as typeof member }
+  const server = ManagedRuntime.make(TestChatApi.layerWith({ people }).pipe(
+    Layer.provideMerge(TestDatabase.layer("test_session_authority")),
+  ))
+  try {
+    const api = asPerson(await server.runPromise(Effect.service(TestChatApi)), "reader")
+    const session = async () => (await api.fetch(`${api.origin}/api/auth/session`)).json()
+    expect(await session()).toMatchObject({ signedIn: true, personId: member.subject.id, role: "admin" })
+    people.reader = { ...member, role: "member" }
+    expect(await session()).toMatchObject({ signedIn: true, personId: member.subject.id, role: "member" })
+    people.reader = { ...member, role: "guest" }
+    expect(await session()).toMatchObject({ signedIn: true, personId: member.subject.id, role: "guest" })
+  } finally {
+    await server.dispose()
   }
 })

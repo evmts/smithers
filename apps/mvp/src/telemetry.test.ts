@@ -242,8 +242,12 @@ test("the relay retains real session lifecycle diagnostics and counters without 
   expect(diagnostics.filter((line) => line.name === "auth.refresh").map((line) => line.fields.stage)).toEqual(["started"])
   expect(diagnostics.filter((line) => line.name === "smithers_auth_session_refreshes").map((line) => ({ via: line.fields.via, value: line.fields["otlp.value"] }))).toEqual(expect.arrayContaining([{ via: "startup", value: 1 }, { via: "retry", value: 1 }, { via: "online", value: 1 }]))
   expect(drift(fromTab.dropped)).toEqual({ records: [], fields: [] })
+  expect(fromTab.kept).toContainEqual(expect.objectContaining({
+    name: "flow.run.created",
+    fields: expect.objectContaining({ "smithers.flow": "auth/refresh", createdAtMs: expect.any(Number) }),
+  }))
   expect(JSON.stringify(fromTab.kept)).not.toContain(privateLogin)
-  for (const line of diagnostics) for (const forbidden of ["login", "personId", "token", "cookie"]) expect(line.fields).not.toHaveProperty(forbidden)
+  for (const line of fromTab.kept) for (const forbidden of ["login", "personId", "token", "cookie"]) expect(line.fields).not.toHaveProperty(forbidden)
 })
 
 test("a burst larger than the relay reads reaches it whole, in exports under its limits", async () => {
