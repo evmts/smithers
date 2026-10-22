@@ -228,3 +228,27 @@ test("known hidden routing fields stay hidden while missing required inputs stay
   expect(submissionPayload(schema, fields, given, { command: "inspect" })).toEqual({ payload: { ...given, command: "inspect" } })
   expect(formFieldsFor(schema, hints, { operation: "recover" }).map(field => field.name)).toEqual(["id", "command"])
 })
+
+test("a quoted duplicate cannot conceal an unquoted flag-bearing field value", () => {
+  const fields = formFieldsFor(Schema.Struct({ duplicate: Schema.optional(Schema.String), text: Schema.optional(Schema.String) }))
+  const builder = { args: (payload: Readonly<Record<string, unknown>>) => line(
+    payload.duplicate === undefined ? undefined : JSON.stringify(payload.duplicate),
+    text(payload, "text")
+  ) }
+  expect(assembleLine(fields, builder, { duplicate: "x --delete", text: "x --delete" })).toEqual({ args: '\"x --delete\"', withheld: ["text"] })
+})
+
+test("a builder cannot hide a second unquoted copy behind its own quoted copy", () => {
+  const fields = formFieldsFor(Schema.Struct({ text: Schema.optional(Schema.String) }))
+  const builder = { args: (payload: Readonly<Record<string, unknown>>) => payload.text === undefined ? "" : `${JSON.stringify(payload.text)} ${payload.text}` }
+  expect(assembleLine(fields, builder, { text: "x --delete" })).toEqual({ args: "", withheld: ["text"] })
+})
+
+test("a quoted field stays safe beside an independently declared flag", () => {
+  const fields = formFieldsFor(Schema.Struct({ text: Schema.optional(Schema.String), delete: Schema.Boolean }))
+  const builder = { args: (payload: Readonly<Record<string, unknown>>) => line(
+    payload.text === undefined ? undefined : JSON.stringify(payload.text),
+    payload.delete ? "--delete" : undefined
+  ) }
+  expect(assembleLine(fields, builder, { text: "x --delete", delete: true })).toEqual({ args: '\"x --delete\" --delete', withheld: [] })
+})

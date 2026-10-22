@@ -647,13 +647,25 @@ const valueText = (value: unknown): string =>
  * flag or a binding out of it: no such token, or the value written as its
  * JSON string literal (quoted, as `fileArgs` and JSON payloads write it).
  */
-const placedSafely = (field: FormField, value: unknown, args: string): boolean => {
+const placedSafely = (field: FormField, value: unknown, args: string, withoutField: () => string): boolean => {
   const text = valueText(value)
   const tokens = text.split(/\s+/)
   // A binding reads out of a quoted value too: the grammars split on whitespace.
   if (tokens.some((token) => smuggles(token) && !quotable(token))) return false
   const unsafe = tokens.some(quotable) || (field.name === "sourceCard" && /\s/.test(text))
-  return !unsafe || args.includes(JSON.stringify(text))
+  if (!unsafe) return true
+  if (!args.includes(JSON.stringify(text))) return false
+  // Quoting a duplicate is not evidence about this field's placement. Compare
+  // exposed tokens with the builder's output when this field is absent, so
+  // independent flags remain valid but an unquoted copy cannot hide.
+  const exposed = (line: string) => line.replace(/"(?:\\.|[^"\\])*"/g, " ").split(/\s+/).filter(quotable)
+  const baseline = exposed(withoutField())
+  return exposed(args).every((token) => {
+    const index = baseline.indexOf(token)
+    if (index === -1) return false
+    baseline.splice(index, 1)
+    return true
+  })
 }
 
 /** A flow `args` builder's line, withholding every value it would write where the grammar misreads it. */
@@ -669,7 +681,11 @@ const builtLine = (
   for (;;) {
     const args = build(carried).trim()
     const live = checked.filter((field) => present(carried[field.name]))
-    let refused = live.filter((field) => !placedSafely(field, carried[field.name], args))
+    let refused = live.filter((field) => !placedSafely(field, carried[field.name], args, () => {
+      const without = { ...carried }
+      delete without[field.name]
+      return build(without)
+    }))
     if (refused.length === 0 && hints.partial !== undefined) {
       const read = hints.partial(args)
       refused = live.filter((field) => !readsAs(read[field.name], carried[field.name]))

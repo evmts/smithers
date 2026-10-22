@@ -295,3 +295,13 @@ describe("CommandPalette", () => {
     expect(rule("\\.sui-command-palette-option\\[aria-selected='true'\\]")).toContain("background:var(--brand-soft,");
   });
 });
+
+for (const arrow of ["ArrowDown", "ArrowUp"]) {
+  test(`${arrow} during IME composition leaves candidate selection to the input method`, async () => {
+    const calls = await palette();
+    const event = new KeyboardEvent("keydown", { key: arrow, bubbles: true, cancelable: true, isComposing: true });
+    await act(async () => { input().dispatchEvent(event); });
+    expect(event.defaultPrevented).toBe(false);
+    expect(calls).toEqual([]);
+  });
+}

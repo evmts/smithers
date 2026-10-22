@@ -95,3 +95,20 @@ describe("Breadcrumbs", () => {
     expect(plain.hasAttribute("aria-current")).toBe(false);
   });
 });
+
+for (const href of ["javascript:alert(1)", "data:text/html,hello", "java\nscript:alert(1)", "vbscript:evil"]) {
+  test(`unsafe breadcrumb stays plain text: ${JSON.stringify(href)}`, async () => {
+    const seen: BreadcrumbItem[] = [];
+    await render(<Breadcrumbs items={[{ key: "unsafe", label: "unsafe", href }, { key: "current", label: "current" }]} onNavigate={(item) => seen.push(item)} />);
+    const item = container!.querySelector("li")!;
+    expect(item.querySelector("a")).toBeNull();
+    await click(item.firstElementChild!);
+    expect(seen).toEqual([]);
+  });
+}
+
+test("safe breadcrumb schemes remain navigable and hrefs are normalized", async () => {
+  const hrefs = ["https://example.com", "http://example.com", "mailto:person@example.com", "/repo", "#file"];
+  await render(<Breadcrumbs items={[...hrefs.map((href) => ({ key: href, label: href, href: ` ${href} ` })), { key: "current", label: "current" }]} />);
+  expect([...container!.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual(hrefs);
+});

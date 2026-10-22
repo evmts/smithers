@@ -138,3 +138,23 @@ describe("Button asChild activation", () => {
     expect(onKeyDownCapture).toHaveBeenCalledTimes(1);
   });
 });
+
+for (const type of ["button", "submit", "reset"] as const) {
+  test(`slotted button receives explicit ${type} type`, async () => {
+    await renderLink(<form><Button asChild type={type}><button>Act</button></Button><a href="#">helper</a></form>);
+    expect(container!.querySelector("button")!.type).toBe(type);
+  });
+}
+
+test("explicit slotted button type prevents accidental form submission", async () => {
+  let submissions = 0;
+  await renderLink(<form onSubmit={(event) => { event.preventDefault(); submissions++; }}><Button asChild type="button"><button>Act</button></Button><a href="#">helper</a></form>);
+  await act(async () => container!.querySelector("button")!.click());
+  expect(submissions).toBe(0);
+});
+
+test("a child's explicit type takes precedence and links get no default type", async () => {
+  const link = await renderLink(<div><Button asChild type="submit"><button type="reset">Reset</button></Button><Button asChild><a href="#">Link</a></Button></div>);
+  expect(container!.querySelector("button")!.type).toBe("reset");
+  expect(link.hasAttribute("type")).toBe(false);
+});

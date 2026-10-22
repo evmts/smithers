@@ -203,7 +203,9 @@ render twice; only an actual ancestor cycle is reported as circular.
     `--name` tokens.
   - A flow's own `args` builder gets the same token refusal. A `--flag` or
     `sourceCard=` token the builder writes inside the value's JSON string
-    literal is kept; a `name=` binding or `from:` token is withheld however it
+    literal is kept only when that field introduces no unquoted flag or
+    binding; a quoted duplicate elsewhere cannot mask it. A `name=` binding
+    or `from:` token is withheld however it
     is quoted. When the flow declares `partial`, every carried value must also
     read back through it. Without `partial`, a builder that joins a multi-word
     value short of its final slot is not detected.

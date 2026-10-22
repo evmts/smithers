@@ -2,6 +2,7 @@
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
 import { cn } from "./cn";
 import { isPlainNavigationClick } from "./internal/navigationClick";
+import { safeHref } from "./internal/safeHref";
 import { useInjectUiCss } from "./styles";
 
 /** One step of a {@link Breadcrumbs} trail. */
@@ -40,12 +41,13 @@ export function Breadcrumbs({ items, onNavigate, className, "aria-label": label,
       <ol className="sui-breadcrumbs-list">
         {items.map((item, index) => {
           const current = index === items.length - 1;
+          const href = item.href === undefined ? undefined : safeHref(item.href);
           return (
             <li key={item.key} className="sui-breadcrumbs-item">
               {index === 0 ? null : <span className="sui-breadcrumbs-separator" aria-hidden="true">/</span>}
-              {current || item.href === undefined ?
+              {current || href === undefined ?
                 <span className="sui-breadcrumbs-current" aria-current={current ? "page" : undefined}>{item.label}</span> :
-                <a className="sui-breadcrumbs-link" href={item.href} onClick={follow(item)}>{item.label}</a>}
+                <a className="sui-breadcrumbs-link" href={href} onClick={follow(item)}>{item.label}</a>}
             </li>
           );
         })}

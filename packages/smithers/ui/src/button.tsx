@@ -77,6 +77,7 @@ export function Button({
     // props, and only when active, so a caller can neither un-disable a
     // loading button nor have its own aria state erased when idle.
     const slottedStateProps = {
+      ...(type === undefined ? {} : { type }),
       ...(interactionDisabled ? { disabled: true, "aria-disabled": true } : {}),
       ...(loading ? { "aria-busy": true } : {}),
     };
