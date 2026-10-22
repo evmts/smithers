@@ -2,6 +2,7 @@ import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Context, Effect, Layer } from "effect"
 import { requesterOf } from "../../flows/requests"
 import { ViewsClient } from "../views/api"
+import { viewConversation } from "../views/conversation"
 import { PreviewClient } from "./api"
 import type { WebOutcome } from "./contract"
 import {
@@ -59,20 +60,6 @@ export const check = (page: {
   }).pipe(withOpenSpan(mode))
 }
 
-const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
-
-/**
- * Where the view goes (decision 0013 §1): an agent's call is a child of its answer's run, so it goes to that answer's
- * conversation, which ChatApi looks up, however the person's tab moved since; a person's open goes to the conversation
- * pinned when they dispatched it. The execution id says which, so a resumed run decides the same.
- */
-const conversationOf = (page: CheckedPage) =>
-  Effect.map(FlowRuntime.FlowInstance, ({ executionId }) => {
-    const requester = requesterOf(executionId)
-    if (requester !== executionId && isUuid(requester)) return { answerId: requester.toLowerCase() }
-    return page.conversationId === undefined ? {} : { conversationId: page.conversationId }
-  })
-
 /** What a refused request to ChatApi means to the step, and the outcome it is counted as. */
 const failureOf = (status: number | undefined) =>
   status === 400
@@ -120,7 +107,7 @@ export const show = ({ page, preview }: PreviewedPage) =>
       id: page.viewId,
       template: framed ? "webpage" : "link",
       props: { url: page.href, ...previewProps(preview) },
-      ...(yield* conversationOf(page)),
+      ...(yield* viewConversation(page.conversationId)),
     }).pipe(Effect.result)
     const outcome: WebOutcome = added._tag === "Success"
       ? framed ? "embedded" : "card"

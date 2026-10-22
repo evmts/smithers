@@ -17,6 +17,7 @@ import { PullsProvider } from "./features/pulls/components/PullsContext"
 import { RepoProvider } from "./features/repo/components/RepoContext"
 import { RunsProvider } from "./features/runs/components/RunsContext"
 import { FlowsUiProvider } from "./features/flows-ui/components/FlowsUiContext"
+import { DocsProvider } from "./features/docs/components/DocsContext"
 import { HomeProvider } from "./features/home/components/HomeContext"
 import { THEME_ATTRIBUTE, THEME_MIRROR_KEY } from "./features/theme/contract"
 import { ENGINE_NAME } from "./flows/contract"
@@ -246,6 +247,7 @@ const render: BootOptions["render"] = (
   codeIntel,
   pulls,
   plugins,
+  docs,
 ) =>
   root.render(
     <StrictMode>
@@ -270,16 +272,18 @@ const render: BootOptions["render"] = (
                               <RunsProvider value={runs}>
                                 <FlowsUiProvider value={flows}>
                                   <HomeProvider value={home}>
+                                    <DocsProvider value={docs}>
                                     {/* The one toast stack reads the feed (decision 0009). */}
                                     <AttentionProvider value={attention}>
                                       {/* The plugin host: its slots in the shell, its views' routes (src/plugins/). */}
                                       <PluginsProvider value={plugins}>
                                         <RouterProvider
                                           router={router}
-                                          context={{ repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, plugins }}
+                                          context={{ repo, home, docs, views, branch, terminal, issues, pulls, todos, runs, flows, plugins }}
                                         />
                                       </PluginsProvider>
                                     </AttentionProvider>
+                                    </DocsProvider>
                                   </HomeProvider>
                                 </FlowsUiProvider>
                               </RunsProvider>

@@ -24,6 +24,9 @@ export const refusing = (title = "Frames refused"): Page => ({
   html: `<!doctype html><title>${title}</title><meta name="description" content="A page that never shows in a frame.">`,
 })
 
+/** A Markdown page, as a docs site serves one of its pages or its `llms.txt` index. */
+export const markdown = (text: string): Page => ({ headers: { "content-type": "text/markdown; charset=utf-8" }, html: text })
+
 /** Hosts on this machine, which the real fetch reaches. */
 const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]"])
 

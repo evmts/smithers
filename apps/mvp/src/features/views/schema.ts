@@ -1,5 +1,6 @@
 import { WebPage } from "@smthrs/views"
 import { Schema } from "effect"
+import { MAX_PATH, MAX_VIEW_TEXT_BYTES } from "../docs/contract"
 import { MAX_URL_LENGTH } from "../web/contract"
 import { VIEW_TEMPLATES } from "./contract"
 
@@ -30,6 +31,28 @@ export const PageProps = Schema.Struct({
   ),
 })
 
+/** A repository as a `docs` view names it: `owner/name`. */
+const Repository = Schema.String.check(Schema.isMaxLength(140), Schema.isPattern(/^[^/\s]+\/[^/\s]+$/))
+
+/** A page's path on its docs site, as its index lists it. */
+const DocsPath = Schema.String.check(Schema.isMaxLength(MAX_PATH), Schema.isPattern(/^\//))
+
+/**
+ * What a view renders. Every template has the page's URL and title (`PageProps`); a `docs` view also names the
+ * repository whose docs index lists the page, the page's path in it, and the Markdown ChatApi read for it (at most 64
+ * KiB, `truncated` when cut), so every device shows it offline. A client never chooses the Markdown: ChatApi reads it
+ * from the repository's own index (worker/Views.ts).
+ */
+export const ViewProps = Schema.Struct({
+  ...PageProps.fields,
+  repository: Schema.optional(Repository),
+  path: Schema.optional(DocsPath),
+  // Characters bound the schema; ChatApi keeps at most MAX_VIEW_TEXT_BYTES of UTF-8, which is never more characters.
+  text: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_VIEW_TEXT_BYTES))),
+  truncated: Schema.optional(Schema.Boolean),
+})
+export type ViewProps = typeof ViewProps.Type
+
 /**
  * One row of Postgres `views` as Electric delivers it: columns in camelCase, `position` (int8) parsed to a number, and
  * `props` (jsonb) as an object. `position` comes from the conversation's own sequence, so a view sits among the messages
@@ -38,7 +61,7 @@ export const PageProps = Schema.Struct({
 export const View = Schema.Struct({
   id: Schema.String,
   template: Template,
-  props: PageProps,
+  props: ViewProps,
   position: Schema.Number,
   createdAt: Schema.String,
 })
@@ -48,7 +71,11 @@ export type View = typeof View.Type
 export const ViewWrite = Schema.Struct({
   id: Schema.String.check(Schema.isUUID()),
   template: Template,
-  props: PageProps,
+  /**
+   * The page's URL and what its check read; for a `docs` view also its repository and path, which ChatApi looks up
+   * in that repository's docs index. A write never carries Markdown: ChatApi drops any.
+   */
+  props: Schema.Struct({ ...PageProps.fields, repository: Schema.optional(Repository), path: Schema.optional(DocsPath) }),
   /** The conversation the view belongs to (decision 0013 §1); the home conversation when absent. */
   conversationId: Schema.optional(Schema.String.check(Schema.isUUID())),
   /**

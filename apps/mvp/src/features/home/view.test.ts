@@ -66,6 +66,7 @@ describe("homePageOf: the repository's own home", () => {
       views: [],
       defaultBranch: "main",
       askHref: "/maya/tinyhttp/tree/main",
+      docs: null,
     })
   })
 
@@ -124,6 +125,7 @@ describe("homePageOf: Smithers' curated home", () => {
       views: ["contributor", "everyone"],
       defaultBranch: "develop",
       askHref: "/maya/tinyhttp/tree/develop",
+      docs: null,
     })
   })
 
@@ -219,6 +221,7 @@ describe("tabsOf", () => {
       repo: "tinyhttp",
       ref: "main",
       _splat: "",
+      docs: false,
     })
     expect(tabsOf(homePageOf({ ...ready, defaultBranch: "a/b/c" }, row({}), undefined), ready)).toMatchObject({
       ref: "a",
@@ -227,6 +230,16 @@ describe("tabsOf", () => {
     expect(tabsOf(homePageOf(opened, undefined, curated()), opened)).toMatchObject({ ref: "develop" })
     expect(tabsOf(homePageOf(ready, row({ state: "absent", sections: [] }), undefined), ready)).toBeUndefined()
     expect(tabsOf({ kind: "loading" }, ready)).toBeUndefined()
+  })
+
+  test("Docs only when the repository names docs: its own home's, else the curated home's", () => {
+    const own = "https://own.example/llms.txt"
+    const smithers = "https://curated.example/llms.txt"
+    expect(homePageOf({ ...ready, docs: own, curatedDocs: smithers }, row({}), curated())).toMatchObject({ docs: own })
+    expect(homePageOf({ ...ready, curatedDocs: smithers }, row({}), curated())).toMatchObject({ docs: smithers })
+    expect(homePageOf({ ...opened, curatedDocs: smithers }, undefined, curated())).toMatchObject({ docs: smithers })
+    expect(tabsOf(homePageOf({ ...ready, docs: own }, row({}), undefined), ready)).toMatchObject({ docs: true })
+    expect(tabsOf(homePageOf(ready, row({}), curated()), ready)).toMatchObject({ docs: false })
   })
 })
 

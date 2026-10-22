@@ -6,7 +6,7 @@
 import { Effect, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
-import { framable, refusing } from "../../../worker/test/pages.ts"
+import { framable, markdown, refusing } from "../../../worker/test/pages.ts"
 import { CHATAPI_ORIGIN, member, nodeDevice, openTab, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
@@ -42,14 +42,24 @@ const PAGES = {
   "https://example.com/": framable("Example"),
   "https://example.com/docs": framable("Example docs"),
   "https://refuses.example/": refusing("Refuses"),
+  // A repository's docs (docs/features/docs.md): its curated home names this index.
+  "https://docs.example/llms.txt": markdown("# Example\n- [Retrying](/guide/retrying.md): Retry a failing effect."),
+  "https://docs.example/guide/retrying.md": markdown("# Retrying\n\nUse `retry`.\n"),
 }
+
+/** Smithers' curated home for `acme/widgets`, naming its docs. */
+const HOMES = [{
+  repository: "acme/widgets",
+  defaultBranch: "main",
+  home: { docs: "https://docs.example/llms.txt", blocks: [{ type: "text", text: "Widgets" }] },
+}]
 
 /**
  * The app as `actor` (a Member unless `null`), with its conversation and full-screen view started as React starts them,
  * and the session row set as sign-in's `load` sets it, so the composer offers `/web`.
  */
 const open = async (options: TabOptions = {}, actor: Actor | null = member) => {
-  const runtime: App = openTestApp(options, { actor, pages: PAGES })
+  const runtime: App = openTestApp(options, { actor, pages: PAGES, homes: HOMES })
   runtimes.push(runtime)
   const chat = await runtime.runPromise(Effect.service(Chat))
   const views = await runtime.runPromise(Effect.service(Views))
@@ -207,6 +217,26 @@ describe("a view's sizes", () => {
     )
     tab.views.actions.show(card)
     await until(() => expect(tab.views.queries.shown.toArray).toEqual([]))
+  }, WITHIN)
+
+  test("/docs shows a page of a repository's docs inline, with its Markdown, and at full size", async () => {
+    const tab = await open({ answers: true })
+
+    send(tab, "/docs acme/widgets retry")
+
+    await until(() => expect(tab.conversation()).toEqual(["view docs https://docs.example/guide/retrying.md"]))
+    const chat = await tab.runtime.runPromise(Effect.service(Chat))
+    expect(chat.queries.conversation.toArray[0]).toMatchObject({
+      title: "Retrying",
+      markdown: "# Retrying\n\nUse `retry`.\n",
+    })
+    const [page] = tab.viewIds() as [string]
+    tab.views.actions.show(page)
+    await until(() =>
+      expect(tab.views.queries.shown.toArray).toEqual([
+        expect.objectContaining({ id: page, template: "docs", title: "Retrying", markdown: "# Retrying\n\nUse `retry`.\n" }),
+      ])
+    )
   }, WITHIN)
 
   test("a card's Open is the person's own click, counted by the view's door", async () => {

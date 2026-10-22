@@ -2,6 +2,8 @@ import { openBranchPage } from "./features/branch/navigation"
 import { createRootRouteWithContext, createRoute, createRouter, notFound, redirect } from "@tanstack/react-router"
 import type { BranchView } from "./features/branch/branch"
 import type { FlowsUiView } from "./features/flows-ui/flowsUi"
+import { pathOfSplat } from "./features/docs/contract"
+import type { DocsView } from "./features/docs/docs"
 import type { HomeView } from "./features/home/home"
 import { issueNumberOf } from "./features/issues/contract"
 import type { IssuesLayer } from "./features/issues/issues"
@@ -30,6 +32,7 @@ import { commitmentSearch } from "./features/issues/lifecycle"
 import { IssuesScreen } from "./screens/issues/IssuesScreen"
 import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
 import { Landing } from "./screens/landing/Landing"
+import { DocsScreen } from "./screens/docs/DocsScreen"
 import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
 import { RepoScreen } from "./screens/repo/RepoScreen"
 import { Root } from "./screens/root/Root"
@@ -56,6 +59,7 @@ import { ViewScreen } from "./screens/view/ViewScreen"
 export interface RouterContext {
   readonly repo: RepoView
   readonly home: HomeView
+  readonly docs: DocsView
   readonly views: ViewsView
   readonly branch: BranchView
   readonly terminal: TerminalView
@@ -294,6 +298,47 @@ const rawRoute = createRoute({
 })
 
 /**
+ * `/$owner/$repo/docs` and `/$owner/$repo/docs/$`: the repository's docs (docs/features/docs.md), its index or one page,
+ * the splat being the page's path without its leading slash. The docs are warmed, then opened; the repository and its
+ * home are opened too, for the header and the tabs.
+ */
+const docsBeforeLoad = (
+  { context, params, ...load }: Load & {
+    readonly context: RouterContext
+    readonly params: { readonly owner: string; readonly repo: string; readonly _splat?: string | undefined }
+  },
+) => {
+  const path = pathOfSplat(params._splat)
+  return enter(
+    load,
+    () =>
+      Promise.all([
+        context.docs.actions.warm(params.owner, params.repo, path),
+        context.home.actions.warm(params.owner, params.repo),
+      ]),
+    () => {
+      context.repo.actions.openRoute("tree", { owner: params.owner, repo: params.repo }, {})
+      context.home.actions.open(params.owner, params.repo)
+      context.docs.actions.open(params.owner, params.repo, path)
+    },
+  )
+}
+
+const docsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/docs",
+  component: DocsScreen,
+  beforeLoad: docsBeforeLoad,
+})
+
+const docsPageRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$owner/$repo/docs/$",
+  component: DocsScreen,
+  beforeLoad: docsBeforeLoad,
+})
+
+/**
  * `/$owner/$repo/issues`: the repository's issues (decision 0012 §6). The route opens its stack too, so each issue shows
  * the TODOs made from it; a preload starts both syncs.
  */
@@ -463,6 +508,8 @@ export const router = createRouter({
     treeRoute,
     blobRoute,
     rawRoute,
+    docsRoute,
+    docsPageRoute,
     issuesRoute,
     newIssueRoute,
     issueRoute,
@@ -479,6 +526,7 @@ export const router = createRouter({
   context: {
     repo: undefined!,
     home: undefined!,
+    docs: undefined!,
     views: undefined!,
     branch: undefined!,
     terminal: undefined!,

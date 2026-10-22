@@ -28,6 +28,8 @@ import * as TodoSteps from "../features/todos/steps"
 import { ViewsClient } from "../features/views/api"
 import { PreviewClient } from "../features/web/api"
 import * as WebPages from "../features/web/steps"
+import { DocsClient } from "../features/docs/api"
+import * as DocsSearch from "../features/docs/steps"
 import * as RunCredentials from "./credentials"
 import { clientFlows } from "./declarations"
 import { type Endpoint, TabPort } from "./tabPort"
@@ -56,6 +58,16 @@ export const webPages = (origin: string, localHttp: boolean) =>
     Layer.provide(WebPages.WebPolicy.layer({ localHttp, appOrigin: origin })),
   )
 
+/**
+ * `app/docs/search`, searching a repository's docs and adding its pages as views through ChatApi on `origin`
+ * (src/features/docs/api.ts, src/features/views/api.ts).
+ */
+export const docsSearch = (origin: string) =>
+  DocsSearch.registration.pipe(
+    Layer.provide(DocsClient.layer({ origin })),
+    Layer.provide(ViewsClient.layer({ origin })),
+  )
+
 /** What every host's registrations take: the agent's host options, and whether `http:` pages on this machine open. */
 export interface HostOptions extends AgentHost.HostOptions {
   /** Whether `app/web/open` opens `http:` pages on this machine: development only. Default `false`. */
@@ -67,7 +79,7 @@ export interface HostOptions extends AgentHost.HostOptions {
 export const jev = (origin: string) => Jev.registration.pipe(Layer.provide(Jev.JudgeSeat.layer(origin)))
 
 /**
- * Every client flow, registered with its steps: the theme's, navigation's, web pages', the agent's, the repository's,
+ * Every client flow, registered with its steps: the theme's, navigation's, web pages', docs search's, the agent's, the repository's,
  * Jev's, agent status's, your own flows', the acts on runs, the issue writes, chat's Copy and Edit, the feed's, and
  * spend alerts' channels. Needs the
  * host's `FlowRuntime`, `Crypto`, `HttpClient` and `RunInspection`, the theme's `Preferences`, navigation's `Tabs`, the
@@ -79,6 +91,7 @@ export const registrations = (options: HostOptions) =>
     Theme.registration,
     Navigation.registration,
     webPages(options.origin, options.localHttp ?? false),
+    docsSearch(options.origin),
     AgentHost.layer(options),
     repoFlows(options.origin),
     jev(options.origin),

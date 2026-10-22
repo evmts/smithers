@@ -18,6 +18,7 @@ import { FlowsUi } from "../../features/flows-ui/flowsUi"
 import { Commands } from "../../features/commands/commands"
 import { Home } from "../../features/home/home"
 import { Issues } from "../../features/issues/issues"
+import { Docs } from "../../features/docs/docs"
 import { Pulls } from "../../features/pulls/pulls"
 import { Repo } from "../../features/repo/repo"
 import { Runs } from "../../features/runs/runs"
@@ -48,13 +49,13 @@ const open = async (reopenRoute?: () => void) => {
     ...(reopenRoute === undefined ? {} : { reopenRoute }),
   })
   disposables.push(() => runtime.dispose())
-  const [repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, chat, attention, auth, intel, fault, api, status, commands, theme, spend] =
+  const [repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, chat, attention, auth, intel, fault, api, status, commands, theme, spend, docs] =
     await runtime.runPromise(Effect.all([
       Effect.service(Repo), Effect.service(Home), Effect.service(Views), Effect.service(Branch),
       Effect.service(Terminal), Effect.service(Issues), Effect.service(Pulls), Effect.service(Todos),
       Effect.service(Runs), Effect.service(FlowsUi), Effect.service(Chat), Effect.service(Attention),
       Effect.service(Auth), Effect.service(CodeIntel), Effect.service(EngineFaults), Effect.service(TestChatApi),
-      Effect.service(Status), Effect.service(Commands), Effect.service(Theme), Effect.service(Spend),
+      Effect.service(Status), Effect.service(Commands), Effect.service(Theme), Effect.service(Spend), Effect.service(Docs),
     ]))
   await runtime.runPromise(fault.holdStarts)
   const terminalStore = await runtime.runPromise(Effect.service(TerminalStore))
@@ -68,7 +69,7 @@ const open = async (reopenRoute?: () => void) => {
     attention.queries.unread, attention.queries.needs, attention.queries.panel, auth.queries.session,
   ]) query.startSyncImmediate()
   return {
-    context: { repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, plugins: await runtime.runPromise(Effect.service(PluginsUi)) },
+    context: { repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, docs, plugins: await runtime.runPromise(Effect.service(PluginsUi)) },
     current: () => branch.queries.current.toArray[0],
     release: () => runtime.runPromise(fault.releaseStarts),
     downShapes: () => runtime.runPromise(shapes.down()),

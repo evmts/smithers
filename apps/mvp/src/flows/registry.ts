@@ -41,6 +41,7 @@ import { AlertChannelSet } from "../features/spend/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoIssue } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
+import { SearchDocs } from "../features/docs/flows"
 
 // The app's flows (docs/features/flows.md#the-registry): every action a person or the agent takes is one `Flow.make`
 // declaration, listed here once. The UI dispatches only a name from this list (`FlowDispatch`), and the agent's catalog
@@ -123,6 +124,17 @@ export const registry = {
     flow: OpenWebPage,
     changes: "adds a page to the chat",
     slash: { command: "web", minimum: "member", hints: { fields: { conversationId: { hidden: true } } } },
+  },
+  // A repository's docs (docs/features/docs.md): adding its pages writes the shared conversation, Member or above too.
+  "app/docs/search": {
+    flow: SearchDocs,
+    changes: "adds docs pages to the chat",
+    slash: {
+      command: "docs",
+      minimum: "member",
+      fields: ["repository", "query"],
+      hints: { fields: { conversationId: { hidden: true }, pages: { hidden: true } } },
+    },
   },
   "chat/Answer": {
     flow: AnswerReference,

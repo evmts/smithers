@@ -20,7 +20,7 @@ import {
   Stream,
   Tracer,
 } from "effect"
-import { FetchHttpClient, HttpEffect } from "effect/http"
+import { FetchHttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterAll, beforeAll, beforeEach } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -29,7 +29,10 @@ import * as RunCredentials from "../RunCredentials.ts"
 import * as SessionKeys from "../SessionKeys.ts"
 import * as Conversations from "../branch/Conversations.ts"
 import * as Chat from "../Chat.ts"
+import * as DocsApi from "../docs/Api.ts"
+import * as DocsSource from "../docs/Source.ts"
 import * as Flows from "../Flows.ts"
+import type { CuratedFile } from "../home/Curated.ts"
 
 /**
  * The test file's one runtime, on a schema of its own: built before the first test, so a missing Postgres fails the
@@ -89,6 +92,8 @@ interface HarnessOptions {
   readonly model?: HostModel["Service"]
   /** `MODEL_SPEND_ALERTS`' default, as the dev stack sets it to `false`; production's, on, unless set. */
   readonly spendAlerts?: boolean
+  /** The curated homes a `docs` view's repository may name its docs in: the real ones unless set. */
+  readonly homes?: ReadonlyArray<CuratedFile>
 }
 
 /** ChatApi's routes on the file's schema and a scripted model, recording every log line, span and metric. */
@@ -151,10 +156,23 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     ImmutableCache.ImmutableCache,
     ImmutableCache.make(ImmutableCache.makeMemoryWebCache(), { backend: "memory" }),
   )
+  // Docs, which a `docs` view reads its page from (worker/docs/Source.ts): kept, like ChatApi's, for the harness's life.
+  const docsCache = Layer.succeed(
+    ImmutableCache.ImmutableCache,
+    ImmutableCache.make(ImmutableCache.makeMemoryWebCache(), { backend: "memory" }),
+  )
+  const docsSource = DocsSource.layer(options.homes === undefined ? {} : { homes: options.homes }).pipe(
+    Layer.provide(Layer.merge(FetchHttpClient.layer, docsCache)),
+  )
+  // ChatApi routes a repository's docs before the chat routes (worker/ChatApiProgram.ts): open to everyone.
+  const docs = DocsApi.make()
+  const routed = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
+    DocsApi.handles(new URL(request.url, "http://chat.test").pathname) ? docs.fetch : chat.fetch)
   const handler = HttpEffect.toWebHandler(
     observed(
-      chat.fetch.pipe(
+      routed.pipe(
         Effect.provideService(Flows.FlowStarter, starter),
+        Effect.provide(docsSource),
         Effect.provide(
           options.sessions ?? (options.actor === undefined ? signedOut : signedIn(options.actor)),
         ),

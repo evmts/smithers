@@ -29,6 +29,8 @@ import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { repoId, REPOSITORIES_TABLE } from "../../src/features/repo/contract.ts"
 import * as Actor from "../Actor.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
+import * as DocsApi from "../docs/Api.ts"
+import * as DocsSource from "../docs/Source.ts"
 import { FlowStarter, StartConflict } from "../Flows.ts"
 import * as RepoClone from "../flows/RepoClone.ts"
 import * as HomeApi from "../home/Api.ts"
@@ -41,6 +43,7 @@ import { fixture, type GitHubRepository, type Scripted, scripted as makeScripted
 import { GITHUB_API, type ScriptedGitHub, scriptedGitHub } from "./githubRest.ts"
 import { build, type Engine } from "./flowHost.ts"
 import { signedIn, type testFile } from "./harness.ts"
+import { outsideWeb, type Page } from "./pages.ts"
 
 type Runtime = ReturnType<typeof testFile>
 
@@ -102,6 +105,8 @@ export interface RepoHarnessOptions {
    * says otherwise): the scripted one (worker/test/githubRest.ts) unless set.
    */
   readonly github?: ScriptedGitHub
+  /** The outside web the docs routes read docs sites from, by URL (worker/test/pages.ts): none unless set. */
+  readonly pages?: Readonly<Record<string, Page>>
 }
 
 /**
@@ -202,9 +207,13 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
   )
   // What RepoApi calls out to: Electric, with the table in this file's schema, and GitHub's REST API, scripted.
   const github = options.github ?? scriptedGitHub()
+  // Docs sites are the outside web: the pages a test names answer, any other is unreachable.
+  const asked: Array<string> = []
+  const outside = outsideWeb(options.pages ?? {}, asked)
   const electric: typeof globalThis.fetch = (input, init) => {
     const upstream = new URL(input instanceof Request ? input.url : String(input))
     if (upstream.origin === GITHUB_API) return github.fetch(new Request(upstream, init))
+    if (upstream.protocol === "https:") return outside(input, init)
     if (upstream.searchParams.get("table") === REPOSITORIES_TABLE) {
       upstream.searchParams.set("table", `${scratch.name}.${REPOSITORIES_TABLE}`)
     }
@@ -234,10 +243,26 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
       ),
     ),
   )
+  // A repository's docs, which worker/ChatApi.ts routes before RepoApi's reads: the index its home names, read from
+  // the outside web through the same cache as what GitHub says of it.
+  const docs = DocsApi.make()
+  const docsHandler = HttpEffect.toWebHandler(
+    observed(
+      docs.fetch.pipe(
+        Effect.provide(
+          DocsSource.layer(options.homes === undefined ? {} : { homes: options.homes }).pipe(
+            Layer.provide(Layer.merge(FetchHttpClient.layer, Layer.succeedContext(cache))),
+          ),
+        ),
+        Effect.provideService(FetchHttpClient.Fetch, electric),
+      ),
+    ),
+  )
   const origin = "http://repos.test"
   const fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(new URL(String(input), origin), init)
-    return HomeApi.handles(new URL(request.url).pathname) ? homeHandler(request) : handler(request)
+    const path = new URL(request.url).pathname
+    return HomeApi.handles(path) ? homeHandler(request) : DocsApi.handles(path) ? docsHandler(request) : handler(request)
   }) as typeof globalThis.fetch
   const line = (message: string) => logs.filter((log) => log.message === message)
   const request = (owner: string, name: string) =>
@@ -260,6 +285,8 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     scripted,
     /** GitHub's REST API as the about route reaches it, scripted. */
     github,
+    /** Every outside page the docs routes requested, in order. */
+    asked,
     /**
      * Asks for a clone of `owner/name` and launches the attempt it answers, as `repo/clone`'s two steps do; answers the
      * request's response.

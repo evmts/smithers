@@ -107,6 +107,15 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
     expect(maintainer.audience).toBe("maintainer")
   })
 
+  test("a curated home that names docs answers them, for the Docs tab; one that names none answers none", async () => {
+    const docs = "https://docs.example/llms.txt"
+    const files: ReadonlyArray<Curated.CuratedFile> = [
+      { repository: "acme/widgets", defaultBranch: "main", home: { docs, blocks: [{ type: "text", text: "Hi" }] } },
+    ]
+    expect((await answerOf(await route(Actor.signedOut, files).get("/api/repos/acme/widgets/home"))).curated?.docs).toBe(docs)
+    expect((await answerOf(await route().get(EFFECT))).curated).not.toHaveProperty("docs")
+  })
+
   test("names compare without case, as GitHub's do", async () => {
     const answer = await answerOf(await route().get("/api/repos/effect-ts/EFFECT/home"))
     expect(answer.curated?.defaultBranch).toBe("main")

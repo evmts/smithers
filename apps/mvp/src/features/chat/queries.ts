@@ -61,6 +61,9 @@ export const conversationQuery = (
           title: view.props.title,
           description: view.props.description,
           icon: view.props.icon,
+          // A docs page's Markdown, as ChatApi read it from the repository's docs index, and whether it was cut.
+          markdown: view.props.text,
+          truncated: view.props.truncated,
         })),
         q
           .from({ refused: unsent.tanstack })

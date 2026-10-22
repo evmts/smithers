@@ -402,22 +402,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
           const id = repoId(target.owner, target.name)
           fields.repoId = id
-          const { bucket, maxAgeSeconds } = RepoAbout.window(startedAt, aboutSettings.freshFor)
-          let fresh = false
-          const read = Effect.gen(function* () {
+          const { maxAgeSeconds } = RepoAbout.window(startedAt, aboutSettings.freshFor)
+          // Only a Member's read that the cache misses spends the deployment's token; anyone else's reads anonymously.
+          const authenticated = Effect.gen(function* () {
             const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
             const member = Option.isSome(actor) && Option.isSome(actor.value) && canClone(actor.value.value)
             fields.token = member ? "deployment" : "anonymous"
-            const client = yield* RepoAbout.client(aboutSettings, { authenticated: member })
-            return yield* RepoAbout.read(client, target.owner, target.name, aboutSettings.appSlug)
-          }).pipe(
-            Effect.map((answer) => {
-              fresh = true
-              return { bytes: encoder.encode(JSON.stringify(answer)), metadata: {} }
-            }),
-          )
-          return yield* ImmutableCache.readThrough(ImmutableCache.key("repo.about", id, bucket), read).pipe(
-            Effect.map(({ bytes }) => {
+            return member
+          })
+          return yield* RepoAbout.cached(aboutSettings, target.owner, target.name, startedAt, authenticated).pipe(
+            Effect.map(({ bytes, fresh }) => {
               fields.bytes = bytes.length
               fields.cached = fresh ? "miss" : "hit"
               return HttpServerResponse.uint8Array(bytes, {

@@ -5,11 +5,14 @@ import { ConfigProvider, Deferred, Effect, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
+import { MAX_VIEW_TEXT_BYTES } from "../src/features/docs/contract.ts"
 import { MAX_VIEW_BODY_BYTES } from "../src/features/views/contract.ts"
 import type { Actor } from "./Actor.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { shared, tracked } from "./test/branch.ts"
+import type { CuratedFile } from "./home/Curated.ts"
 import { eventually, harness, recorded, testFile } from "./test/harness.ts"
+import { markdown, outsideWeb, type Page } from "./test/pages.ts"
 import * as Views from "./Views.ts"
 
 const runtime = testFile("views")
@@ -296,5 +299,129 @@ describe("a view's conversation", () => {
     expect((await add(h, view)).status).toBe(202)
     const moved = await add(h, { ...view, conversationId: await branchConversation() })
     expect([moved.status, await moved.json()]).toEqual([409, { code: "id_taken" }])
+  })
+})
+
+// A `docs` view (docs/features/docs.md#the-docs-view): the write names a repository and a page's path; ChatApi reads the
+// page from that repository's docs index and keeps its Markdown. GitHub is the outside web here, offline, so each
+// repository's docs come from its curated home (worker/docs/Source.ts).
+describe("a docs view", () => {
+  const INDEX = "https://docs.example/llms.txt"
+  const RETRYING = "# Retrying\n\nUse `retry` with a schedule.\n"
+  const index = [
+    "# Example",
+    "- [Retrying](/guide/retrying.md): Retry a failing effect.",
+    "- [Huge](/guide/huge.md): A long page.",
+    "- [Gone](/guide/gone.md): A page the site lost.",
+  ].join("\n")
+  const curated = (repository: string, docs: string): CuratedFile => ({
+    repository,
+    defaultBranch: "main",
+    home: { docs, blocks: [{ type: "text", text: "Curated" }] },
+  })
+  const site: Record<string, Page> = {
+    [INDEX]: markdown(index),
+    "https://docs.example/guide/retrying.md": markdown(RETRYING),
+    // Each "é" is two bytes: the cut must not split one.
+    "https://docs.example/guide/huge.md": markdown(`# Huge\n\n${"é".repeat(MAX_VIEW_TEXT_BYTES)}`),
+    "https://chat.test/llms.txt": markdown("# Ours\n- [Page](/page.md)"),
+    "https://chat.test/page.md": markdown("# Page"),
+  }
+  const docsOpen = (pages: Record<string, Page> = site) =>
+    harness(runtime, () => Stream.empty, {
+      actor: member,
+      fetch: outsideWeb(pages),
+      homes: [
+        curated("acme/widgets", INDEX),
+        curated("acme/offline", "https://offline.example/llms.txt"),
+        curated("acme/ours", "https://chat.test/llms.txt"),
+      ],
+    })
+  const docsView = (path: string, repository = "acme/widgets", extra: Record<string, unknown> = {}) => ({
+    id: crypto.randomUUID(),
+    template: "docs",
+    props: { url: `https://docs.example${path}`, title: "What the writer says", repository, path, ...extra },
+  })
+
+  test("keeps the page as the repository's index lists it, with its Markdown, never the writer's; a resend changes nothing", async () => {
+    const h = await docsOpen()
+    const view = docsView("/guide/retrying.md", "acme/widgets", { text: "Markdown the writer chose" })
+
+    expect((await add(h, view)).status).toBe(202)
+
+    expect((await rows()).map((row) => row.props)).toEqual([{
+      url: "https://docs.example/guide/retrying.md",
+      title: "Retrying",
+      repository: "acme/widgets",
+      path: "/guide/retrying.md",
+      text: RETRYING,
+    }])
+    // The same page again under the same id, even once the site changed it, is the same view.
+    const changed = await docsOpen({ ...site, "https://docs.example/guide/retrying.md": markdown("# Retrying, rewritten") })
+    const again = await add(changed, view)
+    expect([again.status, await again.json()]).toEqual([200, { txid: null }])
+    // A resend after the site dropped the page, or went down, still finds the view it added: the site isn't asked.
+    const gone = await docsOpen({ [INDEX]: site[INDEX]! })
+    const late = await add(gone, view)
+    expect([late.status, await late.json()]).toEqual([200, { txid: null }])
+    const offline = await docsOpen({})
+    expect((await add(offline, view)).status).toBe(200)
+    // Another page under that id is another view.
+    const other = await add(changed, { ...view, props: { ...view.props, path: "/guide/huge.md" } })
+    expect([other.status, await other.json()]).toEqual([409, { code: "id_taken" }])
+    expect(h.only("chat.view.add").annotations).toMatchObject({ template: "docs", status: 202, truncated: false })
+  })
+
+  test("keeps at most 64 KiB of a page's Markdown, cut between characters and marked truncated", async () => {
+    const h = await docsOpen()
+    expect((await add(h, docsView("/guide/huge.md"))).status).toBe(202)
+    const [stored] = await rows()
+    const props = stored!.props as { readonly text: string; readonly truncated?: boolean }
+    expect(props.truncated).toBe(true)
+    expect(new TextEncoder().encode(props.text).length).toBeLessThanOrEqual(MAX_VIEW_TEXT_BYTES)
+    expect(props.text.endsWith("é")).toBe(true)
+    expect(h.only("chat.view.add").annotations).toMatchObject({ truncated: true })
+  })
+
+  test("refuses a page the index doesn't list, docs it can't read, and a write that names no page", async () => {
+    const h = await docsOpen()
+    const answer = async (body: unknown) => {
+      const response = await add(h, body)
+      return [response.status, await response.json()]
+    }
+    expect(await answer(docsView("/guide/missing.md"))).toEqual([400, { code: "refused" }])
+    expect(await answer(docsView("/guide/gone.md"))).toEqual([502, { code: "docs_unreachable" }])
+    expect(await answer(docsView("/llms.txt", "acme/offline"))).toEqual([502, { code: "docs_unreachable" }])
+    // GitHub is offline and Smithers curates nothing for it: nobody can say where its docs are now.
+    expect(await answer(docsView("/guide/retrying.md", "acme/unknown"))).toEqual([503, { code: "unavailable" }])
+    // A docs site on the app's own origin is never kept.
+    expect(await answer(docsView("/page.md", "acme/ours"))).toEqual([400, { code: "refused" }])
+    for (
+      const props of [
+        { url: "https://docs.example/a.md", path: "/a.md" },
+        { url: "https://docs.example/a.md", repository: "acme/widgets" },
+        { url: "https://docs.example/a.md", repository: "app/widgets", path: "/a.md" },
+        { url: "https://docs.example/a.md", repository: "acme", path: "/a.md" },
+        { url: "https://docs.example/a.md", repository: "acme/widgets", path: "a.md" },
+      ]
+    ) {
+      expect(await answer({ id: crypto.randomUUID(), template: "docs", props })).toEqual([400, { code: "invalid" }])
+    }
+    expect(await rows()).toEqual([])
+    expect(h.line("chat.view.add").slice(0, 5).map((line) => line.annotations.reason)).toEqual([
+      "page_not_found",
+      "docs_unreachable",
+      "docs_unreachable",
+      "unavailable",
+      "same_origin",
+    ])
+    expect(recorded(h)).not.toContain("/guide/")
+  })
+
+  test("a web page's write keeps no docs fields", async () => {
+    const h = await docsOpen()
+    const view = { ...page("https://example.com/", "link"), props: { url: "https://example.com/", repository: "a/b", path: "/x" } }
+    expect((await add(h, view)).status).toBe(202)
+    expect((await rows()).map((row) => row.props)).toEqual([{ url: "https://example.com/" }])
   })
 })

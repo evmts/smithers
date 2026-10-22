@@ -760,3 +760,27 @@ describe("0028_clone_progress", () => {
       expect(staged).toBe("refused")
     }))
 })
+
+describe("0043_docs_views", () => {
+  test("adds the docs template to views, keeps the others, and still refuses anything else", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0042"))
+      const insert = (template: string) =>
+        on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+          sql`INSERT INTO views (id, template, props, conversation_id)
+            SELECT ${crypto.randomUUID()}, ${template}, '{"url":"https://docs.example/a.md"}', id FROM conversations LIMIT 1`))
+          .then(() => "taken", () => "refused")
+      expect(await insert("docs")).toBe("refused")
+
+      const applied = await on(through("0043"))
+
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["43_docs_views"])
+      expect(await insert("docs")).toBe("taken")
+      expect(await insert("webpage")).toBe("taken")
+      expect(await insert("link")).toBe("taken")
+      expect(await insert("iframe")).toBe("refused")
+    }))
+})

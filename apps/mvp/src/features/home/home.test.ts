@@ -6,7 +6,7 @@ import { openTab, type Tab } from "../../test/repoDevice"
 import { Deferred, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { CuratedFile } from "../../../worker/home/Curated.ts"
-import { spoonKnife } from "../../../worker/test/githubRest"
+import { scriptedGitHub, spoonKnife } from "../../../worker/test/githubRest"
 import { RepoClient } from "../repo/api"
 import { RepoStore } from "../repo/store"
 import { HomeClient, HomeRefused } from "./api"
@@ -110,7 +110,7 @@ describe("a repository's home", () => {
       ])
     expect(shown).toMatchObject({ source: "declared", audience: "contributor" })
     expect(shown).toMatchObject({ askHref: "/maya/tinyhttp/tree/main" })
-    expect(links).toEqual({ owner: "maya", repo: "tinyhttp", ref: "main", _splat: "" })
+    expect(links).toEqual({ owner: "maya", repo: "tinyhttp", ref: "main", _splat: "", docs: false })
     await waitFor(() => expect(files(tab)["docs/missing.md"]?.state).toBe("failed"))
     await waitFor(() => expect(files(tab)["docs/intro.md"]).toMatchObject({ state: "text", text: `# Intro ${SECRET}\n` }))
     expect(h.scripted.calls.filter((call) => call.endsWith(":docs/intro.md"))).toHaveLength(1)
@@ -154,7 +154,7 @@ describe("a repository's home", () => {
     await seeded(h, { [HOME_FILE]: declared }, "release/1.0")
     const tab = await open(h)
     tab.home.actions.open("maya", "tinyhttp")
-    await waitFor(() => expect(page(tab).tabs).toEqual({ owner: "maya", repo: "tinyhttp", ref: "release", _splat: "1.0" }))
+    await waitFor(() => expect(page(tab).tabs).toEqual({ owner: "maya", repo: "tinyhttp", ref: "release", _splat: "1.0", docs: false }))
     expect(page(tab).page).toMatchObject({ askHref: "/maya/tinyhttp/tree/release/1.0" })
   })
 
@@ -253,9 +253,14 @@ describe("a repository's own home before any clone", () => {
     await waitFor(() => expect(kinds(tab)).toEqual([["hero"]]))
     expect(page(tab).page).toMatchObject({ source: "declared", audience: "everyone", askHref: "/smithersai/vibelang/tree/main" })
     expect(page(tab).current).toMatchObject({ key: `github/smithersai/vibelang@${head}`, previewing: false })
-    expect(page(tab).tabs).toEqual({ owner: "smithersai", repo: "vibelang", ref: "main", _splat: "" })
+    expect(page(tab).tabs).toEqual({ owner: "smithersai", repo: "vibelang", ref: "main", _splat: "", docs: true })
     expect(tab.count(resolves, { outcome: "preview" })).toBe(1)
     expect(JSON.stringify(tab.logs)).not.toContain(SECRET)
+    // Opened again, the home it kept shows as it is: nothing is read or drawn twice.
+    tab.home.actions.open("smithersai", "vibelang")
+    await waitFor(() => expect(page(tab).current).toMatchObject({ answering: false, previewing: false }))
+    expect(kinds(tab)).toEqual([["hero"]])
+    expect(tab.count(resolves, { outcome: "preview" })).toBe(1)
 
     const member = await repoHarness(server)
     member.github.publish("smithersai", "vibelang", spoonKnife({ fullName: "smithersai/vibelang", home: { text: vibe } }))
@@ -275,7 +280,70 @@ describe("a repository's own home before any clone", () => {
       tab.home.actions.open("maya", name)
       await waitFor(() => expect(page(tab).current).toMatchObject({ name, answering: false, previewing: false }))
       expect(page(tab).page).toEqual({ kind: "tree", notice: null })
+      // A tree has no views to switch between.
+      tab.home.actions.view("everyone")
+      expect(page(tab).current).toMatchObject({ viewing: null, docs: null })
     }
+  })
+
+  test("another repository opened mid-read keeps none of the first one's home or docs", async () => {
+    // VibeLang's home file is held at GitHub, so its read is in flight when maya/plain opens.
+    const github = scriptedGitHub()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let asked = false
+    const h = await repoHarness(server, {
+      actor: null,
+      github: {
+        ...github,
+        fetch: async (request: Request) => {
+          if (new URL(request.url).pathname.endsWith(`smithersai/vibelang/contents/${HOME_FILE}`)) {
+            asked = true
+            await held
+          }
+          return github.fetch(request)
+        },
+      },
+    })
+    github.publish("smithersai", "vibelang", spoonKnife({ fullName: "smithersai/vibelang", home: { text: vibe } }))
+    github.publish("maya", "plain", spoonKnife({ fullName: "maya/plain" }))
+    const tab = await open(h)
+    tab.home.actions.open("smithersai", "vibelang")
+    await waitFor(() => expect(asked).toBe(true))
+    tab.home.actions.open("maya", "plain")
+    await waitFor(() => expect(page(tab).current).toMatchObject({ name: "plain", answering: false, previewing: false }))
+    // VibeLang's read lands while maya/plain shows: nothing of it shows here.
+    release()
+    expect(page(tab).page).toEqual({ kind: "tree", notice: null })
+    expect(page(tab).current).toMatchObject({ key: null, docs: null, curatedDocs: null })
+    tab.home.actions.open("smithersai", "vibelang")
+    await waitFor(() => expect(page(tab).tabs).toMatchObject({ repo: "vibelang", docs: true }))
+  })
+
+  test("a clone that lands while GitHub's copy of the home is read wins over it", async () => {
+    // GitHub's answer for the home file is held until the clone's home shows: the injected GitHub, not a mock.
+    const github = scriptedGitHub()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const h = await repoHarness(server, {
+      github: {
+        ...github,
+        fetch: async (request: Request) => {
+          if (new URL(request.url).pathname.endsWith(`/contents/${HOME_FILE}`)) await held
+          return github.fetch(request)
+        },
+      },
+    })
+    github.publish("maya", "tinyhttp", spoonKnife({ fullName: "maya/tinyhttp", home: { text: vibe } }))
+    const tab = await open(h)
+    tab.home.actions.open("maya", "tinyhttp")
+    await seeded(h, { [HOME_FILE]: declared })
+    const cloned = [["prompt", "text", "links", "markdown", "markdown", "markdown", "app"]]
+    await waitFor(() => expect(kinds(tab)).toEqual(cloned))
+    release()
+    await waitFor(() => expect(page(tab).current.previewing).toBe(false))
+    expect(kinds(tab)).toEqual(cloned)
+    expect(tab.count(resolves, { outcome: "preview" })).toBe(0)
   })
 
   test("once the repository is ready, its clone's home is read instead", async () => {
@@ -292,11 +360,14 @@ describe("Smithers' curated home", () => {
   test("shows for a repository that isn't on this device, with only the sections ChatApi sends a Member", async () => {
     const h = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")] })
     const tab = await open(h)
+    // No repository open: there is no view to switch.
+    tab.home.actions.view("everyone")
+    expect(page(tab).current).toMatchObject({ repoId: null, viewing: null })
     tab.home.actions.open("octocat", "Spoon-Knife")
     await waitFor(() => expect(page(tab).page.kind).toBe("home"))
     expect(page(tab).page).toMatchObject({ source: "curated", audience: "contributor", askHref: "/octocat/Spoon-Knife/tree/trunk" })
     expect(kinds(tab)).toEqual([["prompt"], ["hero"]])
-    expect(page(tab).tabs).toEqual({ owner: "octocat", repo: "Spoon-Knife", ref: "trunk", _splat: "" })
+    expect(page(tab).tabs).toEqual({ owner: "octocat", repo: "Spoon-Knife", ref: "trunk", _splat: "", docs: false })
     expect(page(tab).current).toMatchObject({ audience: "contributor", answering: false, key: null })
     expect(tab.count(answers, { outcome: "declared" })).toBe(1)
     expect(tab.lines("home.answer")[0]!.annotations).toMatchObject({ feature: "home", outcome: "declared", audience: "contributor", sections: 2 })

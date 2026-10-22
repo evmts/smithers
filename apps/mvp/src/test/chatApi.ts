@@ -54,6 +54,8 @@ import {
   type ScriptedGitHub,
   scriptedGitHub
 } from "../../worker/github/test/scriptedGitHub.ts"
+import * as DocsApi from "../../worker/docs/Api.ts"
+import * as DocsSource from "../../worker/docs/Source.ts"
 import * as HomeApi from "../../worker/home/Api.ts"
 import type { CuratedFile } from "../../worker/home/Curated.ts"
 import * as RemoteRuns from "../../worker/RemoteRuns.ts"
@@ -442,6 +444,13 @@ export class TestChatApi extends Context.Service<
         const stack = yield* StackApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // A repository's home, as ChatApi routes it (worker/ChatApi.ts): the curated homes a test gives, else the real ones.
         const home = HomeApi.make(options.homes)
+        // A repository's docs, as ChatApi routes them (worker/ChatApi.ts): the index its home names, or the curated home
+        // a test gives, read from the scripted outside web and kept beside what GitHub says of it. A `docs` view reads
+        // its page through the same source.
+        const docs = DocsApi.make()
+        const docsSource = DocsSource.layer(options.homes === undefined ? {} : { homes: options.homes }).pipe(
+          Layer.provide(Layer.merge(FetchHttpClient.layer, Layer.succeedContext(repoCache))),
+        )
         const starts: Array<Started> = []
         const recording = Flows.FlowStarter.of({
           start: (flow, { executionId, payload }) =>
@@ -561,10 +570,12 @@ export class TestChatApi extends Context.Service<
           if (StackApi.handles(path)) return stack.fetch
           if (RemoteRuns.handles(path)) return remoteRuns.fetch
           if (HomeApi.handles(path)) return home.fetch
+          if (DocsApi.handles(path)) return docs.fetch.pipe(Effect.provide(docsSource))
           return path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE
             ? Effect.provideContext(repos.fetch, repoCache)
             : chat.fetch.pipe(
               Effect.provideService(Flows.FlowStarter, expiries),
+              Effect.provide(docsSource),
               Effect.provideService(ImmutableCache.ImmutableCache, webCache),
               Effect.provide(credentials)
             )

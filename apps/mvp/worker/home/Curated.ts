@@ -20,6 +20,8 @@ export interface CuratedHome {
   readonly defaultBranch: string
   readonly sections: ReadonlyArray<Section>
   readonly contributors: Home.Contributors
+  /** The docs index it names (`Home.DocsUrl`); absent when it names none. */
+  readonly docs?: string
 }
 
 /** Every curated file, in one list. */
@@ -41,6 +43,11 @@ export const find = (
   if (file === undefined) return undefined
   const read = Home.read(JSON.stringify(file.home))
   return read._tag === "Declared" && read.skipped === 0
-    ? { defaultBranch: file.defaultBranch, sections: read.sections, contributors: read.contributors }
+    ? {
+      defaultBranch: file.defaultBranch,
+      sections: read.sections,
+      contributors: read.contributors,
+      ...(read.docs === undefined ? {} : { docs: read.docs }),
+    }
     : "invalid"
 }

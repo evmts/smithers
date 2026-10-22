@@ -40,6 +40,7 @@ import { AlertChannelSet } from "../features/spend/flows"
 import { SetTheme } from "../features/theme/flows"
 import { TodoCommit, TodoDraft, TodoDrop, TodoIssue } from "../features/todos/flows"
 import { OpenWebPage } from "../features/web/flows"
+import { SearchDocs } from "../features/docs/flows"
 import { type FlowName, type FlowOf, names } from "./registry"
 
 // Every registered flow's declaration, its body and steps included (docs/features/flows.md#the-registry): what an engine
@@ -54,6 +55,7 @@ export const declarations = {
   "app/theme/set": SetTheme,
   "app/navigate": Navigate,
   "app/web/open": OpenWebPage,
+  "app/docs/search": SearchDocs,
   "chat/Answer": Answer,
   "chat/Close": Close,
   "chat/copy": ChatCopy,

@@ -28,6 +28,8 @@ import * as Placement from "./Placement.ts"
 import * as Flows from "./Flows.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubApi from "./github/Api.ts"
+import * as DocsApi from "./docs/Api.ts"
+import * as DocsSource from "./docs/Source.ts"
 import * as HomeApi from "./home/Api.ts"
 import * as GitHubConfig from "./github/Config.ts"
 import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
@@ -143,6 +145,11 @@ export const program = (options: ProgramOptions = {}) =>
     const home = HomeApi.make()
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
     const webCache = EdgeCache.layer({ name: "web" }).pipe(Layer.orDie)
+    // A repository's docs (docs/features/docs.md): the index its home names and its pages, read through the Worker's
+    // fetch and kept in the repositories' cache beside what GitHub says of it, which names them. The docs routes and
+    // the views route (a `docs` view) read them.
+    const docs = DocsApi.make()
+    const docsSource = DocsSource.layer().pipe(Layer.provide(Layer.merge(FetchHttpClient.layer, repoCache)), Layer.orDie)
     const logs = Logger.layerStructuredJson()
     // ChatApi hosts the remote flow executions' Durable Object (worker/Executions.ts, docs/features/remote-flows.md), and
     // creates each one where the deployment places them (`FLOW_EXECUTION_LOCATION`, worker/Placement.ts).
@@ -239,6 +246,8 @@ export const program = (options: ProgramOptions = {}) =>
         if (RemoteRuns.handles(path)) return yield* remoteRuns.fetch.pipe(Effect.provide(signedIn))
         // And a home, `/api/repos/<owner>/<name>/home` (docs/features/home.md): who the asker is and the curated home.
         if (HomeApi.handles(path)) return yield* home.fetch.pipe(Effect.provide(signedIn))
+        // And docs, `/api/repos/<owner>/<name>/docs[/page]`: open to everyone, like the about read.
+        if (DocsApi.handles(path)) return yield* docs.fetch.pipe(Effect.provide(docsSource))
         if (path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE) {
           return yield* repos.fetch.pipe(
             Effect.provideService(Flows.FlowStarter, starter),
@@ -251,6 +260,7 @@ export const program = (options: ProgramOptions = {}) =>
         return yield* chat.fetch.pipe(
           Effect.provideService(Flows.FlowStarter, starter),
           Effect.provide(signedIn),
+          Effect.provide(docsSource),
           Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         )
       }).pipe(Effect.provide(logs)),

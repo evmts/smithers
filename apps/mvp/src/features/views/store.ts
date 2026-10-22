@@ -13,19 +13,25 @@ export interface ViewsConfig {
   readonly origin: string
 }
 
-/** The page this tab shows full screen, once the device has its view: only a `webpage` has a full size. */
+/**
+ * The view this tab shows full screen, once the device has it: a `webpage` or a `docs` page have a full size; a `link`
+ * card doesn't.
+ */
 export const shownQuery = (views: Collection.Collection<View>, showing: Collection.Collection<Showing, string>) =>
   LiveQuery.make((q) =>
     q
       .from({ showing: showing.tanstack })
       .innerJoin({ view: views.tanstack }, ({ showing, view }) => Query.eq(showing.viewId, view.id))
-      .where(({ view }) => Query.eq(view.template, "webpage"))
+      .where(({ view }) => Query.or(Query.eq(view.template, "webpage"), Query.eq(view.template, "docs")))
       .select(({ view }) => ({
         id: view.id,
+        template: view.template,
         url: view.props.url,
         title: view.props.title,
         description: view.props.description,
         icon: view.props.icon,
+        markdown: view.props.text,
+        truncated: view.props.truncated,
       }))
       .findOne()
   )
@@ -65,7 +71,7 @@ export class ViewsStore extends Context.Service<
           schema: View,
           getKey: (row) => row.id,
           syncMode: "eager",
-          persist: { schemaVersion: 2 },
+          persist: { schemaVersion: 3 },
           shape: {
             url: `${config.origin}${VIEWS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -92,7 +98,7 @@ export class ViewsStore extends Context.Service<
               schema: View,
               getKey: (row) => row.id,
               syncMode: "eager",
-              persist: { schemaVersion: 2 },
+              persist: { schemaVersion: 3 },
               shape: {
                 url: `${config.origin}${VIEWS_SHAPE_ROUTE}?conversation=${encodeURIComponent(conversationId)}`,
                 columnMapper: ElectricCollection.snakeCamelMapper(),

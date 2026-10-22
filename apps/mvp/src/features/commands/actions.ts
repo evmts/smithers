@@ -94,8 +94,11 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>) =>
     // `/web … tab` opens its tab inside this keypress when the browser allows it (src/features/web/actions.ts).
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope)
     else {
-      // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts).
-      const pinned = command.flow.startsWith("sandbox/") ? yield* pinConversation(payload) : payload
+      // A sandbox tool runs on the branch of the conversation this tab shows now (src/features/sandbox/actions.ts), and
+      // `/docs` shows its pages in that conversation.
+      const pinned = command.flow.startsWith("sandbox/") || command.flow === "app/docs/search"
+        ? yield* pinConversation(payload)
+        : payload
       // A dispatch that fails is already logged and counted with the flow.
       yield* flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash" }).pipe(Effect.ignore, Effect.forkIn(scope))
     }

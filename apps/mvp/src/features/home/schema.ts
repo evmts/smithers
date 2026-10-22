@@ -12,10 +12,14 @@ export const Section = Schema.Struct({
 })
 export type Section = typeof Section.Type
 
-/** Smithers' own curated home for a repository: its default branch, for the Code tab and Ask, and its sections. */
+/**
+ * Smithers' own curated home for a repository: its default branch, for the Code tab and Ask, its sections, and the
+ * docs index it names, for the Docs tab.
+ */
 export const Curated = Schema.Struct({
   defaultBranch: Schema.String,
   sections: Schema.Array(Section),
+  docs: Schema.optionalKey(Schema.String),
 })
 export type Curated = typeof Curated.Type
 

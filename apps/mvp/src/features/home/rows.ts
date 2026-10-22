@@ -69,6 +69,10 @@ export const CurrentRow = Schema.Struct({
   viewing: Schema.NullOr(Home.Audience),
   answering: Schema.Boolean,
   previewing: Schema.Boolean,
+  /** The docs index the repository's own home names at its newest commit, from what GitHub says; `null` for none. */
+  docs: Schema.NullOr(Schema.String),
+  /** The docs index Smithers' curated home for it names, as ChatApi answered; `null` for none. */
+  curatedDocs: Schema.NullOr(Schema.String),
   stack: Schema.NullOr(Schema.String),
   running: Schema.Array(Schema.String),
   failure: Schema.NullOr(Schema.String),
@@ -87,6 +91,8 @@ export const emptyCurrent: CurrentRow = {
   viewing: null,
   answering: false,
   previewing: false,
+  docs: null,
+  curatedDocs: null,
   stack: null,
   running: [],
   failure: null,

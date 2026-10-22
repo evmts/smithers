@@ -87,7 +87,14 @@ export const make = (files: ReadonlyArray<Curated.CuratedFile> = Curated.files) 
     }
     const audience = Home.widen(role, found.contributors)
     const sections = Home.visible(found.sections, audience)
-    const answer: HomeAnswer = { audience, curated: { defaultBranch: found.defaultBranch, sections } }
+    const answer: HomeAnswer = {
+      audience,
+      curated: {
+        defaultBranch: found.defaultBranch,
+        sections,
+        ...(found.docs === undefined ? {} : { docs: found.docs }),
+      },
+    }
     return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), {
       outcome: "curated",
       audience,

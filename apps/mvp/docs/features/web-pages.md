@@ -109,8 +109,8 @@ Views are conversation rows (decision 0004 §8): synced like the messages to eve
 | Column | |
 |---|---|
 | `id` | uuid, chosen by the writer, so the same add again changes nothing |
-| `template` | `webpage` or `link` |
-| `props` | jsonb object: `{ url, title?, description?, icon? }`, the check's preview bounded to 200, 300 and 2,048 characters, the icon `https:` only |
+| `template` | `webpage`, `link`, or `docs`: a page of a repository's docs ([docs](docs.md#the-docs-view), migration `0039_docs_views`) |
+| `props` | jsonb object: `{ url, title?, description?, icon? }`, the check's preview bounded to 200, 300 and 2,048 characters, the icon `https:` only; a `docs` view's `{ url, title, repository, path, text, truncated? }`, its Markdown read by ChatApi |
 | `position` | from the messages' own sequence (`messages_position_seq`), so one number orders views and messages, in the order they were added |
 | `created_at` | |
 

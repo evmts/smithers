@@ -1,3 +1,4 @@
+import { ImmutableCache } from "@smthrs/artifacts"
 import { type Core, GitHub } from "@smthrs/integrations"
 import { Home } from "@smthrs/views"
 import { Config, Data, Duration, Effect, Option, Redacted, Schema } from "effect"
@@ -7,6 +8,7 @@ import {
   ABOUT_ROOT_ENTRIES,
   installUrl,
   MAX_BLOB_BYTES,
+  repoId,
   textOf,
 } from "../src/features/repo/contract.ts"
 import type { About, AboutCommit, AboutEntry } from "../src/features/repo/schema.ts"
@@ -262,3 +264,34 @@ export const window = (nowMs: number, freshFor: Duration.Duration) => {
   const bucket = Math.floor(nowMs / span)
   return { bucket: String(bucket), maxAgeSeconds: Math.max(1, Math.ceil(((bucket + 1) * span - nowMs) / 1000)) }
 }
+
+const encoder = new TextEncoder()
+
+/**
+ * What GitHub says of `owner/name` (`About` as JSON bytes) from the immutable cache under the window `nowMs` falls in,
+ * read from GitHub on a miss, with the deployment's token only when `authenticated` answers true, and kept; `fresh`
+ * says this call read GitHub. RepoApi's about route and the docs routes
+ * (worker/docs/Source.ts) share it, so GitHub is asked once a window for both.
+ */
+export const cached = <R>(
+  options: Settings,
+  owner: string,
+  name: string,
+  nowMs: number,
+  authenticated: Effect.Effect<boolean, never, R>,
+) =>
+  Effect.gen(function* () {
+    const { bucket } = window(nowMs, options.freshFor)
+    let fresh = false
+    const fromGitHub = Effect.gen(function* () {
+      const github = yield* client(options, { authenticated: yield* authenticated })
+      return yield* read(github, owner, name, options.appSlug)
+    }).pipe(
+      Effect.map((answer) => {
+        fresh = true
+        return { bytes: encoder.encode(JSON.stringify(answer)), metadata: {} }
+      }),
+    )
+    const entry = yield* ImmutableCache.readThrough(ImmutableCache.key("repo.about", repoId(owner, name), bucket), fromGitHub)
+    return { bytes: entry.bytes, fresh }
+  })

@@ -16,6 +16,7 @@ import {
 } from "../test/deviceFixture"
 import { RepositoryV3 } from "./repo-history"
 import { RunV1 } from "./runs-history"
+import { ViewV2 } from "./views-history"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
@@ -70,6 +71,15 @@ const synced = <A extends object>(path: string, store: Migrations.Synced<A>, id:
 
 const rowsOf = (fixture: Fixture, collection: string) => fixture.collections[collection]!.rows
 
+test("views v2 kept only an https icon without a user or password, as that build checked it", () => {
+  const view = { id: "v", template: "link", props: { url: "https://effect.website" }, position: 1, createdAt: "2026-10-20" }
+  const withIcon = (icon: string) => ({ ...view, props: { ...view.props, icon } })
+  expect(Schema.is(ViewV2)(withIcon("https://effect.website/favicon.ico"))).toBe(true)
+  expect(Schema.is(ViewV2)(withIcon("http://effect.website/favicon.ico"))).toBe(false)
+  expect(Schema.is(ViewV2)(withIcon("https://user:pw@effect.website/favicon.ico"))).toBe(false)
+  expect(Schema.is(ViewV2)(withIcon("not a url"))).toBe(false)
+})
+
 test("the c6940ac53e5a fixture uses that deployed build's recorded schemas and valid rows", () => {
   for (const [id, collection] of Object.entries(currentDeployed.collections)) {
     const store = deviceRegistry.stores.find((entry) => entry.id === id.split(":")[0])
@@ -78,6 +88,8 @@ test("the c6940ac53e5a fixture uses that deployed build's recorded schemas and v
       ? RepositoryV3
       : id === "runs" && collection.version === 1
       ? RunV1
+      : id.split(":")[0] === "views" && collection.version === 2
+      ? ViewV2
       : store._tag === "Local" ? store.versions[collection.version - store.first]! : store.schema
     expect(Migrations.fingerprint(schema), id).toBe(
       currentDeployed.schemaFingerprints[id as keyof typeof currentDeployed.schemaFingerprints]
@@ -116,7 +128,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       preferences: "current 1→1 migrated 0 kept 0",
       "repo-repositories": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
       runs: "resync 1→2 migrated 0 kept 0",
-      views: legacy ? "resync 1→2 migrated 0 kept 0" : "current 2→2 migrated 0 kept 0"
+      views: legacy ? "resync 1→3 migrated 0 kept 0" : "resync 2→3 migrated 0 kept 0"
     })
     expect(report.epoch).toBe(deviceRegistry.epoch)
     expect(await keptRows(path)).toEqual([])

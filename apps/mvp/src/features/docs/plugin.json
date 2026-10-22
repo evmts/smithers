@@ -1,0 +1,14 @@
+{
+  "id": "docs",
+  "version": "1.0.0",
+  "title": "Docs",
+  "contributes": {
+    "flows": [{ "name": "app/docs/search", "entry": "./flows.ts" }],
+    "commands": [{ "command": "docs", "flow": "app/docs/search" }],
+    "cards": [{ "template": "docs", "view": "docs.page" }],
+    "views": [
+      { "id": "docs.page", "entry": "../views/components/ConversationView.tsx" },
+      { "id": "docs.tab", "path": "/<owner>/<repo>/docs" }
+    ]
+  }
+}

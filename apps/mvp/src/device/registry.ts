@@ -128,8 +128,8 @@ export const TimelineSummariesStore = Migrations.local({
 /** The conversation's messages, one collection per conversation. Version 3: an answer's steps (`parts`). */
 export const MessagesStore = Migrations.synced({ id: "chat-messages", version: 3, schema: Message, family: true })
 
-/** The conversation's views. Version 2: a page's title, description and icon. */
-export const ViewsStore = Migrations.synced({ id: "views", version: 2, schema: View, family: true })
+/** The conversation's views. Version 2: a page's title, description and icon. Version 3: a docs page. */
+export const ViewsStore = Migrations.synced({ id: "views", version: 3, schema: View, family: true })
 
 const synced = [
   MessagesStore,

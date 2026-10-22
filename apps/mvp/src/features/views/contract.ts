@@ -13,9 +13,10 @@ export const VIEWS_TABLE = "views"
 /**
  * The templates a view renders with (decision 0004 §3): our own React, rendered natively in the conversation.
  * - `webpage`: an outside page in a sandboxed frame, with its origin and an "Open in new tab" link above it;
- * - `link`: a card with an outside page's origin and an Open button, which opens it in a new tab.
+ * - `link`: a card with an outside page's origin and an Open button, which opens it in a new tab;
+ * - `docs`: a page of a repository's docs, its Markdown kept in the row (docs/features/docs.md#the-docs-view).
  */
-export const VIEW_TEMPLATES = ["webpage", "link"] as const
+export const VIEW_TEMPLATES = ["webpage", "link", "docs"] as const
 
 /** One of {@link VIEW_TEMPLATES}. */
 export type ViewTemplate = (typeof VIEW_TEMPLATES)[number]

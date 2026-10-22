@@ -204,7 +204,9 @@ describe("the catalog", () => {
     const first = ["app/theme/set", "app/navigate", "app/web/open", "app/jev/classify", "app/agent/ask", "flow/new"]
     // flow/save is the first suite's (`flow-new` denies it). run/resume needs a run stuck mid-step, which no seed makes;
     // repo/tree and repo/read need a commit repo/refs answers, and the eval's ChatApi routes no repository.
-    const uncovered = ["flow/save", "run/resume", "repo/tree", "repo/read"]
+    // app/docs/search searches a repository's docs, and the eval's ChatApi routes no repository; e2e/docs.spec.ts asks
+    // the real agent instead.
+    const uncovered = ["flow/save", "run/resume", "repo/tree", "repo/read", "app/docs/search"]
     expect(agentFlows.filter((flow) => !called.has(flow) && !first.includes(flow) && !uncovered.includes(flow))).toEqual([])
   })
 

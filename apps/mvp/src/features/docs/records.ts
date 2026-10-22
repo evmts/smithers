@@ -1,0 +1,39 @@
+import { Effect, Metric } from "effect"
+
+// The Docs tab's records (docs/observability.md): what each load of an index, a search or a page came to, its status
+// when ChatApi refused, how many pages it answered and how long it took. Never a query, a path, a URL, a title or a
+// page's text.
+
+/** What the tab loads. */
+export type LoadKind = "index" | "search" | "page"
+
+/** The tab's loads, by `kind` and `outcome` (`ok`, or ChatApi's refusal code, or `unavailable`). */
+export const loads = Metric.counter("smithers_web_docs_tab", {
+  description: "Docs the Docs tab loaded, by kind and outcome",
+  incremental: true,
+})
+
+/** Records a load: a log line `docs.tab`, its span's attributes and its count. */
+export const recordLoad = (
+  kind: LoadKind,
+  outcome: string,
+  durationMs: number,
+  extra: { readonly status?: number | undefined; readonly results?: number | undefined },
+) =>
+  Effect.gen(function* () {
+    yield* Metric.update(Metric.withAttributes(loads, { kind, outcome }), 1)
+    yield* Effect.annotateCurrentSpan({
+      "smithers.docs.outcome": outcome,
+      ...(extra.results === undefined ? {} : { "smithers.docs.results": extra.results }),
+    })
+    yield* Effect.logWithLevel(outcome === "ok" ? "Info" : "Warn")("docs.tab").pipe(
+      Effect.annotateLogs({
+        feature: "docs",
+        kind,
+        outcome,
+        durationMs,
+        ...(extra.status === undefined ? {} : { status: extra.status }),
+        ...(extra.results === undefined ? {} : { results: extra.results }),
+      }),
+    )
+  })

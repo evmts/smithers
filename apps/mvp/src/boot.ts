@@ -33,6 +33,9 @@ import { CodeIntelStore } from "./features/code-intel/store"
 import { Commands, type CommandsView } from "./features/commands/commands"
 import { FlowsUi, type FlowsUiView } from "./features/flows-ui/flowsUi"
 import { FlowsUiStore } from "./features/flows-ui/store"
+import { DocsClient } from "./features/docs/api"
+import { Docs, type DocsView } from "./features/docs/docs"
+import { DocsStore } from "./features/docs/store"
 import { Home, type HomeView } from "./features/home/home"
 import { HomeClient } from "./features/home/api"
 import { HomeStore } from "./features/home/store"
@@ -187,6 +190,8 @@ export const appLayer = <S = never>(
     // A repository's home (decision 0014 §4), over the repository store, RepoApi's client and ChatApi's home route, and
     // the issues', TODOs' and agent status's stores for its live blocks.
     Home.layer.pipe(Layer.provide(HomeStore.layer)),
+    // A repository's docs (docs/features/docs.md): the Docs tab, over ChatApi's docs routes.
+    Docs.layer.pipe(Layer.provide(DocsStore.layer)),
     Commands.layer,
     Views.layer,
     Web.layer,
@@ -287,6 +292,7 @@ export const appLayer = <S = never>(
         TextsClient.layer({ origin, within: REQUEST_WITHIN }),
         RepoClient.layer({ origin, within: REQUEST_WITHIN }),
         HomeClient.layer({ origin, within: REQUEST_WITHIN }),
+        DocsClient.layer({ origin }),
         // A TODO's run, read from Cloudflare (ruling TODO-3).
         RemoteRunsClient.layer({ origin, within: REQUEST_WITHIN }),
       ),
@@ -393,6 +399,7 @@ export interface BootOptions {
     codeIntel: CodeIntelView,
     pulls: PullsLayer,
     plugins: PluginsView,
+    docs: DocsView,
   ) => void
 }
 
@@ -424,6 +431,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const codeIntel = yield* CodeIntel
     const pulls = yield* Pulls
     const plugins = yield* PluginsUi
+    const docs = yield* Docs
     const store = yield* ChatStore
     yield* bindSessionConnectivity(options.target)
     yield* Effect.sync(() =>
@@ -448,6 +456,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         codeIntel,
         pulls,
         plugins,
+        docs,
       )
     )
     yield* chatShortcuts(options.target)

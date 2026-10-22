@@ -35,6 +35,11 @@ export type HomePage =
     readonly views: ReadonlyArray<Home.Audience>
     readonly defaultBranch: string
     readonly askHref: string
+    /**
+     * The docs index the repository names: its own home's, else Smithers' curated home's; `null` when neither names
+     * one. The Docs tab shows only then (docs/features/docs.md).
+     */
+    readonly docs: string | null
   }
   | { readonly kind: "loading" }
   | { readonly kind: "tree"; readonly notice: string | null }
@@ -62,6 +67,7 @@ const viewsOf = (sections: ReadonlyArray<Home.Section>, own: Home.Audience): Rea
 export const homePageOf = (current: CurrentRow, home: HomeRow | undefined, curated: CuratedRow | undefined): HomePage => {
   if (current.repoId === null) return { kind: "tree", notice: null }
   const audience = current.audience ?? "everyone"
+  const docs = current.docs ?? current.curatedDocs
   const page = (
     source: "declared" | "curated",
     all: ReadonlyArray<Home.Section>,
@@ -80,6 +86,7 @@ export const homePageOf = (current: CurrentRow, home: HomeRow | undefined, curat
       views,
       defaultBranch,
       askHref: codeHref(current.owner, current.name, defaultBranch),
+      docs,
     }
   }
   if (current.key !== null && current.defaultBranch !== null) {
@@ -105,7 +112,7 @@ export const homePageOf = (current: CurrentRow, home: HomeRow | undefined, curat
 export const tabsOf = (page: HomePage, current: CurrentRow) => {
   if (page.kind !== "home") return undefined
   const [ref, ...rest] = page.defaultBranch.split("/")
-  return { owner: current.owner, repo: current.name, ref: ref!, _splat: rest.join("/") }
+  return { owner: current.owner, repo: current.name, ref: ref!, _splat: rest.join("/"), docs: page.docs !== null }
 }
 
 /** Whether the composer has a slash command for an app block's flow: the button shows only then. */

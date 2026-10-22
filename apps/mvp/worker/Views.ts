@@ -3,13 +3,17 @@ import { Cause, Clock, Config, Effect, type Layer, Metric, Option, Schema } from
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
+import { MAX_VIEW_TEXT_BYTES } from "../src/features/docs/contract.ts"
+import { cutText } from "../src/features/docs/text.ts"
+import { isRepository } from "../src/features/repo/contract.ts"
 import { MAX_VIEW_BODY_BYTES, VIEWS_TABLE } from "../src/features/views/contract.ts"
-import { ViewWrite } from "../src/features/views/schema.ts"
+import { type ViewProps, ViewWrite } from "../src/features/views/schema.ts"
 import { checkUrl } from "../src/features/web/url.ts"
 import { canAsk, Sessions } from "./Actor.ts"
 import { branchAccess, canEdit, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "./Body.ts"
+import { DocsSource } from "./docs/Source.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 
@@ -24,6 +28,10 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 // the app itself, or a `webpage` that isn't `https:` on another site. A `link` may be `http:` on `localhost` only where
 // `WEB_PAGES_LOCAL_HTTP` says so: `alchemy dev` (worker/DevChatApi.ts), never a deployment unless it is set. Whatever
 // a row holds, the browser checks it again before it renders (`@smthrs/ui`'s `WebPageView` and `WebLinkCard`).
+//
+// A `docs` view names a repository and a page's path (docs/features/docs.md#the-docs-view): ChatApi reads that page
+// from the repository's own docs index (worker/docs/Source.ts) and keeps its URL, title and at most 64 KiB of its
+// Markdown in the row, so a row never holds Markdown a client chose and every device shows it offline.
 
 /** `POST /api/views` requests, by `status`. */
 export const requests = Metric.counter("smithers_view_requests", {
@@ -59,8 +67,15 @@ const noStore = { "cache-control": "no-store" }
 /** A refusal: its status and code, logged and answered as `{ code }`. */
 const refusal = (status: number, code: string) => HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
 
+/** A view as the route keeps it: its id, template and props. */
+interface Stored {
+  readonly id: string
+  readonly template: ViewWrite["template"]
+  readonly props: ViewProps
+}
+
 /** Adds the view to conversation `conversationId` unless its id is taken: the transaction it added it in, or nothing. */
-const insert = (write: ViewWrite, conversationId: string) =>
+const insert = (write: Stored, conversationId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly txid: string }>`
@@ -71,16 +86,42 @@ const insert = (write: ViewWrite, conversationId: string) =>
     return row === undefined ? undefined : Number(row.txid)
   })
 
-/** Whether the view under `write`'s id is `write` itself, in the same conversation: the same add, landed before. */
-const landed = (write: ViewWrite, conversationId: string) =>
+/**
+ * Whether the view under `write`'s id is `write` itself, in the same conversation: the same add, landed before. A
+ * `docs` view is the same page of the same repository's docs, whatever its Markdown says now.
+ */
+const landed = (write: Stored, conversationId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly same: boolean }>`
-      SELECT template = ${write.template} AND props = ${JSON.stringify(write.props)}::jsonb
-        AND conversation_id = ${conversationId} AS same
-      FROM views WHERE id = ${write.id}`
+    const [row] = write.template === "docs"
+      ? yield* sql<{ readonly same: boolean }>`
+        SELECT template = 'docs' AND props->>'repository' = ${write.props.repository ?? ""}
+          AND props->>'path' = ${write.props.path ?? ""} AND conversation_id = ${conversationId} AS same
+        FROM views WHERE id = ${write.id}`
+      : yield* sql<{ readonly same: boolean }>`
+        SELECT template = ${write.template} AND props = ${JSON.stringify(write.props)}::jsonb
+          AND conversation_id = ${conversationId} AS same
+        FROM views WHERE id = ${write.id}`
     return row?.same === true
   })
+
+/** Whether a `docs` view of the same repository's same page is already under `id`. */
+const addedDocs = (id: string, docs: { readonly owner: string; readonly name: string; readonly path: string }) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly id: string }>`
+      SELECT id FROM views WHERE id = ${id} AND template = 'docs'
+        AND props->>'repository' = ${`${docs.owner}/${docs.name}`} AND props->>'path' = ${docs.path}`
+    return row !== undefined
+  })
+
+/** The repository and page a `docs` write names: `owner/name` GitHub could have, and a path; none otherwise. */
+const docsTarget = (props: ViewWrite["props"]) => {
+  const [owner, name] = (props.repository ?? "").split("/")
+  return owner === undefined || name === undefined || props.path === undefined || !isRepository(owner, name)
+    ? undefined
+    : { owner, name, path: props.path }
+}
 
 /** The conversation of answer `answerId` when `askedBy` asked its question: where its agent's views go. */
 const answerConversation = (answerId: string, askedBy: string) =>
@@ -165,6 +206,8 @@ export const make = <E, R>(
         const write = { ...decoded.value, id: decoded.value.id.toLowerCase() }
         fields.viewId = write.id
         fields.template = write.template
+        const docs = write.template === "docs" ? docsTarget(write.props) : undefined
+        if (write.template === "docs" && docs === undefined) return refusal(400, "invalid")
         const page = checkUrl(
           write.props.url,
           write.template === "webpage" ? "embed" : "tab",
@@ -182,6 +225,51 @@ export const make = <E, R>(
           : write.conversationId === undefined
           ? yield* Conversations.home.pipe(Effect.provide(database))
           : write.conversationId.toLowerCase()
+        // What the row keeps, decided before the conversation's lock is taken: a docs page is read from its site.
+        let stored: Stored
+        if (docs !== undefined && (yield* addedDocs(write.id, docs).pipe(Effect.provide(database)))) {
+          // The same page under the same id, added before: a resend whose answer was lost. The site isn't asked again,
+          // so it lands as before even once the site dropped the page; the conversation is still checked below.
+          stored = {
+            id: write.id,
+            template: "docs",
+            props: { url: write.props.url, repository: `${docs.owner}/${docs.name}`, path: docs.path },
+          }
+        } else if (docs === undefined) {
+          // The page's own title, description and https icon, as the flow's check read them (ViewWrite bounds each).
+          const { url: _url, repository: _repository, path: _path, ...preview } = write.props
+          stored = { id: write.id, template: write.template, props: { url: page.page.href, ...preview } }
+        } else {
+          // The page as the repository's own docs index lists it, and its Markdown as the docs site answers it now.
+          const read = yield* (yield* DocsSource).page(docs.owner, docs.name, docs.path)
+          if (read._tag === "Refused") {
+            fields.reason = read.code
+            return read.code === "unavailable"
+              ? refusal(503, "unavailable")
+              : read.code === "docs_unreachable"
+              ? refusal(502, "docs_unreachable")
+              : refusal(400, "refused")
+          }
+          const site = checkUrl(read.page.url, "tab", policyFor(request, localHttp))
+          if (!site.ok) {
+            fields.reason = site.reason
+            return refusal(400, "refused")
+          }
+          const text = cutText(read.text, MAX_VIEW_TEXT_BYTES)
+          fields.truncated = text.truncated
+          stored = {
+            id: write.id,
+            template: "docs",
+            props: {
+              url: site.page.href,
+              title: read.page.title,
+              repository: `${docs.owner}/${docs.name}`,
+              path: read.page.path,
+              text: text.text,
+              ...(text.truncated ? { truncated: true } : {}),
+            },
+          }
+        }
         return yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient
           return yield* sql.withTransaction(Effect.gen(function* () {
@@ -197,9 +285,6 @@ export const make = <E, R>(
             if (!canEdit(found.access)) return refusal(403, "forbidden")
             const conversationId = found.conversationId
             fields.conversationId = conversationId
-            // The page's own title, description and https icon, as the flow's check read them (ViewWrite bounds each).
-            const { url: _url, ...preview } = write.props
-            const stored = { id: write.id, template: write.template, props: { url: page.page.href, ...preview } }
             const txid = yield* insert(stored, conversationId)
             if (txid !== undefined) return HttpServerResponse.jsonUnsafe({ txid }, { status: 202, headers: noStore })
             if (yield* landed(stored, conversationId)) {

@@ -26,6 +26,7 @@ import { Spend } from "./features/spend/spend"
 import { Attention } from "./features/attention/attention"
 import { Todos } from "./features/todos/todos"
 import { CodeIntel } from "./features/code-intel/codeIntel"
+import { Docs } from "./features/docs/docs"
 import { Pulls } from "./features/pulls/pulls"
 import { StoragePersistence } from "@smthrs/platform-browser"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "./test/chatApi"
@@ -105,6 +106,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(CodeIntel),
       Effect.service(Pulls),
       Effect.service(PluginsUi),
+      Effect.service(Docs),
     ]),
   )
   expect(views[0]).toHaveLength(layers.length)

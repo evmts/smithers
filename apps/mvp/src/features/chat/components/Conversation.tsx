@@ -47,6 +47,8 @@ export function Conversation({ empty = <Wordmark />, readOnly = false }: { reado
             template={message.template}
             url={message.url}
             preview={{ title: message.title, description: message.description, icon: message.icon }}
+            markdown={message.markdown}
+            truncated={message.truncated}
             {...(place?.conversationId == null ? {} : { conversationId: place.conversationId })}
           />
         ) : (

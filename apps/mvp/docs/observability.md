@@ -432,6 +432,10 @@ The browser's read of a repository's homes and its actions ([home.md](features/h
 
 `src/features/home/home.test.ts` asserts each outcome's record and count, and that a sentinel in the home's text, title, link and Markdown file reaches no log line; `worker/home/Api.test.ts` that no section's words reach ChatApi's records.
 
+### A repository's docs
+
+[docs.md](features/docs.md#observability): ChatApi's `repo.docs` and `repo.docs.page` (log and span per request, `smithers_docs_requests` by route and status, `docs.source` on a failure that isn't an answer) and the engine worker's `docs.search` (log per settled search and failed step, span per step, `smithers_web_docs_searches` by door and outcome, `smithers_web_docs_shown` by door). No record carries a query, a path, a URL, a title or a page's text.
+
 ### Code intelligence
 
 The repository view's language server ([code-intelligence.md](features/code-intelligence.md)), relayed through ChatApi's allowlist (`CODE_INTEL_TELEMETRY` in `src/features/code-intel/contract.ts`). No record carries a path, a symbol, a signature, documentation or a problem's message.

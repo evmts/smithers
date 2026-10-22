@@ -15,6 +15,7 @@ import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import type { Actor } from "../../worker/Actor.ts"
 import { build } from "../../worker/test/flowHost.ts"
+import type { CuratedFile } from "../../worker/home/Curated.ts"
 import { harness } from "../../worker/test/harness.ts"
 import { Answer } from "../features/agent/flows"
 import { Tabs } from "../features/navigation/flows"
@@ -81,12 +82,15 @@ export const openAgent = async (
     readonly model?: HostModel["Service"]
     /** The fetch ChatApi reaches Electric and outside pages with (worker/test/pages.ts): the harness's unless set. */
     readonly fetch?: typeof globalThis.fetch
+    /** The curated homes, and the docs they name, ChatApi reads (worker/home/Curated.ts): the real ones unless set. */
+    readonly homes?: ReadonlyArray<CuratedFile>
   } = {},
 ) => {
   const h: Harness = await harness(runtime, script, {
     actor: options.actor ?? member,
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.homes === undefined ? {} : { homes: options.homes }),
   })
   // Only a call: Bun's globals, which a program loading the `@smthrs/cli` root sees, add `preconnect` to `fetch`.
   const fetch = ((input: RequestInfo | URL, init?: RequestInit) => {

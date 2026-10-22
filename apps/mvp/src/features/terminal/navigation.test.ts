@@ -20,6 +20,7 @@ import { Commands } from "../commands/commands"
 import { FlowsUi } from "../flows-ui/flowsUi"
 import { Home } from "../home/home"
 import { Issues } from "../issues/issues"
+import { Docs } from "../docs/docs"
 import { Pulls } from "../pulls/pulls"
 import { PresenceStore } from "../presence/store"
 import { Repo } from "../repo/repo"
@@ -50,7 +51,7 @@ test.each(["empty", "mine", "watching"] as const)(
       return {
         repo: yield* Repo, home: yield* Home, views: yield* Views, branch: yield* Branch,
         terminal: yield* Terminal, issues: yield* Issues, pulls: yield* Pulls,
-        todos: yield* Todos, runs: yield* Runs, flows: yield* FlowsUi, plugins: yield* PluginsUi,
+        todos: yield* Todos, runs: yield* Runs, flows: yield* FlowsUi, plugins: yield* PluginsUi, docs: yield* Docs,
       }
     }))
     const theme = await runtime.runPromise(Effect.service(Theme))

@@ -1,4 +1,4 @@
-import type { Home } from "@smthrs/views"
+import { Home } from "@smthrs/views"
 import { Clock, Effect, FiberHandle, Option, Random, Semaphore } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { aboutOf, isReady, put, ready, shownRepository } from "../repo/actions"
@@ -107,7 +107,7 @@ const answer = (owner: string, name: string, id: string) =>
     const { audience, curated } = result.success
     const row = curatedRowOf(id, curated)
     yield* put<CuratedRow>(store.curated, id, row)
-    yield* setCurrent({ audience, answering: false })
+    yield* setCurrent({ audience, answering: false, curatedDocs: curated?.docs ?? null })
     yield* recordAnswer(row.state, audience, row.sections.length, durationMs, undefined)
   }).pipe(Effect.withSpan("home.answer"))
 
@@ -136,6 +136,18 @@ const declared = (id: string) =>
   })
 
 /**
+ * The docs index the repository's own home names at its newest commit (docs/features/docs.md), from what GitHub says
+ * of it, which the page loads anyway: the Docs tab shows from it, cloned or not.
+ */
+const docsOf = (owner: string, name: string) =>
+  Effect.gen(function* () {
+    const text = (yield* aboutOf(owner, name)).about?.home ?? null
+    const read = text === null ? undefined : Home.read(text)
+    // Opening another repository interrupts this read (`open`'s loader), so the row is still this repository's.
+    yield* setCurrent({ docs: read?._tag === "Declared" ? read.docs ?? null : null })
+  })
+
+/**
  * The repository's own home before a clone: what GitHub says of it carries its `.smithers/home.json` at its newest
  * commit, so a visitor sees the home the clone will have. Only until the repository is ready on this device, whose own
  * read wins, and only a home that shows whole without the clone: one with a Markdown block, whose file needs the
@@ -153,17 +165,16 @@ const preview = (owner: string, name: string, id: string) =>
     const row = homeRowOfText(key, text)
     if (row.state !== "declared" || markdownPaths(row.sections).length > 0) return
     if (Option.isNone(yield* store.homes.get(key))) yield* put<HomeRow>(store.homes, key, row)
-    const current = Option.getOrThrow(yield* store.current.get(CURRENT))
-    if (current.repoId !== id || current.key !== null) return
+    // Opening another repository interrupts this read; a clone that landed meanwhile wins with its own read.
+    if (Option.getOrThrow(yield* store.current.get(CURRENT)).key !== null) return
     yield* setCurrent({ key, defaultBranch: about.defaultBranch })
     yield* recordResolve(row, "preview", (yield* Clock.currentTimeMillis) - startedAt, undefined)
   }).pipe(
-    Effect.ensuring(
-      Effect.flatMap(HomeStore, ({ current }) =>
-        Effect.orDie(current.update(CURRENT, (row) => {
-          if (row.repoId === id) row.previewing = false
-        }))),
-    ),
+    // `open` interrupts this read before it names another repository, so the row is still this one's here.
+    Effect.ensuring(Effect.flatMap(HomeStore, ({ current }) =>
+      Effect.orDie(current.update(CURRENT, (row) => {
+        row.previewing = false
+      })))),
     Effect.withSpan("home.preview"),
   )
 
@@ -247,12 +258,12 @@ export const open = (owner: string, name: string) =>
       name,
       repoId: id,
       answering: true,
-      ...(same ? {} : { ...head, previewing: head.key === null, audience: null, viewing: null, stack: null, failure: null, running: [] }),
+      ...(same ? {} : { ...head, previewing: head.key === null, docs: null, curatedDocs: null, audience: null, viewing: null, stack: null, failure: null, running: [] }),
     })
     const part = <R>(load: Effect.Effect<void, never, R>) => Effect.andThen(load, syncLive(id))
     yield* FiberHandle.run(
       store.loader,
-      Effect.all([part(answer(owner, name, id)), part(declared(id)), part(preview(owner, name, id))], {
+      Effect.all([part(answer(owner, name, id)), part(declared(id)), part(preview(owner, name, id)), part(docsOf(owner, name))], {
         concurrency: "unbounded",
         discard: true,
       }),

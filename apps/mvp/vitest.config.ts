@@ -91,6 +91,9 @@ export default defineConfig({
         "worker/Views.ts",
         "worker/WebPreview.ts",
         "db/migrations/0010_views.ts",
+        // A repository's docs and the docs view (docs/features/docs.md).
+        "worker/docs/**/*.ts",
+        "db/migrations/0043_docs_views.ts",
         // Budget reservations (docs/features/model-endpoint.md#budget).
         "db/migrations/0012_model_reservations.ts",
         // A person's own flows (docs/features/flows.md#your-own-flows).
