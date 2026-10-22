@@ -205,7 +205,7 @@ export type RefusedCode = typeof RefusedCode.Type
 
 const statusField = Schema.optional(Schema.Int)
 
-// The provider's own short error: Resend's error `name`, or the Bot API's `description`. Neither echoes a credential.
+// Only known diagnostics are retained; provider text may echo secrets or content.
 const reasonField = Schema.optional(Schema.String.check(Schema.isMaxLength(120)))
 
 /**
@@ -369,8 +369,10 @@ interface Provider<D extends Destination = Destination> {
 const record = (value: unknown): Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null ? value as Readonly<Record<string, unknown>> : {}
 
-const shortText = (value: unknown): string | undefined =>
-  typeof value === "string" && value.length > 0 ? value.slice(0, 120) : undefined
+const safeReason = (value: unknown, allowed: ReadonlyArray<string>): string | undefined =>
+  typeof value !== "string" || value.length === 0
+    ? undefined
+    : allowed.includes(value) ? value : "provider_rejected"
 
 type EmailDestination = Extract<Destination, { readonly _tag: "email" }>
 type TelegramDestination = Extract<Destination, { readonly _tag: "telegram" }>
@@ -393,7 +395,7 @@ const resend = (provider: EmailProvider): Provider<EmailDestination> => {
       const id = record(body).id
       return typeof id === "string" && id.length > 0 && id.length <= 128 ? id : null
     },
-    reason: (body) => shortText(record(body).name),
+    reason: (body) => safeReason(record(body).name, ["validation_error", "rate_limit_exceeded", "daily_quota_exceeded"]),
     retryAfterSeconds: () => undefined
   }
 }
@@ -410,10 +412,11 @@ const telegram = (provider: TelegramProvider): Provider<TelegramDestination> => 
         })
       ),
     providerId: (body) => {
+      if (record(body).ok !== true) return null
       const id = record(record(body).result).message_id
       return typeof id === "number" && Number.isSafeInteger(id) ? String(id) : null
     },
-    reason: (body) => shortText(record(body).description),
+    reason: (body) => safeReason(record(body).description, ["Bad Request: chat not found"]),
     retryAfterSeconds: (body) => record(record(body).parameters).retry_after
   }
 }
@@ -434,7 +437,12 @@ const classify = (
   retryAfter: string | undefined,
   provider: Provider<never>
 ): Effect.Effect<Receipt, DeliveryError> => {
-  if (status >= 200 && status < 300) return Effect.succeed({ channel, providerId: provider.providerId(body) })
+  if (status >= 200 && status < 300) {
+    const providerId = provider.providerId(body)
+    return providerId === null
+      ? Effect.fail(new DeliveryFailed({ channel, status, code: "unavailable", reason: "invalid_response" }))
+      : Effect.succeed({ channel, providerId })
+  }
   const reason = provider.reason(body)
   const detail = { channel, status, ...(reason === undefined ? {} : { reason }) }
   if (status === 429) {

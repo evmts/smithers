@@ -154,7 +154,9 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
     // Every recipient hears only of a branch they may still open (worker/branch/Access.ts): a feed is a Member's, so each is
     // checked as one, against the branch's shares as they are now.
     const policy = run.branchId === null ? undefined : yield* policyOf(run.branchId)
-    const mayRead = (principal: string) => policy !== undefined && canView(underPolicy(policy, principal, "member"))
+    const mayRead = (principal: string) => run.branchId === null
+      ? principal === run.launchedBy
+      : policy !== undefined && canView(underPolicy(policy, principal, "member"))
     const deliveries = Inbox.route({
       launcher: run.launchedBy,
       state,
@@ -171,7 +173,7 @@ export const foldRun = (runId: string, launcherLogin: string | undefined) =>
         quiet: row.quiet,
         state: !row.mine && state === "needs_you" ? "waiting" : state,
       })),
-    ].filter((delivery) => run.branchId === null ? delivery.recipient === run.launchedBy : mayRead(delivery.recipient))
+    ].filter((delivery) => mayRead(delivery.recipient))
     const home = run.conversationId === null ? undefined : yield* Conversations.home
     const href = run.conversationId !== null && run.conversationId === home
       ? HOME_HREF

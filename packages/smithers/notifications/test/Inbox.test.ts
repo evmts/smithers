@@ -59,10 +59,8 @@ describe("Inbox.route", () => {
     ])
   })
 
-  it("delivers to the launcher even when mayRead refuses everyone", () => {
-    expect(Inbox.route({ launcher: "ana", state: "failed", watchers: [], mayRead: () => false })).toEqual([
-      { recipient: "ana", mine: true, state: "failed", quiet: false }
-    ])
+  it("drops the launcher when mayRead refuses everyone", () => {
+    expect(Inbox.route({ launcher: "ana", state: "failed", watchers: [], mayRead: () => false })).toEqual([])
   })
 
   it("ignores the launcher's own watch entries, whatever their level", () => {
@@ -110,7 +108,7 @@ describe("Inbox.route", () => {
   })
 
   it("drops watchers who may not read the run", () => {
-    const readers = new Set(["cy"])
+    const readers = new Set(["ana", "cy"])
     const deliveries = Inbox.route({
       launcher: "ana",
       state: "done",
@@ -261,6 +259,15 @@ const row = (versions: Partial<Inbox.Versions> = {}): Row => ({
 })
 
 describe("Inbox.ack", () => {
+  it("ignores fractional and unsafe versions for every act", () => {
+    const notice = row()
+    for (const act of ["read", "dismiss", "hide"] as const) {
+      for (const version of [0.5, 2.5, 3.5, Infinity, -Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+        expect(Inbox.ack(notice, act, version)).toBe(notice)
+      }
+    }
+  })
+
   it("records each act in its own field and keeps the rest", () => {
     const notice = row({ readVersion: 1, dismissedVersion: 1, hiddenVersion: 1 })
     expect(Inbox.ack(notice, "read", 2)).toEqual({ ...notice, readVersion: 2 })

@@ -410,6 +410,7 @@ describe("the delivery step", () => {
 
     expect(Exit.isSuccess(refused.exit) && refused.exit.value).toEqual({ outcome: "refused" })
     expect(Exit.isSuccess(again.exit) && again.exit.value).toEqual({ outcome: "existing" })
+    expect(providers.received).toHaveLength(1)
     expect(await receipts()).toEqual([{
       alertId: request.alertId,
       channel: "telegram",

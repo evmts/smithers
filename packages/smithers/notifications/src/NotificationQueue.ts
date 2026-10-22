@@ -8,7 +8,7 @@
  */
 
 import { canonicalize } from "@smthrs/canonical"
-import { digestSync } from "@smthrs/crypto/Sha256"
+import { digestSync } from "@smthrs/crypto"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Context, Effect, HashMap, Layer, Option, Schema, SchemaIssue, Semaphore } from "effect"
 import * as FoldCache from "./internal/foldCache.ts"

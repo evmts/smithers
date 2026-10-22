@@ -149,14 +149,14 @@ describe("Channels.layer email (Resend)", () => {
     expect(request!.headers.b3).toBeUndefined()
   })
 
-  it("reads no provider id from an answer without a usable one", async () => {
+  it("rejects an answer without valid delivery evidence", async () => {
     answers.push({ status: 200, json: { id: 42 } })
     answers.push({ status: 202, json: { id: "x".repeat(129) } })
     answers.push({ status: 200, text: "accepted" })
     answers.push({ status: 200, json: { id: "" } })
 
     for (let i = 0; i < 4; i++) {
-      expect((await send(email)).exit).toEqual(Exit.succeed({ channel: "email", providerId: null }))
+      expect(failure((await send(email)).exit)).toMatchObject({ code: "unavailable", reason: "invalid_response" })
     }
   })
 
@@ -191,13 +191,13 @@ describe("Channels.layer telegram (Bot API)", () => {
     expect(received[0]!.headers["idempotency-key"]).toBeUndefined()
   })
 
-  it("reads no provider id from an answer without a usable one", async () => {
+  it("rejects an answer without valid delivery evidence", async () => {
     answers.push({ status: 200, json: { ok: true, result: { message_id: "7781" } } })
     answers.push({ status: 200, json: { ok: true, result: { message_id: 1.5 } } })
     answers.push({ status: 200, json: { ok: true } })
 
     for (let i = 0; i < 3; i++) {
-      expect((await send(chat)).exit).toEqual(Exit.succeed({ channel: "telegram", providerId: null }))
+      expect(failure((await send(chat)).exit)).toMatchObject({ code: "unavailable", reason: "invalid_response" })
     }
   })
 
@@ -228,12 +228,12 @@ describe("Channels.layer telegram (Bot API)", () => {
     expect(spanText(spans)).not.toContain(origin)
   })
 
-  it("cuts a long description to 120 characters", async () => {
+  it("replaces unrecognized provider text with a safe reason", async () => {
     answers.push({ status: 400, json: { ok: false, description: "d".repeat(500) } })
 
     const error = failure((await send(chat)).exit) as Channels.DeliveryRefused
 
-    expect(error.reason).toBe("d".repeat(120))
+    expect(error.reason).toBe("provider_rejected")
   })
 })
 
@@ -538,5 +538,24 @@ describe("Channels.Channels as a service", () => {
     )
 
     expect(failure(exit)).toMatchObject({ code: "unavailable", status: 503 })
+  })
+})
+
+describe("provider response trust", () => {
+  it.each([email, chat])("never exposes provider-controlled error text for $_tag", async (destination) => {
+    const unsafe = `${API_KEY} ${BOT_TOKEN} ${message.text}`
+    answers.push({ status: 400, json: { name: unsafe, description: unsafe } })
+    const { exit, spans } = await send(destination)
+    const error = failure(exit)
+    for (const sentinel of [API_KEY, BOT_TOKEN, message.text]) {
+      expect(JSON.stringify(error)).not.toContain(sentinel)
+      expect(String(error)).not.toContain(sentinel)
+      expect(spanText(spans)).not.toContain(sentinel)
+    }
+  })
+
+  it("rejects a Telegram negative acknowledgement even with a message id", async () => {
+    answers.push({ status: 200, json: { ok: false, result: { message_id: 7781 } } })
+    expect(failure((await send(chat)).exit)).toMatchObject({ code: "unavailable", reason: "invalid_response" })
   })
 })

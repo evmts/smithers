@@ -135,7 +135,7 @@ const heard = (
 /**
  * Who hears about a run in `fact.state`, and how.
  *
- * - The launcher, when there is one, always comes first, with the run's own
+ * - The launcher, when present and permitted by mayRead, comes first, with the run's own
  *   state, `mine: true` and `quiet: false`. A muted watch never silences the
  *   launcher's own run, and the launcher's watch entries are otherwise
  *   ignored.
@@ -166,7 +166,7 @@ const heard = (
  */
 export const route = (fact: RunFact): ReadonlyArray<Delivery> => {
   const deliveries: Array<Delivery> = []
-  if (fact.launcher !== undefined) {
+  if (fact.launcher !== undefined && (fact.mayRead ?? everyone)(fact.launcher)) {
     deliveries.push({ recipient: fact.launcher, mine: true, state: fact.state, quiet: false })
   }
   const state: RunState = fact.state === "needs_you" ? "waiting" : fact.state
@@ -272,6 +272,7 @@ const field = {
  * @since 1.0.0
  */
 export const ack = <V extends Versions>(notice: V, act: Act, version: number): V => {
+  if (!Number.isSafeInteger(version)) return notice
   const key = field[act]
   const next = Math.min(version, notice.version)
   // `!(next > current)` also refuses NaN, so a bad version never corrupts the row.

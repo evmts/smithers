@@ -94,3 +94,11 @@ const program = Effect.gen(function*() {
 `@smthrs/notifications/package.json` is also exported; `internal/*` and nested `*/index` subpaths are blocked.
 
 A replayed drain fails with `notification_unavailable` if a committed notification or its payload can no longer be read. It never reports a successful partial delivery.
+
+### Response and access validation
+
+Delivery requires a usable provider message id and Telegram `ok: true`.
+Malformed acknowledgements fail with `unavailable` / `invalid_response`.
+Only exact known provider diagnostics are retained; other nonempty reasons become `provider_rejected`.
+Inbox routing checks launcher access as well as watcher access. Legacy unscoped runs permit their launcher alone.
+Acknowledgements ignore versions that are not safe integers.
