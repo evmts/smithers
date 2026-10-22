@@ -7149,11 +7149,16 @@ Builds or provides the durable child port:
 - `spawn` starts the named flow as a run of its own, linked to the caller
   through the engine's parent-edge table and spawned with the result discarded,
   which records `onParentExit: "detach"` so the child outlives its parent. It
-  answers once the child's run row exists.
+  answers once the child's run row exists. The start budget includes storage
+  reads and interrupts stalled admission. Only omitted input defaults to `{}`;
+  explicit `null` reaches the child's payload schema unchanged. Detached
+  execution diagnostics are redacted before logging.
 - `await` reads the child's settled result out of the run store, so it works
   from a different engine, a different process, and a later incarnation. It
-  waits by re-reading the child's run row on an interval rather than suspending
-  the run, so a cell that awaits a long child holds its round open.
+  parks the caller on durable timers between checks inside a flow. A sealed
+  invocation deadline survives replay, including process restart. Outside a
+  flow, host collectors poll in memory. Runtime polling and state decoding
+  failures are catchable `ChildError { code: "failed" }` failures.
 - `send` steers the child through `Control.steer`, naming the message with the
   calling step's canonical key so a re-driven round delivers it once. The
   message carries a timestamp read inside a sealed step, so a re-drive submits
@@ -7438,6 +7443,13 @@ paths that resolve outside the root (including Windows backslash traversal),
 root directory targets, and overlapping file paths are refused. Symbolic links
 below the root are refused with `FlowStoreError { code: "invalid_path" }`.
 
+Writing requires the kernel's descriptor-relative, no-follow filesystem host
+extension, or a genuinely isolated filesystem. Plain path-based hosts fail
+with `unsupported`. Publication, backups, rollback and cleanup use a view
+pinned to the root; concurrent replacement of a parent cannot redirect writes.
+Cleanup failure retains staging, logs a warning, and preserves the original
+publication result.
+
 Writes to the same resolved root are serialized within this process, including
 across store instances and saves of the same flow.
 Each save stages all new files and copies of existing files in a temporary
@@ -7629,6 +7641,13 @@ call failure with the speculative changes discarded. Materialization is
 explicit, so a conflicting concurrent write is a typed refusal instead of a
 lost update. It is a `CallRunner` decorator rather than an option on `make`, so
 a host chooses the transaction boundary by composition.
+
+Sandbox memo keys include `Action.CurrentCacheEnvironment` (effective layers
+and authority). Without that environment they include the ambient flow execution
+id; outside a runtime, an unknown environment disables sandbox memoization.
+`make` explicitly
+clears an inherited cache environment when `Options.capabilities` is omitted,
+so undeclared authority cannot enable reuse between runs.
 
 ### FlowEngineLike.RecordedModelStep
 
@@ -12500,12 +12519,12 @@ schema constant and a type of the same name unless noted.
 
 ### Authority
 
-| Export            | Shape                                                                                                                                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Envelope`        | `{ capabilities: string[]; flows: string[]; budget: { tokens?: number; milliseconds?: number; usd?: number; onExceeded?: BudgetOnExceeded }; host?: string }`. |
-| `GrantScope`      | `"once" \| "run" \| "remembered"`.                                                                                                                             |
-| `ApprovalTarget`  | `{ _tag: "Plan", planId, digest, envelope }` or `{ _tag: "Node", runId, requestId, digest, envelope }`.                                                        |
-| `ApprovalPayload` | `{ target: ApprovalTarget; scope: GrantScope; idempotencyKey: IdempotencyKey }`.                                                                               |
+| Export            | Shape                                                                                                                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Envelope`        | `{ capabilities: string[]; flows: string[]; budget: { tokens?: number; milliseconds?: number; usd?: number; onExceeded?: BudgetOnExceeded }; host?: string }`. Ceilings are nonnegative. |
+| `GrantScope`      | `"once" \| "run" \| "remembered"`.                                                                                                                                                       |
+| `ApprovalTarget`  | `{ _tag: "Plan", planId, digest, envelope }` or `{ _tag: "Node", runId, requestId, digest, envelope }`.                                                                                  |
+| `ApprovalPayload` | `{ target: ApprovalTarget; scope: GrantScope; idempotencyKey: IdempotencyKey }`.                                                                                                         |
 
 ### Plans
 
@@ -13021,7 +13040,7 @@ its members.
 A handler defect, an untyped failure no procedure declares, reaches a client as
 a `Die` whose defect is `{ "name": "Error", "message": "Something went wrong on
 our side. Not your fault." }`. Its raw message and stack never cross the wire;
-the server logs them through `ControlServer.logDefect`. A string defect passes
+the server records only a content-free diagnostic through `ControlServer.logDefect`. A string defect passes
 unchanged, so a payload that fails to decode still answers with the request
 decoder's own sentence. The encoded shape is the one `Schema.Defect()` decodes,
 so older clients and servers read each other's defects.
@@ -13048,11 +13067,17 @@ is `smt1.<claims>.<signature>`. `smthrs token mint` is the command over it.
 
 ## ControlServer
 
-| Export      | Meaning                                                                                                                                                                                |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `layer`     | The handlers, delegating to `Control`. Every mutation that records who asked reads `ControlPrincipal` and stamps it rather than forwarding what the client sent.                       |
-| `layerHttp` | Mounts both protocols on the ambient `HttpRouter`: unary procedures over `POST /rpc`, and `watch` over `WebSocket /rpc/ws`.                                                            |
-| `logDefect` | `(cause: Cause<unknown>) => Effect<void>`. Logs a handler's raw defect at error level and ignores typed failures. Tap it around a handler with `Effect.tapCause` or `Stream.tapCause`. |
+An Origin must match the endpoint's scheme and Host. Hosts with relative request
+URLs provide `RequestScheme`, e.g. `Layer.succeed(ControlServer.RequestScheme,
+"https:")` for TLS or a trusted TLS terminator. Without it, browser origins are
+refused; requests without Origin still work. Forwarding headers are not trusted
+automatically. Absolute Web request URLs already supply the scheme.
+
+| Export      | Meaning                                                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `layer`     | The handlers, delegating to `Control`. Every mutation that records who asked reads `ControlPrincipal` and stamps it rather than forwarding what the client sent.                                         |
+| `layerHttp` | Mounts both protocols on the ambient `HttpRouter`: unary procedures over `POST /rpc`, and `watch` over `WebSocket /rpc/ws`.                                                                              |
+| `logDefect` | `(cause: Cause<unknown>) => Effect<void>`. Logs a content-free handler-defect diagnostic at error level and ignores typed failures. Tap it around a handler with `Effect.tapCause` or `Stream.tapCause`. |
 
 ## ControlClient
 
@@ -18660,19 +18685,19 @@ procedure does, including the principal it stamps on mutations.
 
 The Node host: bind policy, credential policy, and the socket.
 
-| Export                 | Signature                                                                                                                                             | Meaning                                                                                                                   |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `ServerOptions`        | `ListenOptions & { allowedHosts?: readonly string[]; listen?: boolean; credential?: string; heartbeatMillis?: number; maxRequestBodyBytes?: number }` | Bind address, explicitly admitted Host names, authentication, and request limits.                                         |
-| `defaultServerOptions` | `ServerOptions`                                                                                                                                       | `{ host: "127.0.0.1", port: 7331 }`: loopback, no credential.                                                             |
-| `isLoopbackHost`       | `(host: string) => boolean`                                                                                                                           | True for `127.0.0.1`, `::1`, and `localhost`, and nothing else.                                                           |
-| `bindRefusal`          | `(options: ServerOptions) => GatewayError \| undefined`                                                                                               | The typed `bind_failed` refusal a requested bind earns, or `undefined` when it is allowed.                                |
-| `listenOptions`        | `(options: ServerOptions) => Effect<ListenOptions, GatewayError>`                                                                                     | The admitted `node:net` options, with this module's own fields removed, or that refusal in the error channel.             |
-| `ingressOptions`       | `(options: ServerOptions) => GatewayServer.IngressOptions`                                                                                            | The Host policy for a bind: the loopback names, `allowedHosts`, and the concrete bind host; a wildcard bind adds nothing. |
-| `layerAuth`            | `(options: ServerOptions) => Layer<ControlRpcs.ControlAuth>`                                                                                          | The bearer or a scoped token minted under it when a credential is configured; the loopback-only local operator otherwise. |
-| `bearerPrincipal`      | `Readonly<{ id: string; kind: string }>`                                                                                                              | The frozen `{ id: "gateway", kind: "bearer" }` identity stamped by shared-bearer authentication.                          |
-| `scopedPrincipal`      | `Readonly<{ id: string; kind: string }>`                                                                                                              | The frozen `{ id: "gateway", kind: "scoped" }` identity a verified scoped token stamps.                                   |
-| `scopedTokenPaths`     | `ReadonlyArray<string>`                                                                                                                               | The protected mounts a scoped token may reach at the edge: `/rpc`, `/projections`, their sockets, and `/auth/ticket`.     |
-| `layer`                | `(health: GatewayServer.Health, options?: ServerOptions) => Layer<..., GatewayError, Control \| SyncAuth \| SyncServer \| Projections>`               | The assembled gateway on a Node HTTP server.                                                                              |
+| Export                 | Signature                                                                                                                                                                                  | Meaning                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ServerOptions`        | `ListenOptions & { requestScheme?: "http:" \| "https:"; allowedHosts?: readonly string[]; listen?: boolean; credential?: string; heartbeatMillis?: number; maxRequestBodyBytes?: number }` | Bind address, explicitly admitted Host names, authentication, and request limits. `requestScheme` defaults to `http:`; set `https:` behind a trusted TLS terminator. |
+| `defaultServerOptions` | `ServerOptions`                                                                                                                                                                            | `{ host: "127.0.0.1", port: 7331 }`: loopback, no credential.                                                                                                        |
+| `isLoopbackHost`       | `(host: string) => boolean`                                                                                                                                                                | True for `127.0.0.1`, `::1`, and `localhost`, and nothing else.                                                                                                      |
+| `bindRefusal`          | `(options: ServerOptions) => GatewayError \| undefined`                                                                                                                                    | The typed `bind_failed` refusal a requested bind earns, or `undefined` when it is allowed.                                                                           |
+| `listenOptions`        | `(options: ServerOptions) => Effect<ListenOptions, GatewayError>`                                                                                                                          | The admitted `node:net` options, with this module's own fields removed, or that refusal in the error channel.                                                        |
+| `ingressOptions`       | `(options: ServerOptions) => GatewayServer.IngressOptions`                                                                                                                                 | The Host policy for a bind: the loopback names, `allowedHosts`, and the concrete bind host; a wildcard bind adds nothing.                                            |
+| `layerAuth`            | `(options: ServerOptions) => Layer<ControlRpcs.ControlAuth>`                                                                                                                               | The bearer or a scoped token minted under it when a credential is configured; the loopback-only local operator otherwise.                                            |
+| `bearerPrincipal`      | `Readonly<{ id: string; kind: string }>`                                                                                                                                                   | The frozen `{ id: "gateway", kind: "bearer" }` identity stamped by shared-bearer authentication.                                                                     |
+| `scopedPrincipal`      | `Readonly<{ id: string; kind: string }>`                                                                                                                                                   | The frozen `{ id: "gateway", kind: "scoped" }` identity a verified scoped token stamps.                                                                              |
+| `scopedTokenPaths`     | `ReadonlyArray<string>`                                                                                                                                                                    | The protected mounts a scoped token may reach at the edge: `/rpc`, `/projections`, their sockets, and `/auth/ticket`.                                                |
+| `layer`                | `(health: GatewayServer.Health, options?: ServerOptions) => Layer<..., GatewayError, Control \| SyncAuth \| SyncServer \| Projections>`                                                    | The assembled gateway on a Node HTTP server.                                                                                                                         |
 
 `layer` supplies the bind policy, the shared-credential authentication both RPC
 mounts run under, and newline-delimited JSON as the wire serialization. The
@@ -28307,6 +28332,10 @@ Missing entries become zero; a dictionary that fits neither format fails as
 `invalid_answer`. This follows Jev's indexed response while accepting
 unambiguous label-keyed responses from other evaluators.
 
+`Classifier.make` snapshots and freezes the question map, questions and nested
+criteria. Mutating the caller's declaration cannot change the evaluated questions
+or answer decoding under the original digest.
+
 Question names, option names and rubric labels are JSON object keys, including
 `__proto__`, `constructor` and `toString`. Decoding reads only own properties
 and preserves these names in the answer and probability records.
@@ -28406,6 +28435,10 @@ includes cache reads and cache writes; each class is charged at its own rate.
 | `weigh(usage, rates)`              | function | The rate-weighted token sum. `NaN` for missing input or output counts, invalid counters, or cache classes larger than the input count.                                                                      |
 | `costUsd(usage, price)`            | function | USD for one call. A long-context card prices the whole call from its threshold.                                                                                                                             |
 | `cost(usage, modelId, options?)`   | function | `{ costUsd, costSource }`: `"reported"` when the usage carries a valid provider charge, else `"estimated"` from the rate card; `undefined` when neither exists.                                             |
+
+Arithmetic overflow leaves estimated usage unpriced: `weigh` and `costUsd`
+return `NaN`, and `cost` returns `undefined`. A valid provider-reported cost
+still takes precedence.
 
 `@smthrs/agent`'s `Budget` writes `costUsd` and `costSource` on each usage
 record and spend-ledger entry, and takes `prices` rows over `table`.
@@ -35635,7 +35668,8 @@ one with `sandbox: { provider, network?, cpus?, memoryMib?, timeoutSecs? }`:
 `container`, `daytona`, `directory`, `just-bash`, `kubernetes`, `microsandbox`,
 `vercel`), `network` is `none`, `open`, or `{ allow: [hosts] }` of host names (absent,
 the provider's default applies; `microsandbox` then gives no network), `cpus` is a positive
-number, and the other limits are positive whole numbers. A selection places the
+finite number, and the other limits are positive whole numbers. `SandboxSelection`
+enforces these limits when decoding descriptors too. A selection places the
 flow in `sandbox`. An unknown provider or key, a malformed option, or a
 `placement` other than `sandbox` refuses the flow with `invalid_sandbox`.
 
@@ -35681,6 +35715,9 @@ exclusion is `pack`, which describes where discovery found the declaration
 rather than what the call depends on. `capabilities` is sorted because a set is
 what it means; every other array hashes in declaration order. Absent `Option`
 and optional fields hash as `null`.
+
+Measured `lockfiles` contribute their relative root and digest. When absent,
+this field is omitted from the hash to preserve historical declaration identities.
 
 Unlike `executionDigest` this is always defined. It identifies what was
 declared, not whether the source bytes were measured, so a descriptor with no
@@ -37049,10 +37086,9 @@ The registry sources one pack contributes, in manifest order. Every `flows` and
 pack root. Discovery uses the same pipeline as project directories. `source`
 carries `pack:<name>`, which is what a warning about a pack file reads back.
 
-Lexical containment is always enforced. When the pack root's real path
-resolves, a source must resolve inside it or not exist yet; any other
-`realPath` failure is refused. Hosts that cannot resolve the pack root use the
-lexical verdict. The defense
+Lexical containment is always enforced. The pack root's real path must resolve,
+or `sources` fails `invalid_pack`. A source must resolve inside it or not exist
+yet (`NotFound`); any other `realPath` failure is refused. The defense
 is repeated here because callers may construct an `Installed` value without
 decoding a manifest first. Discovery repeats the real-path check for the
 source root, every descended directory, and every selected entry file. Nested

@@ -796,6 +796,10 @@ Missing entries become zero; a dictionary that fits neither format fails as
 `invalid_answer`. This follows Jev's indexed response while accepting
 unambiguous label-keyed responses from other evaluators.
 
+`Classifier.make` snapshots and freezes the question map, questions and nested
+criteria. Mutating the caller's declaration cannot change the evaluated questions
+or answer decoding under the original digest.
+
 Question names, option names and rubric labels are JSON object keys, including
 `__proto__`, `constructor` and `toString`. Decoding reads only own properties
 and preserves these names in the answer and probability records.
@@ -895,6 +899,10 @@ includes cache reads and cache writes; each class is charged at its own rate.
 | `weigh(usage, rates)`              | function | The rate-weighted token sum. `NaN` for missing input or output counts, invalid counters, or cache classes larger than the input count.                                                                      |
 | `costUsd(usage, price)`            | function | USD for one call. A long-context card prices the whole call from its threshold.                                                                                                                             |
 | `cost(usage, modelId, options?)`   | function | `{ costUsd, costSource }`: `"reported"` when the usage carries a valid provider charge, else `"estimated"` from the rate card; `undefined` when neither exists.                                             |
+
+Arithmetic overflow leaves estimated usage unpriced: `weigh` and `costUsd`
+return `NaN`, and `cost` returns `undefined`. A valid provider-reported cost
+still takes precedence.
 
 `@smthrs/agent`'s `Budget` writes `costUsd` and `costSource` on each usage
 record and spend-ledger entry, and takes `prices` rows over `table`.

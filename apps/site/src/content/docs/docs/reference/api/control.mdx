@@ -111,12 +111,12 @@ schema constant and a type of the same name unless noted.
 
 ### Authority
 
-| Export            | Shape                                                                                                                                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Envelope`        | `{ capabilities: string[]; flows: string[]; budget: { tokens?: number; milliseconds?: number; usd?: number; onExceeded?: BudgetOnExceeded }; host?: string }`. |
-| `GrantScope`      | `"once" \| "run" \| "remembered"`.                                                                                                                             |
-| `ApprovalTarget`  | `{ _tag: "Plan", planId, digest, envelope }` or `{ _tag: "Node", runId, requestId, digest, envelope }`.                                                        |
-| `ApprovalPayload` | `{ target: ApprovalTarget; scope: GrantScope; idempotencyKey: IdempotencyKey }`.                                                                               |
+| Export            | Shape                                                                                                                                                                                    |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Envelope`        | `{ capabilities: string[]; flows: string[]; budget: { tokens?: number; milliseconds?: number; usd?: number; onExceeded?: BudgetOnExceeded }; host?: string }`. Ceilings are nonnegative. |
+| `GrantScope`      | `"once" \| "run" \| "remembered"`.                                                                                                                                                       |
+| `ApprovalTarget`  | `{ _tag: "Plan", planId, digest, envelope }` or `{ _tag: "Node", runId, requestId, digest, envelope }`.                                                                                  |
+| `ApprovalPayload` | `{ target: ApprovalTarget; scope: GrantScope; idempotencyKey: IdempotencyKey }`.                                                                                                         |
 
 ### Plans
 
@@ -632,7 +632,7 @@ its members.
 A handler defect, an untyped failure no procedure declares, reaches a client as
 a `Die` whose defect is `{ "name": "Error", "message": "Something went wrong on
 our side. Not your fault." }`. Its raw message and stack never cross the wire;
-the server logs them through `ControlServer.logDefect`. A string defect passes
+the server records only a content-free diagnostic through `ControlServer.logDefect`. A string defect passes
 unchanged, so a payload that fails to decode still answers with the request
 decoder's own sentence. The encoded shape is the one `Schema.Defect()` decodes,
 so older clients and servers read each other's defects.
@@ -659,11 +659,17 @@ is `smt1.<claims>.<signature>`. `smthrs token mint` is the command over it.
 
 ## ControlServer
 
-| Export      | Meaning                                                                                                                                                                                |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `layer`     | The handlers, delegating to `Control`. Every mutation that records who asked reads `ControlPrincipal` and stamps it rather than forwarding what the client sent.                       |
-| `layerHttp` | Mounts both protocols on the ambient `HttpRouter`: unary procedures over `POST /rpc`, and `watch` over `WebSocket /rpc/ws`.                                                            |
-| `logDefect` | `(cause: Cause<unknown>) => Effect<void>`. Logs a handler's raw defect at error level and ignores typed failures. Tap it around a handler with `Effect.tapCause` or `Stream.tapCause`. |
+An Origin must match the endpoint's scheme and Host. Hosts with relative request
+URLs provide `RequestScheme`, e.g. `Layer.succeed(ControlServer.RequestScheme,
+"https:")` for TLS or a trusted TLS terminator. Without it, browser origins are
+refused; requests without Origin still work. Forwarding headers are not trusted
+automatically. Absolute Web request URLs already supply the scheme.
+
+| Export      | Meaning                                                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `layer`     | The handlers, delegating to `Control`. Every mutation that records who asked reads `ControlPrincipal` and stamps it rather than forwarding what the client sent.                                         |
+| `layerHttp` | Mounts both protocols on the ambient `HttpRouter`: unary procedures over `POST /rpc`, and `watch` over `WebSocket /rpc/ws`.                                                                              |
+| `logDefect` | `(cause: Cause<unknown>) => Effect<void>`. Logs a content-free handler-defect diagnostic at error level and ignores typed failures. Tap it around a handler with `Effect.tapCause` or `Stream.tapCause`. |
 
 ## ControlClient
 

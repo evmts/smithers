@@ -2078,11 +2078,16 @@ Builds or provides the durable child port:
 - `spawn` starts the named flow as a run of its own, linked to the caller
   through the engine's parent-edge table and spawned with the result discarded,
   which records `onParentExit: "detach"` so the child outlives its parent. It
-  answers once the child's run row exists.
+  answers once the child's run row exists. The start budget includes storage
+  reads and interrupts stalled admission. Only omitted input defaults to `{}`;
+  explicit `null` reaches the child's payload schema unchanged. Detached
+  execution diagnostics are redacted before logging.
 - `await` reads the child's settled result out of the run store, so it works
   from a different engine, a different process, and a later incarnation. It
-  waits by re-reading the child's run row on an interval rather than suspending
-  the run, so a cell that awaits a long child holds its round open.
+  parks the caller on durable timers between checks inside a flow. A sealed
+  invocation deadline survives replay, including process restart. Outside a
+  flow, host collectors poll in memory. Runtime polling and state decoding
+  failures are catchable `ChildError { code: "failed" }` failures.
 - `send` steers the child through `Control.steer`, naming the message with the
   calling step's canonical key so a re-driven round delivers it once. The
   message carries a timestamp read inside a sealed step, so a re-drive submits
@@ -2367,6 +2372,13 @@ paths that resolve outside the root (including Windows backslash traversal),
 root directory targets, and overlapping file paths are refused. Symbolic links
 below the root are refused with `FlowStoreError { code: "invalid_path" }`.
 
+Writing requires the kernel's descriptor-relative, no-follow filesystem host
+extension, or a genuinely isolated filesystem. Plain path-based hosts fail
+with `unsupported`. Publication, backups, rollback and cleanup use a view
+pinned to the root; concurrent replacement of a parent cannot redirect writes.
+Cleanup failure retains staging, logs a warning, and preserves the original
+publication result.
+
 Writes to the same resolved root are serialized within this process, including
 across store instances and saves of the same flow.
 Each save stages all new files and copies of existing files in a temporary
@@ -2558,6 +2570,13 @@ call failure with the speculative changes discarded. Materialization is
 explicit, so a conflicting concurrent write is a typed refusal instead of a
 lost update. It is a `CallRunner` decorator rather than an option on `make`, so
 a host chooses the transaction boundary by composition.
+
+Sandbox memo keys include `Action.CurrentCacheEnvironment` (effective layers
+and authority). Without that environment they include the ambient flow execution
+id; outside a runtime, an unknown environment disables sandbox memoization.
+`make` explicitly
+clears an inherited cache environment when `Options.capabilities` is omitted,
+so undeclared authority cannot enable reuse between runs.
 
 ### FlowEngineLike.RecordedModelStep
 
