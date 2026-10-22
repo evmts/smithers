@@ -166,10 +166,22 @@ describe("PresenceRoom", () => {
         PresenceRoom.join(room.host, room.accept(), { ...person("ada"), data: "€".repeat(171) })
       )
       expect(Exit.isFailure(tooMuch) && Cause.hasDies(tooMuch.cause)).toBe(true)
+      if (Exit.isFailure(tooMuch)) {
+        expect(Cause.squash(tooMuch.cause)).toMatchObject({
+          _tag: "PlatformError",
+          reason: { _tag: "BadArgument", module: "PresenceRoom", method: "join" }
+        })
+      }
       const socket = room.accept()
       yield* PresenceRoom.join(room.host, socket, person("bob"))
       const twice = yield* Effect.exit(PresenceRoom.join(room.host, socket, person("bob")))
       expect(Exit.isFailure(twice) && Cause.hasDies(twice.cause)).toBe(true)
+      if (Exit.isFailure(twice)) {
+        expect(Cause.squash(twice.cause)).toMatchObject({
+          _tag: "PlatformError",
+          reason: { _tag: "BadArgument", module: "PresenceRoom", method: "join" }
+        })
+      }
       expect(yield* PresenceRoom.connections(room.host)).toHaveLength(1)
     }))
 

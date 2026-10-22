@@ -151,6 +151,12 @@ describe("PresenceSocket", () => {
       for (const state of ["x".repeat(1025), "€".repeat(342)]) {
         const exit = yield* Effect.exit(connection.set(state))
         expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.squash(exit.cause)).toMatchObject({
+            _tag: "PlatformError",
+            reason: { _tag: "BadArgument", module: "PresenceSocket", method: "set" }
+          })
+        }
       }
     }).pipe(Effect.scoped))
 

@@ -27,6 +27,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
+import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import { fits, participantOf, rosterFrame } from "./internal/PresenceWire.ts"
 import {
@@ -278,10 +279,22 @@ export const join = <S extends RoomSocket<R>, R = never>(
 ): Effect.Effect<"joined" | "full", never, R> =>
   Effect.gen(function*() {
     if (identity.data !== undefined && !fits(identity.data, maxDataBytes)) {
-      return yield* Effect.die(new Error(`PresenceRoom.join: data over ${maxDataBytes} bytes`))
+      return yield* Effect.die(
+        PlatformError.badArgument({
+          module: "PresenceRoom",
+          method: "join",
+          description: `data over ${maxDataBytes} bytes`
+        })
+      )
     }
     if (attachmentOf(socket) !== undefined) {
-      return yield* Effect.die(new Error("PresenceRoom.join: the socket has already joined"))
+      return yield* Effect.die(
+        PlatformError.badArgument({
+          module: "PresenceRoom",
+          method: "join",
+          description: "the socket has already joined"
+        })
+      )
     }
     const joined = yield* joinedOf(host)
     if (joined.length >= maxParticipants) {

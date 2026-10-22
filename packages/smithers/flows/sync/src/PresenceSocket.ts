@@ -23,6 +23,7 @@
  */
 
 import * as Effect from "effect/Effect"
+import * as PlatformError from "effect/PlatformError"
 import * as PubSub from "effect/PubSub"
 import * as Queue from "effect/Queue"
 import type * as Scope from "effect/Scope"
@@ -199,7 +200,13 @@ export const connect = (url: string): Effect.Effect<Connection, never, Scope.Sco
     return {
       set: (state) =>
         state !== null && !fits(state, maxStateBytes)
-          ? Effect.die(new Error(`PresenceSocket.set: state over ${maxStateBytes} bytes`))
+          ? Effect.die(
+            PlatformError.badArgument({
+              module: "PresenceSocket",
+              method: "set",
+              description: `state over ${maxStateBytes} bytes`
+            })
+          )
           : Effect.sync(() => {
             live.state = state
             writeState()

@@ -78,7 +78,8 @@ calls `join`, and calls `evict` when someone loses access.
 
 `Identity.data` is the host's own note on a connection, at most
 `maxDataBytes`, such as the session it authenticated. It never reaches a page.
-Data over the cap, or joining one socket twice, is the host's bug and dies.
+Data over the cap, or joining one socket twice, is the host's bug and dies
+with a `PlatformError` whose reason is `BadArgument`.
 
 A send to a socket that already closed never fails the room. Workerd throws on
 a send after close; the room drops that socket from the roster and tells the
@@ -143,7 +144,8 @@ export const follow = Effect.gen(function*() {
 - **State.** Only the latest state is kept. It goes out once the connection
   opens and again after every reconnect, because a fresh connection joins with
   a `null` state. A state the room already holds is not sent again. A state
-  over `maxStateBytes` is the caller's bug and dies.
+  over `maxStateBytes` is the caller's bug and dies with a `PlatformError`
+  whose reason is `BadArgument`.
 - **Scope.** Closing the scope closes the socket with 1000 and stops
   redialing.
 
