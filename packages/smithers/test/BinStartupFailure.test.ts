@@ -1,10 +1,10 @@
 /**
  * A module that fails to load at startup is a failure nobody designed a
- * sentence for, so the executable prints the generic sentence. `--verbose`
- * appends the raw cause, which names the missing package (#2907).
+ * sentence for. Since 4fe3f0724117 every unexpected failure carries a short
+ * safe summary and a private diagnostic receipt, regardless of verbosity.
  */
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -17,12 +17,14 @@ const missingModule = fileURLToPath(new URL("./fixtures/missing-startup-module.t
 const run = (args: ReadonlyArray<string>, redaction = false) => {
   const cwd = mkdtempSync(join(tmpdir(), "smithers-bin-startup-"))
   try {
-    return spawnSync(process.execPath, ["--no-warnings", "--import", missingModule, executable, ...args], {
+    const result = spawnSync(process.execPath, ["--no-warnings", "--import", missingModule, executable, ...args], {
       cwd,
       encoding: "utf8",
       timeout: 180_000,
       env: { ...process.env, NODE_OPTIONS: "", SMITHERS_TEST_STARTUP_REDACTION: redaction ? "1" : "" }
     })
+    const path = /Diagnostics: (.+)\n?$/.exec(result.stderr)?.[1]
+    return { ...result, diagnostic: path === undefined ? undefined : readFileSync(path, "utf8") }
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
@@ -42,13 +44,17 @@ describe("a module that fails to load at startup", { timeout: 240_000 }, () => {
     { name: "opaque inline option value", args: ["targets", "--header=x-opaque:--verbose"] },
     { name: "literal argument tail", args: ["targets", "--", "--verbose"] },
     { name: "first false occurrence wins", args: ["--verbose=false", "targets", "--verbose"] }
-  ])("prints only the generic sentence for $name", ({ args }) => {
+  ])("prints a bounded diagnostic receipt for $name", ({ args }) => {
     const result = run(args)
     expect(result.error).toBeUndefined()
     expect(result.signal).toBeNull()
     expect(result.status).toBe(1)
     expect(result.stdout).toBe("")
-    expect(result.stderr).toBe(`${unknownSentence}\n`)
+    expect(result.stderr.startsWith(`${unknownSentence}\n`)).toBe(true)
+    expect(result.stderr).toContain("@smthrs/missing-startup-module")
+    expect(result.stderr).toMatch(/\nDiagnostics: .+\/failure\.log\n$/)
+    expect(result.diagnostic).toContain("@smthrs/missing-startup-module")
+    expect(result.stderr).not.toMatch(/\n\s+at /)
   })
 
   it.each([
@@ -75,7 +81,9 @@ describe("a module that fails to load at startup", { timeout: 240_000 }, () => {
       expect(result.status).toBe(1)
       expect(result.stdout).toBe("")
       expect(result.stderr).toContain("@smthrs/missing-startup-module")
-      expect(result.stderr).toContain("[REDACTED")
+      expect(result.diagnostic).toContain("[REDACTED")
+      expect(result.diagnostic).not.toContain("synthetic-startup-bearer")
+      expect(result.diagnostic).not.toContain("synthetic-startup-api-key")
       expect(result.stderr).not.toContain("synthetic-startup-bearer")
       expect(result.stderr).not.toContain("synthetic-startup-api-key")
     }

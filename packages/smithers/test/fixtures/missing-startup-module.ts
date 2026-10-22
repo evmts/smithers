@@ -13,7 +13,8 @@ registerHooks({
       // Keep the actual missing-module error. Only the diagnostic control adds
       // a synthetic nested credential shape to prove terminal redaction.
       if (process.env.SMITHERS_TEST_STARTUP_REDACTION === "1" && error instanceof Error) {
-        error.cause = new Error("Authorization: Bearer synthetic-startup-bearer\napi_key=synthetic-startup-api-key")
+        error.message += "\nAuthorization: Bearer synthetic-startup-bearer"
+        error.cause = new Error("api_key=synthetic-startup-api-key")
       }
       throw error
     }

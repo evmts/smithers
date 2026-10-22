@@ -172,7 +172,12 @@ describe("unified historical command dispatch", () => {
     ports.read.mockRejectedValue("Authorization: Bearer private-fixture")
     const result = await invoke(["inspect", "run-1", "--root", directory])
     expect(result.codes).toEqual([1])
-    expect(JSON.parse(result.stdout)).toEqual({ code: "history_failed", message: Failure.unknownSentence })
+    expect(JSON.parse(result.stdout)).toEqual({
+      code: "history_failed",
+      message: expect.stringMatching(
+        /^Something went wrong on our side\. Not your fault\.\nUnknownFailure: No diagnostic message\nDiagnostics: .+\/failure\.log$/
+      )
+    })
     expect(result.stdout).not.toContain("private-fixture")
   })
 
