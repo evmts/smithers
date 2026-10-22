@@ -3143,7 +3143,7 @@
         }
       },
       "declarations": {
-        "DatabaseMetrics.d.ts": "1f96d0ece07238749cf029a26c8a13d73344c7e14f5fef8d6b5c868624787fb2",
+        "DatabaseMetrics.d.ts": "4974160e3690873906a6e52bfe319974fb99e0b6d573b3aa334caa1c24be8032",
         "Dialect.d.ts": "d39b27fc170a47681b5e40ef643fb73efa9fadc00c11816355f07160fc6593fc",
         "DurableWriter.d.ts": "e1cb20258691266fe5f25c10504740084355370a44eb5318c6aa48bfec9ab33b",
         "Migrations.d.ts": "7fe4ab2bb0eae97b338de541d586e402abb104c591a52534b5860784dfbdd557",
@@ -3160,7 +3160,7 @@
         "internal/UnsupportedDatabase.d.ts": "1f2f8205fc6e796619f60ec302e85af6b24ba095f888337e79834f36bf07eb56",
         "internal/WriteRetry.d.ts": "3811ac0f28704e810db6895eaf2e3b421311ad559f1252f4f06daa9be11ae5eb",
         "node/NodeDatabase.d.ts": "771fa8c5ea15a3c63afb8482dc195d8e0190e9f511e6f2aaaba339f1b84f0b69",
-        "postgres/PostgresDatabase.d.ts": "738570c87908d2564fa98d7dc317eb6ab725cb6a12393811e7290184c52d285a",
+        "postgres/PostgresDatabase.d.ts": "c66465fc46cb8658d2644d9e78c827ea2bfc0d5b6d4cf6e4ed37505766b1460f",
         "test/TestDatabase.d.ts": "f927b1d6cada3380eb6215ec523115a9c130fa770a365dfed0562d5a732bae0d"
       }
     },
@@ -8298,10 +8298,10 @@
         "ContainerSession.d.ts": "797393164b7ee24a219c4d1fdd574fa20e690a04a4e5b8b6154a327cf2a9b796",
         "ContainerTerminal.d.ts": "86fe57f2fcd945b8cbf213e5497bf5ef6c86a27978ae569f5ac425ab74effce0",
         "EdgeCache.d.ts": "bc463a0d333b9377c4366182d6b185faca297a27d999eb67315a83ca24d4639e",
-        "ExecutionObject.d.ts": "3acb005661dfbabde3f5e8e5fdce3fb59c176d00e9439558d29913c2e4137725",
+        "ExecutionObject.d.ts": "f1ab45fb2e816996617836e65da0ab0e26967a354f8e08ea75c161ca8f7c15fd",
         "SandboxObject.d.ts": "cb2b361fe7a91acf8c2c94ce58dbf2ba3253e0c28dac6340077007a76211b164",
         "index.d.ts": "c1d014d9436a966fd69f69ff6946c0a92b63cf9f698b8183046956f37bcc1a16",
-        "internal/FailureDetail.d.ts": "30335930f24652e664b9708ff201f87e4e70d0d4946251cd92fc09b6a284f595",
+        "internal/FailureDetail.d.ts": "298722b275b8ae20c94eceac795933d1963b38d48cc98f4f4c80ee2899e4c6bb",
         "internal/Observed.d.ts": "d17191ea497537cbaeb0ca4848a745dd4bf0d2f082cca16a1bf1fe9ddbc8af1b",
         "internal/Refusals.d.ts": "57ac9e4d2d55798b343b707ce6024eb64e1f153a978a308175a2a09e0830ac80",
         "internal/Routing.d.ts": "319bc978a96571e725b078cf37f84db518e4492a181b62205c157e623b71ac18"
