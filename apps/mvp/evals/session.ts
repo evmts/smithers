@@ -27,7 +27,7 @@ import { answerRow, openAgent } from "../src/test/agent"
 import { openDevice } from "../src/test/device"
 import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
 import type { CaseInput, Person, Seed } from "./cases"
-import type { Asked, Draft, Trial, Usage, View } from "./checks"
+import type { Asked, Draft, ModelFailure, Trial, Usage, View } from "./checks"
 import { tokenCap } from "./report"
 
 /** How long one answer may take, asks and flow drafts included, before the trial counts it unanswered. */
@@ -72,14 +72,51 @@ const refusedModel = (fetch: typeof globalThis.fetch) =>
  * have spent `maxTokens`.
  */
 export const openSession = async (runtime: Runtime, maxTokens: number) => {
+  /** The model calls that failed since the trial began, so an artifact says why a model failed, not only that it did. */
+  const failures: Array<ModelFailure> = []
   // The provider pool lives as long as the eval program.
   const provider = await openProviderResource(EgressHttpClient.providerFetch(process.env))
   providers.add(provider)
-  const fetch = provider.value
+  const providerFetch = provider.value
+  /** The provider requests this trial made through `providerFetch`, and how many failed before an answer. */
+  let requests = { made: 0, failed: 0 }
+  /** The trial's provider fetch, noting what broke under a request that failed before its answer: the model sees only `transport`. */
+  const fetch = (async (input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+    requests.made++
+    try {
+      return await providerFetch(input, init)
+    } catch (error) {
+      requests.failed++
+      const cause = (error as { readonly cause?: { readonly code?: unknown; readonly message?: unknown } }).cause
+      failures.push({
+        code: "fetch",
+        httpStatus: null,
+        providerCode: typeof cause?.code === "string" ? cause.code : null,
+        message: typeof cause?.message === "string" ? cause.message.slice(0, 300) : String(error).slice(0, 300),
+      })
+      throw error
+    }
+  }) as typeof globalThis.fetch
   const rawModel = await Effect.runPromise(defaultModel(fetch))
   const candidate = candidateConfig(process.env)
   const budget = candidate ? openBudget(process.env.INFERENCE_LEDGER!, process.env.INFERENCE_PROVIDER!, candidate, 'eval', 2) : undefined
-  const model = budget ? guardedModel(rawModel, budget) : rawModel
+  const guarded = budget ? guardedModel(rawModel, budget) : rawModel
+  /** `host` noting each call that failed, as the SDK's `ModelError` says, in the trial's `modelFailures`. */
+  const observed = (host: typeof guarded): typeof guarded => ({
+    ...host,
+    model: { ...host.model, stream: (request: Parameters<typeof host.model.stream>[0]) =>
+      host.model.stream(request).pipe(Stream.tapError((error) => Effect.sync(() => failures.push(
+        error._tag === "flows/model/ModelError"
+          ? {
+            code: error.code,
+            httpStatus: error.httpStatus ?? null,
+            providerCode: error.providerCode ?? null,
+            message: error.message.slice(0, 300),
+          }
+          : { code: error._tag, httpStatus: null, providerCode: null, message: "" },
+      )))) },
+  })
+  const model = observed(guarded)
   if (budget) budgets.add(budget)
   const agent = await openAgent(runtime, () => Stream.die(new Error("the evals' model is real")), {
     model,
@@ -90,7 +127,7 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
   const agentFor = async (provider: CaseInput["provider"]) => {
     if (provider === "model") return agent
     refusing ??= await openAgent(runtime, () => Stream.die(new Error("the evals' model is real")), {
-      model: await Effect.runPromise(refusedModel(fetch)),
+      model: observed(await Effect.runPromise(refusedModel(fetch))),
       partsEvery: "250 millis",
     })
     return refusing
@@ -113,13 +150,15 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
         if (row?.status === "needs_you" && row.wait !== null && asked.length < row.version) {
           const value = row.wait.kind === "approval" ? person.approve : person.words
           asked.push({ kind: row.wait.kind, prompt: row.wait.prompt, value })
-          await Effect.runPromise(
+          const answered = await Effect.runPromise(
             device.dispatch.dispatch(
               "run/answer",
               { runId: answerId, version: row.version, execution: row.wait.execution, value },
               { door: "button" },
             ),
           )
+          // A refused answer would leave the agent waiting out the trial: the case fails now, saying why.
+          if (answered._tag === "Failed") throw new Error(`The person's answer failed: ${JSON.stringify(answered.error)}`)
         }
       }),
       ANSWER_WITHIN_MS,
@@ -172,10 +211,16 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
   /** One trial of `kase`: a fresh conversation and device, its ask, and what came of it. */
   const trial = async (kase: CaseInput): Promise<Trial> => {
     cap.before(kase.name)
+    // The endpoint's day budget starts over too: a failed call keeps its whole reservation, so a few model failures
+    // would otherwise spend the scratch deployment's day and refuse every later case `quota_exceeded`. The run's own
+    // cap is `maxTokens`, counted from what the model reported.
     await query((sql) =>
-      sql`TRUNCATE messages, views, runs, flow_drafts, flow_revisions, flows, model_usage, watches RESTART IDENTITY CASCADE`
+      sql`TRUNCATE messages, views, runs, flow_drafts, flow_revisions, flows, model_usage, model_budget_days, watches
+        RESTART IDENTITY CASCADE`
     )
     const asking = await agentFor(kase.provider)
+    failures.length = 0
+    requests = { made: 0, failed: 0 }
     const device = await openDevice(asking.fetch)
     try {
       if (kase.seed !== null) await plant(asking, device, kase.seed)
@@ -205,7 +250,12 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
         text: row.text,
         calls: [...inspection.children]
           .sort((a, b) => a.createdAtMs - b.createdAtMs)
-          .map((child) => ({ flow: child.flowName, input: parsed(child.input.text), status: child.status })),
+          .map((child) => ({
+            flow: child.flowName,
+            input: parsed(child.input.text),
+            status: child.status,
+            result: child.result === null ? null : parsed(child.result.text),
+          })),
         painted: device.painted.slice(paintedBefore).filter((mode) => mode !== undefined),
         navigated: device.navigated.slice(navigatedBefore),
         views: views.map((view): View => ({
@@ -227,6 +277,8 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
           ...(inspection.run.waiting === null ? [] : [`waiting:${inspection.run.waiting.kind}`]),
         ],
         ms,
+        modelFailures: [...failures],
+        requests,
       }
     } finally {
       await device.close()

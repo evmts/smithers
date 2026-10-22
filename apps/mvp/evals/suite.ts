@@ -42,6 +42,14 @@ const MEAN_THRESHOLD = 0.8
 /** How an answer fails when its model, not the agent, failed: the provider refused or broke (agent.md#settling). */
 const MODEL_FAILURES = ["rate_limited", "model_error"]
 
+/** How many times a case's trials may run again after their model failed, and how long each waits first. */
+const MODEL_RETRIES = 2
+const MODEL_PAUSE_MS = 65_000
+
+/** Whether `trial` failed in its model rather than its agent. A case whose provider refuses by design expects it. */
+const modelFailed = (input: CaseInput, trial: Trial) =>
+  input.provider !== "refuses" && MODEL_FAILURES.includes(trial.failure ?? "")
+
 const RESULTS = new URL("results/", import.meta.url)
 
 /** What every case runs: the agent answering in the browser (`chat/Answer`). */
@@ -49,7 +57,12 @@ const AGENT = { name: "chat/Answer" }
 
 interface Output {
   readonly trials: ReadonlyArray<Trial>
+  /** The trials whose model failed and that ran again: none unless the provider refused or broke. */
+  readonly retried?: ReadonlyArray<Trial>
 }
+
+/** Every trial a case ran, retried ones too: what it spent. */
+const spentBy = (output: Output | undefined): ReadonlyArray<Trial> => [...output?.retried ?? [], ...output?.trials ?? []]
 
 const sha256 = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex")
 
@@ -61,6 +74,7 @@ const checksScorer = (
   name: string,
   checks: ReadonlyArray<string>,
   checksOf: (name: string, trial: Trial) => ReadonlyArray<{ name: string; pass: boolean }>,
+  trialsOf: (output: Output) => ReadonlyArray<Trial> = (output) => output.trials,
 ) =>
   Scorer.make({
     id: `mvp/agent/${name}`,
@@ -69,7 +83,7 @@ const checksScorer = (
     config: { checks: sha256(checks) },
     score: ({ input, output }) =>
       Effect.sync(() =>
-        grade((output as Output).trials.map((trial) => checksOf((input as CaseInput).name, trial)))
+        grade(trialsOf(output as Output).map((trial) => checksOf((input as CaseInput).name, trial)))
       ),
   })
 
@@ -88,6 +102,8 @@ const safety = (cases: ReadonlyArray<AgentCase>) =>
     "safety",
     [String(safe), ...cases.map((kase) => `${kase.name}: ${String(kase.unsafe)}`)],
     (name, trial) => [...safe(trial), ...(caseNamed(name, cases).unsafe?.(trial) ?? [])],
+    // Zero tolerance: a trial whose model failed and ran again was still the agent's, and anything unsafe it did counts.
+    spentBy,
   )
 
 /** The host's judge: Jev with the Jev key, else the subscription through `EvaluatorBackup.fromModel`. */
@@ -142,30 +158,42 @@ export const runSuite = async (spec: SuiteSpec) => {
   if (!update && !existsSync(BASELINE)) throw new Error(`No evals/${baselineName}: record one with EVAL_BASELINE=update`)
   const session = await openSession(spec.runtime, maxTokens)
   const outputs = new Map<string, Output>()
+  /** The case whose model still failed after its retries, after which no case runs. */
+  let down: string | undefined
   // A trial that can't run (the budget is spent, the provider is rate limiting, Postgres went away) fails its case,
   // which leaves the run undecided.
   const executor = CaseExecutor.make((suiteCase) =>
     Effect.tryPromise({
       try: async () => {
         const input = suiteCase.input as CaseInput
+        if (down !== undefined) throw new Error(`Not run: the model still failed in ${down} after its retries`)
         const trials: Array<Trial> = []
+        const retried: Array<Trial> = []
+        // Recorded before any trial runs, so a trial that throws (the budget spent) leaves the ones before it on record.
+        outputs.set(input.name, { trials, retried })
         for (let index = 0; index < k; index++) {
-          trials.push(await session.trial(input))
+          let trial = await session.trial(input)
+          // The provider's per-minute limits pass: a trial its model failed runs again after a pause, and the artifact
+          // keeps the failed one, so a retry is never hidden.
+          while (modelFailed(input, trial) && retried.length < MODEL_RETRIES && !session.cap.over) {
+            retried.push(trial)
+            await new Promise((resolve) => setTimeout(resolve, MODEL_PAUSE_MS))
+            trial = await session.trial(input)
+          }
+          trials.push(trial)
           // The trial that took the run past its cap fails its case, and every later trial is refused before it starts.
-          if (session.cap.over) {
-            outputs.set(input.name, { trials })
-            throw new Error(session.cap.past(input.name))
+          if (session.cap.over) throw new Error(session.cap.past(input.name))
+          // The model failing says nothing about the agent: the case didn't run, and the run is undecided. A model
+          // still failing after its pauses is down, so no later trial or case runs: they would only spend time failing.
+          if (modelFailed(input, trial)) {
+            down = input.name
+            throw new Error(`The model failed (${trial.failure}) in ${input.name}; run it again`)
           }
         }
-        outputs.set(input.name, { trials })
-        // The model failing says nothing about the agent: the case didn't run, and the run is undecided. A case whose
-        // provider refuses by design expects it.
-        const failed = input.provider === "refuses"
-          ? undefined
-          : trials.find((trial) => MODEL_FAILURES.includes(trial.failure ?? ""))
-        if (failed !== undefined) throw new Error(`The model failed (${failed.failure}) in ${input.name}; run it again`)
+        process.stderr.write(`eval ${input.name}: ${trials.map((trial) => trial.failure ?? trial.status).join(",")}` +
+          `${retried.length === 0 ? "" : ` after ${retried.length} model failures`}\n`)
         return {
-          output: { trials },
+          output: { trials, retried },
           stepKey: `${input.name}/${sha256(trials.map(work))}`,
           latencyMs: trials.reduce((sum, trial) => sum + trial.ms, 0),
           target: AGENT,
@@ -195,9 +223,19 @@ export const runSuite = async (spec: SuiteSpec) => {
   )
 
   const trials = [...outputs.values()].flatMap((output) => output.trials)
-  const unsafe = run.observations.filter((observation) =>
-    observation.scorerName === "safety" && (observation.kind !== "score" || observation.score < 1)
-  )
+  const spending = [...outputs.values()].flatMap(spentBy)
+  // The cases a safety score failed, and those a trial no score read did something unsafe in: a case whose model
+  // still failed after its retries isn't scored, but what its trials did was the agent's.
+  const unsafe = [...new Set([
+    ...run.observations.filter((observation) =>
+      observation.scorerName === "safety" && (observation.kind !== "score" || observation.score < 1)
+    ).map((observation) => observation.case),
+    ...cases.filter((kase) =>
+      spentBy(outputs.get(kase.name)).some((trial) =>
+        [...safe(trial), ...(kase.unsafe?.(trial) ?? [])].some((result) => !result.pass)
+      )
+    ).map((kase) => kase.name),
+  ])]
   const readings = run.observations.flatMap((observation) =>
     observation.scorerName === "judge" && observation.kind === "score"
       ? ((observation.meta as { readonly readings?: ReadonlyArray<{ readonly usage: ReadingUsage | null }> })
@@ -227,7 +265,7 @@ export const runSuite = async (spec: SuiteSpec) => {
     gate = { ...Gate.ciGrade(verdict), report: Report.markdown(comparison) }
   }
   // Whatever the scores, a run that spent past its cap fails: the last trial can't take it past unseen.
-  gate = capGate(gate, endpointSpend(trials), maxTokens)
+  gate = capGate(gate, endpointSpend(spending), maxTokens)
 
   const scored = cases.map((kase) => ({
     name: kase.name,
@@ -244,7 +282,7 @@ export const runSuite = async (spec: SuiteSpec) => {
       ))],
       judge: Object.keys(questionsFor(kase.name, spec.cases)),
     },
-    spend: endpointSpend(outputs.get(kase.name)?.trials ?? [], session.price).total,
+    spend: endpointSpend(spentBy(outputs.get(kase.name)), session.price).total,
     error: run.cases.find((result) => result.case === kase.name)?.error?.message ?? null,
     scores: Object.fromEntries(
       run.observations.filter((observation) => observation.case === kase.name).map((observation): [string, Scored & { meta: unknown }] => [
@@ -255,6 +293,7 @@ export const runSuite = async (spec: SuiteSpec) => {
       ]),
     ),
     trials: outputs.get(kase.name)?.trials ?? [],
+    retried: outputs.get(kase.name)?.retried ?? [],
   }))
   const artifact = {
     suite: spec.name,
@@ -270,9 +309,9 @@ export const runSuite = async (spec: SuiteSpec) => {
       system: sha256(CHAT_SYSTEM),
       catalog: sha256(agentFlows.map((name) => [name, catalogDescription(name)])),
     },
-    spend: { endpoint: endpointSpend(trials, session.price), judge: judgeSpend(readings) },
+    spend: { endpoint: endpointSpend(spending, session.price), judge: judgeSpend(readings) },
     ms: trials.reduce((sum, trial) => sum + trial.ms, 0),
-    gate: { exitCode: gate.exitCode, summary: gate.summary, unsafe: unsafe.map((observation) => observation.case) },
+    gate: { exitCode: gate.exitCode, summary: gate.summary, unsafe },
     trials: k === 1 ? null : Trials.aggregate(
       Object.fromEntries([...outputs].map(([name, output]) => [
         name,
@@ -289,6 +328,6 @@ export const runSuite = async (spec: SuiteSpec) => {
   const table = summary({ cases: scored, endpoint: artifact.spend.endpoint, judge: artifact.spend.judge, ms: artifact.ms })
   process.stdout.write(`${table}\n${gate.report ?? ""}\n${gate.summary}\nresults: evals/results/${runId}.json\n`)
 
-  expect(unsafe.map((observation) => observation.case)).toEqual([])
+  expect(unsafe).toEqual([])
   expect(gate.exitCode).toBe(0)
 }

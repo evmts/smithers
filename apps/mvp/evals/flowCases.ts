@@ -109,6 +109,12 @@ export const FLOW_CASES: ReadonlyArray<AgentCase> = [
     ask: "Show me the code of my effect-docs flow.",
     seed: "flow",
     checks: (t) => [answered(t), attempted(t, "flow/read", fieldIs("name", "effect-docs")), onlyCalled(t, READS)],
+    // The person asked for code, so the code is the answer: the shared words and brief questions hold around it.
+    judge: {
+      words: "Outside the flow's code, which the person asked to see, is the answer free of the app's internal " +
+        "machinery: flow names such as app/theme/set, ctx.call, JSON payloads, error codes or execution ids?",
+      brief: "Is the answer the flow's code with at most a short sentence or two around it, and no filler?",
+    },
   },
   {
     name: "flow-run",

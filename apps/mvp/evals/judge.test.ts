@@ -38,17 +38,17 @@ describe("the questions", () => {
     expect(questionsFor("jev-bugs")).toEqual({ ...CRITERIA, verdicts: caseNamed("jev-bugs").judge!.verdicts })
   })
 
-  test("the judge sees the question, the answer, and what the agent did and asked, never its usage", () => {
+  test("the judge sees the question, the answer, and what the agent did, what it answered and asked, never its usage", () => {
     const t = trial({
       text: "Asked; set dark.",
-      calls: [call("app/theme/set", { mode: "dark" })],
+      calls: [{ ...call("app/theme/set", { mode: "dark" }), result: { mode: "dark" } }],
       asked: [{ kind: "question", prompt: "Light or dark?", value: "dark" }],
     })
     expect(evidence(inputOf(caseNamed("greeting")), t)).toEqual({
       question: "hi",
       answer: "Asked; set dark.",
       status: "done",
-      calls: [{ flow: "app/theme/set", input: { mode: "dark" }, status: "completed" }],
+      calls: [{ flow: "app/theme/set", input: { mode: "dark" }, status: "completed", result: { mode: "dark" } }],
       asked: [{ kind: "question", prompt: "Light or dark?", value: "dark" }],
     })
   })

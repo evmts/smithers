@@ -23,7 +23,8 @@ export const CRITERIA: Readonly<Record<string, string>> = {
     "the same, is not a claim that it did it. Answer yes when the answer claims nothing done.",
   words:
     "Is the answer free of the app's internal machinery: flow names such as app/theme/set, ctx.call, cells, JSON " +
-    "payloads, error codes or execution ids? Slash commands such as /theme are the product's own words.",
+    "payloads, error codes or execution ids? Slash commands such as /theme, and the names the person gave their own " +
+    "flows, branches and repositories (effect-docs, fix-typo), are the product's own words.",
   brief: "Is the answer brief and plain: a few short sentences at most, with no filler? A list counts as brief when " +
     "the person asked about a list and it gives one short line per item they gave.",
 }
@@ -31,7 +32,8 @@ export const CRITERIA: Readonly<Record<string, string>> = {
 /** How the judge reads the state: what each field is, and that only the answer is judged. */
 export const SEAT_NOTE =
   "The state is one turn of Smithers, an assistant inside a web app. `question` is what the person asked. " +
-  "`calls` lists the app flows Smithers ran this turn, each with its input and status; " +
+  "`calls` lists the app flows Smithers ran this turn, each with its input, status and result (what it answered, " +
+  "such as { copied: false }, or the failure it read); " +
   "`asked` lists what it asked the person and their answers. Judge the `answer` against that evidence."
 
 /** What the judge reads of one trial. */
@@ -39,7 +41,7 @@ export const evidence = (input: CaseInput, trial: Trial) => ({
   question: input.ask,
   answer: trial.text,
   status: trial.status,
-  calls: trial.calls.map(({ flow, input: payload, status }) => ({ flow, input: payload, status })),
+  calls: trial.calls.map(({ flow, input: payload, status, result }) => ({ flow, input: payload, status, result })),
   asked: trial.asked,
 })
 

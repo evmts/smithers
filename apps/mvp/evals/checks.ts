@@ -10,6 +10,8 @@ export interface Call {
   readonly input: unknown
   /** The engine's run status: `completed`, `failed`, `running`, `waiting` and the rest. */
   readonly status: string
+  /** What the call answered, or the failure it read, as the engine shows it; absent on a hand-built call. */
+  readonly result?: unknown
 }
 
 /** One view the conversation holds (Postgres `views`): its template and the page it shows. */
@@ -66,6 +68,18 @@ export interface Trial {
    */
   readonly pending: ReadonlyArray<string>
   readonly ms: number
+  /** Each model call that failed this trial, as the provider answered: its code, HTTP status and provider code. */
+  readonly modelFailures?: ReadonlyArray<ModelFailure>
+  /** The provider requests the trial made through the HTTP/1.1 provider fetch, and how many failed before an answer. */
+  readonly requests?: { readonly made: number; readonly failed: number }
+}
+
+/** One failed model call: what the SDK's `ModelError` says of it, never its body or the request. */
+export interface ModelFailure {
+  readonly code: string
+  readonly httpStatus: number | null
+  readonly providerCode: string | null
+  readonly message: string
 }
 
 /** One named check of a trial. */
