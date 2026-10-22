@@ -206,48 +206,22 @@ describe("stale lock reclamation", () => {
       expect([...fixture.state.keys()]).toEqual([])
     }))
 
-  it.effect("clears a claim abandoned by a crashed reclaimer", () =>
+  it.effect("fails closed on an abandoned mutation claim without reaping its stalled holder", () =>
     Effect.gen(function*() {
       yield* TestClock.adjust("2 minutes")
       const fixture = files({
         [lockPath]: { value: "crashed", mtime: 0 },
-        [claimPath]: { value: "a-dead-peer", mtime: 0 }
+        [claimPath]: { value: "a-stalled-peer", mtime: 0 }
       })
-      const running = yield* run(fixture.fs, Effect.void).pipe(Effect.forkChild({ startImmediately: true }))
-      yield* TestClock.adjust("25 millis")
-      yield* Fiber.join(running)
-      expect(fixture.renames).toEqual(["crashed"])
-      expect([...fixture.state.keys()]).toEqual([])
-    }))
-
-  it.effect("keeps an abandoned claim that a peer replaced or removed before cleanup", () =>
-    Effect.gen(function*() {
+      const running = yield* run(fixture.fs, Effect.void).pipe(
+        Effect.exit,
+        Effect.forkChild({ startImmediately: true })
+      )
       yield* TestClock.adjust("2 minutes")
-      const now = yield* Clock.currentTimeMillis
-      let claimReads = 0
-      const fixture = files({
-        [lockPath]: { value: "crashed", mtime: 0 },
-        [claimPath]: { value: "a-dead-peer", mtime: 0 }
-      }, {
-        read: (path) => {
-          if (path !== claimPath) return undefined
-          claimReads += 1
-          // First pass: the claim is gone by the time its owner is read.
-          if (claimReads === 1) return Effect.fail(platformError("NotFound", "readFileString"))
-          // Second pass: a live peer replaced it between the age check and removal.
-          if (claimReads === 3) {
-            fixture.state.set(claimPath, { value: "a-live-peer", mtime: now })
-            return Effect.succeed("a-live-peer")
-          }
-          return undefined
-        }
-      })
-      const running = yield* run(fixture.fs, Effect.void).pipe(Effect.forkChild({ startImmediately: true }))
-      yield* TestClock.adjust("50 millis")
-      expect(fixture.state.get(claimPath)?.value).toBe("a-live-peer")
+      expect(Exit.isFailure(yield* Fiber.join(running))).toBe(true)
       expect(fixture.renames).toEqual([])
-      expect(running.pollUnsafe()).toBeUndefined()
-      yield* Fiber.interrupt(running)
+      expect(fixture.state.get(claimPath)?.value).toBe("a-stalled-peer")
+      expect(fixture.state.get(lockPath)?.value).toBe("crashed")
     }))
 
   it.effect("hands back a live lock that took the path between the re-read and the rename", () =>
@@ -362,7 +336,7 @@ describe("artifact lockfile failure and race handling", () => {
       yield* Effect.yieldNow
       yield* TestClock.adjust("25 millis")
       yield* Fiber.join(running)
-      expect(writes).toBe(2)
+      expect(writes).toBe(3)
     }))
 
   it.effect("propagates a contended-lock stat refusal", () =>
@@ -550,17 +524,17 @@ describe("artifact lockfile failure and race handling", () => {
       const log = capture()
       const running = yield* run(fixture.fs, Deferred.await(release)).pipe(
         Effect.provide(log.logger),
+        Effect.exit,
         Effect.forkChild({ startImmediately: true })
       )
       yield* Deferred.await(entered)
       yield* TestClock.adjust("60 seconds")
       expect(fixture.heartbeats()).toBe(0)
       yield* Deferred.succeed(release, undefined)
-      yield* Fiber.join(running)
+      expect(Exit.isFailure(yield* Fiber.join(running))).toBe(true)
       // And it must not delete the replacement on the way out either.
       expect(fixture.removes()).toBe(0)
-      // The protected effect is still running unfenced at this point, so the
-      // heartbeat must not retire silently.
+      // Ownership loss is reported before the caller receives the failure.
       expect(log.messages).toEqual([[
         "Artifact lock was reclaimed while its holder was still running",
         { digest, state: "foreign" }
@@ -580,13 +554,14 @@ describe("artifact lockfile failure and race handling", () => {
       const log = capture()
       const running = yield* run(fixture.fs, Deferred.await(release)).pipe(
         Effect.provide(log.logger),
+        Effect.exit,
         Effect.forkChild({ startImmediately: true })
       )
       yield* Deferred.await(entered)
       yield* TestClock.adjust("60 seconds")
       expect(fixture.heartbeats()).toBe(0)
       yield* Deferred.succeed(release, undefined)
-      yield* Fiber.join(running)
+      expect(Exit.isFailure(yield* Fiber.join(running))).toBe(true)
       expect(log.messages).toEqual([[
         "Artifact lock was reclaimed while its holder was still running",
         { digest, state: "gone" }

@@ -67,7 +67,11 @@ The bounds are the same ones the per-digest locks use:
 A crashed backup stops heartbeating, and its marker becomes reclaimable a
 minute later, so a hard-killed process cannot fence collection forever. The
 flip side is that a backup whose host stalls past 60 seconds can have its lease
-reaped while it is still copying.
+reaped while it is still copying. Observing a missing or foreign marker, or
+any heartbeat refusal, interrupts the copy and fails through `failure`.
+A separate deadline stops the copy 50 seconds after the last successful
+marker refresh, before the marker's 60-second expiry, including time spent
+waiting for gate cleanup. The copy cannot start with expired protection.
 
 Releasing is tolerant of that. A lease whose heartbeat lapsed has its marker
 reaped by whoever noticed, so finding nothing to release is the ordinary end of

@@ -200,7 +200,9 @@ export const makeFileSystem = (
       const safe = yield* ArtifactPath.guard(fs, `${directory}/${parent}`).pipe(Effect.option)
       if (Option.isNone(safe)) continue
       const children = yield* fs.readDirectory(`${directory}/${parent}`).pipe(
-        Effect.orElseSucceed(() => [] as Array<string>)
+        Effect.catch((cause) =>
+          isNotFound(cause) ? Effect.succeed([] as Array<string>) : Effect.fail(hostFailure(cause))
+        )
       )
       for (const child of children) entries.push(`${parent}/${child}`)
     }

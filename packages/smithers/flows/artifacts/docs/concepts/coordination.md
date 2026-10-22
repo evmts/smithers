@@ -43,18 +43,25 @@ objects directory, and digest; unrelated objects roots do not share permits.
 
 Reclaiming a stale lock is serialized per lock generation. A contender reads
 the owner token, then measures the age. If the lock is stale, the contender
-races for a `wx` claim file named after that token. Only the claim winner
-renames the lock away, and only after re-reading that the path still holds the
-same stale token. Two contenders that measured the same lock as stale
+races for a `wx` claim file named after that token. Release takes the same
+claim before reading its token and removing the lock. Only the claim winner
+mutates that generation, after re-reading its token and (for reclamation) age. Two contenders that measured the same lock as stale
 therefore move it at most once, and neither moves the fresh lock the other
 just took.
 
 The fence still assumes a holder that stops heartbeating is dead. A holder
 whose host stalls past 60 seconds is reaped while it is still running, and its
-heartbeat only logs the loss. Neither the mtime check nor the backup gate
+heartbeat logs the loss, interrupts its protected effect, and fails the caller.
+Until that observation, neither the mtime check nor the backup gate
 independently protects against that loss of mutual exclusion. The mtime check
 is followed by a separate delete, and the backup gate uses the same lock
 protocol.
+
+A mutation claim is never automatically reaped. Its holder may be stalled
+between validation and rename, so reclaiming the claim would allow that
+rename to displace a replacement. An abandoned claim makes contenders reach
+the acquisition deadline. Recover it only after stopping all holders that
+could resume the mutation; elapsed time alone does not establish that.
 
 ## Both sides must agree
 
@@ -99,6 +106,14 @@ is registered before acquisition; interruption during marker creation or gate
 release still removes the marker owned by that acquisition. Failed gate release
 also runs marker cleanup, which may wait for the gate to become reclaimable.
 
+A missing or foreign marker, or a refused heartbeat, interrupts the copy and
+fails through the caller's `failure` mapping. An independent deadline follows
+the last successful marker refresh by 50 seconds, including time spent in
+gate cleanup, so gate contention or a stalled update stops the copy before
+the marker's 60-second stale bound. Expired acquisition protection prevents
+the copy from starting. The copy is interrupted before waiting for heartbeat
+gate cleanup.
+
 `ArtifactBackupLease.unlessActive` answers `None` when a live backup fenced the
 operation, and `ArtifactSweep.remove` turns that into `false`. See
 [Fence a backup against the sweep](../guides/fence-a-backup.md).
@@ -106,8 +121,8 @@ operation, and `ArtifactSweep.remove` turns that into `false`. See
 ## What coordination costs
 
 Under `required`, one sweep deletion takes two locks, the per-digest lock and
-then the workspace-global backup-lease gate. That is roughly ten filesystem
-operations and two forked heartbeat fibers per blob. The gate is one file for
+then the workspace-global backup-lease gate. Release also acquires a generation claim; both locks maintain
+heartbeat fibers while held. The gate is one file for
 the whole workspace, so concurrent deletions serialize through it.
 
 That is the price of never deleting a blob a running backup already recorded.
@@ -121,12 +136,12 @@ observes either, because reads resolve only canonical paths and a lock is
 reclaimed on contention alone, so a digest nobody publishes again would keep
 its lock file forever.
 
-Each filesystem store therefore runs one conservative sweep of its own scratch
-on its first publication: `.tmp-*` payloads and `.locks/` entries whose
-modification time is more than an hour old. An hour is far beyond any live
-writer's publication window and sixty times the lock staleness bound, so a file
-that old belongs to no living holder. A file whose age the host cannot report
-says nothing about its owner and survives.
+Each filesystem store runs one conservative sweep on its first publication:
+`.tmp-*` payloads and stale-owner tombstones more than an hour old. Files
+without a known timestamp survive. Active lock paths and mutation claims are
+excluded: a holder can refresh the same inode after an age check. Only the
+lease protocol reclaims lock generations; abandoned claims require host
+recovery with all possible holders stopped.
 
 This is a sweep of scratch, not garbage collection. Reclaiming published
 artifacts is always an explicit `ArtifactSweep` call.

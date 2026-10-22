@@ -100,14 +100,14 @@ export const defaultDirectory = ".flows/objects"
  * How old a scratch file must be before the sweep treats it as a crash orphan
  * rather than a live writer's in-flight file. A publication writes and renames
  * within one `put`, so an hour is far beyond any live writer's window, and it
- * is sixty times the 60-second bound after which a lock file's own contention
- * path reclaims it, so a lock this old belongs to no living holder either.
+ * stale tombstones have no live owner. Active lock and claim paths are never
+ * removed by scratch cleanup, regardless of their age.
  */
 const staleScratchMs = 60 * 60 * 1000
 
 /** Whether an entry is scratch the sweep may reclaim once it is stale. */
 const isScratch = (entry: string): boolean =>
-  entry.includes(".tmp-") || entry.startsWith(`${ArtifactLocks.directoryName}/`)
+  entry.includes(".tmp-") || (entry.startsWith(`${ArtifactLocks.directoryName}/`) && entry.includes(".stale-"))
 
 const isNotFound = (cause: unknown): boolean =>
   cause instanceof PlatformError.PlatformError && cause.reason._tag === "NotFound"
@@ -161,8 +161,8 @@ export const makeFileSystem = (
   )
   /**
    * Best-effort reclamation of scratch files orphaned by a crash: `.tmp-*`
-   * payloads left between the temp write and the rename, and `.locks/*` files
-   * left by a holder that was hard-killed. Nothing else ever observes either —
+   * payloads left between the temp write and the rename, and `.locks/*` stale
+   * tombstones left by interrupted reclamation. Nothing else observes either —
    * reads resolve only canonical paths, and a lock is reclaimed on contention
    * alone, so a digest nobody publishes again keeps its lock file forever —
    * which is how the objects directory would accumulate dead files unboundedly.
@@ -173,14 +173,10 @@ export const makeFileSystem = (
    * best-effort — a missing directory or failing host never fails the
    * publication.
    *
-   * It measures and then removes, which is not atomic, so a lock file replaced
-   * between those two steps is removed on the strength of its predecessor's
-   * age. The hour-long threshold is what keeps that narrow: a live holder
-   * heartbeats its lock every 10 seconds, so only a path abandoned for an hour
-   * is ever a candidate, and only a reclaim landing inside that one gap loses
-   * its lock. It is the same non-atomic reclamation `FileSystemOptions`'
-   * `coordination` documents, applied to the files that reclamation leaves
-   * behind.
+   * Active lock and claim paths are excluded. A pathname age check cannot
+   * authorize deleting a lock that its owner may refresh immediately after
+   * the check. The lease protocol reclaims lock generations on contention;
+   * abandoned mutation claims require host recovery with holders stopped.
    *
    * This is a sweep of scratch files, not garbage collection. Reclaiming
    * *published* artifacts is `ArtifactSweep` driven by an explicit
@@ -270,7 +266,9 @@ export const makeFileSystem = (
                   Effect.mapError(hostFailure)
                 )
                 const checkParent = yield* ArtifactPath.guard(fs, blob.parent).pipe(Effect.mapError(hostFailure))
-                const checkBlob = yield* ArtifactPath.guard(fs, blob.path, "File").pipe(Effect.mapError(hostFailure))
+                const checkBlob = yield* ArtifactPath.guard(fs, blob.path, "File", undefined, "allow").pipe(
+                  Effect.mapError(hostFailure)
+                )
                 const stored = yield* fs.exists(blob.path).pipe(Effect.mapError(hostFailure))
                 // Existence alone is not validity: a truncated blob left by a crashing
                 // writer or by disk corruption would otherwise be trusted forever at

@@ -585,7 +585,7 @@ describe("the orphan sweep (issue #138)", () => {
   const staleTombstone = `.flows/objects/.locks/${"b".repeat(64)}.lock.stale-dead-owner`
   const freshLock = `.flows/objects/.locks/${"c".repeat(64)}.lock`
 
-  it.effect("reclaims lock files a hard-killed holder left behind, and keeps live ones", () =>
+  it.effect("reclaims tombstones and leaves lock ownership to the lease protocol", () =>
     Effect.gen(function*() {
       // A lock file is otherwise reclaimed only when another acquirer contends
       // for the same digest, and a digest nobody publishes again never gets
@@ -599,7 +599,7 @@ describe("the orphan sweep (issue #138)", () => {
         mtimes: { [staleLock]: dead, [staleTombstone]: dead, [freshLock]: now }
       })
       yield* withCrypto(store(host).put(bytes(artifact)))
-      expect(host.files.has(staleLock)).toBe(false)
+      expect(host.files.has(staleLock)).toBe(true)
       expect(host.files.has(staleTombstone)).toBe(false)
       expect(host.files.has(freshLock)).toBe(true)
     }))

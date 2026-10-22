@@ -627,7 +627,7 @@ describe("Node filesystem sweep security", () => {
   }
 })
 
-it.effect("skips fanouts that become unreadable during inventory", () =>
+it.effect("fails when a fanout becomes unreadable during inventory", () =>
   Effect.gen(function*() {
     const host = memoryFs({ seed: { [blobPath]: artifact } })
     const fs = {
@@ -637,7 +637,7 @@ it.effect("skips fanouts that become unreadable during inventory", () =>
           ? host.fs.readDirectory(path)
           : Effect.fail(systemError("PermissionDenied", "readDirectory"))
     }
-    expect(yield* ArtifactSweep.makeFileSystem(fs).inventory).toEqual([])
+    expect(Exit.isFailure(yield* ArtifactSweep.makeFileSystem(fs).inventory.pipe(Effect.exit))).toBe(true)
   }))
 
 describe("stale lock reclamation", () => {

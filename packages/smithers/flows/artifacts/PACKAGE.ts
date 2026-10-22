@@ -1,4 +1,4 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, SdkRules } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -145,6 +145,8 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+const { importRules, jevRules } = SdkRules({ cwd: "packages/smithers/flows/artifacts", role: "library" })
+
 export const Package = Smithers.Package({
-  targets: { bunTest, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: { bunTest, check, circular, docs, docsFiles, fmt, lib, lint, test, importRules, jevRules, ...securityReview }
 })

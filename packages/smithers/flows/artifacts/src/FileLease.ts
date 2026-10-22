@@ -19,8 +19,9 @@
  *
  * The fence is bounded, not absolute: a holder stalled past `staleAfterMs`
  * (a suspended laptop, a stopped debugger) is reaped while it still runs. Its
- * heartbeat then logs `<label> was reclaimed while its holder was still
- * running`, and the protected effect continues unfenced.
+ * heartbeat then logs the loss, interrupts the protected effect, and fails
+ * the caller. An abandoned mutation claim fails closed; it is never reaped
+ * automatically, since a stalled claimant may still resume its rename.
  *
  * A directory at the lock path, left by a release that used an exclusive
  * `makeDirectory` as its lock, is treated as a lock with no readable owner:
@@ -247,11 +248,15 @@ export const hold = <A, E, R, E2>(
      * named after its owner token first. Only the winner renames, and only
      * after re-reading that the path still holds that stale generation. A
      * loser, or a winner whose generation is already gone, moves nothing.
-     * Owner tokens are unique per acquisition, so a claim never outlives
-     * the generation it names in any way that matters.
+     * Release takes the same claim before reading and removing the lock,
+     * preventing a replacement acquisition inside the reclaimer's gap.
+     * Claims are never reaped while a stalled mutation might still resume.
      */
+    const claimPathFor = (observed: string) =>
+      `${lockPath}.reclaim-${observed.replace(/[^0-9A-Za-z-]/g, "_").slice(0, 96)}`
+
     const reclaim = (observed: string): Effect.Effect<boolean, E2> => {
-      const claimPath = `${lockPath}.reclaim-${observed.replace(/[^0-9A-Za-z-]/g, "_").slice(0, 96)}`
+      const claimPath = claimPathFor(observed)
       return Effect.acquireUseRelease(
         guarded(fs.writeFileString(claimPath, owner, { flag: "wx", mode: 0o600 })).pipe(
           Effect.as(true),
@@ -261,15 +266,10 @@ export const hold = <A, E, R, E2>(
         ),
         (claimed) =>
           Effect.gen(function*() {
-            if (!claimed) {
-              // A claimant that died mid-reclaim leaves its claim behind.
-              // It ages out on the same bound as a lock.
-              const holder = yield* readOwner(claimPath)
-              if (Option.isSome(holder) && (yield* isStale(claimPath))) {
-                yield* removeIfOwnedBy(claimPath, holder.value)
-              }
-              return false
-            }
+            // A claim is a short mutation fence, not an expiring lease. Reaping
+            // it could let a stalled reclaimer rename a replacement generation.
+            // An abandoned claim therefore fails closed until host recovery.
+            if (!claimed) return false
             const current = yield* observe(lockPath)
             if (Option.isNone(current) || current.value !== observed || !(yield* isStale(lockPath))) return true
             const tombstone = `${lockPath}.stale-${owner}`
@@ -299,13 +299,23 @@ export const hold = <A, E, R, E2>(
       )
     }
 
-    const release = fs.readFileString(lockPath).pipe(
-      Effect.flatMap((found) => found === owner ? guarded(fs.remove(lockPath)) : Effect.void),
-      // A concurrent stale-lock reaper can win release. `NotFound`
-      // means no lock remains for this owner to release or leak.
-      Effect.catch((cause): Effect.Effect<void, E2> =>
-        isReason(cause, "NotFound") ? Effect.void : Effect.fail(failure(cause))
-      )
+    const release = Effect.acquireUseRelease(
+      guarded(fs.writeFileString(claimPathFor(owner), owner, { flag: "wx", mode: 0o600 })).pipe(
+        Effect.as(true),
+        Effect.catch((cause): Effect.Effect<boolean, E2> =>
+          isReason(cause, "AlreadyExists") ? Effect.succeed(false) : Effect.fail(failure(cause))
+        )
+      ),
+      (claimed) =>
+        claimed
+          ? fs.readFileString(lockPath).pipe(
+            Effect.flatMap((found) => found === owner ? guarded(fs.remove(lockPath)) : Effect.void),
+            Effect.catch((cause): Effect.Effect<void, E2> =>
+              isReason(cause, "NotFound") ? Effect.void : Effect.fail(failure(cause))
+            )
+          )
+          : Effect.void,
+      (claimed) => claimed ? removeIfOwnedBy(claimPathFor(owner), owner) : Effect.void
     )
 
     // The finalizer is attached around acquisition itself, not just around
@@ -315,51 +325,44 @@ export const hold = <A, E, R, E2>(
     return yield* acquire.pipe(
       Effect.andThen(options.onAcquired ?? Effect.void),
       Effect.andThen(Effect.scoped(Effect.gen(function*() {
-        yield* Effect.forkScoped(
-          Effect.gen(function*() {
-            while (true) {
-              yield* Effect.sleep(heartbeatEvery)
-              // Freshen only a lock this call still owns, the same comparison
-              // the release below makes. A holder stalled past the stale
-              // bound has already been reaped and replaced, and touching that
-              // pathname anyway would hold a stranger's lock fresh forever: a
-              // replacement that is then hard-killed could never be judged
-              // stale while this zombie ran, so every later acquirer would
-              // burn the full acquisition deadline and fail.
-              const beat = yield* fs.readFileString(lockPath).pipe(
-                Effect.map((found) => found === owner ? "own" as const : "foreign" as const),
-                Effect.catch((cause) =>
-                  Effect.succeed(isReason(cause, "NotFound") ? "gone" as const : "unreadable" as const)
-                )
+        const heartbeat = Effect.gen(function*() {
+          while (true) {
+            yield* Effect.sleep(heartbeatEvery)
+            // Freshen only a lock this call still owns, the same comparison
+            // the release below makes. A holder stalled past the stale
+            // bound has already been reaped and replaced, and touching that
+            // pathname anyway would hold a stranger's lock fresh forever: a
+            // replacement that is then hard-killed could never be judged
+            // stale while this zombie ran, so every later acquirer would
+            // burn the full acquisition deadline and fail.
+            const beat = yield* fs.readFileString(lockPath).pipe(
+              Effect.map((found) => found === owner ? "own" as const : "foreign" as const),
+              Effect.catch((cause) =>
+                Effect.succeed(isReason(cause, "NotFound") ? "gone" as const : "unreadable" as const)
               )
-              if (beat === "own") {
-                const timestamp = new Date(yield* Clock.currentTimeMillis)
-                yield* Effect.ignore(guarded(fs.utimes(lockPath, timestamp, timestamp)))
-                continue
-              }
-              // A read the host refused for any other reason is no evidence
-              // either way, so this beat is skipped and the next one retries.
-              // Ending the heartbeat on it would retire a lock this call
-              // still holds: the file goes stale within the minute, another
-              // process reaps it, and this holder keeps working unfenced.
-              if (beat === "unreadable") continue
-              // `gone` and `foreign` are the two states worth an operator
-              // signal: this call's lock was reaped, and possibly already
-              // replaced, while the effect it fences is still running, so
-              // the rest of that effect proceeds unfenced against every other
-              // process. The heartbeat is the only party that ever observes
-              // it — the protected effect is not interrupted and the caller
-              // is not failed — so retiring the fiber silently would leave no
-              // trace at all.
-              yield* Effect.logWarning(
-                `${label} was reclaimed while its holder was still running`,
-                { ...options.annotations, state: beat }
-              )
-              return
+            )
+            if (beat === "own") {
+              const timestamp = new Date(yield* Clock.currentTimeMillis)
+              yield* Effect.ignore(guarded(fs.utimes(lockPath, timestamp, timestamp)))
+              continue
             }
-          })
-        )
-        return yield* effect
+            // A read the host refused for any other reason is no evidence
+            // either way, so this beat is skipped and the next one retries.
+            // Ending the heartbeat on it would retire a lock this call
+            // still holds: the file goes stale within the minute, another
+            // process reaps it, and this holder keeps working unfenced.
+            if (beat === "unreadable") continue
+            // Ownership loss is terminal: race the protected effect so it
+            // is interrupted before this caller reports the lease failure.
+
+            yield* Effect.logWarning(
+              `${label} was reclaimed while its holder was still running`,
+              { ...options.annotations, state: beat }
+            )
+            return yield* Effect.fail(failure(new Error(`${label} ownership lost`)))
+          }
+        })
+        return yield* effect.pipe(Effect.raceFirst(heartbeat))
       }))),
       Effect.onExit(() => acquired ? release : Effect.void)
     )

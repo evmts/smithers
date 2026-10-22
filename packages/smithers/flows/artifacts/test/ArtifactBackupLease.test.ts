@@ -102,6 +102,215 @@ const host = (hooks: Hooks = {}) => {
 const failure = (cause: unknown): unknown => cause
 
 describe("ArtifactBackupLease", () => {
+  for (const state of ["gone", "foreign", "refused"] as const) {
+    it.effect(`regression: interrupts the backup when its marker is ${state}`, () =>
+      Effect.gen(function*() {
+        let refuseReads = false
+        const fixture = host({
+          read: (path) =>
+            path === marker && refuseReads
+              ? Effect.fail(platformError("PermissionDenied", "readFileString")) :
+              undefined
+        })
+        const entered = yield* Deferred.make<void>()
+        let stopped = false
+        const running = yield* ArtifactBackupLease.withLease(
+          fixture.fs,
+          directory,
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(Effect.sync(() => {
+              stopped = true
+            }))
+          ),
+          failure
+        ).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
+        yield* Deferred.await(entered)
+        if (state === "gone") fixture.files.delete(marker)
+        else if (state === "foreign") fixture.files.set(marker, "replacement")
+        else refuseReads = true
+        yield* TestClock.adjust("10 seconds")
+        expect(stopped).toBe(true)
+        expect(running.pollUnsafe()).toBeDefined()
+        expect(Exit.isFailure(yield* Fiber.join(running))).toBe(true)
+        if (state === "foreign") expect(fixture.files.get(marker)).toBe("replacement")
+      }))
+  }
+
+  it.effect("regression: interrupts the backup before a stalled heartbeat expires", () =>
+    Effect.gen(function*() {
+      const fixture = host()
+      const entered = yield* Deferred.make<void>()
+      let stopped = false
+      const faulty = {
+        ...fixture.fs,
+        utimes: (path: string, atime: Date | number, mtime: Date | number) =>
+          path === marker ? Effect.never : fixture.fs.utimes(path, atime, mtime)
+      }
+      const running = yield* ArtifactBackupLease.withLease(
+        faulty,
+        directory,
+        Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.ensuring(Effect.sync(() => {
+            stopped = true
+          }))
+        ),
+        failure
+      ).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      yield* TestClock.adjust("50 seconds")
+      expect(stopped).toBe(true)
+      expect(running.pollUnsafe()).toBeDefined()
+      expect(Exit.isFailure(yield* Fiber.join(running))).toBe(true)
+    }))
+
+  it.effect("regression: stops the copy before waiting for failed heartbeat gate cleanup", () =>
+    Effect.gen(function*() {
+      const resume = yield* Deferred.make<void>()
+      const cleaning = yield* Deferred.make<void>()
+      const entered = yield* Deferred.make<void>()
+      let armed = false
+      let paused = false
+      let stopped = false
+      const fixture = host({
+        remove: (path) => {
+          if (!armed || paused || !path.endsWith("/.backup-lease-gate.lock")) return undefined
+          paused = true
+          return Deferred.succeed(cleaning, undefined).pipe(
+            Effect.andThen(Deferred.await(resume)),
+            Effect.andThen(Effect.sync(() => {
+              fixture.files.delete(path)
+            }))
+          )
+        }
+      })
+      const running = yield* ArtifactBackupLease.withLease(
+        fixture.fs,
+        directory,
+        Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.ensuring(Effect.sync(() => {
+            stopped = true
+          }))
+        ),
+        failure
+      ).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      armed = true
+      fixture.files.delete(marker)
+      yield* TestClock.adjust("10 seconds")
+      yield* Deferred.await(cleaning)
+      const stoppedBeforeCleanup = stopped
+      yield* Deferred.succeed(resume, undefined)
+      // Always unblock finalizers, including when running against the old code.
+      yield* Fiber.interrupt(running)
+      expect(stoppedBeforeCleanup).toBe(true)
+    }))
+
+  it.effect("regression: measures protection from refresh across slow cleanup and later gate contention", () =>
+    Effect.gen(function*() {
+      const cleanupStarted = yield* Deferred.make<void>()
+      const resumeCleanup = yield* Deferred.make<void>()
+      const sweepEntered = yield* Deferred.make<void>()
+      const resumeSweep = yield* Deferred.make<void>()
+      const entered = yield* Deferred.make<void>()
+      let armed = false
+      let paused = false
+      let blockSweep = false
+      let stopped = false
+      let deletedWhileCopying = false
+      const fixture = host({
+        remove: (path) => {
+          if (!armed || paused || !path.endsWith("/.backup-lease-gate.lock")) return undefined
+          paused = true
+          return Deferred.succeed(cleanupStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(resumeCleanup)),
+            Effect.andThen(Effect.sync(() => {
+              fixture.files.delete(path)
+            }))
+          )
+        },
+        stat: (path) =>
+          path === marker && blockSweep
+            ? Deferred.succeed(sweepEntered, undefined).pipe(
+              Effect.andThen(Deferred.await(resumeSweep)),
+              Effect.andThen(Effect.sync(() => fileInfo(fixture.mtimes.get(marker) ?? Option.none())))
+            )
+            : undefined
+      })
+      const running = yield* ArtifactBackupLease.withLease(
+        fixture.fs,
+        directory,
+        Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.ensuring(Effect.sync(() => {
+            stopped = true
+          }))
+        ),
+        failure
+      ).pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      armed = true
+      yield* TestClock.adjust("10 seconds")
+      yield* Deferred.await(cleanupStarted)
+      yield* TestClock.adjust("35 seconds")
+      yield* Deferred.succeed(resumeCleanup, undefined)
+      yield* Effect.yieldNow
+      blockSweep = true
+      const sweep = yield* ArtifactBackupLease.unlessActive(
+        fixture.fs,
+        directory,
+        Effect.sync(() => {
+          deletedWhileCopying = !stopped
+        }),
+        failure
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(sweepEntered)
+      yield* TestClock.adjust("26 seconds")
+      const stoppedBeforeDelete = stopped
+      yield* Deferred.succeed(resumeSweep, undefined)
+      yield* Fiber.join(sweep)
+      yield* Fiber.interrupt(running)
+      expect(stoppedBeforeDelete).toBe(true)
+      expect(deletedWhileCopying).toBe(false)
+    }))
+
+  it.effect("regression: refuses to start a copy after acquisition cleanup outlives its marker", () =>
+    Effect.gen(function*() {
+      const cleanupStarted = yield* Deferred.make<void>()
+      const resume = yield* Deferred.make<void>()
+      let paused = false
+      let copied = false
+      const fixture = host({
+        remove: (path) => {
+          if (paused || !path.endsWith("/.backup-lease-gate.lock")) return undefined
+          paused = true
+          return Deferred.succeed(cleanupStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(resume)),
+            Effect.andThen(Effect.sync(() => {
+              fixture.files.delete(path)
+            }))
+          )
+        }
+      })
+      const running = yield* ArtifactBackupLease.withLease(
+        fixture.fs,
+        directory,
+        Effect.sync(() => {
+          copied = true
+        }),
+        failure
+      )
+        .pipe(Effect.exit, Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(cleanupStarted)
+      yield* TestClock.adjust("61 seconds")
+      yield* Deferred.succeed(resume, undefined)
+      const exit = yield* Fiber.join(running)
+      expect(copied).toBe(false)
+      expect(Exit.isFailure(exit)).toBe(true)
+    }))
+
   it.effect("cleans its marker when interrupted after creation before host completion", () =>
     Effect.gen(function*() {
       const written = yield* Deferred.make<void>()
@@ -383,14 +592,14 @@ describe("ArtifactBackupLease", () => {
         directory,
         Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
         failure
-      ).pipe(Effect.provide(Logger.layer([capture])), Effect.forkChild({ startImmediately: true }))
+      ).pipe(Effect.provide(Logger.layer([capture])), Effect.exit, Effect.forkChild({ startImmediately: true }))
       yield* Deferred.await(entered)
       fixture.files.set(marker, "replacement")
       yield* TestClock.adjust("10 seconds")
       yield* Effect.yieldNow
       expect(fixture.heartbeats).not.toContain(marker)
       yield* Deferred.succeed(release, undefined)
-      yield* Fiber.join(running)
+      expect(Exit.isFailure(yield* Fiber.join(running))).toBe(true)
       expect(fixture.files.get(marker)).toBe("replacement")
       expect(logged.flat()).toContain("Artifact backup lease was reclaimed while its backup was still running")
     }))
@@ -424,14 +633,15 @@ describe("ArtifactBackupLease", () => {
       const capture = Logger.make<unknown, void>(({ message }) => {
         logged.push(message)
       })
-      yield* ArtifactBackupLease.withLease(
+      const exit = yield* ArtifactBackupLease.withLease(
         fixture.fs,
         directory,
         Effect.sync(() => {
           fixture.files.delete(marker)
         }).pipe(Effect.andThen(TestClock.adjust("10 seconds"))),
         failure
-      ).pipe(Effect.provide(Logger.layer([capture])))
+      ).pipe(Effect.provide(Logger.layer([capture])), Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
       expect(logged.flat()).toContain("Artifact backup lease was reclaimed while its backup was still running")
     }))
 
@@ -452,7 +662,7 @@ describe("ArtifactBackupLease", () => {
         directory,
         Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
         failure
-      ).pipe(Effect.provide(Logger.layer([capture])), Effect.forkChild({ startImmediately: true }))
+      ).pipe(Effect.provide(Logger.layer([capture])), Effect.exit, Effect.forkChild({ startImmediately: true }))
       yield* Deferred.await(entered)
       fixture.files.set(marker, "replacement")
       for (let beat = 0; beat < 6; beat++) {
@@ -460,7 +670,7 @@ describe("ArtifactBackupLease", () => {
         yield* Effect.yieldNow
       }
       yield* Deferred.succeed(release, undefined)
-      yield* Fiber.join(running)
+      expect(Exit.isFailure(yield* Fiber.join(running))).toBe(true)
       expect(
         logged.flat().filter((message) =>
           message === "Artifact backup lease was reclaimed while its backup was still running"
@@ -468,7 +678,7 @@ describe("ArtifactBackupLease", () => {
       ).toHaveLength(1)
     }))
 
-  it.effect("keeps the lease through heartbeat and release read refusals, and warns", () =>
+  it.effect("fails the backup on heartbeat read refusal and warns on release refusal", () =>
     Effect.gen(function*() {
       const logged: Array<unknown> = []
       const capture = Logger.make<unknown, void>(({ message }) => {
@@ -481,14 +691,15 @@ describe("ArtifactBackupLease", () => {
             ? Effect.fail(platformError("PermissionDenied", "readFileString"))
             : undefined
       })
-      yield* ArtifactBackupLease.withLease(
+      const exit = yield* ArtifactBackupLease.withLease(
         fixture.fs,
         directory,
         Effect.sync(() => {
           refuseReads = true
         }).pipe(Effect.andThen(TestClock.adjust("10 seconds"))),
         failure
-      ).pipe(Effect.provide(Logger.layer([capture])))
+      ).pipe(Effect.provide(Logger.layer([capture])), Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
       expect(fixture.files.has(marker)).toBe(true)
       expect(logged.flat()).toContain("Artifact backup lease heartbeat failed")
     }))

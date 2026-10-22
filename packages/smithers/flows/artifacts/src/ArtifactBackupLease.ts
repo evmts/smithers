@@ -12,6 +12,7 @@
  */
 
 import * as Clock from "effect/Clock"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
@@ -87,6 +88,7 @@ export const withLease = <A, E, R, E2>(
     yield* fs.makeDirectory(directory, { recursive: true }).pipe(Effect.mapError(failure))
 
     let ownsMarker = false
+    let protectedUntil = 0
     const acquire = Effect.gen(function*() {
       while (true) {
         const acquired = yield* gate(
@@ -94,10 +96,12 @@ export const withLease = <A, E, R, E2>(
           directory,
           Effect.gen(function*() {
             if (yield* activeMarker(fs, directory, failure)) return false
+            const startedAt = yield* Clock.currentTimeMillis
             return yield* Effect.uninterruptible(
               fs.writeFileString(marker, owner, { flag: "wx", mode: 0o600 }).pipe(
                 Effect.andThen(Effect.sync(() => {
                   ownsMarker = true
+                  protectedUntil = startedAt + 50_000
                   return true
                 })),
                 Effect.catch((cause): Effect.Effect<boolean, E2> =>
@@ -123,55 +127,63 @@ export const withLease = <A, E, R, E2>(
       () =>
         acquire.pipe(Effect.andThen(
           Effect.scoped(Effect.gen(function*() {
-            yield* Effect.forkScoped(
-              Effect.gen(function*() {
-                while (true) {
-                  yield* Effect.sleep(heartbeatEvery)
-                  const reclaimed = yield* gate(
-                    fs,
-                    directory,
-                    fs.readFileString(marker).pipe(
-                      Effect.map(Option.some),
-                      Effect.catch((cause) =>
-                        isReason(cause, "NotFound") ? Effect.succeed(Option.none<string>()) : Effect.fail(cause)
-                      ),
-                      Effect.flatMap((found) => {
-                        // A missing or foreign marker means a sweep judged this
-                        // lease stale and reaped it: deletion is no longer
-                        // fenced while the backup still copies. The sibling
-                        // `internal/ArtifactLocks.ts` heartbeat reports the same
-                        // loss the same way. A reaped marker is never handed
-                        // back, so the loss is reported once and the heartbeat
-                        // ends instead of repeating it every tick.
-                        if (Option.getOrUndefined(found) !== owner) {
-                          return Effect.as(
-                            Effect.logWarning(
-                              "Artifact backup lease was reclaimed while its backup was still running"
-                            ),
-                            true
-                          )
-                        }
-                        return Effect.flatMap(Clock.currentTimeMillis, (now) => {
-                          const timestamp = new Date(now)
-                          return Effect.as(fs.utimes(marker, timestamp, timestamp), false)
-                        })
-                      }),
-                      Effect.mapError(failure)
-                    ),
-                    failure
-                  ).pipe(
-                    // A failed heartbeat is retried on the next tick, but a
-                    // minute of them lets the marker go stale, so each one is
-                    // reported rather than dropped.
-                    Effect.catch((cause) =>
-                      Effect.as(Effect.logWarning("Artifact backup lease heartbeat failed", cause), false)
-                    )
-                  )
-                  if (reclaimed) return
+            const expired = () => failure(new Error("Artifact backup lease heartbeat expired"))
+            // The marker ages during gate cleanup too. Bound protection by
+            // the timestamp actually requested, not by heartbeat completion.
+            if ((yield* Clock.currentTimeMillis) >= protectedUntil) return yield* Effect.fail(expired())
+            const lost = yield* Deferred.make<never, E2>()
+            const deadline = Effect.gen(function*() {
+              while (true) {
+                const remaining = protectedUntil - (yield* Clock.currentTimeMillis)
+                if (remaining <= 0) {
+                  yield* Effect.logWarning("Artifact backup lease heartbeat deadline exceeded")
+                  return yield* Effect.fail(expired())
                 }
-              })
-            )
-            return yield* effect
+                yield* Effect.sleep(remaining)
+              }
+            })
+            const heartbeat = Effect.gen(function*() {
+              while (true) {
+                yield* Effect.sleep(heartbeatEvery)
+                yield* gate(
+                  fs,
+                  directory,
+                  fs.readFileString(marker).pipe(
+                    Effect.map(Option.some),
+                    Effect.catch((cause) =>
+                      isReason(cause, "NotFound") ? Effect.succeed(Option.none<string>()) : Effect.fail(cause)
+                    ),
+                    Effect.flatMap((found) => {
+                      if (Option.getOrUndefined(found) !== owner) {
+                        return Effect.logWarning(
+                          "Artifact backup lease was reclaimed while its backup was still running"
+                        ).pipe(Effect.andThen(Effect.fail(new Error("Artifact backup lease ownership lost"))))
+                      }
+                      return Effect.flatMap(Clock.currentTimeMillis, (now) => {
+                        const timestamp = new Date(now)
+                        return fs.utimes(marker, timestamp, timestamp).pipe(Effect.tap(() =>
+                          Effect.sync(() => {
+                            protectedUntil = now + 50_000
+                          })
+                        ))
+                      })
+                    }),
+                    Effect.mapError(failure),
+                    // Signal before the gate finalizer: stopping the copy
+                    // must not wait for filesystem cleanup to complete.
+                    Effect.tapError((cause) => Deferred.fail(lost, cause))
+                  ),
+                  failure
+                ).pipe(
+                  // A host refusal means continued protection cannot be
+                  // established. Stop the backup before the marker expires.
+                  Effect.tapError(() => Effect.logWarning("Artifact backup lease heartbeat failed"))
+                )
+              }
+            })
+
+            yield* Effect.forkScoped(heartbeat.pipe(Effect.catch((cause) => Deferred.fail(lost, cause))))
+            return yield* effect.pipe(Effect.raceFirst(Deferred.await(lost)), Effect.raceFirst(deadline))
           }))
         )),
       () =>

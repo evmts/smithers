@@ -14,6 +14,8 @@ import * as PlatformError from "effect/PlatformError"
 /**
  * Checks one entry without accepting a symbolic link and returns a check that
  * also refuses a changed identity. Missing entries are allowed for creation.
+ * `missing: "allow"` also permits disappearance after inspection, for a
+ * publication that will rewrite a vanished blob; present replacements fail.
  *
  * @category utilities
  * @since 1.0.0-rc.0
@@ -22,7 +24,8 @@ export const guard = (
   fs: FileSystem.FileSystem,
   path: string,
   type: "Directory" | "File" = "Directory",
-  expected?: FileSystem.File.Info
+  expected?: FileSystem.File.Info,
+  missing: "allow" | "refuse" = "refuse"
 ): Effect.Effect<Effect.Effect<void, PlatformError.PlatformError>, PlatformError.PlatformError> => {
   const refused = () =>
     PlatformError.systemError({
@@ -55,7 +58,7 @@ export const guard = (
     return info
   })
   const unchanged = (before: Option.Option<FileSystem.File.Info>, after: Option.Option<FileSystem.File.Info>) => {
-    if (Option.isNone(before)) return Effect.void
+    if (Option.isNone(before) || (missing === "allow" && Option.isNone(after))) return Effect.void
     if (
       Option.isNone(after) || before.value.dev !== after.value.dev ||
       Option.getOrUndefined(before.value.ino) !== Option.getOrUndefined(after.value.ino)
