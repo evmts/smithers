@@ -4,7 +4,8 @@
 import * as Alchemy from "alchemy"
 import * as Neon from "alchemy/Neon"
 import * as Output from "alchemy/Output"
-import { Config, Effect, Option, Redacted } from "effect"
+import { Config, Effect, Option, Redacted, Schema } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 /** The most restore history Neon's Free plan allows, in seconds: six hours. */
 export const HISTORY_RETENTION_SECONDS = 21_600
@@ -41,3 +42,54 @@ export const directUrl = (postgres: Neon.Project) =>
     url.searchParams.delete("channel_binding")
     return Redacted.make(url.toString())
   })
+
+const Endpoint = Schema.Struct({
+  id: Schema.String,
+  type: Schema.String,
+  branch_id: Schema.String,
+  autoscaling_limit_min_cu: Schema.Number,
+  autoscaling_limit_max_cu: Schema.Number,
+})
+const Endpoints = Schema.Struct({ endpoints: Schema.Array(Endpoint) })
+
+/**
+ * Sets the autoscaling range of the project's read-write compute on its default branch through Neon's API, with the
+ * deploy's `NEON_API_KEY`: Alchemy's `Neon.Project` declares no compute size. It runs during a deploy whose range or
+ * project changed; Neon restarts the compute to apply a new range, which drops open connections for about a second. It returns
+ * the compute it set. A range already set is left alone.
+ */
+export const Compute = Alchemy.Action(
+  "ChatCompute",
+  (input: { readonly projectId: string; readonly branchId: string; readonly minCu: number; readonly maxCu: number }) =>
+    Effect.gen(function* () {
+      const key = yield* Config.Redacted("NEON_API_KEY")
+      const neon = (yield* HttpClient.HttpClient).pipe(
+        HttpClient.mapRequest((request) =>
+          request.pipe(
+            HttpClientRequest.prependUrl(`https://console.neon.tech/api/v2/projects/${input.projectId}`),
+            HttpClientRequest.bearerToken(Redacted.value(key)),
+            HttpClientRequest.acceptJson,
+          )
+        ),
+        HttpClient.filterStatusOk,
+      )
+      const { endpoints } = yield* neon.execute(HttpClientRequest.get("/endpoints")).pipe(
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(Endpoints)),
+      )
+      const compute = endpoints.find((endpoint) => endpoint.type === "read_write" && endpoint.branch_id === input.branchId)
+      if (compute === undefined) return yield* Effect.die(new Error("ChatCompute: the default branch has no read-write compute"))
+      const result = { endpointId: compute.id, minCu: input.minCu, maxCu: input.maxCu }
+      // Neon restarts the compute on any update, so a range already set is left alone.
+      if (compute.autoscaling_limit_min_cu === input.minCu && compute.autoscaling_limit_max_cu === input.maxCu) {
+        return result
+      }
+      yield* neon.execute(
+        HttpClientRequest.patch(`/endpoints/${compute.id}`).pipe(
+          HttpClientRequest.bodyJsonUnsafe({
+            endpoint: { autoscaling_limit_min_cu: input.minCu, autoscaling_limit_max_cu: input.maxCu },
+          }),
+        ),
+      )
+      return result
+    }).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie),
+)

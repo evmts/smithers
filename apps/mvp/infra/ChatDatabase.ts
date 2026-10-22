@@ -5,7 +5,8 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Effect, FileSystem, type Redacted } from "effect"
 import * as Database from "../db/Database.ts"
-import { directUrl, Postgres } from "./Postgres.ts"
+import { COMPUTE_MAX_CU, COMPUTE_MIN_CU, CONNECTION_BUDGET } from "./Connections.ts"
+import { Compute, directUrl, Postgres } from "./Postgres.ts"
 
 /**
  * Applies `db/migrations` to the production database with `Database.migrate`, the migrations `pnpm db:migrate` runs
@@ -47,9 +48,18 @@ export const ChatDatabase = Effect.gen(function* () {
     })
   }
   const postgres = yield* Postgres
+  // The compute's size before anything connects to it (infra/Connections.ts `COMPUTE_MIN_CU`).
+  const compute = yield* Compute({
+    projectId: postgres.projectId,
+    branchId: postgres.defaultBranchId,
+    minCu: COMPUTE_MIN_CU,
+    maxCu: COMPUTE_MAX_CU,
+  })
   const migrated = yield* Migrations({ database: directUrl(postgres), migrations: yield* migrationFiles })
   return yield* Cloudflare.Hyperdrive.Connection("ChatDatabase", {
-    origin: Output.map(Output.all(postgres.origin, migrated), ([origin]) => origin),
+    origin: Output.map(Output.all(postgres.origin, migrated, compute), ([origin]) => origin),
     caching: { disabled: true },
+    // Its share of the compute's connections (infra/Connections.ts `CONNECTION_BUDGET`).
+    originConnectionLimit: CONNECTION_BUDGET.hyperdrive,
   })
 })

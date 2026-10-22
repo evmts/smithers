@@ -6,6 +6,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Config, Context, Effect, Option, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { ELECTRIC_POOL_SIZE } from "./Connections.ts"
 import { ElectricSecret } from "./Electric.ts"
 import { admit } from "./ElectricAccess.ts"
 
@@ -45,7 +46,8 @@ class Electric extends Cloudflare.Container<Electric>()("Electric", {
   // 1/4 vCPU, 1 GiB of memory and 4 GB of disk; the default `lite` (256 MiB) is too small for Electric.
   instanceType: "basic",
   maxInstances: 1,
-  env: { ELECTRIC_INSECURE: "true" },
+  // Its query pool is its share of the compute's connections (infra/Connections.ts `CONNECTION_BUDGET`).
+  env: { ELECTRIC_INSECURE: "true", ELECTRIC_DB_POOL_SIZE: String(ELECTRIC_POOL_SIZE) },
 }) {}
 
 /**
