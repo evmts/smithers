@@ -138,6 +138,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
   ])],
   ["cli", new Map([
     ["/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/docs"],
+    ["/backend-diagnostics/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/backend-diagnostics.md"],
     ["/backend-safety/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/backend-safety.md"],
     ["/command-safety/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/command-safety.md"],
     ["/concepts/command-surface/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/command-surface.md"],
