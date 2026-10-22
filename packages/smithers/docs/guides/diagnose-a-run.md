@@ -324,3 +324,5 @@ Reports go to `https://bug.smithers.sh/api/bugs` unless
   each of these commands exits on.
 - [Script the CLI](./script-the-cli.md): answering a park from a script.
 - [CLI reference](../reference/cli/README.md): `smthrs runs` and `smthrs doctor`.
+
+A terminal root is readable after its native result has been copied into the control journal. A detached child does not hold that read open; its later events keep flowing until it finishes. Rewinding the root requires fresh evidence from the new journal generation.

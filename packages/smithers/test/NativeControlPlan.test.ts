@@ -264,6 +264,7 @@ describe("planning a discovered flow on the native host", () => {
         Effect.gen(function*() {
           const control = yield* Control.Control
           return yield* Effect.result(control.plan({ flowId: "native", input: { value: valid ? "planned" : 42 } }))
+            .pipe(Effect.tap(() => Effect.logInfo("planning retry: result obtained")))
         }).pipe(
           Effect.provide(
             NodeControl.layerControl(
@@ -273,7 +274,8 @@ describe("planning a discovered flow on the native host", () => {
               modules
             )
           ),
-          Effect.scoped
+          Effect.scoped,
+          Effect.tap(() => Effect.logInfo("planning retry: host scope closed"))
         )
       )
       expect(loads).toBe(2)

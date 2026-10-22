@@ -23,6 +23,8 @@ export interface Options {
   readonly engineState: Pick<DurableEngineState.Service, "runChildren">
   /** Native trampoline membership, separate from spawn edges. Legacy adapters may omit it. */
   readonly runLineage?: RunStore.Service["lineage"] | undefined
+  /** The root's terminal evidence was drained; detached descendants may still be observed. */
+  readonly onRootSettled?: ((generation: number) => Effect.Effect<void>) | undefined
   /**
    * Called with each native record BEFORE that record is copied into the
    * control journal.
@@ -287,6 +289,8 @@ export const make = (options: Options) =>
           const observed = yield* catchUp
           if (runs !== undefined) {
             let allTerminal = true
+            let rootTerminal = false
+            const rootGeneration = positions.get(options.executionId)?.generation
             for (const executionId of observed) {
               const row = yield* Effect.result(runs.get(executionId))
               if (row._tag === "Failure") {
@@ -295,6 +299,17 @@ export const make = (options: Options) =>
                 allTerminal = false
               } else if (!RunStore.isTerminalRunStatus(row.success.status)) {
                 allTerminal = false
+              } else if (executionId === options.executionId) {
+                rootTerminal = true
+              }
+            }
+            if (!allTerminal && rootTerminal && options.onRootSettled !== undefined) {
+              // The terminal row can have committed after the first page read.
+              // Drain again before releasing its readers, retaining the follower
+              // for live detached descendants and refusing a rewound generation.
+              yield* catchUp
+              if (rootGeneration !== undefined && positions.get(options.executionId)?.generation === rootGeneration) {
+                yield* options.onRootSettled(rootGeneration)
               }
             }
             if (allTerminal) {

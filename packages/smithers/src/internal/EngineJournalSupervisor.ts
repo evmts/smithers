@@ -108,19 +108,26 @@ export const make = (options: Options) =>
     interface Active {
       /** {@link unobserved} until an observation adopts this hold. */
       readonly generation: number
+      /** Generation whose root evidence the readiness Deferred represents. */
+      readyGeneration: number
+      /** Root evidence copied; independent of detached descendants finishing. */
+      ready: Deferred.Deferred<void>
       /** Completed when this observation ends, however it ends. */
       readonly ended: Deferred.Deferred<void>
       fiber?: Fiber.Fiber<void, never>
     }
     const active = new Map<string, Active>()
+    let closed = false
     const runId = (id: string) => id as JournalEvent.RunId
 
     /** Ends a hold, whether or not an observation ever adopted it. */
     const release = (id: string, entry: Active | undefined) =>
       Effect.sync(() => {
         if (entry === undefined) return
-        if (active.get(id) === entry) active.delete(id)
-        Deferred.doneUnsafe(entry.ended, Effect.void)
+        const current = active.get(id)
+        if (current === entry) active.delete(id)
+        if (current === entry || current?.ready !== entry.ready) Deferred.doneUnsafe(entry.ready, Effect.void)
+        if (current === entry || current?.ended !== entry.ended) Deferred.doneUnsafe(entry.ended, Effect.void)
       })
 
     /**
@@ -131,23 +138,28 @@ export const make = (options: Options) =>
      */
     const hold = (id: string) =>
       Effect.gen(function*() {
-        if (active.has(id)) return undefined
-        const entry: Active = { generation: unobserved, ended: yield* Deferred.make<void>() }
+        if (closed || active.has(id)) return undefined
+        const entry: Active = {
+          generation: unobserved,
+          readyGeneration: unobserved,
+          ready: yield* Deferred.make<void>(),
+          ended: yield* Deferred.make<void>()
+        }
         active.set(id, entry)
         return entry
       })
 
-    // An unadopted hold has no fiber whose interruption would end it, so the
-    // host going away between a launch and its admission must end it here.
+    // Close admission and release every hold, including an observer interrupted
+    // before its first step and a launch whose commit callback arrives later.
     yield* Scope.addFinalizer(
       scope,
       Effect.sync(() => {
-        for (const [id, entry] of [...active]) {
-          if (entry.fiber === undefined) {
-            active.delete(id)
-            Deferred.doneUnsafe(entry.ended, Effect.void)
-          }
+        closed = true
+        for (const entry of active.values()) {
+          Deferred.doneUnsafe(entry.ready, Effect.void)
+          Deferred.doneUnsafe(entry.ended, Effect.void)
         }
+        active.clear()
       })
     )
 
@@ -264,7 +276,7 @@ export const make = (options: Options) =>
         }
       })
 
-    const observe = (id: string, initialGeneration: number) =>
+    const observe = (id: string, initialGeneration: number, activeEntry: Active) =>
       Effect.gen(function*() {
         let generation = initialGeneration
         // A launch can be accepted before its independent native driver creates the
@@ -287,6 +299,13 @@ export const make = (options: Options) =>
           runLineage: options.runs.lineage,
           controlRunId: id,
           executionId: id,
+          onRootSettled: (copiedGeneration) =>
+            Effect.sync(() => {
+              if (active.get(id) === activeEntry && copiedGeneration >= activeEntry.readyGeneration) {
+                activeEntry.readyGeneration = copiedGeneration
+                Deferred.doneUnsafe(activeEntry.ready, Effect.void)
+              }
+            }),
           ...(onSourceApplied === undefined ? {} : {
             onRecord: (entry, generation) =>
               Effect.forEach(applied.observe(entry, generation), onSourceApplied, { discard: true })
@@ -337,34 +356,42 @@ export const make = (options: Options) =>
       }))
 
     const begin = (id: string, generation: number) =>
-      gate.withPermits(1)(Effect.gen(function*() {
-        const previous = active.get(id)
-        // A delayed older admission callback must not replace a newer observer.
-        if (previous !== undefined && previous.generation >= generation) return
-        if (previous?.fiber !== undefined) yield* Fiber.interrupt(previous.fiber)
-        // A hold the launch registered belongs to this observation: the caller
-        // waiting on it is the terminal write this observation has to precede,
-        // and it began waiting before there was anything to observe.
-        const entry: Active = {
-          generation,
-          ended: previous !== undefined && previous.fiber === undefined
-            ? previous.ended
-            : yield* Deferred.make<void>()
-        }
-        active.set(id, entry)
-        entry.fiber = yield* Effect.forkIn(
-          // The release is in the finalizer, not after `observe`, because a
-          // caller held by {@link awaitSettled} must also be released when this
-          // fiber is interrupted or dies — otherwise a supervisor that goes away
-          // leaves the run it was observing with no terminal status at all.
-          observe(id, generation).pipe(Effect.ensuring(release(id, entry))),
-          scope
-        )
-      }))
+      gate.withPermits(1)(Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function*() {
+          if (closed) return
+          const previous = active.get(id)
+          // A delayed older admission callback must not replace a newer observer.
+          if (previous !== undefined && previous.generation >= generation) return
+          // A hold the launch registered belongs to this observation: the caller
+          // waiting on it is the terminal write this observation has to precede,
+          // and it began waiting before there was anything to observe.
+          const entry: Active = {
+            generation,
+            readyGeneration: Math.max(generation, previous?.readyGeneration ?? unobserved),
+            ready: previous !== undefined && (previous.fiber === undefined || previous.readyGeneration >= generation)
+              ? previous.ready
+              : yield* Deferred.make<void>(),
+            ended: previous !== undefined && previous.fiber === undefined
+              ? previous.ended
+              : yield* Deferred.make<void>()
+          }
+          active.set(id, entry)
+          if (previous?.fiber !== undefined) yield* restore(Fiber.interrupt(previous.fiber))
+          entry.fiber = yield* Effect.forkIn(
+            // The release is in the finalizer, not after `observe`, because a
+            // caller held by {@link awaitSettled} must also be released when this
+            // fiber is interrupted or dies — otherwise a supervisor that goes away
+            // leaves the run it was observing with no terminal status at all.
+            Effect.interruptible(observe(id, generation, entry)).pipe(Effect.ensuring(release(id, entry))),
+            scope
+          )
+        })
+      ))
 
     /** Answers whether an observation is on its way to adopt {@link hold}'s entry. */
     const admit = (id: string, allowMissing: boolean, pending?: Active, skipVanished = false) =>
       Effect.gen(function*() {
+        if (closed) return false
         // This row can still be uncommitted in the admission transaction.
         // Keep its read in the caller's control context; isolate native reads only.
         const found = yield* options.control.getRun(id).pipe(
@@ -383,7 +410,7 @@ export const make = (options: Options) =>
         const registered = yield* options.controlJournal.whenCommitted(Effect.sync(() => {
           // Short callback only. Both the registration job and follower belong to
           // the captured host scope and cannot inherit the admission transaction.
-          Effect.runForkWith(host)(Effect.forkIn(begin(id, native.generation), scope))
+          if (!closed) Effect.runForkWith(host)(Effect.forkIn(begin(id, native.generation), scope))
         }))
         if (!registered) {
           yield* gap(id, native.generation, "commit", "Caller transaction has no observable commit boundary")
@@ -424,17 +451,41 @@ export const make = (options: Options) =>
         if (entry === undefined) return Effect.void
         const grace = options.orderingGrace ?? orderingGrace
         return Effect.raceFirst(
-          Deferred.await(entry.ended),
+          Effect.gen(function*() {
+            // Observer and readiness replacements share this one deadline.
+            for (;;) {
+              const current = options.engineJournal.generation === undefined
+                ? { _tag: "Success" as const, success: { generation: 0 } }
+                : yield* isolated(options.engineJournal.generation(runId(id))).pipe(Effect.result)
+              const live = active.get(id)
+              if (live === undefined) return
+              if (current._tag === "Failure") {
+                yield* Deferred.await(live.ended)
+                const next = active.get(id)
+                if (next !== undefined && next !== live) continue
+                return
+              }
+              if (live.readyGeneration !== unobserved && current.success.generation > live.readyGeneration) {
+                Deferred.doneUnsafe(live.ready, Effect.void)
+                live.readyGeneration = current.success.generation
+                live.ready = Deferred.makeUnsafe<void>()
+              }
+              const ready = live.ready
+              yield* Deferred.await(ready)
+              const next = active.get(id)
+              if (next !== undefined && (next !== live || next.ready !== ready)) continue
+              return
+            }
+          }),
           Effect.sleep(grace).pipe(
-            Effect.andThen(
-              gap(
+            Effect.andThen(() => {
+              const waiting = active.get(id) ?? entry
+              return gap(
                 id,
-                entry.generation === unobserved ? null : entry.generation,
+                waiting.readyGeneration === unobserved ? null : waiting.readyGeneration,
                 orderingPhase,
                 `No ${settledKind} within ${Duration.format(grace)}`
               ).pipe(
-                // The destination can be the same wedged store that prevented
-                // settlement. Its diagnostic write must have a bound too.
                 Effect.timeout(grace),
                 Effect.catchCause((cause) =>
                   Cause.hasInterruptsOnly(cause) ?
@@ -445,7 +496,7 @@ export const make = (options: Options) =>
                     })
                 )
               )
-            ),
+            }),
             Effect.ignore
           )
         )

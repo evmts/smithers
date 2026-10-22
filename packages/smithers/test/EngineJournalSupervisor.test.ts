@@ -115,6 +115,375 @@ const isSettled = (rows: ReadonlyArray<JournalEvent.Entry>) =>
   rows.some((entry) => entry.eventType === Supervisor.settledKind)
 
 describe("private native journal supervision", () => {
+  it("releases an admission whose commit callback arrives after host shutdown", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.create()
+      let committed: Effect.Effect<void> | undefined
+      let observationReads = 0
+      const supervisor = yield* f.make({
+        engineJournal: {
+          ...f.engineJournal,
+          entries: (request) =>
+            Effect.sync(() => {
+              observationReads++
+            }).pipe(
+              Effect.andThen(f.engineJournal.entries(request))
+            )
+        },
+        controlJournal: {
+          ...f.controlJournal,
+          whenCommitted: (callback) =>
+            Effect.sync(() => {
+              committed = callback
+              return true
+            })
+        }
+      })
+      yield* supervisor.start("root")
+      expect(committed).toBeDefined()
+      yield* supervisor.close
+      yield* committed!
+      yield* Effect.repeat(Effect.yieldNow, { times: 20 })
+      yield* supervisor.awaitSettled("root").pipe(Effect.timeout("1 second"))
+      expect(observationReads).toBe(0)
+      expect((yield* f.rows()).filter((row) => row.eventType === Projection.gapKind)).toEqual([])
+    }))))
+
+  it("releases readiness when the host closes before its observer starts", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.create()
+      for (let turn = 0; turn < 16; turn++) {
+        const supervisor = yield* f.make()
+        yield* supervisor.start("root")
+        yield* Effect.yieldNow
+        yield* supervisor.close
+        yield* supervisor.awaitSettled("root").pipe(Effect.timeout("1 second"))
+      }
+      expect((yield* f.rows()).filter((row) => row.eventType === Projection.gapKind)).toEqual([])
+    }))))
+
+  it("returns a copied terminal root while continuing to observe its detached child", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.create()
+      yield* f.runs.create(
+        "detached",
+        JSON.stringify({
+          version: 1,
+          flowName: "detached",
+          payload: {},
+          parentExecutionId: "root",
+          onParentExit: "detach"
+        })
+      )
+      yield* f.engineState.recordRunParent("detached", "root")
+      yield* f.finish()
+      const supervisor = yield* f.make()
+      const executor = supervisor.wrap(ControlExecutor.makeNoop({
+        launch: () => Effect.succeed("accepted"),
+        readExecution: () => Effect.succeed({ _tag: "Observed", status: "completed" } as const)
+      }))
+      yield* executor.launch(input(summary()))
+      expect(yield* executor.readExecution!("root").pipe(Effect.timeout("1 second")))
+        .toEqual({ _tag: "Observed", status: "completed" })
+      expect((yield* f.rows()).some((entry) =>
+        entry.eventType === Projection.eventKind &&
+        (entry.payload as { executionId?: string }).executionId === "root"
+      )).toBe(true)
+      expect(isSettled(yield* f.rows())).toBe(false)
+      expect((yield* f.rows()).filter((entry) => entry.eventType === Projection.gapKind)).toEqual([])
+      yield* f.native("detached-progress", {}, "child-progress", "detached")
+      yield* until(f.rows(), (rows) =>
+        rows.some((entry) =>
+          entry.eventType === Projection.eventKind &&
+          (entry.payload as { eventType?: string }).eventType === "detached-progress"
+        ))
+      yield* f.finish("detached")
+      yield* until(f.rows(), isSettled)
+    }))))
+
+  it("releases a read when its observer closes during a generation lookup", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.create()
+      const observing = yield* Deferred.make<void>()
+      const lookup = yield* Deferred.make<void>()
+      const resume = yield* Deferred.make<void>()
+      let delayNext = false
+      const supervisor = yield* f.make({
+        engineJournal: {
+          ...f.engineJournal,
+          entries: () => Deferred.succeed(observing, undefined).pipe(Effect.andThen(Effect.never)),
+          generation: (id) =>
+            Effect.gen(function*() {
+              if (delayNext) {
+                delayNext = false
+                yield* Deferred.succeed(lookup, undefined)
+                yield* Deferred.await(resume)
+                return { generation: 1, afterSeq: -1 }
+              }
+              return yield* f.engineJournal.generation!(id)
+            })
+        }
+      })
+      yield* supervisor.start("root")
+      yield* Deferred.await(observing)
+      delayNext = true
+      const done = yield* Deferred.make<void>()
+      yield* Effect.forkScoped(supervisor.awaitSettled("root").pipe(Effect.andThen(Deferred.succeed(done, undefined))))
+      yield* Deferred.await(lookup)
+      yield* supervisor.close
+      yield* Deferred.succeed(resume, undefined)
+      yield* Deferred.await(done).pipe(Effect.timeout("1 second"))
+      expect((yield* f.rows()).filter((entry) => entry.eventType === Projection.gapKind)).toEqual([])
+    }))))
+
+  it("admits a rewind while an older observer is committing its settled marker", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.create()
+      yield* f.finish()
+      const settling = yield* Deferred.make<void>()
+      const lookup = yield* Deferred.make<void>()
+      let reading = false
+      const supervisor = yield* f.make({
+        controlJournal: {
+          ...f.controlJournal,
+          emitDurableUnfenced: (event) =>
+            event.eventType === Supervisor.settledKind &&
+              (event.payload as { generation?: number }).generation === 0
+              ? Deferred.succeed(settling, undefined).pipe(Effect.andThen(Effect.never))
+              : f.controlJournal.emitDurableUnfenced(event)
+        },
+        engineJournal: {
+          ...f.engineJournal,
+          generation: (id) =>
+            f.engineJournal.generation!(id).pipe(
+              Effect.tap(() => reading ? Deferred.succeed(lookup, undefined) : Effect.void)
+            )
+        }
+      })
+      yield* supervisor.start("root")
+      yield* Deferred.await(settling)
+      yield* f.engineJournal.transact(Effect.gen(function*() {
+        yield* f.sql`DELETE FROM flows_journal_events WHERE run_id = 'root'`
+        yield* f.sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq) VALUES ('root', 1, -1)`
+        yield* f.native("flows.engine.run-decision", { actualResult: "rewritten" }, "rewritten")
+      }))
+      reading = true
+      const done = yield* Deferred.make<void>()
+      yield* Effect.forkScoped(supervisor.awaitSettled("root").pipe(Effect.andThen(Deferred.succeed(done, undefined))))
+      yield* Deferred.await(lookup)
+      yield* Effect.repeat(Effect.yieldNow, { times: 20 })
+      reading = false
+      yield* supervisor.start("root")
+      yield* Deferred.await(done).pipe(Effect.timeout("2 seconds"))
+      const rows = yield* f.rows()
+      expect(rows.some((entry) =>
+        entry.eventType === Projection.eventKind &&
+        (entry.payload as { generation?: number }).generation === 1
+      )).toBe(true)
+      // A rewind records its explicit history boundary, never a terminal-ordering failure.
+      expect(rows.filter((entry) => entry.eventType === Projection.gapKind).map((entry) => entry.payload))
+        .toEqual([{ executionId: "root", generation: 1, reason: "rewound", afterSequence: -1 }])
+    }))))
+
+  it.each(["during lookup", "after lookup"] as const)(
+    "waits for a replacement observer installed %s",
+    (ordering) =>
+      Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const f = yield* setup
+        yield* f.create()
+        yield* f.runs.create(
+          "detached",
+          JSON.stringify({
+            version: 1,
+            flowName: "detached",
+            payload: {},
+            parentExecutionId: "root",
+            onParentExit: "detach"
+          })
+        )
+        yield* f.engineState.recordRunParent("detached", "root")
+        yield* f.finish()
+        const oldRead = yield* Deferred.make<void>()
+        const newRead = yield* Deferred.make<void>()
+        const drain = yield* Deferred.make<void>()
+        const lookup = yield* Deferred.make<void>()
+        const resumeLookup = yield* Deferred.make<void>()
+        let blocked = false, delayNext = false, holds = 0
+        const supervisor = yield* f.make({
+          engineJournal: {
+            ...f.engineJournal,
+            entries: (request) =>
+              Effect.gen(function*() {
+                if (blocked && request.runId === "root") {
+                  holds++
+                  yield* Deferred.succeed(holds === 1 ? oldRead : newRead, undefined)
+                  yield* Deferred.await(drain)
+                }
+                return yield* f.engineJournal.entries(request)
+              }),
+            generation: (id) =>
+              Effect.gen(function*() {
+                if (delayNext) {
+                  delayNext = false
+                  yield* Deferred.succeed(lookup, undefined)
+                  yield* Deferred.await(resumeLookup)
+                }
+                return yield* f.engineJournal.generation!(id)
+              })
+          }
+        })
+        yield* supervisor.start("root")
+        yield* supervisor.awaitSettled("root").pipe(Effect.timeout("1 second"))
+        blocked = true
+        yield* f.native("wake", {}, "wake")
+        yield* Deferred.await(oldRead)
+        yield* f.engineJournal.transact(Effect.gen(function*() {
+          yield* f.sql`DELETE FROM flows_journal_events WHERE run_id = 'root'`
+          yield* f.sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq) VALUES ('root', 1, -1)`
+          yield* f.native("flows.engine.run-decision", { actualResult: "rewritten" }, "rewritten")
+        }))
+        delayNext = true
+        const done = yield* Deferred.make<void>()
+        yield* Effect.forkScoped(
+          supervisor.awaitSettled("root").pipe(Effect.andThen(Deferred.succeed(done, undefined)))
+        )
+        yield* Deferred.await(lookup)
+        if (ordering === "after lookup") {
+          yield* Deferred.succeed(resumeLookup, undefined)
+          yield* Effect.repeat(Effect.yieldNow, { times: 20 })
+          yield* f.engineJournal.transact(Effect.gen(function*() {
+            yield* f.sql`DELETE FROM flows_journal_events WHERE run_id = 'root'`
+            yield* f.sql`UPDATE flows_journal_generations SET generation = 2 WHERE run_id = 'root'`
+            yield* f.native("flows.engine.run-decision", { actualResult: "rewritten-twice" }, "rewritten-twice")
+          }))
+        }
+        yield* supervisor.start("root")
+        yield* Deferred.await(newRead)
+        if (ordering === "during lookup") yield* Deferred.succeed(resumeLookup, undefined)
+        yield* Effect.repeat(Effect.yieldNow, { times: 20 })
+        expect(yield* Deferred.isDone(done)).toBe(false)
+        yield* Deferred.succeed(drain, undefined)
+        yield* Deferred.await(done).pipe(Effect.timeout("2 seconds"))
+        expect((yield* f.rows()).some((entry) =>
+          entry.eventType === Projection.eventKind &&
+          (entry.payload as { generation?: number }).generation === (ordering === "after lookup" ? 2 : 1)
+        )).toBe(true)
+      })))
+  )
+
+  it("retains copied rewind readiness before the first read of the new generation", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      yield* f.create()
+      yield* f.runs.create(
+        "detached",
+        JSON.stringify({
+          version: 1,
+          flowName: "detached",
+          payload: {},
+          parentExecutionId: "root",
+          onParentExit: "detach"
+        })
+      )
+      yield* f.engineState.recordRunParent("detached", "root")
+      yield* f.finish()
+      const drain = yield* Deferred.make<void>()
+      let blocked = false
+      const supervisor = yield* f.make({
+        engineJournal: {
+          ...f.engineJournal,
+          entries: (request) =>
+            Effect.gen(function*() {
+              if (blocked && request.runId === "root") yield* Deferred.await(drain)
+              return yield* f.engineJournal.entries(request)
+            })
+        }
+      })
+      yield* supervisor.start("root")
+      yield* supervisor.awaitSettled("root").pipe(Effect.timeout("1 second"))
+      yield* f.engineJournal.transact(Effect.gen(function*() {
+        yield* f.sql`DELETE FROM flows_journal_events WHERE run_id = 'root'`
+        yield* f.sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq) VALUES ('root', 1, -1)`
+        yield* f.native("flows.engine.run-decision", { actualResult: "rewritten" }, "rewritten")
+      }))
+      yield* until(f.rows(), (rows) =>
+        rows.some((entry) =>
+          entry.eventType === Projection.eventKind &&
+          (entry.payload as { generation?: number }).generation === 1
+        ))
+      yield* Effect.repeat(Effect.yieldNow, { times: 20 })
+      blocked = true
+      yield* supervisor.awaitSettled("root").pipe(Effect.timeout("200 millis"))
+      expect((yield* f.rows()).filter((entry) => entry.eventType === Projection.gapKind).map((entry) => entry.payload))
+        .toEqual([{ executionId: "root", generation: 1, reason: "rewound", afterSequence: -1 }])
+    }))))
+
+  it("does not reuse root readiness after a rewind while a detached child remains live", () =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const f = yield* setup
+      const reached = yield* Deferred.make<void>()
+      const drain = yield* Deferred.make<void>()
+      let blocked = false
+      const supervisor = yield* f.make({
+        engineJournal: {
+          ...f.engineJournal,
+          entries: (request) =>
+            Effect.gen(function*() {
+              if (blocked && request.runId === "root") {
+                yield* Deferred.succeed(reached, undefined)
+                yield* Deferred.await(drain)
+              }
+              return yield* f.engineJournal.entries(request)
+            })
+        }
+      })
+      yield* f.create()
+      yield* f.runs.create(
+        "detached",
+        JSON.stringify({
+          version: 1,
+          flowName: "detached",
+          payload: {},
+          parentExecutionId: "root",
+          onParentExit: "detach"
+        })
+      )
+      yield* f.engineState.recordRunParent("detached", "root")
+      yield* f.finish()
+      const executor = supervisor.wrap(ControlExecutor.makeNoop({
+        launch: () => Effect.succeed("accepted"),
+        readExecution: () => Effect.succeed({ _tag: "Observed", status: "completed" } as const)
+      }))
+      yield* executor.launch(input(summary()))
+      yield* executor.readExecution!("root").pipe(Effect.timeout("1 second"))
+      blocked = true
+      yield* f.engineJournal.transact(Effect.gen(function*() {
+        yield* f.sql`DELETE FROM flows_journal_events WHERE run_id = 'root'`
+        yield* f.sql`INSERT INTO flows_journal_generations (run_id, generation, after_seq) VALUES ('root', 1, -1)`
+        yield* f.native("rewritten-result", {}, "rewritten")
+      }))
+      const read = yield* Deferred.make<void>()
+      yield* Effect.forkScoped(executor.readExecution!("root").pipe(Effect.andThen(Deferred.succeed(read, undefined))))
+      yield* Deferred.await(reached)
+      yield* Effect.repeat(Effect.yieldNow, { times: 20 })
+      expect(yield* Deferred.isDone(read)).toBe(false)
+      blocked = false
+      yield* Deferred.succeed(drain, undefined)
+      yield* Deferred.await(read).pipe(Effect.timeout("2 seconds"))
+      expect((yield* f.rows()).some((entry) =>
+        entry.eventType === Projection.eventKind &&
+        (entry.payload as { generation?: number; eventType?: string }).generation === 1 &&
+        (entry.payload as { eventType?: string }).eventType === "rewritten-result"
+      )).toBe(true)
+      expect((yield* f.rows()).filter((entry) => entry.eventType === Projection.gapKind).map((entry) => entry.payload))
+        .toEqual([{ executionId: "root", generation: 1, reason: "rewound", afterSequence: -1 }])
+    }))))
+
   it.each(
     [
       ["completed", false],
