@@ -484,7 +484,7 @@ describe("BrowserChildProcessSpawner", () => {
   it.effect("wraps a thrown interpreter failure as a system PlatformError", () =>
     Effect.gen(function*() {
       const { bash } = stub(async () => {
-        throw new Error("interpreter exploded")
+        throw new Error("private-interpreter-content", { cause: { secret: "private-interpreter-content" } })
       })
 
       const error = yield* run(
@@ -496,8 +496,10 @@ describe("BrowserChildProcessSpawner", () => {
         _tag: "Unknown",
         module: "ChildProcess",
         method: "spawn",
-        description: "interpreter exploded"
+        description: "the interpreter run failed"
       })
+      expect(error.reason.cause).toBeUndefined()
+      expect(JSON.stringify(error)).not.toContain("private-interpreter-content")
     }))
 
   /**
@@ -521,11 +523,13 @@ describe("BrowserChildProcessSpawner", () => {
         _tag: "Unknown",
         module: "ChildProcess",
         method: "spawn",
-        description: "no interpreter mounted"
+        description: "the interpreter run failed"
       })
+      expect(error.reason.cause).toBeUndefined()
+      expect(JSON.stringify(error)).not.toContain("private-interpreter-content")
     }))
 
-  it.effect("stringifies a non-Error interpreter rejection", () =>
+  it.effect("redacts a non-Error interpreter rejection", () =>
     Effect.gen(function*() {
       const { bash } = stub(async () => {
         throw "plain"
@@ -536,7 +540,7 @@ describe("BrowserChildProcessSpawner", () => {
         Effect.flip(Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.exitCode(ChildProcess.make("thing"))))
       )
 
-      expect(error.reason.description).toBe("plain")
+      expect(error.reason.description).toBe("the interpreter run failed")
     }))
 })
 
@@ -917,14 +921,16 @@ describe("BrowserChildProcessSpawner boundary", () => {
         bash,
         Effect.scoped(Effect.gen(function*() {
           const spawner = yield* ChildProcessSpawner
-          const handle = yield* spawner.spawn(ChildProcess.make("slow"))
+          const handle = yield* spawner.spawn(ChildProcess.make("slow", ["private-argument-content"]))
           const before = yield* handle.isRunning
           yield* handle.kill()
           return {
             before,
             after: yield* handle.isRunning,
             exit: yield* Effect.exit(handle.exitCode),
-            stdout: yield* Effect.exit(Stream.runCollect(handle.stdout))
+            stdout: yield* Effect.exit(Stream.runCollect(handle.stdout)),
+            stderr: yield* Effect.exit(Stream.runCollect(handle.stderr)),
+            all: yield* Effect.exit(Stream.runCollect(handle.all))
           }
         }))
       )
@@ -940,10 +946,13 @@ describe("BrowserChildProcessSpawner boundary", () => {
         _tag: "Unknown",
         module: "ChildProcess",
         method: "kill",
-        description: "the interpreter run was aborted",
-        pathOrDescriptor: "slow"
+        description: "the interpreter run was aborted"
       })
       expect(Exit.isFailure(observed.stdout)).toBe(true)
+      expect(Exit.isFailure(observed.stderr)).toBe(true)
+      expect(Exit.isFailure(observed.all)).toBe(true)
+      expect(failure === undefined ? undefined : Reflect.get(failure.reason, "pathOrDescriptor")).toBeUndefined()
+      expect(JSON.stringify(observed)).not.toContain("private-argument-content")
     }))
 
   it.effect("refuses `forceKillAfter`, which has no meaning after the abort", () =>

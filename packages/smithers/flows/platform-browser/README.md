@@ -251,3 +251,5 @@ Worker flow registrations may require the engine's `SqlClient` and
 `DurableWriter` services, in addition to `BrowserRuntime.Host` and `FlowRuntime`.
 For example, an injected durable memory source uses these services over the
 engine's OPFS database; the application does not open a second database.
+
+Interpreter failures expose a fixed process error description without the original exception or cause. Aborted process errors omit the command line and arguments.

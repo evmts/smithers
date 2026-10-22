@@ -49,13 +49,12 @@ const rejected = (method: string, description: string): PlatformError.PlatformEr
  *
  * @private
  */
-const aborted = (line: string): PlatformError.PlatformError =>
+const aborted = (): PlatformError.PlatformError =>
   PlatformError.systemError({
     _tag: "Unknown",
     module: "ChildProcess",
     method: "kill",
-    description: "the interpreter run was aborted",
-    pathOrDescriptor: line
+    description: "the interpreter run was aborted"
   })
 
 /**
@@ -104,7 +103,6 @@ const resolveEnvironment = (
  */
 type Settled = { readonly ok: true; readonly value: Awaited<ReturnType<JustBashLike["exec"]>> } | {
   readonly ok: false
-  readonly error: unknown
 }
 
 /**
@@ -213,13 +211,13 @@ export const make = (bash: JustBashLike) =>
                 signal: controller.signal
               }).then(
                 (value): Settled => ({ ok: true, value }),
-                (error): Settled => ({ ok: false, error })
+                (): Settled => ({ ok: false })
               )
-            } catch (error) {
+            } catch {
               // An interpreter that throws synchronously never produced a
               // promise to wait on, and it is still a failed run rather than a
               // defect in this adapter.
-              return Effect.succeed<Settled>({ ok: false, error })
+              return Effect.succeed<Settled>({ ok: false })
             }
             return Effect.onInterrupt(
               Effect.promise(() => settled),
@@ -232,8 +230,7 @@ export const make = (bash: JustBashLike) =>
                 _tag: "Unknown",
                 module: "ChildProcess",
                 method: "spawn",
-                description: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
-                cause: outcome.error
+                description: "the interpreter run failed"
               })
             )
         )
@@ -250,7 +247,7 @@ export const make = (bash: JustBashLike) =>
           const reported: Exit.Exit<
             Awaited<ReturnType<JustBashLike["exec"]>>,
             PlatformError.PlatformError
-          > = Exit.hasInterrupts(exit) ? Exit.fail(aborted(line)) : exit
+          > = Exit.hasInterrupts(exit) ? Exit.fail(aborted()) : exit
           return Effect.sync(() => {
             running = false
           }).pipe(Effect.andThen(Deferred.done(completed, reported)))
