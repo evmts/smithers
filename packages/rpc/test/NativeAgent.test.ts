@@ -113,7 +113,7 @@ describe("AgentTurnFrame — proxy family", () => {
       .toEqual(rejected.map(([name]) => [name, null]))
   })
 
-  test("the decoder keeps a legacy card frame readable without its private payload", () => {
+  test("the decoder keeps a legacy card frame and its recorded payload readable", () => {
     const frame = decodeAgentTurnFrame({ runId: "r1", type: "card", card: { ...runHistoryCard, kind: "run-history" } })
     expect(frame).toEqual({
       runId: "r1",
@@ -123,7 +123,7 @@ describe("AgentTurnFrame — proxy family", () => {
         kind: "retired",
         status: "acted",
         loading: false,
-        payload: { was: "run-history" }
+        payload: { was: "run-history", recorded: runHistoryCard.payload }
       }
     })
   })

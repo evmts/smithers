@@ -918,11 +918,11 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
   /* Archived chats as a tree; `selected` is the archive whose entries the card shows (#3827). */
   z.object({ ...cardBaseShape, kind: z.literal("archives"), payload: z.object({ selected: z.string().optional() }) }),
 
-  // Identity-only tombstones keep historical frames and journals loadable.
+  // Retired controls stay inert while recorded content survives history replay.
   z.object({
     ...cardBaseShape,
     kind: z.literal("retired"),
-    payload: z.object({ was: z.string().optional() })
+    payload: z.object({ was: z.string().optional(), recorded: z.unknown().optional() })
   }),
   z.object({
     ...cardBaseShape,
@@ -2423,6 +2423,27 @@ export const LEGACY_CARD_KINDS = [
 ] as const
 const retiredKinds = new Set<string>(LEGACY_CARD_KINDS)
 
+// Preserve historical content without reviving stored credential values.
+const recordedCardPayload = (kind: unknown, value: unknown): unknown => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value
+  const payload = value as Record<string, unknown>
+  if (kind === "models" || kind === "model-call" || kind === "agent-models") {
+    const { apiKey: _apiKey, ...recorded } = payload
+    return recorded
+  }
+  if (kind === "env" && Array.isArray(payload.vars)) {
+    return {
+      ...payload,
+      vars: payload.vars.map((entry: unknown) => {
+        if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return entry
+        const { value: _value, ...metadata } = entry as Record<string, unknown>
+        return metadata
+      })
+    }
+  }
+  return value
+}
+
 const retiredFlows = new Set<string>([
   "chat.dictate",
   "commits.list",
@@ -2569,7 +2590,7 @@ const retiredFlows = new Set<string>([
 export type CardSchemaOptions = typeof CurrentCardSchema.options
 /**
  * One persisted card, decoded by kind. Explicitly legacy kinds become titled
- * tombstones; unknown kinds and malformed current kinds fail decoding.
+ * records retaining their bodies and payloads; unknown kinds and malformed current kinds fail decoding.
  *
  * @since 1.0.0
  * @category schemas
@@ -2607,7 +2628,6 @@ export const CardSchema: z.ZodType<z.infer<typeof CurrentCardSchema>, unknown> &
     }
     if (
       typeof row.kind === "string" && (retiredKinds.has(row.kind) ||
-        (row.kind === "agents" && payload?.cloud === true) ||
         ((row.kind === "issue" || row.kind === "issue-list") && (payload?.source === "linear" ||
           (Array.isArray(payload?.issues) &&
             payload.issues.some((issue: unknown) =>
@@ -2615,26 +2635,24 @@ export const CardSchema: z.ZodType<z.infer<typeof CurrentCardSchema>, unknown> &
             )))) ||
         (row.kind === "flow-form" && typeof payload?.flow === "string" && retiredFlows.has(payload.flow)))
     ) {
-      const { body: _body, ...base } = row
       return {
-        ...base,
+        ...row,
         kind: "retired",
         loading: false,
         status: "acted",
-        payload: { was: row.kind }
+        payload: { was: row.kind, recorded: recordedCardPayload(row.kind, row.payload) }
       }
     }
-    if (row.kind === "retired") {
-      const { body: _body, ...base } = row
-      return base
+    if (row.kind === "retired" && typeof payload === "object" && payload !== null && "recorded" in payload) {
+      return { ...row, payload: { ...payload, recorded: recordedCardPayload(payload.was, payload.recorded) } }
     }
     if (row.kind === "agents" && Array.isArray(payload?.agents)) {
       return {
         ...row,
         payload: {
           ...payload,
-          agents: payload.agents.flatMap((entry: unknown) => {
-            if (typeof entry !== "object" || entry === null) return []
+          agents: payload.agents.map((entry: unknown) => {
+            if (typeof entry !== "object" || entry === null) return entry
             const saved = entry as Record<string, unknown>
             // A row the saved payload itself called built-in reads its facts
             // from the table; a configured profile (smithers-ui-DESIGN.md §3.3)
@@ -2644,8 +2662,8 @@ export const CardSchema: z.ZodType<z.infer<typeof CurrentCardSchema>, unknown> &
             // flow, and the seed table may not relabel it as a built-in role.
             const role = saved.builtin === true ? AGENT_ROLES.find((candidate) => candidate.id === saved.id) : undefined
             return role === undefined ?
-              [saved] :
-              [{
+              saved :
+              {
                 ...saved,
                 id: role.id,
                 label: role.label,
@@ -2653,7 +2671,7 @@ export const CardSchema: z.ZodType<z.infer<typeof CurrentCardSchema>, unknown> &
                 harness: role.harness,
                 model: role.model,
                 builtin: true
-              }]
+              }
           })
         }
       }

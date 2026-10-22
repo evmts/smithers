@@ -17,14 +17,14 @@ describe("the app agent's one tool", () => {
     expect(decodeCommandsCall(JSON.stringify({ action: "list", namespace: " /files. ", query: "  read a file " })))
       .toEqual({ action: "list", namespace: "files", query: "read a file" })
     expect(decodeCommandsCall(JSON.stringify({ action: "list", namespace: 7, query: false })))
-      .toEqual({ action: "list", namespace: "", query: "" })
+      .toEqual({ failure: "failed: the commands tool namespace must be a string" })
   })
 
   test("decodes an execute with the model's slash stripped and its argument text kept", () => {
     expect(decodeCommandsCall(JSON.stringify({ action: "execute", name: "//files.read ", args: " JOURNEY.md" })))
       .toEqual({ action: "execute", name: "files.read", args: " JOURNEY.md" })
     expect(decodeCommandsCall(JSON.stringify({ action: "execute", name: "files.read", args: 3 })))
-      .toEqual({ action: "execute", name: "files.read", args: undefined })
+      .toEqual({ failure: "failed: the commands tool args must be a string" })
   })
 
   test("answers the failure the model reads for anything else", () => {

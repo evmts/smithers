@@ -241,17 +241,41 @@ export const MODEL_TEST_RECEIPT_PATH = "/api/model/test/receipt"
  */
 export const PUBLIC_REPOS_PATH = "/api/public/repos"
 /**
+ * A repository name cannot identify two safe activity-route segments.
+ * @since 1.0.0
+ * @category errors
+ */
+export class PublicRepositoryNameRejected extends Error {
+  readonly _tag = "PublicRepositoryNameRejected"
+  readonly code = "invalid_repository"
+
+  constructor() {
+    super("Invalid public repository name")
+    this.name = this._tag
+  }
+}
+/**
  * The recent-activity read of one catalog repository:
  * `GET /api/public/repos/<owner>/<name>/activity`, answering
  * `{ sentence, counts: { commits, pullRequests, issues }, since }`. A count the
  * mirror could not answer is null and the sentence says so. A 404 means the
  * repository is not in the public catalog; the client says so rather than
- * inventing a sentence.
+ * inventing a sentence. Requires two nonempty repository slug segments and
+ * rejects URL delimiters, escapes and dot segments before constructing a path.
  *
  * @since 1.0.0
  * @category constants
  */
-export const publicRepoActivityPath = (repo: string): string => `${PUBLIC_REPOS_PATH}/${repo}/activity`
+export const publicRepoActivityPath = (repo: string): string => {
+  const [owner, name, ...extra] = repo.split("/")
+  if (
+    !owner || !name || extra.length > 0 || /[^a-zA-Z0-9-]/u.test(owner) ||
+    /[^a-zA-Z0-9_.-]/u.test(name) || name === "." || name === ".."
+  ) {
+    throw new PublicRepositoryNameRejected()
+  }
+  return `${PUBLIC_REPOS_PATH}/${owner}/${name}/activity`
+}
 
 /**
  * The admin route prefix route shared by server and client.

@@ -178,11 +178,11 @@ describe("persisted card decoding units", () => {
     }
   ]
 
-  test("legacy null and primitive agent entries are removed while configured profiles retain their facts and order", () => {
+  test("configured profiles retain their facts and order", () => {
     const input = {
       ...base,
       kind: "agents",
-      payload: { native: false, agents: [null, profiles[0], "legacy-placeholder", 17, false, profiles[1], null] }
+      payload: { native: false, agents: profiles }
     }
     const before = structuredClone(input)
     const card = CardSchema.parse(input)
@@ -335,7 +335,16 @@ describe("the service-log card", () => {
       kind: "service-log",
       payload: { workspaceId: "ws-1", repo: "will/smithers", service: "web", lines: ["listening"], follow: true }
     })
-    expect(card).toEqual({ ...base, kind: "retired", status: "acted", loading: false, payload: { was: "service-log" } })
+    expect(card).toEqual({
+      ...base,
+      kind: "retired",
+      status: "acted",
+      loading: false,
+      payload: {
+        was: "service-log",
+        recorded: { workspaceId: "ws-1", repo: "will/smithers", service: "web", lines: ["listening"], follow: true }
+      }
+    })
   })
 })
 
@@ -516,17 +525,28 @@ describe("the agent cards", () => {
 })
 
 describe("the models card", () => {
-  test.each(["models", "model-call", "agent-models"])("saved %s drops credentials and executable requests", (kind) => {
-    const decoded = CardSchema.parse({
-      ...base,
-      kind,
-      body: "Private",
-      payload: { apiKey: "sk-live", request: { prompt: "Private" } }
-    })
-    expect(decoded).toEqual({ ...base, kind: "retired", status: "acted", loading: false, payload: { was: kind } })
-    expect(CardSchema.parse(decoded)).toEqual(decoded)
-    expect(CardPatchSchema.safeParse({ kind, payload: { apiKey: "sk-live" } }).success).toBe(false)
-  })
+  test.each(["models", "model-call", "agent-models"])(
+    "saved %s retains recorded content without restoring executable requests",
+    (kind) => {
+      const decoded = CardSchema.parse({
+        ...base,
+        kind,
+        body: "Private",
+        payload: { apiKey: "sk-live", request: { prompt: "Private" } }
+      })
+      expect(decoded).toEqual({
+        ...base,
+        kind: "retired",
+        body: "Private",
+        status: "acted",
+        loading: false,
+        payload: { was: kind, recorded: { request: { prompt: "Private" } } }
+      })
+      expect(JSON.stringify(decoded)).not.toContain("sk-live")
+      expect(CardSchema.parse(decoded)).toEqual(decoded)
+      expect(CardPatchSchema.safeParse({ kind, payload: { apiKey: "sk-live" } }).success).toBe(false)
+    }
+  )
 
   test("a model form draws its selects from models, credentials and seats, and model.save is not a retired flow", () => {
     expect(FORM_OPTION_PROVIDERS).toEqual(expect.arrayContaining(["models", "credentials", "seats"]))
@@ -614,7 +634,7 @@ describe("card patches never invent defaults", () => {
 })
 
 describe("legacy environment persistence", () => {
-  test("retains the title without restoring saved values or controls", () => {
+  test("retains recorded content without restoring controls", () => {
     const row = {
       ...base,
       kind: "env",
@@ -627,7 +647,7 @@ describe("legacy environment persistence", () => {
     const decoded = CardSchema.parse(row)
     expect(decoded.kind).toBe("retired")
     expect(decoded.title).toBe(row.title)
-    expect(decoded.payload).toEqual({ was: "env" })
+    expect(decoded.payload).toEqual({ was: "env", recorded: { ...row.payload, vars: [{ name: "DATABASE_URL" }] } })
     expect(JSON.stringify(decoded)).not.toContain("password")
     expect(CardSchema.parse(decoded)).toEqual(decoded)
   })
@@ -2795,7 +2815,7 @@ const FIXTURES: Record<
       }
     }
   },
-  retired: { minimal: {}, full: { was: "explain" } },
+  retired: { minimal: {}, full: { was: "explain", recorded: { text: "Saved explanation" } } },
   "plugin-library": {
     minimal: { tutorial: false },
     full: { tutorial: true }
@@ -2930,7 +2950,7 @@ describe("every persisted card kind", () => {
         kind: "retired",
         loading: false,
         status: "acted",
-        payload: { was: "explain" }
+        payload: { was: "explain", recorded: FIXTURES.explain.full }
       }
     })
   })
@@ -2981,7 +3001,8 @@ describe("every persisted card kind", () => {
       kind: "retired",
       status: "acted",
       loading: false,
-      payload: { was: "explain" }
+      body: "Private",
+      payload: { was: "explain", recorded: { secret: "Private" } }
     })
     expect(CardSchema.parse(decoded)).toEqual(decoded)
   })
@@ -3150,7 +3171,7 @@ describe("removed presentation compatibility", () => {
     expect(manifest.rows.filter((row) => row.disposition === "cut").flatMap((row) => row.cardKinds).sort())
       .toEqual([...cutKinds].sort())
   })
-  test.each(cutKinds)("Cut %s preserves only its stored identity and title", (kind) => {
+  test.each(cutKinds)("Cut %s preserves stored identity and content as an inert record", (kind) => {
     expect(CardSchema.options.map((option) => option.shape.kind.value)).not.toContain(kind)
     expect(LEGACY_CARD_KINDS).toContain(kind)
     const row = legacyCards.find((fixture) => fixture.row.kind === kind)!.row
@@ -3162,7 +3183,8 @@ describe("removed presentation compatibility", () => {
       kind: "retired",
       status: "acted",
       loading: false,
-      payload: { was: kind }
+      ...("body" in row ? { body: row.body } : {}),
+      payload: { was: kind, recorded: row.payload }
     })
   })
   const saved = (kind: string, payload: unknown) => ({
@@ -3199,10 +3221,11 @@ describe("removed presentation compatibility", () => {
       title: row.title,
       kind: "retired",
       status: "acted",
-      payload: { was: row.kind },
+      payload: { was: row.kind, recorded: row.payload },
+      body: row.body,
       loading: false
     })
-    expect(result).not.toHaveProperty("body")
+    expect(result.body).toBe(row.body)
     expect(CardSchema.parse(result)).toEqual(result)
     expect(z.object({ cards: z.array(CardSchema) }).parse({ cards: [row] }).cards).toEqual([result])
     expect(CardPatchSchema.safeParse({ kind: row.kind, payload: row.payload }).success).toBe(false)
@@ -3216,7 +3239,7 @@ describe("removed presentation compatibility", () => {
     })
     const result = CardSchema.parse(old)
     expect(result.kind).toBe("retired")
-    expect(result.payload).toEqual({ was: "workspace" })
+    expect(result.payload).toEqual({ was: "workspace", recorded: old.payload })
     expect(result.payload).not.toHaveProperty("snapshots")
   })
 })
@@ -3307,9 +3330,18 @@ describe("pinned historical storage", () => {
     expect(decoded.kind).toBe(fixture.expectedKind)
     expect(decoded.title).toBe(fixture.expectedTitle)
     if (fixture.expectedKind === "retired") {
-      expect(decoded).not.toHaveProperty("body")
+      expect(decoded.body).toBe("body" in fixture.row ? fixture.row.body : undefined)
       expect(decoded).not.toHaveProperty("retiredKind")
-      expect(decoded.payload).toEqual(fixture.expectedWas === null ? {} : { was: fixture.expectedWas })
+      expect(decoded.payload).toEqual(
+        fixture.row.kind === "retired"
+          ? fixture.row.payload
+          : {
+            was: fixture.expectedWas,
+            recorded: fixture.row.kind === "env"
+              ? { ...fixture.row.payload, vars: [{ name: "DATABASE_URL" }, { name: "PIN" }] }
+              : fixture.row.payload
+          }
+      )
     }
     expect(CardSchema.parse(decoded)).toEqual(decoded)
   })
@@ -3318,8 +3350,7 @@ describe("pinned historical storage", () => {
     { kind: "flow-form", payload: { flow: "wiki.ask", private: "PRIVATE" } },
     { kind: "issue", payload: { source: "linear", private: "PRIVATE" } },
     { kind: "issue-list", payload: { source: "linear", private: "PRIVATE" } },
-    { kind: "issue-list", payload: { issues: [{ source: "linear", private: "PRIVATE" }] } },
-    { kind: "agents", payload: { cloud: true, private: "PRIVATE" } }
+    { kind: "issue-list", payload: { issues: [{ source: "linear", private: "PRIVATE" }] } }
   ])("payload-specific $kind retirement uses the same tombstone", ({ kind, payload }) => {
     const decoded = CardSchema.parse({ ...base, kind, title: "<img src=x onerror=alert(1)>", body: "PRIVATE", payload })
     expect(decoded).toEqual({
@@ -3328,19 +3359,20 @@ describe("pinned historical storage", () => {
       title: "<img src=x onerror=alert(1)>",
       status: "acted",
       loading: false,
-      payload: { was: kind }
+      body: "PRIVATE",
+      payload: { was: kind, recorded: payload }
     })
     expect(CardSchema.parse(decoded)).toEqual(decoded)
   })
 
-  test("existing tombstones drop body and extra payload fields", () => {
+  test("existing tombstones keep body while validating their payload fields", () => {
     const decoded = CardSchema.parse({
       ...base,
       kind: "retired",
       body: "PRIVATE",
       payload: { was: "explain", secret: "PRIVATE" }
     })
-    expect(decoded).toEqual({ ...base, kind: "retired", payload: { was: "explain" } })
+    expect(decoded).toEqual({ ...base, kind: "retired", body: "PRIVATE", payload: { was: "explain" } })
     expect(CardSchema.parse(decoded)).toEqual(decoded)
   })
 

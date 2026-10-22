@@ -1,7 +1,13 @@
 import { describe, expect, test } from "vitest"
-import { publicRepoActivityPath } from "../src/AgentApiRoutes.ts"
+import { publicRepoActivityPath, PublicRepositoryNameRejected } from "../src/AgentApiRoutes.ts"
 
 describe("public repository activity paths (unit)", () => {
+  test("invalid names fail with a tagged error without copying repository text", () => {
+    expect(() => publicRepoActivityPath("owner/private?token=value")).toThrow(PublicRepositoryNameRejected)
+    const error = new PublicRepositoryNameRejected()
+    expect(error).toMatchObject({ _tag: "PublicRepositoryNameRejected", code: "invalid_repository" })
+    expect(error.message).toBe("Invalid public repository name")
+  })
   test.each([
     ["smithersai/smithers", "/api/public/repos/smithersai/smithers/activity"],
     ["WillCory/my.repo", "/api/public/repos/WillCory/my.repo/activity"],

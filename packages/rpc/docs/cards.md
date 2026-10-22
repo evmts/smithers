@@ -6,14 +6,22 @@ It excludes `retired`, the current tombstone schema. Unknown kinds outside the
 set fail decoding; malformed live rows fail their current schema.
 `CardSchemaOptions` names the current union options for embedding schemas.
 
-A legacy row keeps its stored title, identity, ordering and timestamp. Decoding
-removes its body and payload, sets `payload: { was: <original kind> }`, stops
-loading and sets status to `acted`. Existing tombstones preserve their title and
-optional `payload.was`; decoding twice is stable. Old tombstones without `was`
-remain readable. Titles are inert text, never saved actions.
+A legacy row keeps its stored title, body, identity, ordering and timestamp.
+Decoding wraps its original payload as
+`payload: { was: <original kind>, recorded: <original payload> }`, stops loading
+and sets status to `acted`. Recorded graph, history and other content stays
+opaque and inert; it never restores controls. Existing tombstones preserve their
+body and optional `payload.was` and `payload.recorded`; decoding twice is stable.
+Old tombstones without these fields remain readable. Titles are inert text,
+never saved actions. Recorded model payloads omit the old `apiKey` field and
+recorded environment variable rows omit `value`; historical data never restores
+those stored credentials. The same stripping applies when reloading a retired row.
 
-Retired flow forms, Linear issue rows and cloud `agents` inventories use the same
-retirement path. Non-cloud `agents` stays live (L4). Decoding a live `agents`
+Retired flow forms and Linear issue rows use the same retirement path. Cloud
+`agents` inventories decode through their declared repository and sessions schema;
+malformed sessions fail validation. Non-cloud `agents` stays live (L4), and null
+or primitive agent entries fail validation instead of silently disappearing.
+Decoding a live `agents`
 row refreshes a profile's label, purpose, harness and model from the built-in
 role table only when the stored row itself says `builtin: true`; a repository
 agent flow whose id matches a built-in role keeps its own facts. Its

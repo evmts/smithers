@@ -92,6 +92,7 @@ const bare = (name: string): string => name.trim().replace(/^\/+/u, "")
 
 /**
  * Decodes the commands tool's arguments, or answers the honest failure the model reads instead.
+ * Optional text fields may be omitted; a present value of another type fails decoding.
  * @since 1.0.0
  * @category parsers
  */
@@ -106,6 +107,11 @@ export const decodeCommandsCall = (raw: string): CommandsCall | { readonly failu
     return { failure: "failed: the commands tool arguments must be an object" }
   }
   const fields = input as Readonly<Record<string, unknown>>
+  for (const key of ["namespace", "query", "args"] as const) {
+    if (key in fields && typeof fields[key] !== "string") {
+      return { failure: `failed: the commands tool ${key} must be a string` }
+    }
+  }
   const text = (key: string): string | undefined => typeof fields[key] === "string" ? fields[key] : undefined
   if (fields.action === "list") {
     return {
