@@ -2,10 +2,23 @@
 title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
-owner: sandboxes builder (Claude Opus, workspace `sandboxes`, from 09:50 on 2026-10-21)
-updated: 2026-10-21 10:07 PDT
+owner: sandboxes builder (Opus, from 20:40 on 2026-10-21, after the earlier sandboxes builder)
+updated: 2026-10-21 21:00 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
+
+## PID 1 reaps orphans — 2026-10-21 21:00 PDT
+
+**Cause:** the box's PID 1 was `sleep infinity`, which never reaps the orphans reparented to it, so three exited `git`s
+stayed zombies and the idle probe called the machine busy for hours (the 17:18 lifecycle run failed at the sleep).
+c816c9e7 makes the probe skip zombies.
+
+**Fix:** the image runs tini as PID 1 (Debian's `tini` 0.19.0), which reaps them; under it the box idles as
+`smithers-idle`, which the probe ignores. Folded into the Node 26.5.0 and pnpm 11.25.0 image change (was a98f91e4).
+
+**Evidence (real Docker, this Mac):** `worker/branch/Probe.docker.test.ts` 4 passed. Main's old image: PID 1 `sleep`,
+an orphan stays a zombie; new image: PID 1 `tini`, no zombie. Removing either probe exclusion makes the probe say busy.
+The linux/amd64 build runs PID 1 `tini`, Node v26.5.0, pnpm 11.25.0. Production proof: the lifecycle e2e after deploy.
 
 ## Production sandboxes — 2026-10-21 10:07 PDT
 

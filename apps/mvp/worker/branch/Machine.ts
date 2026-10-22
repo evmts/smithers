@@ -280,9 +280,10 @@ export const tool = <R>(
  * What a person's processes are doing: exit 3 when a terminal had input within `$1` seconds, or a non-root process
  * other than PID 1, a shell or tmux runs; exit 0 when nothing does. Run as root, which may read every tmux server.
  *
- * A zombie (state `Z`) doesn't count: it has exited, and the box's PID 1, `sleep infinity`, never reaps the orphans
+ * A zombie (state `Z`) doesn't count: it has exited. With `sleep infinity` as the box's PID 1, nothing reaped the orphans
  * reparented to it, so a `git` a person left in the background stayed a zombie and kept a box awake for hours in
- * production.
+ * production; the image now runs tini as PID 1, which reaps them. The box's own idle process, `smithers-idle` under
+ * tini (infra/sandbox/Dockerfile), doesn't count either.
  */
 export const PROBE = `idle=$1; now=$(date +%s)
 for s in /tmp/tmux-*/default; do
@@ -296,7 +297,7 @@ for p in /proc/[0-9]*; do
   u=$(stat -c %u "$p" 2>/dev/null) || continue
   [ "$u" = 0 ] && continue
   [ "$(sed -n 's/^State:[[:space:]]*\\([A-Z]\\).*/\\1/p' "$p/status" 2>/dev/null)" = Z ] && continue
-  case "$(cat "$p/comm" 2>/dev/null)" in sh|bash|dash|tmux*|"") ;; *) exit 3 ;; esac
+  case "$(cat "$p/comm" 2>/dev/null)" in sh|bash|dash|tmux*|smithers-idle|"") ;; *) exit 3 ;; esac
 done
 exit 0`
 
