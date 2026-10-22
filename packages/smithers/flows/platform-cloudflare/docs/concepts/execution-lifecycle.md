@@ -266,3 +266,15 @@ lease alone.
   time. A drive that long is resumed by the next incarnation; a single step
   that long never finishes on this host.
 - **No filesystem.** A step that declares a file boundary fails; see [the Cloudflare Host surface](./host-surface.md).
+
+### Admission timing
+
+Join start-path records on `smithers.execution.id`. The intent retains the
+caller's `requestedAtMs` (older intents remain readable);
+`cloudflare.execution.request` records it when the object receives the call.
+`cloudflare.execution.ready` records `readyAtMs` after runtime construction.
+The engine emits `flow.run.created` with `createdAtMs` after admission commits,
+and `flow.run.claimed` with `claimedAtMs` after activation. Alarm failures
+include their cause tag, attempt, `delayMs`, and `retryAtMs`. These fields
+contain no payload or provider message. Outcome counters retain bounded labels;
+execution ids belong only to logs and spans.

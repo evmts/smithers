@@ -24,3 +24,9 @@ A TODO starts a durable `todo` run on Cloudflare, one per attempt, `todo:<attemp
 Verification of steering: `worker/flows/Todo.test.ts` (the real agent reads a message admitted mid-turn at its next turn, once, and its change carries it; fails with the old empty source), `worker/RemoteRuns.test.ts` (the steer route), `src/features/runs/remote.test.ts` (a tab through its engine, outbox and ChatApi to the run's queue), `src/features/runs/steer.test.ts`, and `@smthrs/agent`'s `AgentActionSteering.test.ts`.
 
 Verification: `worker/RemoteRuns.test.ts` (the routes over a real engine and Electric, refusals, a sentinel, a live request answered when the run moves), `src/features/runs/remote.test.ts` (a tab watching a run go from Not started to done, read again only on change), `worker/stack/Stack.test.ts` (the run recorded on its TODO), `src/features/todos/view.test.ts`, and `@smthrs/ui`'s `browser/live-state.browser.test.ts` (the blink and the reduced-motion hold in Chromium).
+
+2026-10-22 admission diagnostics: the stack writer emits `todo.run.requested`
+with the execution id and request time. The host records receipt, runtime-ready,
+retry cause and delay; the engine records creation and claim with that same id.
+This separates an outbox/RPC delay from runtime setup, alarm backoff and claim
+latency without putting TODO text in telemetry.

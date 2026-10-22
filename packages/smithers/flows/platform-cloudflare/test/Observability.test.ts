@@ -155,6 +155,22 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
         expect(alarms[2]!.attributes.get("smithers.execution.id")).toBe(executionId)
         // Every alarm line names its execution and flow, the forgotten one included.
         const ids = { "smithers.execution.id": executionId, "smithers.flow": Answer._tag }
+        for (const line of t.lines("cloudflare.execution.start")) expect(line.annotations).toMatchObject(ids)
+        expect(t.lines("cloudflare.execution.request")[0]?.annotations).toMatchObject({
+          ...ids, requestedAtMs: expect.any(Number)
+        })
+        expect(t.lines("cloudflare.execution.alarm")[0]?.annotations).toMatchObject({
+          retryAtMs: expect.any(Number), delayMs: 1000
+        })
+        expect(t.lines("flow.run.created")[0]?.annotations).toMatchObject({
+          ...ids, createdAtMs: expect.any(Number)
+        })
+        expect(t.lines("flow.run.claimed")[0]?.annotations).toMatchObject({
+          "smithers.execution.id": executionId, claimedAtMs: expect.any(Number)
+        })
+        expect(t.lines("cloudflare.execution.ready")[0]?.annotations).toMatchObject({
+          ...ids, readyAtMs: expect.any(Number)
+        })
         expect(t.lines("cloudflare.execution.alarm").map((line) => line.annotations)).toEqual([
           expect.objectContaining({
             trace_id: alarms[0]!.traceId,

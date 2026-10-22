@@ -95,6 +95,16 @@ const stack = async () =>
   ))[0]
 
 describe("a commit", () => {
+  test("records the writer's request time with the remote execution id and no content", async () => {
+    const observed = observe()
+    const result = await applyOn(commit({ prompt: "SENTINEL-START-CONTENT" }), true, observed)
+    if (result.kind !== "applied") throw new Error("not applied")
+    expect(observed.lines.find((line) => line.message === "todo.run.requested")?.annotations).toMatchObject({
+      "smithers.execution.id": `todo:${result.receipt.starts[0]!.attemptId}`,
+      requestedAtMs: expect.any(Number),
+    })
+    expect(observed.recorded()).not.toContain("SENTINEL-START-CONTENT")
+  })
   test("numbers the TODO, places it last, Queued, keeps its prompt as revision 1, and keeps a receipt", async () => {
     const first = commit()
     const applied = await applyOn(first)

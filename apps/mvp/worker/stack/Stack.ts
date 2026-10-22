@@ -122,7 +122,13 @@ export const payloadHash = (change: Change): string =>
  * transaction that records the attempt: the TODO links to the run that works on it.
  */
 const recordRun = (sql: SqlClient.SqlClient, start: AttemptStart) =>
-  sql`UPDATE todos SET run_id = ${todoExecutionId(start.attemptId)} WHERE id = ${start.todoId}::uuid`
+  sql`UPDATE todos SET run_id = ${todoExecutionId(start.attemptId)} WHERE id = ${start.todoId}::uuid`.pipe(
+    Effect.tap(() => Effect.gen(function* () {
+      yield* Effect.logInfo("todo.run.requested").pipe(Effect.annotateLogs({
+        "smithers.execution.id": todoExecutionId(start.attemptId), requestedAtMs: yield* Clock.currentTimeMillis,
+      }))
+    })),
+  )
 
 /** One loaded TODO row. */
 interface Loaded extends Row {

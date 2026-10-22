@@ -50,6 +50,7 @@ import * as Routing from "./internal/Routing.ts"
 export const Intent = Schema.Struct({
   flow: Schema.NonEmptyString,
   executionId: Schema.NonEmptyString,
+  requestedAtMs: Schema.optionalKey(Schema.Number),
   payload: Schema.Json,
   /**
    * The door and actor kind the caller started the execution with, which the
@@ -394,6 +395,7 @@ export const intent = <F extends Flow.Any>(
           flow: flow._tag,
           executionId: options.executionId,
           payload,
+          requestedAtMs: yield* Clock.currentTimeMillis,
           origin: { door: origin.door, actor: origin.actor }
         })
       })
@@ -432,14 +434,15 @@ export const start = <A, E, R, RS>(
   effect: Effect.Effect<A, E, R>
 ): Effect.Effect<A, E | IntentConflict, R | RS> =>
   Effect.gen(function*() {
-    const next = stored(value)
-    // Every start line names its execution and flow, as its span does; never the payload.
     const ids = { "smithers.execution.id": value.executionId, "smithers.flow": value.flow }
+    const requestedAtMs = value.requestedAtMs ?? (yield* Clock.currentTimeMillis)
+    yield* Effect.logInfo("cloudflare.execution.request").pipe(Effect.annotateLogs({ ...ids, requestedAtMs }))
+    const next = stored(value)
     const previous = yield* storage.get<string>(intentKey)
     if (previous !== undefined && storedIdentity(previous) !== identity(value)) {
       yield* Effect.annotateCurrentSpan({ "smithers.execution.start": "conflict" })
       yield* Metric.update(Metric.withAttributes(starts, { outcome: "conflict" }), 1)
-      yield* Effect.logWarning("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome: "conflict", ...ids }))
+      yield* Effect.logWarning("cloudflare.execution.start").pipe(Effect.annotateLogs({ ...ids, outcome: "conflict" }))
       return yield* new IntentConflict({
         executionId: value.executionId,
         message: `Execution ${value.executionId} already holds a different intent`
@@ -454,9 +457,9 @@ export const start = <A, E, R, RS>(
     yield* Metric.update(Metric.withAttributes(starts, { outcome }), 1)
     yield* (Exit.isFailure(exit)
       ? Effect.logWarning("cloudflare.execution.start").pipe(
-        Effect.annotateLogs({ outcome, ...ids, "error.type": RetryPolicy.failureType(exit.cause) })
+        Effect.annotateLogs({ ...ids, outcome, "error.type": RetryPolicy.failureType(exit.cause) })
       )
-      : Effect.logInfo("cloudflare.execution.start").pipe(Effect.annotateLogs({ outcome, ...ids })))
+      : Effect.logInfo("cloudflare.execution.start").pipe(Effect.annotateLogs({ ...ids, outcome })))
     return exit
   }).pipe(
     Effect.withSpan("cloudflare.execution.start", {
@@ -674,7 +677,7 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     const outcome = yield* settleOrDrive(storage, raw, options, timing)
     const tag = outcome._tag.toLowerCase()
     const failure = outcome._tag === "Retrying"
-      ? { "error.type": outcome.failure, "smithers.execution.attempt": outcome.attempt, ...outcome.detail }
+      ? { "error.type": outcome.failure, "smithers.execution.attempt": outcome.attempt, retryAtMs: outcome.retryAtMs, delayMs: backoff(outcome.attempt), ...outcome.detail }
       : {}
     // How long the drive ran, when the alarm drove: what shows a drive nearing the 900-second limit.
     const drove = timing.driveMs === undefined ? {} : { "smithers.execution.drive_ms": timing.driveMs }
@@ -726,6 +729,10 @@ const settleOrDrive = <E, R, RS, RE, RR>(
       const flow = options.flows.find((candidate) => candidate._tag === value.flow)
       if (flow === undefined) return yield* new UnknownFlow({ flow: value.flow })
       return yield* Effect.gen(function*() {
+        yield* Effect.logInfo("cloudflare.execution.ready").pipe(Effect.annotateLogs({
+          "smithers.execution.id": value.executionId, "smithers.flow": value.flow,
+          readyAtMs: yield* Clock.currentTimeMillis
+        }))
         const driven = yield* timedDrive(flow, value, options.driveBudgetMs ?? defaultDriveBudgetMs, timing)
         yield* route(value.executionId, options.router)
         if (driven._tag === "Settled") {

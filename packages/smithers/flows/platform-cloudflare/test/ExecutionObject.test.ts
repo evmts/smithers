@@ -606,6 +606,7 @@ describe("ExecutionObject without a database", () => {
       ).toEqual({
         flow: "cloudflare-test/Answer",
         executionId: "e",
+        requestedAtMs: 0,
         payload: { question: "q", pauseMs: 5 },
         origin: { door: "unknown", actor: "unknown" }
       })

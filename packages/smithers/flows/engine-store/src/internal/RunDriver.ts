@@ -1121,6 +1121,9 @@ const claimAndActivate: (driver: Driver, row: RunStore.RunRow) => Effect.Effect<
     return false
   }
   yield* recordClaim("Activated")
+  yield* Effect.logInfo("flow.run.claimed").pipe(Effect.annotateLogs({
+    "smithers.execution.id": row.runId, claimedAtMs: claim.claimedAtMs
+  }))
   // The run is this driver's now, so whatever it was told about the
   // previous owner is spent.
   driver.stealRefusals.delete(row.runId)
@@ -3435,6 +3438,10 @@ const ensureRun = (driver: Driver, flow: Flow.Any, options: Admission): Effect.E
       admittedAtMs: yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
     }
     if (!(yield* admit(driver, flow, options, payload, origin))) return
+    yield* Effect.logInfo("flow.run.created").pipe(Effect.annotateLogs({
+      "smithers.execution.id": options.executionId, "smithers.flow": flow._tag,
+      createdAtMs: yield* Clock.currentTimeMillis
+    }))
     yield* RunMetrics.recordStarted({
       flow: flow._tag,
       door: origin.door,
