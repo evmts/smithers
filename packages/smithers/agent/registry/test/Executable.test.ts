@@ -20,6 +20,7 @@ import { Node } from "@smthrs/plan"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -169,6 +170,16 @@ describe("delegate resolution", () => {
       // and the skill-resources block a driver reads is present.
       expect(executable.invocation(null).prompt).toContain("Summarize the changes")
       expect(executable.invocation(null).prompt).not.toContain("description:")
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("runs a markdown flow under the deadline its frontmatter declares", () =>
+    Effect.gen(function*() {
+      const declared = yield* descriptorNamed("changelog")
+      const timed = new Descriptor.FlowDescriptor({ ...declared, budget: { tokens: 10, deadline: 1_800_000 } })
+      const executable = yield* Executable.fromDescriptor(timed, options())
+      const untimed = yield* Executable.fromDescriptor(declared, options())
+      expect(Duration.toMillis(executable.flow.deadline!)).toBe(1_800_000)
+      expect(untimed.flow.deadline).toBeUndefined()
     }).pipe(Effect.provide(platform)))
 
   it.effect("delegates to the agent when a descriptor names no flow", () =>

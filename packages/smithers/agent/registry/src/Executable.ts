@@ -881,6 +881,11 @@ interface LoadedBody {
   readonly annotations: Context.Context<never>
   readonly flow: LoadedFlow | undefined
   readonly layer?: Layer.Layer<unknown, unknown, unknown> | undefined
+  /**
+   * The deadline a markdown body's lowered flow declares. The bridged flow
+   * runs under it, because a markdown body has no flow of its own to carry it.
+   */
+  readonly deadline?: LoadedFlow["deadline"]
 }
 
 /**
@@ -949,6 +954,7 @@ const loadMarkdown = (
       prompt,
       annotations: lowered.annotations,
       flow: undefined,
+      deadline: lowered.flow.deadline,
       source: { entry: path, bytes, modules: new Map([[path, { bytes, source: text, links: [] }]]) }
     }
   })
@@ -1662,6 +1668,7 @@ export const fromDescriptor = (
         annotations: body.flow === undefined
           ? annotationsOf(lowered)
           : Context.merge(body.annotations, annotationsOf(lowered)),
+        ...(body.deadline === undefined ? {} : { deadline: body.deadline }),
         body: build
       })
       const quiescence = makeQuiescence()
