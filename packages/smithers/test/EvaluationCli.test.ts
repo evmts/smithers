@@ -1,7 +1,7 @@
 import { CaseExecutor, Suite } from "@smthrs/evals"
 import { Effect } from "effect"
 import { spawnSync } from "node:child_process"
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -171,16 +171,29 @@ describe("evaluation CLI", () => {
     }
   })
 
-  it("lists the repo\u0027s shipped fixed suites from its root", async () => {
-    // The shipped suites live under the repository root's `evals/`; vitest
-    // runs from `packages/smithers`, so the root is named from this file.
-    const listed = await serve(fileURLToPath(new URL("../../..", import.meta.url)), ["list"])
+  it("lists shipped fixed suites installed in a consumer project", async () => {
+    // 595b6abc moved these modules beside their owners. Discovery deliberately
+    // reads only a consumer's evals/, not arbitrary executable repository files.
+    // The old recommender suite was retired with packages/backend in 82b5490d.
+    const root = await fixture()
+    const shipped = [
+      ["agent/agent", "../agent/regression/agent.eval.ts"],
+      [
+        "review-seeded-bugs/review-seeded-bugs",
+        "../../../.smithers/flows/review/seeded-bugs/review-seeded-bugs.eval.ts"
+      ]
+    ] as const
+    for (const [name, source] of shipped) {
+      const destination = join(root, "evals", `${name}.eval.ts`)
+      await mkdir(join(destination, ".."), { recursive: true })
+      await copyFile(fileURLToPath(new URL(source, import.meta.url)), destination)
+    }
+    const listed = await serve(root, ["list"])
     expect(listed.code, listed.output).toBe(0)
-    expect(listed.json.suites.map((entry: { name: string }) => entry.name)).toEqual([
-      "agent/agent",
-      "recommend/recommend",
-      "review-seeded-bugs/review-seeded-bugs"
-    ])
+    expect(listed.json.suites).toEqual(shipped.map(([name]) => ({
+      name,
+      file: join(root, "evals", `${name}.eval.ts`)
+    })))
   })
 
   it("discovers suite metadata without importing modules", async () => {
