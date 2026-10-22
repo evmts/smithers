@@ -141,7 +141,12 @@ describe("didYouMean", () => {
     expect(asked).toHaveLength(0)
   })
 
-  it.each(["doctor", "migrate", "bug", "update", "rewind"])("never suggests the hidden door %s", async (name) => {
+  it("offers the public doctor door (9fe1217cdeb9)", async () => {
+    expect(await ask("doctr", [], scripted({ choice: "doctor", probabilities: { doctor: 0.99 } })))
+      .toBe("Did you mean: smthrs doctor?")
+  })
+
+  it.each(["migrate", "bug", "update", "rewind"])("never suggests the hidden door %s", async (name) => {
     expect(await ask("stauts", [], scripted({ choice: name, probabilities: { [name]: 0.99 } })))
       .toBeUndefined()
     const criteria = Object.assign({}, ...Object.values(asked[0]!.questions).map((question) => question.criteria))

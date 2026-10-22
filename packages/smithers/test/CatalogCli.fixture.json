@@ -797,6 +797,11 @@
     "host status",
     "host upgrade",
     "host backup",
-    "host restore"
+    "host restore",
+    "generate flow",
+    "flow start",
+    "runs resume",
+    "change diff",
+    "doctor"
   ]
 }
