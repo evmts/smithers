@@ -46,6 +46,7 @@ import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import * as Tracer from "effect/Tracer"
+import * as Endpoint from "./Endpoint.ts"
 import * as FailureCopy from "./FailureCopy.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import * as Model from "./Model.ts"
@@ -107,7 +108,7 @@ export const ErrorLine = Schema.Struct({
   type: Schema.Literal("error"),
   code: ModelErrorCode,
   message: Schema.String,
-  retryAfterMillis: Schema.optionalKey(Schema.Number)
+  retryAfterMillis: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)))
 })
 
 /**
@@ -618,27 +619,35 @@ const requestJson = Schema.toCodecJson(ModelRequest)
  * the same request to the same endpoint. `options.headers`, which may carry
  * the host's own authorization, and the per-attempt request id and trace
  * context stay out. A request that does not encode fails `invalid_request`.
+ * Endpoint credentials are rejected before constructing this public view.
  *
  * @category client
  * @since 1.0.0
  */
 export const prepare =
   (options: ClientOptions) => (request: ModelRequest): Effect.Effect<PreparedRequest, ModelError> =>
-    Schema.encodeEffect(requestJson)(request).pipe(
-      Effect.mapError(() => new ModelError({ code: "invalid_request", message: "The request could not be encoded." })),
-      Effect.map((encoded) => {
-        const bodyText = JSON.stringify(encoded)
-        return {
-          routeId: "model-proxy",
-          protocolId: "model-proxy/ndjson",
-          method: "POST",
-          url: String(options.url),
-          publicHeaders: { accept: contentType, "content-type": "application/json" },
-          body: new TextEncoder().encode(bodyText),
-          bodyText
-        }
+    Effect.gen(function*() {
+      const url = String(options.url)
+      // Resolve relative browser URLs only for validation; keep their original route identity.
+      const endpoint = yield* Effect.try({
+        try: () => new URL(url, "https://model-proxy.invalid").href,
+        catch: () => new ModelError({ code: "invalid_request", message: "Endpoint URL could not be parsed." })
       })
-    )
+      yield* Effect.fromResult(Endpoint.make({ url: endpoint }))
+      const encoded = yield* Schema.encodeEffect(requestJson)(request).pipe(
+        Effect.mapError(() => new ModelError({ code: "invalid_request", message: "The request could not be encoded." }))
+      )
+      const bodyText = JSON.stringify(encoded)
+      return {
+        routeId: "model-proxy",
+        protocolId: "model-proxy/ndjson",
+        method: "POST",
+        url,
+        publicHeaders: { accept: contentType, "content-type": "application/json" },
+        body: new TextEncoder().encode(bodyText),
+        bodyText
+      }
+    })
 
 /** Span attribute names. */
 const attributes = {
@@ -772,6 +781,9 @@ const clientError = (
 /** The largest error-status body a client reads before falling back to the status alone. */
 const maxErrorBodyBytes = 16_384
 
+/** The largest response line, excluding its newline, buffered by a client: 1 MiB. */
+const maxResponseLineBytes = 1_048_576
+
 const decodeErrorBody = Schema.decodeUnknownEffect(Schema.fromJsonString(ErrorBody))
 
 const remoteStream = (
@@ -861,8 +873,27 @@ const decodeLines = (
   Stream.suspend(() => {
     const { requestId } = call
     const truncated = () => clientError(requestId, "transport", "The model stream ended before it finished.")
+    let lineBytes = 0
     return bytes.pipe(
       Stream.mapError(() => clientError(requestId, "transport", "The model stream broke.")),
+      // Bound incomplete lines before decoding or concatenating their text, including whitespace.
+      Stream.flatMap((chunk) =>
+        Stream.unfold(0, (start) => {
+          if (start >= chunk.length) return Effect.succeed(undefined)
+          const newline = chunk.indexOf(0x0a, start)
+          const end = newline === -1 ? chunk.length : newline
+          lineBytes += end - start
+          if (lineBytes > maxResponseLineBytes) {
+            return Effect.fail(
+              clientError(requestId, "invalid_provider_output", "The model host sent an oversized line.")
+            )
+          }
+          // Yield each line separately, so a terminal line stops before any trailing data is inspected.
+          if (newline !== -1) lineBytes = 0
+          const next = newline === -1 ? end : end + 1
+          return Effect.succeed([chunk.subarray(start, next), next] as const)
+        })
+      ),
       Stream.decodeText(),
       completeLines(truncated),
       Stream.pipeThroughChannel(Ndjson.decodeSchemaString(Line)<ModelError>({ ignoreEmptyLines: true })),

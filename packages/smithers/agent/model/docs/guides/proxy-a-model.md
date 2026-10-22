@@ -260,7 +260,9 @@ const result = yield* ModelStep.run({ name: "chat/answer/model", request, model,
 ```
 
 The client's `headers`, which may carry the host's own authorization, and its
-per-call request id stay out of the key.
+per-call request id stay out of the key. `ModelProxy.prepare` refuses endpoint
+URLs with embedded credentials or credential query parameters as
+`invalid_request`; put authorization in headers. Relative URLs remain supported.
 
 Every failure is a `ModelError`, so the code from
 [Handle failures](./handle-failures.md) applies unchanged. Each one carries
@@ -275,6 +277,11 @@ the request id as `requestId`.
 | The body ended before its terminal line             | `transport`                                                | none         |
 | A line the client could not decode                  | `invalid_provider_output`                                  | none         |
 | The request could not be encoded                    | `invalid_request`                                          | none         |
+
+The client limits each response line to 1 MiB of UTF-8 bytes, excluding the
+newline. An oversized line fails `invalid_provider_output` and cancels the body,
+including when the line never terminates. Error-line `retryAfterMillis` values
+must be finite and nonnegative; invalid values fail `invalid_provider_output`.
 
 ## Observe it
 

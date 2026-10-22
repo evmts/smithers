@@ -850,15 +850,27 @@ describe("ModelProxy prepare", () => {
     const retry: ModelEvent = { type: "retry", attempt: 1, code: "rate_limited", delayMillis: 0 }
     const cases: ReadonlyArray<readonly [string, ReadonlyArray<ModelEvent>, ModelError, boolean]> = [
       // A route that retried a 429 and gave up produced nothing either; its usage is reported, not output.
-      ["429 after a retry", [retry, { type: "usage", inputTokens: 3 }], new ModelError({ code: "rate_limited", message: "x" }), true],
+      [
+        "429 after a retry",
+        [retry, { type: "usage", inputTokens: 3 }],
+        new ModelError({ code: "rate_limited", message: "x" }),
+        true
+      ],
       ["400", [], new ModelError({ code: "invalid_request", message: "x", httpStatus: 400 }), true],
       ["401", [], new ModelError({ code: "authentication", message: "x", httpStatus: 401 }), true],
-      ["429 after text", [{ type: "text-delta", id: "t", text: "paid" }], new ModelError({ code: "rate_limited", message: "x", httpStatus: 429 }), false],
+      [
+        "429 after text",
+        [{ type: "text-delta", id: "t", text: "paid" }],
+        new ModelError({ code: "rate_limited", message: "x", httpStatus: 429 }),
+        false
+      ],
       ["503", [], new ModelError({ code: "provider_internal", message: "x", httpStatus: 503 }), false],
       ["transport", [], new ModelError({ code: "transport", message: "reset" }), false],
       ["call_timeout", [], new ModelError({ code: "call_timeout", message: "x" }), false]
     ]
-    const read = await Promise.all(cases.map(async ([name, events, error]) => [name, ModelProxy.refusedCleanly(await endOf(failing(events, error)))]))
+    const read = await Promise.all(
+      cases.map(async ([name, events, error]) => [name, ModelProxy.refusedCleanly(await endOf(failing(events, error)))])
+    )
 
     expect(read).toEqual(cases.map(([name, , , clean]) => [name, clean]))
   })
@@ -1007,6 +1019,82 @@ describe("ModelProxy prepare", () => {
 describe("ModelProxy client", () => {
   const answering = (body: BodyInit | null, init: ResponseInit = {}) =>
     harness({ fetch: () => () => Promise.resolve(new Response(body, init)) })
+
+  it.each([-1, NaN, Infinity, -Infinity])("rejects invalid retryAfterMillis %s at the wire schema", (delay) => {
+    expect(
+      Schema.is(ModelProxy.ErrorLine)({
+        type: "error",
+        code: "rate_limited",
+        message: "Wait.",
+        retryAfterMillis: delay
+      })
+    ).toBe(false)
+  })
+
+  it.each([0, 0.5, 1200])("accepts finite nonnegative retryAfterMillis %s", async (retryAfterMillis) => {
+    const h = answering(ndjson({ type: "error", code: "rate_limited", message: "Wait.", retryAfterMillis }))
+    expect((await h.call()).error).toMatchObject({ code: "rate_limited", retryAfterMillis })
+  })
+
+  it("rejects a negative retry delay received over HTTP", async () => {
+    const h = answering(ndjson({ type: "error", code: "rate_limited", message: "Wait.", retryAfterMillis: -1 }))
+    expect((await h.call()).error).toMatchObject({ code: "invalid_provider_output" })
+  })
+
+  it("caps an unterminated response line and cancels before reading the rest", async () => {
+    let reads = 0
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        reads++
+        if (reads <= 32) controller.enqueue(encoder.encode("x".repeat(65_536)))
+        else controller.error(new Error("read past the line limit"))
+      },
+      cancel() {
+        cancelled = true
+      }
+    })
+    const h = answering(body)
+
+    const { events, error } = await h.call()
+
+    expect(events).toEqual([])
+    expect(error).toMatchObject({ code: "invalid_provider_output", message: "The model host sent an oversized line." })
+    expect(reads).toBeLessThan(32)
+    expect(cancelled).toBe(true)
+    expect((await h.logLine("client")).annotations).toMatchObject({
+      outcome: "failed",
+      errorCode: "invalid_provider_output"
+    })
+  })
+
+  it.each(["x", "é", " "])("rejects an oversized complete line made of %s", async (character) => {
+    const h = answering(
+      character.repeat(Math.floor(1_048_576 / encoder.encode(character).length) + 1) + "\n" + ndjson({ type: "end" })
+    )
+    expect((await h.call()).error).toMatchObject({
+      code: "invalid_provider_output",
+      message: "The model host sent an oversized line."
+    })
+  })
+
+  it("accepts lines exactly at the byte limit and resets the limit at each newline", async () => {
+    const event = { type: "text-delta", id: "t", text: "" }
+    const overhead = encoder.encode(JSON.stringify(event)).length
+    const text = "é".repeat((1_048_576 - overhead) / 2) + "x".repeat((1_048_576 - overhead) % 2)
+    const large = { ...event, text }
+    const h = answering(chunks(ndjson(large), ndjson(large), ndjson({ type: "end" })))
+    const { events, error } = await h.call()
+    expect(error).toBeUndefined()
+    expect(events).toEqual([large, large])
+  })
+
+  it.each([false, true])("ignores oversized data after the terminal line, split chunks: %s", async (split) => {
+    const end = ndjson({ type: "end" })
+    const trailing = " ".repeat(1_048_577)
+    const h = answering(split ? chunks(end, trailing) : end + trailing)
+    expect(await h.call()).toEqual({ events: [], error: undefined })
+  })
 
   it("fails a body that ends before its terminal line as transport", async () => {
     const h = answering(ndjson({ type: "text-start", id: "t" }))
@@ -1212,6 +1300,32 @@ describe("ModelProxy client", () => {
 })
 
 describe("ModelProxy client route", () => {
+  it.each([
+    "https://private-user:private-password@model.test/api/model",
+    "https://model.test/api/model?api_key=private-key",
+    new URL("https://model.test/api/model?access_token=private-token")
+  ])("refuses endpoint credentials before preparing a public request: %s", async (endpoint) => {
+    const exit = await Effect.runPromiseExit(ModelProxy.prepare({ url: endpoint })(request()))
+    expect(Exit.isFailure(exit)).toBe(true)
+    const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+    expect(error).toMatchObject({ code: "invalid_request" })
+    expect(JSON.stringify(error)).not.toMatch(/private-(user|password|key|token)/)
+  })
+
+  it("preserves relative endpoints and public query parameters", async () => {
+    const endpoint = "/api/model?version=1&max_tokens=20"
+    const prepared = await Effect.runPromise(ModelProxy.prepare({ url: endpoint })(request()))
+    expect(prepared.url).toBe(endpoint)
+  })
+
+  it("fails an unparseable endpoint as invalid_request without exposing its URL", async () => {
+    const exit = await Effect.runPromiseExit(ModelProxy.prepare({ url: "https://[private-host" })(request()))
+    expect(Exit.isFailure(exit)).toBe(true)
+    const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+    expect(error).toMatchObject({ code: "invalid_request", message: "Endpoint URL could not be parsed." })
+    expect(JSON.stringify(error)).not.toContain("private-host")
+  })
+
   it("prepares the exact bytes the client sends, to the endpoint's URL, without the host's headers", async () => {
     const sent: Array<{ readonly url: string; readonly body: string; readonly headers: Headers }> = []
     const h = harness({
