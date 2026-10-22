@@ -6,7 +6,7 @@
   "smthrs": {
     "group": "agent"
   },
-  "description": "Flow-native scoring, durable observations, and asynchronous score runners for flows",
+  "description": "Flow-native scoring and durable observations for caller-owned flow steps",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",
@@ -41,8 +41,6 @@
     "./Binding": "./src/Binding.ts",
     "./Checks": "./src/Checks.ts",
     "./Rubric": "./src/Rubric.ts",
-    "./Runner": "./src/Runner.ts",
-    "./RunnerLive": "./src/RunnerLive.ts",
     "./Sampling": "./src/Sampling.ts",
     "./ScoreGate": "./src/ScoreGate.ts",
     "./ScoreStore": "./src/ScoreStore.ts",
@@ -50,7 +48,10 @@
     "./ScorerError": "./src/ScorerError.ts",
     "./SqlScoreStore": "./src/SqlScoreStore.ts",
     "./index": "./src/index.ts",
-    "./Scorers": "./src/Scorers.ts"
+    "./Scorers": "./src/Scorers.ts",
+    "./Scoring": "./src/Scoring.ts",
+    "./Runner": null,
+    "./RunnerLive": null
   },
   "files": [
     "src/**/*.ts",
@@ -111,26 +112,6 @@
         "require": {
           "types": "./dist/cjs/Rubric.d.ts",
           "default": "./dist/cjs/Rubric.js"
-        }
-      },
-      "./Runner": {
-        "import": {
-          "types": "./dist/esm/Runner.d.ts",
-          "default": "./dist/esm/Runner.js"
-        },
-        "require": {
-          "types": "./dist/cjs/Runner.d.ts",
-          "default": "./dist/cjs/Runner.js"
-        }
-      },
-      "./RunnerLive": {
-        "import": {
-          "types": "./dist/esm/RunnerLive.d.ts",
-          "default": "./dist/esm/RunnerLive.js"
-        },
-        "require": {
-          "types": "./dist/cjs/RunnerLive.d.ts",
-          "default": "./dist/cjs/RunnerLive.js"
         }
       },
       "./Sampling": {
@@ -212,7 +193,19 @@
           "types": "./dist/cjs/Scorers.d.ts",
           "default": "./dist/cjs/Scorers.js"
         }
-      }
+      },
+      "./Scoring": {
+        "import": {
+          "types": "./dist/esm/Scoring.d.ts",
+          "default": "./dist/esm/Scoring.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scoring.d.ts",
+          "default": "./dist/cjs/Scoring.js"
+        }
+      },
+      "./Runner": null,
+      "./RunnerLive": null
     }
   },
   "scripts": {
@@ -254,6 +247,8 @@
     "vitest": "5.0.0",
     "@effect/platform-node": "4.0.5",
     "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/platform-node": "1.0.0-rc.16"
+    "@smthrs/platform-node": "1.0.0-rc.16",
+    "@smthrs/flow": "workspace:*",
+    "@smthrs/plan": "workspace:*"
   }
 }

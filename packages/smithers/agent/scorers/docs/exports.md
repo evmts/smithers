@@ -7,7 +7,7 @@ Every categorized member reachable through the root namespaces, in source
 order. Signatures, bounds, and the reasoning behind each rule are on the
 [API reference](./api.md).
 
-13 namespaces, 109 documented members.
+12 namespaces, 105 documented members.
 
 | Export                               | Kind      | Category     | Summary                                                                                       |
 | ------------------------------------ | --------- | ------------ | --------------------------------------------------------------------------------------------- |
@@ -46,18 +46,14 @@ order. Signatures, bounds, and the reasoning behind each rule are on the
 | `ScoreStore.validate`                | const     | validation   | Decodes an observation against `Observation` before it is persisted.                          |
 | `SqlScoreStore.make`                 | const     | constructors | Builds the SQL-backed score store and applies its migrations.                                 |
 | `SqlScoreStore.layer`                | const     | layers       | Provides the SQL-backed score store.                                                          |
-| `Runner.Job`                         | interface | models       | One scorer execution request.                                                                 |
-| `Runner.BatchOptions`                | interface | models       | Batch execution options.                                                                      |
-| `Runner.Recorded`                    | type      | models       | Whether a batch job's observation reached the durable store.                                  |
-| `Runner.Outcome`                     | interface | models       | One batch result tagged with the job it came from and what the store did with it.             |
-| `Runner.Service`                     | interface | services     | Runtime scorer runner implementation.                                                         |
-| `Runner.Runner`                      | class     | services     | Context service for live and batch scorer execution.                                          |
-| `Runner.makeNoop`                    | const     | constructors | Constructs an inoperative scorer runner.                                                      |
-| `Runner.layerNoop`                   | const     | layers       | Provides the inoperative scorer runner.                                                       |
-| `Runner.jobIdentity`                 | const     | constructors | Builds a `Job.identity` from its components.                                                  |
-| `Runner.inconclusive`                | const     | converting   | Converts a scorer failure into a typed inconclusive observation.                              |
-| `RunnerLive.Options`                 | interface | models       | Live runner worker configuration.                                                             |
-| `RunnerLive.layer`                   | const     | layers       | Provides a scoped non-blocking queue and a blocking batch runner.                             |
+| `Scoring.Job`                        | interface | models       | One scorer execution request.                                                                 |
+| `Scoring.BatchOptions`               | interface | models       | Batch execution options.                                                                      |
+| `Scoring.Recorded`                   | type      | models       | Whether a batch job's observation reached the durable store.                                  |
+| `Scoring.Outcome`                    | interface | models       | One batch result tagged with the job it came from and what the store did with it.             |
+| `Scoring.jobIdentity`                | const     | constructors | Builds a `Job.identity` from its components.                                                  |
+| `Scoring.inconclusive`               | const     | converting   | Converts a scorer failure into a typed inconclusive observation.                              |
+| `Scoring.runBatchCorrelated`         | const     | execution    | Scores and records jobs in the calling fiber, with durable write outcomes.                    |
+| `Scoring.runBatch`                   | const     | execution    | Returns observations in input order.                                                          |
 | `Migrations.run`                     | const     | migrations   | Applies all score-store migrations.                                                           |
 | `Migrations.layer`                   | const     | layers       | Applies score-store migrations when the layer is constructed.                                 |
 | `ScoreGate.ScoreGateCode`            | const     | codes        | The five stable grading and misuse codes.                                                     |

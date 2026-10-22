@@ -571,6 +571,8 @@ const aggregate = (cases: Readonly<Record<string, ReadonlyArray<boolean>>>, k: n
 | `Suite.make`                    | constructors  | Builds and validates a fixed suite.                                             |
 | `Suite.JsonLinesOptions`        | models        | Options used when decoding JSON Lines.                                          |
 | `Suite.fromJsonLines`           | constructors  | Loads the `{ name, input, expected? }` JSON Lines fixture format.               |
+| `Suite.encodeData`              | encoding      | Encodes a versioned durable envelope preserving cloneable suite data.           |
+| `Suite.decodeData`              | decoding      | Decodes durable suite data without evaluating JavaScript.                       |
 | `CaseExecutor.Execution`        | models        | The result of executing one target-flow case.                                   |
 | `CaseExecutor.Run`              | models        | The one callback a case executor is.                                            |
 | `CaseExecutor.Service`          | services      | Runtime shape for an injectable target-flow executor.                           |
@@ -631,3 +633,21 @@ it: one asks whether the run did what the case declares, the other asks whether
 the observation is well formed at all. The run is gated on a committed
 baseline. For the shape of that pipeline in your own code, see
 [Gate a run in CI](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/guides/gate-a-run-in-ci.md).
+
+## Durable suite data
+
+`Suite.encodeData(value)` and `Suite.decodeData(source)` are Effect APIs over
+devalue 5.9.2's data serializer/parser. The `devalue-5.9.2:` envelope preserves
+cycles, repeated references, sparse arrays, null-prototype records, bigint,
+undefined, non-finite numbers and negative zero. No code is evaluated.
+Unsupported executable values, corrupt data and unknown wire versions fail
+with `invalid_suite`. Keep the pinned decoder when upgrading the serializer;
+existing journal payloads must remain readable.
+
+The CLI uses this envelope for its caller-owned evaluation action. The engine
+resumes the original request rather than substituting fresh CLI defaults.
+
+A correlated batch result may include `recorded`. When it is `"failed"`,
+`Runner.run` fails with `scorer_unavailable`; a failed durable write must not
+be journaled as a successful evaluation. Missing `recorded` preserves the
+in-process adapter protocol.

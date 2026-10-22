@@ -13,9 +13,9 @@ makes the write idempotent against an identity you choose.
 ## Build the identity
 
 ```ts
-import { Runner } from "@smthrs/scorers"
+import { Scoring } from "@smthrs/scorers"
 
-const identity = Runner.jobIdentity(["run-1", "greet/ada", contains.scorerKey])
+const identity = Scoring.jobIdentity(["run-1", "greet/ada", contains.scorerKey])
 ```
 
 `jobIdentity` length-prefixes every component under a `v1` prefix, so no

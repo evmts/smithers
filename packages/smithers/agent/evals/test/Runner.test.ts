@@ -1,8 +1,9 @@
 import * as Binding from "@smthrs/scorers/Binding"
-import * as ScorerRunner from "@smthrs/scorers/Runner"
 import type * as Sampling from "@smthrs/scorers/Sampling"
 import * as Scorer from "@smthrs/scorers/Scorer"
 import { ScorerError } from "@smthrs/scorers/ScorerError"
+import * as ScoreStore from "@smthrs/scorers/ScoreStore"
+import * as ScorerRunner from "@smthrs/scorers/Scoring"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -48,6 +49,21 @@ const failureOf = (effect: Effect.Effect<unknown, EvalError, never>): Promise<Ev
   Effect.runPromise(Effect.flip(effect))
 
 describe("Runner", () => {
+  it("fails the evaluation when a correlated runner reports a lost durable write", async () => {
+    const suite = await suiteOf("store-failure", [binding])
+    const scorer: Runner.ScoreBatchRunner = {
+      runBatch: () => Effect.succeed([]),
+      runBatchCorrelated: (jobs) =>
+        Effect.succeed(jobs.map((job) => ({
+          identity: job.identity,
+          observation: ScorerRunner.inconclusive(job, new ScorerError({ code: "store", message: "write refused" })),
+          recorded: "failed" as const
+        })))
+    }
+    const error = await failureOf(Runner.run(suite, { ...runOptions, scorer }).pipe(Effect.provide(succeeding)))
+    expect(error).toMatchObject({ code: "scorer_unavailable", path: "runBatchCorrelated[0]" })
+  })
+
   it.each([false, true])("rejects null batch observations as scorer_protocol (correlated: %s)", async (correlated) => {
     const suite = await suiteOf("null-observation", [binding])
     const scorer: Runner.ScoreBatchRunner = {
@@ -1086,11 +1102,22 @@ describe("Runner", () => {
     expect(Object.hasOwn(seen!, "groundTruth")).toBe(false)
   })
 
-  // The docs promise that the scorers package's own runner service is a
-  // correlated batch runner, so `ambiguous_score_job` never applies to it.
-  it("accepts the scorers runner service as a correlated batch runner", () => {
-    const adapter: Runner.ScoreBatchRunner = ScorerRunner.makeNoop()
-    expect(typeof adapter.runBatchCorrelated).toBe("function")
+  it("adapts blocking scoring functions to the correlated batch protocol", async () => {
+    const adapter: Runner.ScoreBatchRunner = {
+      runBatch: (jobs, options) => ScorerRunner.runBatch(jobs, options).pipe(Effect.provide(ScoreStore.layerNoop)),
+      runBatchCorrelated: (jobs, options) =>
+        ScorerRunner.runBatchCorrelated(jobs, options).pipe(Effect.provide(ScoreStore.layerNoop))
+    }
+    const output = await Effect.runPromise(adapter.runBatchCorrelated!([{
+      identity: "adapted-job",
+      observation: { targetStepKey: "target", scorerKey: scorerFlow.scorerKey },
+      score: scorerFlow.score({ input: null, output: "expected", groundTruth: "expected" }),
+      at: 1
+    }]))
+    expect(output).toMatchObject([{
+      identity: "adapted-job",
+      observation: { kind: "score" }
+    }])
   })
 
   it("requires deterministic run identity and a canonical UTC timestamp", async () => {

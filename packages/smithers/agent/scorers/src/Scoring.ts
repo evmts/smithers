@@ -1,5 +1,5 @@
 /**
- * Non-blocking and blocking scorer runner contract.
+ * Blocking scoring inside caller-owned durable flow steps.
  *
  * Package documentation: `packages/smithers/agent/scorers/docs/api.md`.
  *
@@ -7,21 +7,20 @@
  */
 
 import * as Cause from "effect/Cause"
-import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Text from "./internal/text.ts"
 import type { Result as ScorerResult } from "./Scorer.ts"
+import * as Scorer from "./Scorer.ts"
 import { ScorerError } from "./ScorerError.ts"
 import { maxReasonBytes, type Observation, type ObservationBase } from "./ScoreStore.ts"
+import * as ScoreStore from "./ScoreStore.ts"
 
 /**
  * One scorer execution request.
  *
- * `submit` copies scalar fields and observation keys synchronously when called,
- * before its returned Effect is run. Only the score Effect and its captured
- * values stay shared. Batch methods snapshot each job when its execution starts,
- * so batch inputs must remain stable until then.
+ * Execute these jobs inside a caller-owned `@smthrs/flow` action. The flow
+ * persists the request and re-runs interrupted work; this module never accepts
+ * background jobs. Batch inputs must remain stable until execution starts.
  *
  * `identity` is the durable idempotency key: build it with {@link jobIdentity}
  * rather than by joining strings, so two different tuples cannot produce one
@@ -62,8 +61,8 @@ export type Recorded = "persisted" | "duplicate" | "failed"
  *
  * The method is named `runBatchCorrelated` because `@smthrs/evals` already
  * declares that optional method on its structural `ScoreBatchRunner` in
- * `packages/smithers/agent/evals/src/Runner.ts`. Its results carry job identities, so this
- * service lets that consumer correlate by identity instead of by position
+ * `packages/smithers/agent/evals/src/Runner.ts`. Its results carry job identities, so these
+ * functions let that consumer correlate by identity instead of by position
  * without a change in `@smthrs/evals`.
  *
  * @category models
@@ -74,53 +73,6 @@ export interface Outcome {
   readonly observation: Observation
   readonly recorded: Recorded
 }
-
-/**
- * Runtime scorer runner implementation.
- *
- * @category services
- * @since 0.1.0
- */
-export interface Service {
-  readonly submit: (job: Job) => Effect.Effect<void>
-  readonly runBatch: (
-    jobs: ReadonlyArray<Job>,
-    options?: BatchOptions | undefined
-  ) => Effect.Effect<ReadonlyArray<Observation>>
-  readonly runBatchCorrelated: (
-    jobs: ReadonlyArray<Job>,
-    options?: BatchOptions | undefined
-  ) => Effect.Effect<ReadonlyArray<Outcome>>
-}
-
-/**
- * Context service for live and batch scorer execution.
- *
- * @category services
- * @since 0.1.0
- */
-export class Runner extends Context.Service<Runner, Service>()("flows/scorers/Runner") {}
-
-/**
- * Constructs an inoperative scorer runner.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const makeNoop = (): Service =>
-  Runner.of({
-    submit: () => Effect.void,
-    runBatch: () => Effect.succeed([]),
-    runBatchCorrelated: () => Effect.succeed([])
-  })
-
-/**
- * Provides the inoperative scorer runner.
- *
- * @category layers
- * @since 0.1.0
- */
-export const layerNoop: Layer.Layer<Runner> = Layer.succeed(Runner)(makeNoop())
 
 /**
  * Builds a {@link Job.identity} from its components.
@@ -164,7 +116,7 @@ const failureOf = (cause: unknown): Failure => {
  * - `code` carries the classification, so the distinction survives without
  *   parsing prose.
  * - Coercion is guarded. A cause whose `toString` or `Symbol.toPrimitive`
- *   throws used to raise synchronously inside the runner's `catchCause`
+ *   throws used to raise synchronously inside the batch's `catchCause`
  *   handler and escape as a defect, killing the batch this function exists to
  *   keep alive.
  * - The reason is truncated to `maxReasonBytes`, because the squashed cause is
@@ -184,3 +136,84 @@ export const inconclusive = (job: Job, cause: unknown): Observation => {
     at: job.at
   }
 }
+
+const execute = (job: Job): Effect.Effect<Outcome, never, ScoreStore.ScoreStore> =>
+  Effect.gen(function*() {
+    const store = yield* ScoreStore.ScoreStore
+    return yield* job.score.pipe(
+      Effect.flatMap(Scorer.validate),
+      Effect.map((result): ScoreStore.ScoreObservation => ({
+        targetStepKey: job.observation.targetStepKey,
+        scorerKey: job.observation.scorerKey,
+        kind: "score",
+        score: result.score,
+        ...(result.reason === undefined
+          ? {}
+          : { reason: Text.truncate(result.reason, ScoreStore.maxReasonBytes) }),
+        ...(result.meta === undefined ? {} : { meta: result.meta }),
+        at: job.at
+      })),
+      Effect.catchCause((cause) =>
+        Cause.hasInterrupts(cause)
+          ? Effect.interrupt
+          : Effect.succeed(inconclusive(job, cause))
+      ),
+      Effect.flatMap((observation) =>
+        store.recordOnce(job.identity, observation).pipe(
+          Effect.map((recorded): Recorded => recorded ? "persisted" : "duplicate"),
+          Effect.catch((error) =>
+            Effect.logWarning("Could not record a scorer observation", error).pipe(
+              Effect.annotateLogs({
+                identity: job.identity,
+                targetStepKey: job.observation.targetStepKey,
+                scorerKey: job.observation.scorerKey
+              }),
+              Effect.as<Recorded>("failed")
+            )
+          ),
+          Effect.map((recorded): Outcome => ({ identity: job.identity, observation, recorded }))
+        )
+      )
+    )
+  })
+
+const concurrency = (value: number | undefined): number =>
+  value !== undefined && Number.isSafeInteger(value) && value > 0 ? value : 1
+
+/**
+ * Scores and records a batch in the calling fiber, in input order.
+ *
+ * Await this effect inside a durable flow action. It never forks background
+ * work. Interruption propagates so the flow can resume; recordOnce deduplicates
+ * observations by job identity if a crash occurs after the insert commits.
+ * Store failures remain visible in each outcome; a caller can fail its action
+ * when `recorded` is `failed` so the engine applies its retry policy.
+ *
+ * @category execution
+ * @since 0.1.0
+ */
+export const runBatchCorrelated = (
+  jobs: ReadonlyArray<Job>,
+  options?: BatchOptions | undefined
+): Effect.Effect<ReadonlyArray<Outcome>, never, ScoreStore.ScoreStore> =>
+  Effect.forEach(jobs, (job) =>
+    execute({
+      identity: job.identity,
+      observation: { ...job.observation },
+      score: job.score,
+      at: job.at
+    }), { concurrency: concurrency(options?.concurrency) })
+
+/**
+ * Scores and records a batch, returning its observations in input order.
+ *
+ * Use runBatchCorrelated when a durable action must fail on a store error.
+ *
+ * @category execution
+ * @since 0.1.0
+ */
+export const runBatch = (
+  jobs: ReadonlyArray<Job>,
+  options?: BatchOptions | undefined
+): Effect.Effect<ReadonlyArray<Observation>, never, ScoreStore.ScoreStore> =>
+  runBatchCorrelated(jobs, options).pipe(Effect.map((outcomes) => outcomes.map((outcome) => outcome.observation)))

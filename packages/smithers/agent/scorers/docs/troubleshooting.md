@@ -102,7 +102,7 @@ rule set is in [Durability](./durability.md#what-the-store-refuses-to-persist).
 blank or oversized job identity, or a page bound that is not a safe integer in
 range.
 
-**What to change.** Build identities with `Runner.jobIdentity` and keep them
+**What to change.** Build identities with `Scoring.jobIdentity` and keep them
 within `ScoreStore.maxIdentityBytes` (512 UTF-8 bytes). Keep `limit` in
 `[1, 1000]`, and `offset` and `before` non-negative safe integers. The message
 names the value it was given.
@@ -143,7 +143,7 @@ work that was already scored.
 
 **What to change.** Derive the identity from durable values only: a run id, the
 target step key, and the scorer key. Never a process id, a random value, or a
-wall clock. Build it with `Runner.jobIdentity`, which length-prefixes each
+wall clock. Build it with `Scoring.jobIdentity`, which length-prefixes each
 component so two different tuples cannot collide. See
 [Record a score exactly once](./guides/record-a-score-once.md).
 
@@ -193,16 +193,15 @@ scorer answered rather than what was persisted.
 `"persisted"`, `"duplicate"`, or `"failed"` per job. Read the logs for the
 warning that names the underlying error.
 
-## submit stopped returning
+## Migrating from Runner
 
-**What happened.** `submit` backpressures once `capacity` queued jobs are
-outstanding. It does not wait for a scorer to run, but it does wait for room in
-the queue, so it is not safe on a latency-critical path.
-
-**What to change.** Raise `capacity` or `concurrency` on `RunnerLive.layer`, or
-move submission off the critical path. A value that is not a positive safe
-integer is coerced to the default (1 and 1024) rather than rejected, so check
-that the number you passed is one.
+`Runner` and `RunnerLive` were removed because their in-memory submission queue
+lost accepted work at shutdown. Replace `submit(job)` with an awaited
+`Scoring.runBatchCorrelated([job])` inside the caller's durable flow action.
+Persist serializable inputs in the action payload and keep job identities
+stable across restarts. Inspect `recorded` and fail the action on a failed
+write when the engine should retry it. No runner layer or capacity option is
+needed; provide `ScoreStore` directly.
 
 ## The database refuses to open under Bun
 

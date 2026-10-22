@@ -2,10 +2,9 @@ import { ProviderError } from "@smthrs/sandbox/RemoteChildProcessSpawner"
 import type { Session } from "@smthrs/sandbox/Sandbox"
 import { Deferred, Effect, Exit, Fiber, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Runner from "../src/Runner.ts"
-import * as RunnerLive from "../src/RunnerLive.ts"
 import * as Scorers from "../src/Scorers.ts"
 import * as ScoreStore from "../src/ScoreStore.ts"
+import * as Scoring from "../src/Scoring.ts"
 
 const input = (output: unknown, groundTruth?: unknown) => ({ input: null, output, groundTruth })
 const diff = `diff --git a/a.ts b/a.ts
@@ -227,14 +226,13 @@ describe("testsPass sandbox boundary", () => {
     })
     const observations = await Effect.runPromise(
       Effect.gen(function*() {
-        const runner = yield* Runner.Runner
-        return yield* runner.runBatch([{
+        return yield* Scoring.runBatch([{
           identity: "launch-failure",
           observation: { targetStepKey: "run", scorerKey: scorer.scorerKey },
           score: scorer.score(input(null)),
           at: 1
         }])
-      }).pipe(Effect.provide(RunnerLive.layer()), Effect.provide(ScoreStore.layerNoop))
+      }).pipe(Effect.provide(ScoreStore.layerNoop))
     )
     expect(observations).toMatchObject([{
       kind: "inconclusive",

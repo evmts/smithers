@@ -85,6 +85,7 @@ full API; the name in each table links to the best starting page.
 | Provide Effect's `Crypto` over WebCrypto in any host | `@smthrs/crypto` | `WebCrypto.layer`, or `WebCrypto.make()` for the service value |
 | Test a flow without a live model | `@smthrs/testing` | `ScriptedModel.make`, `CachedModel.make`, `TestHost.layer`, `PlanAssertions`, `JournalAssertions` |
 | Run an eval suite against a committed baseline | `@smthrs/evals`, `@smthrs/scorers` | `Suite.make`, `Runner.run`, `Regression.compare`, `Gate.check`; `Scorer.make`, `Rubric.make` |
+| Persist cloneable evaluation inputs without JSON coercion | `@smthrs/evals` | `Suite.encodeData` / `Suite.decodeData`, Effect wrappers over pinned devalue 5.9.2; preserve the versioned decoder when upgrading |
 | Declare build, test and lint targets | `@smthrs/targets` | `Smithers.Package`, `Smithers.NodeTest`, `Smithers.Typecheck` in `PACKAGE.ts`; run with `pnpm exec smithers-build test //<pkg>:test` |
 
 ## Platform rule (Will, 2026-10-19)
@@ -316,7 +317,7 @@ of UI goes into `@smthrs/ui` with its test and docs, not into an app.
 | --- | --- | --- | --- | --- |
 | [`@smthrs/testing`](../packages/testing/docs/api.md) | `packages/testing` | Test flows deterministically with scripted or recorded models, a memory engine, plan and journal assertions and conformance suites. | `ScriptedModel.make`, `CachedModel.make`, `TestHost.layer`, `PlanAssertions`, `JournalAssertions`, `Conformance.coreSuite`; `@smthrs/testing/Vitest` | Node; **violation** |
 | [`@smthrs/evals`](../packages/smithers/agent/evals/docs/quickstart.md) | `packages/smithers/agent/evals` | Run a fixed eval suite against a committed baseline with a CI exit code. | `Suite.make`, `CaseExecutor.make`, `Runner.run`, `Baseline.write`, `Regression.compare`, `Gate.check`; `smthrs eval run\|baseline\|compare` | All |
-| [`@smthrs/scorers`](../packages/smithers/agent/scorers/docs/quickstart.md) | `packages/smithers/agent/scorers` | Grade a flow's output with exact, contains, rubric or tests-pass scorers and keep the scores. | `Scorer.make`, `Scorers.exact`, `Scorers.rubric`, `Scorers.testsPass`, `Rubric.make`, `RunnerLive.layer` | All |
+| [`@smthrs/scorers`](../packages/smithers/agent/scorers/docs/quickstart.md) | `packages/smithers/agent/scorers` | Grade a flow's output with exact, contains, rubric or tests-pass scorers and keep the scores. | `Scorer.make`, `Scorers.exact`, `Scorers.rubric`, `Scorers.testsPass`, `Rubric.make`, `Scoring.runBatchCorrelated` inside caller-owned flow actions | All |
 | [`@smthrs/eval-agent`](../packages/smithers/agent/regression/README.md) (private) | `packages/smithers/agent/regression` | Check that a change to the `@smthrs/agent` loop did not regress, with offline deterministic cases. | `bun packages/smithers/agent/regression/run.ts` | Bun (program) |
 | [`@smthrs/eval-review-seeded-bugs`](../.smithers/flows/review/seeded-bugs/README.md) (private) | `.smithers/flows/review/seeded-bugs` | Measure the review flow's recall and precision on 16 seeded fixture repositories. | `bun test .smithers/flows/review/seeded-bugs`; `run.ts --live` | Bun (program) |
 | [`@smthrs/eval-authoring`](../evals/authoring/README.md) (private) | `evals/authoring` | Validate or upload the flow-authoring fine-tune dataset. | `pnpm exec smithers-build test '//evals/authoring:test'` | Bun (program) |

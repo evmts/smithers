@@ -19,8 +19,8 @@ and once with its kind and a one-line summary in
 [Exported members](./exports.md).
 
 ```typescript
-import { Runner, RunnerLive, Scorer, ScoreStore, SqlScoreStore } from "@smthrs/scorers"
-import { Effect, Layer } from "effect"
+import { Scorer, ScoreStore, Scoring, SqlScoreStore } from "@smthrs/scorers"
+import { Effect } from "effect"
 
 const quality = Scorer.make({
   id: "my-package/scorers/quality",
@@ -30,17 +30,15 @@ const quality = Scorer.make({
 })
 
 const program = Effect.gen(function*() {
-  const runner = yield* Runner.Runner
-  return yield* runner.runBatch([{
-    identity: Runner.jobIdentity(["run-1", "step-7", quality.scorerKey]),
+  return yield* Scoring.runBatch([{
+    identity: Scoring.jobIdentity(["run-1", "step-7", quality.scorerKey]),
     observation: { targetStepKey: "step-7", scorerKey: quality.scorerKey },
     score: quality.score({ input: "ask", output: "expected" }),
     at: Date.now()
   }])
 })
 
-const live = RunnerLive.layer({ concurrency: 4 }).pipe(Layer.provide(SqlScoreStore.layer))
-const inert = RunnerLive.layer().pipe(Layer.provide(ScoreStore.layerNoop))
+// Await program inside a durable action; see the complete quickstart.
 ```
 
 For a runnable composition including the database layers, see the
@@ -150,37 +148,28 @@ offending field.
 
 Each code's symptom and fix is in [Troubleshooting](./troubleshooting.md).
 
-## Runners
+## Scoring in durable actions
 
-`Runner.Service` has three entry points and one execution path. `submit` queues
-a job and returns: it does not wait for the scorer to run, but it backpressures
-once `capacity` queued jobs are outstanding, so it is not safe on a
-latency-critical path. `runBatchCorrelated` runs jobs at the configured
-concurrency and returns an `Outcome` for each one. Each outcome carries the job
-identity and reports `persisted`, `duplicate`, or `failed` for the durable
-write. `runBatch` is derived from it and returns only the observations, in job
-order.
+`Scoring.runBatchCorrelated(jobs, options?)` executes and records every job
+in the calling fiber, returning an `Outcome` per job in input order. Outcomes
+carry the identity, observation, and `recorded`: `persisted`, `duplicate`, or
+`failed`. `Scoring.runBatch` returns only the observations.
 
-Both are governed by one rule: a scorer failure becomes an inconclusive
-observation and never fails the target or the batch. Batch interruption
-propagates. Each queued job runs in its own scoped fiber: its interruption or
-defect cannot stop the workers or cancel other jobs. Closing the layer scope
-still interrupts running jobs. A score-store failure is logged as a warning
-with `identity`, `targetStepKey`, and `scorerKey` annotations and the structured
-store error, and does not fail the batch either. `runBatch` records what each
-scorer _answered_, while `runBatchCorrelated` also records what the store did. A `duplicate` outcome
-means the identity was already claimed; it does not claim that the returned
-observation is the one already in the store.
+The caller awaits scoring inside its own `@smthrs/flow` action. Its persisted
+payload contains stable inputs and job identities; reconstruct score Effects
+from those inputs when the action executes. Effects are not journal payloads.
+The engine owns retries, deadlines, admission and crash recovery. There is no
+background submission API, private queue, worker loop, or runner layer.
 
-`RunnerLive.layer` coerces a `concurrency` or `capacity` that is not a positive
-safe integer to its default (1 and 1024) rather than failing, because the
-layer's error channel is `never`. The layer is scoped: it forks its workers
-into the scope that builds it, so a job still queued when that scope closes is
-never scored.
+Scorer failures become inconclusive observations. Interruption propagates so
+an interrupted action can resume. Store failures are logged with identity,
+target and scorer annotations and reported as `recorded: "failed"`; use the
+correlated API and fail the enclosing action when a failed write must retry.
+A duplicate suppresses the insert; its returned observation describes this
+attempt, not necessarily the previously persisted observation.
 
-`Runner.layerNoop` and `ScoreStore.layerNoop` are the explicit absences.
-Neither fails; the runner accepts every job and runs nothing, and the store
-accepts every write and reads back nothing.
+`concurrency` defaults to 1. Values other than positive safe integers use 1.
+`ScoreStore.layerNoop` disables persistence while still executing scorers.
 
 ## Stores
 
@@ -212,10 +201,8 @@ four migrations when it is built. What it guarantees across a restart is in
 Three handoffs decide what a later mutation can still change, and each one has
 one answer.
 
-`submit` copies a job's scalar fields and nested observation keys synchronously
-when called, before its returned Effect runs. The score Effect and its captures
-stay shared. Batch methods snapshot each job when that job starts executing;
-keep batch inputs stable until then.
+Batch functions copy each job's scalar fields and observation keys when that
+job starts. Keep inputs and score captures stable until execution finishes.
 
 `record` and `recordOnce` copy and fully encode an observation when they are
 _called_, not when the Effect they return is run. Building `record(observation)`, mutating the
@@ -234,7 +221,7 @@ before binding.
 `flows_score_jobs` and writes the observation in the same transaction, so a
 retried job records once. The identity must be non-empty, at most
 `maxIdentityBytes` UTF-8 bytes, and stable across a restart. Build it with
-`Runner.jobIdentity([...parts])`, which length-prefixes each component: joining
+`Scoring.jobIdentity([...parts])`, which length-prefixes each component: joining
 parts with a delimiter lets two different tuples produce one identity, and one
 shared identity drops every observation after the first.
 The claim must report exactly zero or one affected row. Zero is a duplicate;
@@ -285,18 +272,14 @@ Every public export, once.
 | `ScoreStore.validate`                | validation   | Decodes an observation against `Observation` before it is persisted.              |
 | `SqlScoreStore.make`                 | constructors | Builds the SQL-backed store and applies its migrations.                           |
 | `SqlScoreStore.layer`                | layers       | Provides the SQL-backed score store.                                              |
-| `Runner.Job`                         | models       | One scorer execution request and its durable idempotency key.                     |
-| `Runner.BatchOptions`                | models       | Batch execution options.                                                          |
-| `Runner.Recorded`                    | models       | Whether a batch observation was persisted, duplicated, or failed.                 |
-| `Runner.Outcome`                     | models       | A batch observation tagged with its job identity and durable write result.        |
-| `Runner.Service`                     | services     | The runtime scorer runner implementation.                                         |
-| `Runner.Runner`                      | services     | Context service for live and batch scorer execution.                              |
-| `Runner.makeNoop`                    | constructors | Constructs an inoperative scorer runner.                                          |
-| `Runner.layerNoop`                   | layers       | Provides the inoperative scorer runner.                                           |
-| `Runner.jobIdentity`                 | constructors | Builds a length-prefixed `Job.identity` from its components.                      |
-| `Runner.inconclusive`                | converting   | Converts a scorer failure into a typed inconclusive observation.                  |
-| `RunnerLive.Options`                 | models       | Live runner worker configuration.                                                 |
-| `RunnerLive.layer`                   | layers       | Provides the scoped queue and the blocking batch runner.                          |
+| `Scoring.Job`                        | models       | One scorer execution request and its durable idempotency key.                     |
+| `Scoring.BatchOptions`               | models       | Batch execution options.                                                          |
+| `Scoring.Recorded`                   | models       | Whether a batch observation was persisted, duplicated, or failed.                 |
+| `Scoring.Outcome`                    | models       | A batch observation tagged with its job identity and durable write result.        |
+| `Scoring.runBatchCorrelated`         | execution    | Scores and records jobs in the calling fiber, with durable write outcomes.        |
+| `Scoring.runBatch`                   | execution    | Returns the batch observations in input order.                                    |
+| `Scoring.jobIdentity`                | constructors | Builds a length-prefixed `Job.identity` from its components.                      |
+| `Scoring.inconclusive`               | converting   | Converts a scorer failure into a typed inconclusive observation.                  |
 | `Migrations.run`                     | migrations   | Applies all score-store migrations.                                               |
 | `Migrations.layer`                   | layers       | Applies score-store migrations when the layer is constructed.                     |
 
@@ -453,7 +436,7 @@ Non-text input is inconclusive. `rubric` is the existing `Rubric.make` contract.
 an already acquired `@smthrs/sandbox` session. It drains both output streams and
 waits for the real exit: zero scores 1, every other valid exit scores 0. The
 result includes `meta.exitCode`. Launch, transport or timeout failure raises
-`ScorerError` with code `inconclusive`; `Runner` retains it as an inconclusive
+`ScorerError` with code `inconclusive`; `Scoring` retains it as an inconclusive
 observation. The command scope closes on completion, interruption and timeout.
 The default timeout is 60,000 ms; a blank command or a nonpositive/noninteger
 timeout is an invalid declaration. Command and timeout enter the scorer identity.

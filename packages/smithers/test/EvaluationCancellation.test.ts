@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import { createEvalCli } from "../src/evaluation/EvalCli.ts"
+import * as Evaluation from "../src/evaluation/Evaluation.ts"
 
 const roots: Array<string> = []
 afterEach(async () => {
@@ -27,13 +28,14 @@ import * as Scorer from ${JSON.stringify(new URL("../agent/scorers/src/Scorer.ts
 import * as Binding from ${JSON.stringify(new URL("../agent/scorers/src/Binding.ts", import.meta.url).href)}
 let start
 let finish
+let released = false
 export const started = new Promise((resolve) => { start = resolve })
 export const finalized = new Promise((resolve) => { finish = resolve })
 export let release = () => {}
-const hold = (value) => Effect.callback((resume) => {
-  release = () => resume(Effect.succeed(value))
+const hold = (value) => Effect.suspend(() => released ? Effect.succeed(value) : Effect.callback((resume) => {
+  release = () => { released = true; resume(Effect.succeed(value)) }
   start()
-}).pipe(Effect.ensuring(Effect.sync(() => finish())))
+})).pipe(Effect.ensuring(Effect.sync(() => finish())))
 const target = ({ name: "cancellation-target" })
 const scorer = Scorer.make({ id: "cancel", version: "1", name: "cancel",
   score: () => ${phase === "scorer" ? "hold({ score: 1 })" : "Effect.succeed({ score: 1 })"}
@@ -80,6 +82,19 @@ const serve = async (root: string, runtime: RuntimeConfig, unified = false) => {
 }
 
 describe("evaluation invocation cancellation", () => {
+  it("resumes the same CLI run without an explicit timestamp", async () => {
+    const { root, controls } = await fixture("scorer")
+    const controller = new AbortController()
+    const initial = serve(root, { signal: controller.signal, environment: {} })
+    await controls.started
+    controller.abort()
+    expect((await initial).code).toBe(5)
+    controls.release()
+    const resumed = await serve(root, { environment: {} })
+    expect(resumed.code, resumed.output).toBe(0)
+    expect((await Evaluation.readRun(root, "cancelled")).observations).toMatchObject([{ kind: "score", score: 1 }])
+  })
+
   it.each(["suite", "executor", "scorer"])("interrupts blocked %s work and runs its finalizer", async (phase) => {
     const { root, controls } = await fixture(phase)
     const controller = new AbortController()
@@ -98,7 +113,7 @@ describe("evaluation invocation cancellation", () => {
       const result = await invocation
       expect(result.code, result.output).toBe(5)
       expect(result.output).toContain("eval_run_failed")
-      expect(await readdir(root)).toEqual(["evals"])
+      expect(await readdir(root)).toEqual(phase === "suite" ? ["evals"] : [".flows", "evals"])
     } finally {
       clearTimeout(timer)
       controls.release()

@@ -1,10 +1,16 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import * as Dialect from "@smthrs/database/Dialect"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { CaseExecutor } from "@smthrs/evals"
+import { RetryPolicy } from "@smthrs/flow"
+import { Journal } from "@smthrs/journal"
 import { NodeRuntime } from "@smthrs/platform-node"
+import { Binding, Scorer, Scoring } from "@smthrs/scorers"
 import * as ScoreStore from "@smthrs/scorers/ScoreStore"
 import * as SqlScoreStore from "@smthrs/scorers/SqlScoreStore"
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Layer, Schedule } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -140,10 +146,170 @@ describe("evaluation scoring over the project's engine store", () => {
     await writeSuite(root)
     const loaded = await Evaluation.load(root, "exact")
     const options = { root, runId: "repeat", at: first }
-    const before = await Evaluation.execute(loaded.suite, loaded.executor, options)
-    const after = await Evaluation.execute(loaded.suite, loaded.executor, options)
+    let executions = 0
+    const executor = CaseExecutor.make((entry) =>
+      Effect.sync(() => {
+        executions += 1
+      }).pipe(
+        Effect.andThen(loaded.executor.run(entry))
+      )
+    )
+    const before = await Evaluation.execute(loaded.suite, executor, options)
+    const after = await Evaluation.execute(loaded.suite, executor, options)
+    expect(executions).toBe(1)
     expect(after).toEqual(before)
     expect(after.observations).toHaveLength(1)
+    expect(await stored(root)).toHaveLength(1)
+  })
+
+  it("resumes interrupted scoring through the production evaluation flow and replays once", async () => {
+    const root = await fixture()
+    await writeSuite(root)
+    const loaded = await Evaluation.load(root, "exact")
+    const started = Deferred.makeUnsafe<void>()
+    let interrupted = true
+    let completed = 0
+    const shared = Object.assign(Object.create(null), { label: "shared" })
+    const graph = { values: [shared, shared, undefined, 1n, NaN, Infinity, -0], self: undefined as unknown }
+    graph.self = graph
+    const executor = CaseExecutor.make((entry) =>
+      Effect.sync(() => {
+        const input = entry.input as typeof graph
+        expect(input.self).toBe(input)
+        expect(input.values[0]).toBe(input.values[1])
+        expect(input.values).toEqual(graph.values)
+      }).pipe(Effect.andThen(loaded.executor.run({ ...entry, input: 0.75 })))
+    )
+    const suite = {
+      ...loaded.suite,
+      cases: [{ name: "graph", input: graph }],
+      bindings: loaded.suite.bindings.map((binding) => ({
+        ...binding,
+        scorer: {
+          ...binding.scorer,
+          score: (input: Parameters<typeof binding.scorer.score>[0]) =>
+            Effect.gen(function*() {
+              yield* Deferred.succeed(started, undefined)
+              if (interrupted) yield* Effect.never
+              const result = yield* binding.scorer.score(input)
+              completed += 1
+              return result
+            })
+        }
+      }))
+    }
+    const options = { root, runId: "resume", at: first }
+    const controller = new AbortController()
+    const initial = Evaluation.execute(suite, executor, options, { signal: controller.signal })
+      .then(
+        (result) => new Error(`Evaluation ended before interruption: ${JSON.stringify(result)}`),
+        (error: unknown) => error
+      )
+    await Promise.race([
+      Effect.runPromise(Deferred.await(started).pipe(Effect.timeout("5 seconds"))),
+      initial.then((error) => {
+        throw error
+      })
+    ])
+    controller.abort()
+    expect(await initial).toBeDefined()
+    interrupted = false
+    const resumed = await Evaluation.execute(suite, executor, { ...options, at: second })
+    expect(await Evaluation.execute(suite, executor, options)).toEqual(resumed)
+    expect(resumed.observations[0]!.at).toBe(first)
+    expect(completed).toBe(1)
+    expect(await stored(root)).toHaveLength(1)
+  })
+
+  it("preserves distinct target identities with the same name and scorer", async () => {
+    const root = await fixture()
+    const targets = [{ name: "same" }, { name: "same" }]
+    const scorer = Scorer.make({ id: "same-name-targets", version: "1", score: () => Effect.succeed({ score: 1 }) })
+    const suite = {
+      name: "target-identity",
+      concurrency: 1,
+      cases: [{ name: "a", input: 0 }, { name: "b", input: 1 }],
+      bindings: targets.map((target) => Binding.make({ scorer, appliesTo: target }))
+    }
+    const executor = CaseExecutor.make((entry) =>
+      Effect.succeed({
+        output: 1,
+        stepKey: entry.name,
+        latencyMs: 0,
+        target: targets[entry.input as number]!
+      })
+    )
+    const result = await Evaluation.execute(suite, executor, { root, runId: "targets", at: first })
+    expect(result.cases.map((entry) => entry.observations.length)).toEqual([1, 1])
+    expect(result.observations.map((observation) => observation.stepKey)).toEqual(["a", "b"])
+  })
+
+  it("retries a real score-store rejection under the same durable run identity", async () => {
+    const root = await fixture()
+    await withEngineStore(root)
+    await writeSuite(root)
+    await stored(root)
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* Dialect.trigger(sql, {
+          name: "reject_evaluation_scores",
+          table: "flows_scores",
+          event: "BEFORE INSERT",
+          reject: "score write refused"
+        })
+      }).pipe(
+        Effect.provide(
+          DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({ filename: engineDatabase(root) })))
+        )
+      )
+    )
+    const loaded = await Evaluation.load(root, "exact")
+    const options = { root, runId: "store-failure", at: first }
+    const controller = new AbortController()
+    const initial = Evaluation.execute(loaded.suite, loaded.executor, options, { signal: controller.signal })
+      .then(() => undefined, (error: unknown) => error)
+    try {
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const journal = yield* Journal.Journal
+          const runId = Scoring.jobIdentity(["evaluation", loaded.suite.name, options.runId])
+          return yield* journal.entries({ runId: runId as never, limit: 1000 }).pipe(
+            Effect.map((page) =>
+              page.entries.some((entry) =>
+                entry.eventType === "flows.engine.attempt-finished" &&
+                (entry.payload as { readonly state?: unknown }).state === "failed"
+              )
+            ),
+            Effect.repeat({ until: (failed) => failed, schedule: Schedule.spaced("10 millis") }),
+            Effect.timeout("5 seconds")
+          )
+        }).pipe(
+          Effect.provide(NodeRuntime.storage(engineDatabase(root), root)),
+          Effect.provide(NodeServices.layer),
+          Effect.provide(NodeCrypto.layer)
+        )
+      )
+    } finally {
+      controller.abort()
+      expect(await initial).toBeDefined()
+    }
+    expect(await stored(root)).toHaveLength(0)
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* Dialect.dropTrigger(sql, "reject_evaluation_scores", "flows_scores")
+      }).pipe(
+        Effect.provide(
+          DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({ filename: engineDatabase(root) })))
+        )
+      )
+    )
+    // Respect the engine's persisted backoff before replacing the runtime.
+    await Effect.runPromise(Effect.sleep(RetryPolicy.transient.initialMs))
+    const resumed = await Evaluation.execute(loaded.suite, loaded.executor, options)
+    expect(await Evaluation.execute(loaded.suite, loaded.executor, options)).toEqual(resumed)
+    expect(resumed.observations).toMatchObject([{ kind: "score", score: 0.75 }])
     expect(await stored(root)).toHaveLength(1)
   })
 
@@ -160,7 +326,7 @@ describe("evaluation scoring over the project's engine store", () => {
     expect(observations[0]!.reason).toContain("judge unavailable")
   })
 
-  it("scores in process without an engine store and creates none", async () => {
+  it("creates a durable engine store for project runs and keeps rootless evaluation inline", async () => {
     const root = await fixture()
     await writeSuite(root)
     const result = await serve(root, ["run", "exact", "--run-id", "inline", "--at", first])
@@ -168,11 +334,11 @@ describe("evaluation scoring over the project's engine store", () => {
     expect((await Evaluation.readRun(root, "inline")).observations).toMatchObject([
       { kind: "score", score: 0.75, stepKey, at: first }
     ])
-    expect(await readdir(join(root, ".flows"))).toEqual(["evals"])
+    expect(await readdir(join(root, ".flows"))).toContain("engine.db")
     const loaded = await Evaluation.load(root, "exact")
     const direct = await Evaluation.execute(loaded.suite, loaded.executor, { runId: "inline", at: first })
     expect(direct.observations).toEqual((await Evaluation.readRun(root, "inline")).observations)
-    expect(await readdir(join(root, ".flows"))).toEqual(["evals"])
+    expect(await readdir(join(root, ".flows"))).toContain("engine.db")
   })
 
   it("fails the run without an artifact when the engine store cannot be opened", async () => {

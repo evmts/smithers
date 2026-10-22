@@ -9,10 +9,10 @@
  * @since 0.1.0
  */
 
-import * as ScorerRunner from "@smthrs/scorers/Runner"
 import * as Sampling from "@smthrs/scorers/Sampling"
 import * as Scorer from "@smthrs/scorers/Scorer"
 import type * as ScoreStore from "@smthrs/scorers/ScoreStore"
+import * as ScorerRunner from "@smthrs/scorers/Scoring"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -75,7 +75,7 @@ export interface ScoreRequest {
 }
 
 /**
- * A blocking scorer job, matching the `Runner` module of `@smthrs/scorers`.
+ * A blocking scorer job, matching the `Scoring` module of `@smthrs/scorers`.
  *
  * @category models
  * @since 0.1.0
@@ -94,9 +94,9 @@ export type ScoreJob = ScorerRunner.Job
  * attributed to a case.
  *
  * A run fails with `scorer_protocol` when either protocol is broken.
- * `@smthrs/scorers`' `Runner.Service` implements `runBatchCorrelated`, so its
- * service value can be used directly and `ambiguous_score_job` never applies
- * to it.
+ * Bind `@smthrs/scorers`' `Scoring.runBatchCorrelated` to the caller's
+ * ScoreStore to implement the correlated protocol; `ambiguous_score_job`
+ * never applies to that protocol.
  *
  * @category services
  * @since 0.1.0
@@ -129,6 +129,7 @@ export type ScoreObservation = ScoreStore.Observation
  * @since 0.1.0
  */
 export interface BatchResult {
+  readonly recorded?: ScorerRunner.Recorded | undefined
   readonly identity: string
   readonly observation: ScoreObservation
 }
@@ -504,7 +505,9 @@ const scoreCorrelated = (
   { concurrency }: ScoreContext
 ): Effect.Effect<ReadonlyArray<ScoreObservation>, EvalError> =>
   Effect.gen(function*() {
-    const batchResults = yield* Effect.suspend(() => runBatchCorrelated.call(scorer, jobs, { concurrency })).pipe(
+    const batchResults: ReadonlyArray<BatchResult> = yield* Effect.suspend(() =>
+      runBatchCorrelated.call(scorer, jobs, { concurrency })
+    ).pipe(
       Effect.catchCause((cause) =>
         batchFallback(jobs, cause).pipe(
           Effect.map((observations) =>
@@ -544,6 +547,15 @@ const scoreCorrelated = (
           new EvalError({
             code: "scorer_protocol",
             message: "Correlated scorer result must contain a string identity",
+            path: `runBatchCorrelated[${index}]`
+          })
+        )
+      }
+      if (result.recorded === "failed") {
+        return yield* Effect.fail(
+          new EvalError({
+            code: "scorer_unavailable",
+            message: "Scorer observation could not be persisted",
             path: `runBatchCorrelated[${index}]`
           })
         )

@@ -10,6 +10,22 @@ serves `ScoreStore` over the SQLite database supplied by
 Every write goes through that package's `DurableWriter`, which serializes writes
 against the database file and retries the ones worth retrying.
 
+## Accepted work and crash recovery
+
+Scoring runs inside the caller's durable `@smthrs/flow` action. Persist its
+serializable inputs and stable job key in the action payload; reconstruct the
+score Effect when the action executes. Await `Scoring.runBatchCorrelated`
+before returning from the action, and treat a `failed` write as an action
+failure when persistence is required. The flow engine owns retries, deadlines
+and recovery. The scorers package owns no background queue or workers.
+
+Disposing the runtime before the score completes leaves the action resumable.
+Rebuilding it over the same journal resumes that action; a completed action
+replays its recorded result. `recordOnce` prevents a second observation if the
+insert commits before interruption but the action result was not journaled.
+It does not promise that external scorer effects run exactly once: use stable
+idempotency keys with external services too.
+
 ## What the store refuses to persist
 
 `ScoreStore.Observation` is the contract, and the store decodes against it and

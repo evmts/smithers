@@ -71,7 +71,7 @@
 - [@smthrs/registry](https://smithers.sh/docs/reference/api/registry/): Portable flow descriptor discovery and progressive-disclosure registry services
 - [@smthrs/run-store](https://smithers.sh/docs/reference/api/run-store/): Effect services for flows run state, attempts, and ownership arbitration
 - [@smthrs/sandbox](https://smithers.sh/docs/reference/api/sandbox/): Provisioned machines, provider-neutral remote process execution, conformance, and sandbox liveness for flows
-- [@smthrs/scorers](https://smithers.sh/docs/reference/api/scorers/): Flow-native scoring, durable observations, and asynchronous score runners for flows
+- [@smthrs/scorers](https://smithers.sh/docs/reference/api/scorers/): Flow-native scoring and durable observations for caller-owned flow steps
 - [@smthrs/std](https://smithers.sh/docs/reference/api/std/): The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows
 - [@smthrs/step-cache](https://smithers.sh/docs/reference/api/step-cache/): Effect service for the flows content-addressed step result cache
 - [@smthrs/sync](https://smithers.sh/docs/reference/api/sync/): Workspace read-path sync protocol, server, and client for flows
@@ -94,7 +94,7 @@
 - [@smthrs/model](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/model/docs): Schema-first Effect model protocols, routes, and streaming events for flows
 - [@smthrs/plugin](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/plugin/docs): Vite-style typed plugin kernel for flows: hooks, resolution, and config execution
 - [@smthrs/registry](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/docs): Portable flow descriptor discovery and progressive-disclosure registry services
-- [@smthrs/scorers](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/scorers/docs): Flow-native scoring, durable observations, and asynchronous score runners for flows
+- [@smthrs/scorers](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/scorers/docs): Flow-native scoring and durable observations for caller-owned flow steps
 - [@smthrs/std](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/std/docs): The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows
 - [@smthrs/triggers](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/triggers/docs): Durable cron triggers and channel contracts for flows
 - [@smthrs/build](https://github.com/smithersai/smithers/tree/main/packages/smithers/build/docs): Bazel-style TypeScript workflow orchestration with explicit pnpm installation

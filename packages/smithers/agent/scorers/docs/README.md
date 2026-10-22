@@ -83,17 +83,16 @@ const graded = await Effect.runPromise(
 `graded` is `{ score: 1 }`, and `exactMatch.scorerKey` is the 64-character hex
 digest that will identify this grader in every row it ever writes.
 
-To keep the grade instead of printing it, hand the work to a `Runner`. Each job
+To keep the grade instead of printing it, await `Scoring.runBatch` inside a durable action. Each job
 pairs one scorer execution with the identity that makes its write idempotent:
 
 ```ts
-import { Runner } from "@smthrs/scorers"
+import { Scoring } from "@smthrs/scorers"
 import { Effect } from "effect"
 
 const program = Effect.gen(function*() {
-  const runner = yield* Runner.Runner
-  return yield* runner.runBatch([{
-    identity: Runner.jobIdentity(["run-1", "greet/ada", exactMatch.scorerKey]),
+  return yield* Scoring.runBatch([{
+    identity: Scoring.jobIdentity(["run-1", "greet/ada", exactMatch.scorerKey]),
     observation: { targetStepKey: "greet/ada", scorerKey: exactMatch.scorerKey },
     score: exactMatch.score({ input: { name: "Ada" }, output: "Hello, Ada", groundTruth: "Hello, Ada" }),
     at: Date.now()
@@ -121,7 +120,7 @@ these packages sits under.
 This package deliberately stops at the scorer contract. It does not decide what
 to score or when to score it. [`@smthrs/evals`](/api/evals) does that: it
 filters bindings by target, calls `Sampling.decide` for each candidate step,
-and hands the selected work to a `Runner`. If you want suites, baselines, and
+and executes the selected work inside the calling action. If you want suites, baselines, and
 regression gates rather than the grading primitives, start with
 [the evals documentation](/pkg/evals) and come back here for the scorer
 contract.
@@ -138,8 +137,7 @@ also importable from `@smthrs/scorers/<Module>`:
 | `Sampling`      | The replay-stable policy vocabulary and the decision function over it.                                |
 | `ScoreStore`    | The durable observation contract: record, record once, page, aggregate.                               |
 | `SqlScoreStore` | The SQLite and PostgreSQL implementation of that contract, migrations included.                       |
-| `Runner`        | Job identities, batch outcomes, and the conversion of a scorer failure into an observation.           |
-| `RunnerLive`    | The scoped queue and batch runner over whichever store is provided.                                   |
+| `Scoring`       | Blocking scoring helpers for caller-owned durable actions, job identities and outcomes.               |
 | `ScorerError`   | The eight stable failure codes and the tagged error that carries them.                                |
 | `ScoreGate`     | Pure sample validation, threshold gates, verdict composition, CI grades, and the typed grading error. |
 | `Migrations`    | The score-store schema migrations, applied by `SqlScoreStore` or on their own.                        |

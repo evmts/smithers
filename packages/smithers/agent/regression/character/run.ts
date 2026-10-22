@@ -49,7 +49,7 @@ import {
   Binding,
   Checks,
   Rubric,
-  Runner as ScorerRunner,
+  Scoring as ScorerRunner,
   Scorer
 } from "../../scorers/src/index.ts"
 import type { Seat } from "../../src/index.ts"

@@ -744,7 +744,7 @@ describe("ScoreStore", () => {
     // `ScorerErrorCode` by hand, and only a write through the store compares
     // the two. A ninth code added to the union compiles, validates, and is
     // stamped on the observation; the INSERT then fails the CHECK and
-    // `RunnerLive` downgrades the loss to a logged warning. Adding a code
+    // `Scoring.runBatch` downgrades the loss to a logged warning. Adding a code
     // without a migration that rebuilds the CHECK reddens this test instead.
     it("stores every code in the ScorerErrorCode vocabulary", async () => {
       const codes = ScorerErrorCode.members.map((member) => member.literal)

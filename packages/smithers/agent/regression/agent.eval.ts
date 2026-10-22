@@ -22,7 +22,7 @@ import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { CaseExecutor, EvalError, Suite, type Runner as EvalRunner } from "../evals/src/index.ts"
-import { Binding, Runner as ScorerRunner, Scorer } from "../scorers/src/index.ts"
+import { Binding, Scoring as ScorerRunner, Scorer } from "../scorers/src/index.ts"
 import * as Subject from "./subject.ts"
 
 /**
@@ -664,7 +664,7 @@ export const suite = Suite.make({ name: "agent", concurrency: 1, cases, bindings
  * `Runner.run` declares this service in its requirements, so a suite has to
  * supply one even when its scorers are pure and blocking. This one executes
  * each job in process and validates the result with the scorers package's own
- * `Scorer.validate`, which is what the store-backed `RunnerLive` does minus the
+ * `Scorer.validate`, which is what the store-backed `Scoring.runBatch` does minus the
  * store: nothing here writes a score anywhere, because a committed baseline is
  * where this suite's scores live.
  *

@@ -11,6 +11,7 @@
  */
 
 import type * as ScorerBinding from "@smthrs/scorers/Binding"
+import { parse, stringify } from "devalue"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { EvalError } from "./EvalError.ts"
@@ -359,4 +360,46 @@ export const fromJsonLines = (text: string, options: JsonLinesOptions): Effect.E
       cases.push(decoded)
     }
     return yield* make({ ...options, cases })
+  })
+
+// Keep the decoder tied to the persisted wire version. Updating devalue must
+// preserve this decoder or explicitly migrate existing durable requests.
+const dataEncoding = "devalue-5.9.2:"
+
+/**
+ * Encodes inert suite data for a durable action without JSON coercion.
+ *
+ * Cycles, shared references, bigint, undefined and non-finite numbers survive.
+ * Executable values are refused. The envelope pins the persisted wire version.
+ *
+ * @category encoding
+ * @since 0.1.0
+ */
+export const encodeData = (value: unknown): Effect.Effect<string, EvalError> =>
+  Effect.try({
+    try: () => {
+      validateData(value, "data")
+      return dataEncoding + stringify(value)
+    },
+    catch: () => new EvalError({ code: "invalid_suite", message: "Evaluation data cannot be encoded for durability" })
+  })
+
+/**
+ * Decodes a versioned durable suite-data envelope.
+ *
+ * Uses devalue's data parser, never evaluation of serialized JavaScript.
+ * Unknown versions and malformed data fail with invalid_suite.
+ *
+ * @category decoding
+ * @since 0.1.0
+ */
+export const decodeData = (source: string): Effect.Effect<unknown, EvalError> =>
+  Effect.try({
+    try: () => {
+      if (!source.startsWith(dataEncoding)) throw new Error("Unknown evaluation data encoding")
+      const value: unknown = parse(source.slice(dataEncoding.length))
+      validateData(value, "data")
+      return value
+    },
+    catch: () => new EvalError({ code: "invalid_suite", message: "Evaluation data encoding is unknown or corrupt" })
   })

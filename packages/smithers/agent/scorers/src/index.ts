@@ -22,11 +22,8 @@ export * as ScoreStore from "./ScoreStore.ts"
 /** @category sql @since 0.1.0 */
 export * as SqlScoreStore from "./SqlScoreStore.ts"
 
-/** @category runners @since 0.1.0 */
-export * as Runner from "./Runner.ts"
-
-/** @category runners @since 0.1.0 */
-export * as RunnerLive from "./RunnerLive.ts"
+/** @category scoring @since 0.1.0 */
+export * as Scoring from "./Scoring.ts"
 
 /** @category migrations @since 0.1.0 */
 export * as Migrations from "./Migrations.ts"

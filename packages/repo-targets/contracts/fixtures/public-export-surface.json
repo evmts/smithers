@@ -1712,6 +1712,22 @@
         }
       },
       "reason": "Inbox is public in src/index.ts and docs/api.md with matching development and publication maps."
+    },
+    {
+      "name": "@smthrs/scorers",
+      "subpath": "./Scoring",
+      "development": "./src/Scoring.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/Scoring.d.ts",
+          "default": "./dist/esm/Scoring.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scoring.d.ts",
+          "default": "./dist/cjs/Scoring.js"
+        }
+      },
+      "reason": "DUR-2: blocking scoring helpers for caller-owned durable actions replace Runner and RunnerLive without a background queue."
     }
   ],
   "removed": [
@@ -1889,6 +1905,16 @@
       "name": "@smthrs/patterns",
       "subpath": "./Loop",
       "reason": "Deleted under the approved flows-as-code design (FLOW-10, section 7.5): it restated the engine's trampoline, Flow.to with maxRounds, and Loop.run repeated completed work after a crash (DUR-1)."
+    },
+    {
+      "name": "@smthrs/scorers",
+      "subpath": "./Runner",
+      "reason": "DUR-2: remove the in-memory Runner queue; await Scoring batch helpers inside caller-owned durable flow actions."
+    },
+    {
+      "name": "@smthrs/scorers",
+      "subpath": "./RunnerLive",
+      "reason": "DUR-2: remove the in-memory Runner queue; await Scoring batch helpers inside caller-owned durable flow actions."
     }
   ],
   "packages": [

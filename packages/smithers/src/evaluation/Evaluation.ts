@@ -7,13 +7,18 @@
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { EngineStore } from "@smthrs/engine-store"
 import { Baseline, CaseExecutor, Gate, Regression, Runner, Suite } from "@smthrs/evals"
 import { EvalError } from "@smthrs/evals/EvalError"
-import * as ScorerRunner from "@smthrs/scorers/Runner"
-import * as RunnerLive from "@smthrs/scorers/RunnerLive"
+import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { NodeRuntime } from "@smthrs/platform-node"
+import { Sampling } from "@smthrs/scorers"
 import type { ScorerError } from "@smthrs/scorers/ScorerError"
+import * as ScoreStore from "@smthrs/scorers/ScoreStore"
+import * as Scoring from "@smthrs/scorers/Scoring"
 import * as SqlScoreStore from "@smthrs/scorers/SqlScoreStore"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option, Schema } from "effect"
 import { z } from "incur"
 import { randomUUID } from "node:crypto"
 import { link, mkdir, open, readdir, readFile, realpath, rename, unlink } from "node:fs/promises"
@@ -324,6 +329,16 @@ export const writeJson = async (
   }
 }
 
+const batchScoring = Layer.effect(Runner.Runner)(Effect.gen(function*() {
+  const store = yield* ScoreStore.ScoreStore
+  return {
+    runBatch: (jobs, options) =>
+      Scoring.runBatch(jobs, options).pipe(Effect.provideService(ScoreStore.ScoreStore, store)),
+    runBatchCorrelated: (jobs, options) =>
+      Scoring.runBatchCorrelated(jobs, options).pipe(Effect.provideService(ScoreStore.ScoreStore, store))
+  } satisfies Runner.ScoreBatchRunner
+}))
+
 /**
  * The scorer runner a project's evaluations use.
  *
@@ -337,18 +352,63 @@ export const writeJson = async (
 export const scoring = (root: string): Layer.Layer<Runner.Runner, ScorerError> => {
   const filename = executionDatabasePath(root)
   if (!DatabaseLocation.exists(filename)) return Runner.layerInline
-  return Layer.effect(Runner.Runner)(Effect.service(ScorerRunner.Runner)).pipe(
-    Layer.provide(RunnerLive.layer()),
+  return batchScoring.pipe(
     Layer.provide(SqlScoreStore.layer),
     Layer.provide(DurableWriter.layer().pipe(Layer.provideMerge(NodeDatabase.layer({ filename }))))
   )
 }
 
+const EvaluationInputs = Schema.Struct({
+  run: Schema.Struct({
+    runId: Schema.String,
+    at: Schema.String,
+    trials: Schema.optionalKey(Schema.Number),
+    k: Schema.optionalKey(Schema.Number)
+  }),
+  suite: Schema.Struct({
+    name: Schema.String,
+    cases: Schema.Array(Schema.Struct({
+      name: Schema.String,
+      input: Schema.Unknown,
+      expected: Schema.optionalKey(Schema.Unknown)
+    })),
+    concurrency: Schema.Number,
+    trials: Schema.optionalKey(Schema.Number)
+  }),
+  bindings: Schema.Array(Schema.Struct({
+    index: Schema.Int,
+    scorerKey: Schema.String,
+    target: Schema.String,
+    sampling: Sampling.Sampling,
+    groundTruth: Schema.optionalKey(Schema.Unknown),
+    context: Schema.optionalKey(Schema.Unknown)
+  }))
+})
+const EvaluationRequest = { data: Schema.String }
+const Evaluate = Action.make("smithers/evaluation/Run", {
+  payload: EvaluationRequest,
+  success: Schema.String,
+  error: EvalError,
+  implementationVersion: "evaluation/v1",
+  idempotencyKey: "evaluation/run",
+  retryPolicy: RetryPolicy.make({
+    ...RetryPolicy.transient,
+    retryable: [{ tag: "flows/evals/EvalError", code: "scorer_unavailable" }]
+  })
+})
+const EvaluationFlow = Flow.make("smithers/evaluation", {
+  payload: EvaluationRequest,
+  success: Schema.String,
+  error: EvalError,
+  body: Node.capture({ action: Evaluate.name }, (payload) => Evaluate.call(payload))
+})
+
 /**
  * Executes a suite and returns its persistable artifact.
  *
- * `options.root` selects the project whose {@link scoring} the run uses;
- * without it the run scores in process.
+ * A project run persists its inputs and executes scoring inside a durable flow
+ * action. Repeating its identity replays the saved result; an interrupted run
+ * resumes against the same journal. Without a root this is an inline helper.
  * @category constructors
  * @since 1.0.0
  */
@@ -365,15 +425,104 @@ export const execute = async (
   runtime: RuntimeConfig = {}
 ): Promise<RunArtifact> => {
   const { root, ...runOptions } = options
-  return artifactOf(
-    await Effect.runPromise(
-      Runner.run(suite, runOptions).pipe(
-        Effect.provideService(CaseExecutor.CaseExecutor, executor),
-        Effect.provide(root === undefined ? Runner.layerInline : scoring(root))
-      ),
-      { signal: runtime.signal }
+  if (root === undefined) {
+    return artifactOf(
+      await Effect.runPromise(
+        Runner.run(suite, runOptions).pipe(
+          Effect.provideService(CaseExecutor.CaseExecutor, executor),
+          Effect.provide(Runner.layerInline)
+        ),
+        { signal: runtime.signal }
+      )
     )
+  }
+  const implementation = Evaluate.toLayer((payload) =>
+    Effect.gen(function*() {
+      const request = yield* Suite.decodeData(payload.data).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(EvaluationInputs)),
+        Effect.mapError((cause) =>
+          cause instanceof EvalError ? cause : new EvalError({
+            code: "invalid_suite",
+            message: "The recorded evaluation request is invalid"
+          })
+        )
+      )
+      const bindings: Array<Suite.Binding> = []
+      for (const persisted of request.bindings) {
+        const binding = suite.bindings[persisted.index]
+        if (
+          binding === undefined || binding.scorer.scorerKey !== persisted.scorerKey ||
+          binding.appliesTo.name !== persisted.target
+        ) {
+          return yield* Effect.fail(
+            new EvalError({
+              code: "invalid_suite",
+              message: "The recorded evaluation scorer is no longer available; restore its suite implementation"
+            })
+          )
+        }
+        bindings.push({
+          scorer: binding.scorer,
+          appliesTo: binding.appliesTo,
+          sampling: persisted.sampling,
+          ...(persisted.groundTruth === undefined ? {} : { groundTruth: persisted.groundTruth }),
+          ...(persisted.context === undefined ? {} : { context: persisted.context })
+        })
+      }
+      const result = yield* Runner.run({ ...request.suite, bindings }, request.run).pipe(
+        Effect.provideService(CaseExecutor.CaseExecutor, executor)
+      )
+      return JSON.stringify(artifactOf(result))
+    }), { implementationVersion: "evaluation/v1" }).pipe(
+      Layer.provide(batchScoring),
+      Layer.provide(SqlScoreStore.layer)
+    )
+  const hostRuntime = "Bun" in globalThis ? (await import("@smthrs/platform-bun")).BunRuntime : NodeRuntime
+  const host = hostRuntime.layerHost({
+    filename: executionDatabasePath(root),
+    workspaceRoot: root,
+    owner: { hostId: "smithers-evaluation" },
+    signals: []
+  }, Interpreter.layerWithImplementations(EvaluationFlow, implementation))
+  const inputs = {
+    run: runOptions,
+    suite: {
+      name: suite.name,
+      cases: suite.cases,
+      concurrency: suite.concurrency,
+      ...(suite.trials === undefined ? {} : { trials: suite.trials })
+    },
+    bindings: suite.bindings.map((binding, index) => ({
+      index,
+      scorerKey: binding.scorer.scorerKey,
+      target: binding.appliesTo.name,
+      sampling: binding.sampling,
+      ...(binding.groundTruth === undefined ? {} : { groundTruth: binding.groundTruth }),
+      ...(binding.context === undefined ? {} : { context: binding.context })
+    }))
+  }
+  const executionId = Scoring.jobIdentity(["evaluation", suite.name, options.runId])
+  const serialized = await Effect.runPromise(
+    Effect.gen(function*() {
+      const data = yield* Suite.encodeData(inputs)
+      // The engine's host driver resumes the persisted request if it exists;
+      // a fresh CLI timestamp or changed defaults never replace admitted inputs.
+      yield* EngineStore.drive(EvaluationFlow, { executionId, payload: { data } })
+      const runtime = yield* FlowRuntime.FlowRuntime
+      const result = yield* runtime.poll(EvaluationFlow, executionId)
+      if (Option.isNone(result) || result.value._tag !== "Complete") {
+        return yield* Effect.fail(
+          new EvalError({ code: "executor", message: "Evaluation has not settled; resume its run identity" })
+        )
+      }
+      return yield* result.value.exit
+    }).pipe(
+      Effect.provide(host),
+      Effect.scoped
+    ),
+    { signal: runtime.signal }
   )
+  return RunArtifact.parse(JSON.parse(serialized))
 }
 
 /**

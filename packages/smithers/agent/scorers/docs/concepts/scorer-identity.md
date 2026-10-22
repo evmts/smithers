@@ -54,7 +54,7 @@ That omission is deliberate. A scorer that could declare both a `body` and a
 would know which one produced a given observation. Calling the flow value
 itself raises `FlowError` with code `missing_body`, as any body-less flow does.
 Run a scorer through `scorer.score(input)`, or hand it to a
-[`Runner`](../guides/run-a-batch-of-scorers.md).
+[`Scoring`](../guides/run-a-batch-of-scorers.md).
 
 ## Why a lossy configuration is refused
 

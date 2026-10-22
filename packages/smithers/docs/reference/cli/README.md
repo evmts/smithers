@@ -392,7 +392,12 @@ restores the frame's recorded jj operation, undoing bookmark moves, rebases,
 descriptions, and abandons made after it. Active runs and
 unsafe effect boundaries are refused. Evaluation artifacts live under
 `.flows/evals/runs/`; baselines default to `evals/<encoded-suite>.baseline.json`
-and require `--force` to overwrite. If the output exists, `eval baseline` exits 1
+and require `--force` to overwrite. Project evaluation runs create a durable
+engine journal, persist their cases and run options, and await scoring inside
+a flow action. An interrupted run can resume with the same run identity; a
+completed run replays its result. Failed score writes use the SDK transient
+retry policy; repeat the same run identity after its backoff to resume.
+If the output exists, `eval baseline` exits 1
 and names the file and `--force`; the original file stays unchanged. Evaluation comparison exits 1 for
 regressions and 5 for inconclusive results. Cancellation interrupts evaluation
 suite effects, cases, and scorers, waits for their finalizers, and prevents

@@ -34,7 +34,7 @@ The `next` tag carries the 1.0 release candidates.
 The root entry point re-exports every module as a namespace:
 
 ```ts
-import { Binding, Runner, RunnerLive, Sampling, Scorer, ScoreStore, SqlScoreStore } from "@smthrs/scorers"
+import { Binding, Sampling, Scorer, ScoreStore, Scoring, SqlScoreStore } from "@smthrs/scorers"
 ```
 
 Each module named in the export map is also importable from its own subpath,

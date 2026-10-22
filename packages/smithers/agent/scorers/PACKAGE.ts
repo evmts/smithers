@@ -29,10 +29,10 @@ const securityReview = Smithers.SecurityReview({
         "A scorer that echoes a model output or error cause writes an API key or token into the durable score table readable by anyone with the run database.",
       lookFor: [
         "An insert path in SqlScoreStore.ts (record, recordOnce) that stores reason or metadata_json without redactReason or Redaction.redactJsonString.",
-        "Runner.inconclusive or RunnerLive building a reason from an error cause that bypasses the store's redaction path.",
+        "Scoring.inconclusive or Scoring.runBatch building a reason from an error cause that bypasses the store's redaction path.",
         "The byte bound measured before redaction so a scrub-grown payload is stored past maxMetadataBytes."
       ],
-      paths: ["src/SqlScoreStore.ts", "src/Runner.ts", "src/RunnerLive.ts", "src/internal/**"]
+      paths: ["src/SqlScoreStore.ts", "src/Scoring.ts", "src/internal/**"]
     },
     {
       id: "judge-prompt-injection",

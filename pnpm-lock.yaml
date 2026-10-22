@@ -1580,6 +1580,9 @@ importers:
       '@smthrs/scorers':
         specifier: 1.0.0-rc.16
         version: link:../scorers
+      devalue:
+        specifier: 5.9.2
+        version: 5.9.2
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
@@ -2457,9 +2460,15 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:../../flows/flow
       '@smthrs/kernel':
         specifier: 1.0.0-rc.16
         version: link:../../flows/kernel
+      '@smthrs/plan':
+        specifier: workspace:*
+        version: link:../../flows/plan
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.16
         version: link:../../flows/platform-node
