@@ -106,12 +106,19 @@ export type EndReason = "closed" | "slept" | "lost" | "revoked"
 const endReasons: ReadonlyArray<EndReason> = ["closed", "slept", "lost", "revoked"]
 
 /**
- * The widest and tallest terminal a resize may ask for.
+ * The widest terminal a resize may ask for.
  *
  * @category constants
  * @since 1.0.0-rc.17
  */
 export const maxCols = 1_000
+
+/**
+ * The tallest terminal a resize may ask for.
+ *
+ * @category constants
+ * @since 1.0.0-rc.17
+ */
 export const maxRows = 500
 
 /**
