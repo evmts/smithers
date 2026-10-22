@@ -115,7 +115,7 @@ export type ItemAsideSectionProps = Omit<ComponentProps<"section">, "title"> & {
 export function ItemAsideSection({ title, links, onNavigate, children, className, ...props }: ItemAsideSectionProps) {
   useInjectUiCss();
   return (
-    <section aria-label={title} data-slot="item-aside-section" className={cn("sui-item-aside-section", className)} {...props}>
+    <section {...props} aria-label={title} data-slot="item-aside-section" className={cn("sui-item-aside-section", className)}>
       <div className="sui-item-aside-title">{title}</div>
       {links?.map((link) => <ItemLink key={link.label} link={link} onNavigate={onNavigate} className="sui-item-aside-link" />)}
       {children}
@@ -169,11 +169,11 @@ export function ItemConversation({
   if (loading) {
     return (
       <article
+        {...props}
         data-slot="item-conversation"
         aria-busy="true"
         aria-label="Loading"
         className={cn("sui-item-conv", className)}
-        {...props}
       >
         <span className="sui-sr-only" role="status">Loading</span>
         <div className="sui-item-conv-loading" aria-hidden>
@@ -194,6 +194,7 @@ export function ItemConversation({
 
   return (
     <article
+      {...props}
       data-slot="item-conversation"
       data-state={state}
       data-status={shown.kind}
@@ -201,7 +202,6 @@ export function ItemConversation({
       data-aside={aside === undefined || aside === null ? undefined : ""}
       aria-labelledby={titleId}
       className={cn("sui-item-conv", className)}
-      {...props}
     >
       <header className="sui-item-conv-header">
         <Heading id={titleId} className="sui-item-conv-title">

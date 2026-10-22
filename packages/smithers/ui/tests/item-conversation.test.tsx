@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
+  ItemAsideSection,
   ItemConversation,
   itemConversationCss,
   type ItemConversationComment,
@@ -389,5 +390,50 @@ describe("ItemConversation: loading and themes", () => {
   test("the sheet is composed into the shipped stylesheet and namespaced", () => {
     expect(smithersUiCss).toContain(itemConversationCss.trim());
     expect(itemConversationCss.match(/\.[a-z][\w-]*/g)!.every((name) => name.startsWith(".sui-"))).toBe(true);
+  });
+});
+
+
+describe("generated host attributes", () => {
+  test("the conversation keeps its title association and state while forwarding host props", async () => {
+    await render(<ItemConversation {...BASE} pending="requested" aside={<span>Details</span>}
+      aria-labelledby="host-title" data-slot="host-slot" data-state="closed"
+      data-status="merged" data-pending="not_sent" data-aside="host-aside"
+      id="host-id" className="host-class" data-host="kept" />);
+    const el = container!.querySelector("article")!;
+    expect(el.getAttribute("aria-labelledby")).toBe(el.querySelector("h1")!.id);
+    expect(el.getAttribute("data-slot")).toBe("item-conversation");
+    expect(el.getAttribute("data-state")).toBe("open");
+    expect(el.getAttribute("data-status")).toBe("open");
+    expect(el.getAttribute("data-pending")).toBe("requested");
+    expect(el.getAttribute("data-aside")).toBe("");
+    expect(el.id).toBe("host-id");
+    expect(el.classList.contains("host-class")).toBe(true);
+    expect(el.getAttribute("data-host")).toBe("kept");
+    await rerender(<ItemConversation {...BASE} data-pending="not_sent" data-aside="host-aside" />);
+    expect(article().hasAttribute("data-pending")).toBe(false);
+    expect(article().hasAttribute("data-aside")).toBe(false);
+  });
+
+  test("loading keeps its busy state and accessible label", async () => {
+    await render(<ItemConversation {...BASE} loading aria-busy="false" aria-label="Host label"
+      data-slot="host-slot" id="loading-host" />);
+    const el = container!.querySelector("article")!;
+    expect(el.getAttribute("aria-busy")).toBe("true");
+    expect(el.getAttribute("aria-label")).toBe("Loading");
+    expect(el.getAttribute("data-slot")).toBe("item-conversation");
+    expect(el.id).toBe("loading-host");
+  });
+
+  test("aside sections keep their generated label and slot", async () => {
+    await render(<ItemAsideSection title="Branch" aria-label="Host label" data-slot="host-slot"
+      id="aside-host" className="host-class" data-host="kept">Content</ItemAsideSection>);
+    const el = container!.querySelector("section")!;
+    expect(el.getAttribute("aria-label")).toBe("Branch");
+    expect(el.getAttribute("data-slot")).toBe("item-aside-section");
+    expect(el.id).toBe("aside-host");
+    expect(el.classList.contains("host-class")).toBe(true);
+    expect(el.getAttribute("data-host")).toBe("kept");
+    expect(el.textContent).toContain("Content");
   });
 });

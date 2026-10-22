@@ -69,6 +69,10 @@ import { Button, SmithersUiStyles, StatusPill } from "@smthrs/ui";
 - Time: `RelativeTime`, `useRelativeTime`, `formatRelativeTime`.
 - Calendar: `Calendar` with month, week, and agenda views.
 
+`ItemConversation` and `ItemAsideSection` preserve their generated accessibility and
+data attributes when forwarding host props; host IDs, classes and other props
+still pass through.
+
 Heavy renderers stay behind `@smthrs/ui/adapters/*` subpaths so the base barrel
 tree-shakes clean: `terminal`, `chart`, `knowledge-graph`.
 `tests/barrel-weight.test.ts` is the ratchet that keeps them out of
