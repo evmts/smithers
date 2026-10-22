@@ -417,7 +417,9 @@ deleted, and logged as `outbox write sealed` at Warn level with `name` and
 `stage: "load"`. A write whose principal changed after it was loaded is sealed
 as it comes up to be sent (`stage: "send"`, counted in `attempts` as
 `sealed`): its rows roll back, `settled` fails, and the storage keeps it, so
-it goes once a program that writes as its principal loads it.
+it goes once a program that writes as its principal loads it. Upgrade callbacks
+receive only owned writes; `discard` also checks ownership before deleting a
+parked write.
 
 Starts the outbox and waits until it has loaded the writes stored earlier,
 restored their rows, and asked to lead; a storage it can't read at start is

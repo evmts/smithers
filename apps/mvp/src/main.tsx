@@ -28,7 +28,7 @@ import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
 import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
-import { activationGate, boundFetch, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt } from "./device/identity"
+import { activationGate, boundFetch, outboxPrincipal, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt } from "./device/identity"
 import { NO_DEVICE_DATA } from "./features/auth/contract"
 import { inMemory, memoryStorage, pageWipe, unwiped } from "./wipe"
 import "./styles/fonts.css"
@@ -141,10 +141,10 @@ const host: Host = {
     // A queued write is sent only as who queued it: the device's owner when this page opened its data. Another
     // owner's writes, such as an earlier owner's left in IndexedDB after the browser evicted the device store, stay
     // sealed in the outbox (`Outbox.Principal`).
-    principal: {
-      now: () => (activation.state() === "retained" ? deviceOwner : undefined),
-      ownsUnstamped: () => deviceContinuous,
-    },
+    principal: outboxPrincipal(
+      () => (activation.state() === "retained" ? deviceOwner : undefined),
+      () => deviceContinuous,
+    ),
   },
   lock: WebLock.make(navigator.locks),
   isOnline: () => navigator.onLine,

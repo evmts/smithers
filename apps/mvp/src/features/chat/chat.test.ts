@@ -1,3 +1,4 @@
+import { outboxPrincipal } from "../../device/identity"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { WebLock } from "@smthrs/platform-browser"
@@ -570,6 +571,15 @@ describe("the device store", () => {
   // Whether a tab leads the outbox now.
   const leads = async (tab: { readonly store: ChatStore["Service"]; readonly runtime: ManagedRuntime.ManagedRuntime<never, unknown> }) =>
     Option.getOrThrow(await tab.runtime.runPromise(Stream.runHead(tab.store.outbox.status))).leader
+
+  test("a memory-only activation sends its newly queued question", async () => {
+    const { api, onApi } = await openChat()
+    const device = nodeDevice({ agent: api })
+    const host = { ...device, outbox: { ...device.outbox, principal: outboxPrincipal(() => undefined, () => false) } }
+    const tab = await tabOn(openTab(api, { ...quick, host }))
+    asked(tab.actions.ask("memory question"))
+    await until(async () => expect((await onApi(api.rows)).map(({ text }) => text)).toContain("memory question"), agentWithin)
+  })
 
   test("a question queued as one person is never shown or sent as the next person on the device; the outbox keeps it", async () => {
     // The browser evicted the device store, but not the outbox: Ann's queued question is still in it when Ben's

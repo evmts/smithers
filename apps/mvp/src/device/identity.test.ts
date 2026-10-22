@@ -187,10 +187,21 @@ describe("whether the owner held the data before this activation", () => {
     await activate(device, offline, continuity)
     await activate(device, signedOut, continuity)
     // legacy match, recorded owner, a new device's first person, the owner offline, sealed for a signed-out browser.
-    expect(continuity).toEqual([true, true, false, true, false])
+    expect(continuity).toEqual([true, true, false, false, false])
   })
 
-  test("a visitor's device: the visitor held it once recorded; the person who adopts it did not, until recorded", async () => {
+  test("an existing owner record keeps its unstamped authority when the eligibility column is added", async () => {
+    const device = store()
+    device.sqlite.exec("CREATE TABLE smithers_device_identity (singleton INTEGER PRIMARY KEY, v INTEGER, person_id TEXT, login TEXT)")
+    device.sqlite.prepare("INSERT INTO smithers_device_identity VALUES (1, 1, ?, ?)").run("alice", "alice")
+    const continuity: Array<boolean> = []
+    await activate(device, signedIn("alice", "alice"), continuity)
+    await activate(device, offline, continuity)
+    expect(continuity).toEqual([true, true])
+    expect(device.sqlite.prepare("SELECT owns_unstamped FROM smithers_device_identity").get()).toEqual({ owns_unstamped: 1 })
+  })
+
+  test("a new or adopted device never gains authority over unstamped writes on reload", async () => {
     const continuity: Array<boolean> = []
     const device = store()
     await activate(device, signedOut, continuity)
@@ -198,7 +209,7 @@ describe("whether the owner held the data before this activation", () => {
     await activate(device, signedIn("alice", "alice"), continuity)
     await activate(device, signedIn("alice", "alice"), continuity)
     await activate(device, signedIn("bob", "bob"), continuity)
-    expect(continuity).toEqual([false, true, false, true, false])
+    expect(continuity).toEqual([false, false, false, false, false])
   })
 })
 

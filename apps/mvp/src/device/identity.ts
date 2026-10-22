@@ -35,10 +35,10 @@ export type Outcome = "verified" | "visitor" | "offline" | "signed_out" | "chang
 
 /**
  * What the owner receipt carries: who the opened data belongs to (absent when it may not open) and the outcome; with
- * `reopen`, every tab should load again because another person is signed in now. With `continuous`, the owner held the
- * data before this activation: the device recorded them as its owner, or an earlier build's confirmed session matched
- * them. Only then are the outbox's writes stored before writes named who queued them theirs (`Outbox.Principal`); a
- * device that came to its owner only now (an empty one, a visitor's) keeps such writes sealed.
+ * `reopen`, every tab should load again because another person is signed in now. With `continuous`, the owner
+ * inherited authority over unstamped writes from an existing owner record or an earlier build's matching session.
+ * Only that authority admits writes stored before writes named who queued them (`Outbox.Principal`).
+ * A fresh claim or adoption permanently lacks it, including on reload, and keeps such writes sealed.
  */
 export interface Receipt {
   readonly _tag: typeof IDENTITY_MESSAGE
@@ -54,6 +54,7 @@ const Owner = Schema.Struct({ v: Schema.Literal(1), personId: Schema.String, log
  * The owner record: one row beside the collections in the device store, outside every synced or clearable row, so
  * expiry keeps it and only the device wipe deletes it. Version 1: the owner's stable person id, or `VISITOR`, and the
  * login they claimed it under (empty for a visitor), kept for diagnosis only; the id alone decides.
+ * The additive owns_unstamped column preserves legacy-write eligibility independently of later activations.
  */
 const OWNER_TABLE = "smithers_device_identity"
 
@@ -127,18 +128,27 @@ export const authorizeDevice = (options: {
     yield* database.execute(
       `CREATE TABLE IF NOT EXISTS ${OWNER_TABLE} (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), v INTEGER NOT NULL CHECK (v = 1), person_id TEXT NOT NULL, login TEXT NOT NULL)`,
     )
-    const [row] = yield* database.execute(`SELECT v, person_id AS personId, login FROM ${OWNER_TABLE} WHERE singleton = 1`)
+    // Eligibility for legacy outbox writes survives reload. A new/adopted owner never inherits it merely by
+    // becoming the recorded owner; existing records predate this distinction and retain their legacy authority.
+    const columns = yield* database.execute(`PRAGMA table_info(${OWNER_TABLE})`)
+    if (!columns.some((column) => (column as { name: string }).name === "owns_unstamped")) {
+      yield* database.execute(`ALTER TABLE ${OWNER_TABLE} ADD COLUMN owns_unstamped INTEGER NOT NULL DEFAULT 1`)
+    }
+    const [row] = yield* database.execute(
+      `SELECT v, person_id AS personId, login, owns_unstamped AS ownsUnstamped FROM ${OWNER_TABLE} WHERE singleton = 1`,
+    )
     const recorded = row === undefined ? undefined : (yield* Schema.decodeUnknownEffect(Owner)(row)).personId
     stage = "legacy"
     const legacy = recorded === undefined ? yield* legacyOf(database) : undefined
     stage = "session"
     const session = yield* Effect.result(options.session)
-    const claim = (personId: string, login = "") => {
+    const claim = (personId: string, login = "", ownsUnstamped = false) => {
       stage = "claim"
       return Effect.as(
-        database.execute(`INSERT OR REPLACE INTO ${OWNER_TABLE} (singleton, v, person_id, login) VALUES (1, 1, ?, ?)`, [
+        database.execute(`INSERT OR REPLACE INTO ${OWNER_TABLE} (singleton, v, person_id, login, owns_unstamped) VALUES (1, 1, ?, ?, ?)`, [
           personId,
           login,
+          ownsUnstamped ? 1 : 0,
         ]),
         personId,
       )
@@ -167,7 +177,7 @@ export const authorizeDevice = (options: {
         : legacy?._tag === "empty" || confirmedFor(legacy, { personId: person.personId, login: person.login })
       if (matches) {
         via = recorded === person.personId ? "owner" : recorded === VISITOR ? "visitor" : legacy?._tag === "confirmed" ? "legacy" : "new"
-        owner = via === "owner" ? person.personId : yield* claim(person.personId, person.login)
+        owner = via === "owner" ? person.personId : yield* claim(person.personId, person.login, via === "legacy")
         outcome = "verified"
       } else {
         outcome = "changed"
@@ -176,8 +186,9 @@ export const authorizeDevice = (options: {
     const fields: Record<string, string> = via === undefined ? { outcome } : { outcome, via }
     yield* Metric.update(Metric.withAttributes(checks, fields), 1)
     yield* Effect.logInfo("auth.device_identity").pipe(Effect.annotateLogs(fields))
-    // The owner held the data before this activation: recorded as its owner, or an earlier build's matching session.
-    const continuous = owner !== undefined && (owner === recorded || via === "legacy")
+    // Reload never turns a fresh claim or visitor adoption into authority over legacy writes.
+    const continuous = owner !== undefined &&
+      ((owner === recorded && (row as { ownsUnstamped: number }).ownsUnstamped === 1) || via === "legacy")
     yield* Effect.sync(() => options.report(owner, outcome, continuous))
     if (owner === undefined) return yield* new DeviceIdentityRefused({ reason: outcome })
   }).pipe(
@@ -322,3 +333,9 @@ export const activationGate = (refused: () => void) => {
   }
   return { ready, state: () => state, allow: () => settle("retained"), refuse: () => settle("memory") }
 }
+
+/** The outbox uses the opened owner's identity, including the memory-only activation. */
+export const outboxPrincipal = (owner: () => string | undefined, continuous: () => boolean) => ({
+  now: () => owner() ?? NO_DEVICE_DATA,
+  ownsUnstamped: continuous,
+})

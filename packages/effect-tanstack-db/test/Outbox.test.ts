@@ -31,6 +31,7 @@ const start = (options: {
   readonly notes?: string
   readonly online?: Outbox.Online
   readonly principal?: Outbox.Principal
+  readonly upgrade?: Outbox.Options<never>["upgrade"]
   readonly parked?: Outbox.Options<never>["parked"]
 }) =>
   Effect.gen(function*() {
@@ -44,6 +45,7 @@ const start = (options: {
         ...("leader" in options ? (options.leader ? { leader: options.leader } : {}) : { leader: single }),
         online,
         ...(options.principal === undefined ? {} : { principal: options.principal }),
+        ...(options.upgrade === undefined ? {} : { upgrade: options.upgrade }),
         ...(options.parked === undefined ? {} : { parked: options.parked }),
         mutations: {
           save: (params) =>
@@ -991,6 +993,28 @@ describe("principal", () => {
     }))
   })
 
+  test("another owner's write is never passed to an upgrade or moved into parking", async () => {
+    const world = await setup([])
+    await queue(world, as("ann").principal, [note("a", 1)])
+    const before = [...world.storage.entries]
+    const inspected: Array<string> = []
+    await scoped(Effect.gen(function*() {
+      yield* start({
+        ...world,
+        principal: as("ben").principal,
+        upgrade: {
+          stamp: {},
+          write: (stored) => {
+            inspected.push(stored)
+            return { _tag: "Parked", reason: "unsupported" }
+          }
+        }
+      })
+    }))
+    expect(inspected).toEqual([])
+    expect([...world.storage.entries]).toEqual(before)
+  })
+
   test("a write stored before writes were stamped is the principal's only when it owns unstamped writes", async () => {
     const world = await setup(["ok", "ok", "ok"])
     await queue(world, undefined, [note("a", 1)])
@@ -1026,6 +1050,11 @@ describe("principal", () => {
     expect(seen).toEqual({ settled: true, rows: [], sealed: 1 })
     expect(sent(world)).toEqual([])
     expect([...world.storage.entries.keys()]).toHaveLength(1)
+    await Effect.runPromise(Queue.offer(world.outcomes, "ok"))
+    await scoped(Effect.gen(function*() {
+      yield* start({ ...world, principal: as("visitor").principal })
+      yield* Effect.promise(() => until(() => expect(sent(world)).toEqual(["a"])))
+    }))
   })
 
   test("a parked write goes to its feature only for the principal that queued it", async () => {
@@ -1052,6 +1081,8 @@ describe("principal", () => {
         principal: as("ben").principal,
         parked: { save: (write) => Effect.sync(() => (offered.push(write.id), false)) }
       })
+      yield* outbox.discard("ann-1")
+      expect(world.storage.entries.has("parked:ann-1")).toBe(true)
       return (yield* outbox.parked).map(({ id }) => id)
     }))
     expect({ offered, listed }).toEqual({ offered: ["ben-1"], listed: ["ben-1"] })

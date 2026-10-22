@@ -643,7 +643,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
 
       // The writes an older build stored are brought forward, or parked, before the library loads any.
       if (options.upgrade !== undefined) {
-        yield* carry(options.storage, options.upgrade)
+        yield* carry(storage, options.upgrade)
       }
 
       const executor = yield* Effect.acquireRelease(
@@ -785,6 +785,7 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           const key = `${PARKED_PREFIX}${id}`
           const stored = yield* Effect.tryPromise(() => options.storage.get(key))
           if (stored === null) return
+          if (!owns(options.principal, stampOf((JSON.parse(stored) as StoredParked).write))) return
           yield* Effect.tryPromise(() => options.storage.delete(key))
           yield* Effect.logInfo("outbox write discarded").pipe(
             Effect.annotateLogs({ name: (JSON.parse(stored) as StoredParked).name })
