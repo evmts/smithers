@@ -14,8 +14,26 @@ let answered = 0
 let slowWaiting = false
 let answerSlow = () => {}
 let close = () => Promise.resolve()
+const receivedRequests = new Set<string>()
+const closedRequests = new Set<string>()
+const heldResponses = new Map<string, () => void>()
 beforeAll(async () => {
   const server = createServer((request, response) => {
+    if (request.url?.startsWith("/body-held") || request.url?.startsWith("/headers-held")) {
+      const path = request.url
+      receivedRequests.add(path)
+      heldResponses.set(path, () => response.destroy())
+      response.on("close", () => {
+        closedRequests.add(path)
+        heldResponses.delete(path)
+      })
+      if (path.startsWith("/body-held")) {
+        response.writeHead(200, { "content-type": "application/json" })
+        response.flushHeaders()
+        response.write("[")
+      }
+      return
+    }
     // A body that breaks off: the connection drops after its first bytes.
     if (request.url?.startsWith("/broken") === true) {
       response.writeHead(200, { "content-type": "application/json", "content-length": "100" })
@@ -47,6 +65,49 @@ const request = (path: string) =>
 const body = (response: Response) => Effect.promise(() => response.text())
 
 describe("the real source", () => {
+  test("a caller abort after headers cancels the response body and closes the server connection", async () => {
+    const path = `/body-held?request=${crypto.randomUUID()}`
+    const caller = new AbortController()
+    const response = await Effect.runPromise(
+      ShapeSource.fetchSource.request(`${origin}${path}`, { signal: caller.signal })
+    )
+    const reading = response.text().then(() => "completed", (error: unknown) => (error as Error).name)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      caller.abort()
+      const deadline = new Promise<string>((resolve) => {
+        timer = setTimeout(() => resolve("body still open"), 1_000)
+      })
+      expect(await Promise.race([reading, deadline])).toBe("AbortError")
+      await expect.poll(() => closedRequests.has(path)).toBe(true)
+    } finally {
+      clearTimeout(timer)
+      heldResponses.get(path)?.()
+      await reading
+    }
+  })
+
+  test("interrupting its Effect before headers closes the server connection", async () => {
+    const path = `/headers-held?request=${crypto.randomUUID()}`
+    const fiber = Effect.runFork(ShapeSource.fetchSource.request(`${origin}${path}`, {}))
+    try {
+      await expect.poll(() => receivedRequests.has(path)).toBe(true)
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      expect(Exit.hasInterrupts(await Effect.runPromise(Fiber.await(fiber)))).toBe(true)
+      await expect.poll(() => closedRequests.has(path)).toBe(true)
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      heldResponses.get(path)?.()
+    }
+  })
+
+  test("a request with a null caller signal still reads its body", async () => {
+    const response = await Effect.runPromise(
+      ShapeSource.fetchSource.request(`${origin}/v1/shape?offset=-1`, { signal: null })
+    )
+    expect(await response.json()).toEqual({ url: "/v1/shape?offset=-1" })
+  })
+
   test("sends a request with the fetch in FetchHttpClient.Fetch and answers with the response", async () => {
     const text = await Effect.runPromise(Effect.flatMap(request("/v1/shape?offset=-1"), body))
     expect(JSON.parse(text)).toEqual({ url: "/v1/shape?offset=-1" })

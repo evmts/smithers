@@ -22,7 +22,10 @@ import {
   createCollection,
   getPersistedReadinessSource,
   localOnlyCollectionOptions,
+  type SyncConfig,
   type UtilsRecord,
+  whenSyncAccepted,
+  withAcceptedReceipt,
   type WritableDeep
 } from "@tanstack/db"
 import { persistedCollectionOptions } from "@tanstack/db-sqlite-persistence-core"
@@ -116,7 +119,22 @@ export interface Collection<A extends object, K extends Key = Key, U extends Uti
  */
 export type Options<A extends object, K extends Key, U extends UtilsRecord> =
   & Omit<CollectionConfig<A, K, never, U>, "schema" | "gcTime" | "autoIndex" | "defaultIndexType" | "utils">
-  & { readonly utils?: U }
+  & {
+    readonly utils?: U
+    /** Called after a sync transaction becomes visible, including shared-database hydration. */
+    readonly onSyncCommit?: (commit: SyncCommit) => void
+  }
+
+/**
+ * An installed sync transaction. Its collection metadata is snapshotted before
+ * commit and read after application, including coordinator transactions.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface SyncCommit {
+  readonly getMetadata: (key: string) => unknown
+}
 
 /**
  * How a collection keeps its rows on the device. `schemaVersion` names the
@@ -190,13 +208,16 @@ export function make<A extends object, K extends Key, U extends UtilsRecord = Ut
     // Network-first with no wait: restored rows show at once, and the readiness of the restore is observable.
     return yield* timedRestore(
       create<A, K, U>(
-        persistedCollectionOptions({
-          ...config,
-          sync,
-          persistence: persistence.value,
-          schemaVersion: settings.persist.schemaVersion,
-          initialRender: { strategy: "network-first", networkTimeoutMs: 0 }
-        } as never)
+        {
+          ...persistedCollectionOptions({
+            ...config,
+            sync,
+            persistence: persistence.value,
+            schemaVersion: settings.persist.schemaVersion,
+            initialRender: { strategy: "network-first", networkTimeoutMs: 0 }
+          } as never),
+          onSyncCommit: options.onSyncCommit
+        }
       )
     )
   })
@@ -246,7 +267,31 @@ const create = <A extends object, K extends Key, U extends UtilsRecord>(
   config: object
 ): Effect.Effect<Collection<A, K, U>, never, Scope.Scope> =>
   Effect.acquireRelease(
-    Effect.sync(() => createCollection(config as never) as TanStackCollection<A, K, U>),
+    Effect.sync(() => {
+      const { onSyncCommit, ...options } = config as Options<A, K, U>
+      // Observe the final adapter, outside persistence and writer election: a watcher's dropped source writes never
+      // reach this commit, while the coordinator's installed transactions do, even when they only carry metadata.
+      const sync = options.sync
+      const observed = onSyncCommit === undefined ? sync : {
+        ...sync,
+        sync: (params: Parameters<SyncConfig<A, K>["sync"]>[0]) =>
+          sync.sync({
+            ...params,
+            commit: (signal) => {
+              // Snapshot this transaction before commit: another transaction may be staged while its receipt waits.
+              const metadata = new Map(params.metadata!.collection.list().map(({ key, value }) => [key, value]))
+              const receipt = params.commit(signal)
+              const installed = () => onSyncCommit({ getMetadata: (key) => metadata.get(key) })
+              if (receipt === true) {
+                installed()
+                return true
+              }
+              return withAcceptedReceipt(receipt.then(installed), whenSyncAccepted(receipt))
+            }
+          })
+      }
+      return createCollection({ ...options, sync: observed } as never) as TanStackCollection<A, K, U>
+    }),
     release
   ).pipe(Effect.map(wrap))
 

@@ -123,12 +123,21 @@ included, and:
 | Field        | Does                                                                                                                                                                     |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `sync`       | The shape's sync status: each request's outcome, and the shape stopping. A stream started late begins with the latest event.                                             |
+| `applied`    | Installed sync transactions whose resume cursor matches the latest accepted response, after schema decoding; no replay.                                                  |
 | `reconnect`  | Sends every request waiting out the policy now, and restarts a stopped shape where it stopped.                                                                           |
 | `awaitTxId`  | Waits until Electric delivers Postgres transaction `txid` and TanStack DB has applied it.                                                                                |
 | `awaitMatch` | Waits until Electric delivers a change `match` accepts and TanStack DB has applied it. A change already applied and still among the collection's recent messages counts. |
 
 Both waits fail with `AwaitTimeout` after `timeout`, and with `SyncFailed` when
 the wait ends any other way, such as the collection being cleaned up.
+
+`applied` follows actual collection installation, including a persisted watcher's
+coordinator receipts and empty snapshots. A watcher's successful network batch
+alone cannot report recovery while its writer is stalled. A reset or a receipt
+for an older cursor after a failed request cannot report recovery either.
+Installation and successful source decoding may arrive in either order; both
+are required before recovery is reported.
+Each accepted response emits at most once, even if its cursor is installed again.
 
 ### `ElectricCollection.SyncEvent`
 
@@ -235,6 +244,12 @@ class RequestFailed extends Data.TaggedError("RequestFailed")<{ readonly status?
 | `fetchSource`   | The real source: each request sent with the `fetch` in Effect's `FetchHttpClient.Fetch`, the global one unless a program provides one, with `cache: "no-store"`, so the HTTP cache never answers or keeps a shape request. A live request (a long poll) is sent with `priority: "low"`, so on a page whose shapes hold all six of a browser's HTTP/1.1 connections to an origin, its other requests take the next free connection instead of queueing behind the long polls. |
 | `RequestFailed` | A shape request failed on the network (no `status`) or with a 5xx or 429. The sync policy is stepped with it.                                                                                                                                                                                                                                                                                                                                                                |
 
+`fetchSource` combines the caller's abort signal with Effect interruption.
+Interruption before headers cancels the request; the caller's signal remains
+connected after headers, so closing a collection during a body read cancels
+that read and releases its connection. A missing or `null` caller signal uses
+Effect interruption alone.
+
 ### Testing unhappy paths: `layerFaulty` and `Faults`
 
 ```ts
@@ -318,9 +333,11 @@ const make: <R = never>(
 const config: (options?: { readonly url?: string }) => Config.Config<Connection>
 
 const defaultMetric: Metric.Counter<number>
+const responses: Metric.Counter<number>
 
 class Refused extends Data.TaggedError("Refused")<{
   readonly status: 401 | 403 | 503
+  readonly upstream?: "database" | "access"
   readonly retryAfter?: number
 }> {}
 ```

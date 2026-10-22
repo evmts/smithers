@@ -26,6 +26,7 @@
 
 import { FetchError, isChangeMessage, type Row, type ShapeStreamOptions } from "@electric-sql/client"
 import { Collection, type Persistence } from "@smthrs/effect-tanstack-db"
+import { whenSyncAccepted, withAcceptedReceipt } from "@tanstack/db"
 import {
   electricCollectionOptions,
   type ElectricCollectionUtils,
@@ -144,6 +145,8 @@ export interface ElectricCollection<A extends object>
    * latest event, so a shape that stopped before anyone listened still says so.
    */
   readonly sync: Stream.Stream<SyncEvent>
+  /** Successfully installed sync transactions, after decoding and any persistence receipt; no replay. */
+  readonly applied: Stream.Stream<void>
   /** Sends every request waiting out the sync policy now, and restarts a stopped shape where it stopped. */
   readonly reconnect: Effect.Effect<void>
   /**
@@ -255,7 +258,25 @@ export function make<A extends Row<unknown>, E = never, R = never>(
 
     // The latest event is replayed to each new subscriber: a status read after the fact is still the status.
     const events = yield* PubSub.unbounded<SyncEvent>({ replay: 1 })
-    const publish = (event: SyncEvent) => PubSub.publish(events, event)
+    const applied = yield* PubSub.unbounded<void>()
+    let accepted: { readonly handle: string | null; readonly offset: string | null } | undefined
+    let decoded: typeof accepted
+    let certified: typeof accepted
+    let installed: { readonly kind?: string; readonly handle?: string; readonly offset?: string } | undefined
+    const certify = () => {
+      if (
+        accepted !== undefined && certified !== accepted && decoded === accepted && installed?.kind === "resume" &&
+        installed.handle === accepted.handle && installed.offset === accepted.offset
+      ) {
+        certified = accepted
+        PubSub.publishUnsafe(applied, undefined)
+      }
+    }
+    const publish = (event: SyncEvent) =>
+      Effect.sync(() => {
+        if (event._tag === "Failed" || event._tag === "Stopped") accepted = undefined
+        return PubSub.publishUnsafe(events, event)
+      })
     const woken = yield* Latch.make(false)
     const restart = yield* Latch.make(false)
     // The policy's wait, ended early by `reconnect`.
@@ -283,10 +304,17 @@ export function make<A extends Row<unknown>, E = never, R = never>(
           return yield* new RequestFailed({ status: response.status })
         }
         // Electric reads a 4xx itself.
-        if (!response.ok) return response
+        if (!response.ok) {
+          accepted = undefined
+          return response
+        }
         // Older Electric servers answered 204, with no body, when nothing was new. A subset snapshot (`subset__`
         // parameters, in progressive mode) answers an object, which Electric parses before it takes anything from it.
         if (response.status === 204 || [...url.searchParams.keys()].some((key) => key.startsWith("subset__"))) {
+          accepted = {
+            handle: response.headers.get("electric-handle"),
+            offset: response.headers.get("electric-offset")
+          }
           yield* publish({ _tag: "Succeeded" })
           return response
         }
@@ -303,6 +331,7 @@ export function make<A extends Row<unknown>, E = never, R = never>(
           ...(rows === undefined ? {} : { "electric.shape.rows": rows })
         })
         if (rows === undefined) return new Unreadable({ status: response.status, bytes: body.byteLength })
+        accepted = { handle: response.headers.get("electric-handle"), offset: response.headers.get("electric-offset") }
         yield* publish({ _tag: "Succeeded" })
         return new Response(body, response)
       }).pipe(Effect.withSpan("electric.shape.request", {
@@ -368,13 +397,54 @@ export function make<A extends Row<unknown>, E = never, R = never>(
       onDelete: handler("original", options.onDelete)
     }
 
-    const collectionOptions = electricCollectionOptions({
+    const electricOptions = electricCollectionOptions({
       id: options.id,
       getKey: options.getKey,
       shapeOptions,
       syncMode: options.syncMode ?? "eager",
       ...Object.fromEntries(Object.entries(handlers).filter(([, persist]) => persist !== undefined))
-    } as never) as never
+    } as never)
+    const collectionOptions = {
+      ...electricOptions,
+      sync: {
+        ...electricOptions.sync,
+        sync: (params: Parameters<typeof electricOptions.sync.sync>[0]) =>
+          electricOptions.sync.sync({
+            ...params,
+            markReady: () => {
+              params.markReady()
+              // A watcher has no resume metadata to write. For an empty up-to-date batch Electric therefore accepts
+              // no transaction at all, then marks ready after processing its messages. This is its decoding receipt.
+              if (params.metadata === undefined && decoded !== accepted) {
+                decoded = accepted
+                certify()
+              }
+            },
+            commit: (signal) => {
+              const batch = accepted
+              const receipt = params.commit(signal)
+              // Even a watcher's dropped source commit proves decoding finished, but it can certify recovery only
+              // against metadata installed by the real collection. That installation may have arrived first.
+              const delivered = () => {
+                if (batch === accepted) decoded = batch
+                certify()
+              }
+              if (receipt === true) {
+                delivered()
+                return true
+              }
+              return withAcceptedReceipt(receipt.then(delivered), whenSyncAccepted(receipt))
+            }
+          })
+      },
+      onSyncCommit: ({ getMetadata }: Collection.SyncCommit) => {
+        // Watchers install their writer's transactions through the database, not through their own source. Recovery
+        // needs its actual installed cursor to match the latest accepted response; resets and stale receipts cannot
+        // certify a newer failed request. Metadata also certifies empty shapes, which have no row change event.
+        installed = getMetadata("electric:resume") as typeof installed
+        certify()
+      }
+    } as never
     const collection = yield* (options.persist === undefined
       ? Collection.make<A, Key, ElectricCollectionUtils<Row<unknown>>>(options.schema, collectionOptions)
       : Collection.make<A, Key, ElectricCollectionUtils<Row<unknown>>>(options.schema, collectionOptions, {
@@ -384,6 +454,7 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     self.current = {
       ...collection,
       sync: Stream.fromPubSub(events),
+      applied: Stream.fromPubSub(applied),
       reconnect: Effect.andThen(woken.release, restart.open).pipe(Effect.asVoid),
       awaitTxId: (txid, timeout) => awaiting(() => utils.awaitTxId(txid, Duration.toMillis(timeout))),
       awaitMatch: (match, timeout) =>

@@ -1,3 +1,4 @@
+import { type SyncConfig, whenSyncAccepted } from "@tanstack/db"
 import { Cause, Effect, Exit, Fiber, Option, Schema, Scope, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { Collection } from "../src/index.ts"
@@ -50,6 +51,56 @@ describe("reads", () => {
     expect(texts(all)).toEqual(["a:a", "b:b"])
     expect(Option.map(found, ({ n }) => n)).toEqual(Option.some(2))
     expect(missing).toEqual(Option.none())
+  })
+})
+
+describe("installed sync receipts", () => {
+  test("observes committed metadata and rows only after a held transaction becomes visible", async () => {
+    await run(Effect.gen(function*() {
+      let source!: Parameters<SyncConfig<Note, string>["sync"]>[0]
+      let release!: () => void
+      const held = new Promise<void>((resolve) => (release = resolve))
+      const seen: Array<{ cursor: unknown; rows: string[] }> = []
+      const collection = yield* Collection.make(Note, {
+        id: id("receipts"),
+        getKey: (row) => row.id,
+        sync: {
+          sync: (params) => {
+            source = params
+            params.markReady()
+          }
+        },
+        onInsert: () => held,
+        onSyncCommit: ({ getMetadata }) =>
+          seen.push({
+            cursor: getMetadata("cursor"),
+            rows: [...collection.tanstack.keys()]
+          })
+      })
+      yield* collection.preload
+      source.begin()
+      source.metadata!.collection.set("cursor", 1)
+      expect(source.commit()).toBe(true)
+      expect(seen).toEqual([{ cursor: 1, rows: [] }])
+      const transaction = yield* collection.insert(note("a", 1))
+      source.begin()
+      source.write({ type: "insert", value: note("a", 1) })
+      source.metadata!.collection.set("cursor", 2)
+      const receipt = source.commit()
+      expect(receipt).not.toBe(true)
+      expect(whenSyncAccepted(receipt)).toBe(true)
+      expect(seen).toHaveLength(1)
+      source.begin()
+      source.metadata!.collection.set("cursor", 3)
+      release()
+      yield* transaction.persisted
+      yield* Effect.promise(() => Promise.resolve(receipt))
+      expect(seen).toEqual([{ cursor: 1, rows: [] }, { cursor: 2, rows: ["a"] }])
+      const aborted = new AbortController()
+      aborted.abort()
+      yield* Effect.promise(() => Promise.resolve(source.commit(aborted.signal)).catch(() => undefined))
+      expect(seen).toHaveLength(2)
+    }))
   })
 })
 

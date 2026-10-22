@@ -42,7 +42,8 @@ export class RequestFailed extends Data.TaggedError("RequestFailed")<{ readonly 
 /**
  * A shape source: it sends one shape request and answers with Electric's
  * response, or fails with `RequestFailed` when the request never got one.
- * Interrupting the Effect aborts the request.
+ * Interrupting the Effect aborts the request. The caller's signal also stays
+ * connected after the headers arrive, so aborting it cancels the response body.
  *
  * @category models
  * @since 0.1.0
@@ -73,7 +74,13 @@ export const fetchSource: Source = {
       const fetch = yield* FetchHttpClient.Fetch
       const live = new URL(url).searchParams.get("live") === "true"
       return yield* Effect.tryPromise({
-        try: (signal) => fetch(url, { ...init, ...(live ? { priority: "low" } : {}), cache: "no-store", signal }),
+        try: (signal) =>
+          fetch(url, {
+            ...init,
+            ...(live ? { priority: "low" } : {}),
+            cache: "no-store",
+            signal: init.signal ? AbortSignal.any([init.signal, signal]) : signal
+          }),
         catch: () => new RequestFailed({})
       })
     })

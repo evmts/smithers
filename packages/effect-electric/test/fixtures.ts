@@ -1,8 +1,8 @@
 import { PgClient } from "@effect/sql-pg"
-import { Persistence } from "@smthrs/effect-tanstack-db"
-import { createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
+import { type Outbox, Persistence } from "@smthrs/effect-tanstack-db"
+import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { createPersistedTableName } from "@tanstack/db-sqlite-persistence-core"
-import { Effect, Redacted, Schedule } from "effect"
+import { Effect, Option, Redacted, Schedule } from "effect"
 import { SqlClient } from "effect/sql"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -84,7 +84,7 @@ export const databaseFile = () => join(tmpdir(), `effect-electric-${crypto.rando
  * `Persistence` over a SQLite file in Node, through TanStack DB's own browser persistence: its database is
  * node:sqlite, as a tab's is OPFS.
  */
-export const persistenceOn = (path: string) =>
+export const persistenceOn = (path: string, device?: string) =>
   Persistence.layer({
     open: () => {
       const database = new DatabaseSync(path)
@@ -98,8 +98,31 @@ export const persistenceOn = (path: string) =>
         close: () => database.close()
       }
     },
-    make: (database) => createBrowserWASQLitePersistence({ database })
+    make: (database, coordinator) =>
+      createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
+    ...(device === undefined ? {} : {
+      coordinator: () => new BrowserCollectionCoordinator({ dbName: device }),
+      lock: deviceLocks(device)
+    })
   })
+
+// The host's real Web Locks, shared by programs on one test device. No lock is stolen in these suites.
+const deviceLocks = (device: string): Outbox.Lock => {
+  const request = (name: string, ifAvailable: boolean) =>
+    Effect.acquireRelease(
+      Effect.callback<(() => void) | undefined>((resume, signal) => {
+        void navigator.locks.request(`${device}/${name}`, ifAvailable ? { ifAvailable: true } : { signal }, (held) => {
+          if (held === null) return void resume(Effect.succeed(undefined))
+          return new Promise<void>((release) => resume(Effect.succeed(release)))
+        }).catch(() => undefined)
+      }).pipe(Effect.interruptible),
+      (release) => Effect.sync(() => release?.())
+    ).pipe(Effect.map((release) => release === undefined ? Option.none() : Option.some({ lost: Effect.never })))
+  return {
+    hold: (name) => Effect.map(request(name, false), Option.getOrThrow),
+    tryHold: (name) => request(name, true)
+  }
+}
 
 /**
  * How many rows of collection `id` the SQLite file at `path` holds, read on a connection of its own. A synced row is

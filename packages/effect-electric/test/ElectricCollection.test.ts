@@ -1,6 +1,6 @@
 import { FetchError } from "@electric-sql/client"
-import { LiveQuery, type Persistence } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Exit, Fiber, Option, Schedule, Schema, Scope, Stream, Tracer } from "effect"
+import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
+import { Context, Effect, Exit, Fiber, Latch, Layer, Option, Schedule, Schema, Scope, Stream, Tracer } from "effect"
 import { SqlClient } from "effect/sql"
 import { describe, expect, test } from "vitest"
 import { ElectricCollection, ShapeSource } from "../src/index.ts"
@@ -104,6 +104,91 @@ describe.skipIf(!electricUp)("make", () => {
     expect(Option.map(row, ({ createdBy }) => createdBy)).toEqual(Option.some("someone"))
   })
 
+  test("applied receipts follow installed rows and never report an invalid recovered batch", async () => {
+    const Strict = Schema.Struct({ id: Schema.String, text: Schema.Literal("one"), n: Schema.Number })
+    const result = await run(Effect.gen(function*() {
+      const { table, write, rename } = yield* scratchTable
+      yield* write({ id: "a", text: "one", n: 1 })
+      const { faults, collection: notes } = yield* faulty(notesOf(table, { schema: Strict }))
+      const installed: string[][] = []
+      yield* notes.applied.pipe(
+        Stream.runForEach(() =>
+          Effect.flatMap(notes.toArray, (rows) =>
+            Effect.sync(() => {
+              installed.push(ids(rows))
+            }))
+        ),
+        Effect.forkScoped({ startImmediately: true })
+      )
+      yield* notes.preload
+      yield* eventually(() => installed.length > 0)
+      const before = installed.length
+      yield* faults.refuse(503)
+      const events = yield* record(notes)
+      yield* rename("a", "invalid")
+      yield* eventually(() => events.includes("Failed:503"))
+      yield* faults.heal
+      yield* eventually(() => events.includes("Stopped:none"))
+      return { installed, before, after: installed.length }
+    }))
+    expect(result.installed[0]).toEqual(["a"])
+    expect(result.after).toBe(result.before)
+  })
+
+  test("an expired handle's metadata reset is not an applied batch before its replacement arrives", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const real = yield* ShapeSource.ShapeSource
+      const replacement = yield* Latch.make(false)
+      let expire = false
+      let expired = false
+      let requestedReplacement = false
+      let beforeReset = 0
+      const installed: string[][] = []
+      // A faulty source sends one expired handle to the real Electric server, then holds the replacement.
+      const source = ShapeSource.ShapeSource.of({
+        request: (url, init) =>
+          Effect.gen(function*() {
+            if (expired) {
+              requestedReplacement = true
+              yield* replacement.await
+            }
+            const target = new URL(url)
+            if (expire && !expired) {
+              target.searchParams.set("handle", "expired-shape-recovery")
+              const response = yield* real.request(target.href, init)
+              expect(response.status).toBe(409)
+              beforeReset = installed.length
+              expired = true
+              return response
+            }
+            return yield* real.request(url, init)
+          })
+      })
+      yield* write({ id: "a", text: "one", n: 1 })
+      const notes = yield* notesOf(table).pipe(Effect.provideService(ShapeSource.ShapeSource, source))
+      yield* notes.applied.pipe(
+        Stream.runForEach(() =>
+          Effect.flatMap(notes.toArray, (rows) =>
+            Effect.sync(() => {
+              installed.push(ids(rows))
+            }))
+        ),
+        Effect.forkScoped({ startImmediately: true })
+      )
+      yield* notes.preload
+      yield* eventually(() => installed.length > 0)
+      expire = true
+      yield* write({ id: "b", text: "two", n: 2 })
+      yield* eventually(() => requestedReplacement)
+      expect(installed).toHaveLength(beforeReset)
+      yield* replacement.open
+      yield* eventually(() => installed.length > beforeReset && installed.at(-1)!.includes("b"))
+      return installed.at(-1)
+    }))
+    expect(result?.sort()).toEqual(["a", "b"])
+  })
+
   test("a synced row the schema refuses stops the shape, with no status", async () => {
     const Strict = Schema.Struct({ id: Schema.String, text: Schema.Literals(["one", "two"]), n: Schema.Number })
     const stop = await run(Effect.gen(function*() {
@@ -146,6 +231,47 @@ class Server extends Context.Service<Server, { readonly persist: (row: Row) => E
 ) {}
 
 describe.skipIf(!electricUp)("mutation handlers", () => {
+  test("a held installation receipt cannot certify a later failed request", async () => {
+    await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const acknowledged = yield* Latch.make(false)
+      const release = yield* Latch.make(false)
+      const { faults, collection: notes } = yield* faulty(notesOf(table, {
+        onInsert: ({ rows, collection }) =>
+          Effect.gen(function*() {
+            const txid = yield* write(rows[0]!)
+            yield* collection.awaitTxId(txid, "5 seconds")
+            yield* acknowledged.open
+            yield* release.await
+          })
+      }))
+      let applied = 0
+      yield* notes.applied.pipe(
+        Stream.runForEach(() =>
+          Effect.sync(() => {
+            applied++
+          })
+        ),
+        Effect.forkScoped({ startImmediately: true })
+      )
+      const events = yield* record(notes)
+      yield* notes.preload
+      yield* eventually(() => applied > 0)
+      const before = applied
+      const transaction = yield* notes.insert({ id: "a", text: "one", n: 1 })
+      yield* acknowledged.await
+      yield* faults.refuse(503)
+      // Release any long poll already at Electric; its next request fails while installation is held.
+      yield* write({ id: "b", text: "two", n: 2 })
+      yield* eventually(() => events.includes("Failed:503"))
+      yield* release.open
+      yield* transaction.persisted
+      yield* notes.awaitMatch(changeTo("b"), "5 seconds")
+      expect(applied).toBe(before)
+      expect(ids(yield* notes.toArray).sort()).toEqual(["a", "b"])
+    }))
+  })
+
   test("onInsert runs with the maker's services and tracer: the row shows at once, then synced once awaited", async () => {
     const spans: Array<string> = []
     const tracer = Tracer.make({
@@ -293,36 +419,39 @@ describe.skipIf(!electricUp)("sync status and the sync policy", () => {
     expect(result.waited).toBeLessThan(2_000)
   })
 
-  test("a 4xx stops the shape with its status until reconnect, which restarts it where it stopped", async () => {
-    const result = await run(Effect.gen(function*() {
-      const { table, write } = yield* scratchTable
-      const { faults, collection: notes } = yield* faulty(notesOf(table))
-      const events = yield* record(notes)
-      yield* write({ id: "a", text: "one", n: 1 })
-      yield* notes.preload
-      yield* faults.refuse(400)
-      yield* write({ id: "b", text: "two", n: 2 })
-      yield* eventually(() => events.includes("Stopped:400"))
-      yield* faults.heal
-      const before = (yield* faults.sent).length
-      // A healthy collection on the same shape sees the next write; the stopped one sends nothing meanwhile.
-      const healthy = yield* notesOf(table)
-      yield* healthy.preload
-      yield* write({ id: "c", text: "three", n: 3 })
-      yield* healthy.awaitMatch(changeTo("c"), "5 seconds")
-      const quiet = (yield* faults.sent).length === before
-      yield* notes.reconnect
-      yield* notes.awaitMatch(changeTo("c"), "5 seconds")
-      return {
-        quiet,
-        rows: ids(yield* notes.toArray).sort(),
-        resumedFrom: (yield* faults.sent)[before]?.searchParams.get("offset")
-      }
-    }))
-    expect(result.quiet).toBe(true)
-    expect(result.rows).toEqual(["a", "b", "c"])
-    expect(result.resumedFrom).not.toBe("-1")
-  })
+  test.each([400, 403])(
+    "a %s stops the shape with its status until reconnect, which restarts it where it stopped",
+    async (status) => {
+      const result = await run(Effect.gen(function*() {
+        const { table, write } = yield* scratchTable
+        const { faults, collection: notes } = yield* faulty(notesOf(table))
+        const events = yield* record(notes)
+        yield* write({ id: "a", text: "one", n: 1 })
+        yield* notes.preload
+        yield* faults.refuse(status)
+        yield* write({ id: "b", text: "two", n: 2 })
+        yield* eventually(() => events.includes(`Stopped:${status}`))
+        yield* faults.heal
+        const before = (yield* faults.sent).length
+        // A healthy collection on the same shape sees the next write; the stopped one sends nothing meanwhile.
+        const healthy = yield* notesOf(table)
+        yield* healthy.preload
+        yield* write({ id: "c", text: "three", n: 3 })
+        yield* healthy.awaitMatch(changeTo("c"), "5 seconds")
+        const quiet = (yield* faults.sent).length === before
+        yield* notes.reconnect
+        yield* notes.awaitMatch(changeTo("c"), "5 seconds")
+        return {
+          quiet,
+          rows: ids(yield* notes.toArray).sort(),
+          resumedFrom: (yield* faults.sent)[before]?.searchParams.get("offset")
+        }
+      }))
+      expect(result.quiet).toBe(true)
+      expect(result.rows).toEqual(["a", "b", "c"])
+      expect(result.resumedFrom).not.toBe("-1")
+    }
+  )
 
   test("a subscriber that starts after the shape stopped still hears it stopped", async () => {
     const events = await run(Effect.gen(function*() {
@@ -650,6 +779,167 @@ describe.skipIf(!electricUp)("persisted", () => {
     effect: Effect.Effect<A, E, Scope.Scope | Persistence.Persistence | ShapeSource.Faults>,
     start?: (switches: ShapeSource.Switches) => Effect.Effect<void>
   ) => Effect.scoped(effect).pipe(Effect.provide(persistenceOn(path)), Effect.provide(ShapeSource.layerFaulty(start)))
+
+  test.each([false, true])(
+    "a watcher waits for installed coordinator receipts, including an empty shape (%s)",
+    async (empty) => {
+      await run(Effect.gen(function*() {
+        const { table, write } = yield* scratchTable
+        if (!empty) yield* write({ id: "a", text: "one", n: 1 })
+        const path = databaseFile()
+        const device = `device-${crypto.randomUUID()}`
+        const id = `notes-${crypto.randomUUID()}`
+        const writerPersistence = yield* Layer.build(persistenceOn(path, device))
+        const writer = yield* Effect.gen(function*() {
+          const faults = yield* ShapeSource.Faults
+          const notes = yield* persisted(table, id)
+          yield* notes.restored
+          const events = yield* record(notes)
+          yield* eventually(() => events.includes("Sent"))
+          return { notes, faults }
+        }).pipe(
+          Effect.provide(writerPersistence),
+          Effect.provide(ShapeSource.layerFaulty((switches) => switches.stall()))
+        )
+        // The writer owns the lock but cannot install its first response. The watcher's own source succeeds.
+        yield* eventually(() => writer.notes.tanstack.status === "loading")
+        const watcherPersistence = yield* Layer.build(persistenceOn(path, device))
+        const watcher = yield* Effect.gen(function*() {
+          const faults = yield* ShapeSource.Faults
+          const notes = yield* persisted(table, id)
+          const installed: string[][] = []
+          yield* notes.applied.pipe(
+            Stream.runForEach(() =>
+              Effect.flatMap(notes.toArray, (rows) =>
+                Effect.sync(() => {
+                  installed.push(ids(rows))
+                }))
+            ),
+            Effect.forkScoped({ startImmediately: true })
+          )
+          yield* notes.preload
+          yield* eventually(() => notes.tanstack.status === "ready")
+          return { notes, faults, installed }
+        }).pipe(
+          Effect.provide(watcherPersistence),
+          Effect.provide(ShapeSource.layerFaulty())
+        )
+        expect(watcher.installed).toEqual([])
+        expect(yield* watcher.notes.toArray).toEqual([])
+        yield* writer.faults.heal
+        yield* writer.notes.preload
+        yield* eventually(() => watcher.installed.length > 0)
+        expect(watcher.installed.at(-1)).toEqual(empty ? [] : ["a"])
+      }))
+    }
+  )
+
+  test("a second coordinator installation of the same accepted cursor emits no duplicate applied receipt", async () => {
+    await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      yield* write({ id: "a", text: "one", n: 1 })
+      const path = databaseFile()
+      const device = `device-${crypto.randomUUID()}`
+      const id = `notes-${crypto.randomUUID()}`
+      const writerPersistence = yield* Layer.build(persistenceOn(path, device))
+      const writer = yield* faulty(persisted(table, id)).pipe(Effect.provide(writerPersistence))
+      yield* writer.collection.preload
+      yield* writer.faults.stall()
+      const watcherPersistence = yield* Layer.build(persistenceOn(path, device))
+      const watcher = yield* faulty(persisted(table, id)).pipe(Effect.provide(watcherPersistence))
+      const installed: string[][] = []
+      yield* watcher.collection.applied.pipe(
+        Stream.runForEach(() =>
+          Effect.flatMap(watcher.collection.toArray, (rows) =>
+            Effect.sync(() => {
+              installed.push(rows.map(({ text }) => text))
+            }))
+        ),
+        Effect.forkScoped({ startImmediately: true })
+      )
+      yield* watcher.collection.preload
+      yield* eventually(() => installed.length > 0)
+      yield* watcher.faults.stall()
+      expect(installed).toEqual([["one"]])
+      // Both network sources are gated. An adapter commits another real device transaction while retaining its
+      // installed Electric cursor, so only coordinator hydration can account for the changed row.
+      let deliver!: () => true | Promise<void>
+      const peer = yield* Collection.make(Note, {
+        id,
+        getKey: (row) => row.id,
+        sync: {
+          sync: (params) => {
+            deliver = () => {
+              params.begin()
+              params.write({ type: "update", value: { id: "a", text: "two", n: 1 } })
+              return params.commit()
+            }
+            params.markReady()
+          }
+        }
+      }, { persist: { schemaVersion: 1 } }).pipe(Effect.provideService(Persistence.Persistence, {
+        ...Context.get(writerPersistence, Persistence.Persistence),
+        lock: undefined
+      }))
+      yield* peer.restored
+      yield* Effect.promise(() => Promise.resolve(deliver()))
+      yield* watcher.collection.awaitRow((row) => row.text === "two", "5 seconds")
+      // Drain the already queued stream observer after the gated coordinator commit.
+      yield* Effect.yieldNow
+      expect(installed).toEqual([["one"]])
+    }))
+  })
+
+  test.each([false, true])(
+    "a watcher certifies rows already installed before its source recovers (%s)",
+    async (empty) => {
+      await run(Effect.gen(function*() {
+        const { table, write } = yield* scratchTable
+        if (!empty) yield* write({ id: "a", text: "one", n: 1 })
+        const path = databaseFile()
+        const device = `device-${crypto.randomUUID()}`
+        const id = `notes-${crypto.randomUUID()}`
+        const writerPersistence = yield* Layer.build(persistenceOn(path, device))
+        const writer = yield* Effect.gen(function*() {
+          const faults = yield* ShapeSource.Faults
+          const notes = yield* persisted(table, id)
+          yield* notes.preload
+          // No later writer commit may rescue the watcher after it recovers.
+          yield* faults.stall()
+          return { notes, faults }
+        }).pipe(Effect.provide(writerPersistence), Effect.provide(ShapeSource.layerFaulty()))
+        const watcherPersistence = yield* Layer.build(persistenceOn(path, device))
+        yield* Effect.gen(function*() {
+          const faults = yield* ShapeSource.Faults
+          const notes = yield* persisted(table, id)
+          const installed: string[][] = []
+          yield* notes.applied.pipe(
+            Stream.runForEach(() =>
+              Effect.flatMap(notes.toArray, (rows) =>
+                Effect.sync(() => {
+                  installed.push(ids(rows))
+                }))
+            ),
+            Effect.forkScoped({ startImmediately: true })
+          )
+          yield* notes.restored
+          const events = yield* record(notes)
+          yield* eventually(() => events.includes("Failed:network"))
+          expect(ids(yield* notes.toArray)).toEqual(empty ? [] : ["a"])
+          expect(installed).toEqual([])
+          yield* faults.heal
+          yield* notes.reconnect
+          yield* notes.preload
+          yield* eventually(() => installed.length > 0)
+          expect(installed.at(-1)).toEqual(empty ? [] : ["a"])
+          expect(ids(yield* writer.notes.toArray)).toEqual(empty ? [] : ["a"])
+        }).pipe(
+          Effect.provide(watcherPersistence),
+          Effect.provide(ShapeSource.layerFaulty((switches) => switches.down()))
+        )
+      }))
+    }
+  )
 
   test("restores the rows before Electric answers, and resumes from the stored handle and offset", async () => {
     const result = await run(Effect.gen(function*() {

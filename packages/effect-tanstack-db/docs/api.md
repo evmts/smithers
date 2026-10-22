@@ -68,6 +68,15 @@ The collection TanStack DB creates from a sync adapter's options, checked by
 garbage collection off and indexes fields eagerly as queries need them. Use it
 to build a sync adapter's collection; use `local` for in-memory state.
 
+`options.onSyncCommit` receives `{ getMetadata(key) }` after each sync
+transaction's application receipt succeeds. Rows and collection metadata are
+visible when it runs. It observes transactions installed by the shared-device
+coordinator too, including metadata-only transactions and empty snapshots.
+Dropped watcher-source writes and rejected receipts never call it. Adapters
+can compare their accepted cursor with `getMetadata` before reporting recovery.
+The reader holds that transaction's metadata; a later staged cursor cannot
+certify an earlier receipt. The adapter's acceptance receipt stays intact.
+
 With `persist`, the collection keeps its rows, and its sync adapter's resume
 state, through `Persistence`: TanStack DB's `persistedCollectionOptions` with
 network-first initial rendering that waits for no network
@@ -192,7 +201,14 @@ validates merged rows on update, so a transforming schema such as
 ```ts
 type Options<A extends object, K extends Key, U extends UtilsRecord> =
   & Omit<CollectionConfig<A, K, never, U>, "schema" | "gcTime" | "autoIndex" | "defaultIndexType" | "utils">
-  & { readonly utils?: U }
+  & {
+    readonly utils?: U
+    readonly onSyncCommit?: (commit: SyncCommit) => void
+  }
+
+interface SyncCommit {
+  readonly getMetadata: (key: string) => unknown
+}
 ```
 
 The options TanStack DB creates a collection from, as a sync adapter returns
