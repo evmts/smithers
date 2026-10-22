@@ -2,10 +2,111 @@
 title: Agent status (working, needs you, waiting, failed, done)
 status: in-progress
 area: design
-owner: agent-status feature owner; replacement video ready for review
-updated: 2026-10-21 04:24 PDT
+owner: live-attention builder; Codex Sol production tests
+updated: 2026-10-21 23:14 PDT
 links: [cerebras-rate-limits.md, dev-stack-hygiene.md, ../decisions/0015-agent-status.md, ../design/agent-status/agent-status.html, notifications-and-live-work.md, flow-debugging.md, chat-message-controls.md, durable-answering.md, local-first.md, agent-ui-rendering.md, observability.md, e2e-suite-and-gifs.md, ../decisions/0009-notifications-and-live-work.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../features/agent.md, ../features/chat.md, ../rules.md, fable-review-2-fixes.md, roles-and-labels.md, model-step.md, code-reviews.md, land-to-main.md, cerebras-rate-limits.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 23:14 PDT
+
+**What:** Show needs-you cards on branch pages.
+
+**Why:** Pending questions must remain visible where the person works.
+
+**Current state:** At 23:11 live-attention tests pass import rules and five rebased commits are with the lander. Tests pass 463/464, with the remaining failure reported already on main. No landing or production two-device pass is reported.
+
+**Next step:** Land and deploy, then run the two-device needs-you test against smithers.sh with a real model.
+
+**Open questions for Will:** None newly required.
+
+Evidence: user text and lead replies extracted by script from session 6253ecf2, approximately 21:14–23:14 PDT; tool payloads and automated notifications excluded. The supplied continuation transcript path is absent; recent continuation-era replies are in the original file. Rulings and queue answers take precedence over older docs and surviving briefs. Wiped scratch files are not missing work. Product receipts are lead-reported; this refresh validates the site build. Codex curates documentation and retains execution ownership.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Show actionable needs-you attention on branch pages.
+
+**Why:** Pending questions must remain visible where work happens.
+
+**Current state:** At 20:37 the needs-you fix is held for React imports in non-TSX tests; the live-attention builder owns repairs. The earlier production gap remains unclosed.
+
+**Next step:** Fix tests, land, deploy and prove a real pending question on the branch page.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+
+**What:** Show and answer needs-you questions in branch and home conversations.
+
+**Why:** A branch question must be visible and actionable while work continues.
+
+**Current state:** At 20:32 the lead confirms the branch needs-you alert does not appear in production. The fix exists but is not deployed; no new two-device acceptance receipt.
+
+**Next step:** Land, deploy and prove branch cards, tab counts and answers across two devices.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 16:04 PDT
+
+**What:** Show and answer questions in branch and home conversations.
+
+**Why:** A branch question must produce a visible card and tab count.
+
+**Current state:** At 15:59 the lead reports two attention fixes queued after local-first fixes, including branch cards and tab counts. Unit evidence is 199/200 passing; the remaining failure is attributed to shared database connection exhaustion. At 16:01 the lead says the fixes address the 14 review findings, with failing-before regressions and one finding ruled not a defect. Neither landing nor two-device acceptance is reported.
+
+**Next step:** Land and deploy the fixes, then run two-device question/answer and tab-count journeys on available hosts.
+
+**Open questions for Will:** None newly identified; unresolved questions in the retained history remain open.
+
+Evidence: script-filtered user text and lead assistant replies from session 6253ecf2, approximately 14:03–16:03 PDT on 2026-10-21. Tool records, relayed agent messages, automation prompts and compaction summaries excluded. Rulings and queue answers prevail over shared briefs, panel designs and older planning docs. Product checks are lead-reported; this refresh verifies the maintainer-site build. Engineering ownership retained; documentation reconciliation by Codex.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:54 PDT
+
+**What:** Show agent questions in every conversation.
+
+**Why:** Questions must remain visible and answerable on branch pages.
+
+**Current state:** At 14:53 PDT the panel identifies a home-only message join that drops branch status cards, a 2-second person-action credential race, and a report route returning OK without saving. A builder is fixing all three; no passing production receipt yet.
+
+**Next step:** Prove branch and home questions, truthful report refusal, cross-device answering and notification hiding locally and live.
+
+**Open questions for Will:** None for this repair. Existing pending decisions remain in the retained history.
+
+Evidence: script-extracted user-typed text and lead replies from session 6253ecf2, 12:54–14:54 PDT; automated notifications excluded. Rulings and queue answers govern over historical briefs and proposals. Product receipts are lead-reported; this pass verifies only the maintainer-site build. Implementation owners remain assigned; Codex maintains tracker documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 13:38 PDT
+
+**What:** Show and answer the live Needs you card.
+
+**Why:** A person must see when an agent needs their response.
+
+**Current state:** The 13:15 PDT production report says the live Needs you card never appears. Earlier queue approval of a recording remains historical; there is no current passing production receipt.
+
+**Next step:** Rerun with the repaired production harness, retain the failing live-card journey and assign the confirmed failure through the announced panel/build batch.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from session 6253ecf2, 11:37–13:37 PDT on 2026-10-21. Automated notifications and tool records excluded. Rulings and queue answers override historical briefs, panel designs, decisions, proposals, TODOs and rules. Product results are lead-reported. Existing execution owners retained; Codex owns tracker reconciliation only.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 04:24 PDT
 

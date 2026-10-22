@@ -2,10 +2,44 @@
 title: Pull request list, and the conversation, commits and checks tabs
 status: in-progress
 area: app
-owner: coding factory builder `factory-run-pulls` (Claude Opus), from 03:00 on 2026-10-21: the pages restored and GH-9's merge warning; the live end-to-end run stays with the lead (`factory-run`). From 19:10 on 2026-10-20 until then: coding factory builder (Claude Opus, session 6253ecf2): PRs, the todo run, /review. Until 19:10: unassigned; from 13:21:12 on 2026-10-20 it waits for the [triage](issue-triage.md) builder, which edits the same GitHub write path and list view. Until 13:21: unassigned; designed in decision 0012 (Panel G reported 07:40:55 on 2026-10-20); not in slice G0, which started 07:40:55. Until 07:40: Panel G; decision 0012 written 06:58:11 on 2026-10-20 (status: proposed); no builder yet. Until 06:58: Panel G (Opus merges into decision 0012, the git flow end to end; started 06:41:56 on 2026-10-20). Sol's design done 06:46; Opus's independent design written 06:53. Until 06:41: unassigned
-updated: 2026-10-21
+owner: coding factory builder (Claude Opus, session 6253ecf2), from 19:10 on 2026-10-20: PRs, the todo run, /review. Until 19:10: unassigned; from 13:21:12 on 2026-10-20 it waits for the [triage](issue-triage.md) builder, which edits the same GitHub write path and list view. Until 13:21: unassigned; designed in decision 0012 (Panel G reported 07:40:55 on 2026-10-20); not in slice G0, which started 07:40:55. Until 07:40: Panel G; decision 0012 written 06:58:11 on 2026-10-20 (status: proposed); no builder yet. Until 06:58: Panel G (Opus merges into decision 0012, the git flow end to end; started 06:41:56 on 2026-10-20). Sol's design done 06:46; Opus's independent design written 06:53. Until 06:41: unassigned
+updated: 2026-10-21 21:10 PDT
 links: [issues.md, ../decisions/0012-git-end-to-end.md, old-app-feature-gaps.md, pr-review-and-merge.md, github-source-of-truth.md, issue-triage.md, repo-view-branches-raw-clone.md, agent-ui-rendering.md, review-requests-and-revisions.md, roles-and-labels.md, sign-in.md, decisions-for-will.md, ../decisions/0007-roles-and-tags.md, ../decisions/0008-auth.md, ../proposals/mvp-gaps.md, ../proposals/early-features.md, docs-check-flow-outcome.md, no-github-actions.md, second-build-machine.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 21:10 PDT
+
+**What:** Finish the pull request list, detail and person-authorized merge loop.
+
+**Why:** The production issue-to-merged-PR journey is not proven.
+
+**Current state:** At 21:06 the lead starts an Opus builder on the mini for the git loop through merge. Agent reviews never authorize or perform a person's merge.
+
+**Next step:** Implement missing surfaces and prove the real production journey with person authority.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies, 19:06–21:06 PDT; current rulings and queue answers through 21:06; surviving briefs and reports. Product results are reported receipts, not rerun here. Implementation ownership retained; Codex curates documentation. Wiped scratch files are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 02:06 PDT
+
+**What:** Pull request list and conversation, commits and Smithers checks views.
+
+**Why:** Complete the GitHub-to-Smithers coding loop.
+
+**Current state:** The lead includes pull requests in the c6940ac5 landing at 01:49 PDT. Production deploy remains running. This landing is not proof that the coding factory’s QuickJS/workerd execution or TODO_RUNS activation is complete. GitHub remains the source of truth; Smithers checks are flow runs.
+
+**Next step:** Smoke-test the deployed PR views with the real GitHub App, then prove the factory TODO-to-PR journey before enabling TODO runs. Track protected confirmations separately.
+
+**Open questions for Will:** None.
+
+Evidence: session 6253ecf2 user-typed text and lead replies extracted by script for the latest two hours through 2026-10-21 09:03:39 UTC; current rulings, queue answers, shared briefs/designs and retained builder receipts. Product tests are reported evidence; tracker validation is the site build. Execution owner retained.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

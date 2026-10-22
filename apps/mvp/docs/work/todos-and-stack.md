@@ -3,9 +3,26 @@ title: TODOs and the stack (MVP 1, early feature 8c)
 status: in-progress
 area: app
 owner: TODO builder; lead assigns UI follow-up
-updated: 2026-10-20
+updated: 2026-10-21 20:47 PDT
 links: [todos-draft-commit-drop.md, agent-run-credentials.md, ../decisions/0016-todos-and-the-stack.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, pr-review-and-merge.md, roles-and-labels.md, mvp-scope-cut.md, connect-agents-sandboxes-forge.md, ../decisions/0012-git-end-to-end.md, ../decisions/0013-branch-workspace.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, ../decisions/0015-agent-status.md, no-github-actions.md, pull-request-list-and-tabs.md, decisions-for-will.md, docs-truth-pass.md, will-decision-queue.md, ../rulings.md, everything-is-a-plugin.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Continue the existing workstream and preserve separate landing and production receipts.
+
+**Why:** Passing prepared code does not prove the hosted journey.
+
+**Current state:** At 20:37 the lead reports TODO steering landed on main 41ebbdd6. The full hosted issue-to-human-merge loop still lacks production acceptance and depends on permission and sandbox-image work. A landed steering fix does not close this broader workstream.
+
+**Next step:** Retain the steering landing receipt; deploy and prove the full hosted loop with a person performing the merge.
+
+**Open questions for Will:** No new product question; GitHub access restoration remains pending.
+
+Evidence: script-filtered lead replies through 20:46 PDT, session 6253ecf2. Codex curates the note; implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 17:34 PDT
 

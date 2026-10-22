@@ -21,7 +21,7 @@ Will, 2026-10-21 (PLUGIN-5): "our maintainer app will likely eventually become t
 ## Current state
 
 - **Not in the app.** The old app had the concept, and `.smithers/wiki/` exists in this repository.
-- **The review queue isn't part of this.** It's a product feature now under PLUGIN-4, decision 0022 (proposed).
+- **The review queue isn't part of this.** It's a product feature now under PLUGIN-4, decision 0031 (proposed).
 - **Memory (AGENT-5) ships without the wiki.** It ports Jev-ranked recall from `@smthrs/memory` plus skill filtering, with memory sources as an injected service so the wiki plugs in later as one more source.
 
 ## Next step

@@ -2,9 +2,9 @@
 title: CI parity: a machine per job with toolchains
 status: in-progress
 area: sdk
-owner: dogfood-loop builder (Claude Opus), from 12:40 on 2026-10-21; the image's toolchain is the sandboxes builder's
-updated: 2026-10-21 13:30 PDT
-links: [../proposals/ci-cd-parity.md, sandboxes.md, sandbox-budgets.md, ../features/sandbox-tools.md, ../features/pulls.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, dogfood-loop.md]
+owner: Opus dogfood builder assigned by lead
+updated: 2026-10-21 13:44 PDT
+links: [../proposals/ci-cd-parity.md, sandboxes.md, sandbox-budgets.md, ../features/sandbox-tools.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md]
 ---
 
 ## Built, 2026-10-21 (the dogfood loop's first slice)
@@ -16,6 +16,14 @@ links: [../proposals/ci-cd-parity.md, sandboxes.md, sandbox-budgets.md, ../featu
 
 **Not built:** the `ci/job` child flow, matrices and outcome values below; one job per script; a job image of its own.
 
+## Tracker reconciliation — 2026-10-21 13:44 PDT
+**What:** Run each PR-head check in its own temporary machine with pinned tools and restricted egress.
+**Why:** Hosted checks need isolated machines; branch boxes remain closed.
+**Current state:** At 13:26 PDT the dogfood builder reports per-head machines and npm/dprint-only access built. Lint and check passed on Latitude, not a production job container. Node 26.5 image commit a98f91e4 follows the sandbox production test. This is the first hosted-check slice, not proof of every broader CI matrix capability in the historical proposal.
+**Next step:** Land and deploy the check slice and pinned tooling; prove independent outcomes, exact-head checkout and sleep in production before expanding the matrix.
+**Open questions for Will:** None for this slice; commit-status permission remains tracked separately.
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, approximately 11:44–13:44 PDT; automated notifications and tool content excluded. Rulings and queue answers govern over historical briefs, panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this pass validates the site build only. Existing execution owners retained; Codex curates tracker documentation.
+## Earlier tracker history (retained)
 ## What
 
 `ci/job`: a child flow that reserves one `JobSandbox` container for a job, checks out the exact SHA, runs its steps in order and settles an outcome value (`passed`, `failed`, `cancelled`, `skipped`), never a failure, so a matrix reports every row.

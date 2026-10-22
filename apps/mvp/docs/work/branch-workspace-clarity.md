@@ -1,11 +1,79 @@
 ---
 title: Clear branch workspace and understandable walkthrough
-status: done
+status: in-progress
 area: app
-owner: branch page and recording agent assigned by the lead
-updated: 2026-10-21
+owner: Codex Sol branch-page repair owner
+updated: 2026-10-21 21:34 PDT
 links: [branch-terminal.md, branch-sharing.md, chaptered-review-videos.md, ../decisions/0013-branch-workspace.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 21:34 PDT
+
+**What:** Repair branch connection, first theme paint and offline-reopen chrome.
+
+**Why:** Branch pages must show accurate state online and offline.
+
+**Current state:** At 21:30 the lead confirms all three regression tests pass import rules and still fail on old code. The fixes are queued for the next lander push; no landing or production acceptance receipt is reported.
+
+**Next step:** Collect landing receipts and verify the branch journey on the deployed revision.
+
+**Open questions for Will:** None newly required; existing product decisions and account provisioning remain in their owning workstreams.
+
+Evidence: script-filtered user text and lead replies from the latest approximately two hours across both requested session paths, current rulings and queue answers, and surviving reports where named. Product checks are reported receipts. Implementation owner retained; Codex maintains this tracker entry. Earlier history below is preserved; reboot-wiped briefs are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Repair branch-page state and retain meaningful walkthroughs.
+
+**Why:** Branch views must be understandable online and offline.
+
+**Current state:** At 20:37 prepared fixes are held because their tests import React from non-TSX files. Codex Sol is fixing those tests. Landing and production acceptance remain pending.
+
+**Next step:** Repair the test structure, run checks on the remote runners, land and verify the branch journey live.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:54 PDT
+
+**What:** Repair branch connection, theme and offline header behavior.
+
+**Why:** Branch pages must identify their state accurately.
+
+**Current state:** At 14:51 the lead moves three straightforward repairs to Codex Sol: Offline pill, initial theme, and branch header after reopening offline with storage cleared. No fix acceptance yet.
+
+**Next step:** Keep each failing regression, fix and prove branch pages online/offline locally and live.
+
+**Open questions for Will:** None for this repair. Existing pending decisions remain in the retained history.
+
+Evidence: script-extracted user-typed text and lead replies from session 6253ecf2, 12:54–14:54 PDT; automated notifications excluded. Rulings and queue answers govern over historical briefs and proposals. Product receipts are lead-reported; this pass verifies only the maintainer-site build. Implementation owners remain assigned; Codex maintains tracker documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:35 PDT
+
+**What:** Show a usable branch workspace online and offline.
+
+**Why:** Branch chrome must accurately show connection, theme and identity.
+
+**Current state:** At 14:33 the lead assigns three production E2E regressions to the branch-workspace owner: connection pill never says Offline, theme is unset until chosen, and reopening offline after cleared storage loses the branch header. Earlier done status is reopened.
+
+**Next step:** Repair all three with failing-before/passing-after browser regressions, then retain local and production receipts.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 12:34–14:34 PDT on 2026-10-21, session 6253ecf2. Automated notifications, tool records and generated summaries excluded. Current rulings and queue answers prevail over historical briefs/designs and planning docs. Product receipts are lead-reported; this pass verifies the maintainer-site build only. Existing engineering ownership retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-21, 00:25 PDT
 

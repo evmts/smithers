@@ -3,9 +3,60 @@ title: Complete production GitHub App setup
 status: in-progress
 area: infra
 owner: Will configures the App; lead validates production
-updated: 2026-10-21 02:34 PDT
+updated: 2026-10-21 21:24 PDT
 links: [land-and-deploy-mvp.md, sign-in.md, github-source-of-truth.md, will-decision-queue.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 21:24 PDT
+
+**What:** Verify hosted GitHub sign-in and authorized write-only Commit statuses.
+
+**Why:** The live factory needs correct access at the production origin.
+
+**Current state:** Will approves Commit statuses Read and write at 20:58 in the queue. Later lead updates remove the callback request because GitHub already redirects to smithers.sh. Routing code is pushed at 21:21, but the first deploy and live sign-in/status-write acceptance remain unreported.
+
+**Next step:** After the designated cutover deploy, verify live sign-in, installation permissions and a real status write.
+
+**Open questions for Will:** None currently; do not repeat answered permission or callback requests.
+
+Evidence: script-filtered human messages and lead text replies in the latest approximately two hours across both requested transcript paths; continuation path is absent, but continuation-era replies appear in 6253ecf2. Current rulings and queue answers prevail. Surviving briefs/reports used where cited; wiped scratch files are not missing work. Execution ownership retained; Codex curates this note. Product checks are reported receipts, not rerun here.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Complete GitHub App callback and write permissions for hosted work.
+
+**Why:** New-origin sign-in and required statuses must work live.
+
+**Current state:** At 20:46 the lead still requests the smithers.sh callback, Commit statuses Read and write, and acceptance of updated installation permissions. Earlier setup completion is historical and does not cover these new settings. GH-10 permits write-only statuses; older blanket status bans are superseded.
+
+**Next step:** Verify callback additions preserve workers.dev, accept permission updates and run live sign-in and status-write acceptance.
+
+**Open questions for Will:** GitHub App settings and installation permission acceptance remain pending.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:34 PDT
+
+**What:** Provide real production test access and GitHub integration.
+
+**Why:** Production journeys need an authenticated Member.
+
+**Current state:** Will sent both Write invitations at 10:13. At 10:23 the lead reports codeplanesmithers accepted both and signs into production as Member. Sandbox, steering and remote-flow builders share the session. Spoon-Knife clone is requested but waits on remote migration recovery.
+
+**Next step:** Complete clone and integration verification after host repair; do not re-request invitations.
+
+**Open questions for Will:** None newly identified; retain unrelated unresolved questions in the live queue.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest approximately two hours through 10:33 PDT; current rulings and queue answers through 10:31 PDT, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence; this tracker runs only the site build. Execution ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 02:34 PDT
 

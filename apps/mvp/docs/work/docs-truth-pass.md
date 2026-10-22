@@ -3,9 +3,60 @@ title: Docs truth pass (every doc, AGENTS.md, .specs and memory match Will's rul
 status: in-progress
 area: process
 owner: lead and docs/memory owners
-updated: 2026-10-21 09:11 PDT
+updated: 2026-10-21 11:40 PDT
 links: [ops-vault-history-repair.md, will-decision-queue.md, decisions-for-will.md, self-host-install.md, todos-and-stack.md, no-github-actions.md, prompt-flows-are-code-flows.md, mvp-scope-cut.md, web-first-desktop-later.md, ../rules.md, ../todo.md, ../../../../AGENTS.md, ../../../../.specs/product/mvp.md, ../decisions/0010-web-first-desktop-later.md, ../decisions/0016-todos-and-the-stack.md, ../rulings.md, everything-is-a-plugin.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 11:40 PDT
+
+**What:** Reconcile Smithers and Smithers-Ops documentation with the current rulings.
+
+**Why:** Stale product descriptions misdirect agents.
+
+**Current state:** At 11:39 the lead reports the docs agent finished both repositories. Six Smithers commits await the lander; Smithers-Ops changes are committed and pushed. Public support promises remain a separate unresolved policy decision. This is authoring completion, not completed landing of all docs.
+
+**Next step:** Land the six Smithers commits, check links after legacy removal and retain final verification. Shared ops checkout catch-up has its own active note.
+
+**Open questions for Will:** None newly identified; support promises remain with their own queue question.
+
+Evidence: lead text replies through 11:39 PDT in session 6253ecf2, extracted by script from the latest two hours; rulings and queue answers take precedence over shared briefs, designs and older docs. Product results are reported evidence; this refresh validates the site build only. Existing implementation ownership is retained; Codex curates this note.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:15 PDT
+
+**What:** Bring current Smithers and Smithers-Ops documentation into agreement with rulings.
+
+**Why:** Legacy descriptions and stale questions misdirect agents.
+
+**Current state:** At 11:06 and 11:09 the lead reports five docs commits queued with the lander: app rules/infrastructure, tracked TODO list, landing/contributor guides, maintainer-site README, historical design banners and old-app references. The lead separately updates rulings §18 to settle deployment, private infrastructure, tracker and spend-alert questions. Grafana self-hosting, effectscript-ts identity and Cerebras capacity remain open. The broader two-repository pass has no completion receipt.
+
+**Next step:** Land the documented updates, finish Smithers-Ops reconciliation, check links after the legacy docs move, and resolve stale public support promises in their own workstream. Preserve historical records.
+
+**Open questions for Will:** None newly identified; settled decisions remain settled.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 09:14–11:14 PDT on 2026-10-21; current rulings (including PROC-21–23), queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Engineering receipts are reported evidence; this refresh validates only the maintainer-site build. Existing implementation owners are retained; Codex curates these notes.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:04 PDT
+
+**What:** Update current documentation in Smithers and Smithers-Ops to match Will’s rulings.
+
+**Why:** Old instructions and pending questions must not contradict later decisions.
+
+**Current state:** At 10:54–10:55 the lead starts a docs-update agent in response to Will’s Telegram request, covering both repositories and leaving old run folders alone. The earlier audit gaps remain until explicitly fixed: rulings §18 settled questions, stale deployment prerequisites, dependency age and write-only commit-status exceptions. No completed cross-repository documentation receipt is reported.
+
+**Next step:** Complete the active two-repository reconciliation, preserve historical run folders, check links after legacy docs move, and record validation without reopening settled decisions.
+
+**Open questions for Will:** None newly identified. Repository access, Neon and review routing are settled; Telegram setup is discretionary and must not be resurfaced.
+
+Evidence: script-filtered human text and lead replies in session 6253ecf2, approximately 09:03–11:03 PDT; current rulings and queue answers take precedence over briefs, panel designs and older documentation. Product receipts are lead-reported; Codex curates documentation and validates only the maintainer-site build. Existing engineering ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 09:11 PDT
 

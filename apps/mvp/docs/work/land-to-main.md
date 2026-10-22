@@ -3,9 +3,297 @@ title: Land finished work on main (the lander)
 status: in-progress
 area: process
 owner: lander; finished app round reported on main
-updated: 2026-10-21 09:17 PDT
+updated: 2026-10-21 23:04 PDT
 links: [queue-recorded-revision-source.md, land-and-deploy-mvp.md, code-reviews.md, decisions-for-will.md, app-wiring.md, repo-checks-green.md, old-app-feature-gaps.md, fable-review-2-fixes.md, plan-identity-minified-builds.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, agent-status.md, repo-view-branches-raw-clone.md, ../../../../AGENTS.md, site-deployment-test.md, api-baseline-rerecord.md, dev-stack-hygiene.md, plan-identity-minified-builds.md, review-round-4.md, docs-check-flow-outcome.md, model-step.md, cloudflare-flow-host.md, effect-tanstack-db-and-effect-electric.md, library-catalog.md, issues.md, chat-message-controls.md, flow-authoring.md, model-endpoint.md, plan-identity-across-deploys.md, second-build-machine.md, device-data-migrations.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 23:04 PDT
+
+**What:** Land validated development and maintenance batches on append-only main.
+
+**Why:** Make finished changes available for deployment.
+
+**Current state:** At 23:02 the lead reports push 12 on main e90cc1cf2f12: 24 commits covering co-editing (3), plan-core (4), patterns (3), dogfood (6), production E2E (6), d3037136 and regenerated docs. This supersedes the surviving pre-push handoff. One gateway typecheck failure is held for curator rework. The next batch is www redirect, time-travel, Flows (15), production flows and branch-page fixes.
+
+**Next step:** Finish the ordered next batch and collect deployment and production receipts. Keep known main failures visible; do not count queued fixes as landed.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 21:04–23:04 PDT. Both requested transcript paths checked; continuation text is present in 6253ecf2, while the supplied 265921d3 path is absent. Current rulings and queue answers govern; surviving briefs and reports inform history. Reboot-wiped files are not unfinished work. Codex owns this tracker reconciliation; implementation ownership above is retained. Product results are lead-reported; this refresh runs the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 22:53 PDT
+
+**What:** Land validated development batches on append-only main.
+
+**Why:** Finished work and current documentation must reach the hosted app.
+
+**Current state:** At 22:38 the second lander reports 31 fixes pushed to main 3b028386. At 22:45 the subscription seam joins file tabs, model retries and other large batches awaiting landing receipts. The second lander now copies rulings, work notes and queue changes onto main roughly hourly and is resolving two decision records numbered 0028. The surviving lander handoff lists push 12 as gated but not pushed; it must not be counted as landed.
+
+**Next step:** Finish gates and ordered landing, resolve decision-number collisions with references intact, deploy and collect full production E2E receipts.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered user-typed messages and lead text replies over the latest approximately two hours, through 22:53 PDT, in session 6253ecf2. Both requested paths were checked; the continuation path is unavailable here, while continuation-era replies are present in the original session. Current rulings and queue answers prevail over older decisions and proposals. Surviving briefs inform handoff state; reboot-wiped files are not missing work. Implementation owners are retained; Codex curates documentation. Product checks above are reported receipts, not rerun by this tracker refresh.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 22:43 PDT
+
+**What:** Land validated development batches on append-only main.
+
+**Why:** Finished changes must reach the hosted app.
+
+**Current state:** At 22:38 the second lander pushed 31 fixes to main 3b028386. File tabs and model retries are handed off; large browser-engine, Flows and other batches still await landing/deploy receipts. All stopped agents resumed after login.
+
+**Next step:** Land remaining validated batches, deploy and collect full production E2E results.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered recent human messages and lead text replies in 6253ecf2, through 22:43 PDT; the supplied continuation path is absent, with continuation-era text in the available session. Current rulings and queue answers prevail. Existing execution ownership retained; Codex curates this note. Reported product receipts were not rerun here. Wiped briefs are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 21:24 PDT
+
+**What:** Land validated stacks and deploy from pushed main with real completion receipts.
+
+**Why:** Queued fixes must reach the hosted product.
+
+**Current state:** At 21:18 legacy removal and hostname routing land; at 21:21 main is 7c4f77086cc1 and a replacement large-stack lander takes over. A second lander handles small fixes. Co-editing, plan-core, patterns, dogfood/production e2e, time-travel and Flows batches remain queued. Formatting cleanup of 48 files waits until overlapping stacks land.
+
+**Next step:** Serialize landers, preserve handoffs, and let the designated smithers.sh builder finish the first cutover deploy before other deploys. Then drain remaining validated stacks and verify production.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies in the latest approximately two hours across both requested transcript paths; continuation path is absent, but continuation-era replies appear in 6253ecf2. Current rulings and queue answers prevail. Surviving briefs/reports used where cited; wiped scratch files are not missing work. Execution ownership retained; Codex curates this note. Product checks are reported receipts, not rerun here.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 21:16 PDT
+
+**What:** Land validated stacks and deploy with separate completion receipts.
+
+**Why:** Finished fixes must reach the hosted product.
+
+**Current state:** MacBook push authentication is restored at 20:56. By 21:15 landing is the bottleneck; a second lander handles small fixes while the first handles large stacks, taking turns pushing. Review-lane fixes now go directly to the second lander. The sandbox probe fix deployed at 21:05; other stacks still need individual receipts.
+
+**Next step:** Drain validated stacks with serialized pushes, then deploy from pushed main and record real acceptance results. Observe the first-cutover deployment coordination.
+
+**Open questions for Will:** None; do not repeat the completed MacBook login request.
+
+Evidence: script-filtered human messages and lead text replies, 19:15–21:15 PDT in session 6253ecf2; current rulings, queue answers and surviving briefs/reports. The supplied continuation file was not found; continuation-era lead replies are present in 6253ecf2. Product receipts are reported evidence, not rerun here. Existing execution ownership retained; Codex curates documentation. Reboot-wiped scratch files are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Land validated changes and deploy with separate receipts.
+
+**Why:** Finished code must reach the hosted app.
+
+**Current state:** At 20:37 the lead reports main at 41ebbdd6 with TODO steering, co-edit Saved and zero app lint violations. Push access then failed after token revocation; sandbox idle-sleep fix awaits push. Branch-page and needs-you changes are separately held for React imports in non-TSX tests. No restored-login receipt appears.
+
+**Next step:** Restore GitHub CLI access on both machines, verify jj fetch, then push validated work and deploy. Retain individual deployment and live acceptance receipts.
+
+**Open questions for Will:** GitHub reauthentication with workflow scope remains required; see github-push-access-recovery.md.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+
+**What:** Land validated work and deploy it with distinct completion receipts.
+
+**Why:** Queued code does not change what people can use in production.
+
+**Current state:** At 20:32 the lead estimates about 25 finished fixes queued to land and deploy, leaving production several hours behind. The queue includes TODO steering, branch-page fixes, attention alerts, co-editing, Flows, GitHub writes, time-travel and browser-engine changes. At 20:33 the sandbox sleep mitigation becomes first. Legacy removal alone remains blocked on workflow-token permission.
+
+**Next step:** Land in dependency order, respect active-run compatibility constraints, deploy pushed main and collect production smoke/e2e receipts.
+
+**Open questions for Will:** Legacy push authorization belongs to legacy-code-removal.md; no new question.
+
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 16:43 PDT
+
+**What:** Land validated stacks and deploy main.
+
+**Why:** Pushed changes and deployed behavior need distinct receipts.
+
+**Current state:** At 16:38 the lead reports main 98702a02 includes sandbox diagnostics, device identity and local-first fixes, checked on the MacBook. The local-first builder is deploying that revision; completion is unreported. Next are sandbox start limit, legacy removal, TODO steering, branch-page fixes and live attention.
+
+**Next step:** Collect deploy completion and smoke/E2E receipts; fix the new setTimeout import-rule violation and continue dependency-ordered landing.
+
+**Open questions for Will:** None; Latitude recovery is tracked separately.
+
+Evidence: user-typed messages and lead text replies script-filtered from session 6253ecf2, 14:43–16:43 PDT; synthetic notifications, tools and compaction summaries excluded. Rulings and queue answers govern over historical briefs, panels, decisions, proposals, TODOs and rules. Implementation ownership retained; Codex curates this note. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 16:33 PDT
+
+**What:** Land validated stacks and deploy the resulting main revision.
+
+**Why:** Queued changes must retain their validation and deployment ordering.
+
+**Current state:** At 16:33 PDT main remains 60ababaa. The lander resumes first after the usage limit; sandbox diagnostics are next, then the tested sandbox start limit and legacy removal. Device identity, local-first, TODO steering, Flows, live attention, issue credentials, subscriptions, coedit and review repairs remain queued according to the 16:29 summary. No subsequent pushed or deployed receipt is reported.
+
+**Next step:** Land each validated stack in dependency order, check for active runs before plan-changing deployment and collect the post-deploy production rerun.
+
+**Open questions for Will:** Latitude network access remains unresolved; tests currently serialize on the MacBook.
+
+Evidence: lead text replies in session 6253ecf2, script-filtered through 16:33 PDT from its latest two hours; automated notifications, tool records and compaction summaries excluded. Rulings and queue answers take precedence over historical briefs. Implementation ownership retained; Codex curates tracker documentation. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 15:54 PDT
+
+**What:** Land validated work continuously on append-only main.
+
+**Why:** Queued fixes must reach main before dependent verification.
+
+**Current state:** At 15:30 the lander resumes after VibeLang misses its window. At 15:50–15:52 durable-effects is on main. Next in order: sandbox diagnostics, device identity, local-first fixes, TODO steering, Dogfood, then remaining work. Queue position is not a landing receipt.
+
+**Next step:** Collect landing receipts in that order and rebase dependents; keep product merge authority with people.
+
+**Open questions for Will:** None newly identified; unresolved questions in the retained history remain open.
+
+Evidence: script-filtered lead text replies in session 6253ecf2, latest approximately two hours through 15:53 PDT. Automated notifications, tool content and compaction summaries excluded. Rulings and queue answers prevail over historical briefs. Implementation ownership retained; Codex maintains these notes. Product receipts are lead-reported; this refresh verifies the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 15:40 PDT
+
+**What:** Land validated queued changes in dependency order.
+
+**Why:** Forwarding commits and resuming a lander do not establish a pushed revision.
+
+**Current state:** At 15:25 Flows and TODO-steering commits are being forwarded. At 15:30 the lead resumes the lander after the VibeLang session misses its window and queues the Dogfood stack. At 15:40 new commit ids are still being batched; the durable-effects subagent remains running after its parent died. The latest explicit pushed revision remains 116ba5fa, reported at 14:52.
+
+**Next step:** Collect the next push and validation receipts; preserve durable-effects dependency ordering for steering and dogfood. Reconcile the VibeLang batch separately.
+
+**Open questions for Will:** None newly identified; existing questions remain in the retained history.
+
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, approximately 13:40–15:40 PDT on 2026-10-21. Automated notifications, relayed agent text, tool records and compaction summaries excluded. Current rulings and queue answers govern over briefs and planning documents. Engineering ownership is retained; Codex curates this tracker update. Product outcomes above are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:54 PDT
+
+**What:** Land finished changes with validation receipts.
+
+**Why:** Queued and built changes are not pushed changes.
+
+**Current state:** At 14:52 the lander reports 18 more commits pushed, main 116ba5fa: two review fixes, previously checked small fixes, opening memory, engine-store cleanup, two-tab conflict fix and refreshed API/build baselines. It holds main for the VibeLang push until at most 15:30 while preparing durable effects.
+
+**Next step:** Record the next pushed batch and checks; durable effects, dogfood and steering remain queued until a push receipt exists.
+
+**Open questions for Will:** None for this repair. Existing pending decisions remain in the retained history.
+
+Evidence: script-extracted user-typed text and lead replies from session 6253ecf2, 12:54–14:54 PDT; automated notifications excluded. Rulings and queue answers govern over historical briefs and proposals. Product receipts are lead-reported; this pass verifies only the maintainer-site build. Implementation owners remain assigned; Codex maintains tracker documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:23 PDT
+
+**What:** Land validated changes on append-only main while preserving concurrent work.
+
+**Why:** Shared landing order and serialized jj operations prevent losing other builders’ work.
+
+**Current state:** At 14:22 the lead pauses new pushes after the current push for the VibeLang session’s nine-commit tooling stack, expected within about 45 minutes and no later than 15:30 PDT. The durable-effects stack remains next and continues through checks. A shared jj mutation lock is added after concurrent reconciliation resurrected discarded commits. These are coordination reports, not receipts that either stack has landed.
+
+**Next step:** Record the VibeLang push, release the hold and land durable effects and dependents in order. Use the shared jj lock; preserve append-only main and collect pushed revisions.
+
+**Open questions for Will:** None newly identified; existing decisions remain with their owning notes.
+
+Evidence: lead text replies at 14:20–14:23 PDT on 2026-10-21, extracted by script from session 6253ecf2 within its latest approximately two hours (12:23–14:23 PDT). Automated notifications, tool blocks and relayed agent messages excluded. Current rulings and Will’s queue answers take precedence over historical briefs and designs. Product results are lead-reported; this tracker verifies the site build. Engineering ownership is retained; Codex maintains these notes.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:04 PDT
+
+**What:** Land tested work continuously without disturbing concurrent edits.
+
+**Why:** Deployment depends on the finished repairs reaching append-only main in order.
+
+**Current state:** The migration fix is on main as 78407fce and deploying at 10:55. At 11:00 the second production E2E piece is on main as c8df75af7e9e. The lander checks factory, first four remote-flow fixes and sandbox fixes in that order. Six later remote-flow commits need a design merge with the harness before landing. Decision ids are now 0025 review queue, 0026 TODO run watching and 0027 opening memory.
+
+**Next step:** Finish the ordered landings, resolve the harness contract with its owners and retain pushed-revision and deployment receipts. Serialize jj operations; the earlier shared-checkout repair remains history.
+
+**Open questions for Will:** None newly identified. Repository access, Neon and review routing are settled; Telegram setup is discretionary and must not be resurfaced.
+
+Evidence: script-filtered human text and lead replies in session 6253ecf2, approximately 09:03–11:03 PDT; current rulings and queue answers take precedence over briefs, panel designs and older documentation. Product receipts are lead-reported; Codex curates documentation and validates only the maintainer-site build. Existing engineering ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:44 PDT
+
+**What:** Land finished work continuously on append-only main.
+
+**Why:** Tested fixes must reach deployment without reverting other agents’ changes.
+
+**Current state:** Latest named pushed revision remains ec3f1bedd2a6. At 10:35 the migration repair gets first landing priority, followed by remote-flow and sandbox fixes; docs commits also await landing. At 10:42 the lead reports a concurrent-jj checkout snag repaired and 21 touched files restored from backup; queue answers remain intact. No newer push/deploy receipt is reported.
+
+**Next step:** Serialize landing operations, preserve concurrent edits, land the migration fix first and collect pushed revision and deployment receipts.
+
+**Open questions for Will:** None. Existing access, Neon, Telegram and review-routing decisions are settled.
+
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2 through 10:43 PDT; current rulings and queue answers through 10:31 PDT. Product results are lead-reported; this tracker validates the site build only. Implementation ownership is unchanged; Codex curates these notes. Later evidence supersedes retained history.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 09:54 PDT
+
+**What:** Land tested work continuously on append-only main.
+
+**Why:** Finished workspace changes must reach the shared revision without restoring stale code.
+
+**Current state:** At 09:46 PDT the lead reports the carve lander pushed eight commits through ec3f1bedd2a6 and restored 233 stale files that would undo landed work. The workspace lander is still pushing. Factory’s five commits are handed off at 09:51. No later push or production deployment receipt is reported.
+
+**Next step:** Finish workspace landing and factory handoff. New database migrations must be numbered 0036 or higher because lower numbers are skipped after the highest applied migration; renumber at landing.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, 07:53–09:53 PDT, session 6253ecf2; automated requests, summaries and agent-message wrappers excluded. Rulings and queue answers take precedence over briefs and older docs. Product checks are lead-reported; this refresh validates only the site build. Execution owners retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 09:45 PDT
+
+**What:** Land finished work and reconcile the shared checkout on append-only main.
+
+**Why:** Will asked for all finished work committed, rebased and pushed.
+
+**Current state:** At 09:42 PDT the lead reports the carve lander pushed and main is ec3f1bedd2a6. This supersedes the earlier statement that main had not moved from cf6bd457. The reply does not attribute each workspace batch to the push, confirm the second lander finished, or establish deployment.
+
+**Next step:** Collect path/batch-specific landing receipts, reconcile any remaining in-flight work, and deploy tested revisions serially. Do not infer that every queued workspace commit landed from the carve push alone.
+
+**Open questions for Will:** None; no new decision is needed.
+
+Evidence: script-extracted human text and lead text replies from session 6253ecf2, approximately 07:43–09:43 PDT on 2026-10-21; compacted summaries, local-command output, automated notifications and tool blocks excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product results are reported evidence; this tracker runs only the maintainer-site build. Existing execution owners are retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 09:17 PDT
 

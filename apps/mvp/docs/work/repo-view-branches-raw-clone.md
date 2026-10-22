@@ -1,11 +1,62 @@
 ---
 title: Repo view extras (branch picker, branch count, raw, copy file, clone menu)
-status: done
+status: in-progress
 area: app
-owner: repo browsing builder (lead's brief, 2026-10-20 18:22); the first-arrival page, clone in the feed, reclaim mark, Markdown and HTML views, generated files
-updated: 2026-10-21 01:05 PDT
+owner: Codex Sol repository-page repairs; separate Claude journal builder
+updated: 2026-10-21 14:54 PDT
 links: [repo-clone-reclaim.md, generated-file-provenance.md, review-round-4.md, old-app-feature-gaps.md, repo-clone-and-view.md, repo-open-states.md, repo-view-package-split.md, navigate-flow.md, pull-request-list-and-tabs.md, sandboxes.md, command-palette.md, land-to-main.md, e2e-suite-and-gifs.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../features/repo.md, slash-commands.md, fable-review-2-fixes.md, flows-and-agent.md, agent-jev.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 14:54 PDT
+
+**What:** Repair repository file views and missing-repository feedback.
+
+**Why:** A missing repository must promptly say Not found.
+
+**Current state:** At 14:51 straightforward selector, immediate Not found header and refusal tests move to Codex Sol. The panel separately finds a deployment-wide journal lock delaying missing-repository clone outcomes 42–198 seconds; that engine repair has its own owner.
+
+**Next step:** Fix browser feedback and HTML/raw regressions; coordinate journal contention repair without treating a header fix as clone completion.
+
+**Open questions for Will:** None for this repair. Existing pending decisions remain in the retained history.
+
+Evidence: script-extracted user-typed text and lead replies from session 6253ecf2, 12:54–14:54 PDT; automated notifications excluded. Rulings and queue answers govern over historical briefs and proposals. Product receipts are lead-reported; this pass verifies only the maintainer-site build. Implementation owners remain assigned; Codex maintains tracker documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:05 PDT
+
+**What:** Repair repository HTML and raw file viewing.
+
+**Why:** Repository browsing must work on the deployed app.
+
+**Current state:** At 14:01 PDT a four-model repository-pages panel owns broken HTML/raw views and missing Not found feedback. At 14:03 three confirmed review findings are routed to that panel. Prior approved recordings remain historical evidence.
+
+**Next step:** Complete panel synthesis and build, retain raw/HTML regressions, and prove browsing locally and live.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2 for approximately 12:04–14:04 PDT on 2026-10-21; synthetic notifications and tool records excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the maintainer-site build only. Engineering owners remain responsible; Codex owns this documentation reconciliation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 13:38 PDT
+
+**What:** Keep branch browsing, raw and HTML file views working.
+
+**Why:** A prior approved recording does not establish that the current production view works.
+
+**Current state:** The 13:15 PDT production report identifies failing HTML file views. Reopened from done pending the harness rerun and feature repair; previous approval and implementation receipts remain below.
+
+**Next step:** Confirm the HTML failure after the harness fix; retain its regression and prove file viewing locally and live before closing again.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies extracted by script from session 6253ecf2, 11:37–13:37 PDT on 2026-10-21. Automated notifications and tool records excluded. Rulings and queue answers override historical briefs, panel designs, decisions, proposals, TODOs and rules. Product results are lead-reported. Existing execution owners retained; Codex owns tracker reconciliation only.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 01:05 PDT
 

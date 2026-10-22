@@ -1,4 +1,4 @@
-# 0022: The review queue: one person's queue of everything that needs their judgment
+# 0031: The review queue: one person's queue of everything that needs their judgment
 
 Status: approved with changes (Will, 2026-10-21 01:14; see [Will's answer](#wills-answer)). Claude Opus and Codex Sol designed independently, and Opus merged the two (PROC-6); [Where the drafts disagreed](#where-the-drafts-disagreed) records each difference. Mock: [design/review-queue/review-queue.html](../design/review-queue/review-queue.html). The curator's general prompt: [design/review-queue/CURATOR-PROMPT.md](../design/review-queue/CURATOR-PROMPT.md).
 

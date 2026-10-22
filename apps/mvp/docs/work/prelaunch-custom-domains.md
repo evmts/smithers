@@ -1,14 +1,48 @@
 ---
 title: Prelaunch — custom domains, Vercel-style
-status: todo
-area: hosting
-owner: none
-updated: 2026-10-21
+status: in-progress
+area: infra
+owner: Opus custom-domains builder running in isolated mini repository; Codex tracker curates note
+updated: 2026-10-21 20:55 PDT
 links:
   - ../rulings.md
   - prelaunch-vibelang-on-smithers.md
   - ../infrastructure.md
 ---
+
+## Tracker reconciliation — 2026-10-21 20:55 PDT
+
+**What:** Allow Maintainers to configure and verify custom domains with TLS.
+
+**Why:** Provide the hosting controls needed by the VibeLang factory.
+
+**Current state:** At 20:54 the lead reports the custom-domains builder running on the mini. The background-login blocker is superseded for this builder; no implemented or production-proven domain journey is reported.
+
+**Next step:** Implement and prove add, DNS verification, TLS state and removal through injected services and durable flows, with server-enforced Maintainer access.
+
+**Open questions for Will:** None newly identified.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest two hours through 20:55 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers govern over historical decisions and proposals. Available recovered briefs were read; wiped scratch files are not missing work. Product results are lead-reported; Codex curates documentation and runs the maintainer-site build. Previous implementation ownership is retained below.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Let Maintainers configure and verify custom domains with TLS.
+
+**Why:** VibeLang needs Vercel-style hosting controls.
+
+**Current state:** At 20:46 an Opus builder has an isolated mini clone and brief but awaits background Claude authentication. The feature is assigned, not implemented or production-proven.
+
+**Next step:** Start the prepared builder; implement the approved Maintainer-only domain journey through injected services and durable flows.
+
+**Open questions for Will:** No product question yet; mini background login is required.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## What
 A repository owner adds their own domain to a Smithers app in Settings, the way Vercel does it:

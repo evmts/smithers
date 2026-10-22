@@ -1,11 +1,94 @@
 ---
 title: Token-spend alerts
-status: blocked
+status: in-progress
 area: infra
 owner: spend alert channels builder (Claude Opus)
-updated: 2026-10-21 09:24 PDT
+updated: 2026-10-21 14:17 PDT
 links: [repo-follow-ups.md, ../todo.md, sandbox-budgets.md, ../observability.md, ../decisions/0008-auth.md, code-storage-spend-caps.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, sandboxes.md, notifications-and-live-work.md, dev-stack-hygiene.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 14:17 PDT
+
+**What:** Preserve spend visibility and recover production model access within its configured guard.
+
+**Why:** The daily guard now blocks real production agent and summary calls.
+
+**Current state:** At 14:15 the lead reports 1,004,358 tokens used against the default 1M daily cap, mainly by production tests. Production calls are refused. A 5M deployment-config cap is being deployed; no successful post-change call is reported. Alerts remain required on every spend. Earlier completed alert flows do not establish all destination/deduplication cases.
+
+**Next step:** Track model-budget-recovery.md for deployment and successful-call receipts; finish alert records/toasts and deduplication validation.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2, approximately 12:16–14:16 PDT on 2026-10-21; automated notifications, relayed agent reports and tool blocks excluded. Rulings and queue answers prevail over historical briefs/designs and docs. Product receipts are lead-reported; tracker verification is the maintainer-site build. Implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 12:46 PDT
+
+**What:** Prove spend records, configurable alerts and safe daily model budgets.
+
+**Why:** AUTH-4 requires spend visibility and a budget that holds on the first spend of each UTC day.
+
+**Current state:** At 12:28 the daily-budget fix landed in b1bab88a; at 12:36 the lead reports that revision deployed at 12:35 and five spend-alert flows completed in production. These are flow-completion receipts; separate proof of every email/Telegram destination, toast and deduplication boundary is not supplied by those counts.
+
+**Next step:** Retain first-spend/day-boundary regressions and completed alert receipts; finish destination, browser/server spend and deduplication validation.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 10:44–12:44 PDT on 2026-10-21, session 6253ecf2; synthetic notifications, relayed agents and tool blocks excluded. Rulings and queue answers govern over shared briefs/designs and historical decisions, proposals, TODOs and rules. Product receipts are lead-reported; Codex curates documentation and validates the site build. Existing execution ownership is retained.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 12:28 PDT
+
+**What:** Prove spend records, in-app alerts and safe daily model budgets.
+
+**Why:** AUTH-4 requires spend visibility; daily limits must hold on the first spend too.
+
+**Current state:** At 12:06 three spend alerts were running without retries, with no completed alert receipt. At 12:09 the daily-budget fix passes and is queued to land: the first spend of a UTC day previously could exceed the whole budget. Telegram remains optional at Will’s discretion.
+
+**Next step:** Land and verify budget boundaries, then retain completed alert, toast and deduplication receipts for browser and server model spend.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 10:28–12:28 PDT, session 6253ecf2; rulings and queue answers govern over historical briefs, designs, decisions, proposals, TODOs and rules. Product results are lead-reported. Existing engineering ownership is retained; Codex curates tracker documentation and validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:15 PDT
+
+**What:** Record any model-spend alert and show it to Admins, with optional configured external channels.
+
+**Why:** AUTH-4 requires visible spend alerts while there are no users.
+
+**Current state:** Remote-flow recovery still blocks production proof. At 10:09 PDT Will explicitly deferred Telegram setup until he chooses; the lead removed the queue item permanently and changed production acceptance to an alert record plus in-app toast. Telegram setup is not a blocker. Production email delivery has no sending key according to the lead. No repaired production alert receipt is reported.
+
+**Next step:** After host recovery, prove a real alert record, in-app toast and deduplication, including server-only model spend. External channels remain optional; never queue or remind Will about Telegram setup.
+
+**Open questions for Will:** None. AUTH-4 settles Telegram as Will’s own discretionary later action.
+
+Evidence: user-typed messages and lead text replies extracted by script from session 6253ecf2, approximately 08:14–10:14 PDT on 2026-10-21; tool records, automated notifications, local-command output and continuation summaries excluded. Current rulings (ARCH-4, TEST-6, AUTH-4, ARCH-14, PROC-20) and queue answers take precedence over shared briefs, panel designs, decisions, proposals, TODOs and rules. Execution owners are retained; Codex curates tracker documentation only. Product validation is lead-reported; this refresh runs only the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:04 PDT
+
+**What:** Deliver spend alerts from both browser and server model calls.
+
+**Why:** Spend visibility must reach an Admin outside the app.
+
+**Current state:** Production remains blocked by remote-flow failure. At 10:02 PDT the lead reports no saved Telegram destination, so alerts cannot leave the app until an Admin configures it. Server-side model calls initiating their own alert window are in the production-flows repair scope; no real delivery receipt exists.
+
+**Next step:** Finish host and server-call alert repairs, then verify configured channel delivery and deduplication in production. Preserve email provisioning follow-up from earlier history.
+
+**Open questions for Will:** None. Answered: Will, 10:09 on 2026-10-21, on the queued Telegram setup: "I'll add it when I want telegram just remove it from the list as a do later thing I will do whenever I feel like it". Removed from the queue; no reminder.
+
+Evidence: script-filtered user-typed text and lead text replies in session 6253ecf2, latest approximately two hours through 10:03 PDT; automated notifications, compaction summaries and tools excluded. Current rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates only the site build. Execution ownership retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 09:24 PDT
 
@@ -213,3 +296,5 @@ Until 13:22 on 2026-10-20 the next step was: pick the alert channel, then wire t
 ## Questions for Will
 
 - Answered about 18:40 on 2026-10-20: email and Telegram, configurable. Built as Settings' alert channels.
+- Answered 10:09 on 2026-10-21, on saving his Telegram chat in production Settings: "I'll add it when I want telegram just remove it from the list as a do later thing I will do whenever I feel like it". His own later step: never queued or reminded again.
+

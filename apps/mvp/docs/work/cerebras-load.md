@@ -1,11 +1,43 @@
 ---
 title: Cerebras capacity load test
-status: done
+status: in-progress
 area: infra
 owner: codex-cerebras-load
-updated: 2026-10-20
+updated: 2026-10-21 14:17 PDT
 links: [../../bench/cerebras-load/RESULTS.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 14:17 PDT
+
+**What:** Retain measured capacity evidence and bring benchmark orchestration under the durable engine.
+
+**Why:** DUR-1 and DUR-2 apply to experiments too.
+
+**Current state:** The completed concurrency-10 experiment remains valid historical evidence (542 requests, 199 successes, 343 provider 429s). At 14:08 review finds its ramp orchestration runs outside a durable flow. The lead holds this repair for the fast-inference owner; no fix is reported. Capacity-owner evidence in cerebras-rate-limits.md supersedes the old brief’s unsent-email and broken-transport claims.
+
+**Next step:** Have the existing fast-inference owner convert orchestration to Smithers flow steps and verify restart/spend accounting without repeating paid tests merely for the tracker.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2, approximately 12:16–14:16 PDT on 2026-10-21; automated notifications, relayed agent reports and tool blocks excluded. Rulings and queue answers prevail over historical briefs/designs and docs. Product receipts are lead-reported; tracker verification is the maintainer-site build. Implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 12:46 PDT
+
+**What:** Retain the completed bounded Cerebras load experiment and its limitations.
+
+**Why:** Capacity decisions need measured provider limits, separate from sales approval or backup-provider proof.
+
+**Current state:** The HTTP/1.1 repair and sustained concurrency-10 repeat are complete: 542 requests in 60.45 seconds, 199 successes, 343 provider 429s and zero other errors; escalation stopped. The newer capacity-owner receipt at 12:40 in [cerebras-rate-limits.md](cerebras-rate-limits.md) reports the approved sales request sent and a private SENT receipt. This supersedes this note’s older unsent-draft/Arc blocker. No capacity increase or proven backup is established. Will’s 12:29 request adds backup research because Cerebras denied him before; the existing capacity workstream already owns that scope.
+
+**Next step:** Preserve raw experiment receipts and limitations. Follow capacity negotiation, provider comparison, capped load tests, real evals, role-swap proof and durable failover design in the active capacity note; do not duplicate its owner’s campaign or rerun the completed transport repair.
+
+**Open questions for Will:** No new request from this completed experiment; paid signup and terms decisions remain with the active campaign when needed.
+
+Evidence: existing load/transport receipts, script-filtered Will/lead replies through 12:44 PDT, FAST-INFERENCE-OWNER-BRIEF.md and the newer capacity owner’s 12:40 tracker receipt. The brief’s “HTTP/2 still broken” and “request unsent” claims are superseded. The recently updated owner note is left untouched. Current rulings and queue answers govern; Codex curates documentation only.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 21:04 PDT
 
@@ -94,3 +126,4 @@ Will chose load-testing before requesting capacity. Build and execute a capped S
 Library catalog: @smthrs/model and @smthrs/model-host for the endpoint's provider route; @smthrs/flow for sealed probe steps; @smthrs/platform-node for SQLite flow evidence.
 
 Completed: capped benchmark, live ramp and burst diagnostics, retained raw evidence, capacity scenarios and unsent draft. Sustained capacity remains unestablished because the SDK fetch transport failed with ERR_HTTP2_INVALID_SESSION; repeat after a transport fix. No further live calls within this campaign.
+

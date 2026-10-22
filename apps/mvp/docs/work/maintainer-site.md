@@ -1,11 +1,79 @@
 ---
 title: Maintainer site and work board
-status: done
+status: in-progress
 area: process
-owner: maintainer site builder and tracker curator
-updated: 2026-10-21 09:17 PDT
+owner: Codex tracker curator; engineering owners remain in their notes
+updated: 2026-10-21 21:10 PDT
 links: [will-decision-queue.md, dev-stack-hygiene.md, ../todo.md, ../../../../README.md, design-questions.md, decisions-for-will.md, old-app-feature-gaps.md, fable-review-2-fixes.md, self-host-install.md, web-page-flow.md, model-endpoint.md, docs-truth-pass.md, ../rulings.md, everything-is-a-plugin.md, chaptered-review-videos.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 21:10 PDT
+
+**What:** Keep the maintainer work board current.
+
+**Why:** Keep progress and remaining evidence accurate.
+
+**Current state:** Codex reconciled the 19:06–21:06 PDT transcript window, current rulings, queue answers, surviving briefs/reports, decisions, proposals, TODOs and rules. Added stale-workspace data-loss and cloud-data-preservation workstreams; retained history and engineering owners. Wiped scratch files are not missing work.
+
+**Next step:** Run the requested site build and save its actual outcome in the five-line report.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered lead replies and current rulings; this refresh verifies only the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:35 PDT
+
+**What:** Keep one current note per workstream and rebuild the maintainer site.
+
+**Why:** The maintainer app remains the work tracker; its wiki migration stays deferred.
+
+**Current state:** Reconciled the latest two transcript hours with rulings, queue answers, shared feature/host/panel briefs, decisions, proposals, TODOs and rules. Preserved earlier history and engineering owners; added private-repository staging and updated production, capacity, review and repair evidence.
+
+**Next step:** Run the requested site build and write its real outcome to the five-line scratchpad report.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 12:34–14:34 PDT on 2026-10-21, session 6253ecf2. Automated notifications, tool records and generated summaries excluded. Current rulings and queue answers prevail over historical briefs/designs and planning docs. Product receipts are lead-reported; this pass verifies the maintainer-site build only. Existing engineering ownership retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 13:16 PDT
+
+**What:** Reconcile one evidence-based note per workstream and rebuild the maintainer site.
+
+**Why:** The maintainer app is the current work tracker.
+
+**Current state:** Codex reconciled the approximately 11:16–13:16 PDT conversation window, current rulings and queue answers, shared briefs/designs and repository planning docs. History and existing implementation ownership are retained. The latest update adds the Pierre survey, production matrix failures and a real dogfood issue receipt.
+
+**Next step:** Run the requested build and retain its actual result in the five-line scratchpad report.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, 11:16–13:16 PDT, session 6253ecf2; current rulings and queue answers override older briefs and docs. Product receipts are lead-reported; this refresh validates the maintainer-site build only. Execution owners remain unchanged; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:54 PDT
+
+**What:** Keep one evidence-based work note per workstream and rebuild the maintainer site.
+
+**Why:** The existing board remains current while its future wiki migration is deferred by PLUGIN-5.
+
+**Current state:** This pass reconciles approximately 09:54–11:54 PDT of script-filtered user text and lead replies, current rulings, queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. New evidence covers the 11:47 deployment, pending production validation, revised subscription decisions, review fixes and new security/startup work. Historical notes remain intact.
+
+**Next step:** Run the requested site build, retain its actual result and write the five-line report in the designated scratchpad. Continue tracking completion receipts rather than deploy or handoff acknowledgments.
+
+**Open questions for Will:** None for tracker upkeep.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 09:54–11:54 PDT; current rulings and queue answers take precedence over historical briefs, decisions, proposals, TODOs and rules. Product results are lead-reported; this tracker validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 09:17 PDT
 

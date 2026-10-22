@@ -2,10 +2,61 @@
 title: Debugging and monitoring flows (run list, run page, retry, cancel, resume)
 status: in-progress
 area: app
-owner: flow UI builder; Opus designs visual follow-up
-updated: 2026-10-20
+owner: Flows repair builder; live run-page builder
+updated: 2026-10-21 21:44 PDT
 links: [review-round-4.md, land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, flow-authoring.md, agent-status.md, notifications-and-live-work.md, durable-browser-engine.md, cloudflare-flow-host.md, observability.md, timeline-rail.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0009-notifications-and-live-work.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../proposals/mvp-gaps.md, dev-stack-hygiene.md, review-round-4-p3-cleanup.md, smithers-playground.md, prompt-flows-are-code-flows.md, flow-visual-ui.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 21:44 PDT
+
+**What:** Inspect, stop and retry real flow runs.
+
+**Why:** Run controls must reflect real execution outcomes.
+
+**Current state:** At 21:39 the full 15-commit Flows repair chain, including retry pinning, is with the lander. Reported checks: 359 app tests, 39 harness tests, 16 UI tests and clean typecheck. Docs validation is running; production flows.spec.ts awaits landing and deployment.
+
+**Next step:** Collect docs and landing receipts, deploy, then run the production control journeys on smithers.sh.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered recent human text and lead replies through 21:43 PDT in session 6253ecf2, current rulings and queue answers; surviving reports where cited. The supplied continuation path is absent; post-reboot replies are in the available transcript. Product results are reported receipts, not rerun here. Existing execution owner retained; Codex curates documentation. Wiped scratch files are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:54 PDT
+
+**What:** Inspect and control real flow runs.
+
+**Why:** Outdated test selectors must not obscure real control behavior.
+
+**Current state:** At 14:41 the panel attributes both production Flows timeouts to the harness; drafting/saving/running already reach Done. The live run-page fix remains in final checks. No new complete Stop/Retry production receipt is reported.
+
+**Next step:** Finish run-page checks and landing; update graph selectors and entry route, then prove Stop/Retry against real outcomes.
+
+**Open questions for Will:** None for this repair. Existing pending decisions remain in the retained history.
+
+Evidence: script-extracted user-typed text and lead replies from session 6253ecf2, 12:54–14:54 PDT; automated notifications excluded. Rulings and queue answers govern over historical briefs and proposals. Product receipts are lead-reported; this pass verifies only the maintainer-site build. Implementation owners remain assigned; Codex maintains tracker documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:05 PDT
+
+**What:** Inspect and control runs through the shared flow UI.
+
+**Why:** A graph alone does not prove Stop and Retry work.
+
+**Current state:** At 14:01 PDT the Flows repair panel owns production run/stop/retry timeouts as well as authoring failures. Six confirmed review findings are held for its builder at 14:03. Earlier graph completion is retained below; control journeys remain failing.
+
+**Next step:** Coordinate with flow-authoring.md; repair and prove run controls locally and in production with real journal outcomes.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2 for approximately 12:04–14:04 PDT on 2026-10-21; synthetic notifications and tool records excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the maintainer-site build only. Engineering owners remain responsible; Codex owns this documentation reconciliation.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 19:56 PDT
 

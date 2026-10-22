@@ -1,11 +1,129 @@
 ---
 title: ModelStep, the durable model call
-status: done
+status: in-progress
 area: sdk
-owner: none; review round 4's R4-28 and R4-29 fixed by the SDK batch 2 agent, reported 12:52:09 on 2026-10-20. Until 12:52: W3 agent-package agent (finished); its leftovers closed by the SDK defects agent at 22:47
-updated: 2026-10-20
+owner: durable-effects builder assigned by lead; earlier implementation ownership retained in history
+updated: 2026-10-21 22:43 PDT
 links: [agent-jev.md, land-to-main.md, ../features/chat.md, ../rules.md, ../../../../docs/libraries.md, durable-answering.md, model-host-effect-boundary.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, review-round-4.md, api-baseline-rerecord.md, agent-status.md, code-reviews.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 22:43 PDT
+
+**What:** Keep model retries in the durable engine.
+
+**Why:** Preserve attempts and usage across recovery.
+
+**Current state:** At 22:36 the lead reports the change complete and handed to the lander: 914 flow tests and 2,114 agent tests pass with full coverage. A pre-existing agent failure has a separate queued fix. No landing receipt for this change yet.
+
+**Next step:** Obtain landing and recovery receipts on the deployed revision.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered recent human messages and lead text replies in 6253ecf2, through 22:43 PDT; the supplied continuation path is absent, with continuation-era text in the available session. Current rulings and queue answers prevail. Existing execution ownership retained; Codex curates this note. Reported product receipts were not rerun here. Wiped briefs are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 21:24 PDT
+
+**What:** Keep model retries in the durable engine with stable identity and usage.
+
+**Why:** Recovery must preserve attempts and prompt-cache behavior.
+
+**Current state:** At 21:22 the retry change is rebased without conflicts onto current main. The flow suite passes 914/914 with full coverage; agent suite is rerunning and docs still await completion. A missing-package Latitude slot failed an earlier attempt and has its own runner repair.
+
+**Next step:** Collect agent/docs checks, hand off the validated commit and obtain landing and recovery receipts.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies in the latest approximately two hours across both requested transcript paths; continuation path is absent, but continuation-era replies appear in 6253ecf2. Current rulings and queue answers prevail. Surviving briefs/reports used where cited; wiped scratch files are not missing work. Execution ownership retained; Codex curates this note. Product checks are reported receipts, not rerun here.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 21:10 PDT
+
+**What:** Keep model retries in the durable engine.
+
+**Why:** Recovery must retain attempt identity and usage.
+
+**Current state:** Tests moved to Latitude after the MacBook lock delay. At 21:02 the lead reports 914/914 flow tests and full coverage; agent tests and docs still running.
+
+**Next step:** Collect remaining checks, hand off and obtain landing/recovery receipts.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies, 19:06–21:06 PDT; current rulings and queue answers through 21:06; surviving briefs and reports. Product results are reported receipts, not rerun here. Implementation ownership retained; Codex curates documentation. Wiped scratch files are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+
+**What:** Persist model-call retries through the durable engine.
+
+**Why:** Recovery must retain attempts, usage and stable action identities.
+
+**Current state:** At 20:30 the lead reports the retry change rebased onto main and running its full tests on the MacBook. Passing suites, the final commit and a landing receipt remain unreported. The earlier 19:00 pause is superseded by resumed work.
+
+**Next step:** Collect the suite results, fix failures, commit and hand off to the lander; prove restart and failed-attempt accounting.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 17:14 PDT
+
+**What:** Persist model-call retry state in the durable engine.
+
+**Why:** Recovery must preserve attempts, usage and step identities.
+
+**Current state:** At 17:10 plan-core owns three replacement commits for durable-effects’ final commit. The old final commit is dropped; no replacement landing or completed full validation is reported.
+
+**Next step:** Finish replacement checks after the 19:00 architecture pause, land and prove retry recovery.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, approximately 15:14–17:14 PDT. Notifications, relayed agents, tools and compaction summaries excluded. Rulings and queue answers supersede older briefs/designs and docs. Execution owner retained; Codex curates the tracker only. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 16:33 PDT
+
+**What:** Move model-call retry state into the durable engine.
+
+**Why:** Restart must preserve retry counts, failed-attempt usage and recorded-key replay.
+
+**Current state:** At 16:26–16:29 PDT the model-call retry change is written but unproven: its full test run waits behind the lander’s MacBook test lock. The lead also assigns the plan-core builder the rebase of durable-effects’ final commit onto action-key versioning. No passing test or landing receipt for this last retry piece is reported.
+
+**Next step:** Complete the queued suite, repair workspace state, commit and hand off to the lander; retain old-key replay and restart regressions.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies in session 6253ecf2, script-filtered through 16:33 PDT from its latest two hours; automated notifications, tool records and compaction summaries excluded. Rulings and queue answers take precedence over historical briefs. Implementation ownership retained; Codex curates tracker documentation. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:05 PDT
+
+**What:** Keep model attempts and sealed results durable across restart and upgrades.
+
+**Why:** DUR-2 requires engine-owned retry state; persisted history must remain replayable.
+
+**Current state:** At 14:03 PDT code review confirms model retries outside the engine lose retry counts and failed-attempt token usage after restart. Changing the encoding of finished-step keys would also break replay of recorded results. Both findings go to the durable-effects builder. Reopened from done; no fix or landing receipt exists.
+
+**Next step:** Repair retry/usage persistence and retain old-key replay compatibility with restart and recorded-history regressions; coordinate durable-external-effects.md.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2 for approximately 12:04–14:04 PDT on 2026-10-21; synthetic notifications and tool records excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the maintainer-site build only. Engineering owners remain responsible; Codex owns this documentation reconciliation.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

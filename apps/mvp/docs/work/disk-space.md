@@ -3,9 +3,160 @@ title: Free disk on the MacBook for the agent fleet
 status: in-progress
 area: infra
 owner: cleanup coordinator; lead owns deferred maintenance
-updated: 2026-10-21 04:44 PDT
+updated: 2026-10-21 16:53 PDT
 links: [dev-stack-hygiene.md, flows-root-platform-neutral.md, cloudflare-flow-host.md, integrations-effect-httpclient.md, flows-and-agent.md, agent-ui-rendering.md, sdk-test-reds.md, b1-follow-ups.md, second-build-machine.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 16:53 PDT
+
+**What:** Keep working disk available without losing active work.
+
+**Why:** Concurrent installs and jj operation history repeatedly exhaust the MacBook.
+
+**Current state:** At 16:48 free disk fell to 4 GiB. At 16:51 the lead reports 12 GiB free after deleting e2e sweep videos and retiring four idle workspaces. The earlier 43 GB operation-history reclamation remains deferred until agents stop; this cleanup is not evidence that it happened.
+
+**Next step:** Monitor free space, retire only verified finished workspaces and reproducible caches, and protect active changes before any history reclamation.
+
+**Open questions for Will:** None newly identified; earlier unresolved items remain in the retained history.
+
+Evidence: lead text replies, script-filtered from session 6253ecf2 for 14:53–16:53 PDT; tool content, automated messages, relayed agent reports and compaction summaries excluded. Rulings and queue answers take precedence over historical briefs and plans. Implementation owners and statuses retained; Codex curates this update. Product checks are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 16:33 PDT
+
+**What:** Keep active work safe while recovering reproducible disk use.
+
+**Why:** Installs and shared jj operation history are consuming space during concurrent work.
+
+**Current state:** At 16:33 PDT the lead reports 8.4 GiB free and falling, with cleanup planned below 5 GiB. The earlier 43 GB of operation history is not reclaimed: the lead defers that until agents stop to avoid losing uncommitted work. This supersedes the earlier 10–13 GiB snapshot.
+
+**Next step:** Monitor free space, remove only safe reproducible caches from completed jobs, and defer operation-history reclamation until active work is protected.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies in session 6253ecf2, script-filtered through 16:33 PDT from its latest two hours; automated notifications, tool records and compaction summaries excluded. Rulings and queue answers take precedence over historical briefs. Implementation ownership retained; Codex curates tracker documentation. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 15:54 PDT
+
+**What:** Keep disk available without risking active work.
+
+**Why:** Disk exhaustion interrupts the agent fleet.
+
+**Current state:** At 15:52 the lead reports recovery from 0.9 GiB to 13 GiB free. Shared jj operation history occupies 43 GB and grows about 0.7 GB/hour; a change reportedly slows growth by 13%. Reclaiming that history is deferred until all agents stop.
+
+**Next step:** Monitor capacity and retire only finished workspaces; defer history reclamation until uncommitted work is safe.
+
+**Open questions for Will:** None newly identified; unresolved questions in the retained history remain open.
+
+Evidence: script-filtered lead text replies in session 6253ecf2, latest approximately two hours through 15:53 PDT. Automated notifications, tool content and compaction summaries excluded. Rulings and queue answers prevail over historical briefs. Implementation ownership retained; Codex maintains these notes. Product receipts are lead-reported; this refresh verifies the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 15:40 PDT
+
+**What:** Keep disk available for active work.
+
+**Why:** Low disk blocks builders, checks and landing.
+
+**Current state:** At 15:20 the lead reports 4.6 GiB free; at 15:33 capacity is critical, below 1 GiB. Reproducible caches are being cleared. At 15:40 reducing the jj repository’s per-operation view is planned; no recovered-capacity receipt is reported. Earlier 11 GB recovery is historical.
+
+**Next step:** Collect a fresh capacity receipt after cleanup, retire only finished workspaces, and keep heavy checks on Latitude.
+
+**Open questions for Will:** None newly identified; existing questions remain in the retained history.
+
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, approximately 13:40–15:40 PDT on 2026-10-21. Automated notifications, relayed agent text, tool records and compaction summaries excluded. Current rulings and queue answers govern over briefs and planning documents. Engineering ownership is retained; Codex curates this tracker update. Product outcomes above are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:17 PDT
+
+**What:** Keep disk available without disrupting active builders.
+
+**Why:** Repeated workspace growth blocks checks.
+
+**Current state:** At 14:10 free disk fell to 6 GB. At 14:15 the lead reports retiring eight finished workspaces and recovering to 11 GB. This is a dated snapshot, not permanent leak resolution. The earlier active-builder dependency removal remains recorded below.
+
+**Next step:** Monitor capacity, retire only workspaces whose owning agents have finished, and use Latitude test capacity.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2, approximately 12:16–14:16 PDT on 2026-10-21; automated notifications, relayed agent reports and tool blocks excluded. Rulings and queue answers prevail over historical briefs/designs and docs. Product receipts are lead-reported; tracker verification is the maintainer-site build. Implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 13:24 PDT
+
+**What:** Keep disk available without disrupting active builders.
+
+**Why:** Low disk blocks checks; an idle process does not mean its owning agent has finished.
+
+**Current state:** At 13:18 PDT the lead reports 9.7 GB free after clearing dependencies in one idle workspace; eleven other workspaces were in use. At 13:22 it reports cleanup removed the live run-page builder’s dependencies between steps. Source edits survived and dependencies were reinstalled. The lead now checks that the owning agent has finished before cleanup.
+
+**Next step:** Preserve active agents’ workspaces, monitor the below-6-GB alert, and complete checks deferred by disk pressure.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered lead text replies in session 6253ecf2, latest two-hour window through 13:23 PDT; rulings and queue answers take precedence. Execution ownership retained; Codex curates tracker documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 13:16 PDT
+
+**What:** Keep enough disk available for checks while moving heavy work to approved hosts.
+
+**Why:** Low disk blocks docs:check and concurrent builders.
+
+**Current state:** At 13:14 PDT the lead reports 4.9 GB free, below docs:check’s 5 GB requirement. At 13:15 it reports 3.5 GB of old scratch recordings/temp files removed and 9.5 GB free, with an alert below 6 GB. These are dated reports, not a new disk measurement or proof that deferred checks ran.
+
+**Next step:** Monitor capacity and complete deferred checks after recovery; preserve active work and use remote build capacity.
+
+**Open questions for Will:** None newly reported.
+
+Evidence: script-filtered user-typed text and lead replies, 11:16–13:16 PDT, session 6253ecf2; current rulings and queue answers override older briefs and docs. Product receipts are lead-reported; this refresh validates the maintainer-site build only. Execution owners remain unchanged; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 12:04 PDT
+
+**What:** Keep enough MacBook disk for active builders and tests.
+
+**Why:** Dependency installs and leaked temporary outputs repeatedly consume recovered space.
+
+**Current state:** At 12:03 PDT the lead reports 9.5 GB free as builders install dependencies and an alert configured below 6 GB. Earlier cleanup recovered 15 GB at 11:39 after a low of 2.9 GB. These are lead-reported snapshots, not fresh measurements. No durable leak-resolution receipt is reported.
+
+**Next step:** Keep the below-6-GB alert active, preserve active work and reclaim only verified idle outputs. Move heavy work to Latitude and obtain the leak repair’s landing and repeated-run evidence.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead replies extracted by script from session 6253ecf2, 10:03–12:03 PDT; current rulings and queue answers override historical briefs and design records. Product receipts are lead-reported; tracker verification is the maintainer-site build. Existing engineering owners remain assigned; Codex curates this note only.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 09:54 PDT
+
+**What:** Keep enough local disk for active builders and stop recurring temporary-file growth.
+
+**Why:** A repeated leak consumed recovered space.
+
+**Current state:** At 09:46 PDT the lead reports 1,318 abandoned temporary folders of about 60 MB each; removing stale ones recovered free space from 7 GB to 33 GB. A Codex Sol job is investigating the leak. This is a reported snapshot, not a fresh measurement.
+
+**Next step:** Fix and verify temporary-directory cleanup on success, failure and cancellation; retain the disk alert and preserve active files. See temporary-directory-leak.md.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies, 07:53–09:53 PDT, session 6253ecf2; automated requests, summaries and agent-message wrappers excluded. Rulings and queue answers take precedence over briefs and older docs. Product checks are lead-reported; this refresh validates only the site build. Execution owners retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 04:44 PDT
 
@@ -327,3 +478,4 @@ Until about 02:15 on 2026-10-20 the next step was: check `df -h /` before fannin
 ## Questions for Will
 
 None.
+

@@ -51,7 +51,7 @@ Within a band, rank by how recently something landed, how much depends on it, an
 Nothing reaches the reviewer until it is ready to be judged. An item that fails the gate stays out of the visible queue and is still tracked. It enters on its own once it passes.
 
 - **Recordings:**
-  - The recording comes from a passing test run. Read the run's status from its metadata. A recording without a recorded status is unknown, never passing ([0022](../../decisions/0022-review-queue.md#4-the-curator-as-a-flow)).
+  - The recording comes from a passing test run. Read the run's status from its metadata. A recording without a recorded status is unknown, never passing ([0031](../../decisions/0031-review-queue.md#4-the-curator-as-a-flow)).
   - It has a video with a non-empty chapter timeline. A GIF alone is not enough.
   - It was captured after the latest known fix to the capture pipeline, for example readable size and no blank stretches.
   - It belongs to a walkthrough that has a scripted description (section 6).
@@ -123,7 +123,10 @@ A changeset is too big to review at once. Split it into a storyline:
    - **Questions a reviewer should ask.**
    - A note for each file on what to look at.
 5. **Decisions.** When reviewing a slice turns up a choice only the reviewer can make, it becomes its own decision item, linked to the slice.
-6. **Coverage.**
+6. **Routing.** The reviewer sees only security, data and public-API slices, and slices a review agent flagged. Two agents, Codex Astra and Fable, review every other slice independently: neither sees the other's verdict, because a reviewer that reads the first one's verdict anchors on it and adds almost nothing of its own. Coverage records both verdicts as an agent review (ruling PROC-21).
+   - **A flag is a bug report.** An agent confirms each finding against the code and records false positives. A confirmed finding is fixed, with a regression test that fails on the old code, by a fix job for a simple one, or by a builder for one that needs design. The slice reaches the reviewer once the fixes are on main, with both reviewers' notes and the fix commits, and only then gets its guide.
+   - **Measure each reviewer.** For every confirmed finding, record which reviewers found it, so each one's independent value stays visible.
+7. **Coverage.**
    - Keep the visible queue to its top 150 or so items. Coverage tracks every slice, reviewed or not, with the revision reviewed and the answer that reviewed it.
    - When a reviewed slice changes, it comes back. It ranks below fresh work but above older unreviewed code.
    - An answer that asks for a guide, such as "make it easier to review", is not a review. Record it as "needs guide", and bring the slice back once it has one.
@@ -236,7 +239,7 @@ The queue is the one place where anything that needs the reviewer arrives. Notif
 - A snooze is a durable timer in the flow engine, so it survives restarts and fires exactly once. It is never a client-side timeout or a polling loop.
 - When a snooze ends, the item returns with a small priority boost and a "snoozed since" note.
 - Snoozing an approval doesn't release what it holds. The waiting flow keeps waiting and shows "snoozed by <person> until <time>" to everyone.
-- No quiet hours and no "snoozed three times" flag until the reviewer asks for them ([0022](../../decisions/0022-review-queue.md#9-questions-for-will)).
+- No quiet hours and no "snoozed three times" flag until the reviewer asks for them ([0031](../../decisions/0031-review-queue.md#9-questions-for-will)).
 
 ### Policy
 
@@ -274,7 +277,9 @@ All dates are 2026-10-20, Pacific time. Quotes are the reviewer's own words.
 | Code guides with what, why, how and diagrams (§8.4) | 18:27: "code review like this should come with better descriptions and maybe make a diagram or something visually of how we architected the code"; 18:28: "make it easier to review diagrams more description why how what etc."; 18:29: "make it super easy to review and know what I'm looking at" |
 | Code-view tools (§13) | 23:47: "There is a feature in the vscode where you can remove comments … collapse bodies like a function body … an outline feature that allows you to jump to parts in the file" |
 | Readable code before review (§4) | 2026-10-21 00:05, on a flow-engine file: "This code is generally complex and hard to read and can be made better imo before I review ti"; 00:06: "feels like this could be easier to read we have a lot of nesting and indentation in it I think make it easier to read before i review it" |
-| Measure the queue (§16) | 2026-10-21 01:14, approving decision 0022 with a change: "We need to make sure we eval this stuff too heavily we want to eval if user types something if the user is just rubber stamping everything if our recomendations are good etc." |
+| Independent agent reviews (§8.6) | 2026-10-21 14:3x, the person leading the work, after a trial on 56 slices: with the second reviewer reading the first's verdicts it found 0 confirmed bugs alone; reviewing blind, of 38 confirmed bugs the first found 17 alone, the second 16 alone, and both 5 |
+| Agents review routine code (§8.6) | 2026-10-21 10:30, choosing "Agents review routine slices; show me flagged, security, data and public-API ones", after 58 of 60 timed code approvals took under a fifth of the reading time |
+| Measure the queue (§16) | 2026-10-21 01:14, approving decision 0031 with a change: "We need to make sure we eval this stuff too heavily we want to eval if user types something if the user is just rubber stamping everything if our recomendations are good etc." |
 | Never ask whether something works (§10) | 2026-10-21 00:15, on a verify item for the code-view tools: "i have no idea if it works don't ask me just add tests" |
 | Confidence scores (§7) | 23:14: "give a confidence score. Show me how confident you think you are that you have the perfect default decision made … if your confidence is high I'm more likely to rubber stamp if it's low I know I might need to ask more questions" |
 | Plain, answerable questions (§5, §7) | 18:19: "I don't understand the question can you rephrase it more clearly" |

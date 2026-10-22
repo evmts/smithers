@@ -3,9 +3,26 @@ title: Gate reviews on usable evidence and current rulings
 status: in-progress
 area: process
 owner: queue curator and queue improvement builder assigned by lead
-updated: 2026-10-21 01:24 PDT
+updated: 2026-10-21 10:44 PDT
 links: [will-decision-queue.md, code-review-guides.md, chaptered-review-videos.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 10:44 PDT
+
+**What:** Measure review quality and enforce the approved agent-first routing.
+
+**Why:** Will approved routine Astra-then-Fable reviews while retaining human review for risk and findings.
+
+**Current state:** The 10:30:51 queue answer resolves the previously unanswered routing question as PROC-21. The review lane’s first batch found a real commit-recovery bug independently in both reviews. At 10:39 the curator plans reviewer flag-rate reporting in about eight hours; existing calibration measures remain historical evidence.
+
+**Next step:** Validate routing and revision coverage, retain both review receipts and measure flag rates and calibration without treating agent review as approval.
+
+**Open questions for Will:** None. Existing access, Neon, Telegram and review-routing decisions are settled.
+
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2 through 10:43 PDT; current rulings and queue answers through 10:31 PDT. Product results are lead-reported; this tracker validates the site build only. Implementation ownership is unchanged; Codex curates these notes. Later evidence supersedes retained history.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 01:24 PDT
 

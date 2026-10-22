@@ -1,11 +1,62 @@
 ---
 title: Agent navigates the repo view (feature 4)
-status: todo
+status: in-progress
 area: app
-owner: unassigned; from 13:21:12 on 2026-10-20 it waits for the [repository home](repository-declared-home.md) builder, which edits the same routes. Until 13:21: unassigned (separate jj workspace)
-updated: 2026-10-20
+owner: Opus file-tabs and line-highlighting builder running on mini; Codex tracker curates note
+updated: 2026-10-21 22:43 PDT
 links: [../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, navigate-flow.md, slash-commands.md, repo-clone-and-view.md, flows-and-agent.md, repository-declared-home.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 22:43 PDT
+
+**What:** Let the agent open file tabs at a line range.
+
+**Why:** Make repository answers inspectable.
+
+**Current state:** At 22:36 the lead reports file tabs built, keyboard access tested, full files-feature coverage and Astra findings fixed; queued with the lander. Agent-opened line-range E2E and GIF are not proven because the mini server lacks Code Storage.
+
+**Next step:** Land, deploy and prove the agent line-range flow against smithers.sh.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered recent human messages and lead text replies in 6253ecf2, through 22:43 PDT; the supplied continuation path is absent, with continuation-era text in the available session. Current rulings and queue answers prevail. Existing execution ownership retained; Codex curates this note. Reported product receipts were not rerun here. Wiped briefs are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:55 PDT
+
+**What:** Let the agent open file tabs and highlight code through shared flows.
+
+**Why:** Make repository answers directly inspectable in the app.
+
+**Current state:** At 20:54 the lead reports the file-navigation builder running in its isolated mini repository. This supersedes both the old unassigned state and the prepared-but-login-blocked state. No completion or e2e receipt appears.
+
+**Next step:** Prove agent-opened tabs and line highlights through the public flows, including the required synced state.
+
+**Open questions for Will:** None newly identified.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest two hours through 20:55 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers govern over historical decisions and proposals. Available recovered briefs were read; wiped scratch files are not missing work. Product results are lead-reported; Codex curates documentation and runs the maintainer-site build. Previous implementation ownership is retained below.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Let the agent open file tabs and highlight lines through shared flows.
+
+**Why:** Repository answers should point directly to code.
+
+**Current state:** At 20:46 an Opus builder has its own mini clone and brief, prepared to start automatically after background Claude authentication. Assignment supersedes the historical unassigned state; implementation and e2e are unproven.
+
+**Next step:** Start the prepared builder after authentication and prove file tabs and synced line highlighting through the public flows.
+
+**Open questions for Will:** No product decision; mini background login is required.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

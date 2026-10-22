@@ -2,10 +2,60 @@
 title: Everything is a plugin (P2 public interface design)
 status: in-progress
 area: design
-owner: slice 0 credential builder; later plugin slice owners to be assigned
-updated: 2026-10-20
+owner: Opus public-plugin-interface builder running on mini; Codex tracker curates note
+updated: 2026-10-21 20:55 PDT
 links: [../rulings.md, ../decisions/0017-everything-is-a-plugin.md, ../design/plugins/plugins.html, will-decision-queue.md, maintainer-site.md, flow-authoring.md, prompt-flows-are-code-flows.md, maintainer-app-plugins.md, plugin-design-extra-review.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 20:55 PDT
+
+**What:** Build the approved public plugin interface on the existing flow engine.
+
+**Why:** First-party and external features need the same public capabilities and trust boundaries.
+
+**Current state:** At 20:54 the lead reports the plugin-interface builder running in an isolated mini repository. Decision 0017’s recorded approval remains authoritative; no renewed design approval is needed. A running builder does not establish a working plugin runtime.
+
+**Next step:** Implement the approved slices and prove a separately supplied plugin through the public bridge with person-only actions enforced.
+
+**Open questions for Will:** None newly identified; preserve the existing approval.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest two hours through 20:55 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers govern over historical decisions and proposals. Available recovered briefs were read; wiped scratch files are not missing work. Product results are lead-reported; Codex curates documentation and runs the maintainer-site build. Previous implementation ownership is retained below.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Implement the approved public plugin interface on the flow engine.
+
+**Why:** First-party and external features must use the same public interface.
+
+**Current state:** Decision 0017 and Will’s queue approval remain authoritative; do not request design approval again. The 20:32 lead describes the usable runtime as unbuilt. At 20:46 an isolated mini Opus builder is prepared but waiting on background Claude authentication.
+
+**Next step:** Restore builder access, implement the approved slices and prove a noncompiled plugin through the public bridge.
+
+**Open questions for Will:** No renewed approval request; mini background login is required.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+
+**What:** Build the approved public plugin interface on the existing flow engine.
+
+**Why:** First-party and external features use the same public interface.
+
+**Current state:** Decision 0017 records Will’s approval and the subsequent reviews. The 20:32 lead update says the plugin interface remains designed, not built. Earlier credential-slice work is retained as history and does not prove a usable plugin runtime. Do not ask Will to approve the already-approved design again.
+
+**Next step:** Confirm the remaining implementation slices and prove the first plugin through the public interface, including person-only action and credential boundaries.
+
+**Open questions for Will:** None newly required; resolve implementation scope with the lead against 0017.
+
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 18:04 PDT
 

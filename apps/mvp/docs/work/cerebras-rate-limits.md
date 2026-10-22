@@ -60,6 +60,13 @@ Required regressions: provider 429 switches but local budget 429 and 401 do not;
 ## Earlier tracker history (retained)
 
 
+## Tracker reconciliation — 2026-10-21 12:28 PDT
+**What:** Send the already approved capacity request when Arc is free.
+**Why:** Measured capacity is inadequate for expected traffic.
+**Current state:** Will asked again at 12:25 whether the email was sent. At 12:27 the lead confirms it remains unsent and waits on Arc availability; the authorized draft has no send receipt.
+**Next step:** Lead resumes the previously authorized send when Arc is available, then records send evidence and the provider response. This tracker sends no messages.
+**Open questions for Will:** When is Arc free, or what time should the authorized sender use?
+Evidence: script-filtered user-typed text and lead replies, approximately 10:28–12:28 PDT, session 6253ecf2; rulings and queue answers govern over historical briefs, designs, decisions, proposals, TODOs and rules. Product results are lead-reported. Existing engineering ownership is retained; Codex curates tracker documentation and validates the site build.
 ## Tracker reconciliation — 2026-10-20 23:44 PDT
 
 **What:** Send the approved measured-capacity request, then obtain a provider response.

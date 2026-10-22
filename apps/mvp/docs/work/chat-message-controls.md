@@ -1,11 +1,28 @@
 ---
 title: Message controls (copy, times, reasoning, queued prompts, saved draft)
-status: done
+status: todo
 area: app
 owner: message controls builder; Will approved replacement
-updated: 2026-10-20
+updated: 2026-10-21 12:54 PDT
 links: [land-to-main.md, dev-stack-hygiene.md, old-app-feature-gaps.md, local-first.md, conversations-and-history.md, keyboard-navigation-and-vim.md, fable-review-2-fixes.md, slash-commands.md, agent-status.md, ../features/chat.md, ../features/agent.md, ../decisions/0002-local-first.md, cerebras-rate-limits.md, review-round-4-p3-cleanup.md, will-decision-queue.md, ../rulings.md, chaptered-review-videos.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 12:54 PDT
+
+**What:** Persist edits made through message controls.
+
+**Why:** An edited draft must survive saving and reload.
+
+**Current state:** At 12:53 PDT the lead reports a real local E2E failure: an edited draft remains unsaved. This reopens the completed workstream; Will’s earlier approved recording remains in history. The failure is queued for the next panel-then-build batch once the sweep finishes; no fix or assigned repair is reported.
+
+**Next step:** Keep the failing draft-save test, assign the repair through the announced batch, and prove edit/save/reload locally and live before marking done again.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies for the latest approximately two hours of session 6253ecf2 through 12:54 PDT; automated notifications, relayed agents and tool blocks excluded. Current rulings and queue answers govern over older briefs, panels, decisions, proposals, TODOs and rules. Product receipts are lead-reported; Codex curates tracker documentation and runs the site build. Existing execution owners are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 17:44 PDT
 

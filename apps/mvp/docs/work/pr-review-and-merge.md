@@ -3,9 +3,26 @@ title: PR review and merge (MVP 2, early feature 8a)
 status: in-progress
 area: app
 owner: coding factory builder (Claude Opus, session 6253ecf2), from 19:10 on 2026-10-20: PRs, the todo run, /review. Until 19:10: unassigned; from 13:21:12 on 2026-10-20 it waits for the [triage](issue-triage.md) builder (same GitHub write path and list view). Until 13:21: unassigned; not in 0012's slice G0 (started 07:40:55 on 2026-10-20). Until 07:40: Panel G designed the PR pages, opening a PR and the merge flow in decision 0012 (written 06:58:11 on 2026-10-20, status: proposed; panel started 06:41:56). The `/review` findings flow has no owner. Until 06:41 on 2026-10-20: unassigned
-updated: 2026-10-20
+updated: 2026-10-21 22:53 PDT
 links: [issues.md, ../decisions/0012-git-end-to-end.md, pull-request-list-and-tabs.md, github-source-of-truth.md, review-requests-and-revisions.md, issue-triage.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, ../decisions/0007-roles-and-tags.md, roles-and-labels.md, design-questions.md, docs-check-flow-outcome.md, no-github-actions.md, second-build-machine.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 22:53 PDT
+
+**What:** Review pull requests and let a person merge through durable, authorized writes.
+
+**Why:** Complete the GitHub development loop without stale-base merges or duplicate recovery effects.
+
+**Current state:** At 22:37 the lead reports the merge repair finished and tested: recheck the live base head immediately before merging and recover a lost response using a key in the commit message. The repair replaces part of an earlier review-lane fix, so one lander must land both together with migrations in order. This is a queued implementation receipt, not a completed production merge journey. Agents never approve or merge.
+
+**Next step:** Land the coordinated stack, deploy, and prove moved-base refusal and lost-response recovery; a person performs the final merge.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered user-typed messages and lead text replies over the latest approximately two hours, through 22:53 PDT, in session 6253ecf2. Both requested paths were checked; the continuation path is unavailable here, while continuation-era replies are present in the original session. Current rulings and queue answers prevail over older decisions and proposals. Surviving briefs inform handoff state; reboot-wiped files are not missing work. Implementation owners are retained; Codex curates documentation. Product checks above are reported receipts, not rerun by this tracker refresh.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

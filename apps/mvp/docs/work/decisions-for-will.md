@@ -1,11 +1,79 @@
 ---
 title: Decisions for Will
-status: blocked
+status: in-progress
 area: process
 owner: Will through curated queue; lead routes answered work
-updated: 2026-10-21 01:44 PDT
+updated: 2026-10-21 20:55 PDT
 links: [will-decision-queue.md, dev-stack-hygiene.md, review-round-4.md, issues.md, site-deployment-test.md, ../decisions/0012-git-end-to-end.md, ../decisions/0013-branch-workspace.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, ../decisions/0015-agent-status.md, repo-view-package-split.md, repo-follow-ups.md, app-wiring.md, sdk-test-reds.md, platform-cloudflare-edge-cache.md, integrations-durable-retries.md, design-questions.md, flows-and-agent.md, host-agnostic-flows.md, durable-answering.md, model-host-effect-boundary.md, repo-clone-and-view.md, infrastructure-as-code.md, code-storage-spend-caps.md, land-and-deploy-mvp.md, mvp-scope-cut.md, legacy-smithers-sh.md, move-effectscript-repos.md, vibelang-0-0-2-publish.md, electric-client-bug-report.md, sign-in.md, token-spend-alerts.md, deep-import-migration.md, import-rules-and-jev-lint.md, observability.md, cerebras-rate-limits.md, clone-token-scope-bug.md, effect-tanstack-db-and-effect-electric.md, local-first.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, durable-browser-engine.md, pwa.md, agent-ui-rendering.md, sandboxes.md, sandbox-budgets.md, roles-and-labels.md, pr-review-and-merge.md, web-standard-globals-rule.md, code-reviews.md, flows-root-platform-neutral.md, b1-follow-ups.md, auth.md, slash-commands.md, plan-identity-across-deploys.md, navigate-flow.md, web-page-flow.md, plan-identity-minified-builds.md, agent-repo-navigation.md, maintainer-site.md, fable-review-2-fixes.md, self-host-install.md, old-app-feature-gaps.md, land-to-main.md, pull-request-list-and-tabs.md, issue-triage.md, conversations-and-history.md, branch-terminal.md, branch-sharing.md, flow-authoring.md, flow-debugging.md, repository-declared-home.md, agent-status.md, github-source-of-truth.md, no-github-actions.md, second-build-machine.md, agent-evals.md, secrets-proxy.md, notifications-and-live-work.md, todos-and-stack.md, smithers-playground.md, ../decisions/0016-todos-and-the-stack.md, chat-message-controls.md, docs-truth-pass.md, prompt-flows-are-code-flows.md, self-hosted-grafana.md, disk-space.md, ../rulings.md, everything-is-a-plugin.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 20:55 PDT
+
+**What:** Track only unresolved decisions and access dependencies.
+
+**Why:** Do not ask Will to repeat an answer already recorded in the source of truth.
+
+**Current state:** Queue 940 is resolved by Will’s 20:50 vendor-neutral-seam ruling in PROC-23, replacing both earlier proposals. His 20:48 mini-account instruction is also recorded; the lead reports five builders running at 20:54. Plugin-interface design approval remains settled. GitHub push login has no success receipt.
+
+**Next step:** Advance the seam implementation and keep only current access dependencies or genuinely unanswered questions in the queue.
+
+**Open questions for Will:** Railway deployments: agents/tests or app hosting? The lead also asked whether the reported leak affected credentials beyond the revoked GitHub token; no answer is present. Do not repeat the settled 940 proposals.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest two hours through 20:55 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers govern over historical decisions and proposals. Available recovered briefs were read; wiped scratch files are not missing work. Product results are lead-reported; Codex curates documentation and runs the maintainer-site build. Previous implementation ownership is retained below.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:34 PDT
+
+**What:** Keep only unresolved decisions in the curated queue.
+
+**Why:** Resolved asks must advance work.
+
+**Current state:** The test-account Write grants and Neon Launch choice are settled in chat; both invitations are accepted. Code-review routing is settled by queue option 1 at 10:30:51 (PROC-21). Factory, slash-command and sign-in recordings were approved. Telegram is permanently removed from reminders. Historical pending rows below are superseded by these receipts.
+
+**Next step:** Reconcile remaining live queue items and advance implementation on answered choices.
+
+**Open questions for Will:** None newly identified; retain unrelated unresolved questions in the live queue.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest approximately two hours through 10:33 PDT; current rulings and queue answers through 10:31 PDT, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence; this tracker runs only the site build. Execution ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:15 PDT
+
+**What:** Keep only unresolved product decisions and reviews in Will’s curated queue.
+
+**Why:** Answered questions must advance work rather than repeatedly interrupt Will.
+
+**Current state:** At 10:13 PDT Will sent both test-account Write invitations and selected Neon Launch; the lead removed both queue items. At 10:09 Will deferred Telegram setup at his discretion with no reminders. The 10:14 lead update reports six queue items remain, led by the coding-factory walkthrough (970) and code-review routing (945). Those counts are a reported snapshot, not newly verified queue state.
+
+**Next step:** Route answered access and Neon work to builders; verify invitation acceptance through the test account. Continue curating the remaining reviews without re-queuing Telegram or asking whether features work.
+
+**Open questions for Will:** Existing curated items include the factory walkthrough and code-review routing. No question remains about granting access, selecting Neon or configuring Telegram.
+
+Evidence: user-typed messages and lead text replies extracted by script from session 6253ecf2, approximately 08:14–10:14 PDT on 2026-10-21; tool records, automated notifications, local-command output and continuation summaries excluded. Current rulings (ARCH-4, TEST-6, AUTH-4, ARCH-14, PROC-20) and queue answers take precedence over shared briefs, panel designs, decisions, proposals, TODOs and rules. Execution owners are retained; Codex curates tracker documentation only. Product validation is lead-reported; this refresh runs only the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 09:45 PDT
+
+**What:** Keep only actionable decisions and permissions visible to Will.
+
+**Why:** Builders establish whether features work; Will supplies permissions agents cannot grant themselves.
+
+**Current state:** At 09:43 PDT the lead asks for codeplanesmithers to receive write access on smithersai/smithers. The account is reported Guest there. Production Member tests for sandboxes, TODO runs and steering are blocked without that access. Earlier scratch-repository permission answers do not establish access on this repository. No subsequent answer or grant receipt appears in the reviewed window.
+
+**Next step:** Keep this existing request visible with the production-E2E workstream; continue implementation and tests that do not require the grant. Verify the actual role before running Member acceptance.
+
+**Open questions for Will:** None. Answered 10:13 on 2026-10-21 (option 1, granted), Will: "Both Write invitations are sent; codeplanesmithers still needs to accept them." The prod-e2e builder accepts both invitations as the test account (rulings.md, TEST-6 addendum). Answered 10:13 on 2026-10-21 (option 1, Launch), Will: "Neon shows Launch at $0.106 per compute-unit hour plus storage, and I've selected it for the organization containing production." (rulings.md, ARCH-4 addendum).
+
+Evidence: script-extracted human text and lead text replies from session 6253ecf2, approximately 07:43–09:43 PDT on 2026-10-21; compacted summaries, local-command output, automated notifications and tool blocks excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product results are reported evidence; this tracker runs only the maintainer-site build. Existing execution owners are retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 01:44 PDT
 

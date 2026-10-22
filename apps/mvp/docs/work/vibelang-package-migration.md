@@ -3,9 +3,26 @@ title: Migrate Smithers Effect code to VibeLang, one package at a time
 status: in-progress
 area: sdk
 owner: VibeLang migration session; lander excludes unpublished links
-updated: 2026-10-21 03:14 PDT
+updated: 2026-10-21 14:23 PDT
 links: [../rulings.md, vibelang-0-0-2-publish.md, second-build-machine.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 14:23 PDT
+
+**What:** Migrate every Smithers library package to VibeLang in reviewed batches, preserving public APIs.
+
+**Why:** Exercise VibeLang against real SDK behavior before users depend on it.
+
+**Current state:** At 14:23 the lead reports the VibeLang session will push its nine-commit tooling stack before 15:30 PDT, then migrate all Smithers packages, excluding apps, on Latitude. APIs stay the same and all tests must pass; batches land through the lead. The session also adds AGENTS.md guidance to fix language gaps in VibeLang itself and send breaking language changes to Will. This is the reported plan; no new push or completed package migration is evidenced.
+
+**Next step:** Collect the tooling push receipt, coordinate the legacy-removal rebase, then retain package-specific validation and review for each migration batch.
+
+**Open questions for Will:** None newly identified; existing decisions remain with their owning notes.
+
+Evidence: lead text replies at 14:20–14:23 PDT on 2026-10-21, extracted by script from session 6253ecf2 within its latest approximately two hours (12:23–14:23 PDT). Automated notifications, tool blocks and relayed agent messages excluded. Current rulings and Will’s queue answers take precedence over historical briefs and designs. Product results are lead-reported; this tracker verifies the site build. Engineering ownership is retained; Codex maintains these notes.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 03:14 PDT
 

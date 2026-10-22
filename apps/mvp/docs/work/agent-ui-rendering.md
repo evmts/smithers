@@ -2,10 +2,60 @@
 title: The agent talks through UI (feature 3)
 status: in-progress
 area: app
-owner: views fix agent (assigned by 01:19 on 2026-10-20), Codex Astra review 3's finding 2: `@smthrs/views` spans through `SpanFailure`, with a sentinel test (reported fixed about 01:58; sent back to close the `ViewCodeError.message` leak; fully done about 02:08 on 2026-10-20, 116 tests at 100%); V1+V2 agent (started 23:01 on 2026-10-19), the SDK half, done (reported 00:36 on 2026-10-20); V3 to V5, the app half, wait on the wiring agent (since about 01:17), now that F5, the browser agent, is done (about 01:16); designed by Panel A (Opus lead, Sol)
-updated: 2026-10-20
+owner: Opus forms/views builder running in isolated mini repository; Codex tracker curates note
+updated: 2026-10-21 20:55 PDT
 links: [review-round-4.md, app-wiring.md, ../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0004-agent-ui-codemode-and-rendering-comparison.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0006-repo-clone-and-view.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, agent-evals.md, agent-repo-navigation.md, flows-and-agent.md, disk-space.md, durable-browser-engine.md, sdk-test-reds.md, repo-checks-green.md, flows-root-platform-neutral.md, code-reviews.md, observability.md, repo-clone-and-view.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 20:55 PDT
+
+**What:** Let the agent render interactive forms and inline or full-screen views.
+
+**Why:** Deliver useful interactive answers through the existing safe UI and action boundaries.
+
+**Current state:** At 20:54 the lead reports the prepared forms/views builder running on the mini. Background authentication no longer blocks this builder. No completed implementation or real interactive product acceptance receipt appears.
+
+**Next step:** Implement and prove the real form submission and generated-view journeys, including synced view state and sandbox isolation.
+
+**Open questions for Will:** None newly identified.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest two hours through 20:55 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers govern over historical decisions and proposals. Available recovered briefs were read; wiped scratch files are not missing work. Product results are lead-reported; Codex curates documentation and runs the maintainer-site build. Previous implementation ownership is retained below.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Let the agent render interactive forms and embedded or full-screen views.
+
+**Why:** The requested UI includes arbitrary useful apps, not text-only answers.
+
+**Current state:** At 20:46 a dedicated forms/views Opus builder is prepared on the mini with its own clone. It waits on background Claude authentication. Earlier SDK work does not prove the full product journey.
+
+**Next step:** Start the prepared builder and prove a real interactive form/view journey under the existing sandbox and action boundaries.
+
+**Open questions for Will:** No new product question; mini background login is required.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+
+**What:** Let the agent ask through forms and render small or full-screen interactive views.
+
+**Why:** Deliver the requested safe UI, including a tic-tac-toe view.
+
+**Current state:** At 20:32 the lead lists agent-made forms and views among the largest unbuilt or unproven gaps. Existing SDK rendering/security work remains history; there is no app-level production acceptance for this feature. Decision 0004 records accepted design choices; its older pending-answer text is superseded.
+
+**Next step:** Finish app integration through the public plugin interface and prove form submission and safe inline/full-screen interaction with real e2e and agent evals.
+
+**Open questions for Will:** None newly required.
+
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+
+## Earlier tracker history (retained)
 
 ## What
 

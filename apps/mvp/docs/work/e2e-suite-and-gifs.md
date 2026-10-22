@@ -3,9 +3,60 @@ title: End-to-end suite and flow GIFs
 status: in-progress
 area: app
 owner: recording pipeline builder and feature builders
-updated: 2026-10-21 09:24 PDT
+updated: 2026-10-21 15:54 PDT
 links: [../features/chat.md, ../rules.md, ../observability.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, land-and-deploy-mvp.md, app-wiring.md, local-first.md, slash-commands.md, navigate-flow.md, web-page-flow.md, agent-jev.md, ../rulings.md, chaptered-review-videos.md, device-data-migrations.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 15:54 PDT
+
+**What:** Maintain executed local and production feature proofs.
+
+**Why:** Failures and blocked cases must remain visible.
+
+**Current state:** At 15:49–15:50 the completed sweep on an older main has 9 passing specs, 8 failing and 19 blocked on a live model, before the budget increase. Four failing areas lack assigned repair owners: timeline, cross-device sync, TODO commit and message drafts. These are historical-revision results, not current-main acceptance.
+
+**Next step:** Assign or recheck those four gaps on current main via the production rerun or when mini capacity returns; retain recordings and revision receipts.
+
+**Open questions for Will:** None newly identified; unresolved questions in the retained history remain open.
+
+Evidence: script-filtered lead text replies in session 6253ecf2, latest approximately two hours through 15:53 PDT. Automated notifications, tool content and compaction summaries excluded. Rulings and queue answers prevail over historical briefs. Implementation ownership retained; Codex maintains these notes. Product receipts are lead-reported; this refresh verifies the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 09:45 PDT
+
+**What:** Maintain a feature-by-feature local and production proof matrix with usable recordings.
+
+**Why:** TEST-1 and PROC-20 require executed end-to-end evidence.
+
+**Current state:** The fixed-revision sweep of 37 local specs has no final matrix in the reviewed lead replies. At 09:43 PDT the production-E2E panel remains investigating. Production sandbox, TODO-run and steering proofs require a Member; codeplanesmithers currently has only Guest access on smithersai/smithers. No passing production suite receipt exists.
+
+**Next step:** Collect sweep results and the untested-feature inventory. Complete the dedicated production harness workstream, then run feature proofs against the deployed revision using real authorization; retain blocked results rather than counting them as passes.
+
+**Open questions for Will:** None. Answered 10:13 on 2026-10-21 (option 1, granted), Will: "Both Write invitations are sent; codeplanesmithers still needs to accept them." The prod-e2e builder accepts both invitations as the test account (rulings.md, TEST-6 addendum).
+
+Evidence: script-extracted human text and lead text replies from session 6253ecf2, approximately 07:43–09:43 PDT on 2026-10-21; compacted summaries, local-command output, automated notifications and tool blocks excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product results are reported evidence; this tracker runs only the maintainer-site build. Existing execution owners are retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 09:34 PDT
+
+**What:** Maintain local and production feature proofs with recordings.
+
+**Why:** PROC-20 requires major gaps to be investigated and repaired with evidence.
+
+**Current state:** At 09:26 PDT a four-model panel is reported running specifically for production E2E: one command against production using the test account. Opus will merge and build. The separate fixed-revision sweep of 37 local specs is still running; no final matrix or production suite receipt is reported.
+
+**Next step:** Collect the local matrix and missing-coverage list. Have Opus implement the production test entry point after synthesis, run against a known deployed revision, and record results and GIFs. Send newly confirmed failures through the same panel-then-build process.
+
+**Open questions for Will:** None new. Provider preference and implementation direction are settled; builders resolve engineering choices.
+
+Evidence: session 6253ecf2, script-filtered user-typed text and lead text replies in the latest approximately two hours through 09:33 PDT; synthetic notifications, tool results and compacted summaries excluded. Rulings and queue answers take precedence over shared briefs/designs, decisions, proposals, TODOs and rules. Product results are lead-reported; this refresh validates only the site build. Execution owners remain unchanged; Codex maintains this tracker entry.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 09:24 PDT
 

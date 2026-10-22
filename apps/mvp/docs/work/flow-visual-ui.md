@@ -3,9 +3,26 @@ title: Visual flows editor and live run graph
 status: in-progress
 area: design
 owner: Opus design agent assigned by the lead
-updated: 2026-10-20
+updated: 2026-10-21 17:14 PDT
 links: [flow-debugging.md, flow-authoring.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, everything-is-a-plugin.md, flows-run-graph-slice1.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 17:14 PDT
+
+**What:** Finish the first Flows UI repair slice.
+
+**Why:** Drafting, saving and run inspection need current production proof.
+
+**Current state:** At 17:04 the builder pauses with first-phase code committed. Draft recovery controls and duplicate Save/Draft prevention are queued, not landed. Existing production drafting/saving/running worked; two failing tests used stale selectors. Retry pinning for agent-started runs and executing hand-edited flows remain unbuilt.
+
+**Next step:** Resume at 19:00, land/deploy queued fixes and run the production Flows test; track unbuilt follow-ups separately.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, approximately 15:14–17:14 PDT. Notifications, relayed agents, tools and compaction summaries excluded. Rulings and queue answers supersede older briefs/designs and docs. Execution owner retained; Codex curates the tracker only. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 19:56 PDT
 

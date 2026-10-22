@@ -2,10 +2,77 @@
 title: Secrets through an egress proxy (feature 6)
 status: in-progress
 area: infra
-owner: secrets builder (Claude Opus) reported the egress built and switched off by 14:27 on 2026-10-20; the agent-in-the-sandbox builder wires the `SandboxObject` seam next; it stays off until a browser test proves it. Until 14:30: secrets builder (Claude Opus), started by the lead at 13:22:52 on 2026-10-20; unreported by 13:24. Until 13:22: Panel S (Opus lead, Sol), designed in 0005; no builder
-updated: 2026-10-20
+owner: Opus secrets builder running in isolated mini repository; Codex tracker curates note
+updated: 2026-10-21 22:43 PDT
 links: [../decisions/0005-sandboxes-secrets-and-the-forge.md, ../../../../AGENTS.md, sandboxes.md, design-questions.md, branch-terminal.md, connect-agents-sandboxes-forge.md, decisions-for-will.md, ../features/secrets.md, docs-truth-pass.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 22:43 PDT
+
+**What:** Manage opaque repository secrets with Admin-only writes.
+
+**Why:** Keep credentials out of sandboxes and diagnostics.
+
+**Current state:** At 22:42 the lead reports two commits: mixed-case repository secret delivery and the Secrets page for add/list/rotate/delete with Admin-only mutations. Builder remains active; E2E is blocked by current-main terminal startup, assigned to the sandbox builder.
+
+**Next step:** Land validated changes and prove the secrets E2E after terminal repair.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered recent human messages and lead text replies in 6253ecf2, through 22:43 PDT; the supplied continuation path is absent, with continuation-era text in the available session. Current rulings and queue answers prevail. Existing execution ownership retained; Codex curates this note. Reported product receipts were not rerun here. Wiped briefs are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:55 PDT
+
+**What:** Manage opaque secret names and authorize credential substitution only at egress.
+
+**Why:** Keep secret values outside sandbox code, cards and diagnostics.
+
+**Current state:** At 20:54 the lead reports the secrets builder running on the mini. The prior authentication launch blocker is cleared for this builder. No allowed-egress, denial, revocation or UI acceptance receipt establishes the full feature works; the existing switched-off gate still applies.
+
+**Next step:** Complete and prove the UI and egress journey, including refusal and leak checks, before enabling it.
+
+**Open questions for Will:** None newly identified.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest two hours through 20:55 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers govern over historical decisions and proposals. Available recovered briefs were read; wiped scratch files are not missing work. Product results are lead-reported; Codex curates documentation and runs the maintainer-site build. Previous implementation ownership is retained below.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Provide secrets by opaque name through controlled egress and a usable UI.
+
+**Why:** Sandbox code must never receive secret values.
+
+**Current state:** At 20:46 the secrets Opus builder has an isolated mini clone and brief but cannot start until background Claude authentication is restored. The 20:32 lead lists secret egress and UI among unproven product gaps.
+
+**Next step:** Start the prepared builder; prove allowed egress, denial, revocation and the secrets UI without exposing values.
+
+**Open questions for Will:** No new product decision; mini background login is required.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+
+**What:** Keep secret values opaque and substitute credentials only at allowed-host egress.
+
+**Why:** No secret value may enter a sandbox or diagnostics.
+
+**Current state:** The 20:32 lead update still lists production egress and a secrets UI as major gaps. Earlier wired-but-disabled backend work does not establish this feature works; keep it switched off until the browser and leak/refusal proofs pass.
+
+**Next step:** Complete the secret-management UI and validate allowed egress, disallowed hosts, response scrubbing and absence of plaintext from sandbox and telemetry before enabling.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+
+## Earlier tracker history (retained)
 
 ## Current specification — 2026-10-20, 16:35 PDT
 

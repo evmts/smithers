@@ -1,11 +1,62 @@
 ---
 title: A terminal in an iframe on the branch's sandbox
-status: done
+status: in-progress
 area: infra
 owner: branch workspace clarity builder
-updated: 2026-10-20
+updated: 2026-10-21 23:24 PDT
 links: [review-round-4.md, ../decisions/0013-branch-workspace.md, conversations-and-history.md, branch-sharing.md, sandboxes.md, sandbox-budgets.md, ssh-into-a-branch.md, web-page-flow.md, connect-agents-sandboxes-forge.md, roles-and-labels.md, infrastructure-as-code.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0007-roles-and-tags.md, ../proposals/mvp-gaps.md, docs-check-flow-outcome.md, land-to-main.md, dev-stack-hygiene.md, ../rulings.md, chaptered-review-videos.md, branch-workspace-clarity.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 23:24 PDT
+
+**What:** Open the branch terminal promptly, bound startup and restore retry.
+
+**Why:** A branch must show its terminal and allow recovery from a stuck opening attempt.
+
+**Current state:** At 23:21 the sandbox builder has three Codex Sol fixes running: a 60-second startup deadline with the hung step recorded, restoration of Open terminal, and immediate Terminal navigation instead of waiting up to ten seconds. The mini startup hang was traced to shared test databases, while the production navigation defect remains a product fix. No new completion receipt exists.
+
+**Next step:** Finish all three regressions, isolate mini databases and rerun terminal and secrets journeys after deployment.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies, 21:24–23:24 PDT in session 6253ecf2; the supplied continuation file was not found, including a filename search. Continuation-era replies survive in the original file. Rulings and queue answers govern; reboot-wiped briefs are not missing work. Codex owns tracker reconciliation only; implementation owners above are retained. Product tests are reported receipts.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 23:14 PDT
+
+**What:** Open the branch terminal reliably and settle failed attempts.
+
+**Why:** Terminal access must work from the branch and recover after failed startup.
+
+**Current state:** At 23:07 the lead corrects the earlier diagnosis: the mini hang comes from shared test databases, not a demonstrated current-main terminal startup bug. Separately, product hardening adds a 60-second opening deadline and restores Open terminal after failure. A real production bug leaves the Terminal link on Code view; the sandbox builder is fixing it.
+
+**Next step:** Retain regressions for timeout, retry and Terminal navigation; rerun terminal and secrets E2E after farm isolation and deployment.
+
+**Open questions for Will:** None newly required.
+
+Evidence: user text and lead replies extracted by script from session 6253ecf2, approximately 21:14–23:14 PDT; tool payloads and automated notifications excluded. The supplied continuation transcript path is absent; recent continuation-era replies are in the original file. Rulings and queue answers take precedence over older docs and surviving briefs. Wiped scratch files are not missing work. Product receipts are lead-reported; this refresh validates the site build. Codex curates documentation and retains execution ownership.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 22:43 PDT
+
+**What:** Open the branch terminal and settle failed attempts.
+
+**Why:** A stuck terminal blocks the secrets E2E.
+
+**Current state:** Reopened from done: at 22:42 the lead reports the current-main terminal never finishes opening and its attempt never becomes failed. The sandbox builder takes the bug; the earlier passing lifecycle receipt remains historical evidence.
+
+**Next step:** Retain a failing terminal regression, fix attempt settlement and rerun terminal and secrets E2E.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered recent human messages and lead text replies in 6253ecf2, through 22:43 PDT; the supplied continuation path is absent, with continuation-era text in the available session. Current rulings and queue answers prevail. Existing execution ownership retained; Codex curates this note. Reported product receipts were not rerun here. Wiped briefs are not missing work.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 17:44 PDT
 

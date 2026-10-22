@@ -2,8 +2,8 @@
 title: Creating flows (a form card, the agent builds, a PR activates)
 status: in-progress
 area: app
-owner: flows builder (Opus)
-updated: 2026-10-21
+owner: Flows repair builder assigned by lead
+updated: 2026-10-21 20:34 PDT
 links: [review-round-4.md, land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, flow-debugging.md, repository-declared-home.md, flows-and-agent.md, slash-commands.md, scratch-branches.md, sandboxes.md, todos-and-stack.md, pull-request-list-and-tabs.md, agent-ui-rendering.md, roles-and-labels.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../proposals/mvp-gaps.md, dev-stack-hygiene.md, smithers-playground.md, prompt-flows-are-code-flows.md, docs-truth-pass.md]
 ---
 
@@ -29,6 +29,42 @@ Fixes, by subject:
 ## Earlier tracker history (retained)
 
 ## Specification — 2026-10-20, 17:14 PDT
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+**What:** Create, save and run flows with recoverable drafts.
+**Why:** A person and the agent need a complete authoring path.
+**Current state:** At 20:32 the lead reports drafting, saving and running a flow finish in production. Additional Flows fixes are still in the landing queue; this summary does not establish their deployment or resolve earlier active-run plan compatibility constraints.
+**Next step:** Land the outstanding repairs with safe deployment ordering, then rerun the repaired draft and run-view journeys.
+**Open questions for Will:** None.
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+## Tracker reconciliation — 2026-10-21 16:25 PDT
+**What:** Make draft, answer, save and run recoverable and truthful.
+**Why:** Keep implementation and validation claims tied to evidence.
+**Current state:** At 16:08 three reviewed Flows fixes are queued. One changes plans and would fail mid-flight agent runs with plan changed; deployment must wait until no agent or TODO run is active. Stale step-list and branch-home tests remain distinct from product defects.
+**Next step:** Collect landing receipts, drain active runs before deployment, then prove repaired drafts and run-graph selectors locally and live.
+**Open questions for Will:** None.
+Evidence: script-filtered human messages and lead text replies, 14:25–16:24 PDT, session 6253ecf2; tool blocks, notifications and compaction summaries excluded. Rulings and queue answers govern over historical designs. Existing implementation owner retained; Codex maintains this note. Product receipts are lead-reported.
+## Tracker reconciliation — 2026-10-21 14:54 PDT
+**What:** Make drafting and saving flows recoverable.
+**Why:** Draft failures and concurrent saves must not strand or duplicate work.
+**Current state:** At 14:41 the panel finishes and its builder starts. Production drafting, saving and running reach Done; old tests use removed step-list selectors and start on a branch with no Flows link. Real bugs remain: suggested blocking defaults cannot be accepted, drafting can hang, failed drafts cannot retry/delete or record a reason, and simultaneous saves can duplicate revisions.
+**Next step:** Fix those regressions, update the production tests, then run hand-edited code flows in QuickJS under the already answered decision 0017.
+**Open questions for Will:** None for this repair. Existing pending decisions remain in the retained history.
+Evidence: script-extracted user-typed text and lead replies from session 6253ecf2, 12:54–14:54 PDT; automated notifications excluded. Rulings and queue answers govern over historical briefs and proposals. Product receipts are lead-reported; this pass verifies only the maintainer-site build. Implementation owners remain assigned; Codex maintains tracker documentation.
+## Tracker reconciliation — 2026-10-21 14:05 PDT
+**What:** Create, save and execute flows through the single durable Flow.make model.
+**Why:** Authored flows must complete through the real product boundary.
+**Current state:** At 14:01 PDT the lead starts a Sol/Astra/Opus/Fable panel for production draft/save/run/stop/retry timeouts and drafts stuck as drafting. At 14:03 six confirmed review findings are routed to this panel; implementation and passing receipts are pending.
+**Next step:** Finish four independent diagnoses, synthesize and build the repair, then retain local and production regressions for draft, save, run, stop and retry.
+**Open questions for Will:** None.
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2 for approximately 12:04–14:04 PDT on 2026-10-21; synthetic notifications and tool records excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the maintainer-site build only. Engineering owners remain responsible; Codex owns this documentation reconciliation.
+## Tracker reconciliation — 2026-10-21 13:38 PDT
+**What:** Create and run flows through the shared durable authoring path.
+**Why:** A saved flow must run successfully through the real product boundary.
+**Current state:** At 13:15 PDT the production report says both Flows tests time out after 300 seconds. Other remote flows completing does not prove these authoring journeys pass. The harness owner is porting and rerunning specs; no diagnosis or repair receipt exists for these timeouts.
+**Next step:** Separate fixture failure from product failure in the rerun, retain both timeout cases, and panel/build confirmed defects with local and production proof.
+**Open questions for Will:** None.
+Evidence: lead text replies extracted by script from session 6253ecf2, 11:37–13:37 PDT on 2026-10-21. Automated notifications and tool records excluded. Rulings and queue answers override historical briefs, panel designs, decisions, proposals, TODOs and rules. Product results are lead-reported. Existing execution owners retained; Codex owns tracker reconciliation only.
+## Current specification — 2026-10-20, 17:14 PDT
 
 **What:** Draft, save, edit and execute Flow.make modules through one flow model.
 

@@ -1,11 +1,62 @@
 ---
 title: "CI parity: write-only GitHub commit statuses"
-status: blocked
+status: in-progress
 area: sdk
-owner: dogfood-loop builder (Claude Opus), from 11:20 on 2026-10-21
-updated: 2026-10-21 11:45 PDT
-links: [../rulings.md, ../proposals/ci-cd-parity.md, ../features/pulls.md, ci-parity-required-checks.md, ci-parity-github-writes.md, no-github-actions.md, dogfood-loop.md]
+owner: Opus dogfooding builder assigned by lead
+updated: 2026-10-21 21:10 PDT
+links: [../rulings.md, ../proposals/ci-cd-parity.md, ci-parity-required-checks.md, ci-parity-github-writes.md, no-github-actions.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 21:10 PDT
+
+**What:** Publish durable Smithers run results as GitHub commit statuses.
+
+**Why:** Required checks need real receipts.
+
+**Current state:** Will accepts question:app-commit-statuses-permission at 20:58; the lead confirms this clears that blocker and forwards the answer. Deployment and real write proof remain unreported.
+
+**Next step:** Deploy and verify statuses against an actual hosted run.
+
+**Open questions for Will:** None; permission answer is settled.
+
+Evidence: script-filtered user text and lead replies, 19:06–21:06 PDT; current rulings and queue answers through 21:06; surviving briefs and reports. Product results are reported receipts, not rerun here. Implementation ownership retained; Codex curates documentation. Wiped scratch files are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:54 PDT
+
+**What:** Publish durable check results as smithers/<name> commit statuses.
+
+**Why:** Hosted dogfooding needs visible checks without GitHub Actions.
+
+**Current state:** At 11:49 the lead reports implementation built and handed to the lander: check start publishes pending and completion publishes its result. Production status writes are recorded as refused until the GitHub App permission changes. No landing or successful production publication receipt is reported.
+
+**Next step:** Land the implementation, verify exact-commit results and recovery, then prove status publication on the dogfood PR after the installation permission is granted.
+
+**Open questions for Will:** Queue item 970: grant Commit statuses Read and write and accept the installation update. No grant receipt is recorded.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 09:54–11:54 PDT; current rulings and queue answers take precedence over historical briefs, decisions, proposals, TODOs and rules. Product results are lead-reported; this tracker validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:24 PDT
+
+**What:** Publish durable flow outcomes as smithers/<flow> GitHub commit statuses on the tested commit.
+
+**Why:** Hosted dogfooding needs checks visible to branch protection without GitHub Actions.
+
+**Current state:** At 11:19 commit statuses are an explicit missing dogfood dependency, assigned with repo check definitions and isolated Node check sandboxes to the dogfood builder. GH-10 authorizes status writes, but the GitHub App permission update is still requested. No working status-publication receipt exists.
+
+**Next step:** Implement and test exact-commit pending/terminal statuses through SDK durable actions; verify failure recovery and stale-head isolation, then prove on the dogfood PR after installation permission is granted.
+
+**Open questions for Will:** Existing request: set Commit statuses to Read and write on the Smithers GitHub App and accept installation updates. Product authorization is settled; provider permission completion is not reported.
+
+Evidence: script-filtered human messages and lead text replies, 09:26–11:24 PDT, session 6253ecf2; current rulings and queue answers supersede historical briefs, designs, decisions, proposals, TODOs and rules. Engineering receipts are lead-reported; this refresh validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 **What:** Publish durable Smithers flow outcomes as GitHub commit statuses named `smithers/<flow>` on the exact tested commit.
 

@@ -3,9 +3,43 @@ title: Will's decision queue (full-screen, keyboard-only, in the maintainer app)
 status: in-progress
 area: process
 owner: queue curator and lead
-updated: 2026-10-21 01:44 PDT
+updated: 2026-10-21 20:55 PDT
 links: [maintainer-site.md, decisions-for-will.md, code-reviews.md, e2e-suite-and-gifs.md, smithers-playground.md, todos-and-stack.md, self-host-install.md, second-build-machine.md, dev-stack-hygiene.md, review-round-4-p3-cleanup.md, docs-truth-pass.md, prompt-flows-are-code-flows.md, self-hosted-grafana.md, chat-message-controls.md, repository-declared-home.md, issues.md, ../rulings.md, chaptered-review-videos.md, everything-is-a-plugin.md, maintainer-app-plugins.md, code-review-guides.md, queue-general-feedback.md, queue-before-after-review.md, queue-review-quality-gate.md, native-app-di-plan.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 20:55 PDT
+
+**What:** Keep the decision queue aligned with Will’s latest rulings.
+
+**Why:** Answered proposals must stop blocking implementation.
+
+**Current state:** PROC-23’s 20:50 addendum records Will’s answer to queue 940: a minimal vendor-neutral role seam only. It replaces the own-login-only product routing and coding-session durability-exception proposals. The answer is recorded in rulings even though answers.jsonl’s latest entries remain the 10:30–10:31 approvals. Plugin design approval in decision 0017 also remains settled.
+
+**Next step:** Retire the superseded 940 ask from current curation and route the seam change to its builder; preserve all earlier answers and review history.
+
+**Open questions for Will:** GitHub reauthentication and the production callback/Commit statuses setup remain unverified operational dependencies; no new product approval is requested.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest two hours through 20:55 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers govern over historical decisions and proposals. Available recovered briefs were read; wiped scratch files are not missing work. Product results are lead-reported; Codex curates documentation and runs the maintainer-site build. Previous implementation ownership is retained below.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:34 PDT
+
+**What:** Keep decisions and reviews current without resurfacing settled questions.
+
+**Why:** Will’s latest chat and queue answers override historical pending lists.
+
+**Current state:** Write invitations and Neon Launch are answered; invitations are accepted and production Member sign-in works. Telegram is Will’s discretionary later task and must never be queued or reminded. At 10:30–10:31 Will approved factory, slash-command and sign-in recordings and selected Astra-then-Fable routing. The older pending routing question is resolved.
+
+**Next step:** Apply PROC-21 routing and preserve answers and review history. Do not infer product completion from approved recordings.
+
+**Open questions for Will:** None newly identified; retain unrelated unresolved questions in the live queue.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest approximately two hours through 10:33 PDT; current rulings and queue answers through 10:31 PDT, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence; this tracker runs only the site build. Execution ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 01:44 PDT
 
@@ -30,7 +64,7 @@ Evidence: script-filtered user-typed text and lead replies, session 6253ecf2, 23
 
 **Why:** Will approved the product queue with evaluation requirements (PLUGIN-6); answered choices must leave the pending list.
 
-**Current state:** At 01:14 PDT Will approved decision 0022 with changes and the four-model workflows-as-code recommendation. At 01:16 he confirmed the VibeLang App install. At 01:17–01:18 he approved repo browsing, agent status, branch workspace and code intelligence recordings. The lead reports two code items remaining at 01:22 and holds the next 80 guides through 01:31. First metrics over 177 answers and a gentle rubber-stamp flag are live; real curator evals remain required.
+**Current state:** At 01:14 PDT Will approved decision 0031 with changes and the four-model workflows-as-code recommendation. At 01:16 he confirmed the VibeLang App install. At 01:17–01:18 he approved repo browsing, agent status, branch workspace and code intelligence recordings. The lead reports two code items remaining at 01:22 and holds the next 80 guides through 01:31. First metrics over 177 answers and a gentle rubber-stamp flag are live; real curator evals remain required.
 
 **Next step:** Continue curation, dispatch approved designs after deploy, and retain completed guides while the review-routing question is pending. Keep measurements in queue-review-quality-gate.md.
 
@@ -47,11 +81,11 @@ Evidence: script-extracted user text and lead replies, 23:33–01:33 PDT; ruling
 
 **Why:** Tests establish whether behavior works before review.
 
-**Current state:** Code-view controls remain done on browser tests. Decision 0022 is queued once at priority 995 after duplicate consolidation; the merged workflows-as-code proposal still awaits completion. At 00:42 the VibeLang GitHub App install is queued at 990. Latest queue answers remain 00:17:42. The curator now withholds unreadable slices; last reported simplify-first count is 87.
+**Current state:** Code-view controls remain done on browser tests. Decision 0031 is queued once at priority 995 after duplicate consolidation; the merged workflows-as-code proposal still awaits completion. At 00:42 the VibeLang GitHub App install is queued at 990. Latest queue answers remain 00:17:42. The curator now withholds unreadable slices; last reported simplify-first count is 87.
 
 **Next step:** Continue curation and exact-revision guides; ingest answers and queue the merged authoring design only when ready. Do not ask Will to determine whether buttons or features work.
 
-**Open questions for Will:** Review decision 0022 and the eventual merged authoring design; install the GitHub App on smithersai/vibelang.
+**Open questions for Will:** Review decision 0031 and the eventual merged authoring design; install the GitHub App on smithersai/vibelang.
 
 Evidence: script-filtered user-typed text and lead text replies from session 6253ecf2, approximately 22:44–00:44 PDT; rulings, queue answers through 00:17:42 PDT, current decisions, proposals, TODOs, rules and shared briefs/designs. Automated notifications and teammate messages are excluded as human evidence. Product checks are lead-reported receipts; this tracker validates the site build only. Existing execution owners and all history are retained.
 

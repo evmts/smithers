@@ -3,9 +3,26 @@ title: App suite flakes left after the round 4 burn-down
 status: in-progress
 area: app
 owner: Codex Sol simple-fixes builder; Opus conflict-test builder for notification failure
-updated: 2026-10-21 04:44 PDT
+updated: 2026-10-21 10:44 PDT
 links: [effect-tanstack-db-and-effect-electric.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 10:44 PDT
+
+**What:** Repair baseline flaky tests, lint failures and stale eval expectations after current landings.
+
+**Why:** Existing failures must not conceal new regressions or weaken gates.
+
+**Current state:** At 10:32 the lead reports multiple builders encountering failures already on main: flaky tests, lint and a stale eval baseline. A Codex Sol cleanup job is planned after current landings. Earlier notification and conflict investigations remain in the retained history; no evidence closes them here.
+
+**Next step:** Consolidate the exact failures after landing, fix each with a regression and rerun required gates; coordinate the TODO recovery finding with its SDK design.
+
+**Open questions for Will:** None. Existing access, Neon, Telegram and review-routing decisions are settled.
+
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2 through 10:43 PDT; current rulings and queue answers through 10:31 PDT. Product results are lead-reported; this tracker validates the site build only. Implementation ownership is unchanged; Codex curates these notes. Later evidence supersedes retained history.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 04:44 PDT
 

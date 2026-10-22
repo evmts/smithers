@@ -3,9 +3,76 @@ title: Mac mini test farm
 status: in-progress
 area: infra
 owner: test-farm setup agent; lead coordinates suite use
-updated: 2026-10-20 23:04 PDT
+updated: 2026-10-21 23:14 PDT
 links: [second-build-machine.md, dev-stack-hygiene.md, e2e-suite-and-gifs.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 23:14 PDT
+
+**What:** Isolate each test slot’s database.
+
+**Why:** Shared restart counters and sandbox run IDs must not collide between concurrent test slots.
+
+**Current state:** At 23:07 the lead traces the apparent branch-terminal hang to four mini slots sharing one database while counting restarts independently. A Codex job is assigning one database per slot and changing the farm only while no tests run. Earlier runner recovery remains valid; slot isolation is unfinished.
+
+**Next step:** Finish the idle-farm database split and prove concurrent slots cannot reuse sandbox run IDs.
+
+**Open questions for Will:** None newly required.
+
+Evidence: user text and lead replies extracted by script from session 6253ecf2, approximately 21:14–23:14 PDT; tool payloads and automated notifications excluded. The supplied continuation transcript path is absent; recent continuation-era replies are in the original file. Rulings and queue answers take precedence over older docs and surviving briefs. Wiped scratch files are not missing work. Product receipts are lead-reported; this refresh validates the site build. Codex curates documentation and retains execution ownership.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Provide isolated Mac mini test execution.
+
+**Why:** Run browser journeys away from the MacBook.
+
+**Current state:** Rebuild report confirms node v26.5.0, one real landing e2e pass, exit 17 propagation and cancellation 143 with released locks. The lead confirms runner availability at 20:38. SIGKILL/network loss may leave companion locks; documented recovery still applies.
+
+**Next step:** Resume remote suites with MINI-RUN.md; do not confuse test availability with Claude background login.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+
+**What:** Provide browser-test capacity through the shared mini-run wrapper.
+
+**Why:** Keep browser suites and recordings off the MacBook.
+
+**Current state:** The reboot interrupted the local wrapper, not the surviving remote farm. The rebuilt MINI-RUN.md and mini-run-rebuild-report.md record Node v26.5.0 exit 0 and a real start-app landing e2e: 1 passed, exit 0, from the Flows workspace. Explicit failure returns 17; cancellation returns 143 and releases locks/stops the tracked process. This clears the earlier offline/setup blocker; it does not certify every app journey.
+
+**Next step:** Use the recovered wrapper for model-free browser tests; verify owner/process liveness before clearing any lock left by SIGKILL or network loss.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 15:54 PDT
+
+**What:** Provide browser test and recording capacity.
+
+**Why:** Real browser proofs need an available execution host.
+
+**Current state:** At 15:50 the lead confirms the mini is offline and tells every agent to run suites on Latitude, with browser e2e locally only when needed. No large downloads, installs or container-image pushes while Will uses phone data.
+
+**Next step:** Wait for mini availability; use Latitude suites and necessary local browser checks within the bandwidth constraint.
+
+**Open questions for Will:** None newly identified; unresolved questions in the retained history remain open.
+
+Evidence: script-filtered lead text replies in session 6253ecf2, latest approximately two hours through 15:53 PDT. Automated notifications, tool content and compaction summaries excluded. Rulings and queue answers prevail over historical briefs. Implementation ownership retained; Codex maintains these notes. Product receipts are lead-reported; this refresh verifies the site build.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-20, 23:04 PDT
 

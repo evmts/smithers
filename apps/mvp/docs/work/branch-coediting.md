@@ -1,9 +1,9 @@
 ---
 title: Shared branch prompt and file co-editing
-status: in-progress
+status: done
 area: app
-owner: coedit merger and builder (Opus, lead session 6253ecf2)
-updated: 2026-10-21 20:45 PDT
+owner: four-model co-editing repair panel; Opus synthesis and build assigned by lead
+updated: 2026-10-21 23:24 PDT
 links: [../features/coedit.md, branch-sharing.md, branch-terminal.md, branch-workspace-clarity.md, ../decisions/0013-branch-workspace.md, ../rulings.md]
 ---
 
@@ -29,6 +29,70 @@ links: [../features/coedit.md, branch-sharing.md, branch-terminal.md, branch-wor
 **Open questions for Will:** A second GitHub test account, so the two-person test runs in production (today it is local only).
 
 
+## Tracker reconciliation — 2026-10-21 23:24 PDT
+**What:** Persist shared edits and show Saved on both devices.
+**Why:** Editors need truthful persistence acknowledgements.
+**Current state:** At 23:17 the lead confirms the two-device test passes on smithers.sh against the 23:05 deploy, with both devices showing Saved and every edit kept. All co-edit commits are on main. This closes the proven save slice; outstanding save-state races are tracked separately in coedit-save-recovery.md.
+**Next step:** Retain the production receipt; rerun the full mini suite after database isolation, fix the answer-box flake and prove the two-person journey.
+**Open questions for Will:** Second GitHub test account username when available; its creation is already approved.
+Evidence: script-filtered user text and lead replies, 21:24–23:24 PDT in session 6253ecf2; the supplied continuation file was not found, including a filename search. Continuation-era replies survive in the original file. Rulings and queue answers govern; reboot-wiped briefs are not missing work. Codex owns tracker reconciliation only; implementation owners above are retained. Product tests are reported receipts.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+**What:** Persist branch edits and show Saved on both devices.
+**Why:** Both editors need truthful persistence acknowledgement.
+**Current state:** The lead reports at 20:46 that the co-edit Saved fix works in production, proven by a two-device production test at 20:38. This supersedes the earlier queued-only status. Broader caret/compaction follow-ups in history are not newly proven.
+**Next step:** Retain the production two-device receipt and route remaining separately scoped enhancements to their owners.
+**Open questions for Will:** None.
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+**What:** Persist shared branch edits and acknowledge Saved on every editor.
+**Why:** Both editors need a truthful persistence acknowledgement.
+**Current state:** At 20:32 the lead says the second editor still does not see Saved in production. The fixes are built and queued for landing/deployment; no new production two-device pass is reported.
+**Next step:** Land and deploy, then prove both editors see Saved only after persistence and that edits survive reload.
+**Open questions for Will:** None.
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 16:43 PDT
+**What:** Persist shared branch edits and acknowledge saves on every editor.
+**Why:** Save must reach Saved only after persistence.
+**Current state:** At 16:42 the lead reports both Save fixes implemented and locally tested; every editor sees Saved and wake duration is logged. They queue after the sandbox start limit. No landing or production E2E receipt yet.
+**Next step:** Land fixes, deploy and run the planned two-device production E2E.
+**Open questions for Will:** None.
+Evidence: user-typed messages and lead text replies script-filtered from session 6253ecf2, 14:43–16:43 PDT; synthetic notifications, tools and compaction summaries excluded. Rulings and queue answers govern over historical briefs, panels, decisions, proposals, TODOs and rules. Implementation ownership retained; Codex curates this note. Product results are lead-reported.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 15:54 PDT
+**What:** Persist shared branch edits and show Saved after persistence.
+**Why:** Multiplayer edits must survive reload.
+**Current state:** At 15:49 the lead launches the merger; at 15:52 a builder is merging panel reports and fixing saves that never reach Saved. Earlier launch intent is now confirmed active work.
+**Next step:** Collect implementation and two-person save/recovery proofs locally and in production.
+**Open questions for Will:** None newly identified; unresolved questions in the retained history remain open.
+Evidence: script-filtered lead text replies in session 6253ecf2, latest approximately two hours through 15:53 PDT. Automated notifications, tool content and compaction summaries excluded. Rulings and queue answers prevail over historical briefs. Implementation ownership retained; Codex maintains these notes. Product receipts are lead-reported; this refresh verifies the site build.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 15:40 PDT
+**What:** Persist shared edits and acknowledge Saved only after storage.
+**Why:** Two-person edits must survive reload and show truthful persistence.
+**Current state:** At 15:20 the lead says the coedit merger is next to launch after routing reports and freeing disk. This is launch intent, not confirmation that implementation started. The production save failure remains unresolved; retain designing status.
+**Next step:** Confirm merger launch and build receipts, then prove two-person saves and recovery locally and live.
+**Open questions for Will:** None newly identified; existing questions remain in the retained history.
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, approximately 13:40–15:40 PDT on 2026-10-21. Automated notifications, relayed agent text, tool records and compaction summaries excluded. Current rulings and queue answers govern over briefs and planning documents. Engineering ownership is retained; Codex curates this tracker update. Product outcomes above are lead-reported.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 14:05 PDT
+**What:** Persist shared branch edits and reach Saved truthfully.
+**Why:** Multiplayer editing must preserve work and acknowledge actual persistence.
+**Current state:** At 14:01 PDT the four-model co-editing panel starts on saves never reaching Saved. At 14:03 two confirmed review findings are held for its builder. Earlier mini passes do not establish current production behavior.
+**Next step:** Finish panel diagnosis and build; prove two-person saving, reload and private-draft isolation locally and live.
+**Open questions for Will:** None.
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2 for approximately 12:04–14:04 PDT on 2026-10-21; synthetic notifications and tool records excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the maintainer-site build only. Engineering owners remain responsible; Codex owns this documentation reconciliation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 12:54 PDT
+**What:** Keep shared branch edits durable and show Saved only after persistence.
+**Why:** The requested multiplayer editor must preserve edits and report completion honestly.
+**Current state:** At 12:48 PDT the local E2E sweep reports a real co-editing failure: saves never reach Saved. Earlier mini passes and landing receipts remain historical evidence; they do not establish the current feature works. At 12:53 the lead includes this failure in the next panel-then-build batch after the sweep.
+**Next step:** Retain the failing save journey, finish the sweep and assign the panel/build repair; rerun two-person saving and private-draft isolation locally and live.
+**Open questions for Will:** None; repair assignment is the lead’s next step.
+Evidence: script-filtered human text and lead replies for the latest approximately two hours of session 6253ecf2 through 12:54 PDT; automated notifications, relayed agents and tool blocks excluded. Current rulings and queue answers govern over older briefs, panels, decisions, proposals, TODOs and rules. Product receipts are lead-reported; Codex curates tracker documentation and runs the site build. Existing execution owners are retained.
+## Earlier tracker history (retained)
 ## Tracker reconciliation — 2026-10-21 02:06 PDT
 
 **What:** Shared branch prompt and file co-editing.

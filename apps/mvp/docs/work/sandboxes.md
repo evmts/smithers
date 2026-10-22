@@ -2,8 +2,8 @@
 title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
-owner: sandboxes builder (Opus, from 20:40 on 2026-10-21, after the earlier sandboxes builder)
-updated: 2026-10-21 21:00 PDT
+owner: agent-in-the-sandbox builder (from 13:43:30 on 2026-10-20) keeps a sandbox awake while something runs; the per-branch `SandboxObject` and container shipped with the branch slice (13:42:00). Until 13:46: unassigned; from 13:21:12 on 2026-10-20 it waits for the [branch terminal](branch-terminal.md) slice. Until 13:21: Panel S (Opus lead, Sol)
+updated: 2026-10-21 21:34 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
 
@@ -36,6 +36,222 @@ The linux/amd64 build runs PID 1 `tini`, Node v26.5.0, pnpm 11.25.0. Production 
 
 **Next step:** land the fix, run `e2e/sandbox-lifecycle.spec.ts` locally, deploy once the MigrationError fix is live, then run the same spec against production with a GIF.
 
+## Tracker reconciliation — 2026-10-21 21:34 PDT
+**What:** Prove production branch commands, sleep and restored wake.
+**Why:** Hosted coding must preserve work and stop idle spending.
+**Current state:** At 21:29 the lead reports the complete production lifecycle passed during 21:06–21:27: terminal and commit, busy-command keepalive, sleep 23 seconds after completion, wake in 52 seconds with work intact, and agent commands visible in the terminal. The proper tini image remains a separate pending deployment after the smithers.sh cutover.
+**Next step:** Retain the lifecycle recording; deploy the init image after cutover and verify its lifecycle.
+**Open questions for Will:** None newly required; existing product decisions and account provisioning remain in their owning workstreams.
+Evidence: script-filtered user text and lead replies from the latest approximately two hours across both requested session paths, current rulings and queue answers, and surviving reports where named. Product checks are reported receipts. Implementation owner retained; Codex maintains this tracker entry. Earlier history below is preserved; reboot-wiped briefs are not missing work.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 21:10 PDT
+**What:** Prove commands, idle sleep and restored wake in production.
+**Why:** Idle machines must stop spending and preserve work.
+**Current state:** At 20:58 the lead reports a real-container proof for tini with Node 26.5/pnpm 11.25, queued behind the zombie-process probe fix. The probe fix deploys at 21:05; the roughly 50-minute production lifecycle starts at 21:06. No lifecycle completion or deployed init-image receipt yet.
+**Next step:** Collect lifecycle result, land/deploy the init image and repeat its real sleep/wake proof.
+**Open questions for Will:** None.
+Evidence: script-filtered user text and lead replies, 19:06–21:06 PDT; current rulings and queue answers through 21:06; surviving briefs and reports. Product results are reported receipts, not rerun here. Implementation ownership retained; Codex curates documentation. Wiped scratch files are not missing work.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+**What:** Prove sandbox command execution, sleep and restored wake.
+**Why:** Idle machines must stop spending without losing work.
+**Current state:** At 20:33 production sleep still fails because PID 1 leaves zombie git children counted as activity. A fresh builder owns recovery; the ignore-zombies fix awaits push at 20:37. A proper init in the container image remains the lasting fix. No later lifecycle pass appears.
+**Next step:** Push and deploy the idle fix, rerun the real lifecycle, then ship and verify the init image.
+**Open questions for Will:** Push access restoration is tracked separately.
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 20:34 PDT
+**What:** Prove branch terminal, command execution, idle sleep and restored wake in production.
+**Why:** Hosted coding must preserve work and stop spending when idle.
+**Current state:** At 20:33 the lead corrects the earlier sleep claim: production lifecycle failed again at sleep. PID 1 is sleep infinity and fails to reap finished children; three leftover processes are mistaken for active work. The mitigation that ignores those leftovers is first in the landing queue. The lasting fix is a proper container init; image uploads are now possible off the hotspot. Terminal use and agent commands work according to the lead; the complete lifecycle does not.
+**Next step:** Land the mitigation, deploy and rerun the complete production lifecycle. Publish the corrected sandbox image and retain sleep/restored-wake evidence.
+**Open questions for Will:** None.
+Evidence: lead text replies script-filtered from session 6253ecf2, approximately 18:34–20:34 PDT, and recovered briefs where named. Automated notifications and tool content are excluded. Current rulings and queue answers prevail over older plans. Existing implementation ownership is retained; Codex curates the tracker. Product results are reported evidence, not tests rerun by this refresh.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 17:23 PDT
+**What:** Prove production branch startup, terminal, sleep, restored wake and agent tools.
+**Why:** Hosted coding requires preserved work through the complete sandbox lifecycle.
+**Current state:** The idle-sleep fix landed as 4be64dd8 and is live from 17:17. The lead reports a production machine slept at 17:14. The full lifecycle test started around 17:18 and needs roughly 50 minutes; no final pass or GIF is reported.
+**Next step:** Collect the full production lifecycle result and GIF, then unblock the Node 26.5 image once hotspot upload restrictions lift.
+**Open questions for Will:** None newly identified; retained unresolved decisions remain with their owning workstreams.
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, approximately 15:23–17:23 PDT. Automated notifications and tool content excluded. Rulings and queue answers govern over older briefs, designs and planning docs. Implementation ownership retained; Codex maintains tracker documentation. Product results are lead-reported.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 16:53 PDT
+**What:** Prove branch startup, terminal, sleep and restored wake.
+**Why:** A usable terminal must also preserve the working copy through idle sleep.
+**Current state:** At 16:47 the lead reports startup timeout landed on main 83534f86. At 16:51 the idle-sleep cause is identified: closing the terminal starts a checkpoint save killed with exit 137, leaving no checkpoint and therefore an awake box. The builder reports a fix moving the save into its own request, once on the next keep-alive check; it is queued ahead of legacy removal. No production lifecycle pass is reported.
+**Next step:** Land the checkpoint fix, deploy once, and rerun the full production lifecycle including restored wake and agent tools.
+**Open questions for Will:** None newly identified; earlier unresolved items remain in the retained history.
+Evidence: lead text replies, script-filtered from session 6253ecf2 for 14:53–16:53 PDT; tool content, automated messages, relayed agent reports and compaction summaries excluded. Rulings and queue answers take precedence over historical briefs and plans. Implementation owners and statuses retained; Codex curates this update. Product checks are lead-reported.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 16:43 PDT
+**What:** Prove branch startup, terminal, sleep and restored wake.
+**Why:** Terminal success alone does not prove durable sandbox lifecycle.
+**Current state:** At 16:38 the builder waits for 98702a02 deployment before investigating idle sleep. The 150-second startup timeout is locally tested and queued after diagnostics. Diagnostics are now on main; no full production sleep/wake acceptance receipt exists.
+**Next step:** Complete deployment, land startup limit, fix idle sleep and prove restored wake plus the agent tool step.
+**Open questions for Will:** None.
+Evidence: user-typed messages and lead text replies script-filtered from session 6253ecf2, 14:43–16:43 PDT; synthetic notifications, tools and compaction summaries excluded. Rulings and queue answers govern over historical briefs, panels, decisions, proposals, TODOs and rules. Implementation ownership retained; Codex curates this note. Product results are lead-reported.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 16:33 PDT
+**What:** Bound sandbox startup and prove production sleep/wake.
+**Why:** A slow start must fail visibly; the lifecycle still needs real acceptance.
+**Current state:** At 16:33 PDT the lead reports the 150-second startup limit done and tested on the MacBook, with a clear start-timeout failure instead of a 20-minute browser wait. It is queued immediately after sandbox diagnostics. The idle-sleep bug remains under repair; terminal success does not establish full lifecycle acceptance.
+**Next step:** Land diagnostics and startup limit, deploy, then prove idle sleep, restored wake and the agent tool step in production.
+**Open questions for Will:** None.
+Evidence: lead text replies in session 6253ecf2, script-filtered through 16:33 PDT from its latest two hours; automated notifications, tool records and compaction summaries excluded. Rulings and queue answers take precedence over historical briefs. Implementation ownership retained; Codex curates tracker documentation. Product results are lead-reported.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 14:54 PDT
+**What:** Prove production branch terminals, tools and durable sleep/wake.
+**Why:** Sandboxes remain the top production priority.
+**Current state:** Routing fix d60a5f2b deployed at 13:44. At 14:51 the lead reports the full production run started around 14:50 and needs about 50 minutes with real sleep timers. Terminal, busy, sleep and restored wake run first; the model-dependent agent step runs last. No final acceptance receipt yet.
+**Next step:** Record each terminal/lifecycle result and deployed revision, then separately prove the agent tool step after model access recovers.
+**Open questions for Will:** None for this repair. Existing pending decisions remain in the retained history.
+Evidence: script-extracted user-typed text and lead replies from session 6253ecf2, 12:54–14:54 PDT; automated notifications excluded. Rulings and queue answers govern over historical briefs and proposals. Product receipts are lead-reported; this pass verifies only the maintainer-site build. Implementation owners remain assigned; Codex maintains tracker documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 14:17 PDT
+**What:** Prove hosted checkout, terminal, agent tools and sleep/wake.
+**Why:** Hosted coding needs a working branch machine.
+**Current state:** At 14:16 the lead reports a terminal opened in production at 14:14, the first successful checkout through the git proxy and Code Storage. Routing fix d60a5f2b works and sandbox logs appear in the live tail. This proves the terminal step only. Agent tools and the real 15-minute sleep/wake lifecycle wait on the model-budget increase deploying now.
+**Next step:** Collect tool and restored-work receipts after budget recovery; retain the terminal result and finish the pinned Node/pnpm image proof.
+**Open questions for Will:** None.
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2, approximately 12:16–14:16 PDT on 2026-10-21; automated notifications, relayed agent reports and tool blocks excluded. Rulings and queue answers prevail over historical briefs/designs and docs. Product receipts are lead-reported; tracker verification is the maintainer-site build. Implementation ownership is retained; Codex curates documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 14:05 PDT
+**What:** Prove hosted checkout, terminal, agent tools and sleep/wake.
+**Why:** Hosted coding requires a working branch machine.
+**Current state:** Routing fix d60a5f2b is live from 13:44 PDT. The 14:02 lead correction supersedes earlier claims that production E2E was already running: it had been waiting on the suite lock. At 14:02 it actually starts alongside the suite with isolated Spoon-Knife terminal/tool usage. No terminal/tool or lifecycle pass is reported. Node image a98f91e4 still follows this proof.
+**Next step:** Collect actual terminal/tool and full lifecycle receipts, repair failures, then land/deploy the pinned Node/pnpm image.
+**Open questions for Will:** None.
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2 for approximately 12:04–14:04 PDT on 2026-10-21; synthetic notifications and tool records excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the maintainer-site build only. Engineering owners remain responsible; Codex owns this documentation reconciliation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 13:54 PDT
+**What:** Prove branch checkout, terminal, agent tools and sleep/wake in production.
+**Why:** Hosted coding requires a working branch machine.
+**Current state:** The routing fix d60a5f2b went live at 13:44 on its first deploy attempt. Production lifecycle E2E is running; sandbox logs now appear in the live tail. At 13:49 no passing result is reported. Full lifecycle validation uses real 15-minute timings and is expected to take roughly 50 minutes. Node image change a98f91e4 follows this test.
+**Next step:** Collect terminal/tool and full lifecycle results, repair any failures, then land/deploy the pinned toolchain image. Keep the feature in progress until real E2E passes.
+**Open questions for Will:** None.
+Evidence: lead text replies at 13:44–13:53 PDT on 2026-10-21, extracted by script from session 6253ecf2 within its latest approximately two hours. Automated notifications, relayed agent messages and tool content are excluded. Rulings and queue answers take precedence over historical briefs and designs. Results are lead-reported; this tracker verifies the maintainer-site build. Existing implementation ownership is retained.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 13:44 PDT
+**What:** Prove branch checkout, terminal, tools and sleep/wake in production.
+**Why:** Hosted coding needs a working branch machine.
+**Current state:** At 13:42 PDT the supported-routing and structured-log fix landed as d60a5f2b; deployment is underway at 13:44. No successful production lifecycle is reported. Node 26.5 image change a98f91e4 is committed and scheduled after the production sandbox test.
+**Next step:** Confirm deployment, immediately run production lifecycle tests, then land/deploy pinned Node 26.5.0 and pnpm 11.25.0 for checks.
+**Open questions for Will:** None.
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, approximately 11:44–13:44 PDT; automated notifications and tool content excluded. Rulings and queue answers govern over historical briefs, panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this pass validates the site build only. Existing execution owners retained; Codex curates tracker documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 13:24 PDT
+**What:** Prove production checkout, terminal, tools and sleep/wake recovery.
+**Why:** Hosted coding requires a working branch machine.
+**Current state:** At 13:19 PDT the lead reports the probe confirmed unsupported Cloudflare routing between the sandbox and proxy as the production checkout failure. The same proxy/token clones successfully in the production image on the Mac. The builder is changing routing and fixing missing sandbox logs in the live tail. No passing production lifecycle is reported.
+**Next step:** Land and deploy supported routing plus log visibility, then rerun terminal, tools and sleep/wake tests.
+**Open questions for Will:** None.
+Evidence: script-filtered lead text replies in session 6253ecf2, latest two-hour window through 13:23 PDT; rulings and queue answers take precedence. Execution ownership retained; Codex curates tracker documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 13:16 PDT
+**What:** Prove production branch checkout, tools, terminal and sleep/wake recovery.
+**Why:** The hosted coding loop needs working branch machines.
+**Current state:** The latest 13:15 PDT production matrix still reports terminal and agent-tool failures. Containers start and git runs, but checkout between the container and Code Storage fails. The routing probe and supported-routing repair remain with the sandbox builder; no successful production lifecycle receipt is reported.
+**Next step:** Complete the probe, land/deploy the routing fix and rerun lifecycle and tools tests; finish pinned check-job tooling.
+**Open questions for Will:** None.
+Evidence: script-filtered user-typed text and lead replies, 11:16–13:16 PDT, session 6253ecf2; current rulings and queue answers override older briefs and docs. Product receipts are lead-reported; this refresh validates the maintainer-site build only. Execution owners remain unchanged; Codex curates documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 12:54 PDT
+**What:** Prove branch machines can check out code, run tools and recover after sleep.
+**Why:** Branch sandboxes must actually open a terminal and preserve work.
+**Current state:** At 12:53 PDT the lead reports production sandbox E2E fails at Open the terminal. Containers start, numeric users and the image work, and the box runs git; every wake fails at checkout despite the mirror containing the test branch. Unsupported routing from the forge intercept to a Durable Object stub is the main suspect, not a confirmed cause. A five-minute probe is authorized without the production E2E lock; the builder also prepares supported routing. The pinned Node 26.5.0/pnpm 11.25.0 check image is still being built. No production lifecycle pass exists.
+**Next step:** Confirm the checkout failure with the probe, repair forge routing, deploy and rerun the terminal and sleep/wake lifecycle. Finish the pinned check image and bounded command-record retention.
+**Open questions for Will:** None.
+Evidence: script-filtered human text and lead replies for the latest approximately two hours of session 6253ecf2 through 12:54 PDT; automated notifications, relayed agents and tool blocks excluded. Current rulings and queue answers govern over older briefs, panels, decisions, proposals, TODOs and rules. Product receipts are lead-reported; Codex curates tracker documentation and runs the site build. Existing execution owners are retained.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 12:46 PDT
+**What:** Prove production terminal/tools, sleep/wake, checkpoints and bounded command records.
+**Why:** Branch machines must preserve work without accumulating unlimited per-run records.
+**Current state:** At 12:31 the lead reports the command-record retention fix built and going to the lander, dropping records older than 24 hours. The production lifecycle test started at 12:31: Member sign-in succeeded and repository clones were requested. Its sleep can take roughly 20 minutes. At 12:39 the broader suite reports branch-terminal failures; no completed sandbox lifecycle pass is available. The sandbox builder also owns upgrading the check image to pinned Node 26.5.0 and pnpm 11.25.0, with registry egress limited to check jobs.
+**Next step:** Finish the production lifecycle test and repair terminal failures; land record retention and the pinned toolchain, retaining retry-window, checkpoint and egress regressions.
+**Open questions for Will:** None.
+Evidence: script-filtered user-typed text and lead replies, approximately 10:44–12:44 PDT on 2026-10-21, session 6253ecf2; synthetic notifications, relayed agents and tool blocks excluded. Rulings and queue answers govern over shared briefs/designs and historical decisions, proposals, TODOs and rules. Product receipts are lead-reported; Codex curates documentation and validates the site build. Existing execution ownership is retained.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 11:54 PDT
+**What:** Prove production terminals, tools, sleep/wake and unpushed-work restoration.
+**Why:** Branch machines must preserve work across shutdown and deployment.
+**Current state:** Sandbox fixes are reported live with the 11:47 production deployment. At 11:51 the production sandbox E2E waits for the shared lock while watching live logs. Earlier local coverage and container tests do not establish a production lifecycle pass.
+**Next step:** Finish the queued production E2E and retain terminal, tool, sleep/wake and checkpoint-restoration receipts.
+**Open questions for Will:** None.
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 09:54–11:54 PDT; current rulings and queue answers take precedence over historical briefs, decisions, proposals, TODOs and rules. Product results are lead-reported; this tracker validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 11:40 PDT
+**What:** Prove terminals, tools, sleep/wake and unpushed-work restoration on production Containers.
+**Why:** ARCH-14 requires durable branch machines.
+**Current state:** At 11:39 the lead reports the sandbox repairs landed in main revision 931fed70 alongside remote-host fixes; deployment is underway. Earlier docs/test-capacity waits do not establish a production pass. No successful production sandbox journey is reported.
+**Next step:** After deployment completes, retain production terminal, tool, sleep/wake and unpushed-commit restoration receipts, plus outstanding validation results.
+**Open questions for Will:** None.
+Evidence: lead text replies through 11:39 PDT in session 6253ecf2, extracted by script from the latest two hours; rulings and queue answers take precedence over shared briefs, designs and older docs. Product results are reported evidence; this refresh validates the site build only. Existing implementation ownership is retained; Codex curates this note.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 11:24 PDT
+**What:** Prove branch terminals, tools, sleep/wake and restoration on production Containers.
+**Why:** ARCH-14 requires durable branch machines, including unpushed work.
+**Current state:** Reviewed fixes remain queued: numeric command users, larger instances, sleep rearming and Astra restore/input repairs. At 11:16 and 11:23 the builder waits for shared test capacity; lander and Mac mini E2E jobs go first. No passing production sandbox receipt is reported. Remote flows now wait on QuickJS deployment after successful migration recovery.
+**Next step:** Complete docs checks and the Mac mini E2E retry, land/deploy repairs in order and retain production terminal, tool, sleep/wake and unpushed-commit restoration receipts.
+**Open questions for Will:** None; access is settled and the sandbox image already exists.
+Evidence: script-filtered human messages and lead text replies, 09:26–11:24 PDT, session 6253ecf2; current rulings and queue answers supersede historical briefs, designs, decisions, proposals, TODOs and rules. Engineering receipts are lead-reported; this refresh validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 11:04 PDT
+**What:** Make branch terminals, tools, sleep and restore work on production Cloudflare Containers.
+**Why:** ARCH-14 and PROC-20 prioritize production sandbox proof.
+**Current state:** At 10:56 the builder reports all four Astra findings fixed: preserve terminal input during checkpoint saves; fetch an old base before restoration; recover transient GitHub restore failures; use 30-bit command user ids. These join numeric users, larger instances and deploy-time sleep-timer rearming. The image already exists; earlier claims it was unpublished are superseded. The second deploy will combine sandbox and remote-flow fixes after landing; no successful production sandbox run is reported.
+**Next step:** Land the reviewed repairs, complete the combined deploy after migration recovery, and retain production terminal, tool, sleep/wake and unpushed-commit restore E2E/GIF receipts.
+**Open questions for Will:** None newly identified. Repository access, Neon and review routing are settled; Telegram setup is discretionary and must not be resurfaced.
+Evidence: script-filtered human text and lead replies in session 6253ecf2, approximately 09:03–11:03 PDT; current rulings and queue answers take precedence over briefs, panel designs and older documentation. Product receipts are lead-reported; Codex curates documentation and validates only the maintainer-site build. Existing engineering ownership is retained.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 10:34 PDT
+**What:** Make branch terminals, tools, sleep and wake work on production Cloudflare Containers.
+**Why:** ARCH-14 and PROC-20 prioritize real hosted sandboxes.
+**Current state:** The four-model panel recommends retaining the existing Containers implementation. At 10:32 the builder reports numeric command users, larger instances, re-armed sleep timers, preservation of unpushed commits, wake diagnostics and Node in the image. Mac mini tests report 100% coverage and a real-container terminal. Full local sleep/wake proof and production validation remain outstanding; the image was already published, correcting the earlier claim.
+**Next step:** Finish the lifecycle run, land fixes, then deploy in sequence after the migration repair and prove production sleep/wake with a GIF.
+**Open questions for Will:** None newly identified; retain unrelated unresolved questions in the live queue.
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest approximately two hours through 10:33 PDT; current rulings and queue answers through 10:31 PDT, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence; this tracker runs only the site build. Execution ownership is retained; Codex curates documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 10:24 PDT
+**What:** Run durable branch terminals and agent tools on Cloudflare Containers.
+**Why:** Production sandboxes are Will’s immediate priority.
+**Current state:** The four-model plan is being implemented. The published pinned image exists. Numeric command IDs, instance sizing, sleep timer re-arming and unpushed-commit preservation remain repair scope. At 10:23 PDT the shared production Member session is available; production still waits on the remote-flow migration repair. Secrets remain disabled.
+**Next step:** Land repairs, deploy after host recovery and prove terminal, tools and sleep/wake restoration in production with a GIF.
+**Open questions for Will:** None new. Access, Neon and Telegram decisions are resolved; do not reopen them.
+Evidence: script-extracted human messages and lead text replies, 08:23–10:23 PDT, session 6253ecf2. Automated records and continuation summaries excluded. Rulings and queue answers override older briefs, panels, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the site build only. Existing execution owners retained; Codex owns this documentation refresh.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 10:15 PDT
+**What:** Run a branch terminal and agent tools in a durable Cloudflare Container with sleep/wake recovery.
+**Why:** Production sandboxes are Will’s immediate priority under ARCH-14 and PROC-20.
+**Current state:** All four reports are merged and implementation is running. The published pinned image exists, correcting the earlier unpublished-image claim. Repairs cover numeric command user IDs, instance sizing, re-arming sleep timers and preserving unpushed commits. Production still depends on remote-flow recovery and the shared Member session. Will sent the Write invitations; acceptance is pending. Secrets remain disabled.
+**Next step:** Land and deploy tested repairs, then prove terminal commands, agent tools, busy keep-awake and sleep/wake restore against production with a GIF.
+**Open questions for Will:** None. Cloudflare is preferred and Freestyle remains the fallback; test-account invitations are already authorized.
+Evidence: user-typed messages and lead text replies extracted by script from session 6253ecf2, approximately 08:14–10:14 PDT on 2026-10-21; tool records, automated notifications, local-command output and continuation summaries excluded. Current rulings (ARCH-4, TEST-6, AUTH-4, ARCH-14, PROC-20) and queue answers take precedence over shared briefs, panel designs, decisions, proposals, TODOs and rules. Execution owners are retained; Codex curates tracker documentation only. Product validation is lead-reported; this refresh runs only the site build.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 09:54 PDT
+**What:** Run durable branch terminals and tools on Cloudflare Containers.
+**Why:** Production sandboxes are an immediate priority.
+**Current state:** At 09:48 PDT the lead reports the merged sandbox plan is being implemented, confidence 80%. The published pinned image exists. Production execution still depends on remote-flow migration recovery and Member test access. Numeric command user IDs, instance sizing, timer re-arming and preservation of unpushed commits remain in the repair scope. Secrets remain disabled.
+**Next step:** Complete and land the repair, then verify terminal, agent tools, busy keep-awake and sleep/wake recovery on production with the shared E2E harness and GIF.
+**Open questions for Will:** None. Answered 10:13 on 2026-10-21 (option 1, granted), Will: "Both Write invitations are sent; codeplanesmithers still needs to accept them." The prod-e2e builder accepts both invitations as the test account (rulings.md, TEST-6 addendum).
+Evidence: script-filtered user-typed messages and lead text replies, 07:53–09:53 PDT, session 6253ecf2; automated requests, summaries and agent-message wrappers excluded. Rulings and queue answers take precedence over briefs and older docs. Product checks are lead-reported; this refresh validates only the site build. Execution owners retained; Codex curates documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 09:45 PDT
+**What:** Run a durable Cloudflare sandbox per branch for terminals and agent tools.
+**Why:** Production sandboxes are Will’s immediate priority (ARCH-14, PROC-20).
+**Current state:** At 09:43 PDT the lead reports all four sandbox reports complete and implementation underway. The panel recommends retaining our Cloudflare Containers implementation at 85–90% confidence. The image is already published and pinned; the earlier missing-image claim was corrected. No production container has started because sandbox flows hit the remote-host migration failure. Specific repairs include numeric command user IDs, a larger instance, re-arming sleep timers after deploy, and preserving unpushed commits during restore. No production acceptance receipt exists; secrets stay disabled.
+**Next step:** Finish the Opus implementation alongside the remote-host repair, then prove terminal and agent tools share the branch box, busy work prevents sleep, and real idle sleep/wake preserves work. Record production receipts and a GIF. Cloudflare remains preferred; Freestyle is fallback only if necessary.
+**Open questions for Will:** The lead’s existing request: grant codeplanesmithers write access to smithersai/smithers so it can exercise production Member flows. Reported recommendation confidence: 75%; no grant receipt or answer appears. This blocks live proof, not implementation.
+Evidence: script-extracted human text and lead text replies from session 6253ecf2, approximately 07:43–09:43 PDT on 2026-10-21; compacted summaries, local-command output, automated notifications and tool blocks excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product results are reported evidence; this tracker runs only the maintainer-site build. Existing execution owners are retained; Codex curates documentation.
+## Earlier tracker history (retained)
+## Tracker reconciliation — 2026-10-21 09:34 PDT
+**What:** Run one durable Cloudflare sandbox per branch for terminals and agent tools.
+**Why:** Production sandboxes are a priority under ARCH-14 and PROC-20.
+**Current state:** At 09:27 PDT the lead corrects the earlier image claim: the production image is already published and pinned. Sol and Astra reports recommend retaining the existing Cloudflare Containers implementation rather than adopting the Sandbox SDK. Opus and Fable reports are still awaited; no merged plan or passing production receipt is reported. Remaining gaps are remote-flow migrations, failure-safe sleep/wake and working-copy restoration, and production E2E. Secrets remain disabled.
+**Next step:** Merge all four reports, have Opus implement the recovery and host fixes, then prove terminal and agent tools, keep-awake, idle sleep and restored work on production with a GIF. Cloudflare remains preferred; Freestyle is fallback only if Cloudflare cannot meet requirements.
+**Open questions for Will:** None new. Provider preference and implementation direction are settled; builders resolve engineering choices.
+Evidence: session 6253ecf2, script-filtered user-typed text and lead text replies in the latest approximately two hours through 09:33 PDT; synthetic notifications, tool results and compacted summaries excluded. Rulings and queue answers take precedence over shared briefs/designs, decisions, proposals, TODOs and rules. Product results are lead-reported; this refresh validates only the site build. Execution owners remain unchanged; Codex maintains this tracker entry.
+## Earlier tracker history (retained)
 ## Tracker reconciliation — 2026-10-21 09:24 PDT
 
 **What:** Run a durable sandbox per branch, shared by the terminal and agent tools.
@@ -131,3 +347,4 @@ Until 13:21 on 2026-10-20 the next step was: a one-day spike after features 1 to
 - Budgets: 20 awake sandboxes per deployment, 2 per person, a $100 a month alert, snapshots kept 30 days? Asked 22:43 as question 8 of 14, each as an admin setting changeable without a deploy. Recommended: yes. (Answered 22:45: deferred until we ship; a TODO, [sandbox budgets](sandbox-budgets.md).)
 - None open.
 - May the agent's loop run on its own host with only its tools in the sandbox? (Answered 22:42: yes; the sandbox exposes only itself and its tools.)
+

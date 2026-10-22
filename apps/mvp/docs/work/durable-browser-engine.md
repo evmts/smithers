@@ -1,11 +1,62 @@
 ---
 title: Durable browser engine (B1)
-status: done
+status: in-progress
 area: sdk
-owner: B1 agent (started 22:31 on 2026-10-19; since 23:28 its store moves to `@journeyapps/wa-sqlite`, and its leader becomes the only one; reported done about 23:41); follow-ups in [B1 follow-ups](b1-follow-ups.md)
-updated: 2026-10-20
+owner: Opus browser-engine repair builder assigned by lead
+updated: 2026-10-21 21:44 PDT
 links: [agent-root-browser-safe.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0002-local-first.md, ../rules.md, flows-and-agent.md, durable-answering.md, model-endpoint.md, pwa.md, local-first.md, host-agnostic-flows.md, everything-is-a-durable-flow.md, notifications-and-live-work.md, one-sqlite-one-leader.md, b1-follow-ups.md, flows-root-platform-neutral.md, plan-identity-across-deploys.md, plan-identity-minified-builds.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 21:44 PDT
+
+**What:** Preserve durable writes and tab handover in the browser.
+
+**Why:** Completed writes must survive handover without duplication or tampering.
+
+**Current state:** At 21:36 the lead reports eight completed commits with the lander, 331 passing tests at full coverage and passing docs checks. Third Astra review found cross-tab overwrite, rename/delete, and burst-overflow accounting defects; all are reported fixed. Landing and hosted recovery acceptance are not yet reported.
+
+**Next step:** Land the reviewed stack and collect browser recovery and deployed validation receipts.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered recent human text and lead replies through 21:43 PDT in session 6253ecf2, current rulings and queue answers; surviving reports where cited. The supplied continuation path is absent; post-reboot replies are in the available transcript. Product results are reported receipts, not rerun here. Existing execution owner retained; Codex curates documentation. Wiped scratch files are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 17:14 PDT
+
+**What:** Preserve browser durability across store preparation and tab handover.
+
+**Why:** Writes must commit once and fail closed when persistent storage is unavailable.
+
+**Current state:** At 17:06 five commits are queued, reviewed twice by Astra with reported 100% coverage; generated docs still need landing. Single-tab writes commit once. Failed upgrade preparation blocks local database writes while rows remain in memory, superseding the earlier proposed decision-0021 behavior. One fixed-200-ms runtime test flaked under load.
+
+**Next step:** Land with regenerated docs, repair the flaky test through Sol and retain browser recovery E2E receipts.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, approximately 15:14–17:14 PDT. Notifications, relayed agents, tools and compaction summaries excluded. Rulings and queue answers supersede older briefs/designs and docs. Execution owner retained; Codex curates the tracker only. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:05 PDT
+
+**What:** Preserve browser durability through tab handover and database initialization.
+
+**Why:** Completed writes must not repeat and a failed store must refuse traffic.
+
+**Current state:** At 13:55 PDT the lead reports three confirmed platform-browser defects: terminal reconnect has a handwritten retry loop, tab handover can repeat an already-finished write, and failed database setup still accepts traffic. A new Opus builder owns all three. Reopened from done; no repair receipt is reported.
+
+**Next step:** Replace reconnect recovery with durable engine behavior; retain handover/replay and failed-setup refusal regressions, then validate real browser recovery.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2 for approximately 12:04–14:04 PDT on 2026-10-21; synthetic notifications and tool records excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the maintainer-site build only. Engineering owners remain responsible; Codex owns this documentation reconciliation.
+
+## Earlier tracker history (retained)
+
 
 ## What
 

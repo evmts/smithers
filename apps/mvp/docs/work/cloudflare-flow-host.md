@@ -3,9 +3,297 @@ title: Cloudflare flow host in the Worker (remote flows)
 status: in-progress
 area: infra
 owner: none open from Fable review 2: the engine and hosts agent reported P3-1 and P3-7 fixed at 07:07:38 on 2026-10-20. Until 07:07: Fable fix agent: engine and hosts (since 06:09:22 on 2026-10-20): P3-1, settled Durable Objects keep their intent forever, and P3-7, the remote door with nothing to start; tracked in `fable-review-2-fixes`. Until 06:09: W5 (a)+(c) agent (started 22:59, reported done 23:39 on 2026-10-19), the Worker wiring, W5 (c) of durable answering; Cloudflare child-flow agent (started by 23:12 on 2026-10-19, reported done 00:21 on 2026-10-20), review 2's P1 fix in `platform-cloudflare`
-updated: 2026-10-21 09:24 PDT
+updated: 2026-10-21 13:54 PDT
 links: [../decisions/0011-the-agent-runs-in-the-browser.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0003-flows-and-the-agent.md, durable-answering.md, model-endpoint.md, repo-clone-and-view.md, host-agnostic-flows.md, infrastructure-as-code.md, code-reviews.md, everything-is-a-durable-flow.md, flows-root-platform-neutral.md, b1-follow-ups.md, platform-cloudflare-edge-cache.md, sdk-test-reds.md, disk-space.md, plan-identity-across-deploys.md, fable-review-2-fixes.md, flows-and-agent.md, land-to-main.md, second-build-machine.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 13:54 PDT
+
+**What:** Prove hosted remote flows through production journeys.
+
+**Why:** Completion receipts establish hosted durability beyond deploy success.
+
+**Current state:** Remote flows complete in production. At 13:42 issue-sync E2E passes including a full sync; the webhook fixture missed an early tail record and was repaired. At 13:53 a fresh builder takes over the long production suite after the previous builder exhausted context. Fixes are with the lander; the roughly 70-minute test waits behind the sandbox production run.
+
+**Next step:** Finish the production suite for spend alerts, answer expiry, role recheck and a real TODO-to-PR run; retain individual receipts and landing revisions.
+
+**Open questions for Will:** None.
+
+Evidence: lead text replies at 13:44–13:53 PDT on 2026-10-21, extracted by script from session 6253ecf2 within its latest approximately two hours. Automated notifications, relayed agent messages and tool content are excluded. Rulings and queue answers take precedence over historical briefs and designs. Results are lead-reported; this tracker verifies the maintainer-site build. Existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 13:44 PDT
+
+**What:** Prove remote flows and their full hosted journeys.
+
+**Why:** Sync, clones, alerts and TODO execution share durable remote hosting.
+
+**Current state:** Remote flows complete in production. At 13:42 PDT the issue-sync e2e passed including its own full sync; the webhook test missed a just-started tail record and its fixture is repaired. Long remote-flow tests require about 70 minutes and are explicitly queued after production sandbox e2e. No real TODO-to-PR production pass is reported.
+
+**Next step:** Run repaired webhook and long remote-flow production journeys after the priority sandbox run; retain exact revisions and outcomes.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, approximately 11:44–13:44 PDT; automated notifications and tool content excluded. Rulings and queue answers govern over historical briefs, panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this pass validates the site build only. Existing execution owners retained; Codex curates tracker documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 12:46 PDT
+
+**What:** Run durable remote flows reliably in production.
+
+**Why:** Hosted sync, clones, alerts, sandboxes and TODOs share this host.
+
+**Current state:** At 12:36 the lead reports completed production runs: two token revocations, one role recheck, 13 chat expiries, eight webhook applies, 28 full issue-sync passes, six clones and five spend alerts. Another 22 expiry runs are waiting on their timers. b1bab88a deployed at 12:35; startup measured 64–76 ms. The first remote-flows e2e had passing sync assertions but two fixture loading-wait failures; the fixture is fixed and longer tests are next. Remote execution works; full production journeys are not all proven.
+
+**Next step:** Retain completed-flow receipts and finish long production suites, including TODO-to-PR; keep fixture failures and sandbox lifecycle outcomes visible separately.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 10:44–12:44 PDT on 2026-10-21, session 6253ecf2; synthetic notifications, relayed agents and tool blocks excluded. Rulings and queue answers govern over shared briefs/designs and historical decisions, proposals, TODOs and rules. Product receipts are lead-reported; Codex curates documentation and validates the site build. Existing execution ownership is retained.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 12:28 PDT
+
+**What:** Restore durable remote execution in production.
+
+**Why:** Hosted clone, sync, sandboxes and TODOs need the shared host.
+
+**Current state:** At 12:06 the lead reports completed chat expiry, terminal open and token revoke flows in production. Webhooks synced 1,035 issues and 15 comments; 23 stale runs ended without GitHub calls and two leftover tokens were revoked. Alarm logs are clean. Six clones and three spend alerts were still running; this does not establish their completion.
+
+**Next step:** Retain per-flow receipts, finish the production suites and verify pending clones, alerts, sandboxes and TODO journeys separately.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 10:28–12:28 PDT, session 6253ecf2; rulings and queue answers govern over historical briefs, designs, decisions, proposals, TODOs and rules. Product results are lead-reported. Existing engineering ownership is retained; Codex curates tracker documentation and validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:54 PDT
+
+**What:** Restore durable remote execution in production.
+
+**Why:** Clone, sync, sandbox tools and TODO runs require a working remote host.
+
+**Current state:** The lead reports production fixes went live at 11:47: QuickJS on workerd, TODO execution, remote-flow repairs and sandbox repairs. Electric’s database password is absent from container settings, and repository pages and sync respond normally. Smoke and remote-flow E2E are running; no completed remote-flow receipt yet. Ten later commits landed as b3d8ea23, but their deployment is not established. Worker startup CPU caused one failed deployment attempt before a successful retry.
+
+**Next step:** Collect successful flow, webhook sync and revocation receipts. Track startup work separately. Land the three pending TODO-flow changes in agreed order and deploy together only after checking no TODO runs are active; changing a flow definition currently fails its existing runs. The lead reports none active in production.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 09:54–11:54 PDT; current rulings and queue answers take precedence over historical briefs, decisions, proposals, TODOs and rules. Product results are lead-reported; this tracker validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:40 PDT
+
+**What:** Restore durable remote execution in production.
+
+**Why:** Clone, issue sync, sandbox tools and TODO runs require a working host.
+
+**Current state:** At 11:39 the lead reports the production fixes on main as 931fed70: QuickJS on workerd, TODO runs enabled by default, remote-flow fixes and sandbox repairs. The remote-flows builder is deploying that revision. The earlier migration repair is deployed, but no completed flow after the new deployment is reported.
+
+**Next step:** Record deployment completion, then retain successful production flow, webhook issue-sync and sign-out revocation receipts. Keep dependent tests marked broken until their real passes.
+
+**Open questions for Will:** None; access and Neon decisions remain settled.
+
+Evidence: lead text replies through 11:39 PDT in session 6253ecf2, extracted by script from the latest two hours; rulings and queue answers take precedence over shared briefs, designs and older docs. Product results are reported evidence; this refresh validates the site build only. Existing implementation ownership is retained; Codex curates this note.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:24 PDT
+
+**What:** Restore durable remote execution in production.
+
+**Why:** Clone, issue sync, sandbox tools and TODO runs require a working host.
+
+**Current state:** Revision 78407fce deployed at 10:57 with 23 engine tables and all 25 setup steps. Remote flows still fail constructing QuickJS from raw WASM bytes. At 11:20 the lead confirms the factory workerd repair also covers the production bundler; no additional fix is needed. Its stack still awaits landing and deployment.
+
+**Next step:** Deploy the factory stack and queued remote-flow/sandbox fixes, then prove a flow completes, a webhook syncs an issue and sign-out revokes tokens. Keep dependent tests marked broken until completion receipts exist.
+
+**Open questions for Will:** None; Member access and Neon Launch are settled.
+
+Evidence: script-filtered human messages and lead text replies, 09:26–11:24 PDT, session 6253ecf2; current rulings and queue answers supersede historical briefs, designs, decisions, proposals, TODOs and rules. Engineering receipts are lead-reported; this refresh validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:15 PDT
+
+**What:** Restore durable remote execution in production.
+
+**Why:** Every remote feature depends on the host completing real flows.
+
+**Current state:** At 11:08 the lead confirms revision 78407fce deployed at 10:57: the production engine has 23 tables and all 25 setup steps. Migration recovery is proven. Remote flows still fail because constructing the TODO agent compiles QuickJS from raw WASM bytes, which Workers refuse. The factory stack contains a workerd repair queued for landing; its production bundle coverage still needs verification.
+
+**Next step:** Land the factory, remote-flow and sandbox repairs, deploy them together, then prove a completed remote flow, issue webhook sync and signed-out token revocation. Do not equate migrated tables with working remote features.
+
+**Open questions for Will:** None newly identified; settled decisions remain settled.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 09:14–11:14 PDT on 2026-10-21; current rulings (including PROC-21–23), queue answers, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Engineering receipts are reported evidence; this refresh validates only the maintainer-site build. Existing implementation owners are retained; Codex curates these notes.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:04 PDT
+
+**What:** Restore durable remote execution in production.
+
+**Why:** Clone, webhook sync, sandboxes and TODO runs require the same working host.
+
+**Current state:** At 10:55 the lead reports the Hyperdrive prepared-query eviction fix landed as 78407fce and deploying. At 11:00 that deployment has no completion receipt yet. The first four remote-flow fixes are next in the landing order; six later commits require a design merge with the production E2E harness on test prerequisites. A real production TODO-to-open-PR-and-Drop test is authored, not reported passing.
+
+**Next step:** Finish the migration deploy, merge harness prerequisites deliberately, land the remaining host repairs, then retain successful remote-flow, webhook and real TODO production receipts.
+
+**Open questions for Will:** None newly identified. Repository access, Neon and review routing are settled; Telegram setup is discretionary and must not be resurfaced.
+
+Evidence: script-filtered human text and lead replies in session 6253ecf2, approximately 09:03–11:03 PDT; current rulings and queue answers take precedence over briefs, panel designs and older documentation. Product receipts are lead-reported; Codex curates documentation and validates only the maintainer-site build. Existing engineering ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:54 PDT
+
+**What:** Restore durable remote execution in production.
+
+**Why:** Clone, webhook sync, sandboxes and TODO runs depend on the host.
+
+**Current state:** The Hyperdrive prepared-query eviction repair remains awaiting landing/deploy. At 10:53 PDT the lead reports five more production-flow commits queued behind the first four: live-log E2E coverage for issue sync, signed webhook, spend alerts, answer expiry and role recheck; About-panel recovery; seven repaired sign-out revoke tests; and three Astra findings. Observing live logs during a test is not a completed post-deploy feature pass.
+
+**Next step:** Land and deploy the migration and feature repairs, then run the production flow test and retain actual remote-flow and webhook completion receipts.
+
+**Open questions for Will:** None. Access, Neon, Telegram and review routing are settled.
+
+Evidence: script-filtered human messages and lead text replies from session 6253ecf2, latest two hours through 10:53 PDT; rulings and queue answers take precedence over historical briefs and docs. Product receipts are lead-reported. Codex curates documentation; engineering ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:44 PDT
+
+**What:** Restore durable remote execution in production.
+
+**Why:** Clone, sync, sandboxes and TODO execution depend on the hosted flow engine.
+
+**Current state:** At 10:35 the lead reports reproducing the migration failure through real Hyperdrive: eviction from the 100-entry prepared-query cache closes the connection, rolling back setup at query 101. Disabling saved queries applied all 25 setup steps on a production database copy. SDK/app fixes and safer failure diagnostics are with the lander; stale GitHub sync runs will terminate rather than replay together. No pushed fix or deployed remote-flow success is reported.
+
+**Next step:** Land and deploy the database fix with the four remote-flow repairs, then prove a completed remote flow and webhook issue sync in production.
+
+**Open questions for Will:** None. Existing access, Neon, Telegram and review-routing decisions are settled.
+
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2 through 10:43 PDT; current rulings and queue answers through 10:31 PDT. Product results are lead-reported; this tracker validates the site build only. Implementation ownership is unchanged; Codex curates these notes. Later evidence supersedes retained history.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:34 PDT
+
+**What:** Restore durable remote execution in production.
+
+**Why:** Remote-flow failure blocks clone, sync, sandboxes and TODO execution.
+
+**Current state:** At 10:23 production still waits on the engine database migration repair. Four production-flows fixes are going to the lander: GitHub checkout for TODO branches and resumable long steps; server-model spend alerts; authenticated GitHub App public reads; Electric database credentials moved to a Cloudflare secret. An error-free deployment plan is not a live execution receipt.
+
+**Next step:** Land and deploy the migration repair and dependent fixes, then verify each blocked remote feature through the production harness.
+
+**Open questions for Will:** None newly identified; retain unrelated unresolved questions in the live queue.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest approximately two hours through 10:33 PDT; current rulings and queue answers through 10:31 PDT, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence; this tracker runs only the site build. Execution ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:24 PDT
+
+**What:** Restore remote durable execution in production.
+
+**Why:** The migration failure blocks cloning, issue sync, TODO runs and other remote features.
+
+**Current state:** At 10:23 PDT four production-flows fixes are handed to the lander: GitHub checkout for TODO branches with resumable long steps; server-model calls starting spend alerts; GitHub App authentication for public reads; and Electric’s database password moved to a Cloudflare secret. The production plan reportedly has no errors. These are handoff receipts, not deployment or end-to-end passes. The migration repair remains outstanding; the Member test session is now available.
+
+**Next step:** Land and deploy the migration repair and the four fixes serially; verify each affected remote feature against production.
+
+**Open questions for Will:** None new. Access, Neon and Telegram decisions are resolved; do not reopen them.
+
+Evidence: script-extracted human messages and lead text replies, 08:23–10:23 PDT, session 6253ecf2. Automated records and continuation summaries excluded. Rulings and queue answers override older briefs, panels, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the site build only. Existing execution owners retained; Codex owns this documentation refresh.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:15 PDT
+
+**What:** Restore durable remote execution for production features.
+
+**Why:** The migration failure blocks repository clones, issue sync, TODO runs and other server flows.
+
+**Current state:** The production-flows builder and migration-repair lane are working. TODO sandbox checkout is moving to GitHub, where the TODO branch is created; ordinary branches keep Code Storage. Node is being added and long-step recovery remains a risk. No deployed recovery receipt is reported. Will selected Neon Launch and sent both Write invitations. The shared Member session still needs invitation acceptance and sign-in refresh.
+
+**Next step:** Complete migration, observability, long-step and server-spend repairs; keep the Electric connection secret opaque. Deploy and test each affected production flow using the shared authenticated harness.
+
+**Open questions for Will:** None on Neon, test access or Telegram. In-app alert receipts satisfy current spend-alert acceptance.
+
+Evidence: user-typed messages and lead text replies extracted by script from session 6253ecf2, approximately 08:14–10:14 PDT on 2026-10-21; tool records, automated notifications, local-command output and continuation summaries excluded. Current rulings (ARCH-4, TEST-6, AUTH-4, ARCH-14, PROC-20) and queue answers take precedence over shared briefs, panel designs, decisions, proposals, TODOs and rules. Execution owners are retained; Codex curates tracker documentation only. Product validation is lead-reported; this refresh runs only the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:04 PDT
+
+**What:** Recover durable remote execution in production.
+
+**Why:** Migration failure currently blocks every remote feature.
+
+**Current state:** At 09:54 PDT the production-flows panel has finished and its builder is running alongside the migration-fix lane. By 10:02 the builder is fixing TODO sandbox checkout to use GitHub, matching the branch created there; ordinary branch sandboxes keep Code Storage. Node is being added to the image. TODO runs are now on by default according to the lead, superseding the earlier disabled-default claim. The 40-minute agent step versus 15-minute alarm limit remains an identified risk; no deployed repair receipt exists.
+
+**Next step:** Finish migration and observability repairs, safe long-step resumption, authenticated repository reads, and server-call spend alert initiation. Move Electric’s connection into a Cloudflare secret. Deploy and prove each remote feature, including the factory, against production.
+
+**Open questions for Will:** None. Answered on 2026-10-21: test-account Write on both repositories (10:13, option 1: "Both Write invitations are sent; codeplanesmithers still needs to accept them."; the prod-e2e builder accepts them), the Neon plan (10:13, option 1, Launch), and the Telegram destination (10:09: his own later step, never re-queued).
+
+Evidence: script-filtered user-typed text and lead text replies in session 6253ecf2, latest approximately two hours through 10:03 PDT; automated notifications, compaction summaries and tools excluded. Current rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates only the site build. Execution ownership retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 09:54 PDT
+
+**What:** Recover durable remote execution on production.
+
+**Why:** The migration failure blocks sandboxes, clones, issue sync, TODO runs and other remote actions.
+
+**Current state:** Through 09:53 PDT the migration-fix agent continues; the production-flows panel awaits its Opus report before synthesis/build. The lead also assigns moving Electric’s exposed database connection into a Cloudflare secret. No deployed repair or passing remote-flow receipt appears.
+
+**Next step:** Combine the migration repair and panel findings, land and deploy serially, then exercise every dependent flow. Validate secret configuration without exposing values.
+
+**Open questions for Will:** None new; credential rotation remains Will’s existing responsibility.
+
+Evidence: script-filtered user-typed messages and lead text replies, 07:53–09:53 PDT, session 6253ecf2; automated requests, summaries and agent-message wrappers excluded. Rulings and queue answers take precedence over briefs and older docs. Product checks are lead-reported; this refresh validates only the site build. Execution owners retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 09:34 PDT
+
+**What:** Execute hosted remote flows through the Smithers durable engine.
+
+**Why:** The migration failure blocks multiple major production features.
+
+**Current state:** At 09:26 PDT the lead reports a dedicated four-model remote-flow panel alongside the already-running migration repair agent. Opus will synthesize and implement after all reports arrive. No repaired deployment or successful production execution is reported.
+
+**Next step:** Combine panel findings with the migration fix, land tested pieces and serialize deployments. Verify issue sync, clone, TODO runs, spend alerts, role checks, chat expiry and sign-out token revocation separately, including recovery.
+
+**Open questions for Will:** None new. Provider preference and implementation direction are settled; builders resolve engineering choices.
+
+Evidence: session 6253ecf2, script-filtered user-typed text and lead text replies in the latest approximately two hours through 09:33 PDT; synthetic notifications, tool results and compacted summaries excluded. Rulings and queue answers take precedence over shared briefs/designs, decisions, proposals, TODOs and rules. Product results are lead-reported; this refresh validates only the site build. Execution owners remain unchanged; Codex maintains this tracker entry.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 09:24 PDT
 

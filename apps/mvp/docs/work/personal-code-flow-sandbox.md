@@ -1,9 +1,9 @@
 ---
 title: Run hand-edited personal flows in a sandbox
-status: todo
+status: in-progress
 area: app
-owner: flows builder (Opus)
-updated: 2026-10-21
+owner: Opus hand-edited-flows builder on Mac mini assigned by lead
+updated: 2026-10-21 21:10 PDT
 links: [flow-authoring.md, prompt-flows-are-code-flows.md, sandboxes.md, everything-is-a-plugin.md, ../decisions/0017-everything-is-a-plugin.md, ../rulings.md]
 ---
 
@@ -14,6 +14,14 @@ links: [flow-authoring.md, prompt-flows-are-code-flows.md, sandboxes.md, everyth
 ## Earlier tracker history (retained)
 
 ## Specification — 2026-10-20, 18:55 PDT
+## Tracker reconciliation — 2026-10-21 21:10 PDT
+**What:** Run hand-edited personal flows inside the declared sandbox.
+**Why:** Editing code must produce an executable flow through the public interface.
+**Current state:** At 21:06 the lead starts an Opus builder on the mini specifically for hand-edited flows. No implementation or test completion is reported.
+**Next step:** Implement and prove edit/save/run and sandbox failure paths with the existing durable flow layer.
+**Open questions for Will:** None.
+Evidence: script-filtered user text and lead replies, 19:06–21:06 PDT; current rulings and queue answers through 21:06; surviving briefs and reports. Product results are reported receipts, not rerun here. Implementation ownership retained; Codex curates documentation. Wiped scratch files are not missing work.
+## Current specification — 2026-10-20, 18:55 PDT
 
 **What:** Run hand-edited Flow.make code in QuickJS through the shared plugin execution contract.
 

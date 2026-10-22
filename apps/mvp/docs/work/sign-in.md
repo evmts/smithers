@@ -3,9 +3,26 @@ title: Sign-in for the new app
 status: in-progress
 area: app
 owner: sign-in builder and live GitHub test builder
-updated: 2026-10-21 09:24 PDT
+updated: 2026-10-21 23:04 PDT
 links: [review-round-4.md, pull-request-list-and-tabs.md, dev-stack-hygiene.md, app-wiring.md, integrations-effect-httpclient.md, integrations-durable-retries.md, ../todo.md, ../decisions/0008-auth.md, ../decisions/0011-the-agent-runs-in-the-browser.md, model-endpoint.md, roles-and-labels.md, decisions-for-will.md, auth.md, durable-answering.md, code-reviews.md, ../features/sign-in.md, fable-review-2-fixes.md, local-first.md, issues.md, self-hosted-grafana.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 23:04 PDT
+
+**What:** Recover sign-in on the same page while preserving device ownership.
+
+**Why:** People must recover identity without a reload or sending another owner’s writes.
+
+**Current state:** At 22:54 the lead confirms four passing local sign-in E2E tests with GIFs for initial-check recovery, device adoption, queued-write isolation and a sealed tab. Track C is cleared to land after the outbox security fix. smithers.sh real sign-in passes in the completed 12/13 production run, but recovered-device branch navigation still fails; a new builder takes that failure at 22:56. No new token-revocation acceptance receipt is reported.
+
+**Next step:** Collect ordered landing and deployed recovery receipts; finish production navigation and retain explicit sign-out revocation proof.
+
+**Open questions for Will:** None newly required.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 21:04–23:04 PDT. Both requested transcript paths checked; continuation text is present in 6253ecf2, while the supplied 265921d3 path is absent. Current rulings and queue answers govern; surviving briefs and reports inform history. Reboot-wiped files are not unfinished work. Codex owns this tracker reconciliation; implementation ownership above is retained. Product results are lead-reported; this refresh runs the site build.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 09:24 PDT
 

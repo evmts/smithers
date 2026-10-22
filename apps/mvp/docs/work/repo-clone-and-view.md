@@ -1,11 +1,61 @@
 ---
 title: Clone and view a repo (feature 2)
-status: blocked
+status: in-progress
 area: app
 owner: repo viewer builder and recording builder
-updated: 2026-10-21 09:24 PDT
+updated: 2026-10-21 13:44 PDT
 links: [review-round-4.md, repo-follow-ups.md, repo-view-package-split.md, agent-root-browser-safe.md, dev-stack-hygiene.md, app-wiring.md, sign-in.md, one-sqlite-one-leader.md, ../decisions/0006-repo-clone-and-view.md, code-storage-spend-caps.md, platform-cloudflare-edge-cache.md, integrations-browser-safe-root.md, ../proposals/mvp-gaps.md, ../../../../docs/libraries.md, repo-open-states.md, deep-import-migration.md, durable-answering.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, cloudflare-flow-host.md, code-reviews.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, integrations-effect-httpclient.md, flows-root-platform-neutral.md, local-first.md, navigate-flow.md, agent-repo-navigation.md, fable-review-2-fixes.md, repo-view-branches-raw-clone.md, ../rulings.md, chaptered-review-videos.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 13:44 PDT
+
+**What:** Persist clone requests immediately and launch/recover them through durable steps.
+
+**Why:** Chat must stay usable during launch and recover after crashes or reloads.
+
+**Current state:** At 13:42 PDT immediate durable acknowledgement and independent clone-launch recovery are built and queued with three smaller commits after the sandbox fix. Six earlier production clone completions do not prove the new admission path. Member-only shared-token spending is in the queued work; HTML views and missing-repository feedback remain tracked separately.
+
+**Next step:** Land and deploy admission/recovery, then prove unresolved launch, failure, duplicate input and reload without blocking chat.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, approximately 11:44–13:44 PDT; automated notifications and tool content excluded. Rulings and queue answers govern over historical briefs, panel designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this pass validates the site build only. Existing execution owners retained; Codex curates tracker documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 12:46 PDT
+
+**What:** Clone and browse repositories with immediate durable launch acknowledgement.
+
+**Why:** Imports must recover after failure and protect shared GitHub quota.
+
+**Current state:** At 12:36 the lead reports six repository clones completed in production. Review’s slow launch acknowledgement and launch-recovery findings remain assigned; no repair receipt is reported. A further change limits About-panel GitHub-token use to Members, with landing not established. Earlier signed-out browsing remains a product requirement; these findings concern shared-token spending and trustworthy launch state.
+
+**Next step:** Retain completed clone/browse receipts; land and test durable admission, independent recovery and Member-only shared-token use, including unresolved launch and duplicate requests.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 10:44–12:44 PDT on 2026-10-21, session 6253ecf2; synthetic notifications, relayed agents and tool blocks excluded. Rulings and queue answers govern over shared briefs/designs and historical decisions, proposals, TODOs and rules. Product receipts are lead-reported; Codex curates documentation and validates the site build. Existing execution ownership is retained.
+
+## Earlier tracker history (retained)
+
+## Tracker reconciliation — 2026-10-21 12:28 PDT
+
+**What:** Clone and browse repositories with immediate durable launch acknowledgement.
+
+**Why:** Import must recover after failure and protect shared GitHub quota.
+
+**Current state:** The host is unblocked, but six clones were still running at 12:06. At 12:09 review found launch acknowledgement waits on launch, failed launches recover only on a later request, and signed-out metadata reads can exhaust shared quota. These are assigned to the remote-flows builder.
+
+**Next step:** Fix durable admission, independent launch recovery and metadata access limits; prove a completed production clone and browse journey.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 10:28–12:28 PDT, session 6253ecf2; rulings and queue answers govern over historical briefs, designs, decisions, proposals, TODOs and rules. Product results are lead-reported. Existing engineering ownership is retained; Codex curates tracker documentation and validates the site build.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 09:24 PDT
 

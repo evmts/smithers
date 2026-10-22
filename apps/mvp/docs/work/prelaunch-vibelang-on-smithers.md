@@ -3,12 +3,29 @@ title: Prelaunch — host the VibeLang repository on smithers.sh
 status: in-progress
 area: app
 owner: Opus post-deploy coding-factory builder assigned by lead
-updated: 2026-10-21 04:44 PDT
+updated: 2026-10-21 10:04 PDT
 links:
   - ../rulings.md
   - prelaunch-custom-domains.md
   - ../../../../docs/libraries.md
 ---
+
+## Tracker reconciliation — 2026-10-21 10:04 PDT
+
+**What:** Host VibeLang and its coding factory on production Smithers.
+
+**Why:** SCOPE-13 makes this the north star.
+
+**Current state:** The factory now has repeated workerd E2E passes outside production and a recording, reported at 09:51 PDT. Production still lacks a successful journey. The 10:02 update supersedes the earlier disabled-default claim: TODO runs are on by default, while GitHub checkout and Node image fixes are being built. Docs panes and steering remain separate active work.
+
+**Next step:** Retain landing receipts, then prove production import, browsing, issues and a completed factory run after host and sandbox repairs. Coordinate docs/search and custom domains without treating their designs as implementation proof.
+
+**Open questions for Will:** Existing Member access request; no new scope question.
+
+Evidence: script-filtered user-typed text and lead text replies in session 6253ecf2, latest approximately two hours through 10:03 PDT; automated notifications, compaction summaries and tools excluded. Current rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates only the site build. Execution ownership retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 04:44 PDT
 

@@ -2,10 +2,112 @@
 title: Notifications and live work (MVP 4 and 6, early feature 8b)
 status: in-progress
 area: design
-owner: notifications builder; live GitHub webhook follow-up
-updated: 2026-10-21 04:24 PDT
+owner: live-attention builder; Codex Sol production tests
+updated: 2026-10-21 23:14 PDT
 links: [agent-status.md, flow-debugging.md, ../decisions/0009-notifications-and-live-work.md, mvp-scope-cut.md, ../proposals/early-features.md, ../proposals/mvp-gaps.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, ../decisions/0002-local-first.md, local-first.md, durable-answering.md, ../decisions/0015-agent-status.md, token-spend-alerts.md, branch-terminal.md, issue-triage.md, local-dev-sync-connections.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 23:14 PDT
+
+**What:** Settle dismissed alerts across devices and show branch attention.
+
+**Why:** Dismissal and pending questions must agree across devices.
+
+**Current state:** At 23:11 the five-commit live-attention stack is rebased and queued to land; import-rule blockers are cleared. Tests pass 463/464, one reported baseline failure. Real-model two-device production validation follows landing and deployment.
+
+**Next step:** Collect landing and deployment receipts, then prove needs-you and cross-device dismissal in production.
+
+**Open questions for Will:** None newly required.
+
+Evidence: user text and lead replies extracted by script from session 6253ecf2, approximately 21:14–23:14 PDT; tool payloads and automated notifications excluded. The supplied continuation transcript path is absent; recent continuation-era replies are in the original file. Rulings and queue answers take precedence over older docs and surviving briefs. Wiped scratch files are not missing work. Product receipts are lead-reported; this refresh validates the site build. Codex curates documentation and retains execution ownership.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 16:25 PDT
+
+**What:** Show needs-you attention in each conversation and settle it across devices.
+
+**Why:** Keep implementation and validation claims tied to evidence.
+
+**Current state:** The two fixes clear 14 findings and are queued to land; one finding is recorded as non-defect. At 16:24 the builder has three more commits including a two-device real-model E2E; tests are running on the MacBook. A pass is not yet reported.
+
+**Next step:** Finish tests, land and deploy; retain two-device local and production proof before closing.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies, 14:25–16:24 PDT, session 6253ecf2; tool blocks, notifications and compaction summaries excluded. Rulings and queue answers govern over historical designs. Existing implementation owner retained; Codex maintains this note. Product receipts are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 16:04 PDT
+
+**What:** Clear dismissed attention across devices.
+
+**Why:** A dismissal must settle on every device rather than leave a stale toast.
+
+**Current state:** At 15:59 the lead reports cross-device dismissal and branch-attention fixes queued after local-first fixes. Unit tests are 199/200 passing, with the remaining failure attributed to shared database connection exhaustion. At 16:01 all 14 area findings are accounted for through regressions or one documented non-defect. Two-device E2E is still pending; the Mac mini is offline.
+
+**Next step:** Collect landing receipts, deploy, and prove dismissal, answer, bell and title convergence with two devices.
+
+**Open questions for Will:** None newly identified; unresolved questions in the retained history remain open.
+
+Evidence: script-filtered user text and lead assistant replies from session 6253ecf2, approximately 14:03–16:03 PDT on 2026-10-21. Tool records, relayed agent messages, automation prompts and compaction summaries excluded. Rulings and queue answers prevail over shared briefs, panel designs and older planning docs. Product checks are lead-reported; this refresh verifies the maintainer-site build. Engineering ownership retained; documentation reconciliation by Codex.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:54 PDT
+
+**What:** Synchronize attention and notification actions across devices.
+
+**Why:** Hide and Answer must reach the server and the other device.
+
+**Current state:** At 14:53 the merged panel moves to build. A 2-second door timeout can refuse person-only actions; this is a likely cause of stale remote-device toasts, not yet a proven sole cause.
+
+**Next step:** Remove the person-only root-action race and prove hide, answer, bell and title updates with two real devices.
+
+**Open questions for Will:** None for this repair. Existing pending decisions remain in the retained history.
+
+Evidence: script-extracted user-typed text and lead replies from session 6253ecf2, 12:54–14:54 PDT; automated notifications excluded. Rulings and queue answers govern over historical briefs and proposals. Product receipts are lead-reported; this pass verifies only the maintainer-site build. Implementation owners remain assigned; Codex maintains tracker documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:05 PDT
+
+**What:** Deliver needs-you attention and converge dismissals across devices.
+
+**Why:** Attention must appear when needed and clear when dismissed.
+
+**Current state:** At 14:01 PDT the live-attention panel owns the absent needs-you card, a dismissed notification leaving its toast on another device, and the Runs hover crash. Six confirmed findings are held for its builder at 14:03. No passing repair is reported.
+
+**Next step:** Synthesize and build the repair; retain two-device delivery/dismissal regressions and coordinate Runs navigation coverage.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2 for approximately 12:04–14:04 PDT on 2026-10-21; synthetic notifications and tool records excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the maintainer-site build only. Engineering owners remain responsible; Codex owns this documentation reconciliation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 12:54 PDT
+
+**What:** Synchronize notification dismissal and toast state across devices.
+
+**Why:** A dismissed notification must stop demanding attention on the person’s other device.
+
+**Current state:** At 12:53 PDT the lead reports hiding a notification leaves its toast visible on another device. The local sweep identifies this as a real product failure, queued with co-editing and message controls for the next panel-then-build batch. Earlier notification-delivery issues remain in retained history; no completed dismissal repair is reported.
+
+**Next step:** Retain a two-device dismissal regression, assign the repair after the sweep, and verify both notification state and toast removal locally and live.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies for the latest approximately two hours of session 6253ecf2 through 12:54 PDT; automated notifications, relayed agents and tool blocks excluded. Current rulings and queue answers govern over older briefs, panels, decisions, proposals, TODOs and rules. Product receipts are lead-reported; Codex curates tracker documentation and runs the site build. Existing execution owners are retained.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 04:24 PDT
 

@@ -3,9 +3,43 @@ title: Code review guides and package architecture context
 status: in-progress
 area: process
 owner: code-guide writers and queue curator assigned by lead
-updated: 2026-10-21 04:04 PDT
+updated: 2026-10-21 11:54 PDT
 links: [queue-recorded-revision-source.md, code-reviews.md, will-decision-queue.md, ../rulings.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 11:54 PDT
+
+**What:** Write guides for the slices actually routed to Will, tied to their reviewed revisions and fixes.
+
+**Why:** Focused explanations must reflect the code Will is judging.
+
+**Current state:** At 11:45 the lead corrects the routing inventory to 397 security/data/public-API slices and 5,019 routine slices. Earlier 77/383 estimates are superseded. Confirmed flagged slices reach the queue after fixes land, carrying both reviews and the fix commit; four design findings are held until repaired.
+
+**Next step:** Continue guides against the final routed inventory, pin source and fix revisions, and keep repaired findings linked to the correct code.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 09:54–11:54 PDT; current rulings and queue answers take precedence over historical briefs, decisions, proposals, TODOs and rules. Product results are lead-reported; this tracker validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:44 PDT
+
+**What:** Write revision-specific guides for slices routed to Will.
+
+**Why:** PROC-21 resolves question 945; guides should follow actual human-review routing.
+
+**Current state:** Guide writing is no longer paused. At 10:39 the lead reports four Codex Sol writers preparing guides for 77 routed slices, reported as 56 security, 18 data and 4 public API. The category counts total 78; overlap versus a counting error is unconfirmed. Routine unflagged slices receive agent review records.
+
+**Next step:** Finish guides for routed slices, verify their source revisions and reconcile overlapping categories against the routed inventory.
+
+**Open questions for Will:** None. Existing access, Neon, Telegram and review-routing decisions are settled.
+
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2 through 10:43 PDT; current rulings and queue answers through 10:31 PDT. Product results are lead-reported; this tracker validates the site build only. Implementation ownership is unchanged; Codex curates these notes. Later evidence supersedes retained history.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 04:04 PDT
 

@@ -3,9 +3,111 @@ title: Local-first device store and outbox
 status: in-progress
 area: app
 owner: client and sync repair builders
-updated: 2026-10-20
+updated: 2026-10-21 17:14 PDT
 links: [review-round-4.md, app-wiring.md, ../decisions/0002-local-first.md, ../decisions/0002-local-first-comparison.md, ../todo.md, effect-tanstack-db-and-effect-electric.md, decisions-for-will.md, ../decisions/0011-the-agent-runs-in-the-browser.md, pwa.md, durable-browser-engine.md, lru-size-limit.md, model-endpoint.md, land-and-deploy-mvp.md, one-sqlite-one-leader.md, flows-and-agent.md, durable-answering.md, ../decisions/0001-electric-postgres-tanstack-db.md, ../../../../docs/libraries.md, agent-root-browser-safe.md, repo-clone-and-view.md, plan-identity-across-deploys.md, fable-review-2-fixes.md, agent-status.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 17:14 PDT
+
+**What:** Preserve device state, queued writes and cross-device recovery.
+
+**Why:** Recovery must retain work without borrowing another person’s authority.
+
+**Current state:** At 17:06 the stale-tab fix is live and passes 3/3. At 17:09 Track C’s unit comparison shows no new failures, but two commits wait on sign-in E2E. An older evicted-store queued-authority gap is newly identified and uncorrected.
+
+**Next step:** Pass Track C E2E; resume at 19:00 to repair the authority gap tracked in device-ownership-and-queued-authority.md.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, approximately 15:14–17:14 PDT. Notifications, relayed agents, tools and compaction summaries excluded. Rulings and queue answers supersede older briefs/designs and docs. Execution owner retained; Codex curates the tracker only. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 16:53 PDT
+
+**What:** Preserve queued questions, device ownership and cross-device recovery.
+
+**Why:** People must keep their work through reloads, navigation and concurrent asking.
+
+**Current state:** At 16:44 the lead reports production runs main 60ababaa, deployed at 16:37. Back/forward, concurrent asks and cross-device sync pass 6/6 after stopping the flood of timeline summaries. The additional device-identity/local-first changes are on main 98702a02; that landing is distinct from the deployed revision. At 16:47 the builder has fixed its newly introduced lint failure.
+
+**Next step:** Retain the six production receipts; validate the later device-identity/local-first batch after its deploy and complete remaining local-first acceptance.
+
+**Open questions for Will:** None newly identified; earlier unresolved items remain in the retained history.
+
+Evidence: lead text replies, script-filtered from session 6253ecf2 for 14:53–16:53 PDT; tool content, automated messages, relayed agent reports and compaction summaries excluded. Rulings and queue answers take precedence over historical briefs and plans. Implementation owners and statuses retained; Codex curates this update. Product checks are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 16:43 PDT
+
+**What:** Preserve queued work, device identity and sync recovery.
+
+**Why:** Device state must survive upgrades and ownership changes safely.
+
+**Current state:** At 16:38 the lead reports local-first fixes landed on main 98702a02 and deployment underway. A newly added test violates import rules through setTimeout; its builder is fixing it. Landing does not prove production acceptance.
+
+**Next step:** Repair the lint failure and collect deployment plus production regression results.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed messages and lead text replies script-filtered from session 6253ecf2, 14:43–16:43 PDT; synthetic notifications, tools and compaction summaries excluded. Rulings and queue answers govern over historical briefs, panels, decisions, proposals, TODOs and rules. Implementation ownership retained; Codex curates this note. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 14:05 PDT
+
+**What:** Keep queued questions, sync and sign-in recovery durable across tabs.
+
+**Why:** Devices must preserve work and enforce the verified account boundary.
+
+**Current state:** At 13:41 PDT Tracks A and B are landing: lone-tab questions no longer show Not sent and one tab per device writes sync to storage. Track C sign-in recheck remains in progress; its first commit is done and remaining sign-in tests pass on the mini. Five of six Astra findings are fixed/tested; clone still needs its regression. Ten real-model stale-tab runs wait for the test lock. Withdrawal propagation has no explicit completion receipt.
+
+**Next step:** Collect landing receipts, finish Track C and clone/withdrawal regressions, then run stale-tab real-model and account-boundary journeys.
+
+**Open questions for Will:** None.
+
+Evidence: user-typed text and lead text replies extracted by script from session 6253ecf2 for approximately 12:04–14:04 PDT on 2026-10-21; synthetic notifications and tool records excluded. Rulings and queue answers override historical briefs, designs, decisions, proposals, TODOs and rules. Product receipts are lead-reported; this tracker validates the maintainer-site build only. Engineering owners remain responsible; Codex owns this documentation reconciliation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 12:54 PDT
+
+**What:** Keep device stores, queued input and question withdrawal consistent across tabs.
+
+**Why:** Local-first must preserve work and converge across devices without exposing another account’s data.
+
+**Current state:** At 12:48 PDT the lead reports a withdrawn question remains visible in the other tab. The local-first builder owns that failure. Earlier outbox, one-writer sync and session-recovery work remains open without a complete validation receipt. Separate passing production conflict tests do not establish this withdrawal case passes.
+
+**Next step:** Fix withdrawal propagation with a real two-tab regression; finish outbox/sync/session validation and account-boundary checks. Track co-editing, draft save and notification dismissal in their existing workstreams.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies for the latest approximately two hours of session 6253ecf2 through 12:54 PDT; automated notifications, relayed agents and tool blocks excluded. Current rulings and queue answers govern over older briefs, panels, decisions, proposals, TODOs and rules. Product receipts are lead-reported; Codex curates tracker documentation and runs the site build. Existing execution owners are retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:54 PDT
+
+**What:** Keep queued input durable and gate cached data by the verified device owner.
+
+**Why:** Local-first must preserve both offline work and account isolation.
+
+**Current state:** The outbox lock fix is ready for landing with old-code regression failures and 100% coverage in two SDK packages. Single-writer sync and session recovery remain in progress. At 11:53 the lead confirms startup authorization still exposes saved data on a failed sign-in check and cannot recover from a signed-out result; the device-identity builder owns that security repair. No complete multi-device production matrix is reported.
+
+**Next step:** Land outbox recovery, finish one-writer synchronization and session recovery, and retain two-tab/reload/account-boundary tests. Device authorization has its own linked workstream.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 09:54–11:54 PDT; current rulings and queue answers take precedence over historical briefs, decisions, proposals, TODOs and rules. Product results are lead-reported; this tracker validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 18:26 PDT
 

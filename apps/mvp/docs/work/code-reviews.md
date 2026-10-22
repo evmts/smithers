@@ -3,9 +3,208 @@ title: Codex and Fable reviews
 status: in-progress
 area: process
 owner: review agents and queue curator; lead assigns fixes
-updated: 2026-10-20
+updated: 2026-10-21 21:16 PDT
 links: [review-round-4.md, agent-jev.md, site-deployment-test.md, land-to-main.md, known-host-access-burn-down.md, dev-stack-hygiene.md, ../rules.md, integrations-durable-retries.md, sign-in.md, local-first.md, flows-and-agent.md, one-sqlite-one-leader.md, repo-checks-green.md, agent-ui-rendering.md, model-endpoint.md, platform-cloudflare-edge-cache.md, sdk-test-reds.md, effect-tanstack-db-and-effect-electric.md, decisions-for-will.md, cloudflare-flow-host.md, durable-answering.md, repo-clone-and-view.md, integrations-browser-safe-root.md, land-and-deploy-mvp.md, gitremote-unicode-branches.md, web-standard-globals-rule.md, flows-root-platform-neutral.md, observability.md, app-wiring.md, auth.md, host-agnostic-flows.md, plan-identity-minified-builds.md, navigate-flow.md, web-page-flow.md, fable-review-2-fixes.md, agent-status.md, model-step.md, will-decision-queue.md, code-review-guides.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 21:16 PDT
+
+**What:** Review source and route confirmed repairs to landing.
+
+**Why:** Independent findings need verified fixes and retained review evidence.
+
+**Current state:** At 21:15 the lead expands mini review/confirmation/repair concurrency and sends review-lane fixes directly to the second lander. Jev blank-input rejection is queued. Will approved co-editing and presence slices; 24 code slices remain in his queue. Outstanding Fable reviews remain outstanding. Exact job counts are inconsistent in the lead table and are not treated as receipts.
+
+**Next step:** Collect repair and landing receipts, confirm remaining findings and complete owed Fable reviews without blocking Will.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human messages and lead text replies, 19:15–21:15 PDT in session 6253ecf2; current rulings, queue answers and surviving briefs/reports. The supplied continuation file was not found; continuation-era lead replies are present in 6253ecf2. Product receipts are reported evidence, not rerun here. Existing execution ownership retained; Codex curates documentation. Reboot-wiped scratch files are not missing work.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 21:10 PDT
+
+**What:** Review code and confirm findings.
+
+**Why:** Keep progress and remaining evidence accurate.
+
+**Current state:** At 21:03 the lead reports three Astra review jobs and four finding-confirmation jobs on the mini; 12 review batches completed and 40 of 88 waiting findings are being checked. Two repair jobs remain on the MacBook. This supersedes placement counts, not the missing Fable review requirement.
+
+**Next step:** Collect independent review and repair receipts; keep outstanding Fable work visible.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered lead replies and current rulings; this refresh verifies only the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:55 PDT
+
+**What:** Review code with Astra then Fable and route confirmed findings.
+
+**Why:** Keep flagged, security, data and public-API slices ready for Will under PROC-21.
+
+**Current state:** The recovered lane retains its 291-area inventory; 101 areas still need Fable after the reported Oct 27 reset, and finding text in 70 areas needs reconfirmation. At 20:54 the lead reports Astra reviews moved to the mini’s Codex account. This changes execution placement, not the required review policy. Lost scratch artifacts are historical context, not new product work.
+
+**Next step:** Continue independent reviews and confirmation of findings, preserve builder ownership, and complete missing Fable receipts when available.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest two hours through 20:55 PDT; synthetic notifications and tool blocks excluded. Current rulings and queue answers govern over historical decisions and proposals. Available recovered briefs were read; wiped scratch files are not missing work. Product results are lead-reported; Codex curates documentation and runs the maintainer-site build. Previous implementation ownership is retained below.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Review code with Astra then Fable and route confirmed repairs.
+
+**Why:** Will sees flagged, security, data and public-API slices under PROC-21.
+
+**Current state:** At 20:36 the review lane recovered tooling and 291 reviewed areas; 101 have Astra only and await Fable after Oct 27 reset. Finding text in 70 areas must be reconfirmed by Sol; one recovered finished fix is queued. At 20:39 findings are routed to builders after landing. Remote test runners are available again at 20:38.
+
+**Next step:** Reconfirm the 70 areas, resume end-to-end checks on the recovered runners, land repairs and complete Fable coverage when available.
+
+**Open questions for Will:** None; lost scratch files are recovery context, not new missing product features.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 17:14 PDT
+
+**What:** Review changes and route confirmed findings without colliding with builders.
+
+**Why:** Independent reviews and repairs must respect unlanded ownership.
+
+**Current state:** At 17:10 up to six Codex fix jobs run again on Latitude. At 17:12–17:13 builder ownership expands to every changed file in each unlanded stack; overlapping time-travel, plan and patterns jobs are stopped. Earlier Astra-only reviewer availability does not replace PROC-21.
+
+**Next step:** Continue independent reviews and non-overlapping fixes; retain required Fable receipts and protected builder file sets.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies in session 6253ecf2, approximately 15:14–17:14 PDT. Notifications, relayed agents, tools and compaction summaries excluded. Rulings and queue answers supersede older briefs/designs and docs. Execution owner retained; Codex curates the tracker only. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 16:33 PDT
+
+**What:** Review slices and route confirmed defects to repairs.
+
+**Why:** Will’s routing decision still names Astra and Fable; reviewer availability must remain visible.
+
+**Current state:** At 16:33 PDT the lead restarted the lane with Codex Astra alone, one confirmation job and two Codex Sol fix jobs. This is the reported current execution state, not a new ruling replacing PROC-21 or evidence that both reviews completed. Earlier blind-review measurements remain historical.
+
+**Next step:** Retain reviewer receipts per slice and complete the required Fable review where absent; land validated fixes.
+
+**Open questions for Will:** None newly raised; the transcript supplies no authorization to permanently replace the two-reviewer policy.
+
+Evidence: lead text replies in session 6253ecf2, script-filtered through 16:33 PDT from its latest two hours; automated notifications, tool records and compaction summaries excluded. Rulings and queue answers take precedence over historical briefs. Implementation ownership retained; Codex curates tracker documentation. Product results are lead-reported.
+
+## Earlier tracker history (retained)
+
+
+## Independent reviews are the default — 2026-10-21 14:40 PDT
+
+**What:** Codex Astra and Fable review each routine slice independently, in parallel; neither sees the other's verdict, and either reviewer's flag goes to confirmation.
+
+**Why:** The blind trial on 56 slices. With Fable reading Astra's verdicts first, Fable found 0 confirmed bugs on its own. Reviewing blind, of 38 confirmed bugs Astra alone found 17, Fable alone 16 and both 5: each found about as many real bugs alone as the other (21 and 22 of 38). Per finding, confirmation has rejected 73 of 325 (22%) as false positives, so it stays the filter.
+
+**Current state:** The curator's review lane runs both reviewers blind on every batch from 14:40. Each confirmed finding records `foundBy`, and `coverage.json` `measures.reviewers` keeps the per-reviewer counts.
+
+**Next step:** Keep both reviewers; watch `measures.reviewers` for drift.
+
+**Open questions for Will:** None. PROC-21 names both reviewers; the lead decided at 14:3x that they review independently rather than in turn.
+
+## Tracker reconciliation — 2026-10-21 13:54 PDT
+
+**What:** Review code slices and measure the independent value of each reviewer.
+
+**Why:** PROC-21 requires Astra and Fable; changing that policy needs Will’s decision.
+
+**Current state:** At 13:44 the lead reports 252 confirmed findings and 73 false positives, correcting an earlier slice-based statistic. The next 50 slices receive Fable reviews without Astra’s verdicts; results are expected in 1.5–2 hours after confirmations. Earlier sequential results cannot establish Fable’s independent value.
+
+**Next step:** Finish the blind trial and report independent confirmed findings and limitations. Preserve both reviewers unless Will changes the ruling.
+
+**Open questions for Will:** No decision needed yet. If the blind trial finds little independent value, the lead plans to ask whether to change routine Fable review; no such change is approved.
+
+Evidence: lead text replies at 13:44–13:53 PDT on 2026-10-21, extracted by script from session 6253ecf2 within its latest approximately two hours. Automated notifications, relayed agent messages and tool content are excluded. Rulings and queue answers take precedence over historical briefs and designs. Results are lead-reported; this tracker verifies the maintainer-site build. Existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 12:28 PDT
+
+**What:** Review every routine slice with Astra then Fable.
+
+**Why:** PROC-21 routes flagged, security, data and public API slices to Will.
+
+**Current state:** The latest reported count is 165 reviewed and 80 flagged. At 12:27, 32 guided slices await Will. Account-related failures are requeued; launchers prefer the account supporting Sol and Astra. The curator resumed after the limit reset.
+
+**Next step:** Continue all slices, retain revision-pinned results and flag/false-positive counts, and send confirmed findings only after their fixes land.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered user-typed text and lead replies, approximately 10:28–12:28 PDT, session 6253ecf2; rulings and queue answers govern over historical briefs, designs, decisions, proposals, TODOs and rules. Product results are lead-reported. Existing engineering ownership is retained; Codex curates tracker documentation and validates the site build.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 11:54 PDT
+
+**What:** Review routine slices with Astra then Fable and fix confirmed findings before routing them to Will.
+
+**Why:** PROC-21 preserves human judgment while agents review all routine code.
+
+**Current state:** The latest routing inventory is 397 human-review slices and 5,019 routine slices. At 11:45, 49 of 90 app slices were flagged. At 11:53 the lead reports 41 of 52 findings confirmed and 6 false positives; the remaining five have no stated disposition. Sol confirms findings and fixes simple ones with regressions; design findings go to Claude owners. Two fix jobs cover telemetry, wipe and answers, with ten further confirmed slices queued. Four security findings need design: device authorization and three issue-credential bugs.
+
+**Next step:** Retain revision-pinned reviewer notes and confirmation outcomes. Send flagged slices to Will after their fixes land with the fix commit; keep design findings on hold until repaired. Track the durability class separately under DUR-8.
+
+**Open questions for Will:** None; review routing is settled. Agents never approve or merge.
+
+Evidence: script-filtered user text and lead replies from session 6253ecf2, approximately 09:54–11:54 PDT; current rulings and queue answers take precedence over historical briefs, decisions, proposals, TODOs and rules. Product results are lead-reported; this tracker validates the site build only. Existing implementation ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:44 PDT
+
+**What:** Review routine slices with Astra then Fable; send flagged and security/data/public-API slices to Will.
+
+**Why:** PROC-21 and Will’s 10:30:51 queue answer settle review routing without transferring approval authority.
+
+**Current state:** At 10:35 the lead reports 5,034 routine slices scheduled in batches of eight, app then flow core, SDK and tests. A two-slice pilot verifies the handoff. At 10:39 both reviewers independently flag TODO commit recovery adopting an unrelated commit with matching number/title/author. Human-review slice counts changed between updates (383 then 77); final routing totals are not reconciled.
+
+**Next step:** Continue revision-pinned reviews, route findings to Will, repair the commit-recovery class through the SDK durability design, and reconcile the category totals.
+
+**Open questions for Will:** None. Existing access, Neon, Telegram and review-routing decisions are settled.
+
+Evidence: script-filtered user-typed messages and lead text replies in session 6253ecf2 through 10:43 PDT; current rulings and queue answers through 10:31 PDT. Product results are lead-reported; this tracker validates the site build only. Implementation ownership is unchanged; Codex curates these notes. Later evidence supersedes retained history.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 10:34 PDT
+
+**What:** Route routine slices through Astra then Fable before human review.
+
+**Why:** Will approved PROC-21 at 10:30:51.
+
+**Current state:** The queue answer selects option 1: agents review every routine slice; Will sees flagged slices and all security, data and public-API slices. Other slices are recorded as agent-reviewed. The curator is designing routing and cost controls before running across every slice. Agent review grants no approval or merge authority.
+
+**Next step:** Implement and validate the routing, preserve revision-specific evidence and coverage, and retain mandatory human review categories.
+
+**Open questions for Will:** None newly identified; retain unrelated unresolved questions in the live queue.
+
+Evidence: script-filtered user-typed messages and lead text replies from session 6253ecf2, latest approximately two hours through 10:33 PDT; current rulings and queue answers through 10:31 PDT, shared feature/host/panel briefs and designs, decisions, proposals, TODOs and rules. Product receipts are reported evidence; this tracker runs only the site build. Execution ownership is retained; Codex curates documentation.
+
+## Earlier tracker history (retained)
+
 
 ## Current specification — 2026-10-20, 18:33 PDT
 

@@ -3,9 +3,43 @@ title: ImportRules and Jev lint rules
 status: in-progress
 area: process
 owner: rules agent; the lead refreshes at session end
-updated: 2026-10-21 09:11 PDT
+updated: 2026-10-21 20:47 PDT
 links: [review-round-4.md, repo-view-package-split.md, repo-checks-green.md, ../rules.md, ../../AGENTS.md, ../../../../docs/libraries.md, model-host-effect-boundary.md, sync-service-di-test-seam.md, route-ban-any-receiver.md, code-storage-spend-caps.md, host-agnostic-flows.md, ../decisions/0011-the-agent-runs-in-the-browser.md, no-github-actions.md]
 ---
+
+## Tracker reconciliation — 2026-10-21 20:47 PDT
+
+**What:** Enforce the engineering rulings in checks and Jev.
+
+**Why:** The catalog and executed gates must agree.
+
+**Current state:** At 20:37 the lead reports app-wide lint at zero violations on main 41ebbdd6. New branch-page and needs-you tests independently fail the React/non-TSX rule and are being fixed. Zero violations at that revision does not close all future rule work.
+
+**Next step:** Retain the main lint receipt; fix incoming test violations before landing and continue catalog enforcement.
+
+**Open questions for Will:** None.
+
+Evidence: script-filtered human text and lead replies, 18:46–20:46 PDT, session 6253ecf2; current rulings and queue answers prevail. Runner results are recovered report receipts. Codex curates this update; existing implementation ownership is retained.
+
+## Earlier tracker history (retained)
+
+
+## Tracker reconciliation — 2026-10-21 16:53 PDT
+
+**What:** Enforce the current engineering rulings with deterministic checks and Jev rubrics.
+
+**Why:** The rule catalog and executed checks must agree without leaving known violations.
+
+**Current state:** At 16:53 the lead reports a Codex Sol job removed the nine older app-test import-rule violations; its commit is queued with the lander. A separate local-first test fix is also queued. Zero violations is an expectation after both land, not a recorded check on that combined revision. Six factory-e2e waits used only to pace video were removed; that e2e was not run because the mini is offline. Earlier catalog/ruling reconciliation remains in the history.
+
+**Next step:** Land both lint fixes and run the import-rule check on the resulting revision. Rerun factory e2e and inspect its faster GIF when browser capacity returns; reconcile superseded catalog policy with rulings.
+
+**Open questions for Will:** None newly identified; earlier unresolved items remain in the retained history.
+
+Evidence: lead text replies, script-filtered from session 6253ecf2 for 14:53–16:53 PDT; tool content, automated messages, relayed agent reports and compaction summaries excluded. Rulings and queue answers take precedence over historical briefs and plans. Implementation owners and statuses retained; Codex curates this update. Product checks are lead-reported.
+
+## Earlier tracker history (retained)
+
 
 ## Tracker reconciliation — 2026-10-21 09:11 PDT
 
