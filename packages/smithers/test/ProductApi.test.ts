@@ -13,10 +13,10 @@ interface Operation {
   readonly path: string
   readonly operationId: string
   readonly parameters: ReadonlyArray<Parameter>
-  /** `json` for a JSON request body, `other` for another media type, `none` for no body. */
-  readonly body: "json" | "other" | "none"
-  /** What a 2xx answer carries: JSON, another media type, or nothing. */
-  readonly success: "json" | "raw" | "none"
+  /** `raw` preserves signed JSON bytes; `other` is an unsupported media type. */
+  readonly body: "json" | "raw" | "other" | "none"
+  /** What a successful call exposes: JSON, a raw response, a socket, or nothing. */
+  readonly success: "json" | "raw" | "none" | "websocket"
 }
 
 /**
@@ -24,7 +24,8 @@ interface Operation {
  * parameters and body and answer media types, extracted from the product API
  * spec (`docs/api/openapi.yaml`) before that spec was removed with the Go
  * backend on 2026-10-21, with the OAuth callbacks' missing query contracts
- * corrected alongside the wrappers.
+ * corrected alongside the wrappers. Confirmed omissions in that spec are corrected from
+ * its retained handlers: confirmations, webhooks, live, token and preferences.
  */
 const operations = JSON.parse(
   readFileSync(new URL("./fixtures/product-api-operations.json", import.meta.url), "utf8")
@@ -95,14 +96,15 @@ describe("the generated product API client", () => {
     }])
   })
 
-  it("exports one function per operation with a JSON or empty request body, and nothing else", () => {
+  it("exports one function per supported operation, and nothing else", () => {
     const expected = generatedOperations.map(({ operationId }) => functionName(operationId)).sort()
     const exported = Object.entries(ProductApi).filter(([, value]) => typeof value === "function").map(([name]) => name)
       .sort()
     expect(exported).toEqual(expected)
   })
 
-  it.each(generatedOperations)(
+  // The WebSocket operation has a real peer in ProductApiContracts.test.ts.
+  it.each(generatedOperations.filter((operation) => operation.success !== "websocket"))(
     "$method $path sends the declared method, escaped path, query and body",
     async (operation) => {
       const { path, method, parameters } = operation
@@ -113,12 +115,12 @@ describe("the generated product API client", () => {
         parameters.filter((p) => p.in === "header" && p.required === true).map((p) => [p.name, `key ${p.name}`])
       )
       const sendsHeaders = Object.keys(headers).length > 0
-      const body = { operation: operation.operationId }
+      const body = operation.body === "raw" ? "{ \"signed\": true }\n" : { operation: operation.operationId }
       const input = {
         ...(Object.keys(pathValues).length > 0 ? { path: pathValues } : {}),
         ...(Object.keys(queryValues).length > 0 ? { query: queryValues } : {}),
         ...(sendsHeaders ? { headers } : {}),
-        ...(operation.body === "json" ? { body } : {})
+        ...(["json", "raw"].includes(operation.body) ? { body } : {})
       }
       const { calls, transport, answer, raw } = recorder()
       const result = await generated[functionName(operation.operationId)]!(transport, input)
@@ -134,7 +136,7 @@ describe("the generated product API client", () => {
           method.toUpperCase(),
           expectedPath,
           ...(operation.body === "json" ? [body] : sendsHeaders ? [undefined] : []),
-          ...(sendsHeaders ? [{ headers }] : [])
+          ...(sendsHeaders ? [{ headers, ...(operation.body === "raw" ? { rawBody: body } : {}) }] : [])
         ]
       }])
       expect(result).toBe(kind === "raw" ? raw : kind === "json" ? answer : undefined)

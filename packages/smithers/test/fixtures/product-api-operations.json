@@ -745,7 +745,7 @@
     "operationId": "get_api_confirmations",
     "parameters": [],
     "body": "none",
-    "success": "none"
+    "success": "json"
   },
   {
     "method": "post",
@@ -1071,8 +1071,12 @@
     "method": "post",
     "path": "/webhooks/github",
     "operationId": "post_webhooks_github",
-    "parameters": [],
-    "body": "none",
+    "parameters": [
+      { "name": "X-GitHub-Event", "in": "header", "required": true, "type": "string" },
+      { "name": "X-GitHub-Delivery", "in": "header", "required": true, "type": "string" },
+      { "name": "X-Hub-Signature-256", "in": "header", "required": true, "type": "string" }
+    ],
+    "body": "raw",
     "success": "json"
   },
   {
@@ -1426,7 +1430,7 @@
     "operationId": "get_api_live",
     "parameters": [],
     "body": "none",
-    "success": "none"
+    "success": "websocket"
   },
   {
     "method": "get",
@@ -1650,7 +1654,7 @@
     "path": "/api/notifications/preferences",
     "operationId": "put_api_notifications_preferences",
     "parameters": [],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -1706,7 +1710,7 @@
     "path": "/api/oauth2/token",
     "operationId": "post_api_oauth2_token",
     "parameters": [],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {

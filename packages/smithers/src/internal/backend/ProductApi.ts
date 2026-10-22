@@ -9,17 +9,23 @@
 
 import { pathSegment as segment } from "./PathSegment.ts"
 
-/** What one request adds to the transport's own: the operation's required headers. */
+/** Per-request headers and, for signed webhooks, the original JSON bytes. */
 export interface RequestOptions {
   readonly headers?: Record<string, string>
+  readonly rawBody?: string
 }
 
 /** Sends one product API request. The CLI's backend `Client` is one; so is anything with these two methods. */
 export interface Transport {
-  /** Sends a JSON request and resolves to the parsed JSON response, or null when it has no body. */
+  /** Sends JSON (or options.rawBody unchanged) and parses the JSON response, or null for an empty response. */
   request(method: string, path: string, body?: unknown, options?: RequestOptions): Promise<unknown>
   /** Sends a request and resolves to the raw response, for streams and files. */
   response(method: string, path: string, body?: unknown, options?: RequestOptions): Promise<Response>
+}
+
+/** An injected WebSocket connector owns authentication and connection lifecycle. */
+export interface LiveTransport<Connection> {
+  connect(path: string, protocols: Array<string>): Promise<Connection>
 }
 
 const search = (values: Record<string, string | number | boolean | undefined>): string => {
@@ -2126,9 +2132,11 @@ export const postApiCommandsSelect = (transport: Transport, input?: PostApiComma
 export const getApiCommandsDebugApi = (transport: Transport): Promise<void> =>
   transport.request("GET", `/api/commands/debug-api`).then(() => undefined)
 
+export type GetApiConfirmationsResponse = Array<{ id: string; state: string; [key: string]: unknown }>
+
 /** GET /api/confirmations: List your confirmations */
-export const getApiConfirmations = (transport: Transport): Promise<void> =>
-  transport.request("GET", `/api/confirmations`).then(() => undefined)
+export const getApiConfirmations = (transport: Transport): Promise<GetApiConfirmationsResponse> =>
+  transport.request("GET", `/api/confirmations`) as Promise<GetApiConfirmationsResponse>
 
 export type PostApiConfirmationsResponse = ConfirmationReceipt
 
@@ -2511,9 +2519,19 @@ export const getApiHealth = (transport: Transport): Promise<GetApiHealthResponse
 
 export type PostWebhooksGithubResponse = AnyJSON
 
+export interface PostWebhooksGithubInput {
+  /** Original signed JSON text; parsing and serializing it would invalidate the signature. */
+  readonly body: string
+  readonly headers: {
+    readonly "X-GitHub-Event": string
+    readonly "X-GitHub-Delivery": string
+    readonly "X-Hub-Signature-256": string
+  }
+}
+
 /** POST /webhooks/github */
-export const postWebhooksGithub = (transport: Transport): Promise<PostWebhooksGithubResponse> =>
-  transport.request("POST", `/webhooks/github`) as Promise<PostWebhooksGithubResponse>
+export const postWebhooksGithub = (transport: Transport, input: PostWebhooksGithubInput): Promise<PostWebhooksGithubResponse> =>
+  transport.request("POST", `/webhooks/github`, undefined, { headers: input.headers, rawBody: input.body }) as Promise<PostWebhooksGithubResponse>
 
 export type GetApiInstallMetricsResponse = {
   collected_at: string
@@ -2607,7 +2625,16 @@ export type GetApiInstallResponse = InstallSetupStatus
 export const getApiInstall = (transport: Transport): Promise<GetApiInstallResponse> =>
   transport.request("GET", `/api/install`) as Promise<GetApiInstallResponse>
 
-export type PutApiInstallBody = (unknown | unknown | unknown) | (unknown | unknown) | unknown
+export type PutApiInstallBody =
+  | ((
+    { parallel: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8; capacity?: number; chatgpt?: boolean } |
+    { parallel?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8; capacity: number; chatgpt?: boolean } |
+    { parallel?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8; capacity?: number; chatgpt: boolean }
+  ) & { bind?: never; origins?: never; "wiki_sync.obsidian"?: never })
+  | (({ bind: string; origins?: Array<string> } | { bind?: string; origins: Array<string> }) & {
+    parallel?: never; capacity?: never; chatgpt?: never; "wiki_sync.obsidian"?: never
+  })
+  | { "wiki_sync.obsidian": { path: string }; parallel?: never; capacity?: never; chatgpt?: never; bind?: never; origins?: never }
 
 export type PutApiInstallResponse = InstallSetupStatus
 
@@ -3041,8 +3068,8 @@ export const getApiReposOwnerRepoGithubIssuesRequestsId = (transport: Transport,
   transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/github/issues/requests/${segment(input.path.id)}`) as Promise<GetApiReposOwnerRepoGithubIssuesRequestsIdResponse>
 
 /** GET /api/live: Follow the install's shared topics over one WebSocket */
-export const getApiLive = (transport: Transport): Promise<void> =>
-  transport.request("GET", `/api/live`).then(() => undefined)
+export const getApiLive = <Connection>(transport: LiveTransport<Connection>): Promise<Connection> =>
+  transport.connect(`/api/live`, ["smithers.live.v1"])
 
 export type GetApiMembersResponse = MembersCard
 
@@ -3288,9 +3315,19 @@ export const getApiNotificationsPreferences = (transport: Transport): Promise<Ge
 
 export type PutApiNotificationsPreferencesResponse = AnyJSON
 
+export type PutApiNotificationsPreferencesBody = {
+  notify_issues?: boolean | null
+  notify_landings?: boolean | null
+  notify_mentions?: boolean | null
+}
+
+export interface PutApiNotificationsPreferencesInput {
+  readonly body: PutApiNotificationsPreferencesBody
+}
+
 /** PUT /api/notifications/preferences */
-export const putApiNotificationsPreferences = (transport: Transport): Promise<PutApiNotificationsPreferencesResponse> =>
-  transport.request("PUT", `/api/notifications/preferences`) as Promise<PutApiNotificationsPreferencesResponse>
+export const putApiNotificationsPreferences = (transport: Transport, input: PutApiNotificationsPreferencesInput): Promise<PutApiNotificationsPreferencesResponse> =>
+  transport.request("PUT", `/api/notifications/preferences`, input.body) as Promise<PutApiNotificationsPreferencesResponse>
 
 export type PatchApiNotificationsIdResponse = AnyJSON
 
@@ -3332,9 +3369,26 @@ export const postApiOauth2RevokeAll = (transport: Transport): Promise<PostApiOau
 
 export type PostApiOauth2TokenResponse = AnyJSON
 
+export type PostApiOauth2TokenBody = {
+  client_id: string
+  client_secret?: string
+} & ({
+  grant_type: "authorization_code"
+  code: string
+  redirect_uri: string
+  code_verifier?: string
+} | {
+  grant_type: "refresh_token"
+  refresh_token: string
+})
+
+export interface PostApiOauth2TokenInput {
+  readonly body: PostApiOauth2TokenBody
+}
+
 /** POST /api/oauth2/token */
-export const postApiOauth2Token = (transport: Transport): Promise<PostApiOauth2TokenResponse> =>
-  transport.request("POST", `/api/oauth2/token`) as Promise<PostApiOauth2TokenResponse>
+export const postApiOauth2Token = (transport: Transport, input: PostApiOauth2TokenInput): Promise<PostApiOauth2TokenResponse> =>
+  transport.request("POST", `/api/oauth2/token`, input.body) as Promise<PostApiOauth2TokenResponse>
 
 export interface DeleteApiOrgsOrgMembersUsernameInput {
   readonly path: { readonly org: string; readonly username: string }

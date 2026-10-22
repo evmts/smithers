@@ -446,6 +446,8 @@ export class Client {
       anonymous?: boolean
       token?: string
       headers?: Record<string, string>
+      /** Exact signed webhook text, bypassing JSON serialization. */
+      rawBody?: string
       stream?: boolean
       signal?: AbortSignal
     } = {}
@@ -501,7 +503,7 @@ export class Client {
     const headers = {
       "user-agent": `smithers-cli/${packageVersion}`,
       accept: options.stream ? "text/event-stream" : "application/json",
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(body === undefined && options.rawBody === undefined ? {} : { "content-type": "application/json" }),
       ...(token ? { authorization: `token ${token}` } : {}),
       ...(token && via && !Object.keys(options.headers ?? {}).some((key) => key.toLowerCase() === "smithers-via")
         ? { "Smithers-Via": via }
@@ -517,7 +519,11 @@ export class Client {
     const request = {
       method,
       headers,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(options.rawBody !== undefined
+        ? { body: options.rawBody }
+        : body === undefined
+        ? {}
+        : { body: JSON.stringify(body) }),
       ...(signal ? { signal } : {}),
       redirect: "error" as const
     }
