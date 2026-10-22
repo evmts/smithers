@@ -110,10 +110,10 @@ export const fieldValueLimit = 256
  * @category getters
  * @since 1.0.0
  */
-export const fields = (error: Error): string => {
+export const fields = (error: Error, redact: Redaction.Redactor = Redaction.redactDiagnostic): string => {
   // Only scalar refusal fields are rendered. Do not traverse arbitrary error
   // metadata (which can be cyclic) before the bounded diagnostic redactor.
-  const own = Redaction.redactDiagnostic(
+  const own = redact(
     Object.fromEntries(
       Object.entries(error).flatMap(([key, value]) =>
         typeof value === "string" || typeof value === "number" || typeof value === "boolean"
@@ -141,7 +141,8 @@ export const fields = (error: Error): string => {
  * @category getters
  * @since 1.0.0
  */
-export const sentence = (error: Error): string => safeSentence(error.message === "" ? fields(error) : error.message)
+export const sentence = (error: Error, redact: Redaction.Redactor = Redaction.redactDiagnostic): string =>
+  safeSentence(String(redact(error.message === "" ? fields(error, redact) : error.message)))
 
 /**
  * The sentence an operator reads for a failure nobody designed a sentence

@@ -10,6 +10,7 @@ import { Cause, Effect, Exit, Metric } from "effect"
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -26,6 +27,7 @@ import { request } from "node:http"
 import { isIP } from "node:net"
 import { homedir } from "node:os"
 import { dirname, isAbsolute, join, resolve } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { Refused } from "../../CliError.ts"
 
 /**
@@ -201,41 +203,59 @@ export const loaded = (system: Launchd) => system.launchctl(["print", `${system.
  */
 export const plistFile = (system: Launchd) => join(system.agentsDir, `${label}.plist`)
 
-/** Fail closed while another process owns service replacement, including shutdown. */
-const serviceLock = async <A>(system: Launchd, operation: "install" | "stop", use: () => Promise<A>): Promise<A> => {
-  const lock = `${plistFile(system)}.lock`
-  const result = await Effect.runPromiseExit(
-    Effect.acquireUseRelease(
-      Effect.try({
-        try: () => {
-          mkdirSync(system.agentsDir, { recursive: true })
-          try {
-            mkdirSync(lock, { mode: 0o700 })
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
-            throw new Refused({
-              fault: "infra",
-              code: "host_service_busy",
-              message: "Another host service operation holds the installation lock"
-            })
-          }
-        },
-        catch: (error) => error
-      }),
-      () => Effect.tryPromise({ try: use, catch: (error) => error }),
-      () => Effect.sync(() => rmSync(lock, { recursive: true }))
-    ).pipe(
-      Effect.tap(() => Metric.update(Metric.counter(`cli.host.${operation}.completed`), 1)),
-      Effect.tap(() => Effect.logDebug("Host service operation completed", { operation })),
-      Effect.tapError(() =>
-        Effect.andThen(
-          Metric.update(Metric.counter(`cli.host.${operation}.failed`), 1),
-          Effect.logDebug("Host service operation failed", { operation })
-        )
-      ),
-      SpanFailure.withSpan(`cli.host.${operation}`)
-    )
+/** One OS-backed lock for replacement, shutdown and restore. SQLite releases
+ * its transaction on process death. Never unlink the file: all entrants must
+ * lock the same inode. No application data or credentials are stored here. */
+const serviceLocked = <A, E>(
+  system: Launchd,
+  operation: "install" | "stop" | "restore",
+  use: Effect.Effect<A, E>
+): Effect.Effect<A, E | unknown> =>
+  Effect.acquireUseRelease(
+    Effect.try({
+      try: () => {
+        mkdirSync(system.agentsDir, { recursive: true })
+        const lock = `${plistFile(system)}.lock.sqlite`
+        const database = new DatabaseSync(lock)
+        try {
+          chmodSync(lock, 0o600)
+          database.exec("BEGIN EXCLUSIVE")
+          return database
+        } catch (error) {
+          database.close()
+          if ((error as { errcode?: number }).errcode !== 5) throw error
+          throw new Refused({
+            fault: "infra",
+            code: "host_service_busy",
+            message: "Another host service operation holds the installation lock"
+          })
+        }
+      },
+      catch: (error) => error
+    }),
+    () => use,
+    (database) => Effect.sync(() => database.close())
+  ).pipe(
+    Effect.tap(() => Metric.update(Metric.counter(`cli.host.${operation}.completed`), 1)),
+    Effect.tap(() => Effect.logDebug("Host service operation completed", { operation })),
+    Effect.tapError(() =>
+      Effect.andThen(
+        Metric.update(Metric.counter(`cli.host.${operation}.failed`), 1),
+        Effect.logDebug("Host service operation failed", { operation })
+      )
+    ),
+    SpanFailure.withSpan(`cli.host.${operation}`)
   )
+
+const serviceLock = async <A>(system: Launchd, operation: "install" | "stop", use: () => Promise<A>): Promise<A> => {
+  const result = await Effect.runPromiseExit(serviceLocked(
+    system,
+    operation,
+    Effect.tryPromise({
+      try: use,
+      catch: (error) => error
+    })
+  ))
   if (Exit.isSuccess(result)) return result.value
   throw Cause.squash(result.cause)
 }
@@ -355,7 +375,7 @@ export const install = async (
   options: ServiceOptions,
   system: Launchd
 ): Promise<"installed" | "reloaded" | "unchanged"> => {
-  verifyBundle(options.bundle)
+  options = { ...options, bundle: verifyBundle(options.bundle).bundle }
   return serviceLock(system, "install", async () => {
     const file = plistFile(system), content = hostPlist(options)
     const previous = existsSync(file) ? readFileSync(file, "utf8") : undefined
@@ -452,35 +472,44 @@ export const maintenance = (
   system: Launchd = launchd(),
   run: typeof spawnSync = spawnSync
 ) => {
-  if (operation === "restore" && loaded(system)) {
-    throw new Refused({
-      fault: "infra",
-      code: "install_running",
-      message: "Restore refuses a running install; run smthrs host stop first"
-    })
-  }
-  if (operation === "restore" && !directory?.trim()) {
-    throw new Refused({ fault: "user", code: "invalid_backup", message: "Backup directory is required" })
-  }
-  // A stopped installation retains its exact bundle; only an absent install uses the keg.
-  const file = plistFile(system)
-  const bundle =
-    verifyBundle(existsSync(file) || existsSync(`${file}.stopped`) ? installedBundle(system) : resolveBundle()).bundle
-  const result = run(join(bundle, "bin/smithers-backend"), [
-    "host-maintenance",
-    operation,
-    ...(directory === undefined ? [] : [resolve(directory)])
-  ], {
-    encoding: "utf8",
-    maxBuffer: 65536,
-    env: { HOME: homedir(), PATH: `${bundle}/bin:/usr/bin:/bin:/usr/sbin:/sbin` }
+  const use = Effect.try({
+    try: () => {
+      if (operation === "restore" && loaded(system)) {
+        throw new Refused({
+          fault: "infra",
+          code: "install_running",
+          message: "Restore refuses a running install; run smthrs host stop first"
+        })
+      }
+      if (operation === "restore" && !directory?.trim()) {
+        throw new Refused({ fault: "user", code: "invalid_backup", message: "Backup directory is required" })
+      }
+      // A stopped installation retains its exact bundle; only an absent install uses the keg.
+      const file = plistFile(system)
+      const bundle =
+        verifyBundle(existsSync(file) || existsSync(`${file}.stopped`) ? installedBundle(system) : resolveBundle())
+          .bundle
+      const result = run(join(bundle, "bin/smithers-backend"), [
+        "host-maintenance",
+        operation,
+        ...(directory === undefined ? [] : [resolve(directory)])
+      ], {
+        encoding: "utf8",
+        maxBuffer: 65536,
+        env: { HOME: homedir(), PATH: `${bundle}/bin:/usr/bin:/bin:/usr/sbin:/sbin` }
+      })
+      if (result.status !== 0) {
+        const message = result.stderr?.trim() || "Host maintenance backend did not answer"
+        const code = message.match(/^([a-z_]+):/)?.[1] ?? "host_maintenance_failed"
+        throw new Refused({ fault: "infra", code, message })
+      }
+      return result.stdout.trimEnd()
+    },
+    catch: (error) => error
   })
-  if (result.status !== 0) {
-    const message = result.stderr?.trim() || "Host maintenance backend did not answer"
-    const code = message.match(/^([a-z_]+):/)?.[1] ?? "host_maintenance_failed"
-    throw new Refused({ fault: "infra", code, message })
-  }
-  return result.stdout.trimEnd()
+  const result = Effect.runSyncExit(operation === "restore" ? serviceLocked(system, "restore", use) : use)
+  if (Exit.isSuccess(result)) return result.value
+  throw Cause.squash(result.cause)
 }
 /**
  * true when the host is ready; while it starts, the starting page's step

@@ -311,7 +311,9 @@ export class Client {
     return Redaction.redact(value, { rules: this.outputRules })
   }
   write(text: string) {
-    ;(this.runtime.stderr ?? process.stderr).write(Failure.terminalSafeLines(str(this.redact(text))))
+    ;(this.runtime.stderr ?? process.stderr).write(
+      Failure.terminalSafeLines(str(this.redact(Failure.terminalSafeLines(text))))
+    )
   }
   output(out: Buffer, err: Buffer) {
     if (!this.live) return
@@ -333,7 +335,13 @@ export class Client {
       this.outputPartial[channel] = false
       lines.push(...redactor.flush())
     }
-    if (lines.length) (this.runtime[channel] ?? process[channel]).write(`${lines.join("\n")}${complete ? "\n" : ""}`)
+    if (lines.length) {
+      ;(this.runtime[channel] ?? process[channel]).write(
+        Failure.terminalSafeLines(str(this.redact(
+          Failure.terminalSafeLines(`${lines.join("\n")}${complete ? "\n" : ""}`)
+        )))
+      )
+    }
   }
   flushOutput() {
     if (!this.live) return
@@ -343,22 +351,36 @@ export class Client {
   /**
    * What a failed command reports: a backend HTTP failure as the `Refused`
    * its status names, any other designed failure with its tag and its
-   * sentence redacted of this session's secrets, and anything else as it
-   * came, so the reporter prints the generic sentence.
+   * sentence redacted of this session's secrets. Undesigned failures retain
+   * their generic classification and redact verbose detail as well.
    */
   failure(error: unknown): unknown {
-    if (error instanceof APIError) return refusalOf(error, (value) => this.redact(value))
-    if (!Failure.isDesigned(error)) return error
-    const message = str(this.redact(error.message))
-    if (message === error.message) return error
-    if (!Failure.isTagged(error)) return new Error(message)
-    try {
-      Object.defineProperty(error, "message", { value: message, configurable: true, writable: true })
-      return error
-    } catch {
-      return new Error(message)
+    if (error instanceof APIError) error = refusalOf(error, (value) => this.redact(value))
+    if (!(error instanceof Error)) {
+      return this.redact(Failure.terminalSafeValue(this.redact(error)))
     }
+    const rawMessage = error.message
+    const message = Failure.isDesigned(error)
+      ? str(this.redact(Failure.sentence(error, (value) => this.redact(value))))
+      : str(this.redact(Failure.terminalSafeLines(rawMessage)))
+    const detail = Failure.operatorDetail(error)
+    const stack = str(this.redact(detail))
+    const name = str(this.redact(Failure.terminalSafe(error.name)))
+    const tag = Failure.tagOf(error)
+    const safeTag = tag === undefined ? undefined : str(this.redact(Failure.terminalSafe(tag)))
+    if (message === error.message && stack === detail && safeTag === tag && name === error.name) return error
+    // Keep the classification and contract fields, including frozen tagged
+    // failures. Flatten causes into the sanitized stack so verbose reporters
+    // cannot walk back into the original error's protected values.
+    const descriptors = Object.getOwnPropertyDescriptors(error)
+    descriptors.name = { value: name, configurable: true, writable: true }
+    descriptors.message = { value: message, configurable: true, writable: true }
+    descriptors.stack = { value: stack, configurable: true, writable: true }
+    descriptors.cause = { value: undefined, configurable: true }
+    if (safeTag !== undefined) descriptors._tag = { value: safeTag, enumerable: true, configurable: true }
+    return Object.create(Object.getPrototypeOf(error), descriptors)
   }
+
   async exec(command: string, args: Array<string>, extra: NodeJS.ProcessEnv = {}, input?: string): Promise<string> {
     const result = await run(command, args, {
       env: { ...this.env, ...extra },
@@ -724,7 +746,7 @@ export class Client {
   ): Promise<Array<unknown>> {
     const response = await this.response("GET", path, undefined, { stream: true })
     const events: Array<unknown> = []
-    let buffer = ""
+    let buffer = "", retainedBytes = 0
     if (!response.body) return events
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
     try {
@@ -748,6 +770,14 @@ export class Client {
             data = JSON.parse(raw)
           } catch { /* plain text event */ }
           const id = lines.find((line) => line.startsWith("id:"))?.slice(3).trim()
+          retainedBytes += Buffer.byteLength(raw) + Buffer.byteLength(type) + Buffer.byteLength(id ?? "")
+          if (events.length >= maximumItems || retainedBytes > 4 * 1024 * 1024) {
+            throw new Refused({
+              fault: "infra",
+              code: "backend_protocol",
+              message: "Event stream exceeds retention limit"
+            })
+          }
           events.push({ type, data, ...(id ? { id } : {}) })
           this.write(`${str(object(data).content ?? object(data).status ?? raw)}\n`)
           if (type === stop || terminalStatuses.includes(str(object(data).status))) return events

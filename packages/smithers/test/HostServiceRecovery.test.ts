@@ -67,13 +67,15 @@ describe.skipIf(process.platform !== "darwin")("host recovery with real files an
   })
 
   it("refuses another process's installation lock before touching the service", async () => {
-    const f = fixture(), lock = `${Host.plistFile(f.system)}.lock`
+    const f = fixture(), lock = `${Host.plistFile(f.system)}.lock.sqlite`
     const child = spawn(process.execPath, [
       "-e",
       `
-      require("node:fs").mkdirSync(process.argv[1]);
+      const database = new (require("node:sqlite").DatabaseSync)(process.argv[1]);
+      database.exec("BEGIN EXCLUSIVE");
       console.log("locked");
       process.stdin.resume();
+      process.stdin.on("end", () => database.close());
     `,
       lock
     ], { stdio: ["pipe", "pipe", "pipe"] })
