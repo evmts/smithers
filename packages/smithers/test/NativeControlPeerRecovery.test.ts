@@ -1,4 +1,5 @@
 import { NodeServices } from "@effect/platform-node"
+import { Health } from "@smthrs/control"
 import { Journal } from "@smthrs/journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import { NodeRuntime } from "@smthrs/platform-node"
@@ -51,7 +52,7 @@ const rows = (root: string, name = "engine") =>
     name,
     (db) =>
       db.prepare(
-        "SELECT run_id, status, owner_host_id, owner_nonce, owner_pid, cancel_requested_at_ms FROM flows_runs ORDER BY run_id"
+        "SELECT run_id, status, owner_host_id, owner_nonce, owner_pid, cancel_requested_at_ms FROM flows_runs WHERE json_extract(state_json, '$.flowName') IS NOT 'smithers/health/Discovery' ORDER BY run_id"
       )
         .all() as unknown as Row[]
   )
@@ -145,7 +146,8 @@ it(
         root,
         "engine",
         (db) =>
-          db.prepare("SELECT count(*) AS n FROM flows_journal_events WHERE run_id = ?").get(runId) as { n: number }
+          db.prepare("SELECT count(*) AS n FROM flows_journal_events WHERE run_id = ? AND event_type <> ?")
+            .get(runId, Health.statusObservedEventType) as { n: number }
       )
       const observe = await nativePeer(root, "peer-observe")
       expect(rows(root).find((row) => row.run_id === runId)).toMatchObject({ status: "suspended", owner_pid: null })
@@ -158,8 +160,11 @@ it(
         root,
         "engine",
         (db) =>
-          db.prepare("SELECT count(*) AS n FROM flows_journal_events WHERE run_id = ?").get(runId) as { n: number }
+          db.prepare("SELECT count(*) AS n FROM flows_journal_events WHERE run_id = ? AND event_type <> ?")
+            .get(runId, Health.statusObservedEventType) as { n: number }
       )
+      // 4fe3f0724117 records health observations on peer startup. They are
+      // evidence of observation, not another execution of this run.
       expect(after.n).toBe(before.n)
       expect(await attempts()).toEqual([original.pid])
       expect(await exists(join(root, `entered-${observe.pid}`))).toBe(false)
