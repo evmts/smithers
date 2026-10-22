@@ -401,8 +401,16 @@ test("an ownerless offline activation reopens under verified authority when the 
   await expect.poll(() => tab.log.some((line) => line.includes("e2e.identity_network") && line.includes("window_online")), { message: "the browser delivered its real online event" }).toBe(true)
   // Offline, the empty device opened as a visitor's. The online session names a person, so every tab loads again and
   // the new activation makes them its owner: never a new principal on the existing runtime.
-  await expect.poll(() => tab.log.some((line) => line.includes("auth.device_identity") && line.includes("reopened")), { timeout: 60_000 }).toBe(true)
-  await expect(tab.page.getByRole("button", { name: SIGN_OUT })).toBeVisible({ timeout: 30_000 })
+  const reopened = () => tab.log.findIndex((line) => line.includes("auth.device_identity") && line.includes("reopened"))
+  await expect.poll(reopened, { timeout: 60_000 }).toBeGreaterThanOrEqual(0)
+  // The page that loads again activates under the verified person, on every target: the app's home locally, the run's
+  // own branch on a deployment, which has no Sign out of its own.
+  await expect
+    .poll(() => tab.log.slice(reopened()).some((line) => line.includes("auth.device_identity") && line.includes("verified")), {
+      message: "the reopened page activates as the signed-in person",
+      timeout: 60_000,
+    })
+    .toBe(true)
   await expect(tab.conversation, "the verified page shows its conversation").toBeVisible({ timeout: 30_000 })
   const text = `Recovered authority ${devices.word}`
   const accepted = tab.page.waitForResponse((response) => new URL(response.url()).pathname === QUESTIONS_ROUTE && response.request().postDataJSON()?.text === text)
