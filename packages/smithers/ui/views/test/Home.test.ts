@@ -275,6 +275,33 @@ describe("Home.read, sections", () => {
     })
   })
 
+  it("reads the docs a home declares: an https URL of its docs index; anything else is refused", () => {
+    const docs = "https://vibelang.sh/llms.txt"
+    expect(Home.read(JSON.stringify({ docs, sections: [] }))).toEqual({
+      _tag: "Declared",
+      sections: [],
+      contributors: "role",
+      docs,
+      skipped: 0
+    })
+    expect(Home.read(JSON.stringify({ docs, blocks: [] }))).toMatchObject({ docs })
+    expect(Home.read(JSON.stringify({ blocks: [] }))).not.toHaveProperty("docs")
+    for (
+      const bad of [
+        "http://vibelang.sh/llms.txt",
+        "javascript:alert(1)",
+        "/llms.txt",
+        "",
+        `https://vibelang.sh/${"x".repeat(Home.maximumUrlLength)}`,
+        "https://user:pass@vibelang.sh/llms.txt",
+        null,
+        1
+      ]
+    ) {
+      expect([bad, Home.read(JSON.stringify({ docs: bad, sections: [] }))]).toEqual([bad, invalid("shape")])
+    }
+  })
+
   it("reads who counts as a contributor: `anyone` when the home says so, else `role`; anything else is refused", () => {
     expect(Home.read(JSON.stringify({ contributors: "anyone", sections: [] }))).toMatchObject({
       contributors: "anyone"

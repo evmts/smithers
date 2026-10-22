@@ -39,6 +39,7 @@ import type * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
+import { refusal } from "./internal/hosts.ts"
 
 /**
  * What a browser would do with the page in a frame: show it (`allowed`),
@@ -472,21 +473,6 @@ export interface Options {
   readonly headTimeout?: Duration.Input | undefined
   readonly maxBytes?: number | undefined
   readonly userAgent?: string | undefined
-}
-
-const LOCAL_SUFFIXES = [".localhost", ".local", ".internal", ".home.arpa", ".lan"]
-
-/** Why the check won't request `url`, or nothing. */
-const refusal = (url: URL, privateHosts: ReadonlyArray<string>): Reason | undefined => {
-  if (url.protocol !== "https:" && url.protocol !== "http:") return "invalid_url"
-  if (url.username !== "" || url.password !== "") return "invalid_url"
-  const hostname = url.hostname.toLowerCase()
-  if (privateHosts.includes(hostname)) return undefined
-  const name = hostname.replace(/\.$/, "")
-  // The URL parser writes every IPv4 spelling (`2130706433`, `0x7f.1`) as four decimals, and IPv6 in brackets.
-  const literal = name.startsWith("[") || /^\d+\.\d+\.\d+\.\d+$/.test(name)
-  const local = !name.includes(".") || LOCAL_SUFFIXES.some((suffix) => name.endsWith(suffix))
-  return literal || local ? "private_host" : undefined
 }
 
 const unknown = (reason: Reason, status?: number): Checked =>

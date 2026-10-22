@@ -1,0 +1,216 @@
+# VibeLang
+
+> VibeLang is a language for building reliable TypeScript in the AI era, built on Effect. It gives Effect a simple, readable syntax that compiles to TypeScript, with first-class access to the TypeScript ecosystem.
+
+## Essentials
+
+Every function is an Effect: calls run in order, with no `yield*` or `Effect.gen`. `A!E` is a result and its failures, `A!!` cannot fail; omitted parts are inferred.
+
+```vibe
+error NotFound { id: string }
+
+service Users {
+  name(id: string): string!NotFound
+}
+
+function nameOf(id: string): string!!Users {
+  return Users.name(id)
+    |> timeout(%, "1 second") // each attempt
+    |> retry(%, { times: 3, schedule: Schedule.exponential("100 millis") })
+    catch (e) => "unknown"
+}
+
+export function names(ids: ReadonlyArray<string>) {
+  return forEach(ids, nameOf, { concurrency: 8 })
+}
+```
+
+- `throw new NotFound({ id })` fails; `x catch (e) => y` or `try { } catch (e) { }` recovers; `match (e) { when NotFound: ...; default: throw e; }` picks error classes.
+- Import a sibling module with its extension: `import { User } from "./user.vibe"`. Effect's root modules (`Option`, `Schedule`, `Console`) need no import.
+- `provide UsersLive { ... }` supplies a service; `UsersLive = Layer.succeed(Users, { name(id) { ... } })`.
+- `await.all [a(), b()]` runs programs together; in `x |> f(%)`, `%` is `x`.
+- Function bodies take plain TypeScript: `let`, loops, `typeof`, regex, Array/Map methods.
+- `using h = Effect.acquireRelease(() => open(), (h) => close(h))` frees `h` at block end, failure or interrupt. An interrupted start still runs to the first yield: call `Effect.yieldNow()` first if `open()` must not run.
+- A plain TypeScript call needs `sync(() => f(x))`, or `try(() => f(x), (error: unknown) => new E())` if it can throw.
+- Tests: `it.effect("name") { assert.strictEqual(a, b) }` from `@effect/vitest` uses a test clock (`sleep("1 second")` stalls); `it.live` uses real time. Under an agent, vitest hides `console.log`; assert instead.
+
+VibeLang is v0. The language will change in major, breaking ways. It is not suitable for production use. To set up VibeLang in a project, read [Set up VibeLang](https://vibelang.sh/setup.md) and follow it. Each link below is a page's Markdown; remove `.md` for the page with navigation.
+
+## Onboarding
+
+- [Welcome](https://vibelang.sh/001-onboarding.md): Start Here
+- [Why VibeLang?](https://vibelang.sh/getting-started/002-why-effect.md): Start Here
+- [The Effect Type](https://vibelang.sh/getting-started/003-the-effect-type.md): Learning Path
+- [Installation](https://vibelang.sh/getting-started/004-installation.md): Learning Path
+- [Creating Effects](https://vibelang.sh/getting-started/005-creating-effects.md): Learning Path
+- [Two Types of Errors](https://vibelang.sh/error-management/006-two-error-types.md): Learning Path
+- [Basic Concurrency](https://vibelang.sh/concurrency/007-basic-concurrency.md): Learning Path
+- [Effect's Modules](https://vibelang.sh/getting-started/008-importing-effect.md): Core Concepts
+- [Running Effects](https://vibelang.sh/getting-started/009-running-effects.md): Core Concepts
+- [Sequencing Effects](https://vibelang.sh/getting-started/010-using-generators.md): Core Concepts
+- [Building Pipelines](https://vibelang.sh/getting-started/011-building-pipelines.md): Core Concepts
+- [Devtools](https://vibelang.sh/getting-started/012-devtools.md): Core Concepts
+
+## Setup
+
+- [Set up VibeLang](https://vibelang.sh/setup.md)
+- [New project](https://vibelang.sh/setup/new-project.md): Start a project
+- [Existing project](https://vibelang.sh/setup/existing-project.md): Start a project
+- [vibelang CLI](https://vibelang.sh/setup/vibelang-cli.md): Build and test
+- [Vite and Vitest](https://vibelang.sh/setup/vite.md): Build and test
+- [Format with dprint](https://vibelang.sh/setup/formatting.md): Format and lint
+- [React](https://vibelang.sh/setup/react.md): Frameworks
+- [Vue](https://vibelang.sh/setup/vue.md): Frameworks
+- [Svelte](https://vibelang.sh/setup/svelte.md): Frameworks
+- [VS Code and Cursor](https://vibelang.sh/setup/vscode.md): Editors
+- [Neovim](https://vibelang.sh/setup/neovim.md): Editors
+- [Zed](https://vibelang.sh/setup/zed.md): Editors
+- [Other editors](https://vibelang.sh/setup/other-editors.md): Editors
+- [Release notes](https://vibelang.sh/setup/release-notes.md): Upgrade
+
+## Guides
+
+- [Getting Started](https://vibelang.sh/013-getting-started.md)
+- [Expected Errors](https://vibelang.sh/error-management/014-expected-errors.md): Error Management
+- [Unexpected Errors](https://vibelang.sh/error-management/015-unexpected-errors.md): Error Management
+- [Fallback](https://vibelang.sh/error-management/016-fallback.md): Error Management
+- [Matching](https://vibelang.sh/error-management/017-matching.md): Error Management
+- [Retrying](https://vibelang.sh/error-management/018-retrying.md): Error Management
+- [Timing Out](https://vibelang.sh/error-management/019-timing-out.md): Error Management
+- [Sandboxing](https://vibelang.sh/error-management/020-sandboxing.md): Error Management
+- [Error Accumulation](https://vibelang.sh/error-management/021-error-accumulation.md): Error Management
+- [Error Channel Operations](https://vibelang.sh/error-management/022-error-channel-operations.md): Error Management
+- [Parallel and Sequential Errors](https://vibelang.sh/error-management/023-parallel-and-sequential-errors.md): Error Management
+- [Custom Error Classes](https://vibelang.sh/error-management/024-yieldable-errors.md): Error Management
+- [Managing Services](https://vibelang.sh/requirements-management/025-services.md): Requirements Management
+- [Default Services](https://vibelang.sh/requirements-management/026-default-services.md): Requirements Management
+- [Managing Layers](https://vibelang.sh/requirements-management/027-layers.md): Requirements Management
+- [Layer Memoization](https://vibelang.sh/requirements-management/028-layer-memoization.md): Requirements Management
+- [Introduction](https://vibelang.sh/resource-management/029-introduction.md): Resource Management
+- [Scope](https://vibelang.sh/resource-management/030-scope.md): Resource Management
+- [Logging](https://vibelang.sh/observability/031-logging.md): Observability
+- [Metrics](https://vibelang.sh/observability/032-metrics.md): Observability
+- [Tracing](https://vibelang.sh/observability/033-tracing.md): Observability
+- [Tracking Fibers](https://vibelang.sh/observability/034-tracking-fibers.md): Observability
+- [Configuration](https://vibelang.sh/035-configuration.md)
+- [Runtime](https://vibelang.sh/036-runtime.md)
+- [Using schedules](https://vibelang.sh/scheduling/037-using-schedules.md): Scheduling
+- [Choosing and combining schedules](https://vibelang.sh/scheduling/038-choosing-and-combining-schedules.md): Scheduling
+- [Scheduling work with cron](https://vibelang.sh/scheduling/039-cron.md): Scheduling
+- [Schedule cookbook](https://vibelang.sh/scheduling/040-cookbook.md): Scheduling
+- [Ref](https://vibelang.sh/state-management/041-ref.md): State Management
+- [SynchronizedRef](https://vibelang.sh/state-management/042-synchronizedref.md): State Management
+- [SubscriptionRef](https://vibelang.sh/state-management/043-subscriptionref.md): State Management
+- [Batching](https://vibelang.sh/044-batching.md)
+- [Caching Effects](https://vibelang.sh/caching/045-caching-effects.md): Caching
+- [Cache](https://vibelang.sh/caching/046-cache.md): Caching
+- [Fibers](https://vibelang.sh/concurrency/047-fibers.md): Concurrency
+- [Deferred](https://vibelang.sh/concurrency/048-deferred.md): Concurrency
+- [Queue](https://vibelang.sh/concurrency/049-queue.md): Concurrency
+- [PubSub](https://vibelang.sh/concurrency/050-pubsub.md): Concurrency
+- [Semaphore](https://vibelang.sh/concurrency/051-semaphore.md): Concurrency
+- [Latch](https://vibelang.sh/concurrency/052-latch.md): Concurrency
+- [Introduction](https://vibelang.sh/stream/053-introduction.md): Stream
+- [Creating Streams](https://vibelang.sh/stream/054-creating.md): Stream
+- [Consuming Streams](https://vibelang.sh/stream/055-consuming-streams.md): Stream
+- [Error Handling](https://vibelang.sh/stream/056-error-handling.md): Stream
+- [Operations](https://vibelang.sh/stream/057-operations.md): Stream
+- [Resourceful Streams](https://vibelang.sh/stream/058-resourceful-streams.md): Stream
+- [Introduction](https://vibelang.sh/sink/059-introduction.md): Sink
+- [Creating Sinks](https://vibelang.sh/sink/060-creating.md): Sink
+- [Operations](https://vibelang.sh/sink/061-operations.md): Sink
+- [Leftovers](https://vibelang.sh/sink/062-leftovers.md): Sink
+- [TestClock](https://vibelang.sh/testing/063-testclock.md): Testing
+- [Guidelines](https://vibelang.sh/code-style/064-guidelines.md): Code Style
+- [Dual APIs](https://vibelang.sh/code-style/065-dual.md): Code Style
+- [Branded Types](https://vibelang.sh/code-style/066-branded-types.md): Code Style
+- [Pattern Matching](https://vibelang.sh/code-style/067-pattern-matching.md): Code Style
+- [Excessive Nesting](https://vibelang.sh/code-style/068-do.md): Code Style
+- [Control Flow Operators](https://vibelang.sh/code-style/069-control-flow.md): Code Style
+- [BigDecimal](https://vibelang.sh/data-types/070-bigdecimal.md): Data Types
+- [Cause](https://vibelang.sh/data-types/071-cause.md): Data Types
+- [Chunk](https://vibelang.sh/data-types/072-chunk.md): Data Types
+- [Data](https://vibelang.sh/data-types/073-data.md): Data Types
+- [DateTime](https://vibelang.sh/data-types/074-datetime.md): Data Types
+- [Duration](https://vibelang.sh/data-types/075-duration.md): Data Types
+- [Result](https://vibelang.sh/data-types/076-result.md): Data Types
+- [Exit](https://vibelang.sh/data-types/077-exit.md): Data Types
+- [HashSet](https://vibelang.sh/data-types/078-hash-set.md): Data Types
+- [Option](https://vibelang.sh/data-types/079-option.md): Data Types
+- [Redacted](https://vibelang.sh/data-types/080-redacted.md): Data Types
+- [Equal](https://vibelang.sh/trait/081-equal.md): Trait
+- [Hash](https://vibelang.sh/trait/082-hash.md): Trait
+- [Equivalence](https://vibelang.sh/behaviour/083-equivalence.md): Behaviour
+- [Order](https://vibelang.sh/behaviour/084-order.md): Behaviour
+- [Introduction](https://vibelang.sh/schema/085-introduction.md): Schema
+- [Getting Started](https://vibelang.sh/schema/086-getting-started.md): Schema
+- [Basic Usage](https://vibelang.sh/schema/087-basic-usage.md): Schema
+- [Filters](https://vibelang.sh/schema/088-filters.md): Schema
+- [Advanced Usage](https://vibelang.sh/schema/089-advanced-usage.md): Schema
+- [Projections](https://vibelang.sh/schema/090-projections.md): Schema
+- [Transformations](https://vibelang.sh/schema/091-transformations.md): Schema
+- [Annotations](https://vibelang.sh/schema/092-annotations.md): Schema
+- [Canonical Codecs](https://vibelang.sh/schema/093-canonical-codecs.md): Schema
+- [Error Messages](https://vibelang.sh/schema/094-error-messages.md): Schema
+- [Error Formatters](https://vibelang.sh/schema/095-error-formatters.md): Schema
+- [Class APIs](https://vibelang.sh/schema/096-classes.md): Schema
+- [Default Constructors](https://vibelang.sh/schema/097-default-constructors.md): Schema
+- [Effect Data Types](https://vibelang.sh/schema/098-effect-data-types.md): Schema
+- [Standard Schema](https://vibelang.sh/schema/099-standard-schema.md): Schema
+- [Arbitrary](https://vibelang.sh/schema/100-arbitrary.md): Schema
+- [JSON Schema](https://vibelang.sh/schema/101-json-schema.md): Schema
+- [Equivalence](https://vibelang.sh/schema/102-equivalence.md): Schema
+- [Formatter](https://vibelang.sh/schema/103-formatter.md): Schema
+- [Schema Compilers](https://vibelang.sh/schema/104-compilers.md): Schema
+- [Introduction](https://vibelang.sh/platform/105-introduction.md): Platform
+- [FileSystem](https://vibelang.sh/platform/106-file-system.md): Platform
+- [Path](https://vibelang.sh/platform/107-path.md): Platform
+- [PlatformLogger](https://vibelang.sh/platform/108-platformlogger.md): Platform
+- [Runtime](https://vibelang.sh/platform/109-runtime.md): Platform
+- [Terminal](https://vibelang.sh/platform/110-terminal.md): Platform
+
+## VibeLang features
+
+- [Control operations and handlers](https://vibelang.sh/vibelang-features/111-control-operations-and-handlers.md)
+- [Producers](https://vibelang.sh/vibelang-features/112-producers.md)
+- [Building an HTTP API](https://vibelang.sh/vibelang-features/113-building-an-http-api.md)
+- [VibeLang for Effect users](https://vibelang.sh/vibelang-features/114-vibelang-for-effect-users.md)
+- [Cheat sheet](https://vibelang.sh/vibelang-features/115-cheat-sheet.md)
+- [Pattern matching with match and is](https://vibelang.sh/vibelang-features/116-match-and-is.md)
+- [Token counts](https://vibelang.sh/vibelang-features/117-token-counts.md)
+
+## Specification
+
+- [Introduction](https://vibelang.sh/spec/000-intro.md)
+- [1. A first look](https://vibelang.sh/spec/101-part1-ch01-first-look.md): Part I. The language by example
+- [2. Functions and calls](https://vibelang.sh/spec/102-part1-ch02-functions.md): Part I. The language by example
+- [3. Errors: the E channel](https://vibelang.sh/spec/103-part1-ch03-errors.md): Part I. The language by example
+- [4. Dependency injection: the R channel](https://vibelang.sh/spec/104-part1-ch04-di.md): Part I. The language by example
+- [5. Programs as values: retry, timeout, and pipe](https://vibelang.sh/spec/105-part1-ch05-programs.md): Part I. The language by example
+- [6. Resources](https://vibelang.sh/spec/106-part1-ch06-resources.md): Part I. The language by example
+- [7. Concurrency](https://vibelang.sh/spec/107-part1-ch07-concurrency.md): Part I. The language by example
+- [8. Producers: streams of values](https://vibelang.sh/spec/108-part1-ch08-producers.md): Part I. The language by example
+- [9. Handlers: defining your own effects](https://vibelang.sh/spec/109-part1-ch09-handlers.md): Part I. The language by example
+- [10. Working with TypeScript](https://vibelang.sh/spec/110-part1-ch10-typescript.md): Part I. The language by example
+- [11. The standard library](https://vibelang.sh/spec/111-part1-ch11-stdlib.md): Part I. The language by example
+- [12. Questions Effect users ask](https://vibelang.sh/spec/112-part1-ch12-faq.md): Part I. The language by example
+- [13. What a call means](https://vibelang.sh/spec/213-part2-ch13-calls.md): Part II. The rules
+- [14. Contracts and inference](https://vibelang.sh/spec/214-part2-ch14-contracts.md): Part II. The rules
+- [15. Which functions compile to plain JavaScript](https://vibelang.sh/spec/215-part2-ch15-direct.md): Part II. The rules
+- [16. Callbacks and higher-order functions](https://vibelang.sh/spec/216-part2-ch16-callbacks.md): Part II. The rules
+- [17. Failures, defects, interruption, and cleanup](https://vibelang.sh/spec/217-part2-ch17-failures.md): Part II. The rules
+- [18. Why a continuation runtime](https://vibelang.sh/spec/318-part3-ch18-why.md): Part III. The runtime
+- [19. The checkout trace, step by step](https://vibelang.sh/spec/319-part3-ch19-trace.md): Part III. The runtime
+- [20. The machine](https://vibelang.sh/spec/320-part3-ch20-machine.md): Part III. The runtime
+- [21. One-shot ownership and races](https://vibelang.sh/spec/321-part3-ch21-ownership.md): Part III. The runtime
+- [22. What resume restores](https://vibelang.sh/spec/322-part3-ch22-restore.md): Part III. The runtime
+- [23. Boundaries and finalization](https://vibelang.sh/spec/323-part3-ch23-boundaries.md): Part III. The runtime
+- [24. What Effect provides and what the kernel adds](https://vibelang.sh/spec/324-part3-ch24-effect.md): Part III. The runtime
+- [25. Implementation strategies and costs](https://vibelang.sh/spec/325-part3-ch25-strategies.md): Part III. The runtime
+- [26. What compiled code must guarantee](https://vibelang.sh/spec/326-part3-ch26-compiled.md): Part III. The runtime
+- [27. Compiler architecture](https://vibelang.sh/spec/427-part4-ch27-compiler.md): Part IV. The compiler
+- [28. Tooling](https://vibelang.sh/spec/428-part4-ch28-tooling.md): Part IV. The compiler
+- [29. Decisions](https://vibelang.sh/spec/529-part5-ch29-decisions.md): Part V. Decisions
+- [30. Risks and experiments](https://vibelang.sh/spec/530-part5-ch30-risks.md): Part V. Decisions
+- [A. Evidence index and B. Prior art](https://vibelang.sh/spec/900-appendices.md): Appendices
+- [C. Every Effect feature in VibeLang](https://vibelang.sh/spec/901-appendix-c-coverage.md): Appendices

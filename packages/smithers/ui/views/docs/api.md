@@ -1,12 +1,22 @@
 ---
 title: "API reference"
-description: "Every export of @smthrs/views: the ViewCode, PresentationRealm, Presentation, ViewCsp, Bridge, Interactions, Home and WebPage namespaces, their models, constructors and errors."
+description: "Every export of @smthrs/views: the ViewCode, PresentationRealm, Presentation, ViewCsp, Bridge, Interactions, Home, Docs and WebPage namespaces, their models, constructors and errors."
 ---
 
-The package root exports eight namespaces and nothing else:
+The package root exports nine namespaces and nothing else:
 
 ```ts
-import { Bridge, Home, Interactions, Presentation, PresentationRealm, ViewCode, ViewCsp, WebPage } from "@smthrs/views"
+import {
+  Bridge,
+  Docs,
+  Home,
+  Interactions,
+  Presentation,
+  PresentationRealm,
+  ViewCode,
+  ViewCsp,
+  WebPage
+} from "@smthrs/views"
 ```
 
 ## `ViewCode`
@@ -339,7 +349,7 @@ A repository's own home: the sections and blocks `.smithers/home.json` declares,
 | Export                                                                                                                       | What it is                                                                                                                                                                                                          |
 | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `path`                                                                                                                       | `".smithers/home.json"`                                                                                                                                                                                             |
-| `read(text)`                                                                                                                 | `{ _tag: "Declared", sections, contributors, skipped }` or `{ _tag: "Invalid", reason }`; never throws                                                                                                              |
+| `read(text)`                                                                                                                 | `{ _tag: "Declared", sections, contributors, docs?, skipped }` or `{ _tag: "Invalid", reason }`; never throws                                                                                                       |
 | `Read`, `Invalid`, `Section`                                                                                                 | the answer; why a file is not a home: `json`, `shape`, `sections`, `section`, `blocks` or `block`; a section `{ title?, audience, blocks }`                                                                         |
 | `Audience`, `audiences`                                                                                                      | `everyone`, `contributor`, `maintainer`, from the widest                                                                                                                                                            |
 | `Contributors`                                                                                                               | who counts as a contributor: `role` or `anyone`                                                                                                                                                                     |
@@ -352,8 +362,23 @@ A repository's own home: the sections and blocks `.smithers/home.json` declares,
 | `IssuesBlock`, `RunsBlock`, `ActionBlock`                                                                                    | `{ type, title? }`; `{ type, title? }`; `{ type, flow, title, key? }`                                                                                                                                               |
 | `Card`, `Stat`, `Release`, `Link`                                                                                            | `{ title, text?, label?, url? }`; `{ value, label }`; `{ name, url, date, summary? }`; `{ label, url }`                                                                                                             |
 | `Title`, `Prose`, `Line`, `Command`, `Code`, `Language`, `IsoDate`, `Key`, `Url`, `RepositoryPath`, `FlowName`, `AppPicture` | the field schemas the blocks share                                                                                                                                                                                  |
+| `DocsUrl`                                                                                                                    | the `docs` field: an `https` URL with no user or password, at most 2,048 characters                                                                                                                                 |
 | `maximumSections`, `maximumBlocks`, `maximumEntries`, `maximumStats`, `maximumActions`                                       | 8, 32, 12, 6, 3                                                                                                                                                                                                     |
 | `maximumTitleLength`, `maximumLineLength`, `maximumTextLength`, `maximumCodeLength`, `maximumUrlLength`, `htmlPattern`       | 120, 280, 4,096, 4,096, 2,048, and the pattern of a tag, a closing tag, a comment or a processing instruction                                                                                                       |
+
+## `Docs`
+
+A docs site's `llms.txt` index: read it, find and search its pages, and fetch it or a page from a server, guarded. See
+[Read a docs index](read-a-docs-index.md).
+
+| Export                                                                           | What it is                                                                                                                                                                              |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parse(text, indexUrl)`                                                          | `{ title, summary?, pages }`, the pages on the index's origin, in order; never throws                                                                                                   |
+| `find(index, path)`, `search(index, query, limit?)`                              | the page at a path; the pages matching the query's words, best first, at most `limit` (5)                                                                                               |
+| `fetchText(url, options?)`                                                       | `Effect<Fetched, never, HttpClient>`: `{ _tag: "Text", text, type, url }` or `{ _tag: "Refused", reason, status? }`                                                                     |
+| `Index`, `Page`                                                                  | the schemas and types of an index and a page `{ title, url, path, description?, section? }`                                                                                             |
+| `Fetched`, `FetchRefusal`, `FetchOptions`                                        | the answer; `invalid_url`, `private_host`, `redirects`, `unreachable`, `timeout`, `status`, `content`, `too_large`; `{ privateHosts?, maxRedirects?, timeout?, maxBytes?, userAgent? }` |
+| `maximumPages`, `maximumTitleLength`, `maximumDescriptionLength`, `defaultLimit` | 1,000, 200, 300, 5                                                                                                                                                                      |
 
 ## `WebPage`
 

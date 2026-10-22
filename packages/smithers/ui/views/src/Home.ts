@@ -164,6 +164,19 @@ export const Url = Schema.NonEmptyString.check(
 )
 
 /**
+ * Where a home's docs are listed: the absolute `https` URL of the docs site's
+ * index in the `llms.txt` format, such as `https://vibelang.sh/llms.txt`,
+ * with no user or password. `@smthrs/views`' `Docs` reads the index.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const DocsUrl = Schema.NonEmptyString.check(
+  Schema.isMaxLength(maximumUrlLength),
+  Schema.isPattern(/^https:\/\/[^\s<>"'@]+$/i)
+)
+
+/**
  * A relative path that cannot escape the repository.
  *
  * @category schemas
@@ -223,7 +236,12 @@ export const Command = Line
  * @category schemas
  * @since 0.1.0
  */
-export const Code = Schema.NonEmptyString.check(Schema.isMaxLength(maximumCodeLength), Schema.isPattern(/^[^\u0000]*$/))
+export const Code = Schema.NonEmptyString.check(
+  Schema.isMaxLength(maximumCodeLength),
+  // NUL is exactly what the pattern refuses; the app's stored homes hash this very pattern (apps/mvp/src/device).
+  // eslint-disable-next-line no-control-regex
+  Schema.isPattern(/^[^\u0000]*$/)
+)
 
 /**
  * The language a `code` block is written in, as a lowercase name such as
@@ -673,8 +691,8 @@ export interface Section {
  *
  * - `json`: the text is not JSON;
  * - `shape`: it is not an object with either a `blocks` array or a
- *   `sections` array (both is refused too), or its `contributors` isn't one
- *   of {@link Contributors};
+ *   `sections` array (both is refused too), its `contributors` isn't one
+ *   of {@link Contributors}, or its `docs` isn't a {@link DocsUrl};
  * - `sections`: it declares more than {@link maximumSections} sections;
  * - `section`: a section is not an object with a `blocks` array, or its title
  *   or audience breaks its bounds;
@@ -702,6 +720,8 @@ export type Read =
     readonly _tag: "Declared"
     readonly sections: ReadonlyArray<Section>
     readonly contributors: Contributors
+    /** The docs index the home declares, a {@link DocsUrl}; absent when it declares none. */
+    readonly docs?: string
     readonly skipped: number
   }
   | { readonly _tag: "Invalid"; readonly reason: Invalid }
@@ -710,6 +730,7 @@ const known = new Set<unknown>(kinds)
 const decodeBlock = Schema.decodeUnknownResult(Block)
 const decodeHeading = Schema.decodeUnknownResult(SectionHeading)
 const isContributors = Schema.is(Contributors)
+const isDocsUrl = Schema.is(DocsUrl)
 
 /** A block that names a kind as a string this reader doesn't know: a newer declaration's. */
 const unknownKind = (value: unknown): boolean => {
@@ -726,7 +747,7 @@ const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
  * not a home. A file with `blocks` is one section for everyone; a file with
  * `sections` names each section's audience, `everyone` when it names none, and
  * may say `"contributors": "anyone"` to show its contributors' sections to
- * everyone with the link. A
+ * everyone with the link, and `"docs"` to name its docs index. A
  * block of a kind this reader doesn't know is skipped and counted; any other
  * block that breaks its schema makes the whole file invalid, so a page never
  * draws half of a home. The answer carries no text from the file but the
@@ -752,8 +773,9 @@ export const read = (text: string): Read => {
     return { _tag: "Invalid", reason: "json" }
   }
   if (!isObject(document)) return { _tag: "Invalid", reason: "shape" }
-  const { blocks, sections, contributors = "role" } = document
+  const { blocks, sections, contributors = "role", docs } = document
   if (!isContributors(contributors)) return { _tag: "Invalid", reason: "shape" }
+  if (docs !== undefined && !isDocsUrl(docs)) return { _tag: "Invalid", reason: "shape" }
   const declared: ReadonlyArray<unknown> | undefined = Array.isArray(blocks) && sections === undefined
     ? [{ blocks }]
     : Array.isArray(sections) && blocks === undefined
@@ -785,7 +807,9 @@ export const read = (text: string): Read => {
     const { title, audience = "everyone" } = heading.success
     read.push(title === undefined ? { audience, blocks: drawn } : { title, audience, blocks: drawn })
   }
-  return { _tag: "Declared", sections: read, contributors, skipped }
+  return docs === undefined
+    ? { _tag: "Declared", sections: read, contributors, skipped }
+    : { _tag: "Declared", sections: read, contributors, docs, skipped }
 }
 
 /**

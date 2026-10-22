@@ -40,13 +40,14 @@ everyone, as before.
 
 ## Sections and audiences
 
-| Field          | What it is                                                                                                        |
-| -------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `sections`     | up to 8 sections, in order; a file has `sections` or `blocks`, never both                                         |
-| `title`        | the section's heading, optional                                                                                   |
-| `audience`     | `everyone` (the default), `contributor` or `maintainer`                                                           |
-| `blocks`       | the section's blocks                                                                                              |
-| `contributors` | at the file's top: `role` (the default), or `anyone` to show the contributors' sections to everyone with the link |
+| Field          | What it is                                                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `sections`     | up to 8 sections, in order; a file has `sections` or `blocks`, never both                                                                        |
+| `title`        | the section's heading, optional                                                                                                                  |
+| `audience`     | `everyone` (the default), `contributor` or `maintainer`                                                                                          |
+| `blocks`       | the section's blocks                                                                                                                             |
+| `contributors` | at the file's top: `role` (the default), or `anyone` to show the contributors' sections to everyone with the link                                |
+| `docs`         | at the file's top, optional: the `https` URL of the docs site's [`llms.txt` index](read-a-docs-index.md), such as `https://vibelang.sh/llms.txt` |
 
 `Home.sees(viewer, section)` says whether an audience may see a section's: a
 maintainer sees every section, a contributor every section but a
@@ -97,7 +98,7 @@ else showTheTree(home.reason)
 
 `Home.read(text)` never throws. It answers:
 
-- `{ _tag: "Declared", sections, contributors, skipped }`: the sections to
+- `{ _tag: "Declared", sections, contributors, docs?, skipped }`: the sections to
   draw, in order, each `{ title?, audience, blocks }`. A block whose `type` is
   a string this reader doesn't know is skipped and counted in `skipped`, so a
   home a newer page declares still shows here. Fields a block doesn't declare
@@ -105,7 +106,9 @@ else showTheTree(home.reason)
 - `{ _tag: "Invalid", reason }`, and the page shows the tree:
   - `json`: the text is not JSON;
   - `shape`: it is not an object with a `blocks` array or a `sections` array,
-    has both, or its `contributors` is neither `role` nor `anyone`;
+    has both, its `contributors` is neither `role` nor `anyone`, or its
+    `docs` isn't an `https` URL without a user or password, at most 2,048
+    characters;
   - `sections`: it declares more than 8 sections;
   - `section`: a section isn't an object with a `blocks` array, or its title or
     audience breaks its bounds;
