@@ -53,11 +53,11 @@ projections through internal modules to avoid importing its NodeControl host.
 Nothing assembles `.flows` paths at a call site.
 
 Local control and operator commands share one database initialization layer.
-On POSIX systems it restricts the state directory to `0700` before opening
-SQLite, then restricts the control database and its WAL and shared-memory files
-to `0600` before exposing the store. This also applies when `credentials add` or
-a memory command creates the first state in a project, and when reopening state
-with broader permissions.
+On POSIX systems it creates a missing database parent with mode `0700`, leaving
+an existing parent directory's permissions unchanged. The control database and
+its WAL and shared-memory files are restricted to `0600` before exposing the
+store, including when reopening existing files. This also applies when
+`credentials add` or a memory command creates the first state in a project.
 
 Within one local invocation there is exactly one durable engine, and its SQLite
 connection is shared by the control runtime, the journal, the run store, and
@@ -150,3 +150,11 @@ exported-but-blank variable is how a shell spells "not configured".
 Provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
 and `CEREBRAS_API_KEY`) are not in this set. The seat resolver reads them, not
 the CLI, and `smthrs doctor` reports which are present.
+
+## Planning failures
+
+A loaded flow whose graph cannot be built or compiled fails planning with
+`InvalidInput`; no empty approval plan is saved. Planning and authored rebuild
+warnings retain the flow identifier and failure stage without exception content.
+Load diagnostics redact the complete message before truncation. Concurrent drift
+reads share one scoped disk registry without replacing the planning snapshot.

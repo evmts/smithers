@@ -21,7 +21,6 @@ export const make = (database: (filename: string) => Layer.Layer<SqlClient>) => 
       const path = yield* Path.Path
       const directory = path.dirname(file)
       yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
-      if (process.platform !== "win32") yield* fs.chmod(directory, 0o700)
       return database(file)
     }))
   )

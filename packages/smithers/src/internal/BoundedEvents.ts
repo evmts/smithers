@@ -142,4 +142,4 @@ export const collect = <A, E, R>(
   context: Context,
   limits: Limits = defaultLimits
 ): Effect.Effect<ReadonlyArray<A>, E | CliError.ResourceLimitError, R> =>
-  collectInto(stream, empty<A>(), context, limits).pipe(Effect.map((buffer) => buffer.values))
+  Effect.suspend(() => collectInto(stream, empty<A>(), context, limits).pipe(Effect.map((buffer) => buffer.values)))

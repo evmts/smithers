@@ -44,6 +44,7 @@ import * as Steering from "@smthrs/harness/Steering"
 import type { JjError } from "@smthrs/jj"
 import { EngineEvent, SqlJournal } from "@smthrs/journal"
 import * as Journal from "@smthrs/journal/Journal"
+import * as Redaction from "@smthrs/journal/Redaction"
 import * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -93,7 +94,8 @@ import {
   PlatformError,
   Schema,
   SchemaIssue,
-  Scope
+  Scope,
+  Semaphore
 } from "effect"
 import type { Crypto, Path } from "effect"
 import * as Deferred from "effect/Deferred"
@@ -327,7 +329,9 @@ const loadIssue = (
       return ""
     }
   })()
-  return `Cannot load flow ${flow.slice(0, 256)}: ${(line === "" ? sentence : `${line}; ${sentence}`).slice(0, 800)}`
+  const safeFlow = String(Redaction.redactDiagnostic(flow)).slice(0, 256)
+  const detail = String(Redaction.redactDiagnostic(line === "" ? sentence : `${line}; ${sentence}`)).slice(0, 800)
+  return `Cannot load flow ${safeFlow}: ${detail}`
 }
 
 /** Existing executable registration input to the native runtime final phase.
@@ -913,10 +917,9 @@ export const make = (
    * delegate once, and the delegate's own topology — its fan-out, its
    * priorities, its waits — is what a person approving a plan needs to see.
    *
-   * Planning performs no I/O, so the walk happens here in process. A body the
-   * planner cannot walk still plans, with no nodes: discovery already
-   * admitted the flow, and refusing here would take away the run door a
-   * person has today over a graph they never asked to see.
+   * Planning performs no I/O, so the walk happens here in process. A failed
+   * walk refuses planning rather than publishing an empty approval plan.
+   * Exception content is arbitrary user data and never enters the warning.
    */
   const buildPlanGraph = (
     executable: Executable.Executable,
@@ -925,7 +928,7 @@ export const make = (
     host: HostState
   ):
     | { readonly drafts: ReadonlyArray<PersistedPlan.NodeDraft>; readonly graph: ControlSchema.PlanGraph }
-    | { readonly unwalkable: string } =>
+    | { readonly unwalkable: true } =>
   {
     try {
       const graph = Graph.build(executable.flow, { input: input as never })
@@ -945,10 +948,8 @@ export const make = (
           ...(host.revision === undefined ? {} : { sourceRevision: host.revision })
         }
       }
-    } catch (cause) {
-      // The refusal is carried out, not swallowed: a plan with no nodes and no
-      // reason is a plan nobody can diagnose.
-      return { unwalkable: String(cause) }
+    } catch {
+      return { unwalkable: true }
     }
   }
 
@@ -967,36 +968,32 @@ export const make = (
     }, ControlError.InvalidInput> =>
       Effect.suspend(() => {
         const built = buildPlanGraph(executable, input, root, host)
-        const walked = "unwalkable" in built ? undefined : built
-        const noted = "unwalkable" in built
-          ? Effect.logWarning("Planning this flow could not walk its body", {
+        if ("unwalkable" in built) {
+          return Effect.logWarning("Planning this flow could not walk its body", {
             flowId: executable.descriptor.name,
-            cause: built.unwalkable
-          })
-          : Effect.void
-        return Effect.andThen(
-          noted,
-          PersistedPlan.compile({
-            planId,
-            flow: executable.descriptor.name,
-            nodes: walked?.drafts ?? []
-          }).pipe(
-            Effect.map((plan) => walked === undefined ? { plan } : { plan, graph: walked.graph }),
-            Effect.tapError((cause) =>
-              Effect.logWarning("Planning this flow produced no graph", {
-                flowId: executable.descriptor.name,
-                cause: String(cause)
-              })
-            ),
-            // A flow whose graph the compiler refuses still plans, with no nodes.
-            Effect.catch(() =>
-              PersistedPlan.compile({ planId, flow: executable.descriptor.name, nodes: [] }).pipe(
-                Effect.map((plan) => ({ plan })),
-                Effect.mapError((cause) => new ControlError.InvalidInput({ issue: Failure.operatorSentence(cause) }))
-              )
-            ),
-            Effect.provide(native.crypto)
-          )
+            code: "graph_build_failed"
+          }).pipe(Effect.andThen(Effect.fail(
+            new ControlError.InvalidInput({
+              issue: "Cannot plan this flow: graph construction failed"
+            })
+          )))
+        }
+        return PersistedPlan.compile({
+          planId,
+          flow: executable.descriptor.name,
+          nodes: built.drafts
+        }).pipe(
+          Effect.map((plan) => ({ plan, graph: built.graph })),
+          Effect.tapError(() =>
+            Effect.logWarning("Planning this flow produced no graph", {
+              flowId: executable.descriptor.name,
+              code: "graph_compilation_failed"
+            })
+          ),
+          Effect.mapError(() =>
+            new ControlError.InvalidInput({ issue: "Cannot plan this flow: graph compilation failed" })
+          ),
+          Effect.provide(native.crypto)
         )
       })
 
@@ -1083,10 +1080,22 @@ export const make = (
   // Configuring the CLI's gateway token delegates the local operator's supported
   // decisions to that gateway's authenticated identity. This is a host policy,
   // not an authorization rule for arbitrary bearer or agent principals.
-  const gatewayApprovalAuthority = Effect.runSync(ApprovalAuthority.make([
-    { principal: { id: "local", kind: "operator" }, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] },
-    { principal: native.bearerPrincipal, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
-  ]))
+  const gatewayApprovalAuthority: ApprovalAuthority.Service = {
+    authorize: (request) =>
+      Effect.suspend(() =>
+        ApprovalAuthority.make([
+          {
+            principal: { id: "local", kind: "operator" },
+            scopes: ["once", "run", "remembered"],
+            targets: ["Plan", "Node"]
+          },
+          { principal: native.bearerPrincipal, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
+        ])
+      ).pipe(
+        Effect.orDie,
+        Effect.flatMap((authority) => authority.authorize(request))
+      )
+  }
 
   /**
    * Provides the durable local engine: `SqlControlRuntime` and the production
@@ -1172,7 +1181,8 @@ export const make = (
           // rebuild authored flows. Built on first use, it scans once then.
           const scope = yield* Scope.Scope
           let onDisk: Registry.Registry | undefined
-          const readDisk = Effect.suspend(() =>
+          const diskGate = yield* Semaphore.make(1)
+          const readDisk = diskGate.withPermits(1)(Effect.suspend(() =>
             onDisk !== undefined
               ? onDisk.refresh().pipe(Effect.as(onDisk))
               : Layer.buildWithScope(Layer.fresh(registry), scope).pipe(
@@ -1183,7 +1193,7 @@ export const make = (
                   Effect.fail({ message: defect instanceof Error ? defect.message : String(defect) })
                 )
               )
-          )
+          ))
           const currentFlows = () =>
             readDisk.pipe(
               Effect.mapError(discoveryError("read the flows' current code")),

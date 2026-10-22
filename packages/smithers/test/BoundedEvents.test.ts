@@ -69,3 +69,17 @@ describe("bounded CLI histories", () => {
     expect(failure).toMatchObject({ unit: "events", limit: 1 })
   })
 })
+
+it.each(["results", "events", "bytes"])("reexecution owns fresh %s", async (bound) => {
+  const values = [{ sequence: 1 }]
+  const budget = limits(values, {
+    maxEvents: bound === "events" ? 1 : 10,
+    maxBytes: bound === "bytes" ? limits(values).maxBytes : 1000
+  })
+  const collected = BoundedEvents.collect(Stream.fromIterable(values), context, budget)
+  const first = await Effect.runPromise(collected)
+  const second = await Effect.runPromise(collected)
+  expect(first).toEqual(values)
+  expect(second).toEqual(values)
+  expect(first).not.toBe(second)
+})

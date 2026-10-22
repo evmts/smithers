@@ -613,24 +613,11 @@ ${source}`
     }
   }, 60_000)
 
-  /*
-   * The other way a plan loses its nodes: the body walks, but the compiler
-   * refuses the drafts it produced. Discovery already admitted the flow, so
-   * the run door stays open over an empty plan rather than the command
-   * failing, and the refusal is said out loud.
-   */
-  it("still plans a flow whose drafts the compiler refuses, with no nodes", async () => {
+  it("refuses a flow whose drafts the compiler rejects", async () => {
     const root = await project()
     try {
       const logs: Array<string> = []
-      const card = await planOn(root, Uncompilable, logs)
-
-      expect(card.nodes).toEqual([])
-      expect(card.graph).toBeUndefined()
-      expect(card.digest).toMatch(/^[0-9a-f]{64}$/)
-      expect(card.approval.target.digest).toBe(card.digest)
-      // The compiler refused, not the walk: this is the recovery arm, not the
-      // unwalkable-body one the test below covers.
+      await expect(planOn(root, Uncompilable, logs)).rejects.toMatchObject({ _tag: "/control/InvalidInput" })
       expect(logs.join("\n")).toContain("produced no graph")
       expect(logs.join("\n")).not.toContain("could not walk its body")
     } finally {
@@ -638,36 +625,15 @@ ${source}`
     }
   }, 60_000)
 
-  /*
-   * A plan with no nodes and no reason is a plan nobody can diagnose. The walk
-   * is the only step here that fails in silence, so it says what it hit and on
-   * which flow before the empty plan goes out.
-   */
-  it("says which flow's body it could not walk, and why", async () => {
+  it("identifies a failed graph walk without logging exception content", async () => {
     const root = await project()
     try {
       const logs: Array<string> = []
-      const card = await planOn(root, Unplannable, logs)
-
-      expect(card.nodes).toEqual([])
+      await expect(planOn(root, Unplannable, logs)).rejects.toMatchObject({ _tag: "/control/InvalidInput" })
       const said = logs.join("\n")
       expect(said).toContain("could not walk its body")
-      expect(said).toContain("this body cannot be planned")
+      expect(said).not.toContain("this body cannot be planned")
       expect(said).toContain("native")
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
-  }, 60_000)
-
-  it("still plans a flow whose body cannot be graphed, with no nodes", async () => {
-    const root = await project()
-    try {
-      const card = await planOn(root, Unplannable)
-
-      expect(card.nodes).toEqual([])
-      expect(card.graph).toBeUndefined()
-      expect(card.digest).toMatch(/^[0-9a-f]{64}$/)
-      expect(card.approval.target.digest).toBe(card.digest)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

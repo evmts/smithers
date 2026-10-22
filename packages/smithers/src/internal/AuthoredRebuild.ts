@@ -18,7 +18,6 @@
  */
 
 import type * as Executable from "@smthrs/registry/Executable"
-import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 
 /**
@@ -33,8 +32,7 @@ export const rebuild = (refresh: Executable.Refresh) => (flowId: string): Effect
       outcome._tag === "Refused"
         ? Effect.logWarning("A run wrote a flow this host cannot register", {
           flowId,
-          code: outcome.error.code,
-          reason: outcome.error.message
+          code: outcome.error.code
         })
         : Effect.logInfo("Rebuilt a flow's executable from the source a run applied", {
           flowId,
@@ -48,14 +46,13 @@ export const rebuild = (refresh: Executable.Refresh) => (flowId: string): Effect
     Effect.catch((error) =>
       Effect.logWarning("A flow's executable could not be rebuilt from the source a run applied", {
         flowId,
-        code: error.code,
-        reason: error.message
+        code: error.code
       })
     ),
-    Effect.catchDefect((defect) =>
+    Effect.catchDefect(() =>
       Effect.logWarning("A flow's executable could not be rebuilt from the source a run applied", {
         flowId,
-        cause: Cause.pretty(Cause.die(defect))
+        code: "rebuild_defect"
       })
     )
   )

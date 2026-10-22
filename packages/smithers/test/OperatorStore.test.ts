@@ -72,7 +72,7 @@ describe.skipIf(process.platform === "win32")("operator store permissions", () =
     }
   })
 
-  it("hardens existing state and all live SQLite files before exposing the store", async () => {
+  it("hardens existing SQLite files while preserving the parent permissions", async () => {
     const root = fixture()
     const file = NodeControl.databasePath(root)
     const previous = process.umask(0o022)
@@ -82,7 +82,7 @@ describe.skipIf(process.platform === "win32")("operator store permissions", () =
       chmodSync(Project.stateDirectory(root), 0o755)
       chmodSync(file, 0o644)
       expect(await Effect.runPromise(inspect.pipe(Effect.provide(Store.databaseLayer(root))))).toEqual({
-        [Project.stateDirectory(root)]: 0o700,
+        [Project.stateDirectory(root)]: 0o755,
         [file]: 0o600,
         [`${file}-wal`]: 0o600,
         [`${file}-shm`]: 0o600

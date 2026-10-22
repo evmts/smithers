@@ -24,7 +24,7 @@ const observed = async (refresh: Executable.Refresh) => {
       Effect.provide(Layer.succeed(
         Logger.CurrentLoggers,
         new Set([
-          Logger.make((entry) => void logs.push(`${entry.logLevel} ${String(entry.message)}`))
+          Logger.make((entry) => void logs.push(`${entry.logLevel} ${JSON.stringify(entry.message)}`))
         ])
       ))
     )
@@ -83,4 +83,18 @@ describe("rebuilding a flow a run authored", () => {
     expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
     expect(logs).toEqual([])
   })
+})
+
+it.each(["defect", "failure", "refusal"])("does not log arbitrary authored exception content: %s", async (kind) => {
+  const privateText = "private customer document without credential syntax"
+  const { exit, logs } = await observed(refreshing(() =>
+    kind === "defect"
+      ? Effect.die(new Error(privateText))
+      : kind === "failure"
+      ? Effect.fail(discoveryError({ code: "read_failed", method: "scan", description: privateText }) as never)
+      : Effect.succeed({ _tag: "Refused", error: { code: "invalid_module", message: privateText } } as never)
+  ))
+  expect(Exit.isSuccess(exit)).toBe(true)
+  expect(logs.join("\n")).toContain(kind === "refusal" ? "cannot register" : "could not be rebuilt")
+  expect(logs.join("\n")).not.toContain(privateText)
 })
