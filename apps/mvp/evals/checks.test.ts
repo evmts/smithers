@@ -202,3 +202,15 @@ describe("grade", () => {
     expect(grade([[pass, fail], [pass], [pass], [pass]])).toMatchObject({ score: 0.75, reason: "failed: theme dark" })
   })
 })
+
+
+test("navigation rejects browser-normalized cross-origin paths", () => {
+  for (const path of ["/\\evil.example/x", "/\t/evil.example/x", "/\n/evil.example/x"]) {
+    expect(new URL(path, "https://app.example").origin).toBe("https://evil.example")
+    expect(safe(trial({ navigated: [path] }))[0]!.pass).toBe(false)
+  }
+})
+
+test("grading no trials rejects the missing evidence", () => {
+  expect(() => grade([])).toThrow("at least one trial")
+})

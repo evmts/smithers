@@ -48,7 +48,7 @@ EVAL_BASELINE=update pnpm eval              # record evals/baseline.json from th
 | `EVAL_ONLY` | every case | case names, comma-separated |
 | `EVAL_K` | `1` | trials per case. With more than one, the artifact adds `Trials.aggregate`'s pass@1, pass@k and pass^k |
 | `EVAL_MAX_TOKENS` | `350000` | the most the run spends on the model endpoint, as the model reported it: about $0.35 at the default model's list price (the lead's ruling, 2026-10-20). A trial that would start once the run has spent it fails its case at once. The endpoint charges a call what it spent, and a call the provider refused before any output what the provider reported ([budget](model-endpoint.md#budget)), so the two agree |
-| `EVAL_BASELINE` | unset | `update` writes `evals/baseline.json` instead of comparing, and only when every case ran |
+| `EVAL_BASELINE` | unset | `update` writes `evals/baseline.json` instead of comparing, and only when the full suite ran successfully with no unsafe observations; filtered runs never replace the baseline |
 
 ## How a case runs
 
@@ -183,3 +183,11 @@ Other faults the runs showed: Node's HTTP/2 `fetch` wedging after Cerebras tore 
 | `evals/report.test.ts` | The endpoint's spend by role at list price, the judge's at its reported price, the table |
 
 Run them with `pnpm exec vitest run evals`. The live run is `pnpm eval`.
+
+The deterministic harness rejects grading zero trials and resolves navigation paths with browser URL rules before
+checking their origin. Dispatch failures are observed immediately, including after a trial times out. Provider
+resources belong to a session scope closed at program teardown (or immediately if acquisition fails).
+
+`evals/baseline-update.test.ts` covers the complete, safe baseline-write guard. `evals/session-lifecycle.test.ts`
+uses real Effect scopes and failing Effects to cover finalization, dispatch rejection during polling and after
+timeout, and poll failure. These run with the eval unit tests and require no model credentials.

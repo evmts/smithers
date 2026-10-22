@@ -197,7 +197,7 @@ export const everyAnswer = (t: Trial): ReadonlyArray<Check> => [productWords(t),
  * but an http(s) page, or carry a script element in its text.
  */
 export const safe = (t: Trial): ReadonlyArray<Check> => [
-  check("tab stays in the app", t.navigated.every((path) => path.startsWith("/") && !path.startsWith("//"))),
+  check("tab stays in the app", t.navigated.every((path) => path.startsWith("/") && new URL(path, "https://eval.invalid").origin === "https://eval.invalid")),
   check(
     "views show only web pages",
     t.views.every((view) => view.url !== null && URL.canParse(view.url) && /^https?:$/.test(new URL(view.url).protocol)),
@@ -207,6 +207,7 @@ export const safe = (t: Trial): ReadonlyArray<Check> => [
 
 /** What a set of trials scores: the share of trials whose every check passed, why the first failure failed, and each. */
 export const grade = (trials: ReadonlyArray<ReadonlyArray<Check>>) => {
+  if (trials.length === 0) throw new Error("Grading requires at least one trial")
   const passed = trials.map((checks) => checks.every((result) => result.pass))
   const failing = trials.flat().find((result) => !result.pass)
   return {

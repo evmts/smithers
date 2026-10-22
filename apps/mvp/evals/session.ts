@@ -15,10 +15,11 @@
 import { openBudget } from "../bench/cerebras-load/budget.ts"
 import { guardedModel } from "../bench/cerebras-load/guard.ts"
 import { candidateConfig, refusalConfig } from "./candidate"
+import { openProviderResource, waitForDispatch } from "./session-lifecycle"
 import { afterAll } from "vitest"
 import { HostModel } from "@smthrs/model-host"
 import { EgressHttpClient } from "@smthrs/platform-node"
-import { ConfigProvider, Effect, Scope, Stream } from "effect"
+import { ConfigProvider, Effect, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import type { testFile } from "../worker/test/harness.ts"
 import { DEFAULT_CHAT_MODEL } from "../worker/ModelRoles.ts"
@@ -32,6 +33,9 @@ export const ANSWER_WITHIN_MS = 4 * 60_000
 
 /** How often a trial looks for a question the agent asked. */
 const POLL = "250 millis"
+
+const providers = new Set<Awaited<ReturnType<typeof openProviderResource>>>()
+afterAll(async () => { for (const provider of providers) await provider.close() })
 
 const budgets = new Set<ReturnType<typeof openBudget>>()
 afterAll(() => { for (const budget of budgets) budget.close() })
@@ -67,9 +71,9 @@ const refusedModel = (fetch: typeof globalThis.fetch) =>
  */
 export const openSession = async (runtime: Runtime, maxTokens: number) => {
   // The provider pool lives as long as the eval program.
-  const fetch = await Effect.runPromise(
-    Scope.provide(Effect.runSync(Scope.make()))(EgressHttpClient.providerFetch(process.env)),
-  )
+  const provider = await openProviderResource(EgressHttpClient.providerFetch(process.env))
+  providers.add(provider)
+  const fetch = provider.value
   const rawModel = await Effect.runPromise(defaultModel(fetch))
   const candidate = candidateConfig(process.env)
   const budget = candidate ? openBudget(process.env.INFERENCE_LEDGER!, process.env.INFERENCE_PROVIDER!, candidate, 'eval', 2) : undefined
@@ -100,30 +104,26 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
    */
   const answer = async (device: Device, answerId: string, person: Person): Promise<ReadonlyArray<Asked> | null> => {
     const asked: Array<Asked> = []
-    let finished = false
-    const run = Effect.runPromise(
+    const completed = await waitForDispatch(
       device.dispatch.dispatch("chat/Answer", { answerId }, { door: "composer", executionId: answerId }),
-    ).finally(() => {
-      finished = true
-    })
-    const deadline = Date.now() + ANSWER_WITHIN_MS
-    while (!finished) {
-      if (Date.now() > deadline) return null
-      const [row] = await query<RunRow>((sql) => sql`SELECT status, version, wait FROM runs WHERE id = ${answerId}`)
-      if (row?.status === "needs_you" && row.wait !== null && asked.length < row.version) {
-        const value = row.wait.kind === "approval" ? person.approve : person.words
-        asked.push({ kind: row.wait.kind, prompt: row.wait.prompt, value })
-        await Effect.runPromise(
-          device.dispatch.dispatch(
-            "run/answer",
-            { runId: answerId, version: row.version, execution: row.wait.execution, value },
-            { door: "button" },
-          ),
-        )
-      }
-      await Effect.runPromise(Effect.sleep(POLL))
-    }
-    await run
+      Effect.promise(async () => {
+        const [row] = await query<RunRow>((sql) => sql`SELECT status, version, wait FROM runs WHERE id = ${answerId}`)
+        if (row?.status === "needs_you" && row.wait !== null && asked.length < row.version) {
+          const value = row.wait.kind === "approval" ? person.approve : person.words
+          asked.push({ kind: row.wait.kind, prompt: row.wait.prompt, value })
+          await Effect.runPromise(
+            device.dispatch.dispatch(
+              "run/answer",
+              { runId: answerId, version: row.version, execution: row.wait.execution, value },
+              { door: "button" },
+            ),
+          )
+        }
+      }),
+      ANSWER_WITHIN_MS,
+      POLL,
+    )
+    if (!completed) return null
     return asked
   }
 

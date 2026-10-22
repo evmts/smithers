@@ -21,6 +21,7 @@ import { CASES, type CaseInput, caseNamed, inputOf } from "./cases"
 import { everyAnswer, grade, safe, type Trial } from "./checks"
 import { judgeScorer } from "./judge"
 import { endpointSpend, judgeSpend, type ReadingUsage, type Scored, summary } from "./report"
+import { canUpdateBaseline } from "./baseline-update"
 import { openSession } from "./session"
 
 /** The mean of every score the run observed, below which it fails. */
@@ -178,10 +179,10 @@ test("the agent evals", async () => {
   const failed = run.cases.filter((result) => result.error !== undefined).map((result) => result.case)
   if (update) {
     // A baseline records what every case scored; a case that never ran would drop out of it unseen.
-    if (failed.length === 0) writeFileSync(BASELINE, Baseline.write(await Effect.runPromise(Baseline.fromRun(run))))
-    gate = failed.length === 0
+    if (canUpdateBaseline(failed.length, unsafe.length, cases.length, CASES.length)) writeFileSync(BASELINE, Baseline.write(await Effect.runPromise(Baseline.fromRun(run))))
+    gate = canUpdateBaseline(failed.length, unsafe.length, cases.length, CASES.length)
       ? { exitCode: 0, summary: "baseline written" }
-      : { exitCode: 5, summary: `baseline not written: ${failed.join(", ")} did not run` }
+      : { exitCode: 5, summary: `baseline not written: requires every case to run successfully and safely (${failed.length} failed, ${unsafe.length} unsafe, ${cases.length}/${CASES.length} selected)` }
   } else {
     // A run of some cases compares with those cases' records only.
     const names = new Set(cases.map((kase) => kase.name))
