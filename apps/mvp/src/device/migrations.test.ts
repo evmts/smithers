@@ -232,3 +232,34 @@ test("cached homes and timeline summaries restore and replace by their declared 
     expect(await opened(path, store as Migrations.Local<any, string>)).toEqual([{ ...row, [field]: next }])
   }
 })
+
+
+// Before 3fc7fba8332d, cached homes admitted longer flow names and link lists.
+// Valid rows survive; incompatible derived rows are discarded and counted.
+test.each([HomesStore, CuratedHomesStore])("$id upgrades cached homes across the new bounds", async (store) => {
+  const base = store.id === "homes"
+    ? { state: "declared", contributors: "role", skipped: 0, reason: null }
+    : { state: "declared", defaultBranch: "main" }
+  const rows = [
+    { ...base, key: "valid", sections: [{ audience: "everyone", blocks: [{ type: "prompt", flow: "build" }] }] },
+    { ...base, key: "long-flow", sections: [{ audience: "everyone", blocks: [{ type: "prompt", flow: "a".repeat(121) }] }] },
+    { ...base, key: "many-links", sections: [{ audience: "everyone", blocks: [{
+      type: "links", links: Array.from({ length: 13 }, () => ({ label: "Docs", url: "https://example.com" })),
+    }] }] },
+  ]
+  const { path } = await deviceFrom({
+    ...currentDeployed,
+    collections: { [store.id]: { kind: "local", key: "key", version: store.schemaVersion - 1, rows } },
+    outbox: {},
+  } as Fixture)
+  const report = await prepare(path, deviceRegistry)
+  expect(report.collections).toEqual([expect.objectContaining({
+    collection: store.id, from: store.schemaVersion - 1, to: store.schemaVersion,
+    outcome: "migrated", migrated: 1, dropped: 2, kept: 0,
+  })])
+  expect(await opened(path, store as Migrations.Local<any, string>)).toEqual([rows[0]])
+  expect(await keptRows(path)).toEqual([])
+  expect((await prepare(path, deviceRegistry)).collections).toEqual([
+    expect.objectContaining({ outcome: "current", migrated: 0, dropped: 0, kept: 0 }),
+  ])
+})

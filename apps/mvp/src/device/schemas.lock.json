@@ -1,5 +1,5 @@
 {
-  "epoch": 57,
+  "epoch": 59,
   "stores": {
     "chat-unsent": {
       "kind": "local",
@@ -42,13 +42,15 @@
     "homes": {
       "kind": "local",
       "versions": {
-        "2": "3913295b44917af6"
+        "2": "3913295b44917af6",
+        "3": "77edcb3fe56a42f1"
       }
     },
     "curated-homes": {
       "kind": "local",
       "versions": {
-        "1": "c02d2671c4fb481e"
+        "1": "c02d2671c4fb481e",
+        "2": "3653ab53db6c617b"
       }
     },
     "attention-pending": {

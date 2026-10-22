@@ -1,5 +1,6 @@
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, FiberHandle, Layer, Option, Semaphore, type Schema } from "effect"
+import { CuratedHomesStore, HomesStore } from "../../device/registry"
 import { IssuesStore } from "../issues/store"
 import { Item, SyncRow, syncKey } from "../issues/schema"
 import { Run } from "../status/schema"
@@ -55,20 +56,8 @@ const liveRows = <S, A extends object>(
   })
 
 const make = Effect.gen(function* () {
-  // Version 2: `HomeRow` with sections (version 1 held a flat list of blocks).
-  const homes = yield* Collection.persisted<HomeRow, string>({
-    id: "homes",
-    schema: HomeRow,
-    getKey: (row) => row.key,
-    schemaVersion: 2,
-  })
-  // Version 1: `CuratedRow` as rows.ts declares it.
-  const curated = yield* Collection.persisted<CuratedRow, string>({
-    id: "curated-homes",
-    schema: CuratedRow,
-    getKey: (row) => row.key,
-    schemaVersion: 1,
-  })
+  const homes = yield* Collection.persisted(HomesStore)
+  const curated = yield* Collection.persisted(CuratedHomesStore)
   const files = yield* Collection.local<FileRow, string>({ id: "home-files", schema: FileRow, getKey: (row) => row.key })
   const current = yield* Collection.local<CurrentRow, string>({
     id: "home-current",

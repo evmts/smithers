@@ -24,6 +24,7 @@ import { Preference } from "../features/theme/schema"
 import { Summary } from "../features/timeline/store"
 import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending, Todo, TodoRequest } from "../features/todos/schema"
 import { View } from "../features/views/schema"
+import { CuratedRowV1, HomeRowV2 } from "./home-history"
 import { AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, RequestedV1 } from "./history"
 
 // Every store this device keeps, and its history (decision 0021): each persisted collection, synced or local, and
@@ -67,7 +68,8 @@ export const PreferencesStore = Migrations.local({ id: "preferences", versions: 
 /** Repository homes as last read: a cache RepoApi fills again. Version 1 (a flat list of blocks) was never declared. */
 export const HomesStore = Migrations.local({
   id: "homes",
-  versions: [HomeRow],
+  versions: [HomeRowV2, HomeRow],
+  migrations: [Migrations.step(HomeRowV2, HomeRow, (row) => row)],
   first: 2,
   getKey: (row) => row.key,
   discard: true,
@@ -76,7 +78,8 @@ export const HomesStore = Migrations.local({
 /** Curated homes as last read: a cache RepoApi fills again. */
 export const CuratedHomesStore = Migrations.local({
   id: "curated-homes",
-  versions: [CuratedRow],
+  versions: [CuratedRowV1, CuratedRow],
+  migrations: [Migrations.step(CuratedRowV1, CuratedRow, (row) => row)],
   getKey: (row) => row.key,
   discard: true,
 })
