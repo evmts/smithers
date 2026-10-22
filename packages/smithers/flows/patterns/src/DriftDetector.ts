@@ -6,8 +6,8 @@
  * and an action taken only when the comparison says something changed.
  *
  * The pattern detects once. Polling belongs to the caller, because how often
- * to look is a deployment decision rather than a property of the check: wrap
- * {@link run} in `Loop.run` for bounded rounds inside one execution. The recipe
+ * to look is a deployment decision rather than a property of the check. Use a
+ * flow that hands off to itself with `Flow.to`, bounded by `maxRounds`. The recipe
  * is in the loops reference at https://smithers.sh/docs/reference/api/patterns.
  *
  * @see https://smithers.sh/docs/reference/api/patterns

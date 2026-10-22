@@ -1884,6 +1884,11 @@
       "name": "@smthrs/patterns",
       "subpath": "./WithApproval",
       "reason": "Deleted under the approved flows-as-code design (FLOW-10, section 7.5): it restated HumanTask, and its declaration dropped the approval flow's authority. Ask a person with HumanTask.action and branch on the answer with Node.branch."
+    },
+    {
+      "name": "@smthrs/patterns",
+      "subpath": "./Loop",
+      "reason": "Deleted under the approved flows-as-code design (FLOW-10, section 7.5): it restated the engine's trampoline, Flow.to with maxRounds, and Loop.run repeated completed work after a crash (DUR-1)."
     }
   ],
   "packages": [

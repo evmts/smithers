@@ -1,19 +1,19 @@
 /**
- * Repair a configuration and refine a summary with bounded loop patterns.
+ * Repair a configuration, refine a summary, and drain a queue on the engine.
  *
- * The example calls each pattern's runtime `run` operation, which stops when its
- * value-dependent condition is met. The declaration-side `make` operation
- * describes the conservative graph with its bound.
- *
- * The fixtures are deterministic and need no model, durable engine, or network.
- * See the patterns API reference for the declaration forms.
+ * ScanFixVerify.make and Optimizer.make declare the bounded work. The queue
+ * flow hands off to itself until it is empty, with maxRounds bounding the
+ * lineage. The host supplies the engine and crypto services.
  */
+import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as DriftDetector from "@smthrs/patterns/DriftDetector"
-import * as Loop from "@smthrs/patterns/Loop"
 import * as Optimizer from "@smthrs/patterns/Optimizer"
 import * as ScanFixVerify from "@smthrs/patterns/ScanFixVerify"
 import * as Sidecar from "@smthrs/patterns/Sidecar"
+import * as Node from "@smthrs/plan/Node"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
 
 interface Setting {
   readonly key: string
@@ -50,30 +50,53 @@ const violations = (current: ReadonlyMap<string, number>): ReadonlyArray<Violati
  * `remaining` is empty on a clean exit and lists the last scan's issues when
  * the retry bound stopped the loop, which is the signal an operator acts on.
  */
-export const repair: Effect.Effect<{
-  readonly iterations: number
-  readonly remaining: ReadonlyArray<Violation>
-  readonly settled: ReadonlyArray<Setting>
-}> = Effect.gen(function*() {
-  const current = config()
-  const report = yield* ScanFixVerify.run(current, {
-    maxRetries: 4,
-    concurrency: 4,
-    scan: ({ input }) => Effect.succeed(violations(input)),
-    fix: ({ issue }) => Effect.sync(() => (current.set(issue.key, issue.limit), issue.key)),
-    verify: ({ input }) => Effect.succeed({ resolved: violations(input).length === 0 })
-  }).pipe(
-    // `run` validates its bounds before scanning and fails `PatternError` when
-    // they are not positive integers. They are literals here, so a refusal
-    // would be a defect in this example rather than an error a caller handles.
-    Effect.orDie
-  )
-  return {
-    iterations: report.iterations,
-    remaining: report.remaining,
-    settled: [...current].map(([key, value]) => ({ key, value }))
-  }
+const Violation = Schema.Struct({ key: Schema.String, value: Schema.Number, limit: Schema.Number })
+const Scan = Action.make("bounded-loops/scan", {
+  payload: { input: Schema.String, iteration: Schema.Number },
+  success: Schema.Array(Violation)
 })
+const Fix = Action.make("bounded-loops/fix", {
+  payload: { issue: Violation, index: Schema.Number, iteration: Schema.Number },
+  success: Schema.String
+})
+const Verify = Action.make("bounded-loops/verify", {
+  payload: {
+    input: Schema.String,
+    issues: Schema.Array(Violation),
+    fixes: Schema.Array(Schema.String),
+    iteration: Schema.Number
+  },
+  success: Schema.Struct({ resolved: Schema.Boolean })
+})
+const Repair = ScanFixVerify.make<
+  Action.Requirement<"bounded-loops/scan" | "bounded-loops/fix" | "bounded-loops/verify">
+>({ scan: Scan, fix: Fix, verify: Verify, maxRetries: 4, maxIssues: 3, concurrency: 4 })
+
+/** Repairs a copy of the configuration with journaled action calls. */
+export const repair = (initial: ReadonlyMap<string, number> = config()) =>
+  Effect.gen(function*() {
+    const current = new Map(initial)
+    const raw = yield* Repair.execute({ input: "settings" }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Interpreter.layer(Repair),
+          Scan.toLayer(() => Effect.sync(() => violations(current))),
+          Fix.toLayer(({ issue }) => Effect.sync(() => (current.set(issue.key, issue.limit), issue.key))),
+          Verify.toLayer(() => Effect.sync(() => ({ resolved: violations(current).length === 0 })))
+        ).pipe(Layer.provide(Action.layerImplementations))
+      ),
+      Effect.orDie
+    )
+    const report = yield* Schema.decodeUnknownEffect(Schema.Struct({
+      iterations: Schema.Number,
+      remaining: Schema.Array(Violation)
+    }))(raw).pipe(Effect.orDie)
+    return {
+      iterations: report.iterations,
+      remaining: report.remaining,
+      settled: [...current].map(([key, value]) => ({ key, value }))
+    }
+  })
 
 /**
  * Compares the repaired config to the baseline an operator recorded, and pages
@@ -83,9 +106,8 @@ export const repair: Effect.Effect<{
  * the detector reports: two settings moved away from what the operator
  * approved, and the alert names them.
  *
- * The detector runs once. Polling is the caller's decision: wrap this in
- * `Loop.run` for rounds inside one execution, or register the flow on a
- * schedule for rounds the control plane owns.
+ * The detector runs once. For polling, declare a flow that hands off to itself
+ * with `.to(...)` and bounds the lineage with `maxRounds`.
  */
 export const audit = (
   settled: ReadonlyArray<Setting>
@@ -127,24 +149,38 @@ export const wordy: ReadonlyArray<string> = [
  * rather than the one it happened to end on. Keeping the best attempt is the
  * difference between an optimizer and a retry.
  */
-export const tune: Effect.Effect<{
-  readonly best: string
-  readonly score: number
-  readonly iterations: number
-  readonly converged: boolean
-}> = Effect.gen(function*() {
-  const result = yield* Optimizer.run("summary", {
-    maxIterations: 3,
-    targetScore: 0.9,
-    onMaxReached: "return-last",
-    generate: ({ iteration }) => Effect.succeed(wordy[iteration - 1] ?? ""),
-    // The candidate type is annotated because `generate` reads `previous`,
-    // which makes its own parameter depend on the candidate type. TypeScript
-    // then has nothing to infer that type from when it types `evaluate`. See
-    // the reference page, "Inline callbacks and inference".
-    evaluate: ({ value }: { readonly value: string }) =>
-      Effect.succeed({ score: 1 - value.length / 60, feedback: "shorter" })
-  }).pipe(Effect.orDie)
+const Generate = Action.make("bounded-loops/generate", {
+  payload: { input: Schema.String, previous: Schema.optional(Schema.Unknown), iteration: Schema.Number },
+  success: Schema.String
+})
+const Evaluate = Action.make("bounded-loops/evaluate", {
+  payload: { value: Schema.String, iteration: Schema.Number },
+  success: Schema.Struct({ score: Schema.Number, feedback: Schema.String })
+})
+const Tune = Optimizer.make<Action.Requirement<"bounded-loops/generate" | "bounded-loops/evaluate">>({
+  generate: Generate,
+  evaluate: Evaluate,
+  maxIterations: 3,
+  targetScore: 0.9
+})
+
+/** Runs the search and returns the best summary. */
+export const tune = Effect.gen(function*() {
+  const raw = yield* Tune.execute({ input: "summary" }, { executionId: "bounded-loops/tune" }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Interpreter.layer(Tune),
+        Generate.toLayer(({ iteration }) => Effect.succeed(wordy[iteration - 1] ?? "")),
+        Evaluate.toLayer(({ value }) => Effect.succeed({ score: 1 - value.length / 60, feedback: "shorter" }))
+      ).pipe(Layer.provide(Action.layerImplementations))
+    ),
+    Effect.orDie
+  )
+  const result = yield* Schema.decodeUnknownEffect(Schema.Struct({
+    best: Schema.Struct({ candidate: Schema.String, score: Schema.Number }),
+    iterations: Schema.Number,
+    converged: Schema.Boolean
+  }))(raw).pipe(Effect.orDie)
   return {
     best: result.best.candidate,
     score: Number(result.best.score.toFixed(4)),
@@ -172,9 +208,7 @@ export const shadow: Effect.Effect<{
     // type infers as `never` and the scorer cannot read it.
     shadow: (): Effect.Effect<string, string> => Effect.fail("the cheap seat is out of quota"),
     score: ({ primary, shadow }) => Effect.succeed({ primary: primary.length, shadow: shadow.length })
-    // `Sidecar.run` refuses an unsafe configuration with a `PatternError`, the
-    // same way `Optimizer.run` above does. Every input here is a literal, so a
-    // refusal would be a defect in this file rather than a run-time outcome.
+    // All options are literals, so an unsafe configuration is an example defect.
   }).pipe(Effect.orDie)
   return {
     primary: result.primary,
@@ -183,33 +217,54 @@ export const shadow: Effect.Effect<{
   }
 })
 
-/**
- * Keeps handing the same goal back until the body reports itself finished.
- *
- * This is the Ralph loop: no separate predicate, `maxIterations` as the budget,
- * and `exhausted` telling the caller which of the two ended the loop. It omits
- * `onMaxReached`, which defaults to `"return-last"`.
- */
-export const settle: Effect.Effect<{ readonly turns: number; readonly exhausted: boolean }> = Effect.gen(function*() {
-  let pending = 3
-  const result = yield* Loop.runRalph("drain the queue", {
-    maxIterations: 10,
-    body: () => Effect.sync(() => ({ done: --pending <= 0, pending }))
-  }).pipe(Effect.orDie)
-  return { turns: result.iterations, exhausted: result.exhausted }
+const QueuePayload = Schema.Struct({ pending: Schema.Number, turns: Schema.Number })
+const QueueResult = Schema.Struct({ turns: Schema.Number, exhausted: Schema.Boolean })
+const Drain = Action.make("bounded-loops/drain", {
+  payload: QueuePayload,
+  success: QueuePayload
 })
+type QueueFlow = Flow.Flow<
+  "bounded-loops/queue",
+  typeof QueuePayload,
+  typeof QueueResult,
+  typeof Schema.Never,
+  Action.Requirement<"bounded-loops/drain">
+>
+
+/** Each round journals one drain step, then settles or opens the next round. */
+export const Queue: QueueFlow = Flow.make("bounded-loops/queue", {
+  payload: QueuePayload,
+  success: QueueResult,
+  maxRounds: 10,
+  body: (payload) =>
+    Drain.call(payload).pipe(
+      Node.branch({
+        if: Node.capture({}, (next) => next.pending <= 0),
+        then: (next) => Flow.done({ turns: next.turns, exhausted: false }),
+        else: (next) => Queue.to({ pending: next.pending, turns: next.turns })
+      })
+    )
+})
+
+/** Runs a queue lineage with a caller-owned execution identity. */
+export const drain = (pending: number, executionId: string) =>
+  Queue.execute({ pending, turns: 0 }, { executionId }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Interpreter.layer(Queue),
+        Drain.toLayer(({ pending, turns }) => Effect.succeed({ pending: pending - 1, turns: turns + 1 }))
+      ).pipe(Layer.provide(Action.layerImplementations))
+    )
+  )
+
+/** Drains three items through three engine rounds. */
+export const settle = drain(3, "bounded-loops/settle")
 
 /**
  * Runs the whole story: repair, audit, tune, shadow, settle.
  */
-export const main: Effect.Effect<{
-  readonly repair: { readonly iterations: number; readonly remaining: ReadonlyArray<Violation> }
-  readonly audit: { readonly drifted: boolean; readonly paged: ReadonlyArray<string> }
-  readonly tune: { readonly best: string; readonly converged: boolean }
-  readonly shadow: { readonly quarantined: boolean }
-  readonly settle: { readonly turns: number }
-}> = Effect.gen(function*() {
-  const repaired = yield* repair
+export const main = Effect.gen(function*() {
+  const repaired = yield* repair()
   const audited = yield* audit(repaired.settled)
   const tuned = yield* tune
   const shadowed = yield* shadow

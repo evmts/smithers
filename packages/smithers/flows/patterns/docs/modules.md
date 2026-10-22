@@ -1,6 +1,6 @@
 ---
 title: "Module index"
-description: "All 25 modules of @smthrs/patterns, what each one is for, its import specifier, and the page that documents it."
+description: "All 24 modules of @smthrs/patterns, what each one is for, its import specifier, and the page that documents it."
 ---
 
 The root entry point exports every module as a namespace, and each module is
@@ -21,12 +21,10 @@ Every module name below links to the page that documents it.
 
 ## Loops and search
 
-Work whose round count is a runtime fact. [Loops](./loops.md) covers all five,
-including the inference rule that inline callbacks need.
+[Loops](./loops.md) covers these four patterns and durable lineages.
 
 | Module                                      | Import specifier                 | What it does                                                                        |
 | ------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------- |
-| [`Loop`](./loops.md#loop)                   | `@smthrs/patterns/Loop`          | Repeat a body until a predicate says stop, bounded by an iteration count            |
 | [`Optimizer`](./loops.md#optimizer)         | `@smthrs/patterns/Optimizer`     | Generate, score, and improve until a candidate reaches a target score               |
 | [`ScanFixVerify`](./loops.md#scanfixverify) | `@smthrs/patterns/ScanFixVerify` | Scan for issues, fix each one in parallel, verify, and rescan until nothing is left |
 | [`DriftDetector`](./loops.md#driftdetector) | `@smthrs/patterns/DriftDetector` | Capture the world, compare it to a baseline, and alert only when it moved           |

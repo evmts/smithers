@@ -4,7 +4,6 @@ import * as PlanNode from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Debate from "../src/Debate.ts"
-import * as Loop from "../src/Loop.ts"
 import * as MergeQueue from "../src/MergeQueue.ts"
 import * as Optimizer from "../src/Optimizer.ts"
 import * as Pattern from "../src/Pattern.ts"
@@ -45,9 +44,6 @@ describe("pattern flow names", () => {
     ).toBe("debate(rounds=1)")
     expect(ReviewLoop.make({ produce: stage, review: stage, revise: stage, maxRounds: 3 })._tag).toBe(
       "reviewLoop(maxRounds=3)"
-    )
-    expect(Loop.make({ body: runtimeStage, maxIterations: 2 })._tag).toBe(
-      "loop(maxIterations=2, onMaxReached=return-last)"
     )
     expect(
       MergeQueue.make({

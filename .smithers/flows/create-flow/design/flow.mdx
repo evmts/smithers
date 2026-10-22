@@ -25,7 +25,7 @@ project's `.smithers/flows/` directory.
   loop is justified by risk, such as landing on a main branch, a destructive
   action, or a release gate. It is never justified by default.
 - **Compose, do not hand-roll.** When provisioning found a pattern that fits,
-  use it. `ReviewLoop`, `Loop`, `MapReduce`, and `Escalation` already carry
+  use it. `ReviewLoop`, `MapReduce`, and `Escalation` already carry
   the bound, the exit condition, and the failure behavior you would otherwise
   write twice.
 - **One flow directory.** The flow lives at `.smithers/flows/<name>/flow.ts`, is

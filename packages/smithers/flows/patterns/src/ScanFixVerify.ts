@@ -6,10 +6,8 @@
  * rounds. {@link ReviewLoop} cannot express it, because a review loop revises
  * one artifact; here each issue gets its own fix.
  *
- * The declaration is {@link Loop} over a batched fan-out: the retry bound and
- * the fan-out bound are both declared, so the plan shows the worst case.
- * {@link run} performs the real fan-out over the issues the scanner actually
- * returned.
+ * The retry bound and fan-out bound are declared, so the plan shows the worst
+ * case. The engine fixes only issues the scanner returned.
  *
  * @see https://smithers.sh/docs/reference/api/patterns
  * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership
@@ -20,13 +18,11 @@
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.ts"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
 import { OpaqueInput } from "./internal/Payload.ts"
-import * as Loop from "./Loop.ts"
 import { PatternError } from "./PatternError.ts"
 
 /**
@@ -53,67 +49,14 @@ export interface MakeOptions<R = never> {
 }
 
 /**
- * Operational callbacks for {@link run}.
- *
- * `run` fixes every issue the scan returns, so keep `MakeOptions.maxIssues` at
- * or above what the scanner can produce for the declaration to stay honest.
- *
- * @category models
- * @since 0.1.0
- */
-export interface RuntimeOptions<I, Issue, Fix, Verification, E, R, E2, R2, E3, R3> {
-  readonly scan: (input: {
-    readonly input: I
-    readonly iteration: number
-  }) => Effect.Effect<ReadonlyArray<Issue>, E, R>
-  readonly fix: (input: {
-    readonly issue: Issue
-    readonly index: number
-    readonly iteration: number
-  }) => Effect.Effect<Fix, E2, R2>
-  readonly verify: (input: {
-    readonly input: I
-    readonly issues: ReadonlyArray<Issue>
-    readonly fixes: ReadonlyArray<Fix>
-    readonly iteration: number
-  }) => Effect.Effect<Verification, E3, R3>
-  readonly maxRetries: number
-  readonly concurrency: number
-}
-
-/**
- * The outcome of a scan-fix-verify run.
- *
- * `resolved` is true only when a scan came back empty. `remaining` is empty on
- * that clean exit and lists the last scan's issues when the retry bound stopped
- * the loop. `verifications` holds one entry per round that had something to fix.
- *
- * @category models
- * @since 0.1.0
- */
-export interface Report<Issue, Verification> {
-  readonly iterations: number
-  readonly remaining: ReadonlyArray<Issue>
-  readonly resolved: boolean
-  readonly verifications: ReadonlyArray<Verification>
-}
-
-interface Round<Issue> {
-  readonly issues: ReadonlyArray<Issue>
-  /** True only for a round whose scan came back empty, which is the terminal. */
-  readonly resolved: boolean
-}
-
-/**
  * Reads the signals a verifier uses to report that nothing is left to fix.
  *
  * A verifier answers with `true` or an object carrying its own `resolved: true`.
  * A symbolic plan-time value is neither, which keeps the declared unrolling
  * conservative.
  *
- * {@link run} does not stop on this verdict; it records every verification in
- * {@link Report.verifications} and stops on an empty scan. Callers read the
- * recorded verdicts with this function, so both sides use one vocabulary.
+ * The flow records every verification and stops on an empty scan. Callers
+ * read the recorded verdicts with this function.
  *
  * @category predicates
  * @since 0.1.0
@@ -136,8 +79,7 @@ export type ScanFixVerifyFlow<R = never> = Flow.Flow<
   R
 >
 
-// How many issues a scan returned. A scan answers with an array, exactly as
-// `run` reads it.
+// How many issues a scan returned. A scan answers with an array.
 const issueCount = (issues: unknown): number => (issues as ReadonlyArray<unknown>).length
 
 const positive = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
@@ -156,13 +98,12 @@ const validate = (options: {
     })
 
 /**
- * Declares the bounded scan-fix-verify topology, with the run-time decisions
- * {@link run} makes.
+ * Declares the bounded scan-fix-verify topology and its runtime decisions.
  *
  * Every retry is unrolled, and every retry declares `maxIssues` fix slots in
  * `concurrency`-sized batches, so the plan shows the worst case. Each scan is
- * the subject of a `Node.branch`: an empty scan settles `resolved: true`, as
- * `run` does. Each fix slot is its own `Node.branch` on whether the scan
+ * the subject of a `Node.branch`: an empty scan settles `resolved: true`.
+ * Each fix slot is its own `Node.branch` on whether the scan
  * returned an issue at that index, so a run pays for exactly the fixes the
  * scan asked for, and `verify` is handed the fixes of the issues that exist.
  * Issues past `maxIssues` wait for the next round's rescan. Very large retry
@@ -221,7 +162,7 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
       }
       const verified = (slots: ReadonlyArray<Planned.Planned<unknown>>): Node.Node<unknown, unknown, R> => {
         // The slots past the scan's length hold nothing; verify is handed the
-        // fixes of the issues that exist, as `run` hands it.
+        // fixes of the issues that exist.
         const fixes = Node.map(
           Node.succeed({ issues, slots }),
           Node.capture(
@@ -285,72 +226,5 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
     // the stage it called failed with.
     error: Schema.Unknown,
     body: Node.capture(captures, body)
-  })
-}
-
-/**
- * Runs scan, per-issue fix, and verify until a scan comes back empty or the
- * retry bound is reached.
- *
- * An empty scan is the only terminal. A round whose verifier reports the issues
- * resolved is followed by one confirming rescan, because the scanner is the
- * authority on what is left and a verifier can be wrong. A clean scan ends the
- * loop without fixing or verifying anything, which is why a run whose first
- * scan is clean reports one iteration and no verifications. Fixes fan out with
- * `Effect.forEach` over a snapshot of the issues, so `concurrency` is the real
- * in-flight bound.
- *
- * @category combinators
- * @since 0.1.0
- */
-export const run = <I, Issue, Fix, Verification, E, R, E2, R2, E3, R3>(
-  input: I,
-  options: RuntimeOptions<I, Issue, Fix, Verification, E, R, E2, R2, E3, R3>
-): Effect.Effect<Report<Issue, Verification>, E | E2 | E3 | PatternError, R | R2 | R3> => {
-  const invalid = validate(options)
-  if (invalid !== undefined) return Effect.fail(invalid)
-  // Snapshots taken at the call: the effect may run later, and a caller's
-  // edit to the option object in between must not reach it.
-  const stages = { scan: options.scan, fix: options.fix, verify: options.verify }
-  const maxRetries = options.maxRetries
-  const concurrency = options.concurrency
-  return Effect.gen(function*() {
-    const verifications: Array<Verification> = []
-    const loop = yield* Loop.run<
-      I,
-      Round<Issue>,
-      E | E2 | E3 | PatternError,
-      R | R2 | R3,
-      never,
-      never
-    >(input, {
-      maxIterations: maxRetries,
-      onMaxReached: "return-last",
-      body: ({ input, iteration }) =>
-        Effect.gen(function*() {
-          const issues = yield* stages.scan({ input, iteration })
-          if (issues.length === 0) return { issues, resolved: true }
-          // A snapshot, so a fix that mutates the array the scan returned
-          // cannot widen this round's fan-out.
-          const fixes = yield* Effect.forEach(
-            [...issues],
-            (issue, index) => stages.fix({ issue, index, iteration }),
-            { concurrency }
-          )
-          const verification = yield* stages.verify({ input, issues, fixes, iteration })
-          verifications.push(verification)
-          // A verification is evidence about the round it ends, not the
-          // terminal. The next scan confirms it, and only an empty scan stops
-          // the loop.
-          return { issues, resolved: false }
-        }),
-      until: ({ value }) => Effect.succeed(value.resolved)
-    })
-    return {
-      iterations: loop.iterations,
-      remaining: loop.value.resolved ? [] : loop.value.issues,
-      resolved: loop.value.resolved,
-      verifications
-    }
   })
 }

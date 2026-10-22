@@ -46,7 +46,7 @@
     "./Escalation": "./src/Escalation.ts",
     "./Intervene": "./src/Intervene.ts",
     "./Kanban": "./src/Kanban.ts",
-    "./Loop": "./src/Loop.ts",
+    "./Loop": null,
     "./MapReduce": "./src/MapReduce.ts",
     "./MergeQueue": "./src/MergeQueue.ts",
     "./Optimizer": "./src/Optimizer.ts",
@@ -188,16 +188,7 @@
           "default": "./dist/cjs/Kanban.js"
         }
       },
-      "./Loop": {
-        "import": {
-          "types": "./dist/esm/Loop.d.ts",
-          "default": "./dist/esm/Loop.js"
-        },
-        "require": {
-          "types": "./dist/cjs/Loop.d.ts",
-          "default": "./dist/cjs/Loop.js"
-        }
-      },
+      "./Loop": null,
       "./MapReduce": {
         "import": {
           "types": "./dist/esm/MapReduce.d.ts",

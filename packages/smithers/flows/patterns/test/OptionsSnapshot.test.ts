@@ -11,7 +11,6 @@ import * as DelegationChain from "../src/DelegationChain.ts"
 import * as DriftDetector from "../src/DriftDetector.ts"
 import * as Escalation from "../src/Escalation.ts"
 import * as Intervene from "../src/Intervene.ts"
-import * as Loop from "../src/Loop.ts"
 import * as MapReduce from "../src/MapReduce.ts"
 import * as Optimizer from "../src/Optimizer.ts"
 import * as Panel from "../src/Panel.ts"
@@ -264,23 +263,6 @@ const declarations: ReadonlyArray<Declaration> = [
       options.fuel = 8
       options.depth = 3
       options.fanout = 3
-    }
-  ),
-  ported(
-    "Loop.make",
-    { input: "seed" },
-    () => ({
-      body: runtimeStep,
-      until: runtimeStep,
-      maxIterations: 1,
-      onMaxReached: "return-last" as Loop.OnMaxReached
-    }),
-    (options) => Loop.make(options),
-    (options) => {
-      options.body = runtimeOther
-      options.until = runtimeOther
-      options.maxIterations = 2
-      options.onMaxReached = "fail"
     }
   ),
   ported(
@@ -623,78 +605,6 @@ describe("options are snapshotted at the call", () => {
 
       expect(yield* running).toEqual(["a"])
       expect(trace).toEqual(["map a", "reduce"])
-    }))
-
-  it.effect("Loop.run runs the body, predicate, and bound it was called with", () =>
-    Effect.gen(function*() {
-      const { trace, record } = recorder()
-      const options = {
-        body: record("body"),
-        until: () => Effect.succeed(true),
-        maxIterations: 1,
-        onMaxReached: "return-last" as Loop.OnMaxReached
-      }
-      const running = Loop.run("seed", options)
-
-      options.body = record("swapped body")
-      options.until = () => Effect.succeed(false)
-      options.maxIterations = 3
-      options.onMaxReached = "fail"
-
-      expect(yield* running).toEqual({ value: "body", iterations: 1, exhausted: false })
-      expect(trace).toEqual(["body"])
-    }))
-
-  it.effect("Optimizer.run runs the callbacks and bounds it was called with", () =>
-    Effect.gen(function*() {
-      const { trace, record } = recorder()
-      const options = {
-        generate: record("generate"),
-        evaluate: () => Effect.succeed({ score: 1 }),
-        targetScore: 1,
-        maxIterations: 1,
-        onMaxReached: "return-last" as Optimizer.OnMaxReached
-      }
-      const running = Optimizer.run("seed", options)
-
-      options.generate = record("swapped generate")
-      options.evaluate = () => Effect.succeed({ score: 0 })
-      options.targetScore = 5
-      options.maxIterations = 3
-      options.onMaxReached = "fail"
-
-      expect(yield* running).toEqual({
-        best: { candidate: "generate", score: 1, feedback: undefined, iteration: 1 },
-        iterations: 1,
-        converged: true
-      })
-      expect(trace).toEqual(["generate"])
-    }))
-
-  it.effect("ScanFixVerify.run runs the callbacks and bounds it was called with", () =>
-    Effect.gen(function*() {
-      const { trace, record } = recorder()
-      const options = {
-        scan: ({ iteration }: { readonly iteration: number }) =>
-          Effect.sync(() => {
-            trace.push(`scan ${iteration}`)
-            return iteration === 1 ? ["issue"] : []
-          }),
-        fix: record("fix"),
-        verify: record("verify"),
-        maxRetries: 2,
-        concurrency: 1
-      }
-      const running = ScanFixVerify.run("tree", options)
-
-      options.scan = () => Effect.sync(() => (trace.push("swapped scan"), ["x", "y"]))
-      options.fix = record("swapped fix")
-      options.verify = record("swapped verify")
-      options.maxRetries = 5
-      options.concurrency = 0
-
-      expect(yield* running).toEqual({ iterations: 2, remaining: [], resolved: true, verifications: ["verify"] })
-      expect(trace).toEqual(["scan 1", "fix", "verify", "scan 2"])
     }))
 
   it.effect("DriftDetector.run runs the callbacks and baseline it was called with", () =>

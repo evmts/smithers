@@ -4,24 +4,26 @@
  * The declaration assertions are the same observable facts as before: one
  * generate and one evaluate call per declared iteration, and the next
  * generation reading the previous attempt by field. The executed cases run
- * the declaration and {@link Optimizer.run} on the same scripted scores and
- * require the same outcome: the target check and the best-so-far fold happen
- * on real values in both.
+ * the declaration on scripted scores through the engine. The target check and
+ * the best-so-far fold operate on real values.
  */
 import { describe, it } from "@effect/vitest"
-import { Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Optimizer from "../src/Optimizer.ts"
 import { PatternError } from "../src/PatternError.ts"
-import { execute, member } from "./Execute.ts"
+import { execute, executeExit, member } from "./Execute.ts"
 import { callsTo } from "./Graphs.ts"
 
 /** The generate member: it is handed `{ input, previous, iteration }`. */
 const generate = Flow.make("optimizer/generate", {
-  payload: { input: Schema.Unknown, previous: Schema.Unknown, iteration: Schema.Number },
+  payload: { input: Schema.Unknown, previous: Schema.optional(Schema.Unknown), iteration: Schema.Number },
   success: Schema.Unknown,
   error: Schema.Unknown,
   body: Node.capture({}, ({ iteration }: { readonly iteration: number }) => Node.succeed({ candidate: iteration }))
@@ -63,31 +65,6 @@ const refInputs = (node: Graph.GraphNode): ReadonlyArray<unknown> =>
 const entry = (graph: Graph.Graph): Graph.GraphNode =>
   Graph.nodes(graph).find((node) => node.id === "root") as Graph.GraphNode
 
-const scripted = (scores: ReadonlyArray<number>) => ({
-  generate: ({ iteration }: { readonly iteration: number }) => Effect.succeed(`candidate-${iteration}`),
-  evaluate: ({ iteration }: { readonly iteration: number }) =>
-    Effect.succeed({ score: scores[iteration - 1]!, feedback: `feedback-${iteration}` })
-})
-
-/**
- * Counts the candidates a run still holds. A WeakRef keeps its target alive
- * for the rest of the job that created it, so the count is taken from a later
- * job, after a forced collection.
- */
-const liveCandidates = async (refs: ReadonlyArray<WeakRef<object>>): Promise<number> => {
-  const gc = (globalThis as { gc?: () => void }).gc
-  if (gc === undefined) {
-    // Without a real collection the count measures collector scheduling, not
-    // retention; refuse rather than flake.
-    throw new Error(
-      "Optimizer retention needs --expose-gc; run through this package's vitest config, which sets it"
-    )
-  }
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  gc()
-  return refs.filter((ref) => ref.deref() !== undefined).length
-}
-
 describe("Optimizer", () => {
   it("declares one generate and one evaluate call per iteration", () => {
     const optimizer = Optimizer.make({
@@ -128,14 +105,14 @@ describe("Optimizer", () => {
     })
   })
 
-  it("rejects an optimizer bound below one iteration", () => {
-    expect(() =>
-      Optimizer.make({ generate, evaluate, targetScore: 0.8, maxIterations: 0, onMaxReached: "return-last" })
-    )
-      .toThrow(expect.objectContaining({
-        code: "invalid_decorator",
-        message: "Optimizer maxIterations must be a positive safe integer"
-      }))
+  it("rejects invalid iteration bounds", () => {
+    for (const maxIterations of [0, -1, 1.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => Optimizer.make({ generate, evaluate, targetScore: 0.8, maxIterations }))
+        .toThrow(expect.objectContaining({
+          code: "invalid_decorator",
+          message: "Optimizer maxIterations must be a positive safe integer"
+        }))
+    }
   })
 
   it("makes the target score part of declaration identity", () => {
@@ -197,217 +174,7 @@ describe("Optimizer", () => {
     expect(derived.description).toBeUndefined()
   })
 
-  it.effect("stops at the first candidate that reaches the target", () =>
-    Effect.gen(function*() {
-      const evaluated: Array<number> = []
-      const script = scripted([0.2, 0.9, 0.5])
-      const result = yield* Optimizer.run("prompt", {
-        maxIterations: 3,
-        onMaxReached: "return-last",
-        targetScore: 0.8,
-        generate: script.generate,
-        evaluate: (input) => {
-          evaluated.push(input.iteration)
-          return script.evaluate(input)
-        }
-      })
-
-      expect(result.converged).toBe(true)
-      expect(result.iterations).toBe(2)
-      expect(result.best).toEqual({
-        candidate: "candidate-2",
-        score: 0.9,
-        feedback: "feedback-2",
-        iteration: 2
-      })
-      expect(evaluated).toEqual([1, 2])
-    }))
-
-  it.effect("keeps the best candidate when no target is set", () =>
-    Effect.gen(function*() {
-      const script = scripted([0.2, 0.9, 0.5])
-      const result = yield* Optimizer.run("prompt", {
-        maxIterations: 3,
-        onMaxReached: "return-last",
-        ...script
-      })
-
-      expect(result.iterations).toBe(3)
-      expect(result.converged).toBe(false)
-      expect(result.best.score).toBe(0.9)
-      expect(result.best.iteration).toBe(2)
-    }))
-
-  it.effect("keeps the earliest of two equal best scores", () =>
-    Effect.gen(function*() {
-      const result = yield* Optimizer.run("prompt", {
-        maxIterations: 3,
-        onMaxReached: "return-last",
-        ...scripted([0.5, 0.3, 0.5])
-      })
-
-      // A later attempt has to beat the standing best, not merely match it, so
-      // a tie resolves the same way wherever it falls in the search.
-      expect(result.best.score).toBe(0.5)
-      expect(result.best.iteration).toBe(1)
-      expect(result.best.candidate).toBe("candidate-1")
-    }))
-
-  it.effect("keeps the earliest of equal scores when the tie ends the search", () =>
-    Effect.gen(function*() {
-      const result = yield* Optimizer.run("prompt", {
-        maxIterations: 3,
-        onMaxReached: "return-last",
-        ...scripted([0.5, 0.5, 0.3])
-      })
-
-      expect(result.best.iteration).toBe(1)
-    }))
-
-  it.effect("fails exhausted when the target is never reached", () =>
-    Effect.gen(function*() {
-      const failure = yield* Optimizer.run("prompt", {
-        maxIterations: 3,
-        onMaxReached: "fail",
-        targetScore: 0.95,
-        ...scripted([0.2, 0.9, 0.5])
-      }).pipe(Effect.flip)
-
-      expect(failure).toBeInstanceOf(PatternError)
-      expect(failure.code).toBe("exhausted")
-      expect(failure.message).toBe("Optimizer reached its bound of 3 iterations below 0.95")
-    }))
-
-  it.effect("feeds the previous score and feedback into the next generate call", () =>
-    Effect.gen(function*() {
-      const seen: Array<unknown> = []
-      const script = scripted([0.2, 0.4, 0.5])
-      yield* Optimizer.run("prompt", {
-        maxIterations: 3,
-        onMaxReached: "return-last",
-        targetScore: 0.9,
-        evaluate: script.evaluate,
-        generate: (input) => {
-          seen.push(input.previous)
-          return script.generate(input)
-        }
-      })
-
-      expect(seen).toEqual([
-        undefined,
-        { candidate: "candidate-1", score: 0.2, feedback: "feedback-1", iteration: 1 },
-        { candidate: "candidate-2", score: 0.4, feedback: "feedback-2", iteration: 2 }
-      ])
-    }))
-
-  it.effect("refuses non-finite evaluator scores with the iteration and value", () =>
-    Effect.gen(function*() {
-      for (const score of [Number.NaN, Number.POSITIVE_INFINITY]) {
-        const failure = yield* Effect.flip(
-          Optimizer.run("prompt", {
-            maxIterations: 3,
-            onMaxReached: "return-last",
-            generate: ({ iteration }) => Effect.succeed(`candidate-${iteration}`),
-            evaluate: ({ iteration }) => Effect.succeed({ score, feedback: iteration })
-          })
-        )
-
-        expect(failure).toBeInstanceOf(PatternError)
-        expect(failure.code).toBe("invalid_input")
-        expect(failure.message).toBe(
-          `Optimizer evaluation score at iteration 1 must be a finite number, received ${score}`
-        )
-      }
-    }))
-
-  it.effect("picks the same best across a scripted sequence whose plateau repeats", () =>
-    Effect.gen(function*() {
-      const result = yield* Optimizer.run("prompt", {
-        maxIterations: 6,
-        onMaxReached: "return-last",
-        ...scripted([0.1, 0.7, 0.4, 0.7, 0.2, 0.7])
-      })
-
-      expect(result.best).toEqual({
-        candidate: "candidate-2",
-        score: 0.7,
-        feedback: "feedback-2",
-        iteration: 2
-      })
-      expect(result.iterations).toBe(6)
-      expect(result.converged).toBe(false)
-    }))
-
-  it.effect("releases a candidate the search has already lost", () =>
-    Effect.gen(function*() {
-      const bound = 32
-      const refs: Array<WeakRef<{ readonly iteration: number }>> = []
-      let live = -1
-      const result = yield* Optimizer.run("prompt", {
-        maxIterations: bound,
-        onMaxReached: "return-last",
-        generate: ({ iteration }) =>
-          Effect.sync(() => {
-            const candidate = { iteration }
-            refs.push(new WeakRef(candidate))
-            return candidate
-          }),
-        // Every score is worse than the one before it, so iteration 1 stays
-        // best and every later candidate is one the search has no reason to
-        // hold.
-        evaluate: ({ iteration }) =>
-          Effect.promise(async () => {
-            if (iteration === bound) live = await liveCandidates(refs)
-            return { score: -iteration }
-          })
-      })
-
-      expect(result.best.iteration).toBe(1)
-      expect(live).toBeGreaterThan(0)
-      // The best attempt, the previous one, and the one being scored. A count
-      // that tracks the bound instead means the run is keeping a ledger of
-      // every candidate it has produced.
-      expect(live).toBeLessThanOrEqual(3)
-    }))
-
-  it.effect("validates the target score and the bound before generating", () =>
-    Effect.gen(function*() {
-      let generated = 0
-      const script = scripted([1])
-      const options = {
-        evaluate: script.evaluate,
-        generate: (input: { readonly iteration: number }) => {
-          generated++
-          return script.generate(input)
-        }
-      }
-      const noTarget = yield* Optimizer.run("prompt", { ...options, maxIterations: 1, onMaxReached: "fail" }).pipe(
-        Effect.flip
-      )
-      const badBound = yield* Optimizer.run("prompt", {
-        ...options,
-        maxIterations: 0,
-        onMaxReached: "return-last"
-      }).pipe(Effect.flip)
-      const nonFinite = yield* Optimizer.run("prompt", {
-        ...options,
-        targetScore: Number.POSITIVE_INFINITY,
-        maxIterations: 1,
-        onMaxReached: "return-last"
-      }).pipe(Effect.flip)
-
-      expect(noTarget.code).toBe("invalid_decorator")
-      expect(noTarget.message).toBe("Optimizer onMaxReached 'fail' requires a targetScore to fall short of")
-      expect(badBound.code).toBe("invalid_decorator")
-      expect(badBound.message).toBe("Optimizer maxIterations must be a positive safe integer")
-      expect(nonFinite.code).toBe("invalid_decorator")
-      expect(nonFinite.message).toBe("Optimizer targetScore must be a finite number")
-      expect(generated).toBe(0)
-    }))
-
-  // Loop defaults `onMaxReached` to "return-last"; Optimizer required it, so a
-  // reader who learned one bound could not predict the other.
-  it("defaults onMaxReached to return-last in make, as Loop does", () => {
+  it("defaults onMaxReached to return-last in make", () => {
     const optimizer = Optimizer.make({ generate, evaluate, targetScore: 0.8, maxIterations: 2 })
     const explicit = Optimizer.make({
       generate,
@@ -421,20 +188,6 @@ describe("Optimizer", () => {
       Graph.nodes(Graph.build(flow, { input: "prompt" })).map((node) => node.draft.material)
     expect(shape(optimizer)).toEqual(shape(explicit))
   })
-
-  it.effect("defaults onMaxReached to return-last in run, as Loop does", () =>
-    Effect.gen(function*() {
-      const result = yield* Optimizer.run("prompt", {
-        maxIterations: 2,
-        targetScore: 1,
-        generate: ({ iteration }) => Effect.succeed(`draft ${iteration}`),
-        evaluate: ({ iteration }: { readonly iteration: number }) => Effect.succeed({ score: iteration / 10 })
-      })
-
-      expect(result.converged).toBe(false)
-      expect(result.iterations).toBe(2)
-      expect(result.best.candidate).toBe("draft 2")
-    }))
 
   it("builds the deepest bound it accepts and refuses the next one", () => {
     // Each iteration nests three levels (the generate bind, the evaluate bind,
@@ -454,14 +207,44 @@ describe("Optimizer", () => {
     )
   })
 
-  describe("executed declaration matches run on the same scripted scores", () => {
+  describe("executed declaration on scripted scores", () => {
+    it("propagates the evaluator's typed error", async () => {
+      class EvaluationFailed extends Schema.TaggedError<EvaluationFailed>()("EvaluationFailed", {
+        reason: Schema.String
+      }) {}
+      const error = new EvaluationFailed({ reason: "scorer unavailable" })
+      const Evaluate = Action.make("optimizer/failing-evaluate", {
+        payload: { value: Schema.Unknown, iteration: Schema.Number },
+        success: Schema.Struct({ score: Schema.Number, feedback: Schema.String }),
+        error: EvaluationFailed
+      })
+      const optimizer = Optimizer.make<Action.Requirement<"optimizer/failing-evaluate">>({
+        generate,
+        evaluate: Evaluate,
+        targetScore: 0.9,
+        maxIterations: 3
+      })
+      const exit = await executeExit(
+        optimizer,
+        { input: "prompt" },
+        "optimizer-evaluator-failure",
+        Evaluate.toLayer(() => Effect.fail(error))
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.hasDies(exit.cause)).toBe(false)
+        expect(Cause.findErrorOption(exit.cause)).toEqual(Option.some(error))
+      }
+    })
+
     // Members answer from the literal iteration a declaration hands them, so a
     // scripted score is a real value by the time the ledger folds it.
     const declared = (scores: ReadonlyArray<number>) => ({
       generate: member(
         "optimizer/scripted-generate",
         ({ iteration }) => `candidate-${iteration}`,
-        { input: Schema.Unknown, previous: Schema.Unknown, iteration: Schema.Number }
+        { input: Schema.Unknown, previous: Schema.optional(Schema.Unknown), iteration: Schema.Number }
       ),
       evaluate: member(
         "optimizer/scripted-evaluate",
@@ -469,52 +252,91 @@ describe("Optimizer", () => {
         { value: Schema.Unknown, iteration: Schema.Number }
       )
     })
-    const settle = (effect: Effect.Effect<unknown, unknown, never>) =>
-      Effect.runPromise(Effect.match(effect, { onFailure: (error) => ({ failed: error }), onSuccess: (ok) => ok }))
-    const both = async (
+    const runDeclared = async (
       scores: ReadonlyArray<number>,
       options: { readonly targetScore?: number; readonly maxIterations: number; readonly onMaxReached?: "fail" }
     ) => {
       const flow = Optimizer.make({ ...declared(scores), ...options })
-      const executed = await execute(flow, { input: "prompt" }, `optimizer-${scores.join("-")}-${options.onMaxReached}`)
+      return execute(flow, { input: "prompt" }, `optimizer-${scores.join("-")}-${options.onMaxReached}`)
         .then((ok) => ok, (error: unknown) => ({ failed: error }))
-      const ran = await settle(Optimizer.run("prompt", { ...scripted(scores), ...options }))
-      return { executed, ran }
     }
 
     it("stops at the first candidate that reaches the target", async () => {
-      const { executed, ran } = await both([1, 0, 0], { targetScore: 0.9, maxIterations: 3, onMaxReached: "fail" })
+      const executed = await runDeclared([1, 0, 0], { targetScore: 0.9, maxIterations: 3, onMaxReached: "fail" })
       expect(executed).toEqual({
         best: { candidate: "candidate-1", score: 1, feedback: "feedback-1", iteration: 1 },
         iterations: 1,
         converged: true
       })
-      expect(executed).toEqual(ran)
     })
 
     it("reports the best attempt, not the last, when the bound is reached", async () => {
-      const { executed, ran } = await both([0.2, 0.7, 0.4], { maxIterations: 3 })
+      const executed = await runDeclared([0.2, 0.7, 0.4], { maxIterations: 3 })
       expect(executed).toEqual({
         best: { candidate: "candidate-2", score: 0.7, feedback: "feedback-2", iteration: 2 },
         iterations: 3,
         converged: false
       })
-      expect(executed).toEqual(ran)
+    })
+
+    it("keeps the earliest best across equal scores and a repeated plateau", async () => {
+      for (const scores of [[0.5, 0.3, 0.5], [0.5, 0.5, 0.3], [0.1, 0.7, 0.4, 0.7, 0.2, 0.7]]) {
+        const firstBest = scores.indexOf(Math.max(...scores)) + 1
+        expect(await runDeclared(scores, { maxIterations: scores.length })).toMatchObject({
+          best: { candidate: `candidate-${firstBest}`, score: scores[firstBest - 1], iteration: firstBest },
+          iterations: scores.length,
+          converged: false
+        })
+      }
+    })
+
+    it("passes the previous attempt and stops before generating after the target", async () => {
+      const Generate = Action.make("optimizer/record-generate", {
+        payload: { input: Schema.Unknown, previous: Schema.optional(Schema.Unknown), iteration: Schema.Number },
+        success: Schema.String
+      })
+      const seen: Array<unknown> = []
+      const flow = Optimizer.make<Action.Requirement<"optimizer/record-generate">>({
+        generate: Generate,
+        evaluate: declared([0.2, 0.9, 0.1]).evaluate,
+        targetScore: 0.8,
+        maxIterations: 3
+      })
+      const result = await execute(
+        flow,
+        { input: "prompt" },
+        "optimizer-feedback",
+        Generate.toLayer((payload) =>
+          Effect.sync(() => {
+            seen.push(payload.previous)
+            return `candidate-${payload.iteration}`
+          })
+        )
+      )
+      expect(result).toEqual({
+        best: { candidate: "candidate-2", score: 0.9, feedback: "feedback-2", iteration: 2 },
+        iterations: 2,
+        converged: true
+      })
+      expect(seen).toEqual([
+        undefined,
+        { candidate: "candidate-1", score: 0.2, feedback: "feedback-1", iteration: 1 }
+      ])
     })
 
     it("fails exhausted at the bound under onMaxReached fail", async () => {
-      const { executed, ran } = await both([0.2, 0.7], { targetScore: 0.9, maxIterations: 2, onMaxReached: "fail" })
+      const executed = await runDeclared([0.2, 0.7], { targetScore: 0.9, maxIterations: 2, onMaxReached: "fail" })
       expect(executed).toMatchObject({
         failed: { code: "exhausted", message: "Optimizer reached its bound of 2 iterations below 0.9" }
       })
-      expect(ran).toMatchObject({ failed: { code: "exhausted" } })
     })
 
     it("refuses a non-finite score", async () => {
-      const { executed, ran } = await both([0.2, Number.POSITIVE_INFINITY, 1], { maxIterations: 3 })
-      const message = "Optimizer evaluation score at iteration 2 must be a finite number, received Infinity"
-      expect(executed).toMatchObject({ failed: { code: "invalid_input", message } })
-      expect(ran).toMatchObject({ failed: { code: "invalid_input", message } })
+      for (const score of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        const executed = await runDeclared([0.2, score, 1], { maxIterations: 3 })
+        const message = `Optimizer evaluation score at iteration 2 must be a finite number, received ${score}`
+        expect(executed).toMatchObject({ failed: { code: "invalid_input", message } })
+      }
     })
   })
 })

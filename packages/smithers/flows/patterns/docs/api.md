@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "The public API of @smthrs/patterns: the two halves every pattern exports, what it copies and compares, the three error types, and each module the other pages do not cover."
+description: "The public API of @smthrs/patterns: the declared patterns and their remaining executed forms, what it copies and compares, the three error types, and each module the other pages do not cover."
 ---
 
 This page is the API reference for the higher-order flow patterns: decorators
@@ -15,14 +15,16 @@ The [module index](./modules.md) lists every module and where it is documented.
 
 ## The two halves of a pattern
 
-Every container exports a pair.
+Most containers still export a pair. `Optimizer` and `ScanFixVerify` export
+`make` only; execute the returned flow on the engine.
 
 | Half                  | What it is                                                                                                                                                    | What it must not do                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `make(options)`       | A `Flow` whose body is the **conservative topology**: every rung, round, member, and compensation that the pattern could reach, declared before anything runs | Branch on a value. Core plans continuations against symbolic values, so a plan-time `if` on a result is always the same arm |
 | `run(input, options)` | The `Effect` that performs the value-dependent branch at runtime, short-circuiting the parts the topology reserved                                            | Change the shape the declaration promised                                                                                   |
 
-A planner reads `make`. A handler runs `run`. Every `make` takes one options
+A planner reads `make`. Execute a declared flow on the engine. The remaining
+`run` forms perform their callbacks as Effects. Every `make` takes one options
 object, and every `MakeOptions` accepts an optional `name` and `description`
 for the returned `Flow`. An unnamed pattern is named after its kind and its
 declared bounds, the way the decorators name theirs: `reviewLoop(maxRounds=3)`,
@@ -98,7 +100,7 @@ the tasks of the plan its `plan` callback returns when it validates them.
 The package never freezes a caller's object and never copies below the fields
 it interprets. Flows, callbacks, and schemas are references. A value the
 package carries without reading stays the caller's: the flow input, the
-`baseline` of `DriftDetector`, the values inside `Loop` `captures`, the
+`baseline` of `DriftDetector`, the
 `Item` record `Kanban` hands a column, and every value a callback returns.
 `Kanban` reads an item's `id` once at the call, keys the board by it, and
 hands the column the caller's own record. `DriftDetector.run` reads
@@ -487,26 +489,22 @@ anything runs, to show the compensations in reverse order.
 ## Declaration size
 
 Every `make` expands its declared bounds eagerly into graph nodes. The options
-that expand or multiply topology are `Loop.maxIterations`,
+that expand or multiply topology are `Optimizer.maxIterations`,
 `ReviewLoop.maxRounds`, `Debate.rounds`, `Recursion` envelope depth across
 fanout, `ScanFixVerify.maxRetries` times `maxIssues` in concurrency-sized
 batches, `Trellis` envelope fuel, and `DelegationChain.maxDepth` together with
 `maxDeriskRounds`. These bounds are sized for tens to low hundreds of declared
-calls. A very large bound builds a very large graph before anything runs. For
-an unbounded loop, use the `run` half under an external scheduler instead of
-unrolling it in `make`.
+calls. A very large bound builds a very large graph before anything runs. For a loop whose count depends on runtime values, use a flow that hands off
+to itself with `Flow.to` and bounds its lineage with `maxRounds`.
 
 A bound that unrolls into a sequenced chain is capped a second way. Core
 refuses a plan nested past the exported `Graph.maximumGraphDepth` (currently
 1,000 levels). The declaration limit for a chain with `callsPerUnit` nested
 calls per unit is `Math.floor((Graph.maximumGraphDepth - 1) / callsPerUnit) - 1`:
-the root and settled value also spend depth. Eager branch construction also
-obeys `Node.maximumArmDepth`: `Loop.ralph` accepts at most 512 iterations,
-or 256 with a stall breaker. Constructors using these bounds
-refuse oversized options at declaration with an `invalid_decorator`
-`PatternError` naming the option and limit. This includes `Loop.make`,
-and `Optimizer.make`; see the boundary assertions in
-`Loop.test.ts` and `Optimizer.test.ts`. Other topology, including deeper
+the root and settled value also spend depth. `Optimizer.make` refuses oversized
+options at declaration with an `invalid_decorator` `PatternError` naming the
+option and limit. See the boundary assertions in `Optimizer.test.ts`.
+Other topology, including deeper
 member flows or an enclosing unrolled pattern, spends the same depth budget:
 even a declaration within its constructor's limit can fail at `Graph.build`
 with a `graph_too_deep` `GraphBuildError` naming the node.
@@ -515,7 +513,7 @@ with a `graph_too_deep` `GraphBuildError` naming the node.
 
 The root exports each module as a namespace, and every module is also
 importable as `@smthrs/patterns/<Module>`. The `internal/*` and nested
-`*/index` subpaths are private. The [module index](./modules.md) lists all 27
+`*/index` subpaths are private. The [module index](./modules.md) lists all 24
 modules with their specifiers.
 
 [`@smthrs/flow`](/api/flow) supplies `Flow` and `Graph`, and

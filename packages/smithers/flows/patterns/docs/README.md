@@ -22,15 +22,15 @@ whether this run can write to disk. A scheduler wants to start two independent
 calls together. None of that can read a loop written as behavior, because a
 loop written as behavior does not exist until it has already run.
 
-Every pattern here answers both halves, and exports one function for each:
+Patterns declare flows with `make`. Many also retain an executed `run` form:
 
 - `make` returns a flow whose body declares the conservative topology: every
   round the bound allows, every rung of a ladder, every compensation, whether
   or not a given run reaches it. [`@smthrs/flow`](/api/flow) builds that into a
   graph you can count, cost, and review before anything happens.
-- `run` returns an Effect that performs the branch a declaration cannot. It
-  stops at the round the reviewer approved and skips what the topology
-  reserved.
+- Remaining `run` forms return Effects that invoke their callbacks directly.
+  `Optimizer` and `ScanFixVerify` export only `make`; execute their flows on the
+  engine so completed steps replay from the journal.
 
 ## Install
 
@@ -122,7 +122,7 @@ each step a stable identity.
 
 | Shape                                                                   | Patterns                                                                   | Reference                     |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------- |
-| Repeat until something is true, or until a score is high enough         | `Loop`, `Optimizer`, `ScanFixVerify`, `DriftDetector`, `Sidecar`           | [Loops](./loops.md)           |
+| Repeat until something is true, or until a score is high enough         | `Optimizer`, `ScanFixVerify`, `DriftDetector`, `Sidecar`                   | [Loops](./loops.md)           |
 | Get a second opinion, then settle what it says                          | `Debate`, `Panel`, `ReviewLoop`                                            | [API reference](./api.md)     |
 | Try one strategy, then a stronger one, then ask a person                | `Escalation`                                                               | [API reference](./api.md)     |
 | Fan out, bound the concurrency, and decide what a failure interrupts    | `Bounded`, `Quarantine`, `MapReduce`, `Recursion`                          | [API reference](./api.md)     |
@@ -133,7 +133,7 @@ each step a stable identity.
 
 To ask a person, call `HumanTask` and branch on the answer.
 
-The [module index](./modules.md) lists all 25 modules with their import
+The [module index](./modules.md) lists all 24 modules with their import
 specifiers.
 
 Use `Node.catch` to recover and `Effect.ensuring` in the action's handler to clean up.
@@ -169,9 +169,9 @@ start there.
 - [API reference](./api.md): the two halves of a pattern, string identity and
   ownership, the three error types, and every module the pages below do not
   cover.
-- [Module index](./modules.md): all 25 modules, their import specifiers, and
+- [Module index](./modules.md): all 24 modules, their import specifiers, and
   where each one is documented.
-- [Loops](./loops.md): `Loop`, `Optimizer`, `ScanFixVerify`, `DriftDetector`,
+- [Loops](./loops.md): `Optimizer`, `ScanFixVerify`, `DriftDetector`,
   and `Sidecar`, plus why a declaration cannot branch on a value.
 - [Teams](./teams.md): the six patterns that coordinate several agents, their
   approval gates, and their landing order.

@@ -10,7 +10,6 @@ import * as DelegationChain from "../src/DelegationChain.ts"
 import * as DriftDetector from "../src/DriftDetector.ts"
 import * as Escalation from "../src/Escalation.ts"
 import * as Kanban from "../src/Kanban.ts"
-import * as Loop from "../src/Loop.ts"
 import * as MapReduce from "../src/MapReduce.ts"
 import * as MergeQueue from "../src/MergeQueue.ts"
 import * as ReviewLoop from "../src/ReviewLoop.ts"
@@ -243,18 +242,6 @@ describe("ported pattern declaration execution", () => {
         )
       ).toEqual(many)
     }
-  })
-
-  it("settles a bounded loop with its value, iteration count, and exhaustion", async () => {
-    const step = member("loop-body", (payload: { readonly iteration: number }) => `round-${payload.iteration}`, {
-      input: Schema.Unknown,
-      previous: Schema.optional(Schema.Unknown),
-      iteration: Schema.Unknown
-    })
-    const never = member("loop-until", () => false, { value: Schema.Unknown, iteration: Schema.Unknown })
-
-    expect(await execute(Loop.make({ body: step, until: never, maxIterations: 2 }), { input: "seed" }, "loop-bound"))
-      .toEqual({ value: "round-2", iterations: 2, exhausted: true })
   })
 
   it("reports the last scan's issues, verdict, and verification when the retry bound is reached", async () => {

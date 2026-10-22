@@ -63,7 +63,7 @@ const securityReview = Smithers.SecurityReview({
         "Compose.accepted accepting anything beyond true, \"approved\", or an own approved/accepted property strictly equal to true.",
         "Escalation.defaultEscalate settling a result that reports failure through error, failed: true, or ok: false.",
         "A ReviewLoop, DelegationChain, or Escalation call site that re-implements acceptance with truthiness instead of calling Compose.accepted.",
-        "A stop verdict (Supervisor allDone, Loop done, ScanFixVerify resolved, DriftDetector drifted) read with the `in` operator, which admits an inherited property, instead of Object.hasOwn plus strict equality to true."
+        "A stop verdict (Supervisor allDone, ScanFixVerify resolved, DriftDetector drifted) read with the `in` operator, which admits an inherited property, instead of Object.hasOwn plus strict equality to true."
       ],
       paths: [
         "src/internal/Compose.ts",
@@ -71,7 +71,6 @@ const securityReview = Smithers.SecurityReview({
         "src/DelegationChain.ts",
         "src/Escalation.ts",
         "src/Supervisor.ts",
-        "src/Loop.ts",
         "src/ScanFixVerify.ts",
         "src/DriftDetector.ts"
       ]
@@ -101,7 +100,7 @@ const securityReview = Smithers.SecurityReview({
         "Supervisor, Trellis, DelegationChain, Recursion, or MapReduce iterating a model-returned task or leaf list without a maxDepth, maxRounds, or width cap checked before dispatch.",
         "Supervisor.run dispatching every task the boss plan returns with no cap on the task count, so one plan multiplies worker calls by maxRounds.",
         "Trellis running a model-authored parallel node with concurrency \"unbounded\" where fuel does not bound the leaves started at once.",
-        "Loop, Optimizer, ReviewLoop, or Stalling where run can exceed the round count make declares, or a bound accepting non-safe-integer or Infinity values.",
+        "Optimizer, ReviewLoop, or Stalling with execution that exceeds the declared round count, or a bound accepting non-safe-integer or Infinity values.",
         "Bounded or MergeQueue concurrency admitting 0, negative, NaN, or unbounded widths.",
         "Burndown launching more items than concurrency or capacity slots allow, or a lineage that continues past maxRounds."
       ],
@@ -111,7 +110,6 @@ const securityReview = Smithers.SecurityReview({
         "src/DelegationChain.ts",
         "src/Recursion.ts",
         "src/MapReduce.ts",
-        "src/Loop.ts",
         "src/Optimizer.ts",
         "src/ReviewLoop.ts",
         "src/internal/Stalling.ts",
@@ -146,9 +144,9 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A caller changes pattern options after declaration to bypass validation or change key material, causing a run to reuse a result for different inputs.",
       lookFor: [
-        "A pattern that captures caller options by reference so a later edit changes key material or bypasses validation (DriftDetector, Kanban, Loop, MergeQueue snapshots)."
+        "A pattern that captures caller options by reference so a later edit changes key material or bypasses validation (DriftDetector, Kanban, MergeQueue snapshots)."
       ],
-      paths: ["src/DriftDetector.ts", "src/Kanban.ts", "src/Loop.ts", "src/MergeQueue.ts"]
+      paths: ["src/DriftDetector.ts", "src/Kanban.ts", "src/MergeQueue.ts"]
     }
   ]
 })

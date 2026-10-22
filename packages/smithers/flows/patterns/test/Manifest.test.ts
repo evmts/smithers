@@ -71,7 +71,7 @@ describe("package manifest", () => {
   // import narrow anyway, so a future plan module
   // cannot arrive here unnoticed. Four are named: the authoring vocabulary the
   // ported patterns build their bodies from, the planned reference those
-  // bodies thread, the effect model, and the ceiling vocabulary `Loop` shares
+  // bodies thread, the effect model, and the ceiling vocabulary `Optimizer` shares
   // with `@smthrs/flow`'s `Poll`.
   it("takes only shared vocabularies from @smthrs/plan", () => {
     const specifiers = new Set<string>()

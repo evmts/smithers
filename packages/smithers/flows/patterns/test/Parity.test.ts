@@ -20,15 +20,12 @@ import * as Escalation from "../src/Escalation.ts"
 import * as Patterns from "../src/index.ts"
 import * as Intervene from "../src/Intervene.ts"
 import * as Kanban from "../src/Kanban.ts"
-import * as Loop from "../src/Loop.ts"
 import * as MapReduce from "../src/MapReduce.ts"
 import * as MergeQueue from "../src/MergeQueue.ts"
-import * as Optimizer from "../src/Optimizer.ts"
 import * as Panel from "../src/Panel.ts"
 import * as ReviewLoop from "../src/ReviewLoop.ts"
 import * as Runbook from "../src/Runbook.ts"
 import * as Saga from "../src/Saga.ts"
-import * as ScanFixVerify from "../src/ScanFixVerify.ts"
 import * as Sidecar from "../src/Sidecar.ts"
 import * as Supervisor from "../src/Supervisor.ts"
 import { approval, check, fail, flow, type Pattern, roles, scripted, settleRun } from "./Parity.ts"
@@ -69,68 +66,6 @@ const drift: Pattern<{ readonly alerts: boolean }> = {
       ordered: true
     }))
   )
-}
-
-interface OptimizerCase {
-  readonly targetScore?: number
-  readonly maxIterations: number
-  readonly onMaxReached?: "fail" | "return-last"
-}
-
-const scores = (values: ReadonlyArray<number>) => ({
-  generate: ({ iteration }: { readonly iteration: number }) => `candidate-${iteration}`,
-  evaluate: ({ iteration }: { readonly iteration: number }) => ({
-    score: values[iteration - 1]!,
-    feedback: `feedback-${iteration}`
-  })
-})
-
-const optimizer: Pattern<OptimizerCase> = {
-  make: (members, options) => Optimizer.make({ generate: members.generate!, evaluate: members.evaluate!, ...options }),
-  run: (effects, input, options) =>
-    Optimizer.run(input, { generate: effects.generate!, evaluate: effects.evaluate!, ...options }),
-  cases: [
-    {
-      name: "optimizer-target",
-      input: "prompt",
-      options: { targetScore: 0.9, maxIterations: 3, onMaxReached: "fail" },
-      script: scores([1, 0, 0]),
-      expected: {
-        best: { candidate: "candidate-1", score: 1, feedback: "feedback-1", iteration: 1 },
-        iterations: 1,
-        converged: true
-      },
-      ordered: true
-    },
-    {
-      name: "optimizer-best-not-last",
-      input: "prompt",
-      options: { maxIterations: 3 },
-      script: scores([0.2, 0.7, 0.4]),
-      expected: {
-        best: { candidate: "candidate-2", score: 0.7, feedback: "feedback-2", iteration: 2 },
-        iterations: 3,
-        converged: false
-      },
-      ordered: true
-    },
-    {
-      name: "optimizer-exhausted",
-      input: "prompt",
-      options: { targetScore: 0.9, maxIterations: 2, onMaxReached: "fail" },
-      script: scores([0.2, 0.7]),
-      expected: {
-        failed: { code: "exhausted", message: "Optimizer reached its bound of 2 iterations below 0.9" }
-      }
-    },
-    {
-      name: "optimizer-member-fails",
-      input: "prompt",
-      options: { maxIterations: 3 },
-      script: { ...scores([0.1, 0.2, 0.3]), evaluate: () => fail({ code: "judge_down", message: "judge down" }) },
-      expected: { failed: { code: "judge_down", message: "judge down" } }
-    }
-  ]
 }
 
 const debate: Pattern<{ readonly rounds: number }> = {
@@ -357,48 +292,6 @@ const escalation: Pattern<EscalationCase> = {
       }
     }))
   ]
-}
-
-interface LoopCase {
-  readonly until: boolean
-  readonly maxIterations: number
-  readonly onMaxReached?: Loop.OnMaxReached
-}
-
-const loopScript = (doneAt: number) => ({
-  body: ({ iteration }: { readonly iteration: number }) => ({ done: iteration === doneAt, n: iteration }),
-  until: ({ value }: { readonly value: { readonly n: number } }) => value.n === doneAt
-})
-
-const loop: Pattern<LoopCase> = {
-  make: (m, { until, ...o }) => Loop.make({ body: m.body!, ...(until ? { until: m.until! } : {}), ...o }),
-  run: (e, input, { until, ...o }) => Loop.run(input, { body: e.body!, ...(until ? { until: e.until! } : {}), ...o }),
-  cases: [true, false].flatMap((until) => [
-    {
-      name: `loop-until-${until}-settles`,
-      input: "task",
-      options: { until, maxIterations: 3 },
-      script: loopScript(2),
-      expected: { value: { done: true, n: 2 }, iterations: 2, exhausted: false },
-      ordered: true
-    },
-    {
-      name: `loop-until-${until}-return-last`,
-      input: "task",
-      options: { until, maxIterations: 2 },
-      script: loopScript(9),
-      expected: { value: { done: false, n: 2 }, iterations: 2, exhausted: true },
-      ordered: true
-    },
-    {
-      name: `loop-until-${until}-fail`,
-      input: "task",
-      options: { until, maxIterations: 2, onMaxReached: "fail" as const },
-      script: loopScript(9),
-      expected: { failed: { code: "exhausted", message: "Loop reached its bound of 2 iterations unsatisfied" } },
-      ordered: true
-    }
-  ])
 }
 
 const interveneScript = (approval: unknown) => ({
@@ -659,29 +552,6 @@ const kanban: Pattern<KanbanCase> = {
   ]
 }
 
-const scanScript = (rounds: ReadonlyArray<ReadonlyArray<string>>) => ({
-  scan: ({ iteration }: { readonly iteration: number }) => rounds[iteration - 1] ?? [],
-  fix: ({ issue }: { readonly issue: string }) => `fixed ${issue}`,
-  verify: ({ fixes, iteration }: { readonly fixes: unknown; readonly iteration: number }) => ({ fixes, iteration })
-})
-
-const scanFixVerify: Pattern<{ readonly maxRetries: number }> = {
-  make: (m, { maxRetries }) =>
-    ScanFixVerify.make({ scan: m.scan!, fix: m.fix!, verify: m.verify!, maxRetries, maxIssues: 3, concurrency: 3 }),
-  run: (e, input, { maxRetries }) =>
-    ScanFixVerify.run(input, { scan: e.scan!, fix: e.fix!, verify: e.verify!, maxRetries, concurrency: 3 }),
-  cases: [
-    { name: "sfv-clean-rescan", rounds: [["issue-a"], []] },
-    { name: "sfv-clean-first", rounds: [] },
-    { name: "sfv-bound", rounds: [["issue-a", "issue-b"], ["issue-b"]] }
-  ].map(({ name, rounds }) => ({
-    name,
-    input: "repo",
-    options: { maxRetries: 2 },
-    script: scanScript(rounds)
-  }))
-}
-
 const runbookScript = {
   s1: ({ step }: { readonly step: string }) => `${step}-ok`,
   s2: ({ previous }: { readonly previous: unknown }) => ({ after: previous }),
@@ -881,15 +751,12 @@ const table: Readonly<Record<string, Pattern<any>>> = {
   Escalation: escalation,
   Intervene: intervene,
   Kanban: kanban,
-  Loop: loop,
   MapReduce: mapReduce,
   MergeQueue: mergeQueue,
-  Optimizer: optimizer,
   Panel: panel,
   ReviewLoop: reviewLoop,
   Runbook: runbook,
   Saga: saga,
-  ScanFixVerify: scanFixVerify,
   Sidecar: sidecar,
   Supervisor: supervisor
 }

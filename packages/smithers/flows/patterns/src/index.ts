@@ -112,12 +112,6 @@ export * as Kanban from "./Kanban.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Loop from "./Loop.ts"
-
-/**
- * @category patterns
- * @since 0.1.0
- */
 export * as MergeQueue from "./MergeQueue.ts"
 
 /**
