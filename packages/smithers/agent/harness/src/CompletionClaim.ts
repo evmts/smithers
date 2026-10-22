@@ -171,6 +171,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { Digest } from "@smthrs/core"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -457,7 +458,7 @@ export const record = (ledger: ReadonlyArray<Ran>, calls: ReadonlyArray<Settled>
     const command = elide.head(
       NarrowedCheck.label(call.input),
       NarrowedCheck.labelWidth,
-      "the issuing cell in the run record has the whole input"
+      `the issuing cell in the run record has the whole input; input ${Digest.digest(quote(call.input))}`
     )
     const outcome = call.failing ? "failed" as const : "passed" as const
     const earlier = newest.get(command)

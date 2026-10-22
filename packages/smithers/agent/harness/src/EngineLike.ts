@@ -430,6 +430,22 @@ export interface EngineLike {
    */
   readonly call: (call: Cell.Call) => Effect.Effect<Cell.CallResult, HarnessError>
   /**
+   * Recovers an unsettled call through the host's keyed durable activity.
+   *
+   * The host must replay an existing settlement and let its durable engine
+   * authorize any unfinished execution, including ownership and recovery
+   * consent checks. This must never dispatch an unjournaled call directly.
+   * Without this port, an orphaned harness attempt fails closed. Admission
+   * and timeout guards still run before recovery, just as for a fresh call.
+   */
+  readonly recoverCall?: ((call: Cell.Call) => Effect.Effect<Cell.CallResult, HarnessError>) | undefined
+  /**
+   * Whether the host is parking this execution durably. Read only while a
+   * call is interrupted, to distinguish a resumable wait from an abort.
+   * Calls on this port run one at a time; an absent witness fails closed.
+   */
+  readonly isSuspended?: Effect.Effect<boolean> | undefined
+  /**
    * Decides a call's authority before the per-call clock starts.
    *
    * A person answering an approval is not the flow running slowly, so the

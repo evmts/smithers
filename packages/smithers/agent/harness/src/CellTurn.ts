@@ -2009,8 +2009,10 @@ const pin = (
  * As with frame evaluation, an empty attempt marker lets the loop look for
  * a recorded settlement before dispatch. Existing markers are skipped; a fresh
  * marker permits one attempt outside the record, and its settlement is saved
- * in the next slot. A parked or interrupted attempt leaves only its marker.
- * Legacy settlements in slot zero remain readable.
+ * in the next slot. A known permission or timeout park writes a retry marker;
+ * an orphaned attempt requires the host's keyed recovery port, since it may
+ * have performed external work before the host crashed. Without that port it
+ * fails closed. Legacy settlements remain readable.
  *
  * The call cannot run inside `record.execute`: `EngineLike.call` can reach a
  * durable wait, which must suspend the run rather than an enclosing activity.
@@ -2030,7 +2032,7 @@ const issued = (
   ordinal: number,
   callMs: number,
   flow: string,
-  issue: Effect.Effect<Cell.CallResult, HarnessError>,
+  issue: (recovering: boolean) => Effect.Effect<Cell.CallResult, HarnessError>,
   replaying: boolean,
   call: Cell.Call
 ): Effect.Effect<Cell.CallResult, HarnessError> =>
@@ -2040,12 +2042,13 @@ const issued = (
       frame: state.frame,
       boundary: `cell-call:${cell}:${ordinal}${attempt === 0 ? "" : `:attempt:${attempt}`}`
     })
+    let mayIssue = true
     for (let attempt = 0;; attempt++) {
       let fresh = false
       const recorded = yield* engine.record({
         name: "cell-call",
         identity: identity(attempt),
-        success: Schema.NullOr(Cell.CallResultVariant),
+        success: Schema.Union([Schema.Null, Schema.Literal("retry"), Cell.CallResultVariant]),
         execute: replaying
           ? Effect.fail(
             new HarnessError({
@@ -2058,30 +2061,68 @@ const issued = (
             return null
           })
       })
-      if (recorded !== null) return yield* Cell.decodeCallResult(recorded)
-      if (!fresh) continue
-      // A permission park, abort or engine failure leaves only the marker.
-      // A later attempt can ask again, outside any enclosing record activity.
-      // Authority is decided before the clock starts: approval time is not
-      // the flow's to spend.
-      const refused = engine.admit === undefined ? undefined : yield* engine.admit(call)
-      const subject = EngineLike.callSubject(call.identity)
-      const guarded = refused === undefined ? engine.guard : undefined
-      if (guarded !== undefined) yield* guarded.admit(subject)
-      const settlement = refused ?? (yield* issue.pipe(
-        Effect.timeoutOrElse({ duration: callMs, orElse: () => Effect.succeed(Sandbox.callTimedOut(flow, callMs)) }),
-        Effect.flatMap(Cell.decodeCallResult)
-      ))
-      if (guarded !== undefined && settlement.outcome === "failure" && settlement.code === "timeout") {
-        // Continue may retry a guarded timeout; no settlement is recorded
-        // until the guard allows the cell to receive one.
-        yield* guarded.trip({
-          source: "tool-call",
-          subject,
-          limitMillis: limitOf(settlement),
-          message: settlement.message ?? `Flow ${flow} timed out.`
+      if (recorded !== null && recorded !== "retry") return yield* Cell.decodeCallResult(recorded)
+      if (!fresh) {
+        mayIssue = recorded === "retry"
+        continue
+      }
+      if (!mayIssue && engine.recoverCall === undefined) {
+        return yield* new HarnessError({
+          code: "engine_failed",
+          message: `Call ${ordinal} has an unsettled execution attempt; refusing to issue it again`
         })
       }
+      // Only a known park authorizes a later attempt. A missing settlement is
+      // ambiguous, including when the call's timeout already fired.
+      // Parking this admission cannot authorize the orphaned external attempt
+      // that preceded it. Its next admission must still use host recovery.
+      const retry = Effect.suspend(() =>
+        mayIssue ?
+          engine.record({
+            name: "cell-call",
+            identity: identity(attempt + 1),
+            success: Schema.Literal("retry"),
+            execute: Effect.succeed("retry" as const)
+          }) :
+          Effect.void
+      ).pipe(Effect.asVoid)
+      // Authority is decided before the clock starts: approval time is not
+      // the flow's to spend.
+      let safeToRetry = true
+      const settlement = yield* Effect.gen(function*() {
+        const refused = engine.admit === undefined ? undefined : yield* engine.admit(call)
+        const subject = EngineLike.callSubject(call.identity)
+        const guarded = refused === undefined ? engine.guard : undefined
+        if (guarded !== undefined) yield* guarded.admit(subject)
+        safeToRetry = false
+        const result = refused ?? (yield* issue(!mayIssue).pipe(
+          Effect.timeoutOrElse({ duration: callMs, orElse: () => Effect.succeed(Sandbox.callTimedOut(flow, callMs)) }),
+          Effect.flatMap(Cell.decodeCallResult)
+        ))
+        if (guarded !== undefined && result.outcome === "failure" && result.code === "timeout") {
+          // Continue is authorized by the host's guard on the next admission.
+          safeToRetry = true
+          yield* guarded.trip({
+            source: "tool-call",
+            subject,
+            limitMillis: limitOf(result),
+            message: result.message ?? `Flow ${flow} timed out.`
+          })
+        }
+        return result
+      }).pipe(
+        Effect.catch((error) =>
+          safeToRetry || permissionRequired(error) !== undefined || error.code === "suspended"
+            ? retry.pipe(Effect.andThen(Effect.fail(error)))
+            : Effect.fail(error)
+        ),
+        Effect.onInterrupt(() =>
+          Effect.flatMap(
+            safeToRetry ? Effect.succeed(true) : engine.isSuspended ?? Effect.succeed(false),
+            (suspended) => suspended ? retry : Effect.void
+          )
+        )
+      )
       return yield* engine.record({
         name: "cell-call",
         call,
@@ -2431,11 +2472,12 @@ const callHandler = (
       invocation.flow,
       // A flow that asks Jev journals its receipts into this run, and what it
       // pays for them is a reading this frame's cell asked for.
-      Effect.suspend(() => engine.call(call)).pipe(
-        Effect.provideService(AgentEvent.Journal, emit),
-        Effect.provideService(EngineLike.Spend, { purpose: "reading", frame: state.frame }),
-        Effect.provideService(Cell.Failures, (reported) => Effect.sync(() => void (kind = reported)))
-      ),
+      (recovering) =>
+        Effect.suspend(() => recovering ? engine.recoverCall!(call) : engine.call(call)).pipe(
+          Effect.provideService(AgentEvent.Journal, emit),
+          Effect.provideService(EngineLike.Spend, { purpose: "reading", frame: state.frame }),
+          Effect.provideService(Cell.Failures, (reported) => Effect.sync(() => void (kind = reported)))
+        ),
       replaying,
       call
     )
@@ -2531,9 +2573,11 @@ const timedAs = <A, E, R>(
 ): Effect.Effect<A, E, R> =>
   Effect.gen(function*() {
     const from = yield* Clock.currentTimeMillis
-    const value = yield* effect
-    clock[part] += elapsed(from, yield* Clock.currentTimeMillis)
-    return value
+    return yield* effect.pipe(Effect.ensuring(
+      Effect.map(Clock.currentTimeMillis, (now) => {
+        clock[part] += elapsed(from, now)
+      })
+    ))
   })
 
 /** The frame's time split as its closing event carries it; the parts add up to the wall time. */
@@ -2723,7 +2767,8 @@ const summarized = (
     const text = settled.message.content.filter(
       (part): part is ModelRequest.TextPart => part.type === "text"
     )
-    if (text.length === 0) {
+    const summary = text.map((part) => part.text).join("\n")
+    if (summary.trim().length === 0) {
       return yield* new HarnessError({
         code: "model_failed",
         message: "The sealed compaction step returned no text summary"
@@ -2731,7 +2776,7 @@ const summarized = (
     }
     return {
       summary: ModelRequest.Message.user(
-        untrustedData(text.map((part) => part.text).join("\n"), "compaction summary of conversation and tool output")
+        untrustedData(summary, "compaction summary of conversation and tool output")
       ),
       call: {
         usage: settled.usage,

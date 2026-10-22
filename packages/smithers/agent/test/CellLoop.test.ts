@@ -11,7 +11,7 @@ import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
-import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as CellTurn from "@smthrs/harness/CellTurn"
 import * as ContextWindow from "@smthrs/harness/ContextWindow"
@@ -54,7 +54,7 @@ const written = await ctx.call("fs/write", { path: listed[0], text: "done" })
 ctx.done(written)`
 
 /** A model that records every provider call and replies with exactly one cell. */
-const cellModel = (calls: Array<string>): Model.Model =>
+const cellModel = (calls: Array<string>, source = cell): Model.Model =>
   Model.make({
     stream: (request) =>
       Stream.suspend(() => {
@@ -64,7 +64,7 @@ const cellModel = (calls: Array<string>): Model.Model =>
           ModelEvent.ModelEvent.TextDelta({
             type: "text-delta",
             id: "cell",
-            text: "```cell\n" + cell + "\n```"
+            text: "```cell\n" + source + "\n```"
           }),
           ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
           ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
@@ -248,6 +248,7 @@ const loop = (options: {
   readonly calls: FlowEngineLike.CallRunner
   readonly state?: CellTurn.State | undefined
   readonly steering?: Steering.Source | undefined
+  readonly engine?: ((port: EngineLike.EngineLike) => EngineLike.EngineLike) | undefined
 }) =>
   Effect.gen(function*() {
     const port = yield* FlowEngineLike.make({ model: options.model, route, calls: options.calls })
@@ -257,12 +258,56 @@ const loop = (options: {
       Effect.provide(QuickJSSandbox.layer),
       Effect.provide(scriptedCompletionJudge),
       Effect.provideService(Steering.Source, options.steering ?? Steering.makeNoop()),
-      Effect.provideService(EngineLike.EngineLike, port)
+      Effect.provideService(EngineLike.EngineLike, options.engine?.(port) ?? port)
     )
     return events.map((event) => event._tag)
   }).pipe(Effect.provide(Safety.layer))
 
 describe("the cell loop on the durable engine", () => {
+  it("recovers a native timeout settlement after its harness record write failed without repeating the call", async () => {
+    const providerCalls: Array<string> = []
+    const executed: Array<string> = []
+    const events: Array<AgentEvent.AgentEvent> = []
+    const crash = new HarnessError({ code: "engine_failed", message: "Settlement store unavailable" })
+    let unavailable = true
+    const outcome = await drive(
+      Effect.gen(function*() {
+        const instance = yield* FlowRuntime.FlowInstance
+        return yield* loop({
+          model: cellModel(providerCalls, `const r = await ctx.call("fs/write", {}); ctx.done(r.error.code)`),
+          calls: {
+            run: (call) =>
+              Effect.sync(() => {
+                executed.push(call.flowName)
+                return Sandbox.callTimedOut(call.flowName, 80)
+              })
+          },
+          engine: (port) => ({
+            ...port,
+            record: <A>(boundary: EngineLike.RecordBoundary<A>) =>
+              Effect.suspend(() => {
+                if (unavailable && boundary.call !== undefined) {
+                  unavailable = false
+                  return Effect.fail(crash)
+                }
+                return port.record(boundary)
+              })
+          })
+        }).pipe(
+          Effect.provideService(AgentEvent.Observer, (event) => Effect.sync(() => void events.push(event))),
+          Effect.catchIf((error) => error === crash, () => Flow.suspend(instance))
+        )
+      }),
+      { resume: true }
+    )
+    expect(outcome._tag).toBe("completed")
+    expect(executed).toEqual(["fs/write"])
+    expect(providerCalls).toEqual(["test-model"])
+    expect(events.filter((event) => event._tag === "cell-call-settled")).toMatchObject([{
+      result: { outcome: "failure", code: "timeout", value: { limitMillis: 80 } }
+    }])
+  })
+
   it("runs each call in a cell as its own keyed activity, not one opaque cell activity", async () => {
     const providerCalls: Array<string> = []
     const executed: Array<string> = []
@@ -275,6 +320,38 @@ describe("the cell loop on the durable engine", () => {
     expect(tags).toContain("resolved")
     // Two boundaries, each recorded under its own identity.
     expect(executed).toEqual(["fs/list#0:0", "fs/write#0:1"])
+    expect(providerCalls).toEqual(["test-model"])
+  })
+
+  it("resumes a native durable suspension inside a cell call without repeating its settled prefix", async () => {
+    const providerCalls: Array<string> = []
+    const executed: Array<string> = []
+    let waiting = true
+    const outcome = await drive(
+      Effect.flatMap(FlowRuntime.FlowInstance, (instance) =>
+        loop({
+          model: cellModel(providerCalls),
+          calls: {
+            run: (call) =>
+              Effect.gen(function*() {
+                executed.push(call.flowName)
+                if (call.flowName === "fs/write" && waiting) {
+                  waiting = false
+                  yield* Flow.suspend(instance)
+                }
+                return new Cell.CallResult({
+                  outcome: "success",
+                  value: call.flowName === "fs/list" ? ["alpha.md"] : "wrote alpha.md"
+                })
+              })
+          }
+        })),
+      { resume: true }
+    )
+    expect(outcome._tag).toBe("completed")
+    const tags = outcome._tag === "completed" ? outcome.value as ReadonlyArray<string> : []
+    expect(tags).toContain("resolved")
+    expect(executed).toEqual(["fs/list", "fs/write", "fs/write"])
     expect(providerCalls).toEqual(["test-model"])
   })
 

@@ -50,6 +50,22 @@ Call settlement uses the same attempt-marker protocol. The harness reads a
 saved settlement before dispatch, including a per-call timeout, so reconstructing
 a cell does not repeat a call whose settlement already exists. Unsettled calls
 remain outside record activities so durable waits and permission parks can resume.
+A known permission or guarded-timeout park records permission to retry; a native
+durable wait does so when the host certifies it through `EngineLike.isSuspended`.
+The host still admits the next attempt. An attempt marker with neither a settlement
+nor permission to retry requires `EngineLike.recoverCall`; without it recovery
+fails closed. That port enters the host's keyed durable activity, replaying an
+existing result and leaving unfinished work to the engine's ownership and recovery
+consent checks. `FlowEngineLike` uses the same activity for fresh and recovered
+calls, including calls interrupted by a guarded frame timeout. A recorded native
+timeout replays rather than dispatching again. Existing recorded settlements,
+including legacy slot-zero settlements, remain readable. Call identities and
+recorded trace facts do not change.
+
+Compaction refuses empty or whitespace-only summaries before replacing transcript
+content. Frame component timing includes failed and interrupted work, recorded
+before realm teardown. Long check labels carry the full canonical input's digest
+so truncation cannot merge their outcomes or invent a previous outcome.
 
 A whole-frame timeout records the last dispatched and last delivered bridge
 ordinals with the frame outcome. Replay reads that record before evaluating

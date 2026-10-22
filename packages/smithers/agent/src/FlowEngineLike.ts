@@ -1232,6 +1232,10 @@ export const make = (
       sealStepWithEvents,
       splice,
       call,
+      // Both paths enter the same keyed Action. The engine replays settled
+      // work and owns recovery consent and fencing for unfinished work.
+      recoverCall: call,
+      isSuspended: Effect.sync(() => instance.suspended),
       guard,
       ...(admit === undefined ? {} : { admit }),
       record,

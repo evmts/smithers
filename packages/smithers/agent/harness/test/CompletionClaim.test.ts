@@ -934,6 +934,25 @@ describe("the claim brake", () => {
 
     expect((jev.asked[0]?.state as Record<string, unknown>)["checksRun"]).toEqual([])
   })
+
+  it("keeps distinct long commands and only attributes prior outcomes to the same full input", () => {
+    const prefix = `node check.mjs ${"shared-argument ".repeat(200)}`
+    const first = { command: `${prefix}first` }
+    const second = { command: `${prefix}other` }
+    const failed = call({ input: first, value: { exitCode: 1 }, failing: true, passing: false })
+    const passed = call({ input: second, value: { exitCode: 0 } })
+    const initial = CompletionClaim.record([], [failed])
+    const distinct = CompletionClaim.record(initial, [passed])
+    expect(distinct).toHaveLength(2)
+    expect(distinct[0]).toMatchObject({ outcome: "failed" })
+    expect(distinct[1]).toMatchObject({ outcome: "passed" })
+    expect(distinct[1]).not.toHaveProperty("before")
+    const repeated = CompletionClaim.record(distinct, [call({ input: first })])
+    expect(repeated).toHaveLength(2)
+    expect(repeated[0]).not.toHaveProperty("before")
+    expect(repeated[1]).toMatchObject({ outcome: "passed", before: "failed" })
+    expect(repeated[0]?.command).not.toBe(repeated[1]?.command)
+  })
 })
 
 describe("a long claim, read one sentence at a time", () => {

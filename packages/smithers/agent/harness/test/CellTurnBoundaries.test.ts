@@ -605,6 +605,21 @@ describe("CellTurn context budget", () => {
     expect(of(events, "compaction-settled")).toHaveLength(0)
     expect(of(events, "turn-opened")).toHaveLength(0)
   })
+
+  it.each(["", "   ", "\t\r\n", "\u2003\u00a0"])(
+    "rejects a blank compaction summary %j before replacing transcript content",
+    async (summary) => {
+      const observed = await run({
+        script: [prose(summary), emits(`ctx.done("done")`)],
+        state: state({ contextWindow: crowded, contextWindowTokens: 40_000, maxFrames: 2 }),
+        flows: []
+      })
+      expect(observed.failure).toMatchObject({ code: "model_failed" })
+      expect(of(observed.events, "compaction-settled")).toEqual([])
+      expect(of(observed.events, "turn-opened")).toEqual([])
+      expect(observed.model.recorder.requests).toHaveLength(1)
+    }
+  )
 })
 
 describe("CellTurn call classification", () => {
@@ -1546,6 +1561,81 @@ describe("CellTurn record boundaries", () => {
 })
 
 describe("CellTurn interruption", () => {
+  it.each(["cell", "judge", "compaction"] as const)(
+    "includes interrupted %s time in the component before realm teardown",
+    async (component) => {
+      const { advance, clock } = manualClock()
+      const model = ScriptedModel.make([
+        component === "compaction" ?
+          { ...ScriptedModel.midStreamInterrupt, arriving: () => advance(10) } :
+          emits(component === "cell" ? `await ctx.call("fs/list", { path: "." })` : `ctx.done("done")`)
+      ])
+      const engine = ScriptedEngine.make(model.model)
+      const sandbox = Layer.effect(
+        Sandbox.Sandbox,
+        Effect.map(Sandbox.Sandbox, (service) => ({
+          ...service,
+          openRealm: (options: Sandbox.RealmOptions) =>
+            Effect.gen(function*() {
+              const realm = yield* service.openRealm!(options)
+              yield* Effect.addFinalizer(() => Effect.sync(() => advance(500)))
+              return realm
+            })
+        }))
+      ).pipe(Layer.provide(QuickJSSandbox.layer), Layer.orDie)
+      const millis = component === "compaction" ? ScriptedModel.midStreamInterrupt.events.length * 10 : 80
+      const observed = await collect({
+        state: state(component === "compaction" ? { contextWindow: crowded, contextWindowTokens: 40_000 } : {}),
+        flows: component === "compaction" ? [] : [lister],
+        judged: component === "judge"
+      }, {
+        engine: EngineLike.layer(EngineLike.make({
+          ...engine.engine,
+          call: () => Effect.sync(() => advance(millis)).pipe(Effect.andThen(Effect.interrupt))
+        })),
+        evaluator: component === "judge" ?
+          Layer.succeed(Evaluator.Evaluator, {
+            evaluate: () => Effect.sync(() => advance(millis)).pipe(Effect.andThen(Effect.interrupt))
+          }) :
+          confidentEvaluator,
+        sandbox,
+        clock
+      })
+      expect(observed.interrupted).toBe(true)
+      expect(of(observed.events, "turn-closed")).toMatchObject([{
+        outcome: "aborted",
+        time: { [`${component}Ms`]: millis, wallMs: millis, otherMs: 0 }
+      }])
+      expect(clock.currentTimeMillisUnsafe()).toBe(millis + 500)
+    }
+  )
+
+  it("includes a failed cell's time when permission suspends its frame", async () => {
+    const { advance, clock } = manualClock()
+    const model = ScriptedModel.make([emits(`await ctx.call("fs/list", { path: "." })`)])
+    const engine = ScriptedEngine.make(model.model)
+    const request = new Permission.PermissionRequired({
+      requestId: "timed-permission",
+      capability: Capability.make("fs:read", "**"),
+      tier: "irreversible",
+      meta: {}
+    })
+    const observed = await collect({ state: state(), flows: [lister] }, {
+      engine: EngineLike.layer(EngineLike.make({
+        ...engine.engine,
+        call: () =>
+          Effect.sync(() => advance(75)).pipe(Effect.andThen(Effect.fail(
+            new HarnessError({ code: "engine_failed", message: "Permission required", cause: request })
+          )))
+      })),
+      clock
+    })
+    expect(of(observed.events, "turn-closed")).toMatchObject([{
+      outcome: "suspended",
+      time: { wallMs: 75, cellMs: 75, otherMs: 0 }
+    }])
+  })
+
   it("records interrupted model time before scope teardown", async () => {
     const { advance, clock } = manualClock()
     const model = ScriptedModel.make([{
@@ -2196,6 +2286,148 @@ describe("CellTurn recorded observations", () => {
       // interrupted host call could duplicate effects it performed before waiting.
       expect(second.calls).toEqual([])
       expect(of(second.events, "cell-call-settled").map((event) => event.result.code)).toEqual(["timeout", undefined])
+    }
+  )
+
+  it.each([false, true])(
+    "does not reissue a timed-out call after a lost settlement (recovery refused=%s)",
+    async (recoverable) => {
+      const records = new Map<string, unknown>()
+      let executions = 0
+      const crash = new HarnessError({ code: "engine_failed", message: "Settlement store unavailable" })
+      const refused = new HarnessError({ code: "engine_failed", message: "Host refused unfinished call recovery" })
+      const attempt = async (crashes: boolean) => {
+        const model = ScriptedModel.make([emits(
+          `const result = await ctx.call("fs/list", { path: "." }); ctx.done(result.ok === false ? "failed" : "listed")`
+        )])
+        const fixture = ScriptedEngine.make(model.model)
+        const host = EngineLike.make({
+          ...fixture.engine,
+          ...(recoverable ? { recoverCall: () => Effect.fail(refused) } : {}),
+          call: () =>
+            Effect.sync(() => {
+              executions++
+              return Sandbox.callTimedOut("fs/list", 80)
+            })
+        })
+        const engine = Layer.effect(
+          EngineLike.EngineLike,
+          Effect.map(EngineLike.EngineLike, (service) => ({
+            ...service,
+            record: <A>(boundary: EngineLike.RecordBoundary<A>) =>
+              crashes && boundary.name === "cell-call" && boundary.call !== undefined
+                ? Effect.fail(crash)
+                : service.record(boundary)
+          }))
+        ).pipe(Layer.provide(journaled({ ...fixture, engine: host }, records)))
+        return collect({ state: state({ maxFrames: 1 }), flows: [lister] }, { engine })
+      }
+      const first = await attempt(true)
+      expect(first.failure).toBe(crash)
+      expect(executions).toBe(1)
+      const resumed = await attempt(false)
+      expect(executions).toBe(1)
+      expect(resumed.failure).toMatchObject({ code: "engine_failed" })
+      if (recoverable) expect(resumed.failure).toBe(refused)
+      expect(of(resumed.events, "resolved")).toEqual([])
+    }
+  )
+
+  it.each(["permission", "interrupt"] as const)(
+    "preserves required host recovery when orphan admission parks through %s",
+    async (park) => {
+      const records = new Map<string, unknown>()
+      let executions = 0
+      let recoveries = 0
+      const crash = new HarnessError({ code: "engine_failed", message: "Settlement store unavailable" })
+      const refused = new HarnessError({ code: "engine_failed", message: "Host refused unfinished call recovery" })
+      const permission = new HarnessError({
+        code: "engine_failed",
+        message: "Permission required",
+        cause: new Permission.PermissionRequired({
+          requestId: "orphan-admission",
+          capability: Capability.make("fs:read", "**"),
+          tier: "irreversible",
+          meta: {}
+        })
+      })
+      const attempt = async (stage: number) => {
+        const model = ScriptedModel.make([emits(`await ctx.call("fs/list", {}); ctx.done("listed")`)])
+        const fixture = ScriptedEngine.make(model.model, [{ _tag: "Success", value: [] }])
+        const host = EngineLike.make({
+          ...fixture.engine,
+          admit: () =>
+            stage !== 1 ?
+              Effect.succeed(undefined) :
+              park === "interrupt"
+              ? Effect.interrupt
+              : Effect.fail(permission),
+          call: (call) =>
+            Effect.suspend(() => {
+              executions++
+              return fixture.engine.call(call)
+            }),
+          recoverCall: () =>
+            Effect.suspend(() => {
+              recoveries++
+              return Effect.fail(refused)
+            })
+        })
+        const engine = Layer.effect(
+          EngineLike.EngineLike,
+          Effect.map(EngineLike.EngineLike, (service) => ({
+            ...service,
+            record: <A>(boundary: EngineLike.RecordBoundary<A>) =>
+              stage === 0 && boundary.call !== undefined ? Effect.fail(crash) : service.record(boundary)
+          }))
+        ).pipe(Layer.provide(journaled({ ...fixture, engine: host }, records)))
+        return collect({ state: state({ maxFrames: 1 }), flows: [lister] }, { engine })
+      }
+      expect((await attempt(0)).failure).toBe(crash)
+      const parked = await attempt(1)
+      if (park === "interrupt") expect(parked.interrupted).toBe(true)
+      else expect(of(parked.events, "suspended")).toHaveLength(1)
+      expect((await attempt(2)).failure).toBe(refused)
+      expect(executions).toBe(1)
+      expect(recoveries).toBe(1)
+    }
+  )
+
+  it.each(["admission", "native-park", "native-abort"] as const)(
+    "retries interrupted calls only with a safe witness from %s",
+    async (phase) => {
+      const records = new Map<string, unknown>()
+      let executions = 0
+      const attempt = async (interrupts: boolean) => {
+        const model = ScriptedModel.make([emits(`await ctx.call("fs/list", {}); ctx.done("listed")`)])
+        const fixture = ScriptedEngine.make(model.model, [{ _tag: "Success", value: [] }])
+        const host = EngineLike.make({
+          ...fixture.engine,
+          admit: () => interrupts && phase === "admission" ? Effect.interrupt : Effect.succeed(undefined),
+          isSuspended: Effect.succeed(phase === "native-park"),
+          call: (call) =>
+            Effect.suspend(() => {
+              executions++
+              return interrupts ? Effect.interrupt : fixture.engine.call(call)
+            })
+        })
+        return collect({ state: state({ maxFrames: 1 }), flows: [lister] }, {
+          engine: journaled({ ...fixture, engine: host }, records)
+        })
+      }
+      const first = await attempt(true)
+      expect(first.interrupted).toBe(true)
+      expect(executions).toBe(phase === "admission" ? 0 : 1)
+      const second = await attempt(false)
+      if (phase === "native-abort") {
+        expect(second.failure).toMatchObject({ code: "engine_failed" })
+        expect(executions).toBe(1)
+        expect(of(second.events, "resolved")).toEqual([])
+      } else {
+        expect(second.failure).toBeUndefined()
+        expect(resolvedText(second.events)).toBe("listed")
+        expect(executions).toBe(phase === "admission" ? 1 : 2)
+      }
     }
   )
 
