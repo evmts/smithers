@@ -785,8 +785,8 @@ describe("the Node host composition", () => {
     expect(registryIsRequired).toEqual([true, true])
   })
 
-  const readHostBack = <A>(query: (database: DatabaseSync) => A): A => {
-    const database = new DatabaseSync(hostFile, { readOnly: true })
+  const readHostBack = <A>(query: (database: DatabaseSync) => A, filename = hostFile): A => {
+    const database = new DatabaseSync(filename, { readOnly: true })
     try {
       return query(database)
     } finally {
@@ -1433,94 +1433,104 @@ describe("the Node host composition", () => {
     expect(outcome).toMatchObject({ _tag: "Success", value: "mutated" })
   }, 60_000)
 
-  it("kills what a run spawned when a SECOND driver over the same file interrupts it", async () => {
-    // Cancellation from another process is the shape an operator's `cancel`
-    // has: the run is driven here and interrupted from a driver that shares
-    // only the SQLite file. Containment has to survive that route too, not
-    // just the signal one.
-    const host = (hostId: string) =>
-      NodeRuntime.layerHost(
-        {
-          filename: hostFile,
-          workspaceRoot: directory,
-          owner: { hostId },
-          signals: [],
-          containment: { graceMs: 300 },
-          rules: [
-            new Permission.Rule({
-              effect: "allow",
-              pattern: new Capability.CapabilityPattern({ action: "proc:spawn", resource: "*" })
-            })
-          ]
-        },
-        hostFlows
+  it.each([{ signals: [] }, { signals: ["SIGUSR2"] }] as Array<{ signals: Array<NodeJS.Signals> }>)(
+    "kills what a run spawned when a SECOND driver over the same file interrupts it (signals=$signals)",
+    async ({ signals }) => {
+      // Cancellation from another process is the shape an operator's `cancel`
+      // has: the run is driven here and interrupted from a driver that shares
+      // only the SQLite file. Containment has to survive that route too, not
+      // just the signal one.
+      const hostFile = join(hostRoot, `host-cancel-${signals.length}.sqlite`)
+      interrupted.length = 0
+      const host = (hostId: string) =>
+        NodeRuntime.layerHost(
+          {
+            filename: hostFile,
+            workspaceRoot: directory,
+            owner: { hostId },
+            signals,
+            containment: { graceMs: 300 },
+            rules: [
+              new Permission.Rule({
+                effect: "allow",
+                pattern: new Capability.CapabilityPattern({ action: "proc:spawn", resource: "*" })
+              })
+            ]
+          },
+          hostFlows
+        )
+
+      const caller = await Effect.runPromise(
+        Effect.gen(function*() {
+          const runs = yield* RunStore.RunStore
+          const running = yield* Effect.forkChild(
+            Effect.exit(Host.execute({ what: "sleep-again" }, { executionId: "host-cancel" })),
+            { startImmediately: true }
+          )
+          let row = yield* runs.get("host-cancel")
+          for (let attempt = 0; attempt < 400 && (row.status !== "running" || interrupted.length === 0); attempt++) {
+            yield* Effect.sleep("25 millis")
+            row = yield* runs.get("host-cancel")
+          }
+          expect(row.status).toBe("running")
+          expect(interrupted).toHaveLength(1)
+          expect(groupIsAlive(interrupted[0]!)).toBe(true)
+
+          // The second driver: its own engine, its own owner, the same file. Its
+          // `interrupt` writes a durable cancellation request rather than
+          // touching a fiber it does not hold.
+          yield* Effect.gen(function*() {
+            const engine = yield* FlowRuntime.FlowRuntime
+            yield* engine.interrupt(Host, "host-cancel")
+          }).pipe(Effect.provide(host("host-cancel-b")), Effect.scoped)
+
+          // The owner observes the request on its heartbeat cadence, so the wait
+          // is bounded by that plus the containment grace, not by a poll count.
+          for (let attempt = 0; attempt < 80 && row.status !== "cancelled"; attempt++) {
+            yield* Effect.sleep("100 millis")
+            row = yield* runs.get("host-cancel")
+          }
+          expect(row.status).toBe("cancelled")
+
+          // graceMs is 300 above, so the group has to be gone well inside this.
+          for (let attempt = 0; attempt < 32 && groupIsAlive(interrupted[0]!); attempt++) {
+            yield* Effect.sleep("25 millis")
+          }
+          expect(groupIsAlive(interrupted[0]!)).toBe(false)
+
+          // The caller settles with the run. A cross-driver cancel interrupts
+          // the fiber that asked for it, so nothing here interrupts it by hand:
+          // the settlement is the assertion.
+          let settled = running.pollUnsafe()
+          for (let attempt = 0; attempt < 200 && settled === undefined; attempt++) {
+            yield* Effect.sleep("25 millis")
+            settled = running.pollUnsafe()
+          }
+          return settled
+        }).pipe(Effect.provide(host("host-cancel-a")), Effect.scoped, Effect.exit)
       )
 
-    const caller = await Effect.runPromise(
-      Effect.gen(function*() {
-        const runs = yield* RunStore.RunStore
-        const running = yield* Effect.forkChild(
-          Effect.exit(Host.execute({ what: "sleep-again" }, { executionId: "host-cancel" })),
-          { startImmediately: true }
+      // Preserve the actual setup or assertion failure instead of hiding it
+      // behind the caller-settlement assertion below.
+      if (Exit.isFailure(caller)) throw Cause.squash(caller.cause)
+      const settled = caller.value
+      expect(settled).toBeDefined()
+      const outcome = settled !== undefined && Exit.isSuccess(settled)
+        ? settled.value as Exit.Exit<unknown, unknown>
+        : settled
+      expect(outcome !== undefined && Exit.isFailure(outcome) && Cause.hasInterrupts(outcome.cause)).toBe(true)
+
+      // Read back through an independent connection: what the second driver's
+      // request produced is a durable row, not an in-process observation.
+      expect(
+        readHostBack(
+          (database) => database.prepare("SELECT status FROM flows_runs WHERE run_id = 'host-cancel'").get(),
+          hostFile
         )
-        let row = yield* runs.get("host-cancel")
-        for (let attempt = 0; attempt < 400 && (row.status !== "running" || interrupted.length === 0); attempt++) {
-          yield* Effect.sleep("25 millis")
-          row = yield* runs.get("host-cancel")
-        }
-        expect(row.status).toBe("running")
-        expect(interrupted).toHaveLength(1)
-        expect(groupIsAlive(interrupted[0]!)).toBe(true)
-
-        // The second driver: its own engine, its own owner, the same file. Its
-        // `interrupt` writes a durable cancellation request rather than
-        // touching a fiber it does not hold.
-        yield* Effect.gen(function*() {
-          const engine = yield* FlowRuntime.FlowRuntime
-          yield* engine.interrupt(Host, "host-cancel")
-        }).pipe(Effect.provide(host("host-cancel-b")), Effect.scoped)
-
-        // The owner observes the request on its heartbeat cadence, so the wait
-        // is bounded by that plus the containment grace, not by a poll count.
-        for (let attempt = 0; attempt < 80 && row.status !== "cancelled"; attempt++) {
-          yield* Effect.sleep("100 millis")
-          row = yield* runs.get("host-cancel")
-        }
-        expect(row.status).toBe("cancelled")
-
-        // graceMs is 300 above, so the group has to be gone well inside this.
-        for (let attempt = 0; attempt < 32 && groupIsAlive(interrupted[0]!); attempt++) {
-          yield* Effect.sleep("25 millis")
-        }
-        expect(groupIsAlive(interrupted[0]!)).toBe(false)
-
-        // The caller settles with the run. A cross-driver cancel interrupts
-        // the fiber that asked for it, so nothing here interrupts it by hand:
-        // the settlement is the assertion.
-        let settled = running.pollUnsafe()
-        for (let attempt = 0; attempt < 200 && settled === undefined; attempt++) {
-          yield* Effect.sleep("25 millis")
-          settled = running.pollUnsafe()
-        }
-        return settled
-      }).pipe(Effect.provide(host("host-cancel-a")), Effect.scoped, Effect.exit)
-    )
-
-    // Asserted out here, where a failure is the test's: every `expect` inside
-    // the block above is swallowed by its own `Effect.exit`.
-    const settled = Exit.isSuccess(caller) ? caller.value : undefined
-    expect(settled).toBeDefined()
-    const outcome = settled !== undefined && Exit.isSuccess(settled)
-      ? settled.value as Exit.Exit<unknown, unknown>
-      : settled
-    expect(outcome !== undefined && Exit.isFailure(outcome) && Cause.hasInterrupts(outcome.cause)).toBe(true)
-
-    // Read back through an independent connection: what the second driver's
-    // request produced is a durable row, not an in-process observation.
-    expect(
-      readHostBack((database) => database.prepare("SELECT status FROM flows_runs WHERE run_id = 'host-cancel'").get())
-    ).toMatchObject({ status: "cancelled" })
-  }, 60_000)
+      ).toMatchObject({ status: "cancelled" })
+    },
+    60_000
+  )
 })
 
 /**

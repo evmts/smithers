@@ -8,6 +8,19 @@ host liveness probe, the process reaper, and the language-server client. Each
 answers deliberately, and several answers that look like bugs are the safe
 choice.
 
+## `NodeRuntime cannot install signal ...`
+
+This configuration error is raised before listener installation. The name must
+appear in `node:os`'s `constants.signals` and cannot be `SIGKILL` or `SIGSTOP`.
+An existing listener does not cause this error. Compare the configured name
+with the signal constants in the process that constructs the host.
+
+Cross-driver cancellation uses a durable interrupt request and needs no OS
+signal: a host can set `signals: []`. The NodeRuntime regression exercises
+cancellation both with no listeners and with two hosts listening for `SIGUSR2`.
+Worker threads do not receive process signals; see
+[Node's worker restrictions](https://nodejs.org/api/worker_threads.html).
+
 ## A filesystem call fails with `ENOTSUP`
 
 **Symptom.** An atomic operation fails with:
