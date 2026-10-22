@@ -55,12 +55,20 @@ const decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(RunState.Ru
  *
  * "Due" is `EngineStore.nextWake` at or before now, so a parent that has
  * already consumed this settlement, a settled child and an unknown id are
- * left alone.
+ * left alone. Every read is one read transaction: one snapshot, and the
+ * round trips of one transaction rather than one per read.
  *
  * @category operations
  * @since 1.0.0
  */
 export const routes = (executionId: string) =>
+  Effect.flatMap(DurableEngineState.DurableEngineState, (engineState) => engineState.readTransaction(read(executionId)))
+
+/**
+ * {@link routes}' reads, which it runs as one read transaction: one snapshot of what the drive left, and one
+ * transaction's round trips for all of them rather than a transaction for each.
+ */
+const read = (executionId: string) =>
   Effect.gen(function*() {
     const runs = yield* RunStore.RunStore
     const engineState = yield* DurableEngineState.DurableEngineState

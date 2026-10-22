@@ -250,6 +250,7 @@ const object = <E, R>(
                 // The `todo` run's agent writes with the `coding` role, admitted and metered as the endpoint's calls are.
                 Layer.unwrap(Effect.map(flowStarter, (started) =>
                   TodoAgent.registration(seats("coding", started), appDatabase, AgentSandbox.layer, commandSeconds))),
+                commandSeconds,
               ),
             )
             : hostFor(flows)

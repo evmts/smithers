@@ -426,7 +426,53 @@ describe("SandboxTools status and diff", () => {
     ), slow)
 })
 
+/**
+ * `session`, whose scripts find a `git` that logs each subcommand to `log` before it runs the real one: what a script
+ * asked git to do.
+ */
+const loggingGit = (session: Sandbox.Session, log: string): Sandbox.Session => {
+  const bin = mkdtempSync(join(root, "bin-"))
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim()
+  writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$1" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 })
+  return {
+    ...session,
+    spawn: (command, options) =>
+      session.spawn(command, { ...options, env: { ...options?.env, PATH: `${bin}:${process.env.PATH}` } })
+  }
+}
+
 describe("SandboxTools checkpoint and restore", () => {
+  it.effect(
+    "stages from the checkout's own index, so only the files that changed are read, and carries the same patch",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          for (let index = 0; index < 20; index++) writeFileSync(join(session.workdir, `f${index}.txt`), `${index}\n`)
+          git(session.workdir, "add", ".")
+          git(session.workdir, "commit", "-q", "-m", "files")
+          writeFileSync(join(session.workdir, "f3.txt"), "changed\n")
+          writeFileSync(join(session.workdir, "staged.txt"), "staged\n")
+          git(session.workdir, "add", "staged.txt")
+          writeFileSync(join(session.workdir, "staged.txt"), "staged, then changed\n")
+          rmSync(join(session.workdir, "f7.txt"))
+          const log = join(root, `git-${++sessions}.log`)
+          const seeded = yield* SandboxTools.checkpoint(loggingGit(session, log))
+          // The copied index stands in for `read-tree HEAD`: nothing rebuilt it from the commit.
+          expect(readFileSync(log, "utf8").split("\n")).not.toContain("read-tree")
+          const patch = new TextDecoder().decode(seeded.patch)
+          expect(patch).toContain("+changed")
+          expect(patch).toContain("+staged, then changed")
+          expect(patch).toContain("deleted file mode")
+          // A checkout with no index of its own starts from HEAD, and carries the same patch.
+          rmSync(join(session.workdir, ".git", "index"))
+          const fresh = yield* SandboxTools.checkpoint(loggingGit(session, log))
+          expect(readFileSync(log, "utf8").split("\n")).toContain("read-tree")
+          expect(fresh).toEqual(seeded)
+        })
+      ),
+    slow
+  )
+
   it.effect(
     "carries tracked, untracked and deleted changes to a fresh clone at another commit",
     () =>

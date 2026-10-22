@@ -174,10 +174,17 @@ for (const target of Postgres.targets) {
           expect(t.drives("unfinished")).toBe(1)
           expect(t.drives("failed")).toBe(1)
           const [unregistered, undriven, unbuilt] = t.alarmLines().map((line) => line.annotations)
-          expect(undriven).toMatchObject({ outcome: "retrying", "smithers.execution.drive_ms": expect.any(Number) })
+          expect(undriven).toMatchObject({
+            outcome: "retrying",
+            "smithers.execution.build_ms": expect.any(Number),
+            "smithers.execution.drive_ms": expect.any(Number)
+          })
+          // A drive that failed routed nothing.
+          expect(undriven).not.toHaveProperty("smithers.execution.route_ms")
           expect(unregistered).toMatchObject({ outcome: "retrying", "smithers.execution.drive_ms": expect.any(Number) })
           expect(unbuilt).toMatchObject({ outcome: "retrying" })
           expect(unbuilt).not.toHaveProperty("smithers.execution.drive_ms")
+          expect(unbuilt).not.toHaveProperty("smithers.execution.build_ms")
         }))
       )
     })

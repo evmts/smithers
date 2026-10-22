@@ -19,6 +19,7 @@ import {
   SHA,
   statusContextOf,
 } from "../../src/features/pulls/contract.ts"
+import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { classify, withToken } from "../github/Calls.ts"
@@ -71,9 +72,6 @@ export class ChecksUnavailable extends Schema.TaggedError<ChecksUnavailable>()("
 
 /** 1 s doubling to a minute, for at most 30 minutes. */
 export const CHECKS_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 })
-
-/** The longest one check script runs, in seconds. */
-export const CHECK_TIMEOUT_SECONDS = 600
 
 /** The most changed lines of diff the review reads. */
 export const MAX_REVIEW_DIFF_CHARS = 60_000
@@ -240,8 +238,12 @@ export const reviewBodyOf = (findings: string, login: string): string =>
     `Reviewed by Smithers for @${login} (review).`,
   ].join("\n\n")
 
-/** The steps over `services` and the host's `Machines`. */
-export const steps = <E, R>(services: Services<E, R>) => {
+/**
+ * The steps over `services` and the host's `Machines`. Each check script runs for up to `commandSeconds`, the
+ * deployment's longest command (`SANDBOX_COMMAND_MAX_SECONDS`, worker/flows/SandboxCommand.ts `maxSeconds`;
+ * `COMMAND_LIMIT_SECONDS` unless given).
+ */
+export const steps = <E, R>(services: Services<E, R>, commandSeconds: number = COMMAND_LIMIT_SECONDS) => {
   const repositoryOfRequest = (request: ChecksRequest) => repositoryOf(request.repoId.replace(/^github\//, ""))
 
   /** Sends check `name`'s `state` on the head as the App, with a token that may write commit statuses only. */
@@ -331,16 +333,17 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const done: Array<{ readonly name: string; readonly status: "done" | "failed" }> = []
       for (const name of names) {
         const id = yield* checkRunIdOf(request, name)
-        // Each script runs as its own `sandbox/Command` job, so this step parks while it runs and runs again from the
-        // top once it ends: a check is announced, counted and logged only by the call that recorded its start or end.
+        // Each script runs as its own `sandbox/Command` (`SandboxCommand.run`): one that ends within the step's wait answers
+        // here, and a longer one parks this step while its job runs, which then runs again from the top once it ends: a
+        // check is announced, counted and logged only by the call that recorded its start or end.
         if (yield* started(request, id, name)) yield* pending(request, name)
         const callId = yield* Uuid.v5(CHECK_RUN_NAMESPACE, `${request.attemptId}:${request.sha}:check:${name}`).pipe(
           Effect.provide(WebCrypto.layer),
         )
-        const ran = yield* SandboxCommand.run(machine, callId, {
+        const ran = yield* SandboxCommand.run(machines, machine, callId, {
           tool: "run",
           command: `sh ${CHECKS_DIRECTORY}/${name}.sh`,
-          timeoutSeconds: CHECK_TIMEOUT_SECONDS,
+          timeoutSeconds: commandSeconds,
         }).pipe(Effect.option)
         const status = Option.match(ran, {
           onNone: () => "failed" as const,
@@ -480,9 +483,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
   return { scripts, review, report }
 }
 
-/** Registers `checks/Run` with its steps over `services` and the host's `Machines`. */
-export const registration = <E, R>(services: Services<E, R>) => {
-  const implementation = steps(services)
+/**
+ * Registers `checks/Run` with its steps over `services` and the host's `Machines`, each check script running for up to
+ * `commandSeconds` (`COMMAND_LIMIT_SECONDS` unless given).
+ */
+export const registration = <E, R>(services: Services<E, R>, commandSeconds: number = COMMAND_LIMIT_SECONDS) => {
+  const implementation = steps(services, commandSeconds)
   return Interpreter.layerWithImplementations(
     ChecksRun,
     Layer.mergeAll(

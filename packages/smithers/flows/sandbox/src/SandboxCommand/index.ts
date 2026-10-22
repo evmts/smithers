@@ -11,9 +11,14 @@
  *   job's key (`<job execution id>#g<generation>`); a start asked again, by
  *   a host that lost the answer, answers the same handle and starts nothing.
  * - **Park between probes.** Each probe reads the command's heartbeat (its
- *   process group alive) or its exit, and the run parks between probes on a
- *   durable timer, from `probe.every` doubling to `probe.max`. No step, host
- *   or exec session waits on the command.
+ *   process group alive) or its exit, waiting until the next probe is due
+ *   for the exit, so one is seen when it happens, and the run parks between
+ *   probes on a durable timer, from `probe.every` doubling to `probe.max`.
+ *   No step or host waits on the command past one probe's wait.
+ * - **In the step that asks.** The job's `run`, from inside a step, starts,
+ *   waits on and collects a command that ends within its wait (`probe.max`
+ *   unless given) in that step, so the run that asked never parks for it;
+ *   a longer one goes on as the job's own execution, under the same key.
  * - **Collect once it finished.** The result is the `RunResult`
  *   `SandboxTools.execute` answers, journaled as the job's success.
  * - **Lost stops.** A command whose box restarted, or whose process died
@@ -55,7 +60,10 @@ export interface Commands<E = never, R = never> {
     call: typeof SandboxTools.Run.Type,
     key: string
   ) => Effect.Effect<SandboxTools.Started, SandboxTools.ToolFailure | E, R>
-  readonly observe: (key: string) => Effect.Effect<SandboxTools.Observed, SandboxTools.ToolFailure | E, R>
+  readonly observe: (
+    key: string,
+    options?: { readonly waitMs?: number | undefined }
+  ) => Effect.Effect<SandboxTools.Observed, SandboxTools.ToolFailure | E, R>
   readonly collect: (key: string) => Effect.Effect<typeof SandboxTools.RunResult.Type, SandboxTools.ToolFailure | E, R>
   readonly cancel: (key: string) => Effect.Effect<void, SandboxTools.ToolFailure | E, R>
 }
@@ -69,7 +77,7 @@ export interface Commands<E = never, R = never> {
  */
 export const onSession = (session: Session, callsDirectory: string): Commands => ({
   start: (call, key) => SandboxTools.start(session, call, { key, callsDirectory }),
-  observe: (key) => SandboxTools.observe(session, { key, callsDirectory }),
+  observe: (key, options) => SandboxTools.observe(session, { key, callsDirectory, waitMs: options?.waitMs }),
   collect: (key) => SandboxTools.collect(session, { key, callsDirectory }),
   cancel: (key) => SandboxTools.cancel(session, { key, callsDirectory })
 })
@@ -187,7 +195,9 @@ export const make = <
  * target the payload or the handle carries, so it works from any host.
  *
  * - `status` maps `running` to `Running`, `finished` to `Exited` with its
- *   exit code, and `lost` to `Lost`.
+ *   exit code, and `lost` to `Lost`. Its read waits for the command to end
+ *   as long as the job asks (`SandboxTools.observe`'s `waitMs`), so an exit
+ *   is seen when it happens.
  * - `abandon` cancels by key, which wins over a start of that key still in
  *   flight.
  *
@@ -207,8 +217,8 @@ export const operations = <Target, E, R>(
     Effect.flatMap(reach(target), (box) => box.start(call, key)).pipe(
       Effect.map((started) => ({ target, ...started }))
     ),
-  status: (handle, key) =>
-    Effect.flatMap(reach(handle.target), (box) => box.observe(key)).pipe(
+  status: (handle, key, options) =>
+    Effect.flatMap(reach(handle.target), (box) => box.observe(key, options)).pipe(
       Effect.map((observed): ExternalJob.Status =>
         observed.state === "running"
           ? { _tag: "Running" }

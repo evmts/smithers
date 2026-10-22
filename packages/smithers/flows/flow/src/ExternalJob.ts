@@ -17,6 +17,7 @@ import * as Action from "./Action/index.ts"
 import * as Fault from "./Fault.ts"
 import * as Flow from "./Flow/index.ts"
 import { FlowInstance } from "./FlowRuntime/FlowInstance.ts"
+import { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
 import { ExecutionMiddleware } from "./internal/ExecutionMiddleware.ts"
 import * as Interpreter from "./Interpreter.ts"
 import * as Sleep from "./Sleep.ts"
@@ -74,14 +75,27 @@ Fault.register("@smthrs/flow/ExternalJobLost", "infra")
 Fault.register("@smthrs/flow/ExternalJobTimedOut", "dependency")
 Fault.register("@smthrs/flow/ExternalJobAgain", "dependency")
 
-const millis = (value: Duration.Input, field: string): number => {
+const millis = (value: Duration.Input, field: string, at = "make"): number => {
   const parsed = Duration.fromInput(value)
   const result = Option.isSome(parsed) ? Duration.toMillis(parsed.value) : NaN
   if (!Number.isFinite(result) || result <= 0) {
-    throw new RangeError(`ExternalJob.make: ${field} must be a finite positive duration`)
+    throw new RangeError(`ExternalJob.${at}: ${field} must be a finite positive duration`)
   }
   return result
 }
+/**
+ * What a status read may do before it answers: wait up to `waitMs`
+ * milliseconds for the work to end, answering as soon as it does, and with
+ * what it sees once the wait is over otherwise. An adapter that can't wait
+ * answers at once; the job's schedule then does the waiting.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface StatusOptions {
+  readonly waitMs: number
+}
+
 /**
  * The adapter's full typed failure union belongs in make's error schema.
  *
@@ -101,7 +115,7 @@ const millis = (value: Duration.Input, field: string): number => {
  */
 export interface Operations<P, H, A, E, R> {
   readonly start: (payload: P, key: string) => Effect.Effect<H, E, R>
-  readonly status: (handle: H, key: string) => Effect.Effect<Status, E, R>
+  readonly status: (handle: H, key: string, options?: StatusOptions) => Effect.Effect<Status, E, R>
   readonly collect: (handle: H, key: string, exited: Exited) => Effect.Effect<A, E | Again, R>
   readonly cancel: (handle: H, key: string) => Effect.Effect<void, E, R>
   readonly abandon?: ((payload: P, key: string) => Effect.Effect<void, E, R>) | undefined
@@ -439,20 +453,22 @@ export const make = <
       ),
       Probe.toLayer((job) =>
         Effect.gen(function*() {
-          let now = Math.floor(yield* Clock.currentTimeMillis)
+          const begunAt = Math.floor(yield* Clock.currentTimeMillis)
           const deadline = job.startedAt + timeout
-          let timedOut = now >= deadline
-          const status = timedOut ? { _tag: "Running" as const } : yield* Effect.raceFirst(
-            operations.status(job.handle, keyOf(job)),
-            Effect.sleep(deadline - now).pipe(Effect.as({ _tag: "Running" as const }))
-          )
-          now = Math.floor(yield* Clock.currentTimeMillis)
-          timedOut ||= now >= deadline
           const delay = Math.min(maximum, every * 2 ** Math.min(job.probe - 1, 1023))
+          let timedOut = begunAt >= deadline
+          // The read may wait for the work to end until the next probe is due (`StatusOptions`), so an adapter that
+          // can wait answers an exit when it happens, and the park after it is over at once.
+          const status = timedOut ? { _tag: "Running" as const } : yield* Effect.raceFirst(
+            operations.status(job.handle, keyOf(job), { waitMs: Math.min(delay, deadline - begunAt) }),
+            Effect.sleep(deadline - begunAt).pipe(Effect.as({ _tag: "Running" as const }))
+          )
+          const now = Math.floor(yield* Clock.currentTimeMillis)
+          timedOut ||= now >= deadline
           return {
             status,
             timedOut,
-            wakeAt: Math.min(deadline, Math.ceil(now + delay)),
+            wakeAt: Math.min(deadline, Math.max(now, Math.ceil(begunAt + delay))),
             next: { ...job, probe: job.probe + 1 },
             restart: {
               input: job.input,
@@ -510,9 +526,104 @@ export const make = <
   // A job requires its own execution scope and identity even when composed
   // through call; reuse the existing child boundary rather than inline it.
   const call: typeof flow.child = (payload) => flow.child(payload)
+  /**
+   * The first generation, done inside the calling step: `None` unless it
+   * exits within `waitMs` and collects, when it answers what it collected.
+   * Anything else (a failure, a lost generation, one still running) is the
+   * job's to decide, under the same key. Interrupted, it stops the work only
+   * when the caller's run was cancelled: a host that stops leaves it to the
+   * step's next attempt, which asks for the same key again.
+   */
+  const inline = <R>(
+    operations: Operations<State["input"], H["Type"], A["Type"], E["Type"], R>,
+    payload: State["input"],
+    executionId: string,
+    waitMs: number
+  ) =>
+    Effect.gen(function*() {
+      const key = keyOf({ origin: executionId, generation: 1 })
+      const caller = yield* Effect.serviceOption(FlowInstance)
+      const until = Math.floor(yield* Clock.currentTimeMillis) + waitMs
+      let handle: Option.Option<H["Type"]> = Option.none()
+      const attempt = Effect.gen(function*() {
+        const started = yield* operations.start(payload, key)
+        handle = Option.some(started)
+        for (let probe = 1;; probe++) {
+          const status = yield* operations.status(started, key, {
+            waitMs: Math.max(0, until - Math.floor(yield* Clock.currentTimeMillis))
+          })
+          if (status._tag === "Exited") return Option.some(yield* operations.collect(started, key, status))
+          if (status._tag === "Lost") return Option.none<A["Type"]>()
+          const now = Math.floor(yield* Clock.currentTimeMillis)
+          if (now >= until) return Option.none<A["Type"]>()
+          yield* Effect.sleep(Math.min(until - now, maximum, every * 2 ** Math.min(probe - 1, 1023)))
+        }
+      })
+      const stop = (): Effect.Effect<void, E["Type"], R> =>
+        Option.isSome(handle)
+          ? operations.cancel(handle.value, key)
+          : operations.abandon === undefined
+          ? Effect.void
+          : operations.abandon(payload, key)
+      return yield* attempt.pipe(
+        Effect.catch(() => Effect.succeedNone),
+        Effect.onInterrupt(() =>
+          Option.isSome(caller) && caller.value.interrupted
+            ? stop().pipe(
+              Effect.catch(() =>
+                Effect.logWarning("ExternalJob inline run could not stop its job").pipe(
+                  Effect.annotateLogs({ job: tag, operation: Option.isSome(handle) ? "cancel" : "abandon", key })
+                )
+              )
+            )
+            : Effect.void
+        )
+      )
+    })
+  /**
+   * Runs the job from inside a step (an action's body) as execution
+   * `executionId` over `operations` (the ones its `toLayer` was given), and
+   * answers its success as `execute` does. Work that ends within `wait`
+   * (`probe.max` unless set, at most `timeout`) is started, waited on and
+   * collected in the step itself, under the key its first generation would
+   * use, so the step's run never parks for it and no execution of the job is
+   * made. Anything else, or work still running then, goes to the job's own
+   * execution under the same key, which the step then waits on as `execute`
+   * does: the provider answers the same handle and starts nothing. A step
+   * asked again joins a job an earlier attempt handed its work to.
+   *
+   * Throws a `RangeError` for a `wait` that isn't a finite positive duration.
+   */
+  const run = <R>(
+    payload: State["input"],
+    options: {
+      readonly executionId: string
+      readonly operations: Operations<State["input"], H["Type"], A["Type"], E["Type"], R>
+      readonly wait?: Duration.Input | undefined
+    }
+  ) => {
+    const waitMs = Math.min(timeout, options.wait === undefined ? maximum : millis(options.wait, "wait", "run"))
+    return Effect.gen(function*() {
+      const executed = flow.execute(payload, { executionId: options.executionId })
+      // The job's actions are the caller's to register, as `toLayer` does: `run` is asked with its operations.
+      const execute = executed as Effect.Effect<
+        A["Type"],
+        Effect.Error<typeof executed>,
+        Exclude<Effect.Services<typeof executed>, Action.Requirement<string>>
+      >
+      const handedOff = yield* (yield* FlowRuntime).poll(flow, options.executionId).pipe(
+        Effect.as(true),
+        Effect.catchTag("@smthrs/flow/FlowExecutionNotFound", () => Effect.succeed(false))
+      )
+      if (handedOff) return yield* execute
+      const done = yield* inline(options.operations, payload, options.executionId, waitMs)
+      return Option.isSome(done) ? done.value : yield* execute
+    })
+  }
   const flows: ReadonlyArray<Flow.Any> = [flow, launch, observe]
-  return Object.assign(flow, { call, toLayer, flows }) as {
+  return Object.assign(flow, { call, run, toLayer, flows }) as {
     readonly call: typeof call
+    readonly run: typeof run
     readonly toLayer: typeof toLayer
     readonly flows: ReadonlyArray<Flow.Any>
   } & typeof flow

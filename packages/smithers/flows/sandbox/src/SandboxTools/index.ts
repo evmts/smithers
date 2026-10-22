@@ -53,6 +53,8 @@ import type { Session } from "../Sandbox/Session.ts"
  * - `diffBytes`: the bytes a diff returns.
  * - `diffPaths`: the paths a diff may name.
  * - `checkpointBytes`: the largest working-copy patch a checkpoint takes.
+ * - `maxObserveWaitSeconds`: the longest {@link observe} waits for a
+ *   command to end.
  *
  * @category constants
  * @since 1.0.0-rc.17
@@ -67,7 +69,8 @@ export const limits = {
   listEntries: 1000,
   diffBytes: 256 * 1024,
   diffPaths: 100,
-  checkpointBytes: 8 * 1024 * 1024
+  checkpointBytes: 8 * 1024 * 1024,
+  maxObserveWaitSeconds: 60
 } as const
 
 const GuestPath = Schema.String.check(Schema.isMaxLength(limits.pathLength))
@@ -891,15 +894,26 @@ printf '%s %s\\n' "$pid" "$at"`
 /**
  * Whether the command under fence `$1` runs: its runner, which waits for the
  * command and then records how it ended, lives in the box that started it.
+ * With `$2` seconds to wait, it first waits that long at most for the exit,
+ * looking every 50 ms, and stops waiting once the runner is gone.
  */
-const OBSERVE = `d=$1
+const OBSERVE = `d=$1; w=\${2:-0}
 ${IDENT}
-if [ ! -f "$d/exit" ] && [ -f "$d/pid" ]; then
-  read -r pid at box id <"$d/pid"
-  if [ "$pid" -gt 1 ] && [ "$(ident 1)" = "$box" ] && kill -0 "$pid" 2>/dev/null && [ "$(ident "$pid")" = "$id" ]; then
-    printf 'running %s\\n' "$pid"
-    exit 0
-  fi
+alive() {
+  [ -f "$d/pid" ] && read -r pid at box id <"$d/pid" && [ "$pid" -gt 1 ] && [ "$(ident 1)" = "$box" ] &&
+    kill -0 "$pid" 2>/dev/null && [ "$(ident "$pid")" = "$id" ]
+}
+if [ "$w" -gt 0 ]; then
+  end=$(($(date +%s) + w)); i=0
+  while [ ! -f "$d/exit" ]; do
+    i=$((i + 1))
+    if [ $((i % 20)) -eq 1 ]; then { alive && [ "$(date +%s)" -lt "$end" ]; } || break; fi
+    sleep 0.05 2>/dev/null || sleep 1
+  done
+fi
+if [ ! -f "$d/exit" ] && alive; then
+  printf 'running %s\\n' "$pid"
+  exit 0
 fi
 if [ -f "$d/exit" ]; then read -r code timed <"$d/exit"; printf 'finished %s %s\\n' "$code" "$timed"; else printf 'lost\\n'; fi`
 
@@ -1016,20 +1030,24 @@ export const start = (
 
 /**
  * What the command started under `options.key` is doing ({@link Observed}).
- * It reads only: asking changes nothing in the box.
+ * It reads only: asking changes nothing in the box. With `waitMs`, it first
+ * waits for the command to end, answering `finished` as soon as it does
+ * (within 50 ms) and what it sees once the wait is over otherwise; the wait
+ * is whole seconds, `waitMs` rounded up, at most {@link limits}`.maxObserveWaitSeconds`.
  *
  * @category operations
  * @since 1.0.0-rc.17
  */
 export const observe = (
   session: Session,
-  options: CommandOptions
+  options: CommandOptions & { readonly waitMs?: number | undefined }
 ): Effect.Effect<Observed, ToolRefused | ToolUnavailable> =>
   commandSpan(
     "observe",
     Effect.gen(function*() {
       const fence = yield* commandFence(options)
-      const { code, stdout } = yield* gather(session, script(OBSERVE, [fence]), 128)
+      const wait = Math.min(limits.maxObserveWaitSeconds, Math.max(0, Math.ceil((options.waitMs ?? 0) / 1000)))
+      const { code, stdout } = yield* gather(session, script(OBSERVE, [fence, String(wait)]), 128)
       if (code !== 0) return yield* Effect.fail(failedWith(code) as ToolUnavailable)
       const [state, first, second] = text(stdout).trim().split(" ")
       return state === "running"
@@ -1103,10 +1121,14 @@ export interface Checkpoint {
 }
 
 // Each step that can fail exits with its own code (120 to 124), so a failure names its step (`ToolUnavailable.exitCode`).
+// The index the changes are staged in starts as a copy of the checkout's own, whose stat data lets `git add` hash only
+// the files that changed rather than every file in the checkout (on 15,000 files, 25 ms rather than a second); a checkout
+// with no index starts from `HEAD`. Either way `add -A` makes it the working copy, so the patch is the same.
 const CHECKPOINT = `cd -- "$1" 2>/dev/null && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69
 dir=$(mktemp -d) || exit 120
 trap 'rm -rf -- "$dir"' EXIT
-GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 121
+own=$(git rev-parse --git-path index) || exit 121
+{ [ -f "$own" ] && cp -- "$own" "$dir/index" 2>/dev/null; } || GIT_INDEX_FILE="$dir/index" git read-tree HEAD || exit 121
 GIT_INDEX_FILE="$dir/index" git add -A || exit 122
 GIT_INDEX_FILE="$dir/index" git diff --cached --binary --no-color --no-ext-diff HEAD >"$dir/patch" || exit 123
 : >"$dir/bundle"

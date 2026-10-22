@@ -58,6 +58,8 @@ compatibility flags and the database.
 - [Attach a terminal to a container](./guides/attach-a-terminal-to-a-container.md):
   wake a container offline, create a tmux session, and bridge each viewer's
   WebSocket.
+- [Measure a sandbox command's overhead](./guides/command-latency.md): the
+  benchmark of a run's call of a sandbox command, its method and numbers.
 - [Troubleshooting](./troubleshooting.md): every `Retrying` failure and what
   resolves it.
 - [API reference](./api.md): every public export.

@@ -352,7 +352,10 @@ export const command = <R>(
             generation,
           }))
           : request.op === "observe"
-          ? Effect.map(SandboxTools.observe(session, at), (observed): CommandOutcome => ({ _tag: "Observed", observed }))
+          ? Effect.map(
+            SandboxTools.observe(session, { ...at, waitMs: request.waitMs }),
+            (observed): CommandOutcome => ({ _tag: "Observed", observed }),
+          )
           : request.op === "collect"
           ? Effect.map(SandboxTools.collect(session, at), (result): CommandOutcome => ({ _tag: "Collected", result }))
           : Effect.as(SandboxTools.cancel(session, at), { _tag: "Cancelled" } as const),
@@ -395,7 +398,8 @@ type CommandStage = "provision" | "record" | "session" | "script" | "save"
 
 /**
  * The longest one exec of a command operation takes: provisioning a user, opening a session or one of the command
- * scripts, each of which answers in seconds. One that takes longer answers `Unavailable`, which its job asks again;
+ * scripts, each of which answers in seconds, or, for an observe that waits for the command to end, within its wait
+ * (at most `SandboxTools.limits.maxObserveWaitSeconds`). One that takes longer answers `Unavailable`, which its job asks again;
  * the start's fence starts the command once however many times it is asked.
  */
 export const COMMAND_EXEC_MS = 2 * 60_000

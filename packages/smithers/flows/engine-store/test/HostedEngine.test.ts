@@ -411,6 +411,64 @@ describe("EngineStore.drive", () => {
       }).pipe(Effect.provide(hosted("admitted-nap", starts)))
     })))
 
+  describe("a run that parks on a wake due soon", () => {
+    const Blink = Flow.make("HostedEngine/Blink", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
+    /** A hosted engine whose `Blink` naps `seconds` on a durable clock, counting how often its body starts. */
+    const blinking = (executionId: string, seconds: number, starts: { count: number }) =>
+      Layer.effectDiscard(Effect.gen(function*() {
+        yield* (yield* FlowRuntime.FlowRuntime).register(Blink, () =>
+          Effect.gen(function*() {
+            starts.count++
+            // Durable however short, as `Sleep.action`'s, which a job's probe parks on.
+            yield* DurableClock.sleep({ name: "blink", duration: Duration.seconds(seconds), inMemoryThreshold: 0 })
+            return "awake"
+          }))
+      })).pipe(Layer.provideMerge(engine(filename, first, { host: executionId })))
+
+    it("is driven again in the same drive once the wake comes due, as a probe's short sleep is", () =>
+      run(Effect.gen(function*() {
+        const starts = { count: 0 }
+        const outcome = yield* Effect.gen(function*() {
+          const driver = yield* EngineStore.Driver
+          yield* driver.admit(Blink, { executionId: "blink", payload: {} })
+          const drive = yield* Effect.forkChild(driver.drive(Blink, { executionId: "blink", payload: {} }))
+          yield* TestClock.adjust(Duration.seconds(1))
+          return yield* Fiber.join(drive)
+        }).pipe(Effect.provide(blinking("blink", 1, starts)))
+        // Parked, then replayed and settled by the same drive: no second invocation of the host.
+        expect(outcome).toEqual({ _tag: "Settled", status: "completed" })
+        expect(starts.count).toBe(2)
+      })))
+
+    it("is handed back when the wake is past the hold, past the budget's end, or the hold is 0", () =>
+      run(Effect.gen(function*() {
+        const starts = { count: 0 }
+        /** Admits `executionId`, then drives it once with `options`. */
+        const admittedDrive = (
+          executionId: string,
+          options: { readonly budgetMs?: number; readonly holdMs?: number }
+        ) =>
+          Effect.gen(function*() {
+            const driver = yield* EngineStore.Driver
+            yield* driver.admit(Blink, { executionId, payload: {} })
+            return yield* driver.drive(Blink, { executionId, payload: {}, ...options })
+          })
+        const later = yield* admittedDrive("nap-6", {}).pipe(Effect.provide(blinking("nap-6", 6, starts)))
+        const short = yield* Effect.gen(function*() {
+          const atBudget = yield* admittedDrive("nap-1", { budgetMs: 500 })
+          const unheld = yield* admittedDrive("nap-1b", { holdMs: 0 })
+          return { atBudget, unheld }
+        }).pipe(Effect.provide(blinking("nap-1", 1, starts)))
+        expect({ later, ...short }).toEqual({
+          later: { _tag: "Parked", wakeAtMs: 6_000 },
+          atBudget: { _tag: "Parked", wakeAtMs: 1_000 },
+          unheld: { _tag: "Parked", wakeAtMs: 1_000 }
+        })
+        // Each parked once and was not driven again by the drive that parked it.
+        expect(starts.count).toBe(3)
+      })))
+  })
+
   it("admits, parks until the clock is due, and settles once it is", () =>
     run(Effect.gen(function*() {
       const starts = { sleeper: 0, waiter: 0 }

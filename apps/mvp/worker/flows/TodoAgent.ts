@@ -33,6 +33,13 @@ export const CONTEXT_WINDOW_TOKENS = 32_768
 /** The most tool calls one cell may make. */
 export const MAX_CALLS_PER_CELL = 8
 
+/**
+ * The agent's cell limits: at most `MAX_CALLS_PER_CELL` calls, and a command's wait spends none of the frame's backstop,
+ * so a command may run as long as its own timeout says; its call's own ceiling is its timeout and the default call limit
+ * more (`Sandbox.callLimit`).
+ */
+export const LIMITS = { calls: MAX_CALLS_PER_CELL, pauseTotalMsFor: ["sandbox/run"] }
+
 /** The most frames (model turns) one attempt's agent takes before it must answer. */
 export const MAX_FRAMES = 40
 
@@ -217,7 +224,7 @@ export const machineBindings = <E, R>(
           const tool = { ...input, tool: entry.tool } as SandboxTools.Call
           // A command runs as the call's own `sandbox/Command` job, so it holds no step of this run while it runs.
           const ran = tool.tool === "run"
-            ? SandboxCommand.run({ branch: machine.value.branch, ownerId: machine.value.ownerId }, callId, tool)
+            ? SandboxCommand.run(machines, { branch: machine.value.branch, ownerId: machine.value.ownerId }, callId, tool)
             : Effect.map(machines.tool(machine.value.branch, machine.value.ownerId, callId, tool), (done) => done.result)
           return (yield* ran.pipe(Effect.mapError(failedAs))) as never
         }),
@@ -257,7 +264,7 @@ export const host = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
             bindings(machines, Layer.provide(database, Layer.succeedContext(context)), commandSeconds),
           ),
         ],
-        limits: { calls: MAX_CALLS_PER_CELL },
+        limits: LIMITS,
         capabilityEnvelope: [],
         maxFrames: MAX_FRAMES,
       })

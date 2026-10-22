@@ -120,7 +120,29 @@ export interface DriveOptions {
   readonly executionId: string
   readonly payload: object
   readonly budgetMs?: number | undefined
+  /**
+   * How long the drive waits for a wake due soon after its run parks, in
+   * milliseconds, to drive the run again itself: a durable sleep shorter than
+   * this, or a completion or clock that came due as the run parked, costs no
+   * new invocation of the host, which would build its runtime and replay the
+   * run again to do the same. {@link defaultHoldMs} unless set; 0 hands every
+   * park back. A wake past the budget's end is handed back too.
+   */
+  readonly holdMs?: number | undefined
 }
+
+/**
+ * How long {@link drive} waits for a wake due soon after its run parks unless
+ * `holdMs` says otherwise: five seconds, about what a Cloudflare Durable
+ * Object pays to build its runtime and claim the run again.
+ *
+ * @since 1.0.0
+ * @category hosting
+ */
+export const defaultHoldMs = 5_000
+
+/** The most times one drive drives its run again for a wake that came due as it parked. */
+const maxHeldDrives = 64
 
 /**
  * Drives one execution as far as it can go now, for a host that wakes it
@@ -1114,22 +1136,43 @@ const actionSnapshot = Effect.fnUntraced(function*(store: Store, key: string) {
   })
 })
 
-/** What the store says the execution is now, for its host. */
+/**
+ * What the store says the execution is now, for its host, and when the drive
+ * may drive it again itself: the wake of a run parked by its own flow, with
+ * no claim or owner on it, which a run left unfinished for any other reason
+ * (released by an interrupted drive, claimed elsewhere, cancelled) never has.
+ */
 const driven = (store: Store, executionId: string) =>
   Effect.gen(function*() {
     const row = yield* store.runStore.get(executionId)
     if (RunStore.isTerminalRunStatus(row.status)) {
-      return { _tag: "Settled", status: row.status } as const
+      return { left: { _tag: "Settled", status: row.status } as Driven, row, wakeAtMs: undefined }
     }
     const wake = yield* nextWake(executionId).pipe(
       Effect.provideService(RunStore.RunStore, store.runStore),
       Effect.provideService(DurableEngineState.DurableEngineState, store.engineState)
     )
     const nowMs = Math.floor(yield* Clock.currentTimeMillis)
-    return Option.isSome(wake) && wake.value <= nowMs
-      ? { _tag: "Unfinished" } as const
-      : { _tag: "Parked", wakeAtMs: Option.getOrUndefined(wake) } as const
+    // Parked by its own flow: suspended with nothing holding it, waiting for what the flow parked on, not released by a
+    // drive that was interrupted (a lost fence, an unavailable store), which its host drives again only after a backoff.
+    const parked = row.status === "suspended" && row.claim === null && row.owner === null &&
+      row.cancelRequestedAtMs === null &&
+      Option.exists(yield* store.engineState.waiting(executionId), (waiting) => waiting.reason !== "released")
+    const left: Driven = Option.isSome(wake) && wake.value <= nowMs
+      ? { _tag: "Unfinished" }
+      : { _tag: "Parked", wakeAtMs: Option.getOrUndefined(wake) }
+    return { left, row, wakeAtMs: parked ? Option.getOrUndefined(wake) : undefined }
   })
+
+/** Why a drive left work due: the run as the store holds it now, never its state or payload. */
+const logUnfinished = (row: RunStore.RunRow) =>
+  Effect.logWarning("engine-store.drive.unfinished").pipe(Effect.annotateLogs({
+    "smithers.execution.id": row.runId,
+    status: row.status,
+    claimed: row.claim !== null,
+    owned: row.owner !== null,
+    cancelRequested: row.cancelRequestedAtMs !== null
+  }))
 
 /**
  * Runs `round` under `budget`: once the budget is spent and no step is
@@ -1174,18 +1217,40 @@ const hostDriver = (store: Store) =>
         Effect.as(true),
         Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
       )
-      const round = admitted
-        ? store.driver.resumeHosted(flow, input.executionId)
+      const resumed = store.driver.resumeHosted(flow, input.executionId)
+      let round = admitted
+        ? resumed
         : store.driver.execute(flow, { executionId: input.executionId, payload: input.payload, discard: false })
       const startedMs = yield* Clock.currentTimeMillis
-      // A drive that ends on a lost fence, an unavailable store or a spent
-      // budget interrupts itself and releases the run; the store, read below,
-      // says what is left. Any other failure is the caller's.
-      const { exit, yielded } = input.budgetMs === undefined
-        ? { exit: yield* Effect.exit(round), yielded: false }
-        : yield* withinBudget(store, input.executionId, DriveBudget.make(startedMs + input.budgetMs), round)
-      if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause)
-      const left = yield* driven(store, input.executionId)
+      const deadlineMs = input.budgetMs === undefined ? undefined : startedMs + input.budgetMs
+      const holdMs = input.holdMs ?? defaultHoldMs
+      let left: Driven
+      let yielded: boolean
+      for (let held = 0;; held++) {
+        // A drive that ends on a lost fence, an unavailable store or a spent
+        // budget interrupts itself and releases the run; the store, read below,
+        // says what is left. Any other failure is the caller's.
+        const drove = deadlineMs === undefined
+          ? { exit: yield* Effect.exit(round), yielded: false }
+          : yield* withinBudget(store, input.executionId, DriveBudget.make(deadlineMs), round)
+        if (Exit.isFailure(drove.exit) && !Cause.hasInterruptsOnly(drove.exit.cause)) {
+          return yield* Effect.failCause(drove.exit.cause)
+        }
+        const now = yield* driven(store, input.executionId)
+        left = now.left
+        yielded = drove.yielded
+        const nowMs = yield* Clock.currentTimeMillis
+        // A run its own flow parked on a wake due within `holdMs`, and before the budget's end, is driven again here.
+        const holding = !yielded && now.wakeAtMs !== undefined && now.wakeAtMs - nowMs <= holdMs &&
+          (deadlineMs === undefined || now.wakeAtMs < deadlineMs) && held < maxHeldDrives
+        if (!holding) {
+          if (left._tag === "Unfinished" && !yielded) yield* logUnfinished(now.row)
+          break
+        }
+        yield* Effect.sleep(Math.max(0, now.wakeAtMs! - nowMs))
+        yield* Metric.update(EngineStoreMetrics.heldDrives, 1)
+        round = resumed
+      }
       const outcome: Driven = yielded && left._tag === "Unfinished" ? { _tag: "Yielded" } : left
       if (outcome._tag === "Settled") yield* store.driver.reannounce(input.executionId)
       if (outcome._tag === "Yielded") {

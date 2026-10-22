@@ -1,9 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, ExternalJob, Fault, Flow, Interpreter } from "@smthrs/flow"
+import { Action, ExternalJob, Fault, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Clock, type Duration, Effect, Exit, Fiber, FileSystem, Layer, Schema, Stream, Tracer } from "effect"
+import { Cause, Clock, Duration, Effect, Exit, Fiber, FileSystem, Layer, Schema, Stream, Tracer } from "effect"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
 import { execFileSync, spawn } from "node:child_process"
@@ -114,6 +114,24 @@ const withPath = (session: Sandbox.Session, bin: string): Sandbox.Session => ({
     session.spawn(command, { ...options, env: { ...options.env, PATH: `${bin}:${process.env.PATH}` } })
 })
 
+/** A session that answers every script with `stdout` and exit 0, recording each script's last argument in `asked`. */
+const recording = (asked: Array<string>, stdout: string): Sandbox.Session => ({
+  id: "recording",
+  remoteId: "recording",
+  workdir: "/workspace",
+  spawn: (command) =>
+    Effect.sync(() => {
+      asked.push(command.slice(command.lastIndexOf(" ") + 1).replaceAll("'", ""))
+      return {
+        stdout: Stream.make(new TextEncoder().encode(stdout)),
+        stderr: Stream.empty,
+        exitCode: Effect.succeed(0)
+      }
+    }),
+  readFile: () => Effect.die("unused"),
+  writeFile: () => Effect.die("unused")
+})
+
 describe("SandboxTools.start, observe, collect and cancel", () => {
   it.live(
     "start answers at once; the command outlives its exec session, runs once and collects as often as asked",
@@ -164,6 +182,59 @@ describe("SandboxTools.start, observe, collect and cancel", () => {
       }),
     slow
   )
+
+  it.live(
+    "observe may wait for the exit: it answers within 50 ms of it, running once the wait is over, lost once the runner is gone",
+    () =>
+      Effect.gen(function*() {
+        const box = machine()
+        const start = (command: string) =>
+          Effect.gen(function*() {
+            const key = keyOf()
+            yield* box.inSession((session) =>
+              SandboxTools.start(session, { tool: "run", command }, { key, callsDirectory: box.calls })
+            )
+            return key
+          })
+        const observe = (key: string, waitMs: number) =>
+          Effect.timed(
+            box.inSession((session) => SandboxTools.observe(session, { key, callsDirectory: box.calls, waitMs }))
+          ).pipe(Effect.map(([took, observed]) => ({ ms: Duration.toMillis(took), observed })))
+        // Exits about a second in; the read asked to wait up to ten answers then.
+        const quick = yield* start("sleep 1; exit 4")
+        const ended = yield* observe(quick, 10_000)
+        expect(ended.observed).toEqual({ state: "finished", exitCode: 4, timedOut: false })
+        expect(ended.ms).toBeGreaterThan(500)
+        expect(ended.ms).toBeLessThan(3_000)
+        // Still running when a one-second wait is over.
+        const long = yield* start("sleep 30")
+        const waited = yield* observe(long, 1_000)
+        expect(waited.observed).toMatchObject({ state: "running" })
+        expect(waited.ms).toBeGreaterThan(900)
+        expect(waited.ms).toBeLessThan(5_000)
+        // Its runner killed during a long wait: the read stops waiting and answers lost.
+        const pid = Number(
+          readFileSync(join(box.calls, `command-${long.replace("#", "_23")}`, "pid"), "utf8").split(" ")[0]
+        )
+        const reading = yield* Effect.forkChild(observe(long, 30_000))
+        yield* Effect.sleep("300 millis")
+        process.kill(-pid, "SIGKILL")
+        const gone = yield* Fiber.join(reading)
+        expect(gone.observed).toEqual({ state: "lost" })
+        expect(gone.ms).toBeLessThan(5_000)
+      }),
+    slow
+  )
+
+  it.effect("observe waits whole seconds, at most the tools' limit, and not at all unless asked", () =>
+    Effect.gen(function*() {
+      const asked: Array<string> = []
+      const session = recording(asked, "finished 0 0\n")
+      for (const waitMs of [undefined, 0, 1, 1_500, 600_000]) {
+        yield* SandboxTools.observe(session, { key: "k", callsDirectory: "/calls", waitMs })
+      }
+      expect(asked).toEqual(["0", "0", "1", "2", String(SandboxTools.limits.maxObserveWaitSeconds)])
+    }))
 
   it.live(
     "runs in a cwd under the workdir; a cwd that isn't a directory collects as not_a_directory",
@@ -525,7 +596,8 @@ const reach = (target: typeof Target.Type) =>
     const box = boxes.get(target.machine)!
     return {
       start: (call, key) => box.inSession((session) => SandboxCommand.onSession(session, box.calls).start(call, key)),
-      observe: (key) => box.inSession((session) => SandboxCommand.onSession(session, box.calls).observe(key)),
+      observe: (key, options) =>
+        box.inSession((session) => SandboxCommand.onSession(session, box.calls).observe(key, options)),
       collect: (key) => box.inSession((session) => SandboxCommand.onSession(session, box.calls).collect(key)),
       cancel: (key) => box.inSession((session) => SandboxCommand.onSession(session, box.calls).cancel(key))
     } satisfies SandboxCommand.Commands<ProviderError>
@@ -633,6 +705,48 @@ describe("SandboxCommand.make", () => {
       expect(readFileSync(join(workdir, "runs.log"), "utf8")).toBe("ran\n")
       expect(readdirSync(box.calls)).toHaveLength(1)
     }).pipe(Effect.provide(job.layer)), slow)
+
+  it.live(
+    "run collects a command that ends within its wait in the step that asks: once, and with no job execution",
+    () =>
+      Effect.gen(function*() {
+        const box = machine()
+        boxes.set("inline", box)
+        const workdir = yield* box.inSession((session) => Effect.succeed(session.workdir))
+        const began = Date.now()
+        const result = yield* job.Job.run({
+          target: { machine: "inline" },
+          call: { tool: "run", command: "echo ran >> runs.log; sleep 1; echo done-$((2+3))" }
+        }, { executionId: "inline-call", operations: SandboxCommand.operations(reach), wait: "10 seconds" })
+        expect(result).toMatchObject({ exitCode: 0, stdout: "done-5\n", timedOut: false })
+        // Answered when the command ended, about a second in, through one waiting read.
+        expect(Date.now() - began).toBeLessThan(5_000)
+        expect(readFileSync(join(workdir, "runs.log"), "utf8")).toBe("ran\n")
+        const polled = yield* Effect.flip((yield* FlowRuntime.FlowRuntime).poll(job.Job, "inline-call"))
+        expect(polled._tag).toBe("@smthrs/flow/FlowExecutionNotFound")
+      }).pipe(Effect.provide(job.layer)),
+    slow
+  )
+
+  it.live(
+    "run hands a command still running when its wait is over to the job, which runs it on, once",
+    () =>
+      Effect.gen(function*() {
+        const box = machine()
+        boxes.set("handed", box)
+        const workdir = yield* box.inSession((session) => Effect.succeed(session.workdir))
+        const result = yield* job.Job.run({
+          target: { machine: "handed" },
+          call: { tool: "run", command: "echo ran >> runs.log; sleep 2; echo done" }
+        }, { executionId: "handed-call", operations: SandboxCommand.operations(reach), wait: "500 millis" })
+        expect(result).toMatchObject({ exitCode: 0, stdout: "done\n" })
+        expect(readFileSync(join(workdir, "runs.log"), "utf8")).toBe("ran\n")
+        expect(readdirSync(box.calls)).toEqual(["command-handed-call_23g1"])
+        const polled = yield* (yield* FlowRuntime.FlowRuntime).poll(job.Job, "handed-call")
+        expect(polled._tag).toBe("Some")
+      }).pipe(Effect.provide(job.layer)),
+    slow
+  )
 
   it.live(
     "a command whose runner dies is lost: the job cancels it and fails ExternalJobLost",

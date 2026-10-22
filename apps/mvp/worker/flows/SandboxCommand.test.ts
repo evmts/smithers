@@ -10,7 +10,7 @@
 import * as Pg from "@effect/sql-pg"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Redacted, Schema } from "effect"
+import { Cause, ConfigProvider, Context, type Duration, Effect, Exit, Fiber, Layer, Redacted, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -262,10 +262,15 @@ const RunCommand = Flow.make("probe/RunCommand", {
 })
 
 describe("a command a run's own step runs, on a host that dies mid-command", { timeout: 120_000 }, () => {
-  test("the step's run parks on the command's job, which runs it once, and the step reads its output", async () => {
+  /**
+   * `RunCommand` and the sandbox flows on `box`, the step running its command through `SandboxCommand.run` with `wait`,
+   * and the run of `command` on that host, whose alarm is cut off once the command started and before it finished.
+   */
+  const killedMidCommand = async (wait: Duration.Input, command: string) => {
     const box = machine()
     const branch: SandboxBranch = { branchId: "b-probe", owner: "octocat", name: "Spoon-Knife", branch: "test-branch" }
     const sandbox = await sandboxTools(box)
+    const machines = Box.machinesOn(box.box)
     const flows = {
       flows: [...sandbox.flows, RunCommand],
       registration: Layer.mergeAll(
@@ -273,7 +278,7 @@ describe("a command a run's own step runs, on a host that dies mid-command", { t
         Interpreter.layerWithImplementations(
           RunCommand,
           RunIt.toLayer(({ branch, callId, command }) =>
-            SandboxCommand.run({ branch, ownerId: OWNER }, callId, { tool: "run", command }).pipe(
+            SandboxCommand.run(machines, { branch, ownerId: OWNER }, callId, { tool: "run", command }, wait).pipe(
               Effect.orDie,
               Effect.flatMap((result) =>
                 result.stdout === "done-5\n" ? Effect.succeed(result.stdout) : Effect.die(`read ${result.stdout}`)
@@ -285,21 +290,43 @@ describe("a command a run's own step runs, on a host that dies mid-command", { t
     }
     const marker = (name: string) => existsSync(join(box.workdir, name))
     const executionId = `probe-${crypto.randomUUID()}`
+    const callId = crypto.randomUUID()
     const outcome = await withEngine((url, schema, status) =>
       Effect.gen(function* () {
         const objects = deployment(url, schema, flows)
-        const payload = { callId: crypto.randomUUID(), branch, command: "echo ran >> runs.log; touch started; sleep 2; touch finished; echo done-$((2+3))" }
+        const payload = { callId, branch, command }
         yield* objects.objectOf(executionId).host.start(yield* ExecutionHost.intent(RunCommand, { executionId, payload }))
         const killed = yield* objects.drive(
           () => Effect.map(status(executionId), (found) => found === "completed" || found === "failed"),
           () => marker("started") && !marker("finished"),
         )
-        return { killed, status: yield* status(executionId) }
+        return {
+          killed,
+          status: yield* status(executionId),
+          job: yield* status(SandboxCommand.commandExecutionId(callId)),
+        }
       })
     )
-    // The step completed only if it read `done-5`: anything else died.
-    expect(outcome).toEqual({ killed: 1, status: "completed" })
-    expect(readFileSync(join(box.workdir, "runs.log"), "utf8")).toBe("ran\n")
+    return { outcome, runs: readFileSync(join(box.workdir, "runs.log"), "utf8") }
+  }
+
+  test("a command that ends within the step's wait runs once in the step, which reads its output", async () => {
+    const { outcome, runs } = await killedMidCommand(
+      SandboxCommand.STEP_WAIT,
+      "echo ran >> runs.log; touch started; sleep 2; touch finished; echo done-$((2+3))",
+    )
+    // The step completed only if it read `done-5`: anything else died. No job execution was made.
+    expect(outcome).toEqual({ killed: 1, status: "completed", job: undefined })
+    expect(runs).toBe("ran\n")
+  })
+
+  test("a longer one goes on as its job, which runs it once, and the step's run parks until it ends", async () => {
+    const { outcome, runs } = await killedMidCommand(
+      "1 second",
+      "echo ran >> runs.log; sleep 2; touch started; sleep 2; touch finished; echo done-$((2+3))",
+    )
+    expect(outcome).toEqual({ killed: 1, status: "completed", job: "completed" })
+    expect(runs).toBe("ran\n")
   })
 })
 
@@ -309,10 +336,11 @@ describe("SandboxCommand.run", () => {
     const box = machine()
     const exit = await Effect.runPromiseExit(
       SandboxCommand.run(
+        Box.machinesOn(box.box),
         { branch: { branchId: "b", owner: "o", name: "n", branch: "main" }, ownerId: OWNER },
         "c-1",
         { tool: "run", command: "touch ran" },
-      ).pipe(Effect.provideService(Machines, Box.machinesOn(box.box))),
+      ),
     )
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(new SandboxCommand.NoRun())
     expect(existsSync(join(box.workdir, "ran"))).toBe(false)

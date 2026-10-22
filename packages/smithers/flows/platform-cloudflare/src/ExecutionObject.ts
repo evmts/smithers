@@ -585,6 +585,13 @@ const drive = <RS>(storage: Storage<RS>, flow: Flow.Any, value: Intent, budgetMs
     return yield* EngineStore.drive(flow, { executionId: value.executionId, payload: {}, budgetMs })
   })
 
+/** Where one alarm's time went, in milliseconds: building its runtime, driving, and routing what the drive left. */
+interface Timing {
+  buildMs?: number
+  driveMs?: number
+  routeMs?: number
+}
+
 /**
  * Drives the execution within `budgetMs`, records how long the drive took by
  * its outcome ({@link driveDuration}) and in `timing`, and reads what it left
@@ -595,7 +602,7 @@ const timedDrive = <RS>(
   flow: Flow.Any,
   value: Intent,
   budgetMs: number,
-  timing: { driveMs?: number }
+  timing: Timing
 ) =>
   Effect.gen(function*() {
     const startedMs = yield* Clock.currentTimeMillis
@@ -703,7 +710,10 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  * cost: `durationMs`, the journal entries it committed (`events`), its write
  * transactions (`transactions`), how many of those held the whole schema's
  * writer lock (`schemaWide`), and their summed wait for their locks
- * (`lockWaitMs`), the same on the alarm's span.
+ * (`lockWaitMs`), the same on the alarm's span; and where its time went:
+ * building the runtime (`smithers.execution.build_ms`, also on the
+ * `cloudflare.execution.ready` line), the drive (`drive_ms`) and routing
+ * what the drive left (`route_ms`), each once the alarm got that far.
  *
  * `flows` lists the declarations this object may run; an intent naming
  * another flow is a failure like any other. Every object routes executions
@@ -732,7 +742,7 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     const raw = yield* storage.get<string>(intentKey)
     const ids = yield* idsOf(raw)
     yield* Effect.annotateCurrentSpan(ids)
-    const timing: { driveMs?: number } = {}
+    const timing: Timing = {}
     const [elapsed, [writes, [written, outcome]]] = yield* Effect.timed(
       DatabaseMetrics.tally(JournalMetrics.tally(settleOrDrive(storage, raw, options, timing)))
     )
@@ -746,7 +756,11 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
         ...outcome.detail
       }
       : {}
-    const drove = timing.driveMs === undefined ? {} : { "smithers.execution.drive_ms": timing.driveMs }
+    const drove = {
+      ...(timing.buildMs === undefined ? {} : { "smithers.execution.build_ms": timing.buildMs }),
+      ...(timing.driveMs === undefined ? {} : { "smithers.execution.drive_ms": timing.driveMs }),
+      ...(timing.routeMs === undefined ? {} : { "smithers.execution.route_ms": timing.routeMs })
+    }
     const cost = {
       durationMs: Math.round(Duration.toMillis(elapsed)),
       events: written.events,
@@ -774,7 +788,7 @@ const settleOrDrive = <E, R, RS, RE, RR>(
     readonly settledRetentionMs?: number | undefined
     readonly driveBudgetMs?: number | undefined
   },
-  timing: { driveMs?: number }
+  timing: Timing
 ): Effect.Effect<Outcome, never, R | RS | RR> =>
   Effect.gen(function*() {
     if (raw === undefined) {
@@ -802,19 +816,27 @@ const settleOrDrive = <E, R, RS, RE, RR>(
       const value = yield* decodeIntent(raw)
       const flow = options.flows.find((candidate) => candidate._tag === value.flow)
       if (flow === undefined) return yield* new UnknownFlow({ flow: value.flow })
+      // Building the runtime is the layer's acquisition, which `Effect.provide` runs before the body: the ready line
+      // says how long it took, so a slow start shows whether the runtime or the drive held it.
+      const buildingAtMs = yield* Clock.currentTimeMillis
       return yield* Effect.gen(function*() {
+        const readyAtMs = yield* Clock.currentTimeMillis
+        timing.buildMs = readyAtMs - buildingAtMs
         yield* Effect.logInfo("cloudflare.execution.ready").pipe(Effect.annotateLogs({
           "smithers.execution.id": value.executionId,
           "smithers.flow": value.flow,
-          readyAtMs: yield* Clock.currentTimeMillis
+          readyAtMs,
+          "smithers.execution.build_ms": timing.buildMs
         }))
         const driven = yield* timedDrive(storage, flow, value, options.driveBudgetMs ?? defaultDriveBudgetMs, timing)
+        const routingAtMs = yield* Clock.currentTimeMillis
         // A cancelled intent may have no engine row at all.
         const exists = yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
           Effect.as(true),
           Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
         )
         if (exists) yield* route(value.executionId, options.router)
+        timing.routeMs = (yield* Clock.currentTimeMillis) - routingAtMs
         if (driven._tag === "Settled") {
           const now = yield* Clock.currentTimeMillis
           yield* storage.put(settledKey, now)

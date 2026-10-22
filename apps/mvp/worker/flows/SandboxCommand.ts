@@ -1,8 +1,7 @@
 import { WebCrypto } from "@smthrs/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { SandboxCommand, SandboxTools } from "@smthrs/sandbox"
-import { Config, Effect, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import { Config, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { MachineFailure, Machines } from "../branch/Machines.ts"
 import { SandboxBranch } from "../branch/Sandboxes.ts"
@@ -12,8 +11,11 @@ import { SandboxBranch } from "../branch/Sandboxes.ts"
 // on a ... sandbox" over `@smthrs/flow`'s `ExternalJob`.
 //
 //   start (wake the machine, start the command detached as the person's user, once per key)
-//     ─▶ probe ─▶ park ─▶ probe ... (the run holds no step and no host while the command runs)
+//     ─▶ probe ─▶ park ─▶ probe ... (each probe waits for the exit until the next is due; no step holds the command)
 //     ─▶ collect (its RunResult; the working copy is saved)        └ lost or past the deadline: cancel, then fail
+//
+// A step that asks (`run`) does the start, one waiting probe and the collect itself when the command ends within
+// `STEP_WAIT`: no job execution, no park, so the run that asked goes on at once. A longer command goes on as the job.
 //
 // A command that runs for up to an hour (`COMMAND_LIMIT_SECONDS`; a deployment may lower it with
 // `SANDBOX_COMMAND_MAX_SECONDS`) holds no step of the run that asked for it, so neither Cloudflare's 15-minute alarm limit
@@ -68,12 +70,22 @@ export const ToolCall = (seconds: number) =>
     SandboxTools.Diff,
   ])
 
-/** The job's steps over the host's `Machines`: every operation reaches the branch's machine as the person's user. */
-export const registration = Command.toLayer(
+/** The job's operations on `machines`: every operation reaches the branch's machine as the person's user. */
+export const operationsOn = (machines: Machines["Service"]) =>
   SandboxCommand.operations((target: Target) =>
-    Effect.map(Machines, (machines) => machines.commands(target.branch, target.ownerId, target.callId))
-  ),
+    Effect.succeed(machines.commands(target.branch, target.ownerId, target.callId))
+  )
+
+/** The job's steps over the host's `Machines` (`operationsOn`). */
+export const registration = Layer.unwrap(
+  Effect.map(Machines, (machines) => Command.toLayer(operationsOn(machines))),
 ).pipe(Layer.provideMerge(Action.layerImplementations))
+
+/**
+ * How long a step that asks for a command waits on it in the step itself (`Command.run`): a command that ends within it
+ * answers then, with no job execution and no park, and a longer one goes on as its job.
+ */
+export const STEP_WAIT: Duration.Input = "1 minute"
 
 /** The execution id of call `callId`'s command: from the call's own id, so the call asked again joins the same job. */
 export const commandExecutionId = (callId: string): string => `sandbox-command:${callId}`
@@ -82,21 +94,28 @@ export const commandExecutionId = (callId: string): string => `sandbox-command:$
 export class NoRun extends Schema.TaggedError<NoRun>()("@smthrs/mvp/sandbox/NoRun", {}) {}
 
 /**
- * Runs `call` on `target`'s machine as call `callId`'s `sandbox/Command`, a child of the run that asks: the run parks
- * while the command runs, and asked again (a resumed run replaying the call) it joins the same job, so the command runs
- * once and its result is collected once. Needs the asking run's `FlowRuntime`, else fails `NoRun`.
+ * Runs `call` on `target`'s machine, through `machines`, as call `callId`'s `sandbox/Command` (`Command.run`): a command
+ * that ends within `wait` (`STEP_WAIT` unless given) is started, waited on and collected in the step that asks, and a longer one goes on as the
+ * job, a child of the run that asks, which parks while it runs. Asked again (a resumed run replaying the call) it starts
+ * the same key, or joins the same job, so the command runs once and its result is collected once. Needs the asking
+ * run's `FlowRuntime`, else fails `NoRun`.
  */
-export const run = (target: Omit<Target, "callId">, callId: string, call: typeof SandboxTools.Run.Type) =>
+export const run = (
+  machines: Machines["Service"],
+  target: Omit<Target, "callId">,
+  callId: string,
+  call: typeof SandboxTools.Run.Type,
+  wait: Duration.Input = STEP_WAIT,
+) =>
   Effect.gen(function* () {
     const runtime = yield* Effect.serviceOption(FlowRuntime.FlowRuntime)
     if (Option.isNone(runtime)) return yield* new NoRun()
-    // The job's implementations are registered with the runtime (`registration`), which `execute` reaches through it.
-    const executed = Command.execute({ target: { ...target, callId }, call }, {
+    // The job's implementations are registered with the runtime too (`registration`), for the job a longer command goes
+    // on as.
+    const ran = Command.run({ target: { ...target, callId }, call }, {
       executionId: commandExecutionId(callId),
-    }) as Effect.Effect<
-      typeof SandboxTools.RunResult.Type,
-      Effect.Error<ReturnType<typeof Command.execute>>,
-      FlowRuntime.FlowRuntime | Crypto.Crypto
-    >
-    return yield* executed.pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime.value), Effect.provide(WebCrypto.layer))
+      operations: operationsOn(machines),
+      wait,
+    })
+    return yield* ran.pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime.value), Effect.provide(WebCrypto.layer))
   })

@@ -8,15 +8,19 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Schema from "effect/Schema"
+import * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as TestClock from "effect/testing/TestClock"
 import { randomUUID } from "node:crypto"
 import { ExecutionObject } from "../src/index.ts"
+import * as Routing from "../src/internal/Routing.ts"
 import { Child, Counter, flows, Guardian, Parent, Patient, Relay, runtime, Supervisor } from "./fixtures/NestedFlows.ts"
 import * as Objects from "./fixtures/Objects.ts"
 import * as Postgres from "./fixtures/Postgres.ts"
+import * as StatementTrace from "./fixtures/StatementTrace.ts"
 
 /** The rows a case's schema holds, oldest first: each run's id, flow, status and parent. */
 const runsIn = (schema: string) =>
@@ -196,6 +200,34 @@ for (const target of Postgres.targets) {
         expect(yield* c.objects.alarm(parentId)).toEqual(c.objects.outcomes.get(parentId)![1])
         expect(c.steps).toEqual(["child:hi", "parent:child:hi"])
         expect(alarms(c.objects)).toEqual({ [parentId]: "forget", [childId]: "forget" })
+      }).pipe(Effect.ensuring(c.cleanup))
+    })
+
+    it.live("a drive's routing reads the store as one read transaction", () => {
+      const c = setup(target)
+      const parentId = `parent-${randomUUID()}`
+      return Effect.gen(function*() {
+        const intent = yield* ExecutionObject.intent(Parent, { executionId: parentId, payload: { label: "one" } })
+        yield* ExecutionObject.start(c.objects.object(parentId).storage, intent, Effect.void)
+        yield* c.objects.run()
+        const childId = (yield* c.runs)[1]!.id
+        // What the child's settlement left, read again through a proxy that sees every statement.
+        const scope = yield* Scope.make()
+        const trace = yield* Scope.provide(StatementTrace.proxy(target.url), scope)
+        const layer = runtime({ record: Effect.succeed, database: Postgres.database(c.schema, trace.url) })(
+          yield* ExecutionObject.intent(Child, { executionId: childId, payload: { label: "one" } })
+        )
+        const routed = yield* Effect.scoped(
+          Effect.gen(function*() {
+            const before = trace.statements.length
+            const routes = yield* Routing.routes(childId)
+            return { routes, statements: trace.statements.slice(before).map((statement) => statement.sql) }
+          }).pipe(Effect.provide(layer))
+        ).pipe(Effect.ensuring(Scope.close(scope, Exit.void)))
+        expect(routed.routes).toEqual({ start: [], wake: [] })
+        expect(routed.statements.filter((sql) => sql.startsWith("BEGIN"))).toEqual([
+          "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
+        ])
       }).pipe(Effect.ensuring(c.cleanup))
     })
 

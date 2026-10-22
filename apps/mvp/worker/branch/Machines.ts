@@ -30,7 +30,8 @@ export const CommandRequest = Schema.Union([
     call: SandboxTools.Run,
     callId: Schema.optional(Schema.String),
   }),
-  Schema.Struct({ op: Schema.Literal("observe"), key: Schema.String }),
+  // An observe may wait up to `waitMs` for the command to end (`SandboxTools.observe`), answering as soon as it does.
+  Schema.Struct({ op: Schema.Literal("observe"), key: Schema.String, waitMs: Schema.optional(Schema.Number) }),
   Schema.Struct({ op: Schema.Literal("collect"), key: Schema.String }),
   Schema.Struct({ op: Schema.Literal("cancel"), key: Schema.String }),
 ])
@@ -175,7 +176,11 @@ export const commandsOver = <R>(
         Effect.tap((outcome) => woken(outcome.generation)),
         Effect.map((outcome) => outcome.started),
       ),
-    observe: (key) => answer({ op: "observe", key }, (outcome) => (outcome._tag === "Observed" ? outcome.observed : undefined)),
+    observe: (key, options) =>
+      answer(
+        { op: "observe", key, ...(options?.waitMs === undefined ? {} : { waitMs: options.waitMs }) },
+        (outcome) => (outcome._tag === "Observed" ? outcome.observed : undefined),
+      ),
     collect: (key) => answer({ op: "collect", key }, (outcome) => (outcome._tag === "Collected" ? outcome.result : undefined)),
     cancel: (key) => Effect.asVoid(answer({ op: "cancel", key }, (outcome) => (outcome._tag === "Cancelled" ? outcome : undefined))),
   }

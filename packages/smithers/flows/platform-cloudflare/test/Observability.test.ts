@@ -173,9 +173,11 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
           "smithers.execution.id": executionId,
           claimedAtMs: expect.any(Number)
         })
+        // How long building the runtime took, so a slow start says whether the runtime or the drive held it.
         expect(t.lines("cloudflare.execution.ready")[0]?.annotations).toMatchObject({
           ...ids,
-          readyAtMs: expect.any(Number)
+          readyAtMs: expect.any(Number),
+          "smithers.execution.build_ms": expect.any(Number)
         })
         const idle = {
           durationMs: expect.any(Number),
@@ -219,6 +221,11 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
           })
         ])
         const settled = t.lines("cloudflare.execution.alarm")[1]!.annotations as Record<string, number>
+        // Where the alarm's time went: building the runtime, driving, and routing what the drive left.
+        for (const part of ["build_ms", "drive_ms", "route_ms"]) {
+          expect(settled[`smithers.execution.${part}`]).toBeGreaterThanOrEqual(0)
+        }
+        expect(t.lines("cloudflare.execution.alarm")[0]!.annotations).not.toHaveProperty("smithers.execution.route_ms")
         expect(written).toBeGreaterThan(0)
         expect(settled.transactions).toBeGreaterThan(0)
         expect(settled.durationMs).toBeGreaterThan(0)

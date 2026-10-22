@@ -95,8 +95,9 @@ describe("a remote execution in local workerd", () => {
   test("runs probe/Pause from real alarms, and a new incarnation finishes it after ctx.abort() mid-step", async () => {
     const executionId = crypto.randomUUID()
     const intent = await Effect.runPromise(
-      // Longer than any first drive, migrations included, takes under load, so the first alarm parks on the timer.
-      ExecutionHost.intent(Pause.Pause, { executionId, payload: { label: "w", pauseMs: 3_000 } }),
+      // Longer than the drive's hold for a wake due soon (`EngineStore.defaultHoldMs`, 5 s), so the first alarm parks on
+      // the timer.
+      ExecutionHost.intent(Pause.Pause, { executionId, payload: { label: "w", pauseMs: 8_000 } }),
     )
     const started = await worker.dispatchFetch(`http://executions/${executionId}/start`, {
       method: "POST",
@@ -121,7 +122,7 @@ describe("a remote execution in local workerd", () => {
     expect(aborted!.incarnation).toBe(before!.incarnation)
     expect(after!.incarnation).not.toBe(aborted!.incarnation)
     // The second step waited for the timer, and the new incarnation took over one alarm backoff later, not a lease.
-    expect(aborted!.at - before!.at).toBeGreaterThanOrEqual(3_000)
+    expect(aborted!.at - before!.at).toBeGreaterThanOrEqual(8_000)
     expect(after!.at - aborted!.at).toBeLessThan(20_000)
 
     const [run] = await admin(

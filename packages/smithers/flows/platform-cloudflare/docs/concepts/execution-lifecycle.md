@@ -96,7 +96,16 @@ alarm itself. `Parked.wakeAtMs` is what the alarm was left armed for.
 A drive that leaves work due now (`EngineStore.drive` reports `Unfinished`:
 the runtime refused the execution, or the store became unavailable during the
 drive) is `Retrying` with `Undriven` rather than `Parked`, so an object that
-cannot make progress backs off instead of waking itself in a loop.
+cannot make progress backs off instead of waking itself in a loop. A run that
+parks on its own wake due within five seconds (a probe's short sleep, a clock
+that came due as the park committed) is not that: the drive waits for the wake
+and drives the run again in the same alarm (`EngineStore.drive`'s `holdMs`),
+where a new alarm would build the runtime and replay the run first.
+
+Each alarm's line says where its time went: building the runtime
+(`smithers.execution.build_ms`, also on `cloudflare.execution.ready`), the
+drive (`drive_ms`) and routing (`route_ms`), each once the alarm got that far.
+Routing reads what the drive left as one read transaction.
 
 ## The drive budget
 

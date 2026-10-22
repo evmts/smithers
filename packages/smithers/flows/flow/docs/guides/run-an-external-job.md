@@ -66,6 +66,39 @@ job key throughout one generation. Delays double from `probe.every` up to
 `probe.max`, and stop at the original timeout deadline. That deadline is carried
 through every generation and survives a host restart.
 
+Each status read is given `{ waitMs }`, the time until the next probe is due.
+An adapter that can wait for the work to end answers as soon as it does, so an
+exit is seen when it happens; one that can't answers at once, and the durable
+timer does the waiting. Either way the next probe is due `delay` after the
+probe began.
+
+## Run it from inside a step
+
+`Build.run(payload, { executionId, operations, wait })` runs the job from inside
+a step, such as an action's body or an agent's tool call, and answers its
+success as `.execute` does. Pass the same operations `toLayer` was given.
+
+```ts
+const result = yield * Build.run({ source }, { executionId: `build:${callId}`, operations: adapter, wait: "1 minute" })
+```
+
+Work that ends within `wait` (`probe.max` unless set, at most `timeout`) is
+started, read and collected in the step itself, under the key the first
+generation uses (`<execution id>#g1`): the step's run never parks for it, and
+no execution of the job is made. Anything else, a failure, a lost generation or
+work still running when the wait is over, goes to the job's own execution under
+the same key, which the step then waits on as `.execute` does; the provider
+answers the handle it already gave and starts nothing. A step asked again after
+a restart starts the same key, or joins the job an earlier attempt handed its
+work to. Interrupted, it cancels the work only when its run was cancelled: a
+host that stops leaves the work to the step's next attempt.
+
+On Cloudflare a job's execution and each probe round live on their own Durable
+Objects, and the run that asked parks and replays when the job settles. `run`
+skips all of it for short work: on the platform's benchmark a command that exits
+at once answers its caller in 0.1 s rather than 47 s
+(`@smthrs/platform-cloudflare`, docs/guides/command-latency.md).
+
 The deadline bounds every provider call, not only the probes. A Start reached
 after the deadline, such as an engine retry or a restarted host's replay, never
 calls `start`. A `start` or `collect` still running at the deadline is

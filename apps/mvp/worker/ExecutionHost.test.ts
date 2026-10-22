@@ -97,6 +97,31 @@ const status = (sql: SqlClient.SqlClient, schema: string, executionId: string) =
   ).pipe(Effect.map((rows) => rows[0]?.status))
 
 describe("ExecutionHost over the compose Postgres", () => {
+  test("a durable sleep that comes due within the drive's hold finishes in the same alarm, never Undriven", () =>
+    withSchema(({ name, sql, url }) =>
+      Effect.gen(function* () {
+        // 2026-10-22: a job's probe round parked on a 1 to 2 s sleep already due when the park committed; its alarm
+        // answered Retrying(Undriven), and the next one rebuilt the runtime a backoff later to replay it.
+        const object = memory()
+        const marks: Array<string> = []
+        const executionId = crypto.randomUUID()
+        const host = ExecutionHost.make(object.storage, {
+          hostId: `object-${executionId}`,
+          database: ExecutionHost.database(url, name),
+          flows: {
+            flows: [Pause.Pause],
+            registration: Pause.registration((label) => Effect.sync(() => marks.push(label)).pipe(Effect.as(label))),
+          },
+          router: recording().router,
+        })
+        yield* host.start(yield* ExecutionHost.intent(Pause.Pause, { executionId, payload: { label: "s", pauseMs: 1_000 } }))
+        const settled = yield* host.alarm()
+        expect(settled).toEqual({ _tag: "Settled", forgetAtMs: expect.any(Number) })
+        expect(marks).toEqual(["s:before", "s:after"])
+        expect(yield* status(sql, name, executionId)).toBe("completed")
+      })
+    ))
+
   test("start wakes the object at once; alarms drive probe/Pause through its durable sleep to the end", () =>
     withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
@@ -114,9 +139,9 @@ describe("ExecutionHost over the compose Postgres", () => {
           router: routes.router,
         })
         const before = Date.now()
-        // Longer than any first drive, migrations included, takes under a loaded suite: a timer that comes due during
-        // the drive leaves work due now, and the alarm answers Retrying instead of Parked.
-        const payload = { label: "x", pauseMs: 5_000 }
+        // Longer than the drive's hold for a wake due soon (`EngineStore.defaultHoldMs`, 5 s), so the first alarm parks
+        // on the timer and the next one finishes the run.
+        const payload = { label: "x", pauseMs: 8_000 }
         const intent = yield* ExecutionHost.intent(Pause.Pause, { executionId, payload })
         // An intent recorded by the standalone writer survives adoption by the composed handlers.
         yield* ExecutionHost.recordStart(object.storage, intent)
@@ -130,7 +155,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         expect(parked._tag).toBe("Parked")
         expect(marks).toEqual(["x:before"])
         const wakeAt = parked._tag === "Parked" ? parked.wakeAtMs : null
-        expect(wakeAt).toBeGreaterThanOrEqual(before + 5_000)
+        expect(wakeAt).toBeGreaterThanOrEqual(before + 8_000)
         expect(object.alarm()).toBe(wakeAt)
         expect(yield* status(sql, name, executionId)).toBe("suspended")
 

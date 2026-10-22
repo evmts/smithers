@@ -270,6 +270,20 @@ export const driveYields = Metric.counter("flows_engine_drive_yields", {
 })
 
 /**
+ * Counter over hosted drives that drove their run again themselves: it parked
+ * on a wake due within the drive's `holdMs` (`EngineStore.drive`), such as a
+ * short durable sleep, which its host would otherwise wake it for with a new
+ * invocation.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const heldDrives = Metric.counter("flows_engine_held_drives", {
+  description: "Hosted drives that drove their run again for a wake due soon after it parked",
+  incremental: true
+})
+
+/**
  * Counter over step-boundary settlements at the dispatch seam, dimensioned by
  * `outcome`: `clean` evidence, an `expected`-mode `deviation`, or a hard
  * `violation` (undeclared write, missing declared output, surviving declared

@@ -14,6 +14,7 @@ import { join } from "node:path"
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { checkExecutionId } from "../../src/features/pulls/contract.ts"
+import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { instantCommands, noCommands } from "../test/commands.ts"
 import { CheckoutFailed, SandboxUnavailable } from "../branch/Sandboxes.ts"
@@ -39,6 +40,7 @@ beforeEach(async () => {
 /** A machine whose checkout holds `files`, whose `sh <path>` exits with `exits[path]` (0 unless set). */
 const machine = (files: Readonly<Record<string, string>>, exits: Readonly<Record<string, number>> = {}, sync = 0) => {
   const commands: Array<string> = []
+  const timeouts: Array<number | undefined> = []
   const branches = new Set<string>()
   const sleeps: Array<{ readonly branchId: string; readonly generation: number; readonly idleMs: number }> = []
   const exitOf = (command: string) => exits[command.replace(/^sh /, "")] ?? 0
@@ -49,6 +51,7 @@ const machine = (files: Readonly<Record<string, string>>, exits: Readonly<Record
       instantCommands(exitOf, (_key, call) => {
         branches.add(JSON.stringify(branch))
         commands.push(call.command)
+        timeouts.push(call.timeoutSeconds)
       }, results),
     tool: (branch, _owner, _callId, call) => {
       branches.add(JSON.stringify(branch))
@@ -93,7 +96,7 @@ const machine = (files: Readonly<Record<string, string>>, exits: Readonly<Record
         return "slept" as const
       }),
   })
-  return { commands, branches, sleeps, layer: Layer.succeed(Machines, service) }
+  return { commands, timeouts, branches, sleeps, layer: Layer.succeed(Machines, service) }
 }
 
 /** A judge that answers `text` once per call. */
@@ -126,6 +129,25 @@ const runs = () =>
   >
 
 describe("checks/Run", { timeout: 60_000 }, () => {
+  test("runs each script for as long as the deployment lets a command run, never a fixed 600 s", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const { seat } = await judgeSeat(runtime, judge("- nothing."))
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    const timeouts = async (registration: ReturnType<typeof Checks.registration>, sha: string) => {
+      const box = machine({ ".smithers/checks/readme.sh": "" })
+      await runFlow(Checks.ChecksRun, { ...request, sha }, withJobs(registration).pipe(Layer.provide(box.layer)), {
+        executionId: checkExecutionId(request.repoId, sha, "all"),
+      })
+      return box.timeouts
+    }
+    // SANDBOX_COMMAND_MAX_SECONDS at 1,800, and unset: the job's own limit, an hour.
+    expect(await timeouts(Checks.registration({ ...services, judge: seat }, 1_800), request.sha)).toEqual([1_800])
+    const other = github.push("smithers/t1-readme", { "README.md": "# Widgets\n\nA line.\n" })
+    expect(await timeouts(Checks.registration({ ...services, judge: seat }), other)).toEqual([COMMAND_LIMIT_SECONDS])
+  })
+
   test("runs each .smithers/checks script on the head, then the review, each a run on the head's SHA", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })

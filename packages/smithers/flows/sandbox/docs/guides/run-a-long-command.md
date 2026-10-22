@@ -92,10 +92,27 @@ The job's key is `<job execution id>#g<generation>`. Each operation is a POSIX
   identity, so a box that restarted, or a runner killed before it recorded the
   exit, observes `lost`, and a pid the box reused never reads as running.
 
+`SandboxTools.observe` may wait for the exit: given `waitMs`, it looks every
+50 ms and answers `finished` as soon as the command ends, `running` once the
+wait is over (whole seconds, at most `SandboxTools.limits.maxObserveWaitSeconds`),
+and `lost` as soon as the runner is gone.
+
+## Run it from the step that asks
+
+A step that needs the command's result, such as an agent's `run` tool, calls
+`Install.run(payload, { executionId, operations, wait })` with the same
+operations as `toLayer`. A command that ends within `wait` (20 seconds unless
+set) is started, read once with a waiting `observe`, and collected in the step
+itself: no job execution, and the run that asked never parks. A longer one goes
+on as the job under the same key, which the step waits on as `execute` does.
+See `@smthrs/flow`'s "Run an external job".
+
 ## Probes, loss and deadlines
 
 The run parks between probes on a durable timer: a probe a second after the
 start, doubling to one every 20 seconds (`SandboxCommand.defaults.probe`).
+Each probe's `observe` waits for the exit until the next probe is due, so the
+job sees a command end when it does.
 A `lost` command is cancelled and the job fails `ExternalJobLost` once
 `restarts` replacements are spent; the default is zero, so a command runs at
 most once. The job's deadline is 20 minutes past the longest command
