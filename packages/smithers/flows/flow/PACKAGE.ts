@@ -6,7 +6,12 @@
  * `BuildAndCheckTypeScriptPackage({ cwd: "packages/smithers/flows/flow", deps: [plan, crypto, keys, canonical, capability] })`
  * emits; the file exists to show the expansion, not to diverge from it.
  */
-import { ImportRules, ReviewDocsAgainstCode, ReviewJsdocAgainstCode, ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
+import {
+  ImportRules,
+  ReviewDocsAgainstCode,
+  ReviewJsdocAgainstCode,
+  ReviewTagsMigrationsAndKeys
+} from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from "../../../../PACKAGE.ts"
 import { Package as canonicalPackage } from "../canonical/PACKAGE.ts"

@@ -372,7 +372,9 @@ const record = (value: unknown): Readonly<Record<string, unknown>> =>
 const safeReason = (value: unknown, allowed: ReadonlyArray<string>): string | undefined =>
   typeof value !== "string" || value.length === 0
     ? undefined
-    : allowed.includes(value) ? value : "provider_rejected"
+    : allowed.includes(value)
+    ? value
+    : "provider_rejected"
 
 type EmailDestination = Extract<Destination, { readonly _tag: "email" }>
 type TelegramDestination = Extract<Destination, { readonly _tag: "telegram" }>
@@ -395,7 +397,8 @@ const resend = (provider: EmailProvider): Provider<EmailDestination> => {
       const id = record(body).id
       return typeof id === "string" && id.length > 0 && id.length <= 128 ? id : null
     },
-    reason: (body) => safeReason(record(body).name, ["validation_error", "rate_limit_exceeded", "daily_quota_exceeded"]),
+    reason: (body) =>
+      safeReason(record(body).name, ["validation_error", "rate_limit_exceeded", "daily_quota_exceeded"]),
     retryAfterSeconds: () => undefined
   }
 }

@@ -10,24 +10,28 @@ const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
 /** A real collector bound to loopback for the lifetime of the test scope. */
-const collector = (status: number) => Effect.acquireRelease(
-  Effect.promise(async () => {
-    const { createServer } = await import("node:http")
-    const server = createServer((request, response) => {
-      request.resume()
-      response.writeHead(status).end("{}")
-    })
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-    const address = server.address() as import("node:net").AddressInfo
-    const forward = ((input: string | URL | Request, init?: RequestInit) =>
-      fetch(`http://127.0.0.1:${address.port}${new URL(String(input)).pathname}`, init)) as typeof fetch
-    return { server, forward }
-  }),
-  ({ server }) => Effect.promise(() => new Promise<void>((resolve) => {
-    server.closeAllConnections()
-    server.close(() => resolve())
-  }))
-)
+const collector = (status: number) =>
+  Effect.acquireRelease(
+    Effect.promise(async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((request, response) => {
+        request.resume()
+        response.writeHead(status).end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const address = server.address() as import("node:net").AddressInfo
+      const forward = ((input: string | URL | Request, init?: RequestInit) =>
+        fetch(`http://127.0.0.1:${address.port}${new URL(String(input)).pathname}`, init)) as typeof fetch
+      return { server, forward }
+    }),
+    ({ server }) =>
+      Effect.promise(() =>
+        new Promise<void>((resolve) => {
+          server.closeAllConnections()
+          server.close(() => resolve())
+        })
+      )
+  )
 
 it.live("exports granular spans and metrics from one added layer", () =>
   Effect.gen(function*() {

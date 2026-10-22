@@ -6,9 +6,8 @@
  * @since 1.0.0
  */
 
-import type { DurableWriter } from "@smthrs/database"
-import type { SqlClient } from "effect/sql/SqlClient"
 import { WebCrypto } from "@smthrs/crypto"
+import type { DurableWriter } from "@smthrs/database"
 import { OwnerIdentity, RunCatalogRead, RunInspection, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { type Flow, type FlowRuntime, RunMetrics } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
@@ -19,6 +18,7 @@ import * as Effect from "effect/Effect"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
+import type { SqlClient } from "effect/sql/SqlClient"
 import * as BrowserSqlite from "../BrowserSqlite.ts"
 import { filename, type Service as SharedDatabase } from "../SharedSqlite.ts"
 import type * as TabChannel from "../TabChannel.ts"
@@ -154,7 +154,11 @@ export interface RunOptions<Registered, RegistrationError, RegistrationRequireme
  * @category running
  * @since 1.0.0
  */
-export const program = <Registered, RegistrationError, RegistrationRequirements extends FlowRuntime.FlowRuntime | Host | SqlClient | DurableWriter.DurableWriter>(
+export const program = <
+  Registered,
+  RegistrationError,
+  RegistrationRequirements extends FlowRuntime.FlowRuntime | Host | SqlClient | DurableWriter.DurableWriter
+>(
   options: RunOptions<Registered, RegistrationError, RegistrationRequirements>
 ): Effect.Effect<never, unknown, WebLock.WebLock | TabChannel.TabChannel> => // Every service `RegistrationRequirements` may name is one the engine host
 // provides, which the generic `Exclude` chain cannot show.

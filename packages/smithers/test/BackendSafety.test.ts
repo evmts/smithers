@@ -1,8 +1,8 @@
 import { NodeWS } from "@effect/platform-node/NodeSocket"
-import { execFileSync, spawn } from "node:child_process"
-import { once } from "node:events"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import { execFileSync, spawn } from "node:child_process"
+import { once } from "node:events"
 import { mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { tmpdir, userInfo } from "node:os"
@@ -14,8 +14,8 @@ import * as ProductApi from "../src/internal/backend/ProductApi.ts"
 import { resources } from "../src/internal/backend/Resources.ts"
 import { runs } from "../src/internal/backend/Runs.ts"
 import { quote, remote } from "../src/internal/backend/SSH.ts"
-import { workspaces, workspaceSSH } from "../src/internal/backend/Workspaces.ts"
 import { stacks } from "../src/internal/backend/Stack.ts"
+import { workspaces, workspaceSSH } from "../src/internal/backend/Workspaces.ts"
 
 // Fault injection is a provided Effect service at a real HTTP server boundary;
 // fetch, Client, streaming, and the filesystem all run unchanged.
@@ -291,7 +291,6 @@ describe("product request destinations", () => {
   )
 })
 
-
 const options = { repo: "owner/repo" }
 const fixture = async (
   handle: (request: IncomingMessage, response: ServerResponse, body: Values) => void
@@ -332,18 +331,21 @@ const sshServer = async (home: string, forcedCommand?: string) => {
   const address = reservation.address()
   if (!address || typeof address === "string") throw new Error("No SSH address")
   await new Promise<void>((done) => reservation.close(() => done()))
-  await writeFile(config, [
-    `HostKey ${key}`,
-    `AuthorizedKeysFile ${key}.pub`,
-    `Port ${address.port}`,
-    "ListenAddress 127.0.0.1",
-    `PidFile ${join(home, "sshd.pid")}`,
-    "StrictModes no",
-    "UsePAM no",
-    "PasswordAuthentication no",
-    "KbdInteractiveAuthentication no",
-    ...(forcedCommand ? [`ForceCommand ${forcedCommand}`] : [])
-  ].join("\n") + "\n")
+  await writeFile(
+    config,
+    [
+      `HostKey ${key}`,
+      `AuthorizedKeysFile ${key}.pub`,
+      `Port ${address.port}`,
+      "ListenAddress 127.0.0.1",
+      `PidFile ${join(home, "sshd.pid")}`,
+      "StrictModes no",
+      "UsePAM no",
+      "PasswordAuthentication no",
+      "KbdInteractiveAuthentication no",
+      ...(forcedCommand ? [`ForceCommand ${forcedCommand}`] : [])
+    ].join("\n") + "\n"
+  )
   const child = spawn("/usr/sbin/sshd", ["-D", "-e", "-f", config], { stdio: ["ignore", "ignore", "pipe"] })
   cleanup.push(async () => {
     if (child.exitCode === null && child.signalCode === null) {
@@ -361,7 +363,10 @@ const sshServer = async (home: string, forcedCommand?: string) => {
     child.once("exit", () => failed(new Error(log)))
   })
   const hostKey = (await readFile(`${key}.pub`, "utf8")).trim().split(" ").slice(0, 2).join(" ")
-  const endpoint = { command: `ssh -p ${address.port} -i ${quote(key)} ${userInfo().username}@127.0.0.1`, hostKeys: [hostKey] }
+  const endpoint = {
+    command: `ssh -p ${address.port} -i ${quote(key)} ${userInfo().username}@127.0.0.1`,
+    hostKeys: [hostKey]
+  }
   return { endpoint, receipt: { command: endpoint.command, host_keys: [{ known_hosts_line: hostKey }] } }
 }
 
@@ -389,9 +394,11 @@ describe("backend safety regressions", () => {
   })
 
   it.each(["dispatch", "run"])("refuses malformed workflow %s inputs before dispatch", async (action) => {
-    const { c, requests } = await fixture((_req, res) => res.end('{"workflows":[{"id":7,"name":"Build"}]}'))
+    const { c, requests } = await fixture((_req, res) => res.end("{\"workflows\":[{\"id\":7,\"name\":\"Build\"}]}"))
     for (const input of ["missing", "=value", "  =value"]) {
-      await expect(runs[`workflow ${action}`]!(c, { id: 7, workflow: "Build" }, { ...options, input: ["ok=yes", input] }))
+      await expect(
+        runs[`workflow ${action}`]!(c, { id: 7, workflow: "Build" }, { ...options, input: ["ok=yes", input] })
+      )
         .rejects.toMatchObject({ _tag: "/cli/UsageError" })
     }
     expect(requests).toEqual([])
@@ -442,7 +449,10 @@ describe("backend safety regressions", () => {
     const capture = join(f.home, "received")
     const ssh = await sshServer(f.home, `/bin/cat > ${quote(capture)}`)
     const result = await workspaces["workspace exec"]!(f.c, { id: "box" }, {
-      ...options, command: "true", seedAgentAuth: "claude", detach: true
+      ...options,
+      command: "true",
+      seedAgentAuth: "claude",
+      detach: true
     }).then(() => undefined, (error) => error)
     expect(await readdir(f.home)).not.toContain("received")
     expect(result).toMatchObject({ code: "credential_seeding_disabled" })
@@ -450,12 +460,17 @@ describe("backend safety regressions", () => {
   })
 
   it("refuses issue execution before creating a workspace or launching an unmanaged agent", async () => {
-    const f = await fixture((req, res) => res.end(JSON.stringify(
-      req.url?.endsWith("/ssh") ? ssh.receipt : req.url?.endsWith("/issues/7") ? { title: "Fix" } : { id: "box" }
-    )))
+    const f = await fixture((req, res) =>
+      res.end(JSON.stringify(
+        req.url?.endsWith("/ssh") ? ssh.receipt : req.url?.endsWith("/issues/7") ? { title: "Fix" } : { id: "box" }
+      ))
+    )
     const capture = join(f.home, "commands")
     const ssh = await sshServer(f.home, `/usr/bin/printf '%s\\n' "$SSH_ORIGINAL_COMMAND" >> ${quote(capture)}`)
-    const result = await workspaces["workspace issue"]!(f.c, { number: 7 }, options).then(() => undefined, (error) => error)
+    const result = await workspaces["workspace issue"]!(f.c, { number: 7 }, options).then(
+      () => undefined,
+      (error) => error
+    )
     expect(await readdir(f.home)).not.toContain("commands")
     expect(result).toMatchObject({ code: "durable_agent_required" })
     expect(f.requests).toEqual([])
@@ -485,7 +500,13 @@ describe("backend safety regressions", () => {
         }
       }
     }, true)
-    const script = `/usr/bin/python3 -c ${quote(`import sys; sys.stdout.buffer.write((b'o' * 1023 + b'\\n') * ${bytes / 1024}); sys.stderr.buffer.write((b'e' * 1023 + b'\\n') * ${bytes / 1024})`)}`
+    const script = `/usr/bin/python3 -c ${
+      quote(
+        `import sys; sys.stdout.buffer.write((b'o' * 1023 + b'\\n') * ${
+          bytes / 1024
+        }); sys.stderr.buffer.write((b'e' * 1023 + b'\\n') * ${bytes / 1024})`
+      )
+    }`
     const result = await remote(streaming, endpoint, script, 30_000, undefined, false, true)
     expect(result.code).toBe(0)
     expect(stdoutBytes).toBe(bytes)
@@ -500,23 +521,30 @@ describe("backend safety regressions", () => {
     const small = await remote(c, endpoint, "printf out; printf err >&2; exit 7")
     expect(small).toEqual({ code: 7, stdout: Buffer.from("out"), stderr: Buffer.from("err") })
     for (const channel of ["stdout", "stderr"]) {
-      const script = `/usr/bin/python3 -c ${quote(`import sys; sys.${channel}.buffer.write(b'x' * (17 * 1024 * 1024))`)}`
+      const script = `/usr/bin/python3 -c ${
+        quote(`import sys; sys.${channel}.buffer.write(b'x' * (17 * 1024 * 1024))`)
+      }`
       const error = await remote(c, endpoint, script).then(() => undefined, (error: unknown) => error)
       expect(error).toMatchObject({ code: "tool_output_too_large" })
     }
   })
 
   it("honors terminal cancellation while the WebSocket is connecting and destroys the session", async () => {
-    const f = await fixture((_req, res) => res.end('{"id":"terminal"}'))
+    const f = await fixture((_req, res) => res.end("{\"id\":\"terminal\"}"))
     const wss = new NodeWS.WebSocketServer({ noServer: true })
-    cleanup.push(async () => { await new Promise<void>((done) => wss.close(() => done())) })
+    cleanup.push(async () => {
+      await new Promise<void>((done) => wss.close(() => done()))
+    })
     f.server.on("upgrade", (req, socket, head) => {
       f.controller.abort()
       wss.handleUpgrade(req, socket, head, (ws) => {
         ws.send(JSON.stringify({ type: "status", status: "stopped" }))
       })
     })
-    const result = await workspaces["workspace shell"]!(f.c, { id: "box" }, options).then(() => undefined, (error) => error)
+    const result = await workspaces["workspace shell"]!(f.c, { id: "box" }, options).then(
+      () => undefined,
+      (error) => error
+    )
     expect(f.requests.at(-1)?.path).toBe("/api/repos/owner/repo/workspace/sessions/terminal/destroy")
     expect(result).toMatchObject({ code: "interrupted" })
   })

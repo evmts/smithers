@@ -48,7 +48,12 @@ const every: ReadonlyArray<Home.Block> = [
   {
     type: "cards",
     title: "Ecosystem",
-    cards: [{ title: "Core", text: "Effect, Layer and Schema.", label: "effect", url: "https://npmjs.com/package/effect" }],
+    cards: [{
+      title: "Core",
+      text: "Effect, Layer and Schema.",
+      label: "effect",
+      url: "https://npmjs.com/package/effect"
+    }],
     more: { label: "All packages", url: "https://github.com/Effect-TS/effect" }
   },
   { type: "stats", stats: [{ value: "MIT", label: "License" }] },
@@ -271,7 +276,9 @@ describe("Home.read, sections", () => {
   })
 
   it("reads who counts as a contributor: `anyone` when the home says so, else `role`; anything else is refused", () => {
-    expect(Home.read(JSON.stringify({ contributors: "anyone", sections: [] }))).toMatchObject({ contributors: "anyone" })
+    expect(Home.read(JSON.stringify({ contributors: "anyone", sections: [] }))).toMatchObject({
+      contributors: "anyone"
+    })
     expect(Home.read(JSON.stringify({ contributors: "role", blocks: [] }))).toMatchObject({ contributors: "role" })
     for (const contributors of ["everyone", true, null, 1]) {
       expect([contributors, Home.read(JSON.stringify({ contributors, sections: [] }))]).toEqual([
@@ -282,7 +289,12 @@ describe("Home.read, sections", () => {
   })
 
   it("refuses both `blocks` and `sections`, or `sections` that isn't an array", () => {
-    for (const document of [{ blocks: [], sections: [] }, { sections: {} }, { sections: null }, { blocks: [], sections: null }]) {
+    for (
+      const document of [{ blocks: [], sections: [] }, { sections: {} }, { sections: null }, {
+        blocks: [],
+        sections: null
+      }]
+    ) {
       expect([document, Home.read(JSON.stringify(document))]).toEqual([document, invalid("shape")])
     }
   })
@@ -339,7 +351,9 @@ describe("Home.sees and Home.visible", () => {
   ]
 
   it("lets each audience see its own sections and the wider ones, never a narrower one", () => {
-    const table = Home.audiences.map((viewer) => [viewer, Home.audiences.filter((section) => Home.sees(viewer, section))])
+    const table = Home.audiences.map((
+      viewer
+    ) => [viewer, Home.audiences.filter((section) => Home.sees(viewer, section))])
     expect(table).toEqual([
       ["everyone", ["everyone"]],
       ["contributor", ["everyone", "contributor"]],

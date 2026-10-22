@@ -42,9 +42,9 @@ import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
+import type * as GitRemote from "./GitRemote.ts"
 import { isReadLimit, readAtMost } from "./internal/bounded.ts"
 import * as Token from "./internal/token.ts"
-import type * as GitRemote from "./GitRemote.ts"
 
 /**
  * What a call was doing when it failed. `configure` is building the layer:

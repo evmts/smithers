@@ -8,7 +8,8 @@ describe("declared input boundaries", () => {
     expect(accepts("a".repeat(Home.maximumTitleLength))).toBe(true)
     expect(accepts("a".repeat(Home.maximumTitleLength + 1))).toBe(false)
     expect(Home.read(JSON.stringify({ blocks: [{ type: "view", flow: "a".repeat(10000) }] }))).toEqual({
-      _tag: "Invalid", reason: "block"
+      _tag: "Invalid",
+      reason: "block"
     })
   })
 
@@ -25,9 +26,13 @@ describe("declared input boundaries", () => {
   })
 
   it("bounds links in one block even when the block count is valid", () => {
-    const read = (length: number) => Home.read(JSON.stringify({ blocks: [{
-      type: "links", links: Array.from({ length }, () => ({ label: "Docs", url: "https://example.com" }))
-    }] }))
+    const read = (length: number) =>
+      Home.read(JSON.stringify({
+        blocks: [{
+          type: "links",
+          links: Array.from({ length }, () => ({ label: "Docs", url: "https://example.com" }))
+        }]
+      }))
     expect(read(Home.maximumEntries)._tag).toBe("Declared")
     expect(read(Home.maximumEntries + 1)).toEqual({ _tag: "Invalid", reason: "block" })
   })
@@ -39,10 +44,12 @@ describe("declared input boundaries", () => {
   })
 
   it("returns unknown for invalid page or ancestor URLs without throwing", () => {
-    for (const frame of [
-      { page: "not a URL", ancestors: ["https://example.com"] },
-      { page: "https://example.com", ancestors: ["not a URL"] }
-    ]) {
+    for (
+      const frame of [
+        { page: "not a URL", ancestors: ["https://example.com"] },
+        { page: "https://example.com", ancestors: ["not a URL"] }
+      ]
+    ) {
       expect(WebPage.framing({}, frame)).toEqual({ framing: "unknown", reason: "invalid_url" })
     }
   })

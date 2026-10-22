@@ -65,13 +65,22 @@ describe("Deadline", () => {
   effect("enforces accepted starts outside the Date range", () =>
     Effect.gen(function*() {
       const deadline = yield* inExecution(Deadline.start({
-        flowName: "Deadline/bounded", startedAtMs: -Number.MAX_SAFE_INTEGER, deadline: 1
+        flowName: "Deadline/bounded",
+        startedAtMs: -Number.MAX_SAFE_INTEGER,
+        deadline: 1
       }))
-      const exit = yield* Effect.exit(inExecution(Deadline.within(deadline, "Deadline/bounded")(Effect.succeed("late"))))
+      const exit = yield* Effect.exit(
+        inExecution(Deadline.within(deadline, "Deadline/bounded")(Effect.succeed("late")))
+      )
       expect(squash(exit)).toMatchObject({ _tag: "@smthrs/flow/DeadlineExceeded" })
-      expect(yield* inExecution(Deadline.within({
-        startedAtMs: 8_640_000_000_000_001, deadlineMs: 1
-      }, "Deadline/bounded")(Effect.succeed("on time")))).toBe("on time")
+      expect(
+        yield* inExecution(
+          Deadline.within({
+            startedAtMs: 8_640_000_000_000_001,
+            deadlineMs: 1
+          }, "Deadline/bounded")(Effect.succeed("on time"))
+        )
+      ).toBe("on time")
     }).pipe(Effect.provide(layerMemory)))
 
   effect(

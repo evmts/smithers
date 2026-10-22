@@ -255,13 +255,16 @@ here, and so does any host that admits a person's message straight into a
 run's queue, so a steer reads the same in every transcript.
 
 ```ts
-yield* queue.admit(runId, Notification.humanSteer({
+yield * queue.admit(
   runId,
-  id: messageId,
-  actor: `person:${login}`,
-  attribution: { login },
-  payload: SteerPayload.encode({ kind: "Message", body })
-}))
+  Notification.humanSteer({
+    runId,
+    id: messageId,
+    actor: `person:${login}`,
+    attribution: { login },
+    payload: SteerPayload.encode({ kind: "Message", body })
+  })
+)
 ```
 
 ## NotificationState

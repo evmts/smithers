@@ -19,12 +19,12 @@
  */
 
 import type { DurableWriter } from "@smthrs/database"
-import type { SqlClient } from "effect/sql/SqlClient"
 import { type Flow, type FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import type * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
+import type { SqlClient } from "effect/sql/SqlClient"
 import type * as BrowserSqlite from "./BrowserSqlite.ts"
 import type * as Engine from "./internal/Engine.ts"
 import type * as Leader from "./internal/Leader.ts"
@@ -292,7 +292,11 @@ export interface RunOptions<Registered, RegistrationError, RegistrationRequireme
  * @category running
  * @since 1.0.0
  */
-export const run = <Registered, RegistrationError, RegistrationRequirements extends FlowRuntime.FlowRuntime | Host | SqlClient | DurableWriter.DurableWriter>(
+export const run = <
+  Registered,
+  RegistrationError,
+  RegistrationRequirements extends FlowRuntime.FlowRuntime | Host | SqlClient | DurableWriter.DurableWriter
+>(
   options: RunOptions<Registered, RegistrationError, RegistrationRequirements>
 ): Fiber.Fiber<never, unknown> =>
   Effect.runFork(

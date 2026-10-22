@@ -366,8 +366,7 @@ const securityReview = Smithers.SecurityReview({
     },
     {
       id: "subscription-credential-export",
-      title:
-        "Host provider credentials never enter a workspace, and subscriptions stay with their provider CLIs",
+      title: "Host provider credentials never enter a workspace, and subscriptions stay with their provider CLIs",
       threat:
         "A backend or SSH endpoint the operator did not intend receives their ChatGPT OAuth refresh tokens or Anthropic API key and spends their account. A Claude subscription token is never read, stored, or sent (#2777).",
       lookFor: [

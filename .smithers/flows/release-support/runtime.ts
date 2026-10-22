@@ -15,9 +15,9 @@ import {
   supervisorStance
 } from "@smthrs/cli/NodeControl"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
-import { NodeRuntime } from "@smthrs/platform-node"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import { NodeRuntime } from "@smthrs/platform-node"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, type Scope } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"

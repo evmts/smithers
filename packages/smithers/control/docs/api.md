@@ -529,14 +529,14 @@ The acceptance port from the control plane into a real run executor.
 point and batch readers in one options object. Omit the object for a host without
 engine observations. Mutation methods remain refused.
 
-| Export            | Kind     | Signature                                                                                                                                                |
-| ----------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ControlExecutor` | class    | `Context.Service<ControlExecutor, Service>` at key `/control/ControlExecutor`                                                                            |
-| `make`            | function | `(implementation: Service) => Service`                                                                                                                   |
-| `makeNoop`        | function | `(overrides?: Partial<Service>) => Service`. Accepts every launch as `pending` and starts nothing.                                                       |
+| Export            | Kind     | Signature                                                                                                                                                                                               |
+| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ControlExecutor` | class    | `Context.Service<ControlExecutor, Service>` at key `/control/ControlExecutor`                                                                                                                           |
+| `make`            | function | `(implementation: Service) => Service`                                                                                                                                                                  |
+| `makeNoop`        | function | `(overrides?: Partial<Service>) => Service`. Accepts every launch as `pending` and starts nothing.                                                                                                      |
 | `makeObserving`   | function | `(service: Service) => Service`. The same executor with `launch` and `resumeRun` refused as defects and parked settlement left to the driving host, for a host composed to observe runs and drive none. |
-| `layer`           | layer    | `(implementation: Service) => Layer<ControlExecutor>`                                                                                                    |
-| `layerNoop`       | layer    | `(overrides?: Partial<Service>) => Layer<ControlExecutor>`                                                                                               |
+| `layer`           | layer    | `(implementation: Service) => Layer<ControlExecutor>`                                                                                                                                                   |
+| `layerNoop`       | layer    | `(overrides?: Partial<Service>) => Layer<ControlExecutor>`                                                                                                                                              |
 
 ### Service
 
@@ -666,11 +666,11 @@ automatically. Absolute Web request URLs already supply the scheme.
 
 ## ControlClient
 
-| Export           | Kind       | Signature                                                                                                     |
-| ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
+| Export           | Kind       | Signature                                                                                                                                          |
+| ---------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ClientConfig`   | interface  | `{ url: string; credential?: string; watchTransport?: "http" \| "socket" }`. `credential` is attached as a bearer token on every HTTP RPC request. |
-| `layer`          | layer      | `(config: ClientConfig) => Layer<Control, ...>`                                                               |
-| `isControlError` | refinement | `(value: unknown) => value is ControlError`, derived from `ControlErrorSchema`.                               |
+| `layer`          | layer      | `(config: ClientConfig) => Layer<Control, ...>`                                                                                                    |
+| `isControlError` | refinement | `(value: unknown) => value is ControlError`, derived from `ControlErrorSchema`.                                                                    |
 
 Unary procedures use HTTP at `url`. With a credential, `watch` uses the same
 HTTP protocol and bearer; without one it defaults to the platform Socket

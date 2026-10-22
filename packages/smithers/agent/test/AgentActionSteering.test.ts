@@ -84,7 +84,10 @@ const steer = (runId: string, id: string, body: string) =>
  * first turn and finishes on its second; `during` runs while the first turn
  * streams.
  */
-const runSteered = (executionId: string, during: Effect.Effect<unknown, unknown, NotificationQueue.NotificationQueue>) =>
+const runSteered = (
+  executionId: string,
+  during: Effect.Effect<unknown, unknown, NotificationQueue.NotificationQueue>
+) =>
   Effect.gen(function*() {
     const requests: Array<ModelRequest.ModelRequest> = []
     const queue = yield* NotificationQueue.NotificationQueue
@@ -93,10 +96,16 @@ const runSteered = (executionId: string, during: Effect.Effect<unknown, unknown,
         Stream.suspend(() => {
           const index = requests.length
           requests.push(request)
-          const source = index === 0 ? `console.log("frame one")` : `ctx.done(${JSON.stringify(JSON.stringify({ summary: "ok" }))})`
+          const source = index === 0
+            ? `console.log("frame one")`
+            : `ctx.done(${JSON.stringify(JSON.stringify({ summary: "ok" }))})`
           const events = Stream.fromIterable([
             ModelEvent.ModelEvent.TextStart({ type: "text-start", id: `c${index}` }),
-            ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: `c${index}`, text: "```cell\n" + source + "\n```" }),
+            ModelEvent.ModelEvent.TextDelta({
+              type: "text-delta",
+              id: `c${index}`,
+              text: "```cell\n" + source + "\n```"
+            }),
             ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: `c${index}` }),
             ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
           ])
@@ -126,9 +135,11 @@ const runSteered = (executionId: string, during: Effect.Effect<unknown, unknown,
           Layer.provideMerge(AgentAction.layerHost(host)),
           Layer.provideMerge(seats),
           Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerSandbox, scriptedCompletionJudge)),
-          Layer.provideMerge(Notifications.layerForExecution().pipe(
-            Layer.provide(Layer.succeed(NotificationQueue.NotificationQueue)(queue))
-          )),
+          Layer.provideMerge(
+            Notifications.layerForExecution().pipe(
+              Layer.provide(Layer.succeed(NotificationQueue.NotificationQueue)(queue))
+            )
+          ),
           Layer.provideMerge(Layer.merge(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
@@ -146,8 +157,10 @@ describe("steering a running AgentAction", () => {
     const out = await Effect.runPromise(
       runSteered(
         "todo:steered",
-        Effect.flatMap(NotificationQueue.NotificationQueue, (queue) =>
-          queue.admit("todo:steered", steer("todo:steered", "steer-1", "Use tabs, not spaces")))
+        Effect.flatMap(
+          NotificationQueue.NotificationQueue,
+          (queue) => queue.admit("todo:steered", steer("todo:steered", "steer-1", "Use tabs, not spaces"))
+        )
       ).pipe(Effect.provide(queueLayer()))
     )
     expect(out.result).toEqual({ summary: "ok" })
@@ -167,8 +180,10 @@ describe("steering a running AgentAction", () => {
     const out = await Effect.runPromise(
       runSteered(
         "todo:quiet",
-        Effect.flatMap(NotificationQueue.NotificationQueue, (queue) =>
-          queue.admit("todo:other", steer("todo:other", "steer-2", "Rename the module")))
+        Effect.flatMap(
+          NotificationQueue.NotificationQueue,
+          (queue) => queue.admit("todo:other", steer("todo:other", "steer-2", "Rename the module"))
+        )
       ).pipe(Effect.provide(queueLayer()))
     )
     expect(out.result).toEqual({ summary: "ok" })

@@ -1640,7 +1640,9 @@ export const layer: Layer.Layer<
                     // notice advances the live cursor before its page is read.
                     return Stream.concat(history, unseen).pipe(
                       Stream.tap(
-                        Effect.fn("Control.watch.recover")((event: ControlEvent | { readonly snapshotComplete: Deferred.Deferred<void> }) =>
+                        Effect.fn("Control.watch.recover")((
+                          event: ControlEvent | { readonly snapshotComplete: Deferred.Deferred<void> }
+                        ) =>
                           Effect.gen(function*() {
                             if ("snapshotComplete" in event) return
                             yield* Metric.update(watchRecovered, 1)

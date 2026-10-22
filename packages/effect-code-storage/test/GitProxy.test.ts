@@ -62,20 +62,22 @@ const proxy = async (
 }
 
 describe("GitProxy.classify", () => {
-  test.each([
-    ["GET", "/o/n/info/refs?service=git-upload-pack", "info-refs"],
-    ["GET", "/anything/else.git/info/refs?service=git-upload-pack", "info-refs"],
-    ["POST", "/o/n/git-upload-pack", "upload-pack"],
-    ["GET", "/o/n/info/refs?service=git-receive-pack", undefined],
-    ["GET", "/o/n/info/refs?service=git-upload-pack&service=git-receive-pack", undefined],
-    ["GET", "/o/n/info/refs", undefined],
-    ["POST", "/o/n/git-receive-pack", undefined],
-    ["POST", "/o/n/git-upload-pack?x=1", undefined],
-    ["GET", "/o/n/git-upload-pack", undefined],
-    ["PUT", "/o/n/info/refs?service=git-upload-pack", undefined],
-    ["GET", "/o/n/info/lfs/objects/batch", undefined],
-    ["GET", "/o/n/HEAD", undefined]
-  ] as const)("%s %s is %s", (method, path, service) => {
+  test.each(
+    [
+      ["GET", "/o/n/info/refs?service=git-upload-pack", "info-refs"],
+      ["GET", "/anything/else.git/info/refs?service=git-upload-pack", "info-refs"],
+      ["POST", "/o/n/git-upload-pack", "upload-pack"],
+      ["GET", "/o/n/info/refs?service=git-receive-pack", undefined],
+      ["GET", "/o/n/info/refs?service=git-upload-pack&service=git-receive-pack", undefined],
+      ["GET", "/o/n/info/refs", undefined],
+      ["POST", "/o/n/git-receive-pack", undefined],
+      ["POST", "/o/n/git-upload-pack?x=1", undefined],
+      ["GET", "/o/n/git-upload-pack", undefined],
+      ["PUT", "/o/n/info/refs?service=git-upload-pack", undefined],
+      ["GET", "/o/n/info/lfs/objects/batch", undefined],
+      ["GET", "/o/n/HEAD", undefined]
+    ] as const
+  )("%s %s is %s", (method, path, service) => {
     expect(GitProxy.classify(method, `${GUEST}${path}`)).toBe(service)
   })
 })

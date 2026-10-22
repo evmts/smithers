@@ -9,18 +9,7 @@ import { setTimeout as delay } from "node:timers/promises"
 import { Refused, UsageError } from "../../CliError.ts"
 import * as Environment from "../../Environment.ts"
 import * as Failure from "../Failure.ts"
-import {
-  type Client,
-  esc,
-  list,
-  object,
-  pick,
-  positive,
-  query,
-  str,
-  type Values,
-  withCause
-} from "./Client.ts"
+import { type Client, esc, list, object, pick, positive, query, str, type Values, withCause } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 import { type Endpoint, hostKeys, remote } from "./SSH.ts"
 

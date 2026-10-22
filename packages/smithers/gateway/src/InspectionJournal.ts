@@ -22,27 +22,58 @@ export interface InspectionEvent {
  * @since 1.0.0
  * @category projections
  */
-export const inspectionJournal = (runId: string, events: ReadonlyArray<InspectionEvent>): ReadonlyArray<JournalRecord> => {
+export const inspectionJournal = (
+  runId: string,
+  events: ReadonlyArray<InspectionEvent>
+): ReadonlyArray<JournalRecord> => {
   let generation = 0
-  return [...new Map(events.map((event) => [event.seq, event])).values()].sort((a, b) => a.seq - b.seq).flatMap((event) => {
-    if (event.payload.clipped) return []
-    let payload: unknown
-    try { payload = JSON.parse(event.payload.text) } catch { return [] }
-    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return []
-    const declared = (payload as Record<string, unknown>).generation
-    if (typeof declared === "number" && Number.isSafeInteger(declared) && declared >= 0) generation = declared
-    const fact = event.eventType === StepFact.eventType ? Schema.decodeUnknownOption(StepFact.Fact)(payload) : Option.none()
-    const call = event.eventType === CallFact.eventType ? Schema.decodeUnknownOption(CallFact.Fact)(payload) : Option.none()
-    const source = Option.isSome(call) ? { sourceId: `call-fact-v1:${call.value.callId}:${call.value.phase}`, sourceSequence: 0 } : Option.isSome(fact) ? { sourceId: `step-fact-v1:${fact.value.step.stepId}:${fact.value.step.attempt}:${fact.value.step.ask}:${fact.value.step.retry}`, sourceSequence: fact.value.sourceSequence } : { sourceId: "engine", sourceSequence: event.seq }
-    return [{
-      runId: Option.isSome(call) ? call.value.identity.runId : runId, sequence: event.seq, occurredAt: event.emittedAtMs, kind: "control.engine.event",
-      payload: {
-        version: 1, executionId: runId, generation, sequence: event.seq,
-        eventId: `${runId}/${event.seq}`, ...source,
-        emittedAtMs: event.emittedAtMs, eventType: event.eventType, payload, meta: {},
-      },
-    }]
-  })
+  return [...new Map(events.map((event) => [event.seq, event])).values()].sort((a, b) => a.seq - b.seq).flatMap(
+    (event) => {
+      if (event.payload.clipped) return []
+      let payload: unknown
+      try {
+        payload = JSON.parse(event.payload.text)
+      } catch {
+        return []
+      }
+      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return []
+      const declared = (payload as Record<string, unknown>).generation
+      if (typeof declared === "number" && Number.isSafeInteger(declared) && declared >= 0) generation = declared
+      const fact = event.eventType === StepFact.eventType
+        ? Schema.decodeUnknownOption(StepFact.Fact)(payload)
+        : Option.none()
+      const call = event.eventType === CallFact.eventType
+        ? Schema.decodeUnknownOption(CallFact.Fact)(payload)
+        : Option.none()
+      const source = Option.isSome(call)
+        ? { sourceId: `call-fact-v1:${call.value.callId}:${call.value.phase}`, sourceSequence: 0 }
+        : Option.isSome(fact)
+        ? {
+          sourceId:
+            `step-fact-v1:${fact.value.step.stepId}:${fact.value.step.attempt}:${fact.value.step.ask}:${fact.value.step.retry}`,
+          sourceSequence: fact.value.sourceSequence
+        }
+        : { sourceId: "engine", sourceSequence: event.seq }
+      return [{
+        runId: Option.isSome(call) ? call.value.identity.runId : runId,
+        sequence: event.seq,
+        occurredAt: event.emittedAtMs,
+        kind: "control.engine.event",
+        payload: {
+          version: 1,
+          executionId: runId,
+          generation,
+          sequence: event.seq,
+          eventId: `${runId}/${event.seq}`,
+          ...source,
+          emittedAtMs: event.emittedAtMs,
+          eventType: event.eventType,
+          payload,
+          meta: {}
+        }
+      }]
+    }
+  )
 }
 
 /** The same monitor model used by CLI/TUI, from RunInspection's public events.
@@ -57,14 +88,27 @@ export const monitorFromInspection = (run: TraceRun, events: ReadonlyArray<Inspe
  * @since 1.0.0
  * @category projections
  */
-export const inspectionForest = (pages: ReadonlyArray<{ readonly runId: string; readonly events: ReadonlyArray<InspectionEvent> }>) => {
+export const inspectionForest = (
+  pages: ReadonlyArray<{ readonly runId: string; readonly events: ReadonlyArray<InspectionEvent> }>
+) => {
   const rows = pages.flatMap((page) => {
     const records = inspectionJournal(page.runId, page.events)
     const bySequence = new Map(page.events.map((event) => [event.seq, event]))
     return records.map((record) => ({ record, ownerId: page.runId, event: bySequence.get(record.sequence!)! }))
-  }).sort((a, b) => a.record.occurredAt! - b.record.occurredAt! || a.ownerId.localeCompare(b.ownerId) || a.record.sequence! - b.record.sequence!)
+  }).sort((a, b) =>
+    a.record.occurredAt! - b.record.occurredAt! || a.ownerId.localeCompare(b.ownerId) ||
+    a.record.sequence! - b.record.sequence!
+  )
   return {
-    records: rows.map(({ record }, index) => ({ ...record, sequence: pages.length === 1 ? record.sequence : index + 1 })),
-    events: rows.map(({ event, ownerId }, index) => ({ ...event, runId: ownerId, nativeSeq: event.seq, seq: pages.length === 1 ? event.seq : index + 1 })),
+    records: rows.map(({ record }, index) => ({
+      ...record,
+      sequence: pages.length === 1 ? record.sequence : index + 1
+    })),
+    events: rows.map(({ event, ownerId }, index) => ({
+      ...event,
+      runId: ownerId,
+      nativeSeq: event.seq,
+      seq: pages.length === 1 ? event.seq : index + 1
+    }))
   }
 }

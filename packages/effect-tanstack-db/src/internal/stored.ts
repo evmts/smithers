@@ -73,7 +73,10 @@ const decodeValue = (value: unknown): unknown => {
   const decoded: Record<string, unknown> = {}
   for (const [key, entry] of Object.entries(value)) {
     Object.defineProperty(decoded, key, {
-      value: decodeValue(entry), enumerable: true, writable: true, configurable: true
+      value: decodeValue(entry),
+      enumerable: true,
+      writable: true,
+      configurable: true
     })
   }
   return decoded

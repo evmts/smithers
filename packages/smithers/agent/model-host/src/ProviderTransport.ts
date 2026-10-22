@@ -62,14 +62,16 @@ export const providerTransport = (
   Layer.unwrap(Effect.gen(function*() {
     // Only an injected Fetch: the reference's default caches the first global fetch it sees, so an absent one reads
     // the global when the layer builds, as an explicit `base` would.
-    const fetch = base ?? Context.getOrUndefined(yield* Effect.context<never>(), FetchHttpClient.Fetch) ?? globalThis.fetch
+    const fetch = base ?? Context.getOrUndefined(yield* Effect.context<never>(), FetchHttpClient.Fetch) ??
+      globalThis.fetch
     const guarded = refusingRedirects(fetch, onRefused)
     return Layer.effect(
       HttpClient.HttpClient,
       Effect.map(
         HttpClient.HttpClient,
         (client) =>
-          HttpClient.transformResponse(client, (response) => Effect.provideService(response, FetchHttpClient.Fetch, guarded))
+          HttpClient.transformResponse(client, (response) =>
+            Effect.provideService(response, FetchHttpClient.Fetch, guarded))
       )
     ).pipe(Layer.provide(FetchHttpClient.layer))
   }))

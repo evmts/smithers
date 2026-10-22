@@ -158,9 +158,11 @@ export const within =
         deadlineMs: deadline.deadlineMs,
         startedAtMs: deadline.startedAtMs,
         message: `${flowName} execution ${instance.executionId} ran past its ${deadline.deadlineMs} ms deadline, ` +
-          `counted from its start at ${Math.abs(deadline.startedAtMs) <= 8_640_000_000_000_000
-            ? new Date(deadline.startedAtMs).toISOString()
-            : `epoch millisecond ${deadline.startedAtMs}`}`
+          `counted from its start at ${
+            Math.abs(deadline.startedAtMs) <= 8_640_000_000_000_000
+              ? new Date(deadline.startedAtMs).toISOString()
+              : `epoch millisecond ${deadline.startedAtMs}`
+          }`
       })
       const remaining = yield* remainingMs(deadline)
       if (remaining <= 0) return yield* Effect.die(expired)

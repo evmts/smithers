@@ -3,7 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import test from "node:test"
-import { ASSET_HEADERS, checkAssetHeaders, checkBuiltSite, checkLandingActions, releaseReferences } from "./check-built-site.mjs"
+import {
+  ASSET_HEADERS,
+  checkAssetHeaders,
+  checkBuiltSite,
+  checkLandingActions,
+  releaseReferences
+} from "./check-built-site.mjs"
 
 function fixture(t, files) {
   const root = mkdtempSync(join(tmpdir(), "smithers-built-site-"))
@@ -94,8 +100,7 @@ test("page links and assets retain their existing checks", (t) => {
  */
 test("every internal URL form resolves against the emitting page, so all four fail alike when the route is missing", (t) => {
   const root = fixture(t, {
-    "index.html":
-      "<a href=\"/guide/\">Root-relative</a><a href=\"https://smithers.sh/guide/\">Absolute</a>" +
+    "index.html": "<a href=\"/guide/\">Root-relative</a><a href=\"https://smithers.sh/guide/\">Absolute</a>" +
       "<a href=\"./guide/\">Relative</a><a href=\"guide/index.html\">Bare</a>" +
       "<a href=\"/absent/\">Root-relative</a><a href=\"https://smithers.sh/absent/\">Absolute</a>" +
       "<a href=\"./absent/\">Relative</a><img src=\"absent.png\">",
@@ -188,14 +193,24 @@ test("the source public/_headers the build copies into dist already passes, so t
   assert.deepEqual(Object.keys(ASSET_HEADERS), ["cache-control"])
 })
 
-test("the landing carries the install command and its Docs and Source buttons", t => {
-  const buttons = '<nav aria-label="Start"><a class="landing-button" href="/docs/installation/">Docs</a><a class="landing-button" href="https://github.com/smithersai/smithers">Source</a></nav>'
-  const run = '<div class="landing-command"><code><span aria-hidden="true">$ </span><span id="run-command">npx smthrs@next generate flow coding</span></code><button type="button" id="copy-install">Copy</button></div>'
-  const install = '<h1>Smithers is a codebase maintainer agent.</h1>' + run + buttons
+test("the landing carries the install command and its Docs and Source buttons", (t) => {
+  const buttons =
+    "<nav aria-label=\"Start\"><a class=\"landing-button\" href=\"/docs/installation/\">Docs</a><a class=\"landing-button\" href=\"https://github.com/smithersai/smithers\">Source</a></nav>"
+  const run =
+    "<div class=\"landing-command\"><code><span aria-hidden=\"true\">$ </span><span id=\"run-command\">npx smthrs@next generate flow coding</span></code><button type=\"button\" id=\"copy-install\">Copy</button></div>"
+  const install = "<h1>Smithers is a codebase maintainer agent.</h1>" + run + buttons
   assert.deepEqual(checkLandingActions(fixture(t, { "index.html": install })), [])
-  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": '<h1>Empty</h1>' })), ["index.html: missing the install command's Copy button"])
-  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": install.replace(' href="/docs/installation/"', ' href="/"') })), ["index.html: missing the /docs/installation/ button"])
-  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": install.replace("npx smthrs@next", "npm i -g smthrs@next") })), ["index.html: missing the npx run command"])
+  assert.deepEqual(checkLandingActions(fixture(t, { "index.html": "<h1>Empty</h1>" })), [
+    "index.html: missing the install command's Copy button"
+  ])
+  assert.deepEqual(
+    checkLandingActions(fixture(t, { "index.html": install.replace(" href=\"/docs/installation/\"", " href=\"/\"") })),
+    ["index.html: missing the /docs/installation/ button"]
+  )
+  assert.deepEqual(
+    checkLandingActions(fixture(t, { "index.html": install.replace("npx smthrs@next", "npm i -g smthrs@next") })),
+    ["index.html: missing the npx run command"]
+  )
   assert.deepEqual(checkLandingActions(fixture(t, {})), ["index.html: missing from the build"])
 })
 
@@ -209,7 +224,7 @@ test("built pages reject the retired GitHub App installation URL", (t) => {
 
 test("retired docs URLs reach Install while live page anchors remain checked", (t) => {
   const root = fixture(t, {
-    "docs/installation/index.html": '<h2 id="install">Install</h2>',
+    "docs/installation/index.html": "<h2 id=\"install\">Install</h2>",
     "_redirects": "/docs/guides/old/ /docs/installation/ 301\n"
   })
   assert.deepEqual(checkBuiltSite(root, ["/docs/guides/old/#retired-heading"]).failures, [])
@@ -217,11 +232,13 @@ test("retired docs URLs reach Install while live page anchors remain checked", (
 })
 
 test("a docs page's Markdown copy reaches its screenshots and linked pages in the build", (t) => {
-  const copy = "# Flows\n\n![The Flow card](https://smithers.sh/images/docs/flow-card.light.webp)\n\nSee [Quickstart](https://smithers.sh/docs/quickstart/#sign-in) and [GitHub](https://github.com/smithersai/smithers).\n"
+  const copy =
+    "# Flows\n\n![The Flow card](https://smithers.sh/images/docs/flow-card.light.webp)\n\nSee [Quickstart](https://smithers.sh/docs/quickstart/#sign-in) and [GitHub](https://github.com/smithersai/smithers).\n"
   const root = fixture(t, {
     "docs/flows.md": copy,
-    "docs/flows/index.html": '<link rel="alternate" type="text/markdown" href="/docs/flows.md"><img src="/images/docs/flow-card.dark.webp" alt="The Flow card">',
-    "docs/quickstart/index.html": '<h2 id="sign-in">Sign in</h2>',
+    "docs/flows/index.html":
+      "<link rel=\"alternate\" type=\"text/markdown\" href=\"/docs/flows.md\"><img src=\"/images/docs/flow-card.dark.webp\" alt=\"The Flow card\">",
+    "docs/quickstart/index.html": "<h2 id=\"sign-in\">Sign in</h2>",
     "images/docs/flow-card.light.webp": "light",
     "images/docs/flow-card.dark.webp": "dark"
   })

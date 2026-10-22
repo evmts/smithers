@@ -78,14 +78,16 @@ describe("client control", () => {
 
 describe("server control", () => {
   test("ready and ended round-trip", () => {
-    for (const control of [
-      { type: "ready", access: "write" },
-      { type: "ready", access: "read" },
-      { type: "ended", reason: "closed" },
-      { type: "ended", reason: "slept" },
-      { type: "ended", reason: "lost" },
-      { type: "ended", reason: "revoked" }
-    ] as const) {
+    for (
+      const control of [
+        { type: "ready", access: "write" },
+        { type: "ready", access: "read" },
+        { type: "ended", reason: "closed" },
+        { type: "ended", reason: "slept" },
+        { type: "ended", reason: "lost" },
+        { type: "ended", reason: "revoked" }
+      ] as const
+    ) {
       expect(decodeServerControl(encodeServerControl(control))).toEqual(control)
     }
   })

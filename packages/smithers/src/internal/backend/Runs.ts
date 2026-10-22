@@ -14,12 +14,14 @@ export const runs: Record<string, Handler> = {}
 runs["workflow list"] = (c, _a, o) => c.request("GET", c.repoPath(o.repo) + "/workflows")
 for (const action of ["dispatch", "run"]) {
   runs[`workflow ${action}`] = async (c, a, o) => {
-    const inputs = Object.fromEntries(list(o.input).map(str).map((value) => {
-      const i = value.indexOf("=")
-      const key = value.slice(0, i).trim()
-      if (i < 0 || !key) throw new UsageError({ message: "--input expects KEY=VALUE" })
-      return [key, value.slice(i + 1)]
-    }))
+    const inputs = Object.fromEntries(
+      list(o.input).map(str).map((value) => {
+        const i = value.indexOf("=")
+        const key = value.slice(0, i).trim()
+        if (i < 0 || !key) throw new UsageError({ message: "--input expects KEY=VALUE" })
+        return [key, value.slice(i + 1)]
+      })
+    )
     const base = c.repoPath(o.repo)
     let id = a.id
     if (action === "run") {

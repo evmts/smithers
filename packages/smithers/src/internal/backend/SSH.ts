@@ -176,7 +176,9 @@ export const remote = async (
   let outputError: Refused | undefined
   const overflow = () => {
     outputError ??= new Refused({
-      fault: "dependency", code: "tool_output_too_large", message: "SSH output exceeded 16 MiB per channel"
+      fault: "dependency",
+      code: "tool_output_too_large",
+      message: "SSH output exceeded 16 MiB per channel"
     })
     child.kill()
   }

@@ -40,12 +40,12 @@ everyone, as before.
 
 ## Sections and audiences
 
-| Field | What it is |
-| --- | --- |
-| `sections` | up to 8 sections, in order; a file has `sections` or `blocks`, never both |
-| `title` | the section's heading, optional |
-| `audience` | `everyone` (the default), `contributor` or `maintainer` |
-| `blocks` | the section's blocks |
+| Field          | What it is                                                                                                        |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `sections`     | up to 8 sections, in order; a file has `sections` or `blocks`, never both                                         |
+| `title`        | the section's heading, optional                                                                                   |
+| `audience`     | `everyone` (the default), `contributor` or `maintainer`                                                           |
+| `blocks`       | the section's blocks                                                                                              |
 | `contributors` | at the file's top: `role` (the default), or `anyone` to show the contributors' sections to everyone with the link |
 
 `Home.sees(viewer, section)` says whether an audience may see a section's: a
@@ -59,24 +59,24 @@ contributor.
 
 ## Blocks
 
-| `type`     | Fields | What a page draws |
-| ---------- | ------ | ----------------- |
+| `type`     | Fields                                                                                                           | What a page draws                                                                                                                                   |
+| ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `hero`     | `title`, `tagline?`, `text?`, `install?`, `actions?: [{ label, url }]` (1 to 3), `announcement?: { label, url }` | the project's opening: its name, a tagline, a line, its links (the first primary), the command that installs it, and an announcement above the name |
-| `code`     | `code`, `file?`, `language?`, `title?` | an example's source, as text, named by its file |
-| `cards`    | `cards: [{ title, text?, label?, url? }]` (1 to 12), `title?`, `more?: { label, url }` | a grid of cards and a link to the rest |
-| `stats`    | `stats: [{ value, label }]` (1 to 6), `title?` | declared facts, a value over its label; never counted by the page |
-| `releases` | `releases: [{ name, url, date, summary? }]` (1 to 12), `title?`, `more?` | releases as declared, each with its `YYYY-MM-DD` date |
-| `text`     | `title?`, `text` | a paragraph of plain text |
-| `links`    | `title?`, `links: [{ label, url }]` | links to absolute `http` or `https` URLs |
-| `markdown` | `path`, `title?` | a Markdown file of the repository, read at the home's commit |
-| `prompt`   | `flow?`, `title?`, `placeholder?` | the way to ask, with the flow that takes the question |
-| `app`      | `flow`, `title`, `picture` | one flow's button, when the page has that flow |
-| `action`   | `flow`, `title`, `key?` | a primary button that runs its flow at once, and its one-letter key |
-| `flows`    | `title?` | live: the flows the page offers |
-| `stack`    | `title?` | live: the repository's stack of changes |
-| `issues`   | `title?` | live: the issues and pull requests at a glance |
-| `runs`     | `title?` | live: recent flow runs |
-| `view`     | `flow` | the view a repository flow declares |
+| `code`     | `code`, `file?`, `language?`, `title?`                                                                           | an example's source, as text, named by its file                                                                                                     |
+| `cards`    | `cards: [{ title, text?, label?, url? }]` (1 to 12), `title?`, `more?: { label, url }`                           | a grid of cards and a link to the rest                                                                                                              |
+| `stats`    | `stats: [{ value, label }]` (1 to 6), `title?`                                                                   | declared facts, a value over its label; never counted by the page                                                                                   |
+| `releases` | `releases: [{ name, url, date, summary? }]` (1 to 12), `title?`, `more?`                                         | releases as declared, each with its `YYYY-MM-DD` date                                                                                               |
+| `text`     | `title?`, `text`                                                                                                 | a paragraph of plain text                                                                                                                           |
+| `links`    | `title?`, `links: [{ label, url }]`                                                                              | links to absolute `http` or `https` URLs                                                                                                            |
+| `markdown` | `path`, `title?`                                                                                                 | a Markdown file of the repository, read at the home's commit                                                                                        |
+| `prompt`   | `flow?`, `title?`, `placeholder?`                                                                                | the way to ask, with the flow that takes the question                                                                                               |
+| `app`      | `flow`, `title`, `picture`                                                                                       | one flow's button, when the page has that flow                                                                                                      |
+| `action`   | `flow`, `title`, `key?`                                                                                          | a primary button that runs its flow at once, and its one-letter key                                                                                 |
+| `flows`    | `title?`                                                                                                         | live: the flows the page offers                                                                                                                     |
+| `stack`    | `title?`                                                                                                         | live: the repository's stack of changes                                                                                                             |
+| `issues`   | `title?`                                                                                                         | live: the issues and pull requests at a glance                                                                                                      |
+| `runs`     | `title?`                                                                                                         | live: recent flow runs                                                                                                                              |
+| `view`     | `flow`                                                                                                           | the view a repository flow declares                                                                                                                 |
 
 A live block (`Home.liveKinds`) carries no rows: the page reads them itself,
 through its own access checks, so a declaration names a block, never its data.
@@ -115,18 +115,18 @@ else showTheTree(home.reason)
 
 ## Bounds
 
-| What                    | Bound                                                                                                      |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Sections                | 8 (`maximumSections`)                                                                                      |
-| Blocks                  | 32 in all (`maximumBlocks`)                                                                                |
-| A list in a block       | 12 cards, releases or links (`maximumEntries`), 6 stats (`maximumStats`), 3 hero actions (`maximumActions`)       |
-| A short line            | a tagline, a card's text, a release's summary, an install command: 280 characters, one line                |
-| A code block            | 4,096 characters, no NUL; `<` allowed, since source code holds it                                          |
-| A title or a link label | 1 to 120 characters, one line (`maximumTitleLength`)                                                       |
-| A text block            | 1 to 4,096 characters (`maximumTextLength`)                                                                |
-| A link                  | `http://` or `https://`, no spaces or quotes, 2,048 characters (`maximumUrlLength`)                        |
-| A Markdown path         | relative, no empty, `.` or `..` segment, no `\`, `%`, `:`, `?`, `#` or control character, 1,024 characters |
-| Every string            | no HTML: no tag, closing tag, comment or processing instruction (`htmlPattern`); `a < b` is fine           |
+| What                    | Bound                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Sections                | 8 (`maximumSections`)                                                                                       |
+| Blocks                  | 32 in all (`maximumBlocks`)                                                                                 |
+| A list in a block       | 12 cards, releases or links (`maximumEntries`), 6 stats (`maximumStats`), 3 hero actions (`maximumActions`) |
+| A short line            | a tagline, a card's text, a release's summary, an install command: 280 characters, one line                 |
+| A code block            | 4,096 characters, no NUL; `<` allowed, since source code holds it                                           |
+| A title or a link label | 1 to 120 characters, one line (`maximumTitleLength`)                                                        |
+| A text block            | 1 to 4,096 characters (`maximumTextLength`)                                                                 |
+| A link                  | `http://` or `https://`, no spaces or quotes, 2,048 characters (`maximumUrlLength`)                         |
+| A Markdown path         | relative, no empty, `.` or `..` segment, no `\`, `%`, `:`, `?`, `#` or control character, 1,024 characters  |
+| Every string            | no HTML: no tag, closing tag, comment or processing instruction (`htmlPattern`); `a < b` is fine            |
 
 ## Who writes the file
 

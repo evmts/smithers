@@ -10,8 +10,8 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
  * attribute or a log line.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, DurableDeferred, Flow, type FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { FlowEngine } from "@smthrs/engine"
+import { Action, DurableDeferred, Flow, type FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import type * as Crypto from "effect/Crypto"
@@ -137,7 +137,11 @@ describe("usage metrics", () => {
         retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 3 }),
         execute: Effect.suspend(() => ++flakyRuns === 1 ? Effect.fail(`boom ${SENTINEL}`) : Effect.succeed("ok"))
       })
-      const childStep = Action.make({ name: "usage-child-step", success: Schema.String, execute: Effect.succeed("child") })
+      const childStep = Action.make({
+        name: "usage-child-step",
+        success: Schema.String,
+        execute: Effect.succeed("child")
+      })
       const boom = Action.make({
         name: "usage-boom",
         success: Schema.String,
@@ -264,8 +268,12 @@ describe("usage metrics", () => {
       })
       expect(counts(snapshot, "flows_runs_settled")).toHaveLength(5)
       // Admitted before this build, it was never counted as started, and its settlement has no duration.
-      expect(counts(snapshot, "flows_runs_started")).not.toContainEqual(expect.objectContaining({ door: "unknown", flow: "Usage/Child" }))
-      expect(lines.find((line) => line.annotations.executionId === "usage-legacy")?.annotations).not.toHaveProperty("durationMs")
+      expect(counts(snapshot, "flows_runs_started")).not.toContainEqual(
+        expect.objectContaining({ door: "unknown", flow: "Usage/Child" })
+      )
+      expect(lines.find((line) => line.annotations.executionId === "usage-legacy")?.annotations).not.toHaveProperty(
+        "durationMs"
+      )
       expect(counts(snapshot, "flows_run_duration_ms")).toEqual(expect.arrayContaining([
         { flow: "Usage/Gated", outcome: "succeeded", placement: "browser", count: 1 },
         { flow: "Usage/Fails", outcome: "failed", placement: "browser", count: 1 },
@@ -307,12 +315,18 @@ describe("usage metrics", () => {
       )
       expect(settledGated?.level).toBe("INFO")
       // Admission runs in the caller's fiber, yet writes at the level the engine's host chose.
-      expect(usage.find((line) =>
-        line.message === "flow.run.started" && line.annotations.flow === "Usage/Gated"
-      )?.level).toBe("INFO")
-      expect(settledGated?.annotations).toMatchObject({ executionId: "usage-gated", door: "button", placement: "browser" })
+      expect(
+        usage.find((line) => line.message === "flow.run.started" && line.annotations.flow === "Usage/Gated")?.level
+      ).toBe("INFO")
+      expect(settledGated?.annotations).toMatchObject({
+        executionId: "usage-gated",
+        door: "button",
+        placement: "browser"
+      })
       expect(typeof settledGated?.annotations.durationMs).toBe("number")
-      expect(usage.find((line) => line.annotations.flow === "Usage/Fails" && line.message === "flow.run.settled")?.level)
+      expect(
+        usage.find((line) => line.annotations.flow === "Usage/Fails" && line.message === "flow.run.settled")?.level
+      )
         .toBe("WARN")
 
       // No payload, result or failure message in any usage record.

@@ -110,9 +110,11 @@ export const codeStorage = (publicKey: CryptoKey) => {
       return answer
     }
 
-    const route = /^\/api\/repos(?:\/([^/]+))?(\/upstream\/pull|\/files|\/file|\/commits|\/branches\/create|\/branches|\/tags)?$/.exec(
-      url.pathname
-    )
+    const route =
+      /^\/api\/repos(?:\/([^/]+))?(\/upstream\/pull|\/files|\/file|\/commits|\/branches\/create|\/branches|\/tags)?$/
+        .exec(
+          url.pathname
+        )
     if (route === null || url.origin !== BASE) {
       record(undefined)
       return problem(404, "route_not_found")

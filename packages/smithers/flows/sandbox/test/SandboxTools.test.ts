@@ -2,7 +2,16 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, FileSystem, Stream } from "effect"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll } from "vitest"
@@ -27,7 +36,10 @@ const provider = Effect.gen(function*() {
 
 let sessions = 0
 /** Runs `body` on a fresh machine whose workdir holds a git repository with one commit of `README.md`. */
-const onMachine = <A, E>(body: (session: Sandbox.Session) => Effect.Effect<A, E>, options: { readonly git?: boolean } = {}) =>
+const onMachine = <A, E>(
+  body: (session: Sandbox.Session) => Effect.Effect<A, E>,
+  options: { readonly git?: boolean } = {}
+) =>
   Effect.scoped(Effect.gen(function*() {
     const session = yield* (yield* provider).acquire(`tools-${++sessions}`)
     if (options.git !== false) {
@@ -77,49 +89,61 @@ describe("SandboxTools.resolve", () => {
 })
 
 describe("SandboxTools run", () => {
-  it.effect("answers the exit code and both streams, in the workdir or a cwd under it", () =>
-    onMachine((session) =>
-      Effect.gen(function*() {
-        mkdirSync(join(session.workdir, "sub"))
-        const ran = yield* exec(session, { tool: "run", command: "pwd; echo oops >&2; exit 3" })
-        expect(ran).toEqual({
-          tool: "run",
-          exitCode: 3,
-          timedOut: false,
-          stdout: `${session.workdir}\n`,
-          stderr: "oops\n",
-          stdoutBytes: session.workdir.length + 1,
-          stderrBytes: 5,
-          truncated: false
+  it.effect(
+    "answers the exit code and both streams, in the workdir or a cwd under it",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          mkdirSync(join(session.workdir, "sub"))
+          const ran = yield* exec(session, { tool: "run", command: "pwd; echo oops >&2; exit 3" })
+          expect(ran).toEqual({
+            tool: "run",
+            exitCode: 3,
+            timedOut: false,
+            stdout: `${session.workdir}\n`,
+            stderr: "oops\n",
+            stdoutBytes: session.workdir.length + 1,
+            stderrBytes: 5,
+            truncated: false
+          })
+          const inSub = yield* exec(session, { tool: "run", command: "pwd", cwd: "sub" })
+          expect(inSub).toMatchObject({ exitCode: 0, stdout: `${session.workdir}/sub\n` })
         })
-        const inSub = yield* exec(session, { tool: "run", command: "pwd", cwd: "sub" })
-        expect(inSub).toMatchObject({ exitCode: 0, stdout: `${session.workdir}/sub\n` })
-      })
-    ), slow)
+      ),
+    slow
+  )
 
-  it.effect("runs a command at most once: the same call again answers what it recorded", () =>
-    onMachine((session) =>
-      Effect.gen(function*() {
-        const call = { tool: "run", command: "echo ran >> runs.log; wc -l < runs.log" } as const
-        const first = yield* exec(session, call, "once")
-        const again = yield* exec(session, call, "once")
-        expect(again).toEqual(first)
-        expect(readFileSync(join(session.workdir, "runs.log"), "utf8")).toBe("ran\n")
-        // Another call is another run.
-        yield* exec(session, call, "twice")
-        expect(readFileSync(join(session.workdir, "runs.log"), "utf8")).toBe("ran\nran\n")
-      })
-    ), slow)
+  it.effect(
+    "runs a command at most once: the same call again answers what it recorded",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const call = { tool: "run", command: "echo ran >> runs.log; wc -l < runs.log" } as const
+          const first = yield* exec(session, call, "once")
+          const again = yield* exec(session, call, "once")
+          expect(again).toEqual(first)
+          expect(readFileSync(join(session.workdir, "runs.log"), "utf8")).toBe("ran\n")
+          // Another call is another run.
+          yield* exec(session, call, "twice")
+          expect(readFileSync(join(session.workdir, "runs.log"), "utf8")).toBe("ran\nran\n")
+        })
+      ),
+    slow
+  )
 
-  it.effect("fails ToolLost for a call an earlier attempt started and never finished, without running it", () =>
-    onMachine((session) =>
-      Effect.gen(function*() {
-        mkdirSync(join(calls, "started-before"), { recursive: true })
-        const lost = yield* failure(exec(session, { tool: "run", command: "touch ran" }, "started-before"))
-        expect(lost._tag).toBe("@smthrs/sandbox/SandboxTools/ToolLost")
-        expect(existsSync(join(session.workdir, "ran"))).toBe(false)
-      })
-    ), slow)
+  it.effect(
+    "fails ToolLost for a call an earlier attempt started and never finished, without running it",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          mkdirSync(join(calls, "started-before"), { recursive: true })
+          const lost = yield* failure(exec(session, { tool: "run", command: "touch ran" }, "started-before"))
+          expect(lost._tag).toBe("@smthrs/sandbox/SandboxTools/ToolLost")
+          expect(existsSync(join(session.workdir, "ran"))).toBe(false)
+        })
+      ),
+    slow
+  )
 
   it.effect("stops a command at its timeout and says so", () =>
     onMachine((session) =>
@@ -133,68 +157,87 @@ describe("SandboxTools run", () => {
       })
     ), slow)
 
-  it.effect("keeps the first outputBytes of each stream and counts the rest", () =>
-    onMachine((session) =>
-      Effect.gen(function*() {
-        const over = SandboxTools.limits.outputBytes + 10
-        const ran = yield* exec(session, {
-          tool: "run",
-          command: `head -c ${over} /dev/zero | tr '\\0' a; head -c ${over} /dev/zero | tr '\\0' b >&2`
-        }) as Effect.Effect<typeof SandboxTools.RunResult.Type>
-        expect(ran.truncated).toBe(true)
-        expect(ran.stdoutBytes).toBe(over)
-        expect(ran.stderrBytes).toBe(over)
-        expect(ran.stdout).toBe("a".repeat(SandboxTools.limits.outputBytes))
-        expect(ran.stderr).toBe("b".repeat(SandboxTools.limits.outputBytes))
-        const quiet = yield* exec(session, { tool: "run", command: `head -c ${over} /dev/zero >&2` }) as Effect.Effect<
-          typeof SandboxTools.RunResult.Type
-        >
-        expect(quiet).toMatchObject({ stdout: "", stdoutBytes: 0, stderrBytes: over, truncated: true })
-      })
-    ), slow)
+  it.effect(
+    "keeps the first outputBytes of each stream and counts the rest",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const over = SandboxTools.limits.outputBytes + 10
+          const ran = yield* exec(session, {
+            tool: "run",
+            command: `head -c ${over} /dev/zero | tr '\\0' a; head -c ${over} /dev/zero | tr '\\0' b >&2`
+          }) as Effect.Effect<typeof SandboxTools.RunResult.Type>
+          expect(ran.truncated).toBe(true)
+          expect(ran.stdoutBytes).toBe(over)
+          expect(ran.stderrBytes).toBe(over)
+          expect(ran.stdout).toBe("a".repeat(SandboxTools.limits.outputBytes))
+          expect(ran.stderr).toBe("b".repeat(SandboxTools.limits.outputBytes))
+          const quiet = yield* exec(session, {
+            tool: "run",
+            command: `head -c ${over} /dev/zero >&2`
+          }) as Effect.Effect<
+            typeof SandboxTools.RunResult.Type
+          >
+          expect(quiet).toMatchObject({ stdout: "", stdoutBytes: 0, stderrBytes: over, truncated: true })
+        })
+      ),
+    slow
+  )
 
-  it.effect("refuses a cwd outside the workdir, records a cwd that isn't a directory, and fails on a broken fence", () =>
-    onMachine((session) =>
-      Effect.gen(function*() {
-        const outside = yield* failure(exec(session, { tool: "run", command: "true", cwd: "../.." }))
-        expect(outside).toMatchObject({ _tag: "@smthrs/sandbox/SandboxTools/ToolRefused", reason: "path" })
-        const missing = { tool: "run", command: "touch ran", cwd: "nowhere" } as const
-        expect(yield* failure(exec(session, missing, "no-cwd"))).toMatchObject({ reason: "not_a_directory" })
-        mkdirSync(join(session.workdir, "nowhere"))
-        // The same call answers what it recorded, even once the directory exists.
-        expect(yield* failure(exec(session, missing, "no-cwd"))).toMatchObject({ reason: "not_a_directory" })
-        expect(existsSync(join(session.workdir, "nowhere", "ran"))).toBe(false)
-        // A command that exits 20 by itself is no refusal.
-        expect(yield* exec(session, { tool: "run", command: "exit 20" })).toMatchObject({ exitCode: 20 })
-        writeFileSync(join(root, "a-file"), "")
-        const broken = yield* failure(
-          SandboxTools.execute(session, { tool: "run", command: "true" }, {
-            callId: "x",
-            callsDirectory: join(root, "a-file", "calls")
-          })
-        )
-        expect(broken).toMatchObject({ _tag: "@smthrs/sandbox/SandboxTools/ToolUnavailable", code: "unknown" })
-        const escaping = yield* failure(
-          SandboxTools.execute(session, { tool: "run", command: "true" }, { callId: "x", callsDirectory: "/../.." })
-        )
-        expect(escaping).toMatchObject({ reason: "path" })
-      })
-    ), slow)
+  it.effect(
+    "refuses a cwd outside the workdir, records a cwd that isn't a directory, and fails on a broken fence",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const outside = yield* failure(exec(session, { tool: "run", command: "true", cwd: "../.." }))
+          expect(outside).toMatchObject({ _tag: "@smthrs/sandbox/SandboxTools/ToolRefused", reason: "path" })
+          const missing = { tool: "run", command: "touch ran", cwd: "nowhere" } as const
+          expect(yield* failure(exec(session, missing, "no-cwd"))).toMatchObject({ reason: "not_a_directory" })
+          mkdirSync(join(session.workdir, "nowhere"))
+          // The same call answers what it recorded, even once the directory exists.
+          expect(yield* failure(exec(session, missing, "no-cwd"))).toMatchObject({ reason: "not_a_directory" })
+          expect(existsSync(join(session.workdir, "nowhere", "ran"))).toBe(false)
+          // A command that exits 20 by itself is no refusal.
+          expect(yield* exec(session, { tool: "run", command: "exit 20" })).toMatchObject({ exitCode: 20 })
+          writeFileSync(join(root, "a-file"), "")
+          const broken = yield* failure(
+            SandboxTools.execute(session, { tool: "run", command: "true" }, {
+              callId: "x",
+              callsDirectory: join(root, "a-file", "calls")
+            })
+          )
+          expect(broken).toMatchObject({ _tag: "@smthrs/sandbox/SandboxTools/ToolUnavailable", code: "unknown" })
+          const escaping = yield* failure(
+            SandboxTools.execute(session, { tool: "run", command: "true" }, { callId: "x", callsDirectory: "/../.." })
+          )
+          expect(escaping).toMatchObject({ reason: "path" })
+        })
+      ),
+    slow
+  )
 })
 
 describe("SandboxTools read and write", () => {
-  it.effect("writes a file, making its directories, and reads it back", () =>
-    onMachine((session) =>
-      Effect.gen(function*() {
-        const written = yield* exec(session, { tool: "write", path: "src/deep/note.txt", content: "héllo\n" })
-        expect(written).toEqual({ tool: "write", path: "src/deep/note.txt", bytes: 7 })
-        expect(readFileSync(join(session.workdir, "src/deep/note.txt"), "utf8")).toBe("héllo\n")
-        const replaced = yield* exec(session, { tool: "write", path: `${session.workdir}/src/deep/note.txt`, content: "" })
-        expect(replaced).toEqual({ tool: "write", path: "src/deep/note.txt", bytes: 0 })
-        const read = yield* exec(session, { tool: "read", path: "README.md" })
-        expect(read).toEqual({ tool: "read", path: "README.md", content: "hello\n", bytes: 6, truncated: false })
-      })
-    ), slow)
+  it.effect(
+    "writes a file, making its directories, and reads it back",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const written = yield* exec(session, { tool: "write", path: "src/deep/note.txt", content: "héllo\n" })
+          expect(written).toEqual({ tool: "write", path: "src/deep/note.txt", bytes: 7 })
+          expect(readFileSync(join(session.workdir, "src/deep/note.txt"), "utf8")).toBe("héllo\n")
+          const replaced = yield* exec(session, {
+            tool: "write",
+            path: `${session.workdir}/src/deep/note.txt`,
+            content: ""
+          })
+          expect(replaced).toEqual({ tool: "write", path: "src/deep/note.txt", bytes: 0 })
+          const read = yield* exec(session, { tool: "read", path: "README.md" })
+          expect(read).toEqual({ tool: "read", path: "README.md", content: "hello\n", bytes: 6, truncated: false })
+        })
+      ),
+    slow
+  )
 
   it.effect("reads the first fileBytes of a larger file", () =>
     onMachine((session) =>
@@ -223,7 +266,9 @@ describe("SandboxTools read and write", () => {
         expect(yield* failure(exec(session, { tool: "write", path: "README.md/x", content: "" }))).toMatchObject({
           reason: "not_a_directory"
         })
-        expect(yield* failure(exec(session, { tool: "write", path: ".", content: "" }))).toMatchObject({ reason: "path" })
+        expect(yield* failure(exec(session, { tool: "write", path: ".", content: "" }))).toMatchObject({
+          reason: "path"
+        })
         expect(yield* failure(exec(session, { tool: "write", path: "/tmp/x", content: "" }))).toMatchObject({
           reason: "path"
         })
@@ -238,35 +283,41 @@ describe("SandboxTools read and write", () => {
 })
 
 describe("SandboxTools list", () => {
-  it.effect("lists a directory's entries by kind, hidden ones included", () =>
-    onMachine((session) =>
-      Effect.gen(function*() {
-        writeFileSync(join(session.workdir, ".hidden"), "abc")
-        writeFileSync(join(session.workdir, "with space.txt"), "")
-        mkdirSync(join(session.workdir, "src"))
-        symlinkSync("README.md", join(session.workdir, "link"))
-        const listed = yield* exec(session, { tool: "list" }) as Effect.Effect<typeof SandboxTools.ListResult.Type>
-        expect(listed.path).toBe(".")
-        expect(listed.truncated).toBe(false)
-        expect([...listed.entries].sort((a, b) => a.name.localeCompare(b.name))).toEqual([
-          { name: ".git", kind: "directory", bytes: 0 },
-          { name: ".hidden", kind: "file", bytes: 3 },
-          { name: "link", kind: "symlink", bytes: 0 },
-          { name: "README.md", kind: "file", bytes: 6 },
-          { name: "src", kind: "directory", bytes: 0 },
-          { name: "with space.txt", kind: "file", bytes: 0 }
-        ])
-        const sub = yield* exec(session, { tool: "list", path: "src" })
-        expect(sub).toEqual({ tool: "list", path: "src", entries: [], truncated: false })
-      })
-    ), slow)
+  it.effect(
+    "lists a directory's entries by kind, hidden ones included",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          writeFileSync(join(session.workdir, ".hidden"), "abc")
+          writeFileSync(join(session.workdir, "with space.txt"), "")
+          mkdirSync(join(session.workdir, "src"))
+          symlinkSync("README.md", join(session.workdir, "link"))
+          const listed = yield* exec(session, { tool: "list" }) as Effect.Effect<typeof SandboxTools.ListResult.Type>
+          expect(listed.path).toBe(".")
+          expect(listed.truncated).toBe(false)
+          expect([...listed.entries].sort((a, b) => a.name.localeCompare(b.name))).toEqual([
+            { name: ".git", kind: "directory", bytes: 0 },
+            { name: ".hidden", kind: "file", bytes: 3 },
+            { name: "link", kind: "symlink", bytes: 0 },
+            { name: "README.md", kind: "file", bytes: 6 },
+            { name: "src", kind: "directory", bytes: 0 },
+            { name: "with space.txt", kind: "file", bytes: 0 }
+          ])
+          const sub = yield* exec(session, { tool: "list", path: "src" })
+          expect(sub).toEqual({ tool: "list", path: "src", entries: [], truncated: false })
+        })
+      ),
+    slow
+  )
 
   it.effect("cuts a listing at listEntries", () =>
     onMachine((session) =>
       Effect.gen(function*() {
         const many = join(session.workdir, "many")
         mkdirSync(many)
-        for (let index = 0; index <= SandboxTools.limits.listEntries; index++) writeFileSync(join(many, `f${index}`), "")
+        for (let index = 0; index <= SandboxTools.limits.listEntries; index++) {
+          writeFileSync(join(many, `f${index}`), "")
+        }
         const listed = yield* exec(session, { tool: "list", path: "many" }) as Effect.Effect<
           typeof SandboxTools.ListResult.Type
         >
@@ -287,69 +338,81 @@ describe("SandboxTools list", () => {
 })
 
 describe("SandboxTools status and diff", () => {
-  it.effect("reports the branch and every changed path, renames with their old path", () =>
-    onMachine((session) =>
-      Effect.gen(function*() {
-        writeFileSync(join(session.workdir, "README.md"), "changed\n")
-        writeFileSync(join(session.workdir, "keep.txt"), "k\n")
-        git(session.workdir, "add", "keep.txt")
-        git(session.workdir, "commit", "-q", "-m", "keep")
-        git(session.workdir, "mv", "keep.txt", "kept.txt")
-        writeFileSync(join(session.workdir, "new file.txt"), "new\n")
-        const status = yield* exec(session, { tool: "status" }) as Effect.Effect<
-          typeof SandboxTools.StatusResult.Type
-        >
-        expect(status.branch).toBe("main")
-        expect(status.entries).toEqual([
-          { path: "README.md", index: " ", worktree: "M" },
-          { path: "kept.txt", index: "R", worktree: " ", from: "keep.txt" },
-          { path: "new file.txt", index: "?", worktree: "?" }
-        ])
-        git(session.workdir, "checkout", "-q", "--detach")
-        expect(yield* exec(session, { tool: "status" })).toMatchObject({ branch: null })
-      })
-    ), slow)
-
-  it.effect("names the branch of a repository with no commits, and refuses a workdir that isn't one", () =>
-    Effect.gen(function*() {
-      yield* onMachine((session) =>
+  it.effect(
+    "reports the branch and every changed path, renames with their old path",
+    () =>
+      onMachine((session) =>
         Effect.gen(function*() {
-          git(session.workdir, "init", "-q", "-b", "fresh")
-          writeFileSync(join(session.workdir, "a"), "")
-          expect(yield* exec(session, { tool: "status" })).toEqual({
-            tool: "status",
-            branch: "fresh",
-            entries: [{ path: "a", index: "?", worktree: "?" }]
-          })
-        }), { git: false })
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          expect(yield* failure(exec(session, { tool: "status" }))).toMatchObject({ reason: "not_a_repository" })
-          expect(yield* failure(exec(session, { tool: "diff" }))).toMatchObject({ reason: "not_a_repository" })
-        }), { git: false })
-    }), slow)
+          writeFileSync(join(session.workdir, "README.md"), "changed\n")
+          writeFileSync(join(session.workdir, "keep.txt"), "k\n")
+          git(session.workdir, "add", "keep.txt")
+          git(session.workdir, "commit", "-q", "-m", "keep")
+          git(session.workdir, "mv", "keep.txt", "kept.txt")
+          writeFileSync(join(session.workdir, "new file.txt"), "new\n")
+          const status = yield* exec(session, { tool: "status" }) as Effect.Effect<
+            typeof SandboxTools.StatusResult.Type
+          >
+          expect(status.branch).toBe("main")
+          expect(status.entries).toEqual([
+            { path: "README.md", index: " ", worktree: "M" },
+            { path: "kept.txt", index: "R", worktree: " ", from: "keep.txt" },
+            { path: "new file.txt", index: "?", worktree: "?" }
+          ])
+          git(session.workdir, "checkout", "-q", "--detach")
+          expect(yield* exec(session, { tool: "status" })).toMatchObject({ branch: null })
+        })
+      ),
+    slow
+  )
 
-  it.effect("diffs tracked changes and untracked files as new ones, optionally for some paths", () =>
-    onMachine((session) =>
+  it.effect(
+    "names the branch of a repository with no commits, and refuses a workdir that isn't one",
+    () =>
       Effect.gen(function*() {
-        writeFileSync(join(session.workdir, "README.md"), "hello\nworld\n")
-        writeFileSync(join(session.workdir, "hello.txt"), "hi\n")
-        const diff = yield* exec(session, { tool: "diff" }) as Effect.Effect<typeof SandboxTools.DiffResult.Type>
-        expect(diff.truncated).toBe(false)
-        expect(diff.bytes).toBe(new TextEncoder().encode(diff.diff).byteLength)
-        expect(diff.diff).toContain("+world")
-        expect(diff.diff).toContain("new file mode")
-        expect(diff.diff).toContain("+hi")
-        const only = yield* exec(session, { tool: "diff", paths: ["hello.txt"] }) as Effect.Effect<
-          typeof SandboxTools.DiffResult.Type
-        >
-        expect(only.diff).toContain("+hi")
-        expect(only.diff).not.toContain("+world")
-        expect(yield* failure(exec(session, { tool: "diff", paths: ["../x"] }))).toMatchObject({ reason: "path" })
-        const clean = yield* onMachine((fresh) => exec(fresh, { tool: "diff" }))
-        expect(clean).toEqual({ tool: "diff", diff: "", bytes: 0, truncated: false })
-      })
-    ), slow)
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            git(session.workdir, "init", "-q", "-b", "fresh")
+            writeFileSync(join(session.workdir, "a"), "")
+            expect(yield* exec(session, { tool: "status" })).toEqual({
+              tool: "status",
+              branch: "fresh",
+              entries: [{ path: "a", index: "?", worktree: "?" }]
+            })
+          }), { git: false })
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            expect(yield* failure(exec(session, { tool: "status" }))).toMatchObject({ reason: "not_a_repository" })
+            expect(yield* failure(exec(session, { tool: "diff" }))).toMatchObject({ reason: "not_a_repository" })
+          }), { git: false })
+      }),
+    slow
+  )
+
+  it.effect(
+    "diffs tracked changes and untracked files as new ones, optionally for some paths",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          writeFileSync(join(session.workdir, "README.md"), "hello\nworld\n")
+          writeFileSync(join(session.workdir, "hello.txt"), "hi\n")
+          const diff = yield* exec(session, { tool: "diff" }) as Effect.Effect<typeof SandboxTools.DiffResult.Type>
+          expect(diff.truncated).toBe(false)
+          expect(diff.bytes).toBe(new TextEncoder().encode(diff.diff).byteLength)
+          expect(diff.diff).toContain("+world")
+          expect(diff.diff).toContain("new file mode")
+          expect(diff.diff).toContain("+hi")
+          const only = yield* exec(session, { tool: "diff", paths: ["hello.txt"] }) as Effect.Effect<
+            typeof SandboxTools.DiffResult.Type
+          >
+          expect(only.diff).toContain("+hi")
+          expect(only.diff).not.toContain("+world")
+          expect(yield* failure(exec(session, { tool: "diff", paths: ["../x"] }))).toMatchObject({ reason: "path" })
+          const clean = yield* onMachine((fresh) => exec(fresh, { tool: "diff" }))
+          expect(clean).toEqual({ tool: "diff", diff: "", bytes: 0, truncated: false })
+        })
+      ),
+    slow
+  )
 
   it.effect("cuts a diff at diffBytes", () =>
     onMachine((session) =>
@@ -364,59 +427,66 @@ describe("SandboxTools status and diff", () => {
 })
 
 describe("SandboxTools checkpoint and restore", () => {
-  it.effect("carries tracked, untracked and deleted changes to a fresh clone at another commit", () =>
-    Effect.gen(function*() {
-      const origin = join(root, `origin-${++sessions}`)
-      mkdirSync(origin)
-      git(origin, "init", "-q", "-b", "main")
-      writeFileSync(join(origin, "a.txt"), "a\n")
-      writeFileSync(join(origin, "gone.txt"), "gone\n")
-      writeFileSync(join(origin, "bin"), new Uint8Array([0, 1, 2, 255]))
-      git(origin, "add", ".")
-      git(origin, "commit", "-q", "-m", "base")
-      const base = git(origin, "rev-parse", "HEAD").trim()
+  it.effect(
+    "carries tracked, untracked and deleted changes to a fresh clone at another commit",
+    () =>
+      Effect.gen(function*() {
+        const origin = join(root, `origin-${++sessions}`)
+        mkdirSync(origin)
+        git(origin, "init", "-q", "-b", "main")
+        writeFileSync(join(origin, "a.txt"), "a\n")
+        writeFileSync(join(origin, "gone.txt"), "gone\n")
+        writeFileSync(join(origin, "bin"), new Uint8Array([0, 1, 2, 255]))
+        git(origin, "add", ".")
+        git(origin, "commit", "-q", "-m", "base")
+        const base = git(origin, "rev-parse", "HEAD").trim()
 
-      const saved = yield* onMachine((session) =>
-        Effect.gen(function*() {
-          git(session.workdir, "clone", "-q", origin, ".")
-          writeFileSync(join(session.workdir, "a.txt"), "a\nmore\n")
-          writeFileSync(join(session.workdir, "new.txt"), "new\n")
-          writeFileSync(join(session.workdir, "bin"), new Uint8Array([9, 0, 9]))
-          rmSync(join(session.workdir, "gone.txt"))
-          const saved = yield* SandboxTools.checkpoint(session)
-          // Capturing changes nothing: the changes are still unstaged.
-          expect(git(session.workdir, "status", "--porcelain")).toContain("?? new.txt")
-          return saved
-        }), { git: false })
-      expect(saved.head).toBe(base)
-      // Every commit is on the remote: no bundle.
-      expect(saved.bundle!.byteLength).toBe(0)
+        const saved = yield* onMachine((session) =>
+          Effect.gen(function*() {
+            git(session.workdir, "clone", "-q", origin, ".")
+            writeFileSync(join(session.workdir, "a.txt"), "a\nmore\n")
+            writeFileSync(join(session.workdir, "new.txt"), "new\n")
+            writeFileSync(join(session.workdir, "bin"), new Uint8Array([9, 0, 9]))
+            rmSync(join(session.workdir, "gone.txt"))
+            const saved = yield* SandboxTools.checkpoint(session)
+            // Capturing changes nothing: the changes are still unstaged.
+            expect(git(session.workdir, "status", "--porcelain")).toContain("?? new.txt")
+            return saved
+          }), { git: false })
+        expect(saved.head).toBe(base)
+        // Every commit is on the remote: no bundle.
+        expect(saved.bundle!.byteLength).toBe(0)
 
-      // The branch moved on since; the restore puts the working copy back on its own base.
-      writeFileSync(join(origin, "later.txt"), "later\n")
-      git(origin, "add", ".")
-      git(origin, "commit", "-q", "-m", "later")
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          git(session.workdir, "clone", "-q", origin, ".")
-          yield* SandboxTools.restore(session, saved)
-          expect(git(session.workdir, "rev-parse", "HEAD").trim()).toBe(base)
-          expect(readFileSync(join(session.workdir, "a.txt"), "utf8")).toBe("a\nmore\n")
-          expect(readFileSync(join(session.workdir, "new.txt"), "utf8")).toBe("new\n")
-          expect([...readFileSync(join(session.workdir, "bin"))]).toEqual([9, 0, 9])
-          expect(existsSync(join(session.workdir, "gone.txt"))).toBe(false)
-        }), { git: false })
+        // The branch moved on since; the restore puts the working copy back on its own base.
+        writeFileSync(join(origin, "later.txt"), "later\n")
+        git(origin, "add", ".")
+        git(origin, "commit", "-q", "-m", "later")
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            git(session.workdir, "clone", "-q", origin, ".")
+            yield* SandboxTools.restore(session, saved)
+            expect(git(session.workdir, "rev-parse", "HEAD").trim()).toBe(base)
+            expect(readFileSync(join(session.workdir, "a.txt"), "utf8")).toBe("a\nmore\n")
+            expect(readFileSync(join(session.workdir, "new.txt"), "utf8")).toBe("new\n")
+            expect([...readFileSync(join(session.workdir, "bin"))]).toEqual([9, 0, 9])
+            expect(existsSync(join(session.workdir, "gone.txt"))).toBe(false)
+          }), { git: false })
 
-      // A clean working copy restores with nothing to apply.
-      const clean = yield* onMachine((session) => SandboxTools.checkpoint(session))
-      expect(clean.patch.byteLength).toBe(0)
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          yield* SandboxTools.restore(session, { head: git(session.workdir, "rev-parse", "HEAD").trim(), patch: clean.patch })
-          expect(git(session.workdir, "status", "--porcelain")).toBe("")
-        })
-      )
-    }), slow)
+        // A clean working copy restores with nothing to apply.
+        const clean = yield* onMachine((session) => SandboxTools.checkpoint(session))
+        expect(clean.patch.byteLength).toBe(0)
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            yield* SandboxTools.restore(session, {
+              head: git(session.workdir, "rev-parse", "HEAD").trim(),
+              patch: clean.patch
+            })
+            expect(git(session.workdir, "status", "--porcelain")).toBe("")
+          })
+        )
+      }),
+    slow
+  )
 
   it.effect("carries a commit made in the box, which no remote has, to a fresh clone", () =>
     Effect.gen(function*() {
@@ -434,7 +504,10 @@ describe("SandboxTools checkpoint and restore", () => {
           git(session.workdir, "add", "local.txt")
           git(session.workdir, "commit", "-q", "-m", "local")
           writeFileSync(join(session.workdir, "after.txt"), "typed after the commit\n")
-          return { checkpoint: yield* SandboxTools.checkpoint(session), head: git(session.workdir, "rev-parse", "HEAD").trim() }
+          return {
+            checkpoint: yield* SandboxTools.checkpoint(session),
+            head: git(session.workdir, "rev-parse", "HEAD").trim()
+          }
         }), { git: false })
       expect(saved.checkpoint.head).toBe(saved.head)
       expect(saved.checkpoint.bundle!.byteLength).toBeGreaterThan(0)
@@ -443,7 +516,9 @@ describe("SandboxTools checkpoint and restore", () => {
         Effect.gen(function*() {
           git(session.workdir, "clone", "-q", origin, ".")
           // The fresh clone lacks the box's commit; without its bundle, it can't be restored.
-          const lacking = yield* Effect.flip(SandboxTools.restore(session, { head: saved.head, patch: saved.checkpoint.patch }))
+          const lacking = yield* Effect.flip(
+            SandboxTools.restore(session, { head: saved.head, patch: saved.checkpoint.patch })
+          )
           expect(lacking).toMatchObject({ reason: "not_found" })
           yield* SandboxTools.restore(session, saved.checkpoint)
           expect(git(session.workdir, "rev-parse", "HEAD").trim()).toBe(saved.head)
@@ -453,44 +528,48 @@ describe("SandboxTools checkpoint and restore", () => {
         }), { git: false })
     }), slow)
 
-  it.effect("fetches a bundle's base the shallow clone lacks from origin; an origin that can't be reached is unavailable", () =>
-    Effect.gen(function*() {
-      const origin = join(root, `origin-${++sessions}`)
-      mkdirSync(origin)
-      git(origin, "init", "-q", "-b", "main")
-      git(origin, "config", "uploadpack.allowReachableSHA1InWant", "true")
-      writeFileSync(join(origin, "a.txt"), "a\n")
-      git(origin, "add", ".")
-      git(origin, "commit", "-q", "-m", "base")
-
-      const saved = yield* onMachine((session) =>
-        Effect.gen(function*() {
-          git(session.workdir, "clone", "-q", `file://${origin}`, ".")
-          writeFileSync(join(session.workdir, "local.txt"), "local\n")
-          git(session.workdir, "add", "local.txt")
-          git(session.workdir, "commit", "-q", "-m", "local")
-          return yield* SandboxTools.checkpoint(session)
-        }), { git: false })
-
-      // The branch moves on, so a depth-1 clone no longer has the commit the box's commit sits on.
-      for (const name of ["b", "c"]) {
-        writeFileSync(join(origin, `${name}.txt`), `${name}\n`)
+  it.effect(
+    "fetches a bundle's base the shallow clone lacks from origin; an origin that can't be reached is unavailable",
+    () =>
+      Effect.gen(function*() {
+        const origin = join(root, `origin-${++sessions}`)
+        mkdirSync(origin)
+        git(origin, "init", "-q", "-b", "main")
+        git(origin, "config", "uploadpack.allowReachableSHA1InWant", "true")
+        writeFileSync(join(origin, "a.txt"), "a\n")
         git(origin, "add", ".")
-        git(origin, "commit", "-q", "-m", name)
-      }
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          git(session.workdir, "clone", "-q", "--depth", "1", `file://${origin}`, ".")
-          // An origin that doesn't answer: try again later, never "not found".
-          git(session.workdir, "remote", "set-url", "origin", "http://127.0.0.1:9/unreachable")
-          const down = yield* Effect.flip(SandboxTools.restore(session, saved))
-          expect(down).toEqual(new SandboxTools.ToolUnavailable({ code: "unavailable" }))
-          git(session.workdir, "remote", "set-url", "origin", `file://${origin}`)
-          yield* SandboxTools.restore(session, saved)
-          expect(git(session.workdir, "rev-parse", "HEAD").trim()).toBe(saved.head)
-          expect(readFileSync(join(session.workdir, "local.txt"), "utf8")).toBe("local\n")
-        }), { git: false })
-    }), slow)
+        git(origin, "commit", "-q", "-m", "base")
+
+        const saved = yield* onMachine((session) =>
+          Effect.gen(function*() {
+            git(session.workdir, "clone", "-q", `file://${origin}`, ".")
+            writeFileSync(join(session.workdir, "local.txt"), "local\n")
+            git(session.workdir, "add", "local.txt")
+            git(session.workdir, "commit", "-q", "-m", "local")
+            return yield* SandboxTools.checkpoint(session)
+          }), { git: false })
+
+        // The branch moves on, so a depth-1 clone no longer has the commit the box's commit sits on.
+        for (const name of ["b", "c"]) {
+          writeFileSync(join(origin, `${name}.txt`), `${name}\n`)
+          git(origin, "add", ".")
+          git(origin, "commit", "-q", "-m", name)
+        }
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            git(session.workdir, "clone", "-q", "--depth", "1", `file://${origin}`, ".")
+            // An origin that doesn't answer: try again later, never "not found".
+            git(session.workdir, "remote", "set-url", "origin", "http://127.0.0.1:9/unreachable")
+            const down = yield* Effect.flip(SandboxTools.restore(session, saved))
+            expect(down).toEqual(new SandboxTools.ToolUnavailable({ code: "unavailable" }))
+            git(session.workdir, "remote", "set-url", "origin", `file://${origin}`)
+            yield* SandboxTools.restore(session, saved)
+            expect(git(session.workdir, "rev-parse", "HEAD").trim()).toBe(saved.head)
+            expect(readFileSync(join(session.workdir, "local.txt"), "utf8")).toBe("local\n")
+          }), { git: false })
+      }),
+    slow
+  )
 
   it.effect("fetches a base commit the fresh clone lacks from origin by its id", () =>
     Effect.gen(function*() {
@@ -526,30 +605,39 @@ describe("SandboxTools checkpoint and restore", () => {
         }), { git: false })
     }), slow)
 
-  it.effect("refuses a commit the working copy doesn't have, a workdir with no commit, and a patch over the limit", () =>
-    Effect.gen(function*() {
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          const missing = yield* Effect.flip(
-            SandboxTools.restore(session, { head: "0".repeat(40), patch: new Uint8Array() })
-          )
-          expect(missing).toMatchObject({ reason: "not_found" })
-          const head = git(session.workdir, "rev-parse", "HEAD").trim()
-          const broken = yield* Effect.flip(
-            SandboxTools.restore(session, { head, patch: new TextEncoder().encode("not a patch\n") })
-          )
-          expect(broken).toMatchObject({ _tag: "@smthrs/sandbox/SandboxTools/ToolUnavailable" })
-          writeFileSync(join(session.workdir, "huge.bin"), new Uint8Array(SandboxTools.limits.checkpointBytes + 1).fill(7))
-          expect(yield* Effect.flip(SandboxTools.checkpoint(session))).toMatchObject({ reason: "too_large" })
-        }))
-      yield* onMachine((session) =>
-        Effect.gen(function*() {
-          expect(yield* Effect.flip(SandboxTools.checkpoint(session))).toMatchObject({ reason: "not_a_repository" })
-          expect(yield* Effect.flip(SandboxTools.restore(session, { head: "x", patch: new Uint8Array() }))).toMatchObject({
-            reason: "not_a_repository"
+  it.effect(
+    "refuses a commit the working copy doesn't have, a workdir with no commit, and a patch over the limit",
+    () =>
+      Effect.gen(function*() {
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            const missing = yield* Effect.flip(
+              SandboxTools.restore(session, { head: "0".repeat(40), patch: new Uint8Array() })
+            )
+            expect(missing).toMatchObject({ reason: "not_found" })
+            const head = git(session.workdir, "rev-parse", "HEAD").trim()
+            const broken = yield* Effect.flip(
+              SandboxTools.restore(session, { head, patch: new TextEncoder().encode("not a patch\n") })
+            )
+            expect(broken).toMatchObject({ _tag: "@smthrs/sandbox/SandboxTools/ToolUnavailable" })
+            writeFileSync(
+              join(session.workdir, "huge.bin"),
+              new Uint8Array(SandboxTools.limits.checkpointBytes + 1).fill(7)
+            )
+            expect(yield* Effect.flip(SandboxTools.checkpoint(session))).toMatchObject({ reason: "too_large" })
           })
-        }), { git: false })
-    }), slow)
+        )
+        yield* onMachine((session) =>
+          Effect.gen(function*() {
+            expect(yield* Effect.flip(SandboxTools.checkpoint(session))).toMatchObject({ reason: "not_a_repository" })
+            expect(yield* Effect.flip(SandboxTools.restore(session, { head: "x", patch: new Uint8Array() })))
+              .toMatchObject({
+                reason: "not_a_repository"
+              })
+          }), { git: false })
+      }),
+    slow
+  )
 })
 
 describe("SandboxTools on a failing session", () => {

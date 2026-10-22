@@ -12,8 +12,9 @@
  * @since 1.0.0
  */
 import { Smithers } from "@smthrs/targets"
-import { Package as repoTargetsPackage } from "../../packages/repo-targets/PACKAGE.ts"
 import { Package as errorsPackage } from "../../packages/errors/PACKAGE.ts"
+import { Package as repoTargetsPackage } from "../../packages/repo-targets/PACKAGE.ts"
+import { workspacePackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package as chainPackage } from "../../packages/smithers/agent/chain/PACKAGE.ts"
 import { Package as evalsPackage } from "../../packages/smithers/agent/evals/PACKAGE.ts"
 import { Package as fsPackage } from "../../packages/smithers/agent/fs/PACKAGE.ts"
@@ -63,7 +64,6 @@ import { Package as migratePackage } from "../../packages/smithers/migrate/PACKA
 import { Package as notificationsPackage } from "../../packages/smithers/notifications/PACKAGE.ts"
 import { Package as cliPackage } from "../../packages/smithers/PACKAGE.ts"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
-import { workspacePackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const cwd = "apps/site"
 
@@ -91,7 +91,8 @@ const supportDocs = Smithers.Generate({
  * not projected: the build copies them from docs/app/images (`build`).
  */
 const appDocs = Smithers.Generate({
-  summary: "Project the docs pages, their Markdown copies, and the docs sidebar from apps/site/docs/app; check drift under lint.",
+  summary:
+    "Project the docs pages, their Markdown copies, and the docs sidebar from apps/site/docs/app; check drift under lint.",
   script: Smithers.file("scripts/sync-app-docs.mjs"),
   data: [...appDocsInputs, appDocsImages, Smithers.file("scripts/docs-text.mjs")],
   changes: ["src/content/docs/docs/*.md", "public/docs/*.md", "src/data/docs-sidebar.json"]
@@ -198,7 +199,8 @@ const cliData = Smithers.Generate({
  * fails the generator rather than publishing.
  */
 const cliReference = Smithers.Generate({
-  summary: "Render the CLI reference page and its Markdown copy from the captured command manifest and help; check drift under lint.",
+  summary:
+    "Render the CLI reference page and its Markdown copy from the captured command manifest and help; check drift under lint.",
   script: Smithers.file("scripts/gen-cli-reference.mjs"),
   data: [Smithers.file("src/data/cli-commands.json"), Smithers.glob("src/data/help/**/*.txt")],
   changes: ["src/content/docs/docs/reference/cli.md", "public/docs/reference/cli.md"]
@@ -304,7 +306,8 @@ const llms = Smithers.Generate({
  * and where site copy says a repository's flows live (M-49).
  */
 const docsTextTest = Smithers.Shell.Test({
-  shell: "node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs apps/site/scripts/flows-location.test.mjs",
+  shell:
+    "node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs apps/site/scripts/flows-location.test.mjs",
   data: [
     Smithers.file("scripts/flows-location.test.mjs"),
     Smithers.file("src/data/migration-paths.json"),
@@ -394,7 +397,7 @@ const installPageTest = Smithers.Shell.Test({
     Smithers.glob("src/pages/**/*.astro"),
     Smithers.glob("docs/**/*"),
     Smithers.file("public/_redirects"),
-    ...["T-INS-04", "T-INS-05", "T-INS-08"].map(name => Smithers.file(`//.specs/engineering/tickets/${name}.md`)),
+    ...["T-INS-04", "T-INS-05", "T-INS-08"].map((name) => Smithers.file(`//.specs/engineering/tickets/${name}.md`)),
     Smithers.file("astro.config.mjs"),
     Smithers.file("src/data/project.json"),
     Smithers.glob("src/content/docs/docs/**/*"),
@@ -604,7 +607,8 @@ const securityReview = Smithers.SecurityReview({
     {
       id: "demo-intake-form",
       title: "The demo form sends only the typed fields to the fixed intake endpoint",
-      threat: "A visitor's name, work email and message reach a third party, or a script on the page rewrites where the form posts.",
+      threat:
+        "A visitor's name, work email and message reach a third party, or a script on the page rewrites where the form posts.",
       lookFor: [
         "An intake endpoint taken from a query parameter, env var, or page data instead of the literal bug.smithers.sh URL.",
         "Error handling that renders the server's response body into the page with innerHTML.",
@@ -615,17 +619,25 @@ const securityReview = Smithers.SecurityReview({
     {
       id: "redirects",
       title: "Redirects stay on smithers.sh",
-      threat: "An attacker uses a smithers.sh URL, or a retired `<slug>.smithers.sh` docs host, as an open redirect to a phishing origin.",
+      threat:
+        "An attacker uses a smithers.sh URL, or a retired `<slug>.smithers.sh` docs host, as an open redirect to a phishing origin.",
       lookFor: [
         "A _redirects rule whose destination is an absolute off-site URL or a splat that forwards a user-controlled host.",
         "A docs-redirect Location built from request text (host suffix, path, query or headers) instead of a value of the generated maps under https://github.com/smithersai/smithers/."
       ],
-      paths: ["public/_headers", "public/_redirects", "scripts/check-built-site.mjs", "docs-redirect/src/**", "docs-redirect/wrangler.jsonc"]
+      paths: [
+        "public/_headers",
+        "public/_redirects",
+        "scripts/check-built-site.mjs",
+        "docs-redirect/src/**",
+        "docs-redirect/wrangler.jsonc"
+      ]
     },
     {
       id: "build-time-secret-exposure",
       title: "No secret or server-only env var is inlined into the built client bundle",
-      threat: "Anyone who loads smithers.sh reads a provider key, deploy token, or dev API origin baked into static HTML or JS.",
+      threat:
+        "Anyone who loads smithers.sh reads a provider key, deploy token, or dev API origin baked into static HTML or JS.",
       lookFor: [
         "import.meta.env reads of a non-PUBLIC_ variable in a component or client script.",
         "A vite `define` that embeds process.env values other than the commit sha.",
@@ -636,7 +648,8 @@ const securityReview = Smithers.SecurityReview({
     {
       id: "recording-scripts-credentials",
       title: "The recording script keeps provider credentials and git state on the operator's machine",
-      threat: "Running record-tape leaks the operator's ChatGPT or API key into a committed recording, or removes a worktree it does not own.",
+      threat:
+        "Running record-tape leaks the operator's ChatGPT or API key into a committed recording, or removes a worktree it does not own.",
       lookFor: [
         "A tape or script that echoes env, prints auth files, or types a key that lands in public/media output.",
         "A cleanup trap that runs `rm -rf` or `git worktree remove` on a path not created by mktemp in the same script.",
@@ -647,7 +660,8 @@ const securityReview = Smithers.SecurityReview({
     {
       id: "copyable-install-snippets",
       title: "Install and tutorial snippets that visitors run are safe to paste",
-      threat: "A visitor who copies a docs command runs an unpinned remote script or leaks a key into shell history or a committed file.",
+      threat:
+        "A visitor who copies a docs command runs an unpinned remote script or leaks a key into shell history or a committed file.",
       lookFor: [
         "A `curl | sh` or `npx` command fetching from a host other than the project's own domains or npm.",
         "A snippet with a real-looking API key or token rather than a placeholder.",

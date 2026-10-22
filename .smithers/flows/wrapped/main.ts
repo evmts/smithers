@@ -12,11 +12,11 @@
  */
 import { NodeRuntime as PlatformRuntime, NodeServices } from "@effect/platform-node"
 import { Action, Interpreter } from "@smthrs/flow"
-import { NodeRuntime } from "@smthrs/platform-node"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as EvaluatorBackup from "@smthrs/model/EvaluatorBackup"
+import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect, Layer, Redacted, Schema } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { realpath } from "node:fs/promises"

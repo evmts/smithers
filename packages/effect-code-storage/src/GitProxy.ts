@@ -115,7 +115,10 @@ export const uploadPack = (
       Effect.gen(function*() {
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt
         yield* Metric.update(Metric.withAttributes(requests, { service: service ?? "refused", outcome }), 1)
-        yield* Effect.annotateCurrentSpan({ "git.proxy.service": service ?? "refused", "http.response.status_code": status })
+        yield* Effect.annotateCurrentSpan({
+          "git.proxy.service": service ?? "refused",
+          "http.response.status_code": status
+        })
         yield* Effect.logWithLevel(outcome === "ok" ? "Info" : "Warn")("git.proxy").pipe(
           Effect.annotateLogs({ service: service ?? "refused", outcome, status, durationMs })
         )

@@ -38,9 +38,15 @@ function readRedirects(root) {
   const firstDynamic = rules.findIndex((rule) => rule.source.includes("*"))
   const dynamic = firstDynamic === -1 ? 0 : rules.length - firstDynamic
   if (dynamic > 100) {
-    throw new Error(`_redirects:${rules[firstDynamic].line}: ${dynamic} rules from the first splat rule onward count as dynamic (Cloudflare limit 100); move splat rules to the end`)
+    throw new Error(
+      `_redirects:${
+        rules[firstDynamic].line
+      }: ${dynamic} rules from the first splat rule onward count as dynamic (Cloudflare limit 100); move splat rules to the end`
+    )
   }
-  if (rules.length - dynamic > 2000) throw new Error(`_redirects: ${rules.length - dynamic} static rules exceed Cloudflare's 2,000 limit`)
+  if (rules.length - dynamic > 2000) {
+    throw new Error(`_redirects: ${rules.length - dynamic} static rules exceed Cloudflare's 2,000 limit`)
+  }
   return rules
 }
 
@@ -100,9 +106,13 @@ export function checkLandingActions(root) {
   if (!/<button\b[^>]*id="copy-install"/.test(html)) return ["index.html: missing the install command's Copy button"]
   const failures = []
   for (const href of ["/docs/installation/", "https://github.com/smithersai/smithers"]) {
-    if (!new RegExp(`<a class="landing-button[^"]*" href="${href.replace(/[?.]/g, "\\$&")}"`).test(html)) failures.push(`index.html: missing the ${href} button`)
+    if (!new RegExp(`<a class="landing-button[^"]*" href="${href.replace(/[?.]/g, "\\$&")}"`).test(html)) {
+      failures.push(`index.html: missing the ${href} button`)
+    }
   }
-  if (!/<span id="run-command">npx smthrs@next [^<]+<\/span>/.test(html)) failures.push("index.html: missing the npx run command")
+  if (!/<span id="run-command">npx smthrs@next [^<]+<\/span>/.test(html)) {
+    failures.push("index.html: missing the npx run command")
+  }
   return failures
 }
 
@@ -162,7 +172,10 @@ export function checkBuiltSite(root, requiredReferences = []) {
       const path = join(directory, entry.name)
       if (entry.isDirectory()) walk(path)
       else if (entry.name.endsWith(".md")) {
-        markdown.set(path, [...readFileSync(path, "utf8").matchAll(/\]\((https:\/\/smithers\.sh\/[^)\s]*)\)/g)].map((match) => match[1]))
+        markdown.set(
+          path,
+          [...readFileSync(path, "utf8").matchAll(/\]\((https:\/\/smithers\.sh\/[^)\s]*)\)/g)].map((match) => match[1])
+        )
       } else if (entry.name.endsWith(".html")) {
         const html = readFileSync(path, "utf8")
         pages.set(path, {
@@ -217,7 +230,10 @@ export function checkBuiltSite(root, requiredReferences = []) {
     let target = join(root, decodeURIComponent(url.pathname))
     if (existsSync(target) && statSync(target).isDirectory()) target = join(target, "index.html")
     if (!existsSync(target)) failures.add(`${source}: missing ${reference} (resolved to ${url.pathname})`)
-    else if (url.hash && !(visited.size > 1 && url.pathname === "/docs/installation/") && pages.has(target) && !pages.get(target).ids.has(decodeURIComponent(url.hash.slice(1)))) {
+    else if (
+      url.hash && !(visited.size > 1 && url.pathname === "/docs/installation/") && pages.has(target) &&
+      !pages.get(target).ids.has(decodeURIComponent(url.hash.slice(1)))
+    ) {
       failures.add(`${source}: missing anchor ${reference} (resolved to ${url.pathname}${url.hash})`)
     }
   }

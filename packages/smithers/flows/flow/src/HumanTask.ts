@@ -39,6 +39,7 @@
  */
 
 import * as Node from "@smthrs/plan/Node"
+import * as Clock from "effect/Clock"
 import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -46,7 +47,6 @@ import * as Exit from "effect/Exit"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Action from "./Action/index.ts"
-import * as Clock from "effect/Clock"
 import * as DurableClock from "./DurableClock.ts"
 import * as DurableDeferred from "./DurableDeferred.ts"
 import { FlowInstance } from "./FlowRuntime/FlowInstance.ts"

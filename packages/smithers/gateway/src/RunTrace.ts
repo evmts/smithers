@@ -2546,7 +2546,12 @@ const engineNodeShapes = (journal: ReadonlyArray<JournalRecord>) => {
  * @since 1.0.0
  * @category constructors
  */
-export const monitorFromJournal = (run: TraceRun, records: ReadonlyArray<JournalRecord>, at?: number, options: { readonly childBoundaries?: boolean } = {}) => {
+export const monitorFromJournal = (
+  run: TraceRun,
+  records: ReadonlyArray<JournalRecord>,
+  at?: number,
+  options: { readonly childBoundaries?: boolean } = {}
+) => {
   const last = records.reduce((last, row) => Math.max(last, row.sequence ?? 0), 0)
   const journal = at === undefined ? records : records.filter((row) => (row.sequence ?? 0) <= at)
   // A historical frame must not inherit the current run's terminal status.
@@ -2577,7 +2582,8 @@ export const monitorFromJournal = (run: TraceRun, records: ReadonlyArray<Journal
   // A step is a node that dispatched an action. Plan structure (sequences,
   // branches, maps) and child-flow calls, whose own nodes are the steps, are
   // never steps of their own.
-  const structural = (kind: string | undefined) => kind !== undefined && PLAN_STRUCTURE.has(kind) && !(options.childBoundaries === true && kind === "FlowCall")
+  const structural = (kind: string | undefined) =>
+    kind !== undefined && PLAN_STRUCTURE.has(kind) && !(options.childBoundaries === true && kind === "FlowCall")
   const nodeShapes = engineNodeShapes(journal)
   const calls = trace.rows.filter((row) => {
     // A tool call an agent made inside a step is a cell of that step's
@@ -2667,7 +2673,10 @@ export const monitorFromJournal = (run: TraceRun, records: ReadonlyArray<Journal
       }:`
       const nodes = execution.graph?.nodes ?? []
       const hidden = new Map(
-        nodes.filter((node) => engineLabel(node.action ?? node.id) || structural(node.kind) || (node.kind === "FlowCall" && node.id === "root"))
+        nodes.filter((node) =>
+          engineLabel(node.action ?? node.id) || structural(node.kind) ||
+          (node.kind === "FlowCall" && node.id === "root")
+        )
           .map((node) => [node.id, node])
       )
       // Engine bookkeeping stays in the Engine row. Its dependency edges still

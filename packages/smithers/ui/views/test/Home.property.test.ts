@@ -35,7 +35,10 @@ const block = fc.record(
     code: field,
     key: fc.oneof(fc.constantFrom("b", "B", ""), text),
     language: fc.oneof(fc.constantFrom("ts", "sh", "TS"), text),
-    cards: fc.oneof(fc.array(fc.record({ title: field, text: field, url: field }, { requiredKeys: [] }), { maxLength: 3 }), field),
+    cards: fc.oneof(
+      fc.array(fc.record({ title: field, text: field, url: field }, { requiredKeys: [] }), { maxLength: 3 }),
+      field
+    ),
     stats: fc.oneof(fc.array(fc.record({ value: field, label: field }, { requiredKeys: [] }), { maxLength: 3 }), field),
     releases: fc.oneof(
       fc.array(
@@ -59,7 +62,10 @@ const section = fc.record(
 
 const document = fc.oneof(
   fc.record({ blocks }),
-  fc.record({ sections: fc.array(section, { maxLength: 10 }), contributors: fc.oneof(fc.constantFrom(...["role", "anyone"]), field) }, {
+  fc.record({
+    sections: fc.array(section, { maxLength: 10 }),
+    contributors: fc.oneof(fc.constantFrom(...["role", "anyone"]), field)
+  }, {
     requiredKeys: ["sections"]
   }),
   fc.anything()

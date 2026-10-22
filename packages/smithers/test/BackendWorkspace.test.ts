@@ -404,7 +404,12 @@ describe("box remote execution", () => {
     } else await workspaces["workspace shell"]!(c, { id: "box" }, { ...options, cols: 100, rows: 40 })
     expect(state.url).toBe("wss://api.example.test/api/repos/owner/repo/workspace/sessions/terminal/terminal")
     expect(state.options).toMatchObject({ headers: { Authorization: "token login-secret" } })
-    expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/workspace/sessions/terminal/destroy", undefined, { signal: expect.any(AbortSignal) })
+    expect(request).toHaveBeenLastCalledWith(
+      "POST",
+      "/api/repos/owner/repo/workspace/sessions/terminal/destroy",
+      undefined,
+      { signal: expect.any(AbortSignal) }
+    )
     if (terminal === "failed") expect(exit).toHaveBeenCalledWith(1)
   })
   it("refuses a terminal size that is not a whole number from 0 to 65535 before opening a session", async () => {
@@ -422,4 +427,3 @@ describe("box remote execution", () => {
     await expect(workspaces["workspace shell"]!(c, { id: "box" }, options)).rejects.toThrow("omitted id")
   })
 })
-
