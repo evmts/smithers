@@ -3153,7 +3153,7 @@
         }
       },
       "declarations": {
-        "DatabaseMetrics.d.ts": "315889bcd2a0ac71a9e5eaf19d7aeee2ce659cd3a8541780b49a88f4c3eda1e3",
+        "DatabaseMetrics.d.ts": "0b728db2d3f9e8c03e37d748ad968f80c529906434ea6ee37e415e3393d37934",
         "Dialect.d.ts": "d39b27fc170a47681b5e40ef643fb73efa9fadc00c11816355f07160fc6593fc",
         "DurableWriter.d.ts": "7652d02cc6b14b420df7b6935e57b2261561273861c7f591dacedf160dd86658",
         "Migrations.d.ts": "7fe4ab2bb0eae97b338de541d586e402abb104c591a52534b5860784dfbdd557",
@@ -3170,7 +3170,7 @@
         "internal/UnsupportedDatabase.d.ts": "1f2f8205fc6e796619f60ec302e85af6b24ba095f888337e79834f36bf07eb56",
         "internal/WriteLock.d.ts": "aea9201eac23dcb8d4ef1e2ec291a2aa5b26b17f3be13bd34ee5283693d98c73",
         "internal/WriteRetry.d.ts": "3811ac0f28704e810db6895eaf2e3b421311ad559f1252f4f06daa9be11ae5eb",
-        "internal/WriteTally.d.ts": "5d3689eae0c13f0d74e65074a90408f678fbb9e416cb53aa2d94323a6891a7b9",
+        "internal/WriteTally.d.ts": "dfa7f6d6def8b7919750559fec0c5d941591fce960bd49850f81a6bd655a9688",
         "node/NodeDatabase.d.ts": "771fa8c5ea15a3c63afb8482dc195d8e0190e9f511e6f2aaaba339f1b84f0b69",
         "postgres/PostgresDatabase.d.ts": "c66465fc46cb8658d2644d9e78c827ea2bfc0d5b6d4cf6e4ed37505766b1460f",
         "test/SlowNetwork.d.ts": "22b688f89762d39654aac9dd8ee0fedfb28a79e7f20237d2b157d53f71bb62c4",
@@ -3692,7 +3692,7 @@
         "internal/RetentionOps.d.ts": "898635a9deca11f44bee301d774770b7056fb11eef20dfe02ce65fca4fd7d574",
         "internal/RunCatalogOps.d.ts": "56bbb146d34481c36aac949735f9082db57feac1712acbda46e1eee2e66e8fa7",
         "internal/RunCoordinator.d.ts": "f7cfdd6c87bee9696dd5e9173e1b74437c704ae605d451fde9b9f6f2bcfb1712",
-        "internal/RunDriver.d.ts": "351987b1d53aeff6a7dc72fc7b672c911f3f08dcd5d2b688e36173459a84eb46",
+        "internal/RunDriver.d.ts": "ac1bcfdb343b905475acfcbdaf4f444916b130ca734f517fd313eb81999aa0d8",
         "internal/RunLifecycle.d.ts": "90d432a715101a5ba7dd8e7862ccbbccf805e11cb7ff08811a656561c510d24e",
         "internal/RunListing.d.ts": "611d01b2684c9097b009dbeddac216856071ac2b8601b0820b4401f2e7dc622a",
         "internal/RunListingError.d.ts": "d305943204c937216478c4040cae8062b4bb3a1bbbc436a5807a4c473cc37a27",
@@ -4255,7 +4255,7 @@
       },
       "declarations": {
         "Runtime.d.ts": "9fafcd9c15ac03173a1af050e4d2c7fff65462eef73bbe6fa9938466822a4024",
-        "index.d.ts": "f0bfbe4cb44dd04b603ad4297957005a0390ca9c62d9bd6b04833fa1c2a58074",
+        "index.d.ts": "a1e5e55c06e030fb6948f7b5767417abda4930b4f7b3252b669f4b7a31eed266",
         "internal/RegistryArgs.d.ts": "50a11574418857393368200faca06dfd3f6cf8f85a91faa3cfbe17f34ba1c31d",
         "internal/RuntimeOptions.d.ts": "4a4692fc4a65e5075ce0a5d778c20b5aa4102b8062f206ebc44dface5309704b"
       }
@@ -8308,7 +8308,7 @@
       },
       "declarations": {
         "CloudflareHost.d.ts": "431b34f9821282281582f40bdc385b86825206535061644dd38ce0065a3a80cc",
-        "CloudflareRuntime.d.ts": "96595e721a7e7933937428359689e478cdcc669deae8dbd09f01db95d32822a8",
+        "CloudflareRuntime.d.ts": "c6371737b639d32fa08d550b5e34d7e8aadaf0db2baf038f5d094b0463b54358",
         "ContainerSession.d.ts": "797393164b7ee24a219c4d1fdd574fa20e690a04a4e5b8b6154a327cf2a9b796",
         "ContainerTerminal.d.ts": "86fe57f2fcd945b8cbf213e5497bf5ef6c86a27978ae569f5ac425ab74effce0",
         "EdgeCache.d.ts": "bc463a0d333b9377c4366182d6b185faca297a27d999eb67315a83ca24d4639e",
@@ -12183,16 +12183,18 @@
       },
       "declarations": {
         "Bridge.d.ts": "420bf32b9ef3888a8a8f471a5efa4b57ffd6011cf111cc0b77a2ccd8871403e9",
-        "Home.d.ts": "5ee075e8e9b0dfbbaddf3d4508750f70d5fc1b67d1dcb400b03498da3768d71a",
+        "Docs.d.ts": "ad255f872c443ea1985c5bd5da0c12ca680cbfb0201807d707cda7e3a939a9c2",
+        "Home.d.ts": "a5c40c695f3e55d31274d7ba19dc66d0a4bd8cf186c1464fd78b4dae08fa5919",
         "Interactions.d.ts": "07673330842dde41cf8077bf111c86ac24713c5694d58069c01c467c99c45860",
         "Presentation.d.ts": "d3051a0706bf9dfdc71901325d302a32f50ea210158b5d79c3a09a2f701778bf",
         "PresentationRealm.d.ts": "69aeb219df0da76e5906048fd91cf37ffe29f9d768c355703403b7a42bc2ea60",
         "ViewCode.d.ts": "30f048ee10ed1f421f2f4fd98118b2af4de5b15c425b04e448181cd61ab6250c",
         "ViewCsp.d.ts": "f560cdcd348325cc7e71385b32cda167c4cd7de0846e0ae55d185892db226c1c",
         "WebPage.d.ts": "e279925cc677f9605d19b3cdf1abc77bb87d6a9380629094cdc20be528ebcf91",
-        "index.d.ts": "80f058191a64133a446402612ff5594c7ab1ffc18ea0541ab56108122c7a5d42",
+        "index.d.ts": "b2cc908f2838fc708eaf0c4cc1ec0977855bcff36c21336fe43970b8b77b68f4",
         "internal/bytes.d.ts": "7eeb4f03a64163f6ee21190681548a8ae23e0ed5a96751ddc845bf4abe35b6d8",
         "internal/harden.d.ts": "e37db3ed40736579b4217ea7679c5a209e746a29dc4970d6b67d13cdd2f40553",
+        "internal/hosts.d.ts": "cf9e332ab25e082bbac5af25503ead0799c5bad9de6ca9e531ad986f2cfd376a",
         "internal/vocabulary.d.ts": "b4f2840fe7fe7db6f96a885694c6fd1394d8823341eed4ecef98841476ab2bd5"
       }
     },
