@@ -44,7 +44,7 @@ const workspace = async (budget: ControlSchema.Envelope["budget"] = {}): Promise
       "name: capacity",
       "description: Exercises the production model boundary.",
       "model: openai:gpt-4o-mini",
-      `budget: ${JSON.stringify(budget)}`,
+      ...(Object.keys(budget).length === 0 ? [] : [`budget: ${JSON.stringify(budget)}`]),
       "---",
       "",
       "Exercise the production model boundary.",

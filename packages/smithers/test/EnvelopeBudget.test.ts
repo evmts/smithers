@@ -141,13 +141,9 @@ describe("a declared flow budget", () => {
     expect(await verdictAfterSpending(envelope, 10_000_000)).toEqual({ _tag: "proceed" })
   })
 
-  it("ignores a malformed declaration instead of refusing every call", async () => {
-    // A budget has no conservative reading: the conservative number is zero,
-    // and a zero ceiling would report a typo as a spending decision. Discovery
-    // warns and drops it, so the flow runs unbounded.
-    const envelope = await plannedEnvelope(["budget:", "  tokens: soon"])
-
-    expect(envelope.budget).toEqual({})
+  it("refuses a malformed declaration before it can spend without a ceiling", async () => {
+    // Discovery fails closed on invalid budgets (35b985a420a1).
+    await expect(plannedEnvelope(["budget:", "  tokens: soon"])).rejects.toThrow("Flow review is not registered")
   })
 })
 
@@ -161,10 +157,9 @@ describe("a budget's onExceeded choice", () => {
     expect(policy.tokens).toEqual({ max: 1000, onExceeded: "park" })
   })
 
-  it("drops an unknown choice and keeps the ceiling", async () => {
-    const envelope = await plannedEnvelope(["budget:", "  tokens: 1000", "  onExceeded: sulk"])
-
-    expect(envelope.budget).toEqual({ tokens: 1000 })
+  it("refuses an unknown onExceeded choice before admission", async () => {
+    await expect(plannedEnvelope(["budget:", "  tokens: 1000", "  onExceeded: sulk"]))
+      .rejects.toThrow("Flow review is not registered")
   })
 
   it("lets a planner replace the declared budget, as flow start's flags do", async () => {
