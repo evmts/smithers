@@ -94,11 +94,10 @@ export const defectMessage = "Something went wrong on our side. Not your fault."
  * declares.
  *
  * Encoding replaces a defect value (an `Error`, a failure an `orDie` turned
- * into a defect, any non-string value) with `{ name: "Error", message }`
+ * into a defect, or a string) with `{ name: "Error", message }`
  * carrying {@link defectMessage}, so a driver message, path, or stack never
- * reaches a client. The server logs the raw defect. A string passes unchanged:
- * the RPC server's own request-decoding sentence, which describes the caller's
- * payload, is one, and so is an author-written `Effect.die` sentence.
+ * reaches a client. The server logs the raw defect. Strings receive the same protection,
+ * including request-decoding failures.
  *
  * Decoding is Effect's default `Schema.Defect()` decoding, so a client reads
  * this shape and an older server's shape alike, and an older client reads this
@@ -111,7 +110,7 @@ export const ControlDefect = Schema.Json.pipe(Schema.decodeTo(
   Schema.Unknown,
   SchemaTransformation.transform({
     decode: Schema.decodeSync(Schema.Defect()),
-    encode: (defect): Schema.Json => typeof defect === "string" ? defect : { name: "Error", message: defectMessage }
+    encode: (): Schema.Json => ({ name: "Error", message: defectMessage })
   })
 ))
 

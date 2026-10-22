@@ -3,7 +3,8 @@
  * reach: refusals, the idempotency seams, and every state a released fence
  * leaves behind.
  */
-import { Deferred, Effect, Exit } from "effect"
+import { Plan as PersistedPlan } from "@smthrs/plan"
+import { Deferred, Effect, Exit, Fiber } from "effect"
 import { describe, expect, it, vi } from "vitest"
 import {
   AlreadyResolved,
@@ -26,7 +27,7 @@ import {
 } from "../src/ControlRuntime.ts"
 import type { Envelope, Principal } from "../src/ControlSchema.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
-import { memoryRuntime } from "./TestStack.ts"
+import { browserCrypto, memoryRuntime } from "./TestStack.ts"
 
 const envelope: Envelope = { capabilities: [], flows: [], budget: {} }
 const principal: Principal = { id: "operator", kind: "test", stampedAt: 0 }
@@ -59,6 +60,63 @@ const start = (runtime: Service) =>
   })
 
 describe("ControlRuntime.layerMemory", () => {
+  it("inventories a reserved run identity", async () => {
+    await withRuntime((runtime) =>
+      Effect.gen(function*() {
+        const { card } = yield* runtime.plan({ flowId: "system/test", input: {} })
+        const token = yield* runtime.lookupApproval(card.approval.target)
+        yield* runtime.resolveApproval(token, "approved", principal)
+        yield* runtime.launch(card.planId, card.digest, card.envelope, principal, "reserved-custom")
+        expect((yield* runtime.pageRunIds({ limit: 1 })).ids).toEqual(["reserved-custom"])
+      })
+    )
+  })
+
+  it("orders plan inventory by publication while an earlier plan is suspended", async () => {
+    const entered = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    await withRuntime((runtime) =>
+      Effect.gen(function*() {
+        const pending = yield* runtime.plan({ flowId: "held", input: "held" }).pipe(Effect.forkChild)
+        yield* Deferred.await(entered)
+        const published = yield* runtime.plan({ flowId: "held", input: "ready" })
+        let page = yield* runtime.pagePlanIds({ limit: 1 })
+        const ids = [...page.ids]
+        while (page.next !== undefined) {
+          page = yield* runtime.pagePlanIds({ limit: 1, after: page.next, through: page.through })
+          ids.push(...page.ids)
+        }
+        expect(ids).toEqual([published.card.planId])
+        const query = yield* runtime.queryPlans({ limit: 1 })
+        expect(query.plans.map((plan) => plan.card.planId)).toEqual([published.card.planId])
+        yield* Deferred.succeed(release, undefined)
+        const late = yield* Fiber.join(pending)
+        const next = yield* runtime.pagePlanIds({ limit: 1, after: page.through })
+        expect(next.ids).toEqual([late.card.planId])
+        const queryNext = yield* runtime.queryPlans({ limit: 1, after: query.next ?? page.through })
+        expect(queryNext.plans.map((plan) => plan.card.planId)).toEqual([late.card.planId])
+      }), {
+      flows: [{
+        flowId: "held",
+        description: "Publication ordering",
+        deployClass: false,
+        envelope,
+        plan: (input, planId) =>
+          Effect.gen(function*() {
+            if (input === "held") {
+              yield* Deferred.succeed(entered, undefined)
+              yield* Deferred.await(release)
+            }
+            const plan = yield* PersistedPlan.compile({ planId, flow: "held", nodes: [] }).pipe(
+              Effect.mapError((cause) => new InvalidInput({ issue: String(cause) })),
+              Effect.provide(browserCrypto)
+            )
+            return { plan }
+          })
+      }]
+    })
+  })
+
   it("refuses a reserved identity already occupied by another run without replacing it", async () => {
     await withRuntime((runtime) =>
       Effect.gen(function*() {

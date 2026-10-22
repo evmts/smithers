@@ -26,7 +26,7 @@ const dying = Layer.effect(
     const base = yield* Control
     return Control.of({
       ...base,
-      list: () => Effect.die(new Error(secret)),
+      list: () => Effect.die(secret),
       watch: () => Stream.die(new Error(secret)),
       cancel: (input) => Effect.fail(new RunNotFound({ runId: input.runId }))
     })
@@ -93,7 +93,7 @@ describe("control RPC defect redaction", () => {
     expect(logs.some((line) => line.includes(secret))).toBe(true)
   })
 
-  it("still answers an undecodable payload with the request decoder's own sentence", async () => {
+  it("sanitizes request-decoding defects as well", async () => {
     const body = await run(
       [],
       Effect.flatMap(
@@ -102,8 +102,8 @@ describe("control RPC defect redaction", () => {
       )
     )
 
-    expect(body).toContain(`"_tag":"Die","defect":"Expected {`)
-    expect(body).not.toContain(sentence)
+    expect(body).toContain(sentence)
+    expect(body).not.toContain("Expected {")
   })
 
   it("sends the designed sentence for a streaming handler defect through the client", async () => {
@@ -153,9 +153,9 @@ describe("ControlDefect", () => {
     expect(defectMessage).toBe(sentence)
   })
 
-  it("passes a string defect unchanged, since the server's request-decoding sentence is one", () => {
+  it("sanitizes string defects while retaining backward-compatible decoding", () => {
     const issue = "Expected \"runs\" | \"flows\", got \"runz\"\n  at [\"_tag\"]"
-    expect(Schema.encodeUnknownSync(codec)(issue)).toBe(issue)
+    expect(Schema.encodeUnknownSync(codec)(issue)).toEqual({ name: "Error", message: defectMessage })
     expect(Schema.decodeUnknownSync(codec)(issue)).toBe(issue)
   })
 

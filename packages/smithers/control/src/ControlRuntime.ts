@@ -904,6 +904,10 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
       const runKeys = new Map<IdempotencyKey, { readonly fingerprint: string }>()
       const installedGrants: Array<BulkGrant> = []
       const installedGrantKeys = new Set<string>()
+      // Inventory positions are assigned at publication, independently of
+      // identities reserved before asynchronous planning.
+      const planIds: Array<string> = []
+      const runIds = new Map<number, RunId>()
       let planSequence = 0
       const signalCommands = new Map<string, SignalCommand>()
       let pendingSignalOffset = 0
@@ -1026,6 +1030,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             }
           }
           plans.set(planId, { card, decodedInput: snapshot(decoded), decision: "pending" })
+          planIds.push(planId)
           tokens.set(approvalKey(card.approval.target), {
             tokenId: planId,
             target: snapshot(card.approval.target),
@@ -1048,24 +1053,24 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           yield* idPageLimit(request.limit)
           return pageByPosition(
             request,
-            planSequence,
-            (position) => plans.has(`plan-${position}`) ? `plan-${position}` : undefined
+            planIds.length,
+            (position) => planIds[position - 1]
           )
         }),
         queryPlans: Effect.fn("ControlRuntime.queryPlans")(function*(request) {
           yield* idPageLimit(request.limit)
           const matched: Array<StoredPlan> = []
           let position = request.after ?? 0
-          while (position < planSequence && matched.length < request.limit) {
+          while (position < planIds.length && matched.length < request.limit) {
             position += 1
-            const plan = plans.get(`plan-${position}`)
+            const plan = plans.get(planIds[position - 1]!)
             if (
               plan !== undefined &&
               (request.flowId === undefined || plan.card.flowId === request.flowId) &&
               (request.decision === undefined || plan.decision === request.decision)
             ) matched.push(asStored(plan))
           }
-          return position < planSequence ? { plans: matched, next: position } : { plans: matched }
+          return position < planIds.length ? { plans: matched, next: position } : { plans: matched }
         }),
         lookupApproval: Effect.fn("ControlRuntime.lookupApproval")(function*(target) {
           const requested = snapshot(target)
@@ -1244,6 +1249,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
               createdAt: timestamp,
               updatedAt: timestamp
             }
+            runIds.set(sequence, runId)
             runs.set(runId, {
               summary: snapshot(summary),
               fence,
@@ -1266,7 +1272,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           return pageByPosition(
             request,
             runSequence,
-            (position) => runs.has(`run-${position}`) ? `run-${position}` : undefined
+            (position) => runIds.get(position)
           )
         }),
         queryRuns: Effect.fn("ControlRuntime.queryRuns")(function*(request) {

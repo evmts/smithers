@@ -137,3 +137,18 @@ derived from the same schema the errors are declared in.
   own.
 - [Testing flows on smithers.sh](/docs/guides/testing-flows/): the same habit,
   one layer down.
+
+## Projection and inventory regressions
+
+Journaled approval requests take precedence over observed wait rows, including
+when a matching decision arrives before its request. A stale observed digest
+cannot reject that journaled decision.
+
+Memory plan inventories use publication order. A planner held by an Effect
+`Deferred` receives its inventory position only when its card publishes, so a
+cursor cannot skip it. Run inventories retain the actual reserved run identity.
+The regression suite exercises both through `ControlRuntime`.
+
+RPC defect encoding sanitizes strings as well as errors and objects. The HTTP
+regression injects `Effect.die` through the Control service and checks that the
+client receives the generic sentence while server logs retain the defect.

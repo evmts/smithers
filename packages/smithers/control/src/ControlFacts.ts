@@ -252,6 +252,7 @@ export const fold = (
   let latest: { readonly fact: typeof RunFact.Type; readonly sequence: number } | undefined
   let first: { readonly baseline: "created" | "legacy"; readonly sequence: number } | undefined
   let uncovered = false
+  const journalRequests = new Set<string>()
   const requests = new Map<string, { readonly row: Approval; readonly versioned: boolean }>()
   for (const row of observedApprovals) {
     if (snapshot !== undefined && row.runId !== snapshot.runId) continue
@@ -295,7 +296,8 @@ export const fold = (
           submitted.target.requestId !== requestId)
       ) continue
       const identity = key(runId, requestId)
-      if (requests.has(identity)) continue
+      if (journalRequests.has(identity)) continue
+      journalRequests.add(identity)
       const decision = decisions.get(identity)
       requests.set(identity, {
         versioned,
@@ -335,10 +337,14 @@ export const fold = (
       if (identity === undefined || decisions.has(identity)) continue
       const request = requests.get(identity)
       if (
-        request !== undefined && digest !== undefined && record(record(request.row.payload).target).digest !== digest
+        request !== undefined && journalRequests.has(identity) && digest !== undefined &&
+        record(record(request.row.payload).target).digest !== digest
       ) continue
       decisions.set(identity, { status, ...(digest === undefined ? {} : { digest }) })
-      if (request !== undefined) requests.set(identity, { ...request, row: { ...request.row, status } })
+      if (
+        request !== undefined &&
+        (digest === undefined || record(record(request.row.payload).target).digest === digest)
+      ) requests.set(identity, { ...request, row: { ...request.row, status } })
     }
   }
   const matches = !uncovered && latest !== undefined && (snapshot === undefined ||

@@ -289,6 +289,22 @@ describe("observed approval seeding", () => {
     ...overrides
   } as Facts.Approval)
 
+  it.each([false, true])("journal requests override stale observations (decision first: %s)", (decisionFirst) => {
+    const stale = observedRow("gate", {
+      title: "stale",
+      payload: { target: { ...target("gate"), digest: "stale", envelope }, scope: "run", idempotencyKey: "gate" }
+    })
+    const events = decisionFirst ? [decision("gate"), request("gate")] : [request("gate"), decision("gate")]
+    const rows = Facts.fold(events, run, [stale]).approvals
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      title: "gate",
+      status: "approved",
+      requestedAt: 1,
+      payload: { target: { digest: "digest:gate" } }
+    })
+  })
+
   it("seeds only the observed rows that name themselves in the folded run", () => {
     const rows = Facts.fold([], run, [
       observedRow("seeded"),
