@@ -40,7 +40,7 @@ const NAMED = new RegExp(
 )
 
 /** A failure's kind as the agent's calls read it (`WebPageRefused`, `FlowNotFound`): a typed failure's tag. */
-const FAILURE_TAG = /\b(?:[A-Z][a-z]+)+(?:Refused|Forbidden|Unavailable|NotFound|Denied|Taken|NotReady|OutOfTime)\b/g
+const FAILURE_TAG = /\b(?:[A-Z][a-z]+)+(?:Refused|Forbidden|Unavailable|NotFound|Denied|Taken|NotReady|OutOfTime|Approved)\b/g
 
 /** An execution's, a view's or a draft's id. */
 const ID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi

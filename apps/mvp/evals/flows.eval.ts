@@ -12,8 +12,8 @@ const spec: SuiteSpec = {
   prefix: "flows",
   cases: FLOW_CASES,
   baseline: new URL("flows-baseline.json", import.meta.url),
-  // About $2.50 at the default model's list price: the baseline's 36 cases spent 1,865,924 tokens ($1.89) on
-  // 2026-10-22, most of them three to six calls of ~11,000 tokens.
+  // About $2.50 at the default model's list price: its 37 cases spent 1,667,932 to 1,865,924 tokens ($1.68 to $1.89)
+  // in full runs on 2026-10-22, most of them three to six calls of ~11,000 tokens.
   maxTokens: 2_500_000,
   runtime: testFile("eval_flows"),
 }

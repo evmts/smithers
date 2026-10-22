@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     include: ["evals/*.eval.ts"],
     environment: "node",
-    // A whole suite runs inside one test: up to 36 agent answers in turn, each a few model calls, and a pause of a
+    // A whole suite runs inside one test: up to 37 agent answers in turn, each a few model calls, and a pause of a
     // minute before each trial its model failed (evals/suite.ts).
     testTimeout: 120 * 60_000,
     hookTimeout: 120_000,

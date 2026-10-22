@@ -36,12 +36,15 @@ describe("internalNames", () => {
   test("finds the cell's names, the codes a failed call reads, and a typed failure's tag", () => {
     expect(internalNames("ctx.call then ctx.done")).toEqual(["ctx.call", "ctx.done"])
     expect(internalNames("it was rate_limited, then unknown_flow")).toEqual(["rate_limited", "unknown_flow"])
-    expect(internalNames("NavigationRefused, FlowNotFound, NameTaken, DraftNotReady")).toEqual([
+    expect(internalNames("NavigationRefused, FlowNotFound, NameTaken, DraftNotReady, NotApproved")).toEqual([
       "NavigationRefused",
       "FlowNotFound",
       "NameTaken",
       "DraftNotReady",
+      "NotApproved",
     ])
+    // The flows eval's flow-delete-denied, 2026-10-22: "the delete was refused (NotApproved)". A plain word passes.
+    expect(internalNames("Approved, then not approved.")).toEqual([])
   })
 
   test("passes what a person reads: slash commands, repositories, paths, URLs, their own flows, plain words", () => {
