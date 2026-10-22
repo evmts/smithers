@@ -17,10 +17,11 @@ import * as Machine from "./TodoMachine.ts"
 // `@smthrs/agent`, the library catalog's "Run an agent loop with tools") writes the TODO's change on its branch's machine.
 // Its tools are the sandbox tools (`@smthrs/sandbox`'s `SandboxTools`), bound in process to the attempt's machine
 // (`Machines`), so each call runs on the branch's checkout as the person who committed the TODO, and a command runs once
-// per call even when the run resumes (the call's id is its replay-stable identity). The model is the `agent` role,
-// admitted and metered in process as the model endpoint's calls are (`ModelEndpoint.local`).
+// per call even when the run resumes (the call's id is its replay-stable identity). The model is the `coding` role
+// (the `agent` role's model until an admin sets it, decision 0033), admitted and metered in process as the model
+// endpoint's calls are (`ModelEndpoint.local`).
 
-/** The seat the step declares: the model endpoint's `agent` role. */
+/** The seat the step declares, which the host answers with the model endpoint's `coding` role (worker/Executions.ts). */
 export const AGENT_SEAT = "agent"
 
 /** The context window the agent compacts against, as the browser agent's (src/features/agent/host.ts). */

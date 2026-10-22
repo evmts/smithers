@@ -6,7 +6,9 @@ import { MODEL_ROLES, type ModelRole } from "../src/features/model/contract.ts"
 
 // Which model answers each role (docs/features/model-endpoint.md#roles): the model an admin set in `model_roles`, read
 // on every call, else the deployment's default (`HostModel`, from the `CHAT_MODEL` configuration). The summary role's
-// default is its own (`SUMMARY_MODEL`), never the agent's. Changing a role needs no deploy.
+// default is its own (`SUMMARY_MODEL`), never the agent's; the coding role's is the agent role's model, a row
+// included, so the `todo` run's agent changes only when an admin sets `coding` itself (decision 0033). Changing a role
+// needs no deploy.
 
 /** One of the model roles, as a schema. */
 export const Role = Schema.Literals(MODEL_ROLES)
@@ -55,14 +57,19 @@ export const summaryModel = Config.option(Config.schema(Schema.fromJsonString(Mo
 
 /**
  * The model `role` uses: its `model_roles` row, built with the key the Worker holds, or the deployment default when
- * the role has no row: `SUMMARY_MODEL` for the summary role, `HostModel` for every other. A row or default this Worker
- * can't use fails with `HostModelUnusable` and the planner's reason (`invalid` for a row that isn't a record,
- * `unconfigured` for a summary role with neither a row nor `SUMMARY_MODEL`, `config` for one that doesn't parse).
+ * the role has no row: `SUMMARY_MODEL` for the summary role, the agent role's row for the coding role, else
+ * `HostModel`. A row or default this Worker can't use fails with `HostModelUnusable` and the planner's reason
+ * (`invalid` for a row that isn't a record, `unconfigured` for a summary role with neither a row nor `SUMMARY_MODEL`,
+ * `config` for one that doesn't parse).
  */
 export const resolve = (role: ModelRole) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly model: unknown }>`SELECT model FROM model_roles WHERE role = ${role}`
+    const rowOf = (name: ModelRole) =>
+      Effect.map(sql<{ readonly model: unknown }>`SELECT model FROM model_roles WHERE role = ${name}`, ([found]) => found)
+    const own = yield* rowOf(role)
+    // The coding role answers as the agent role does, its row included, until an admin points it somewhere of its own.
+    const row = own === undefined && role === "coding" ? yield* rowOf("agent") : own
     if (row === undefined) {
       // Auxiliary navigation must not silently spend on the main agent model: only its own default answers it.
       if (role === "summary") {

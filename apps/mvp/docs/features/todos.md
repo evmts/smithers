@@ -116,7 +116,7 @@ Make TODO drafts a TODO from an issue, linked to it (Will, 2026-10-20). Everythi
 todo/Begin      the TODO and its prompt; its branch smithers/t<n>-<slug> made on GitHub, as the App, at the head of the
                 TODO in review before it (stacked), else of the default branch; a name someone else holds takes -2 to
                 -5 ─▶ writer: branch and its base, step implement
-todo/Implement  the agent (AgentAction, the `agent` role) writes the change on the attempt's branch machine with the sandbox
+todo/Implement  the agent (AgentAction, the `coding` role) writes the change on the attempt's branch machine with the sandbox
                 tools (worker/flows/TodoAgent.ts), and runs the repository's checks there
 todo/Collect    the files it changed, read whole from the machine (50 files, 1 MiB at most); none ─▶ failed empty_change
 todo/Publish    one commit, createCommitOnBranch fenced by the base ("T<n>: <title>", "Smithers for @maya"); the pull

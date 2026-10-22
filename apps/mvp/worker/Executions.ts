@@ -219,9 +219,9 @@ export const live = <E, R>(
                 ExecutionHost.withGitHub(flows, githubServices(github.value)),
                 todoServices(github.value),
                 machines,
-                // The `todo` run's agent writes with the `agent` role, admitted and metered as the endpoint's calls are.
+                // The `todo` run's agent writes with the `coding` role, admitted and metered as the endpoint's calls are.
                 Layer.unwrap(Effect.map(flowStarter, (started) =>
-                  TodoAgent.registration(seats("agent", started), appDatabase, AgentSandbox.layer))),
+                  TodoAgent.registration(seats("coding", started), appDatabase, AgentSandbox.layer))),
               ),
             )
             : hostFor(flows)

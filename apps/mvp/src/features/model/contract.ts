@@ -9,9 +9,10 @@ export const MODEL_ROUTE = "/api/model"
 
 /**
  * What a model call is for. Each role is answered by the model an admin set for it (`admin/SetModel`), or by the
- * deployment's default model when no admin has.
+ * deployment's default model when no admin has. `coding` is the `todo` run's agent (decision 0033): until an admin
+ * sets it, it answers with the `agent` role's model.
  */
-export const MODEL_ROLES = ["agent", "renderer", "judge", "summary"] as const
+export const MODEL_ROLES = ["agent", "coding", "renderer", "judge", "summary"] as const
 
 /** One of {@link MODEL_ROLES}. */
 export type ModelRole = (typeof MODEL_ROLES)[number]

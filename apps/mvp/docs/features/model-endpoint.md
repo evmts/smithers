@@ -57,7 +57,14 @@ The body is at most `MODEL_MAX_REQUEST_BYTES`, 192 KiB unless set, counted while
 
 ## Roles
 
-Each model call names its role: `agent`, `renderer` or `judge`. A role is answered by the model an admin set for it, read from Postgres on every call, or by the deployment's default model (`CHAT_MODEL`, through `HostModel`) when no admin has. A change applies on the next call, with no deploy.
+Each model call names its role: `agent`, `coding`, `renderer`, `judge` or `summary`. A role is answered by the model an admin set for it, read from Postgres on every call, or by the deployment's default model (`CHAT_MODEL`, through `HostModel`) when no admin has. A change applies on the next call, with no deploy. Two roles default differently: `summary` to its own `SUMMARY_MODEL`, and `coding`, the `todo` run's agent, to the `agent` role's model, its setting included, until an admin sets `coding` itself ([decision 0033](../decisions/0033-coding-model-role.md)).
+
+The coding role is the seam for pointing a deployment's coding agent at a model of its own choosing: any endpoint that speaks one of the configured-model protocols (Anthropic Messages, OpenAI Responses or Chat Completions), with a key the Worker holds under a name of the deployment's own and pins to that endpoint's origin (`SMITHERS_MODEL_KEY_<NAME>` and `SMITHERS_MODEL_KEY_<NAME>_ORIGIN`). What serves that endpoint is the deployment's business, at its own risk; the product names no vendor.
+
+```
+admin/SetModel { role: "coding", model: { protocol: "openai-chat", baseUrl: "https://models.example", modelId: "coder-1", credential: "CODER" } }
+# the Worker holds SMITHERS_MODEL_KEY_CODER and SMITHERS_MODEL_KEY_CODER_ORIGIN=https://models.example
+```
 
 An admin changes a role with the flow `admin/SetModel { role, model }`. `model` is a configured-model record (`@smthrs/rpc` ConfiguredModel) without its name: `protocol`, `baseUrl`, `path`, `modelId` and `credential`. `credential` names a key the Worker already holds, such as `CEREBRAS_API_KEY`; the key itself never enters the record.
 

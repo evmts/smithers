@@ -161,7 +161,7 @@ const scratchDatabase = () =>
   runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
 
 /** Runs `admin/SetModel` on the Node host as `actor`, writing to this file's schema. */
-const setModel = async (actor: Actor, change: { readonly role: "agent" | "renderer" | "judge" | "summary"; readonly model: ModelRoles.ModelRecord }) =>
+const setModel = async (actor: Actor, change: { readonly role: typeof ModelRoles.Role.Type; readonly model: ModelRoles.ModelRecord }) =>
   runFlow(
     SetModel.SetModel,
     change,
@@ -468,6 +468,41 @@ describe("roles", () => {
     const audit = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
       SELECT model FROM model_role_changes ORDER BY id`))
     expect(audit.map((row) => row.model)).toEqual([first.model, second.model])
+  })
+
+  test("the coding role answers as the agent role does, its setting included, until an admin sets coding itself", async () => {
+    const agentModel = await provider({ text: "agent row answer" })
+    const codingModel = await provider({ text: "coding row answer" })
+    const h = await harness(runtime, answering, {
+      actor: member,
+      modelId: "default-model",
+      config: {
+        SMITHERS_MODEL_KEY_FIXTURE: "row-key",
+        SMITHERS_MODEL_KEY_FIXTURE_ORIGIN: agentModel.origin,
+        SMITHERS_MODEL_KEY_CODER: "coder-key",
+        SMITHERS_MODEL_KEY_CODER_ORIGIN: codingModel.origin,
+      },
+    })
+
+    // No setting for either: the deployment's default, booked as coding.
+    await call(h, ask("first"), "coding")
+    expect(h.requests.map((request) => request.modelId)).toEqual(["default-model"])
+    expect(h.only("model.proxy.serve").annotations).toMatchObject({ role: "coding", modelId: "default-model" })
+    // The agent role's setting: coding follows it.
+    await setModel(admin, { role: "agent", model: rowModel(agentModel.origin, "agent-row") })
+    const followed = await call(h, ask("second"), "coding")
+    expect(followed.lines.filter((line) => line.type === "text-delta").map((line) => line.text)).toEqual(["agent row answer"])
+    // Its own setting, an origin-pinned key of its own: coding goes there, and the agent role stays.
+    const ran = await setModel(admin, {
+      role: "coding",
+      model: { protocol: "openai-chat", baseUrl: codingModel.origin, modelId: "coder-1", credential: "CODER" },
+    })
+    expect(Exit.isSuccess(ran.exit) && ran.exit.value).toEqual({ role: "coding", modelId: "coder-1" })
+    const own = await call(h, ask("third"), "coding")
+    const agent = await call(h, ask("fourth"), "agent")
+    expect(own.lines.filter((line) => line.type === "text-delta").map((line) => line.text)).toEqual(["coding row answer"])
+    expect(agent.lines.filter((line) => line.type === "text-delta").map((line) => line.text)).toEqual(["agent row answer"])
+    expect(codingModel.seen.map((seen) => [seen.body.model, seen.headers.authorization])).toEqual([["coder-1", "Bearer coder-key"]])
   })
 
   test("admin/SetModel records who changed what, once per step", async () => {
