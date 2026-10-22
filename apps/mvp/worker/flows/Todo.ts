@@ -288,6 +288,8 @@ export interface Services<E, R> {
   readonly tokens: GitHubTokens
   readonly http: HttpClient.HttpClient
   readonly apiBaseUrl: string
+  /** The engine's durable cancellation request, including an execution not yet admitted. */
+  readonly cancel?: (executionId: string) => Effect.Effect<void, unknown>
   /**
    * Starts a remote execution on its own host: the next TODO's run, a head's checks. The same start again changes
    * nothing. Admission failures reach the step's durable retry policy, which replays the writer's persisted receipt.
@@ -406,6 +408,10 @@ export const steps = <E, R>(services: Services<E, R>) => {
       },
     })
 
+  const assertBase = (request: TodoRequest, baseRef: string) => Effect.gen(function* () {
+    if (yield* Stack.closedBase(request.repoId, baseRef)) return yield* new TodoFailed({ failure: "base_closed" })
+  })
+
   /** Reports to the writer; a stale report (a dropped TODO, another attempt) ends the run. */
   // Postgres failing fails the step for its retry policy (`step`'s `failureIn`).
   // A stale attempt first starts again what its publish started: a run that stopped between its publish committing and
@@ -413,6 +419,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
   const report = (request: TodoRequest, event: Stack.RunEvent) =>
     Effect.gen(function* () {
       const reported = yield* Stack.report(attemptOf(request), event, { runs: true })
+      if (reported.outcome === "base_closed") return yield* new TodoFailed({ failure: "base_closed" })
       if (reported.outcome === "stale") {
         yield* Effect.forEach(yield* Stack.publishedStarts(attemptOf(request)), startTodo, { discard: true })
         return yield* new TodoFailed({ failure: "ended" })
@@ -504,6 +511,10 @@ export const steps = <E, R>(services: Services<E, R>) => {
           : Option.none()
         if (Option.isSome(below) && Option.isNone(belowHead)) return yield* new TodoFailed({ failure: "base_closed" })
         const baseRef = todo.baseRef ?? (Option.isSome(belowHead) ? belowHead.value.name : defaultBranch)
+        yield* assertBase(request, baseRef)
+        if (baseRef !== defaultBranch && Option.isNone(yield* GitHub.Refs.getBranch(repository.owner, repository.name, baseRef))) {
+          return yield* new TodoFailed({ failure: "base_closed" })
+        }
         // The branch, made once at its base's head and named with this step's key; a step that runs again finds it by
         // the key, at the commit it was made at, even after its base moved.
         const made = yield* Action.once(
@@ -534,6 +545,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
 
   const collect = ({ request, begun }: typeof Collect.payloadSchema.Type) =>
     step("collect", request, Effect.gen(function* () {
+      yield* assertBase(request, baseOf(begun))
       const machines = yield* Machines
       const machine = machineOf({ ...request, branch: begun.branch, ownerId: begun.ownerId })
       const tool = (name: string, call: SandboxTools.Call) =>
@@ -572,6 +584,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
 
   const publish = ({ request, begun, collected }: typeof Publish.payloadSchema.Type) =>
     step("publish", request, Effect.gen(function* () {
+      yield* assertBase(request, baseOf(begun))
       yield* report(request, { kind: "step", step: "publish" })
       const repository = repositoryOfRequest(request)
       const token = yield* tokenFor("publish", request, "publish")
@@ -591,6 +604,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
             deletions: collected.deletions,
           }),
         )
+        // A close arriving during commit must not advance to the next external write.
+        yield* assertBase(request, baseOf(begun))
         // The pull request, found among the branch's by this step's marker, or opened once. Stacked on another TODO's
         // branch, it opens as a draft, so nobody merges it into that branch by mistake.
         const pull = yield* Action.once(

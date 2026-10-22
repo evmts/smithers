@@ -11,6 +11,7 @@ import flowDraftDeleted from "./migrations/0040_flow_draft_deleted.ts"
 import refsChangedAt from "./migrations/0041_refs_changed_at.ts"
 import codingModelRole from "./migrations/0042_coding_model_role.ts"
 import docsViews from "./migrations/0043_docs_views.ts"
+import todoBaseAncestry from "./migrations/0045_todo_base_ancestry.ts"
 import todoRetry from "./migrations/0044_todo_retry.ts"
 import { PgClient } from "@effect/sql-pg"
 import { Config, Effect, Layer, Redacted } from "effect"
@@ -125,6 +126,7 @@ export const migrations = {
   "0042_coding_model_role": codingModelRole,
   "0043_docs_views": docsViews,
   "0044_todo_retry": todoRetry,
+  "0045_todo_base_ancestry": todoBaseAncestry,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

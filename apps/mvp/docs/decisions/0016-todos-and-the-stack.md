@@ -347,7 +347,7 @@ Both designs were written independently, then Opus merged them. Adopted claims w
 
 ## Dogfood correction — 2026-10-22: failed dependencies
 
-Will's production reproduction (#4430, runs b590330a and a6dc894b) supersedes the earlier failure-table statement that the next item starts after failure. Admission stops at the first failed predecessor. A person's Drop explicitly releases the dependency; an unmerged PR close fails queued successors `base_closed`. A missing published base branch is also `base_closed`, never permission to begin on main. The existing restack and descendant-close behavior still applies to TODOs already published.
+Will's production reproduction (#4430, runs b590330a and a6dc894b) supersedes the earlier failure-table statement that the next item starts after failure. Admission stops at the first failed predecessor. A person's Drop releases an unpublished failed dependency; dropping an In review base or an unmerged PR close fails queued successors `base_closed`. A missing published base branch is also `base_closed`, never permission to begin on main. The existing restack and descendant-close behavior still applies to TODOs already published.
 
 ## Dogfood correction — 2026-10-22: merge waits
 
@@ -361,3 +361,44 @@ admission/cancellation check or the engine's drive budget. A drive joining a
 stopping recovery drain waits for cleanup and starts a replacement without
 inheriting the old drain's interruption. Cancellation is settled from its durable
 request before any further action, including when that drive's budget is spent.
+
+### Closed bases during implementation (2026-10-22, #4432)
+
+Dropping an In review TODO or projecting its unmerged PR close starts the same
+independent durable cleanup. Its first action records a transitive descendant
+snapshot; its next action requests every execution's engine cancellation and
+reports `base_closed` through the stack writer. A separate action closes recorded
+PRs after settlement. Refused closes are logged and counted; transient failures
+retry without holding execution lanes or delaying another cancellation. Retries
+retain that snapshot, and attempt fencing protects replacement attempts. There
+is no application polling or cancellation sweep. Queued successors hold with
+`base_closed`. Begin, collection, publication and the writer's step boundary
+also check closed ancestry, covering a branch assignment racing cleanup.
+Retry clears the failed attempt's base and selects the nearest open ancestor,
+else main. Cancellation uses the same engine path as dropping a TODO; the
+execution object retains its cancellation tombstone against delayed admission.
+
+Library catalog entries: `@smthrs/flow` (durable workflow and cancellation),
+`@smthrs/integrations` (GitHub). Core stack enforcement is infrastructure shared
+by every plugin that starts a TODO; it is not a plugin-specific feature.
+
+Migration 0045 preserves each attempt's base ref with its branch and PR number.
+Discovery traverses those historical edges as well as current TODOs, so Retry
+of an intermediate TODO cannot hide a still-running grandchild from a delayed
+close delivery. The migration backfills current attempts; it does not invent
+base refs for historical attempts that predate this field.
+
+Migration 0045 also stores `todos.base_reset`: an explicit Retry keeps its new
+base choice while waiting for a lane. Admission clears it. Dropping or settling
+the old predecessor does not fail that queued Retry again. Projected unmerged
+closures block ordinary admission synchronously under the stack lock, before
+invalidation's asynchronous launch. The new `todo/InvalidateBase` flow leaves
+existing `todo/Drop` declarations and persisted single-close plans unchanged.
+
+
+A close delivery for an already failed predecessor preserves ordinary queued
+successors for that predecessor's Retry. An explicit Retry of a descendant may
+skip ancestors failed `base_closed` by the same closure, choosing an open base;
+unrelated failures continue to hold ordinary admission. The terminal event's
+failure classification reaches the rules before lane admission in that same
+transaction, including when a queued Retry is waiting for cleanup to free it.

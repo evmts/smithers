@@ -21,6 +21,7 @@ import * as TerminalOpen from "./flows/TerminalOpen.ts"
 import type { Machines } from "./branch/Machines.ts"
 import type { Sandboxes } from "./branch/Sandboxes.ts"
 import * as Todo from "./flows/Todo.ts"
+import * as TodoBaseClosed from "./flows/TodoBaseClosed.ts"
 import * as TodoDrop from "./flows/TodoDrop.ts"
 import type { Implement } from "./flows/TodoAgent.ts"
 import * as GitHubHost from "./github/Host.ts"
@@ -119,13 +120,14 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
   commandSeconds?: number,
   stepWaitSeconds?: number,
 ) => ({
-  flows: [...flows.flows, Todo.Todo, TodoDrop.Drop, Checks.ChecksRun],
+  flows: [...flows.flows, Todo.Todo, TodoDrop.Drop, TodoBaseClosed.Invalidate, Checks.ChecksRun],
   registration: Layer.mergeAll(
     flows.registration,
     Layer.unwrap(Effect.map(services, (built) =>
       Layer.mergeAll(
         Todo.registration(built, implement),
         TodoDrop.registration(built),
+        TodoBaseClosed.registration(built),
         Checks.registration(built, commandSeconds, stepWaitSeconds),
       )
         .pipe(Layer.provide(machines))

@@ -83,6 +83,7 @@ export interface Services<E = unknown, R = never> {
   /** GitHub's REST API (`GITHUB_API_URL`). */
   readonly apiBaseUrl: string
   /** Complete a TODO's durable wait and wake its host; delivery is retried by this step. */
+  readonly invalidateTodo?: (stop: { readonly attemptId: string; readonly todoId: string; readonly baseClosed: boolean }) => Effect.Effect<void, unknown>
   readonly signalTodo?: (executionId: string, prNumber: number) => Effect.Effect<void, unknown>
 }
 
@@ -128,6 +129,15 @@ export const read = <E, R>(services: Services<E, R>) => (request: typeof Read.pa
           AND (p.merged OR i.state = 'closed') AND t.state IN ('working', 'in_review') AND t.run_id IS NOT NULL`
       yield* Effect.forEach(waiting, ({ runId }) => services.signalTodo!(runId, request.number), { discard: true })
       yield* Effect.logInfo("todo.webhook").pipe(Effect.annotateLogs({ ...fields, woken: waiting.length }))
+    }
+    if (pull && services.invalidateTodo !== undefined) {
+      const sql = yield* SqlClient.SqlClient
+      const roots = yield* sql<{ attemptId: string; todoId: string }>`
+        SELECT a.id AS "attemptId", t.id AS "todoId" FROM pulls p JOIN items i ON i.id = p.item_id
+        JOIN todo_attempts a ON a.repo_id = p.repo_id AND a.pr_number = p.number
+        JOIN todos t ON t.id = a.todo_id
+        WHERE p.repo_id = ${repository.id} AND p.number = ${request.number} AND NOT p.merged AND i.state = 'closed'`
+      yield* Effect.forEach(roots, (root) => services.invalidateTodo!({ ...root, baseClosed: true }), { discard: true })
     }
     // From the delivery's arrival, once the route recorded it.
     const received = yield* Store.receivedAt(request.deliveryId)

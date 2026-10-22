@@ -5,6 +5,7 @@ import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { FlowStarter } from "../Flows.ts"
 import * as Todo from "../flows/Todo.ts"
+import * as TodoBaseClosed from "../flows/TodoBaseClosed.ts"
 import * as TodoDrop from "../flows/TodoDrop.ts"
 import * as Stack from "./Stack.ts"
 
@@ -23,6 +24,11 @@ export const make = (
     Effect.catchCause((cause) => Cause.hasInterrupts(cause)
       ? Effect.interrupt
       : Effect.fail(new Stack.RunsUnavailable({ errorCode: codeOf(Cause.squash(cause)) }))),
+    Effect.andThen(starter.start(TodoBaseClosed.Invalidate, {
+      executionId: `todo-base-closed:${attempt.attemptId}`,
+      payload: { ...attempt, baseClosed: true },
+    }).pipe(Effect.catch((error) => error._tag === "@smthrs/mvp/flows/StartConflict"
+      ? Effect.void : Effect.fail(new Stack.RunsUnavailable({ errorCode: error.errorCode }))))),
     Effect.andThen(starter.start(TodoDrop.Drop, {
       executionId: `todo-drop:${attempt.attemptId}`,
       payload: { attemptId: attempt.attemptId, todoId: attempt.todoId },

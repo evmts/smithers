@@ -22,6 +22,10 @@ export interface Row {
   readonly attempt: number
   /** Its prompt's latest revision, which an attempt works on. */
   readonly revision: number
+  /** Projected unmerged PR closure blocks admission before asynchronous invalidation runs. */
+  readonly baseClosed?: boolean
+  /** Explicit Retry keeps its new-base intent while queued for a lane. */
+  readonly baseReset?: boolean
 }
 
 /** One repository's stack, as its writer loaded it under the lock. */
@@ -107,8 +111,9 @@ const fill = (todos: ReadonlyArray<Row>, lanes: number): { todos: ReadonlyArray<
   // A failed predecessor still owns its place. Only a person can remove that dependency;
   // freeing its execution lane must never silently turn its successors into independent work.
   const ordered = byPosition(todos)
-  const blocked = ordered.findIndex((todo) => todo.state === "failed")
-  const queued = (blocked < 0 ? ordered : ordered.slice(0, blocked)).filter((todo) => todo.state === "queued")
+  const blocked = ordered.findIndex((todo) => todo.state === "failed" || todo.baseClosed === true)
+  const queued = ordered.filter((todo, index) => todo.state === "queued" &&
+    (blocked < 0 || index < blocked || todo.baseReset === true && !ordered.slice(0, index).some((before) => before.state === "failed" && before.baseClosed !== true)))
   const starting = new Set(queued.slice(0, Math.max(0, free)).map((todo) => todo.id))
   const starts: Array<Start> = []
   const next = todos.map((todo) => {
@@ -145,7 +150,7 @@ export const apply = (stack: Stack, op: Op): { readonly stack: Stack; readonly r
   if (target === undefined) return { stack, result: { kind: "refused", code: "not_found" } }
   if (op.kind === "retry") {
     if (target.state !== "failed") return { stack, result: { kind: "refused", code: "not_retryable" } }
-    const filled = fill(stack.todos.map((todo) => todo.id === target.id ? { ...todo, state: "queued" as const } : todo), stack.lanes)
+    const filled = fill(stack.todos.map((todo) => todo.id === target.id ? { ...todo, state: "queued" as const, baseClosed: false, baseReset: true } : todo), stack.lanes)
     return { stack: { ...stack, todos: filled.todos }, result: { kind: "retried", number: target.number, starts: filled.starts } }
   }
   if (target.state === "merged") return { stack, result: { kind: "refused", code: "merged" } }
@@ -157,7 +162,7 @@ export const apply = (stack: Stack, op: Op): { readonly stack: Stack; readonly r
     todo.id === target.id
       ? { ...todo, state: "dropped", position: null }
       : todo.position !== null && todo.position > from
-      ? { ...todo, position: todo.position - 1 }
+      ? { ...todo, position: todo.position - 1, state: target.state === "in_review" && todo.state === "queued" && !todo.baseReset ? "failed" : todo.state }
       : todo
   )
   const filled = fill(shifted, stack.lanes)
@@ -208,7 +213,7 @@ const finish = (stack: Stack, op: Extract<Op, { readonly kind: "finish" }>): { r
     todo.id === target.id
       ? { ...todo, state: op.state, position: leaves ? null : todo.position }
       : leaves && todo.position !== null && todo.position > from
-      ? { ...todo, position: todo.position - 1, state: op.state === "dropped" && todo.state === "queued" ? "failed" : todo.state }
+      ? { ...todo, position: todo.position - 1, state: op.state === "dropped" && todo.state === "queued" && !todo.baseReset ? "failed" : todo.state }
       : todo
   )
   const filled = fill(changed, stack.lanes)

@@ -691,8 +691,127 @@ test("repeated retry before admission cannot erase the old attempt's base identi
     kind: "finished", state: "dropped", note: "closed_on_github",
   }, { runs: false }))
   const again = await runtime.runPromise(Stack.apply(retry(), { runs: false }))
-  expect(again).toMatchObject({ receipt: { outcome: "retried", starts: [] } })
+  // The first Retry remains queued after its predecessor settles; a fresh press cannot reset it again.
+  expect(again).toMatchObject({ receipt: { outcome: "not_retryable", starts: [] } })
   expect(await runtime.runPromise(Stack.baseTodoOf(REPO, "smithers/old-base"))).toMatchObject({
     value: { number: 2, prNumber: 2, state: "failed" },
   })
+})
+
+
+test("dropping an in-review base holds its queued successors until Retry", async () => {
+  const made = await applyOn(commit(), true)
+  if (made.kind !== "applied") throw new Error("commit refused")
+  const first = made.receipt.starts[0]!
+  await runtime.runPromise(Stack.report(first, { kind: "branch", branch: "base", baseRef: "main", baseSha: "a".repeat(40) }, { runs: true }))
+  await runtime.runPromise(Stack.report(first, { kind: "published", headSha: "b".repeat(40), prNumber: 1, draft: false }, { runs: true }))
+  await applyOn(commit(), false)
+  const dropped = await applyOn(drop(1), true)
+  expect(dropped).toMatchObject({ receipt: { starts: [] } })
+  expect(await sql("SELECT state, failure FROM todos WHERE number = 2")).toEqual([{ state: "failed", failure: "base_closed" }])
+  const retry = await applyOn({ ...drop(2), op: { kind: "retry", number: 2 } }, true)
+  expect(retry).toMatchObject({ receipt: { starts: [{ number: 2, ordinal: 1 }] } })
+  if (retry.kind !== "applied") throw new Error("retry refused")
+  expect((await runtime.runPromise(Stack.belowOf(retry.receipt.starts[0]!)))._tag).toBe("None")
+})
+
+
+test("a delayed invalidation follows the archived branch of a retried intermediate descendant", async () => {
+  const first = await applyOn(commit(), true)
+  if (first.kind !== "applied") throw new Error("commit refused")
+  const a = first.receipt.starts[0]!
+  await applyOn(commit(), true)
+  await applyOn(commit(), true)
+  const branch = (attempt: Stack.AttemptStart, name: string, baseRef: string) => runtime.runPromise(Stack.report(attempt,
+    { kind: "branch", branch: name, baseRef, baseSha: "a".repeat(40) }, { runs: true }))
+  const publish = (attempt: Stack.AttemptStart, prNumber: number) => runtime.runPromise(Stack.report(attempt,
+    { kind: "published", headSha: "a".repeat(40), prNumber, draft: true }, { runs: true }))
+  await branch(a, "a", "main")
+  const b = (await publish(a, 1)).starts[0]!
+  await branch(b, "b", "a")
+  const c = (await publish(b, 2)).starts[0]!
+  await branch(c, "c", "b")
+  await runtime.runPromise(Stack.report(b, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+  await applyOn({ ...drop(2), op: { kind: "retry", number: 2 } }, true)
+  await applyOn(drop(1), true)
+  expect(await runtime.runPromise(Stack.descendants(a))).toMatchObject([{ attemptId: c.attemptId }])
+})
+
+test("admission records the base before Begin, so drop discovers a delayed execution", async () => {
+  const first = await applyOn(commit(), true)
+  if (first.kind !== "applied") throw new Error("commit refused")
+  const a = first.receipt.starts[0]!
+  await applyOn(commit(), true)
+  await runtime.runPromise(Stack.report(a, { kind: "branch", branch: "base", baseRef: "main", baseSha: "a".repeat(40) }, { runs: true }))
+  const b = (await runtime.runPromise(Stack.report(a, { kind: "published", headSha: "a".repeat(40), prNumber: 1, draft: false }, { runs: true }))).starts[0]!
+  expect(await sql("SELECT branch, base_ref FROM todos WHERE number = 2")).toEqual([{ branch: null, base_ref: "base" }])
+  await applyOn(drop(1), true)
+  expect(await runtime.runPromise(Stack.descendants(a))).toMatchObject([{ attemptId: b.attemptId, prNumber: null }])
+})
+
+test("Retry keeps its new-base intent while another lane is occupied and the closed predecessor settles", async () => {
+  const made = await applyOn(commit(), true)
+  if (made.kind !== "applied") throw new Error("commit refused")
+  const a = made.receipt.starts[0]!
+  await applyOn(commit(), true)
+  await runtime.runPromise(Stack.report(a, { kind: "branch", branch: "base", baseRef: "main", baseSha: "a".repeat(40) }, { runs: true }))
+  const b = (await runtime.runPromise(Stack.report(a, { kind: "published", headSha: "a".repeat(40), prNumber: 1, draft: false }, { runs: true }))).starts[0]!
+  await sql("UPDATE stacks SET lanes = 2")
+  const other = await applyOn(commit(), true)
+  if (other.kind !== "applied") throw new Error("commit refused")
+  const c = other.receipt.starts[0]!
+  await runtime.runPromise(Stack.report(b, { kind: "finished", state: "failed", failure: "base_closed" }, { runs: true }))
+  // C occupies the only lane. Retry must remember the person's choice until that lane frees.
+  await sql("UPDATE stacks SET lanes = 1")
+  const retry = await applyOn({ ...drop(2), op: { kind: "retry", number: 2 } }, true)
+  expect(retry).toMatchObject({ receipt: { outcome: "retried", starts: [] } })
+  expect(await sql("SELECT state, base_reset FROM todos WHERE number = 2")).toEqual([{ state: "queued", base_reset: true }])
+  await runtime.runPromise(Stack.report(a, { kind: "finished", state: "dropped", note: "closed_on_github" }, { runs: true }))
+  expect(await sql("SELECT state, base_reset FROM todos WHERE number = 2")).toEqual([{ state: "queued", base_reset: true }])
+  const admitted = await runtime.runPromise(Stack.report(c, { kind: "finished", state: "failed", failure: "base_closed" }, { runs: true }))
+  expect(admitted.starts).toMatchObject([{ todoId: b.todoId, ordinal: 2 }])
+  expect((await runtime.runPromise(Stack.belowOf(admitted.starts[0]!)))._tag).toBe("None")
+  expect(await sql("SELECT base_reset FROM todos WHERE number = 2")).toEqual([{ base_reset: false }])
+})
+
+
+test("Retry of a grandchild skips ancestors failed by the same closed base", async () => {
+  const made = await applyOn(commit(), true)
+  if (made.kind !== "applied") throw new Error("commit refused")
+  const a = made.receipt.starts[0]!
+  await applyOn(commit(), true)
+  await applyOn(commit(), true)
+  const branch = (attempt: Stack.AttemptStart, name: string, baseRef: string) => runtime.runPromise(Stack.report(attempt,
+    { kind: "branch", branch: name, baseRef, baseSha: "a".repeat(40) }, { runs: true }))
+  const publish = (attempt: Stack.AttemptStart, prNumber: number) => runtime.runPromise(Stack.report(attempt,
+    { kind: "published", headSha: "a".repeat(40), prNumber, draft: true }, { runs: true }))
+  await branch(a, "a", "main")
+  const b = (await publish(a, 1)).starts[0]!
+  await branch(b, "b", "a")
+  const c = (await publish(b, 2)).starts[0]!
+  await branch(c, "c", "b")
+  await applyOn(drop(1), true)
+  for (const attempt of [c, b]) await runtime.runPromise(Stack.report(attempt,
+    { kind: "finished", state: "failed", failure: "base_closed" }, { runs: true }))
+  const retry = await applyOn({ ...drop(3), op: { kind: "retry", number: 3 } }, true)
+  if (retry.kind !== "applied") throw new Error("retry refused")
+  expect(retry.receipt.starts).toMatchObject([{ todoId: c.todoId, ordinal: 2 }])
+  expect((await runtime.runPromise(Stack.belowOf(retry.receipt.starts[0]!)))._tag).toBe("None")
+})
+
+
+test("a queued Retry starts when cleanup frees the last lane in the same base_closed report", async () => {
+  const made = await applyOn(commit(), true)
+  if (made.kind !== "applied") throw new Error("commit refused")
+  const a = made.receipt.starts[0]!
+  await applyOn(commit(), true)
+  await runtime.runPromise(Stack.report(a, { kind: "branch", branch: "base", baseRef: "main", baseSha: "a".repeat(40) }, { runs: true }))
+  const b = (await runtime.runPromise(Stack.report(a, { kind: "published", headSha: "a".repeat(40), prNumber: 1, draft: false }, { runs: true }))).starts[0]!
+  await applyOn(commit(), true)
+  await applyOn(drop(1), true)
+  const retry = await applyOn({ ...drop(3), op: { kind: "retry", number: 3 } }, true)
+  expect(retry).toMatchObject({ receipt: { outcome: "retried", starts: [] } })
+  const settled = await runtime.runPromise(Stack.report(b, { kind: "finished", state: "failed", failure: "base_closed" }, { runs: true }))
+  expect(settled.starts).toMatchObject([{ number: 3, ordinal: 1 }])
+  expect((await runtime.runPromise(Stack.belowOf(settled.starts[0]!)))._tag).toBe("None")
 })

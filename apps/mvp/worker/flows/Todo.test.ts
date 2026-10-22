@@ -33,10 +33,11 @@ import * as Stack from "../stack/Stack.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import * as Box from "../test/box.ts"
 import { machines } from "../test/todoMachines.ts"
-import { testFile } from "../test/harness.ts"
+import { eventually, testFile } from "../test/harness.ts"
 import { ChecksRun } from "./Checks.ts"
 import * as SandboxCommand from "./SandboxCommand.ts"
 import * as Todo from "./Todo.ts"
+import * as TodoBaseClosed from "./TodoBaseClosed.ts"
 import * as TodoAgent from "./TodoAgent.ts"
 import * as TodoMachine from "./TodoMachine.ts"
 
@@ -134,6 +135,7 @@ const agentSeat = async (model: Model.Model) => {
 const setup = async (
   options: {
     readonly agent?: ReadonlyArray<string>
+    readonly cancel?: (executionId: string) => Effect.Effect<void, unknown>
     readonly model?: Model.Model
     readonly run?: (command: string) => number
     readonly schema?: string
@@ -148,6 +150,7 @@ const setup = async (
     tokens: services.tokens,
     http: services.http,
     apiBaseUrl: services.apiBaseUrl,
+    ...(options.cancel === undefined ? {} : { cancel: options.cancel }),
     start: (flow, start) => Effect.sync(() => void starts.push({ flow: flow._tag, ...start })),
   }
   const agent = cells(...(options.agent ?? [WRITES_README]))
@@ -156,6 +159,7 @@ const setup = async (
   const registration = Layer.mergeAll(
     Todo.registration(todoServices, TodoAgent.registration(seat, await database(), Agent.layerSandbox)),
     SandboxCommand.registration,
+    TodoBaseClosed.registration(todoServices),
   ).pipe(Layer.provide(machine.layer))
   const run = (start: Stack.AttemptStart) =>
     runFlow(Todo.Todo, start, registration, {
@@ -1101,6 +1105,167 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     } finally {
       await sql(runtime, `DROP SCHEMA IF EXISTS ${schema} CASCADE`)
     }
+  })
+
+  test.each(["drop", "webhook"] as const)("%s cancels a successor during implementation without publishing; Retry uses main", async (trigger) => {
+    let implementing = false
+    let cancellations = 0
+    let cancel: (id: string) => Effect.Effect<void, unknown> = () => Effect.die("host not built")
+    const ctx = await setup({
+      cancel: (id) => cancel(id),
+      model: Model.make({ stream: () => Stream.suspend(() => { implementing = true; return Stream.never }) }),
+    })
+    const start1 = (await commit("One", "First"))!
+    await commit("Two", "Second")
+    const branch = "smithers/base"
+    const sha = ctx.github.push(branch, { "ONE.md": "one" })
+    const pull = ctx.github.openPull(branch)
+    await runtime.runPromise(Stack.report(start1, { kind: "branch", branch, baseRef: "main", baseSha: sha }, { runs: true }))
+    const publication = await runtime.runPromise(Stack.report(start1, { kind: "published", headSha: sha, prNumber: pull.number, draft: false }, { runs: true }))
+    const start2 = publication.starts[0]!
+    await commit("Three", "Queued")
+    const scope = Effect.runSync(Scope.make())
+    try {
+      const { context, engine } = await Effect.runPromise(build(ctx.registration).pipe(Effect.provideService(Scope.Scope, scope)))
+      const flows = Context.get(context, FlowRuntime.FlowRuntime)
+      cancel = (id) => Effect.suspend((): Effect.Effect<void, unknown> => {
+        cancellations++
+        // A failed handoff is owned by the cleanup action's durable retry, never a polling loop.
+        if (trigger === "drop" && cancellations === 1) return Effect.fail(new Stack.RunsUnavailable({ errorCode: "injected" }))
+        return flows.interrupt(Todo.Todo, id).pipe(Effect.provide(context))
+      })
+      await Effect.runPromise(flows.execute(Todo.Todo, { executionId: todoExecutionId(start2.attemptId), payload: start2, discard: true }).pipe(Effect.provide(context)))
+      await eventually(() => implementing, 30_000)
+      if (trigger === "drop") {
+        await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya,
+          via: "person", op: { kind: "drop", number: 1 } }, { runs: true }))
+      } else {
+        ctx.github.close(pull.number)
+        await runtime.runPromise(Apply.read({ ...ctx.services,
+          invalidateTodo: (stop) => flows.execute(TodoBaseClosed.Invalidate, { executionId: `todo-closed:${stop.attemptId}`, payload: stop, discard: true }).pipe(Effect.provide(context)),
+        })({ deliveryId: crypto.randomUUID(), repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, number: pull.number, event: "pull_request" }))
+      }
+      await Effect.runPromise(flows.execute(TodoBaseClosed.Invalidate, { executionId: `${trigger === "drop" ? "todo-drop" : "todo-closed"}:${start1.attemptId}`, payload: { attemptId: start1.attemptId, todoId: start1.todoId, baseClosed: true } }).pipe(Effect.provide(context)))
+      await eventually(async () => (await Effect.runPromise(engine.status(todoExecutionId(start2.attemptId)))) === "cancelled", 20_000)
+      expect(await todo(2)).toMatchObject({ state: "failed", failure: "base_closed", prNumber: null })
+      const cancellationCount = cancellations
+      expect(cancellationCount).toBe(trigger === "drop" ? 2 : 1)
+      await Effect.runPromise(flows.execute(TodoBaseClosed.Invalidate, {
+        executionId: `${trigger === "drop" ? "todo-drop" : "todo-closed"}:${start1.attemptId}`,
+        payload: { attemptId: start1.attemptId, todoId: start1.todoId, baseClosed: true },
+      }).pipe(Effect.provide(context)))
+      expect(cancellations).toBe(cancellationCount)
+      expect(await todo(3)).toMatchObject({ state: "failed", failure: "base_closed", branch: null })
+      expect(ctx.github.pulls.size).toBe(1)
+      expect(ctx.starts.filter((entry) => entry.flow === "checks/Run")).toHaveLength(0)
+      const retry = await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya,
+        via: "person", op: { kind: "retry", number: 2 } }, { runs: true }))
+      if (retry.kind !== "applied") throw new Error("retry refused")
+      const begun = await dispatched(ctx, (steps) => steps.begin({ request: retry.receipt.starts[0]! })) as Exit.Exit<Todo.Begun>
+      expect(begun).toMatchObject({ _tag: "Success", value: { baseRef: "main" } })
+    } finally {
+      await Effect.runPromise(Scope.close(scope, Exit.void))
+    }
+  })
+
+  test.each(["closed", "refused", "retry"] as const)("invalidation settles a parked published descendant before PR cleanup: %s", async (outcome) => {
+    const ctx = await setup()
+    const { start1, start2, begun, published } = await stacked(ctx)
+    const Waiting = Flow.make("todo", { payload: Todo.TodoRequest, success: Todo.Awaited,
+      capabilities: ["db:write:todos", "db:write:todo_attempts", "db:write:items", "db:write:pulls"],
+      error: Todo.Await.errorSchema,
+      body: Node.capture({ begun, published, await: Todo.Await.name }, (request) => Todo.Await.call({ request, begun, published })),
+    })
+    let cancel: (id: string) => Effect.Effect<void, unknown> = () => Effect.die("host not built")
+    const registration = Layer.mergeAll(
+      Interpreter.layerWithImplementations(Waiting, Todo.Await.toLayer(Todo.steps(ctx.services).awaitMerge)).pipe(Layer.provideMerge(Action.layerImplementations)),
+      TodoBaseClosed.registration({ ...ctx.services, cancel: (id) => cancel(id) }),
+    )
+    const scope = Effect.runSync(Scope.make())
+    try {
+      const { context, engine } = await Effect.runPromise(build(registration).pipe(Effect.provideService(Scope.Scope, scope)))
+      const flows = Context.get(context, FlowRuntime.FlowRuntime)
+      cancel = (id) => flows.interrupt(Waiting, id).pipe(Effect.provide(context))
+      const executionId = todoExecutionId(start2.attemptId)
+      await Effect.runPromise(flows.execute(Waiting, { executionId, payload: start2, discard: true }).pipe(Effect.provide(context)))
+      await eventually(async () => (await Effect.runPromise(engine.status(executionId))) === "suspended", 20_000)
+      await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya,
+        via: "person", op: { kind: "drop", number: 1 } }, { runs: true }))
+      if (outcome !== "closed") ctx.github.faults.push({
+        match: (method, path) => method === "PATCH" && path.endsWith(`/pulls/${published.prNumber}`),
+        status: outcome === "refused" ? 403 : 503,
+      })
+      await Effect.runPromise(flows.execute(TodoBaseClosed.Invalidate, { executionId: crypto.randomUUID(),
+        payload: { attemptId: start1.attemptId, todoId: start1.todoId, baseClosed: true } }).pipe(Effect.provide(context)))
+      await eventually(async () => (await Effect.runPromise(engine.status(executionId))) === "cancelled", 20_000)
+      expect(ctx.github.issues.get(published.prNumber)!.state).toBe(outcome === "refused" ? "open" : "closed")
+      expect(await todo(2)).toMatchObject({ state: "failed", failure: "base_closed" })
+    } finally {
+      await Effect.runPromise(Scope.close(scope, Exit.void))
+    }
+  })
+
+  test("a failed predecessor's close delivery preserves queued successors for its Retry", async () => {
+    const ctx = await setup()
+    const start = (await commit("One", "First"))!
+    const branch = "smithers/base"
+    const sha = ctx.github.push(branch, { "ONE.md": "one" })
+    const pull = ctx.github.openPull(branch)
+    await runtime.runPromise(Stack.report(start, { kind: "branch", branch, baseRef: "main", baseSha: sha }, { runs: true }))
+    await runtime.runPromise(Stack.report(start, { kind: "published", headSha: sha, prNumber: pull.number, draft: false }, { runs: true }))
+    await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person",
+      op: { kind: "commit", title: "Two", prompt: "Queued", acceptance: [] } }, { runs: false }))
+    await runtime.runPromise(Stack.report(start, { kind: "finished", state: "failed", failure: "pr_refused" }, { runs: true }))
+    ctx.github.close(pull.number)
+    await runtime.runPromise(Apply.read(ctx.services)({ deliveryId: crypto.randomUUID(),
+      repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, number: pull.number, event: "pull_request" }))
+    await runtime.runPromise(Stack.descendants({ ...start, baseClosed: true }))
+    expect(await todo(2)).toMatchObject({ state: "queued", failure: null })
+    const retried = await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya,
+      via: "person", op: { kind: "retry", number: 1 } }, { runs: true }))
+    if (retried.kind !== "applied") throw new Error("retry refused")
+    const next = retried.receipt.starts[0]!
+    const published = await runtime.runPromise(Stack.report(next, { kind: "published", headSha: sha, prNumber: pull.number + 1, draft: false }, { runs: true }))
+    expect(published.starts).toMatchObject([{ number: 2, ordinal: 1 }])
+  })
+
+  test("a projected close blocks another lane before invalidation is launched", async () => {
+    const ctx = await setup()
+    const { start1, pull1 } = await stacked(ctx)
+    ctx.github.close(pull1.number)
+    // The real projection commits, while its invalidation launch has not happened yet.
+    await runtime.runPromise(Apply.read(ctx.services)({ deliveryId: crypto.randomUUID(),
+      repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, number: pull1.number, event: "pull_request" }))
+    await sql(runtime, "UPDATE stacks SET lanes = 2")
+    expect(await commit("Three", "Queued behind the closed base")).toBeUndefined()
+    expect(await todo(3)).toMatchObject({ state: "queued", branch: null })
+    await runtime.runPromise(Stack.descendants({ ...start1, baseClosed: true }))
+    expect(await todo(3)).toMatchObject({ state: "failed", failure: "base_closed", branch: null })
+  })
+
+  test("a close delivery still addresses the original attempt after Retry replaces its PR projection", async () => {
+    const ctx = await setup()
+    const { start1, pull1 } = await stacked(ctx)
+    await runtime.runPromise(Stack.report(start1, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
+    await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya,
+      via: "person", op: { kind: "retry", number: 1 } }, { runs: false }))
+    ctx.github.close(pull1.number)
+    const requests: Array<unknown> = []
+    await runtime.runPromise(Apply.read({ ...ctx.services,
+      invalidateTodo: (stop) => Effect.sync(() => void requests.push(stop)),
+    })({ deliveryId: crypto.randomUUID(), repo: `${REPOSITORY.owner}/${REPOSITORY.name}`, number: pull1.number, event: "pull_request" }))
+    expect(requests).toEqual([{ attemptId: start1.attemptId, todoId: start1.todoId, baseClosed: true }])
+  })
+
+  test("a closed base fences collection and publishing before another PR is created", async () => {
+    const ctx = await setup()
+    const { start2, begun } = await stacked(ctx)
+    await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya,
+      via: "person", op: { kind: "drop", number: 1 } }, { runs: true }))
+    const count = ctx.github.pulls.size
+    expect(failure(await step(ctx, (steps) => steps.collect({ request: start2, begun })))).toMatchObject({ failure: "base_closed" })
+    expect(failure(await step(ctx, (steps) => steps.publish({ request: start2, begun, collected: { additions: [], deletions: [] } })))).toMatchObject({ failure: "base_closed" })
+    expect(ctx.github.pulls.size).toBe(count)
   })
 
   test("stacked: T2 starts on T1's branch, its pull request a draft into T1's branch, its review reading only its change", async () => {

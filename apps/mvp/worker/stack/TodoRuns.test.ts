@@ -5,6 +5,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
 import * as Flows from "../Flows.ts"
 import * as Todo from "../flows/Todo.ts"
+import * as TodoBaseClosed from "../flows/TodoBaseClosed.ts"
 import * as TodoDrop from "../flows/TodoDrop.ts"
 import * as Stack from "./Stack.ts"
 import * as TodoRuns from "./TodoRuns.ts"
@@ -52,7 +53,11 @@ test("the production TODO adapter sends drop to durable cancellation, even befor
   const cleanup = object(`todo-drop:${attempt.attemptId}`)
   expect(JSON.parse(cleanup.values.get("smithers/intent") as string)).toMatchObject({ flow: TodoDrop.Drop._tag, payload: { attemptId: attempt.attemptId, todoId: attempt.todoId } })
   yield* runs.stop(attempt)
-  expect(objects.size).toBe(2)
+  expect(objects.size).toBe(3)
+  const invalidation = object(`todo-base-closed:${attempt.attemptId}`)
+  expect(JSON.parse(invalidation.values.get("smithers/intent") as string)).toMatchObject({
+    flow: TodoBaseClosed.Invalidate._tag, payload: { attemptId: attempt.attemptId, todoId: attempt.todoId, baseClosed: true },
+  })
   yield* runs.start(attempt)
   expect(o.alarm()).not.toBeNull()
 })))

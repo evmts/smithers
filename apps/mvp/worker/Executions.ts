@@ -17,6 +17,7 @@ import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as Todo from "./flows/Todo.ts"
 import * as SandboxCommand from "./flows/SandboxCommand.ts"
 import { pullClosed } from "./flows/TodoWait.ts"
+import * as TodoBaseClosed from "./flows/TodoBaseClosed.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
@@ -227,6 +228,10 @@ const object = <E, R>(
             }, judge)
             return {
               ...services,
+              invalidateTodo: (stop: typeof TodoBaseClosed.Request.Type) => ExecutionHost.intent(TodoBaseClosed.Invalidate, {
+                executionId: `todo-closed:${stop.attemptId}`, payload: stop,
+              }).pipe(Effect.flatMap((intent) => executions.getByName(intent.executionId).start(intent)),
+                Effect.provideService(RuntimeContext, runtime)),
               signalTodo: (executionId: string, number: number) =>
                 executions.getByName(executionId).signal(pullClosed(number).name).pipe(
                   Effect.provideService(RuntimeContext, runtime),
@@ -243,6 +248,7 @@ const object = <E, R>(
             const built = yield* githubServices(ready)
             return {
               ...built,
+              cancel: (executionId: string) => executions.getByName(executionId).cancel().pipe(Effect.provideService(RuntimeContext, runtime)),
               start: Todo.admission((flow, options) =>
                 ExecutionHost.intent(flow, { executionId: options.executionId, payload: options.payload as never }).pipe(
                   Effect.flatMap((intent) => executions.getByName(options.executionId).start(intent)),

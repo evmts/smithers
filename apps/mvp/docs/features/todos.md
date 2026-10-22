@@ -286,7 +286,7 @@ Retry uses the same `worker/stack/TodoRuns.ts` adapter as durable Drop and admis
 
 ### Admission after a failed base (2026-10-22)
 
-The writer admits no queued TODO beyond the first failed predecessor. A person’s Drop removes that dependency and releases the queue. A PR closed unmerged fails queued successors `base_closed`; a missing published base branch also refuses `base_closed`, never falling back to main. Already published descendants retain the existing close-and-fail behavior. Retrying the failed predecessor preserves its position; its publication releases the held TODO onto its branch.
+The writer admits no queued TODO beyond the first failed predecessor. Dropping an unpublished failed TODO releases its dependency; dropping an In review base holds queued successors `base_closed`. A PR closed unmerged fails queued successors `base_closed`; a missing published base branch also refuses `base_closed`, never falling back to main. Already published descendants retain the existing close-and-fail behavior. Retrying the failed predecessor preserves its position; its publication releases the held TODO onto its branch.
 
 Stack initialization retains the store’s shape source, including cache isolation and injected access refusals. A prompt shape refused with 401 or 403 keeps access at `sign_in` or `forbidden` even when the TODO shape succeeds.
 
@@ -300,3 +300,13 @@ A verified close is terminal for that TODO attempt. Reopening the GitHub PR befo
 Retry keeps the previous attempt's branch and PR number in `todo_attempts` before
 clearing the current projection. Published descendants continue to resolve their
 original base after replacement publication, including a confirmed GitHub merge.
+
+A dropped or closed-unmerged base cancels its running descendants through the
+durable engine and settles them `base_closed`, freeing their lanes before
+another implementation cycle publishes. Queued successors hold. Retry chooses
+the nearest open ancestor, or the default branch. The durable cleanup records
+its descendant snapshot before cancellation; repeated delivery and recovery
+preserve attempt fencing. `todo.base_closed` logs and spans carry attempt IDs
+and outcomes; `smithers_todo_base_closed` counts settlement outcomes. PR cleanup
+runs after lane release; `smithers_todo_base_closed_pulls` counts closed, refused
+and retried closes. A close refusal never blocks cancellation or settlement.
