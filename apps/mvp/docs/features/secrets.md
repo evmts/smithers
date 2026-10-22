@@ -64,7 +64,7 @@ A value is never shown again and never stays on the device. It is typed into a p
 
 ### Wiring into the box
 
-The branch's `SandboxObject` (`worker/BranchSandboxes.ts`) routes the box's outbound requests here only when `SANDBOX_SECRETS` is `true`. It is off by default, and stays off until an e2e proves a box gets a bound host's answer and never sees the value. With it on, every wake:
+The branch's `SandboxObject` (`worker/BranchSandboxes.ts`) routes the box's outbound requests here only when `SANDBOX_SECRETS` is `true`. It is off by default; `e2e/secrets.spec.ts` proves it through a real box (below), and turning it on for a deployment is Will's call: set `SANDBOX_SECRETS=true` in ChatApi's environment when Alchemy plans it. With it on, every wake:
 
 1. registers `interceptAllOutboundHttp` and `interceptOutboundHttps("*")` beside the forge's intercept (`@smthrs/platform-cloudflare`'s `SandboxObject.wake` with `egress`), so every request for another host reaches the object;
 2. answers each such request with `SandboxEgress.forward({ repoId, branchId, generation })`, the guest taken from the object's own state (the branch it serves and its generation), never from the request;
@@ -91,9 +91,11 @@ SECRETS_KEY is a Worker secret Alchemy generates once (`infra/Secrets.ts`, 32 ra
 - `worker/secrets/Secrets.test.ts`, on the compose Postgres and Electric, with the flows on the Node host's engine: an Admin's set, replace and delete, and every refusal; a sentinel search of every table, the flow journal and everything recorded; the shape's columns; the egress end to end with a scripted upstream, including another host, an earlier generation and a redirect.
 - `src/features/secrets/` (100% coverage), on the app's layer against ChatApi's real handler: Add, Rotate and Delete as an Admin, read-only for a Member, nothing for anyone else, every refusal and a network failure; and a sentinel search, after Add and Rotate, of every collection row, the outbox, the device's SQLite files, ChatApi's spans and everything the tab exported.
 
+- `e2e/secrets.spec.ts`, under `alchemy dev` with `SANDBOX_SECRETS=true` and `GITHUB_REPOSITORY=octocat/Spoon-Knife` (need `sandboxSecrets`): an Admin adds and rotates `DEMO_TOKEN` on the Secrets page, bound to httpbingo.org; in the branch's terminal, a real container, the variable is a placeholder; a Node `fetch` with it as a bearer token gets httpbingo.org's 200 with the token echoed back as the placeholder, and httpbin.org's request is refused 403 `host_not_allowed`; from outside the box, `docker export` of its filesystem, every process environment and every ChatApi log line hold neither value, and the egress logged one substitution forwarded and the refusal; deleted, the placeholder gets 403. Its trace is off, since a trace keeps what was typed.
+
 ## What's not built
 
-- **An e2e through a real box** before `SANDBOX_SECRETS` is on by default ([Wiring into the box](#wiring-into-the-box)).
+- **On by default**: `SANDBOX_SECRETS` stays off until Will switches it on ([Wiring into the box](#wiring-into-the-box)).
 - **Main-only secrets** (D-24) and **secret files** (M-42).
 - **The forge token and model routing** in the egress (0005 §4 steps 3 and 4), which the forge proxy and the model endpoint do today on their own routes.
 - **Path scoping** of a secret, beyond hosts and methods.

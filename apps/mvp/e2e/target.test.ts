@@ -66,9 +66,21 @@ describe("the target", () => {
 })
 
 describe("needs", () => {
+  it("requires the local secrets flag and fixture repository together", () => {
+    for (const target of ["local", "deployment"] as const) {
+      for (const flag of [undefined, "false", "true"]) {
+        for (const repository of [undefined, "other/repo", "octocat/Spoon-Knife"]) {
+          const run = { ...local, target, env: { SANDBOX_SECRETS: flag, GITHUB_REPOSITORY: repository } } as Run
+          expect(NEEDS.sandboxSecrets.met(run)).toBe(target === "local" && flag === "true" && repository === "octocat/Spoon-Knife")
+        }
+      }
+    }
+  })
+
   it("are all met locally, where local development's Admin is signed in, but GitHub sign-in", () => {
     const unmet = (Object.keys(NEEDS) as Array<NeedName>).filter((name) => !NEEDS[name].met(local))
     expect(unmet).toEqual([
+      "sandboxSecrets",
       "webhookSecret",
       "alertProviders",
       "oldBuild",

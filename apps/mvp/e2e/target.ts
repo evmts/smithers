@@ -166,6 +166,12 @@ const needs = {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "it signs out and in as local development's person, who exists only without GitHub sign-in; in a deployment that would end the run's shared session",
   },
+  sandboxSecrets: {
+    met: (run) =>
+      run.target === "local" && run.env.SANDBOX_SECRETS === "true" &&
+      (run.env.GITHUB_REPOSITORY ?? "").toLowerCase() === "octocat/spoon-knife",
+    reason: "a branch box's secrets egress is off unless the dev server runs with SANDBOX_SECRETS=true, and the fixture's secrets are writable only with GITHUB_REPOSITORY=octocat/Spoon-Knife (docs/features/secrets.md#wiring-into-the-box)",
+  },
   localLogs: {
     met: (run) => run.target === "local" || set(run, "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"),
     reason: "it reads ChatApi's records: locally from .alchemy/log, in a deployment through a Cloudflare tail (e2e/logs.ts), which needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID",
