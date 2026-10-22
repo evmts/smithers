@@ -70,13 +70,12 @@ export interface RuntimeOptions<I, Shard, Mapped, Reduced, E, R, E2, R2> {
 /**
  * The payload a declared map-reduce takes.
  *
- * `@smthrs/flow` requires a struct payload, and this pattern has always read
- * one field off its input, so the struct states it.
+ * `shards` must be an array. Its elements can have any shape.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Payload = Schema.Struct({ shards: Schema.Unknown })
+export const Payload = Schema.Struct({ shards: Schema.Array(Schema.Unknown) })
 
 /**
  * The declared form of a map-reduce flow.
@@ -173,10 +172,27 @@ export const make = <R = never>(options: MakeOptions<R>): MapReduceFlow<R> => {
  * Executes map work with bounded concurrency, preserves shard order, and
  * reduces the real mapped values.
  *
+ * `reduce` and `fail` return the reducer's result type. `succeed` can also
+ * return an empty array of mapped values.
+ *
  * @category combinators
  * @since 0.1.0
  */
-export const run = <
+export function run<
+  I extends { readonly shards: ReadonlyArray<unknown> },
+  Mapped,
+  Reduced,
+  E,
+  R,
+  E2,
+  R2
+>(
+  input: I,
+  options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2> & {
+    readonly onEmpty: "reduce" | "fail"
+  }
+): Effect.Effect<Reduced, E | E2 | PatternError, R | R2>
+export function run<
   I extends { readonly shards: ReadonlyArray<unknown> },
   Mapped,
   Reduced,
@@ -187,7 +203,19 @@ export const run = <
 >(
   input: I,
   options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
-): Effect.Effect<Reduced | ReadonlyArray<Mapped>, E | E2 | PatternError, R | R2> => {
+): Effect.Effect<Reduced | ReadonlyArray<Mapped>, E | E2 | PatternError, R | R2>
+export function run<
+  I extends { readonly shards: ReadonlyArray<unknown> },
+  Mapped,
+  Reduced,
+  E,
+  R,
+  E2,
+  R2
+>(
+  input: I,
+  options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
+): Effect.Effect<Reduced | ReadonlyArray<Mapped>, E | E2 | PatternError, R | R2> {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the shard array or the option object in between must not reach
   // it. The input itself is handed to the callbacks as the caller's object.

@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Schema from "effect/Schema"
-import { expect } from "vitest"
+import { expect, expectTypeOf } from "vitest"
 import * as MapReduce from "../src/MapReduce.ts"
 import { PatternError } from "../src/PatternError.ts"
 import { callsTo } from "./Graphs.ts"
@@ -25,9 +25,39 @@ const reducer = Flow.make("reduce", {
   body: ({ mapped }) => Node.succeed(mapped)
 })
 
-const declaration = (shards: unknown): { readonly shards: unknown } => ({ shards })
+const declaration = (shards: ReadonlyArray<unknown>): typeof MapReduce.Payload.Type => ({ shards })
 
 describe("MapReduce", () => {
+  it("decodes only payloads with a shards array", () => {
+    for (const shards of [null, undefined, {}, "shard", 1]) {
+      expect(Schema.decodeUnknownResult(MapReduce.Payload)({ shards })._tag).toBe("Failure")
+    }
+    for (const shards of [[], [null, 1, "shard", {}]]) {
+      expect(Schema.decodeUnknownSync(MapReduce.Payload)({ shards })).toEqual({ shards })
+    }
+  })
+
+  it.effect("types the runtime result by the empty-input policy", () =>
+    Effect.gen(function*() {
+      const callbacks = {
+        concurrency: 1,
+        map: ({ shard }: { readonly shard: number }) => Effect.succeed(String(shard)),
+        reduce: ({ mapped }: { readonly mapped: ReadonlyArray<string> }) => Effect.succeed(mapped.length)
+      }
+      for (const onEmpty of ["reduce", "fail"] as const) {
+        const reduced = MapReduce.run({ shards: [1] }, { ...callbacks, onEmpty })
+        expectTypeOf<Effect.Success<typeof reduced>>().toEqualTypeOf<number>()
+        expect(yield* reduced).toBe(1)
+      }
+      const succeeded = MapReduce.run({ shards: [] as Array<number> }, { ...callbacks, onEmpty: "succeed" })
+      expectTypeOf<Effect.Success<typeof succeeded>>().toEqualTypeOf<number | ReadonlyArray<string>>()
+      expect(yield* succeeded).toEqual([])
+      const onEmpty: MapReduce.OnEmpty = "reduce" as MapReduce.OnEmpty
+      const dynamic = MapReduce.run({ shards: [1] }, { ...callbacks, onEmpty })
+      expectTypeOf<Effect.Success<typeof dynamic>>().toEqualTypeOf<number | ReadonlyArray<string>>()
+      expect(yield* dynamic).toBe(1)
+    }))
+
   it("declares deterministic map and reduce phases", () => {
     const mapReduce = MapReduce.make({
       map: step,
@@ -87,7 +117,7 @@ describe("MapReduce", () => {
   it("refuses a declaration input without a shards array", () => {
     const mapReduce = MapReduce.make({ map: step, reduce: reducer, concurrency: 1, onEmpty: "reduce" })
 
-    expect(() => mapReduce.body({ shard: [] } as unknown as { readonly shards: unknown })).toThrow(
+    expect(() => mapReduce.body({ shard: [] } as unknown as typeof MapReduce.Payload.Type)).toThrow(
       expect.objectContaining({
         code: "invalid_input",
         message: "MapReduce input must contain a shards array"
