@@ -15,12 +15,12 @@ export interface NavigationHost {
   /** The app's origin: a path is checked against it again before the tab moves. */
   readonly origin: string
   /** Takes this tab to `path`, an app path: TanStack Router's `navigate`, outside React. */
-  readonly navigate: (path: string) => void
+  readonly navigate: (path: string) => void | Promise<void>
 }
 
 /**
  * Answers the navigation channel for this tab's requests until its scope closes: goes to the call's path, checked once
- * more (`appPath`), and answers whether the tab moved. A navigate that throws leaves the tab where it was.
+ * more (`appPath`), and answers whether the tab moved. A navigate that throws or rejects answers that it did not move.
  */
 export const tabNavigation = (host: NavigationHost) =>
   Layer.effectDiscard(
@@ -31,7 +31,7 @@ export const tabNavigation = (host: NavigationHost) =>
         const target = path === undefined ? undefined : appPath(path, host.origin)
         return target === undefined || target._tag === "Refused"
           ? Effect.succeed({ moved: false })
-          : Effect.try(() => host.navigate(target.path)).pipe(
+          : Effect.tryPromise(async () => { await host.navigate(target.path) }).pipe(
             Effect.as({ moved: true }),
             Effect.orElseSucceed(() => ({ moved: false })),
           )

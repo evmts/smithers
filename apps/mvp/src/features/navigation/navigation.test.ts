@@ -19,7 +19,7 @@ import { MAX_TO_LENGTH, NAVIGATE_WITHIN, NAVIGATION_TELEMETRY, navigationChannel
 import { Navigate, NavigationRefused, registration, Tabs } from "./flows"
 import { navigations } from "./metrics"
 import { appPath } from "./paths"
-import { To } from "./schema"
+import { GoCall, To } from "./schema"
 import { tabNavigation } from "./tab"
 
 const ORIGIN = "http://localhost:1337"
@@ -78,6 +78,13 @@ describe("where it may go", () => {
     expect(appPath("http://[::1", ORIGIN)).toEqual({ _tag: "Refused", reason: "invalid" })
   })
 
+  test("the tab call bounds a supplied path while allowing no path", () => {
+    const valid = (input: { readonly path?: string }) => Exit.isSuccess(Effect.runSyncExit(GoCall.makeEffect(input)))
+    expect(valid({})).toBe(true)
+    expect(valid({ path: "x".repeat(MAX_TO_LENGTH) })).toBe(true)
+    expect(valid({ path: "x".repeat(MAX_TO_LENGTH + 1) })).toBe(false)
+  })
+
   test("the flow takes 1 to MAX_TO_LENGTH characters", () => {
     const valid = (to: string) => Exit.isSuccess(Effect.runSyncExit(To.makeEffect(to)))
     expect(valid("")).toBe(false)
@@ -134,7 +141,7 @@ const openEngine = async (within: `${number} millis` = "2000 millis") => {
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
 
   /** A tab on this engine: it moves through `navigate`, which records each path unless set. */
-  const tab = async (navigate?: (path: string) => void) => {
+  const tab = async (navigate?: (path: string) => void | Promise<void>) => {
     const navigated: Array<string> = []
     const built = await Effect.runPromise(
       Scope.provide(scoped())(
@@ -231,6 +238,43 @@ describe("the tab that asked", () => {
       expect.objectContaining({ level: "INFO", annotations: expect.objectContaining({ door: "unknown", outcome: "gone" }) }),
       expect.objectContaining({ level: "INFO", annotations: expect.objectContaining({ door: "agent", outcome: "gone" }) }),
     ])
+  })
+
+  test("an asynchronous router must complete before moved is true", async () => {
+    const engine = await openEngine()
+    let enter!: () => void
+    let complete!: () => void
+    const entered = new Promise<void>((resolve) => { enter = resolve })
+    const completion = new Promise<void>((resolve) => { complete = resolve })
+    const asking = await engine.tab(() => { enter(); return completion })
+    asking.started("nav-async", "button")
+    let settled = false
+    const result = engine.navigate("nav-async", "/octocat").then((exit) => { settled = true; return exit })
+    await entered
+    try {
+      // A second request completes over the same channel while this router is still pending.
+      const other = await engine.tab()
+      other.started("nav-barrier", "slash")
+      expect(await engine.navigate("nav-barrier", "/")).toEqual(Exit.succeed({ path: "/", moved: true }))
+      expect(settled).toBe(false)
+    } finally {
+      complete()
+    }
+    expect(await result).toEqual(Exit.succeed({ path: "/octocat", moved: true }))
+    expect(engine.count({ door: "button", outcome: "navigated" })).toBe(1)
+  })
+
+  test("an asynchronous router failure answers false and records failure", async () => {
+    const engine = await openEngine()
+    const asking = await engine.tab(() => {
+      const failed = Promise.reject(new Error("the router failed asynchronously"))
+      void failed.catch(() => {}) // Keep the old implementation's discarded rejection from escaping the test.
+      return failed
+    })
+    asking.started("nav-rejected", "button")
+    expect(await engine.navigate("nav-rejected", "/octocat")).toEqual(Exit.succeed({ path: "/octocat", moved: false }))
+    expect(engine.count({ door: "button", outcome: "failed" })).toBe(1)
+    expect(engine.line()).toMatchObject({ level: "ERROR", annotations: { outcome: "failed" } })
   })
 
   test("a router that throws leaves the tab where it was, and the step answers it didn't move", async () => {

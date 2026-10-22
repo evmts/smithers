@@ -157,9 +157,8 @@ const host: Host = {
   },
   // Copy permalink writes here; the browser refuses without the page's focus or permission.
   clipboard: (text) => navigator.clipboard.writeText(text),
-  // `app/navigate` moves this tab through the router, never `history` or `location`. The location changes at once;
-  // the route's loader then opens what it shows.
-  navigate: (path) => void router.navigate({ href: path }),
+  // `app/navigate` observes the router completing or failing before answering the asking tab.
+  navigate: (path) => router.navigate({ href: path }),
   // `app/web/open` (src/features/web/url.ts): `http:` pages on this machine open in a new tab only under the dev
   // server. A person's own `/web … tab` opens its tab here, inside their keypress, when the browser still allows it:
   // `window.open` takes the click's activation when it opens a tab, so an activation still there after it means the

@@ -107,7 +107,7 @@ export interface Host extends ChatHost {
   /** The tab's title, which agent status counts open questions in (`document.title`); none unless set. */
   readonly title?: TabTitle["Service"]
   /** Takes this tab to `path`, an app path: the router's `navigate` (src/features/navigation/tab.ts). */
-  readonly navigate: (path: string) => void
+  readonly navigate: (path: string) => void | Promise<void>
   /** Which outside pages open, and a tab opened from the person's own click or key (src/features/web/actions.ts). */
   readonly web: WebHost
   /**

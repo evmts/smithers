@@ -15,7 +15,7 @@ export type Navigated = typeof Navigated.Type
 export const Reason = Schema.Literals(REFUSALS)
 
 /** What the step asks the tab that started its request (src/flows/askingTab.ts): go to `path`, or, without one, stay. */
-export const GoCall = Schema.Struct({ path: Schema.optional(Schema.String) })
+export const GoCall = Schema.Struct({ path: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_TO_LENGTH))) })
 
 /** What that tab answers: whether it moved. */
 export const Moved = Schema.Struct({ moved: Schema.Boolean })
