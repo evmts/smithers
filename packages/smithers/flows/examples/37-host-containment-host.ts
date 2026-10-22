@@ -17,6 +17,7 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import * as References from "effect/References"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { dirname } from "node:path"
@@ -101,6 +102,8 @@ const exit = await Effect.runPromise(
           flows
         )
       ),
+      // stdout is the PID protocol. Registration info must not precede it.
+      Effect.provideService(References.MinimumLogLevel, "Warning"),
       Effect.scoped
     )
   )
