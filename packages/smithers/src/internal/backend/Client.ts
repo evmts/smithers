@@ -487,7 +487,8 @@ export class Client {
         else if (item && typeof item === "object") remember(item)
       }
     }
-    remember(body)
+    const binary = body instanceof Uint8Array
+    if (!binary) remember(body)
     for (const [key, value] of Object.entries(options.headers ?? {})) {
       if (/authorization|token|secret/i.test(key)) this.protect(value.replace(/^(?:Bearer|token)\s+/i, ""))
     }
@@ -503,7 +504,11 @@ export class Client {
     const headers = {
       "user-agent": `smithers-cli/${packageVersion}`,
       accept: options.stream ? "text/event-stream" : "application/json",
-      ...(body === undefined && options.rawBody === undefined ? {} : { "content-type": "application/json" }),
+      ...(body === undefined && options.rawBody === undefined
+        ? {}
+        : {
+          "content-type": options.rawBody === undefined && binary ? "application/octet-stream" : "application/json"
+        }),
       ...(token ? { authorization: `token ${token}` } : {}),
       ...(token && via && !Object.keys(options.headers ?? {}).some((key) => key.toLowerCase() === "smithers-via")
         ? { "Smithers-Via": via }
@@ -523,7 +528,7 @@ export class Client {
         ? { body: options.rawBody }
         : body === undefined
         ? {}
-        : { body: JSON.stringify(body) }),
+        : { body: binary ? Buffer.from(body) : JSON.stringify(body) }),
       ...(signal ? { signal } : {}),
       redirect: "error" as const
     }

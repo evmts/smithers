@@ -1866,7 +1866,7 @@
     "path": "/api/orgs/{org}/members",
     "operationId": "post_api_orgs_org_members",
     "parameters": [{ "name": "org", "in": "path", "required": true, "type": "string" }],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -1968,7 +1968,7 @@
     "path": "/api/orgs/{org}/variables",
     "operationId": "post_api_orgs_org_variables",
     "parameters": [{ "name": "org", "in": "path", "required": true, "type": "string" }],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -2078,7 +2078,7 @@
       { "name": "owner", "in": "path", "required": true, "type": "string" },
       { "name": "repo", "in": "path", "required": true, "type": "string" }
     ],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -2175,7 +2175,7 @@
       { "name": "repo", "in": "path", "required": true, "type": "string" },
       { "name": "keyDigest", "in": "path", "required": true, "type": "string" }
     ],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -2306,7 +2306,7 @@
       { "name": "repo", "in": "path", "required": true, "type": "string" },
       { "name": "id", "in": "path", "required": true, "type": "string" }
     ],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -2532,7 +2532,7 @@
       { "name": "repo", "in": "path", "required": true, "type": "string" },
       { "name": "slug", "in": "path", "required": true, "type": "string" }
     ],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -2748,7 +2748,7 @@
       { "name": "repo", "in": "path", "required": true, "type": "string" },
       { "name": "id", "in": "path", "required": true, "type": "string" }
     ],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -2829,7 +2829,7 @@
       { "name": "repo", "in": "path", "required": true, "type": "string" },
       { "name": "digest", "in": "path", "required": true, "type": "string" }
     ],
-    "body": "none",
+    "body": "binary",
     "success": "json"
   },
   {
@@ -3272,7 +3272,7 @@
       { "name": "owner", "in": "path", "required": true, "type": "string" },
       { "name": "repo", "in": "path", "required": true, "type": "string" }
     ],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -3296,7 +3296,7 @@
       { "name": "repo", "in": "path", "required": true, "type": "string" },
       { "name": "number", "in": "path", "required": true, "type": "string" }
     ],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {
@@ -3320,7 +3320,7 @@
       { "name": "repo", "in": "path", "required": true, "type": "string" },
       { "name": "number", "in": "path", "required": true, "type": "string" }
     ],
-    "body": "none",
+    "body": "json",
     "success": "json"
   },
   {

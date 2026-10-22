@@ -13,8 +13,8 @@ interface Operation {
   readonly path: string
   readonly operationId: string
   readonly parameters: ReadonlyArray<Parameter>
-  /** `raw` preserves signed JSON bytes; `other` is an unsupported media type. */
-  readonly body: "json" | "raw" | "other" | "none"
+  /** `raw` preserves signed JSON text via rawBody; `binary` sends Uint8Array bytes; `other` is unsupported. */
+  readonly body: "json" | "raw" | "binary" | "other" | "none"
   /** What a successful call exposes: JSON, a raw response, a socket, or nothing. */
   readonly success: "json" | "raw" | "none" | "websocket"
 }
@@ -26,6 +26,7 @@ interface Operation {
  * backend on 2026-10-21, with the OAuth callbacks' missing query contracts
  * corrected alongside the wrappers. Confirmed omissions in that spec are corrected from
  * its retained handlers: confirmations, webhooks, live, token and preferences.
+ * Mutation bodies and binary uploads are covered by ProductApiBodies.test.ts.
  */
 const operations = JSON.parse(
   readFileSync(new URL("./fixtures/product-api-operations.json", import.meta.url), "utf8")
@@ -115,12 +116,17 @@ describe("the generated product API client", () => {
         parameters.filter((p) => p.in === "header" && p.required === true).map((p) => [p.name, `key ${p.name}`])
       )
       const sendsHeaders = Object.keys(headers).length > 0
-      const body = operation.body === "raw" ? "{ \"signed\": true }\n" : { operation: operation.operationId }
+      const sendsBody = operation.body === "json" || operation.body === "binary"
+      const body = operation.body === "binary"
+        ? new Uint8Array([0, 255, 128])
+        : operation.body === "raw"
+        ? "{ \"signed\": true }\n"
+        : { operation: operation.operationId }
       const input = {
         ...(Object.keys(pathValues).length > 0 ? { path: pathValues } : {}),
         ...(Object.keys(queryValues).length > 0 ? { query: queryValues } : {}),
         ...(sendsHeaders ? { headers } : {}),
-        ...(["json", "raw"].includes(operation.body) ? { body } : {})
+        ...(sendsBody || operation.body === "raw" ? { body } : {})
       }
       const { calls, transport, answer, raw } = recorder()
       const result = await generated[functionName(operation.operationId)]!(transport, input)
@@ -135,7 +141,7 @@ describe("the generated product API client", () => {
         args: [
           method.toUpperCase(),
           expectedPath,
-          ...(operation.body === "json" ? [body] : sendsHeaders ? [undefined] : []),
+          ...(sendsBody ? [body] : sendsHeaders ? [undefined] : []),
           ...(sendsHeaders ? [{ headers, ...(operation.body === "raw" ? { rawBody: body } : {}) }] : [])
         ]
       }])

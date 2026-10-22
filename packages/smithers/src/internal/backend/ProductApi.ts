@@ -1,9 +1,10 @@
 // Generated from the product API spec (docs/api/openapi.yaml). The spec and its
 // generator were removed with the Go backend on 2026-10-21; nothing regenerates
 // this file. test/fixtures/product-api-operations.json keeps the operations it
-// was generated from.
+// was generated from, with missing mutation request bodies corrected by
+// test/ProductApiBodies.test.ts.
 //
-// Not generated (the request body is not JSON):
+// Not generated (unsupported form-encoded request bodies):
 //   post_api_auth_github_cli_consent (application/x-www-form-urlencoded)
 //   post_api_fast_model_sign_in (application/x-www-form-urlencoded)
 
@@ -12,7 +13,7 @@ import type { GatewayRpcs } from "@smthrs/gateway"
 import type { Rpc, RpcGroup } from "effect/rpc"
 import { pathSegment as segment } from "./PathSegment.ts"
 
-/** Per-request headers and, for signed webhooks, the original JSON bytes. */
+/** Per-request headers; rawBody preserves signed JSON text and takes precedence over body. */
 export interface RequestOptions {
   readonly headers?: Record<string, string>
   readonly rawBody?: string
@@ -20,7 +21,7 @@ export interface RequestOptions {
 
 /** Sends one product API request. The CLI's backend `Client` is one; so is anything with these two methods. */
 export interface Transport {
-  /** Sends JSON (or options.rawBody unchanged) and parses the JSON response, or null for an empty response. */
+  /** Sends JSON, Uint8Array bytes, or unchanged rawBody text; returns parsed JSON or null for an empty response. */
   request(method: string, path: string, body?: unknown, options?: RequestOptions): Promise<unknown>
   /** Sends a request and resolves to the raw response, for streams and files. */
   response(method: string, path: string, body?: unknown, options?: RequestOptions): Promise<Response>
@@ -3525,11 +3526,12 @@ export type PostApiOrgsOrgMembersResponse = AnyJSON
 
 export interface PostApiOrgsOrgMembersInput {
   readonly path: { readonly org: string }
+  readonly body: AnyJSON
 }
 
 /** POST /api/orgs/{org}/members */
 export const postApiOrgsOrgMembers = (transport: Transport, input: PostApiOrgsOrgMembersInput): Promise<PostApiOrgsOrgMembersResponse> =>
-  transport.request("POST", `/api/orgs/${segment(input.path.org)}/members`) as Promise<PostApiOrgsOrgMembersResponse>
+  transport.request("POST", `/api/orgs/${segment(input.path.org)}/members`, input.body) as Promise<PostApiOrgsOrgMembersResponse>
 
 export type GetApiOrgsOrgProviderConnectionsResponse = AnyJSON
 
@@ -3648,11 +3650,12 @@ export type PostApiOrgsOrgVariablesResponse = AnyJSON
 
 export interface PostApiOrgsOrgVariablesInput {
   readonly path: { readonly org: string }
+  readonly body: AnyJSON
 }
 
 /** POST /api/orgs/{org}/variables */
 export const postApiOrgsOrgVariables = (transport: Transport, input: PostApiOrgsOrgVariablesInput): Promise<PostApiOrgsOrgVariablesResponse> =>
-  transport.request("POST", `/api/orgs/${segment(input.path.org)}/variables`) as Promise<PostApiOrgsOrgVariablesResponse>
+  transport.request("POST", `/api/orgs/${segment(input.path.org)}/variables`, input.body) as Promise<PostApiOrgsOrgVariablesResponse>
 
 export type PostApiOrgsResponse = AnyJSON
 
@@ -3755,11 +3758,12 @@ export type PatchApiReposOwnerRepoResponse = AnyJSON
 
 export interface PatchApiReposOwnerRepoInput {
   readonly path: { readonly owner: string; readonly repo: string }
+  readonly body: AnyJSON
 }
 
 /** PATCH /api/repos/{owner}/{repo} */
 export const patchApiReposOwnerRepo = (transport: Transport, input: PatchApiReposOwnerRepoInput): Promise<PatchApiReposOwnerRepoResponse> =>
-  transport.request("PATCH", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}`) as Promise<PatchApiReposOwnerRepoResponse>
+  transport.request("PATCH", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}`, input.body) as Promise<PatchApiReposOwnerRepoResponse>
 
 export interface DeleteApiReposOwnerRepoActionsRunsIdArtifactsNameInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly id: string; readonly name: string }
@@ -3827,11 +3831,12 @@ export type PutApiReposOwnerRepoBuildCacheAcKeydigestResponse = AnyJSON
 
 export interface PutApiReposOwnerRepoBuildCacheAcKeydigestInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly keyDigest: string }
+  readonly body: AnyJSON
 }
 
 /** PUT /api/repos/{owner}/{repo}/build-cache/ac/{keyDigest} */
 export const putApiReposOwnerRepoBuildCacheAcKeydigest = (transport: Transport, input: PutApiReposOwnerRepoBuildCacheAcKeydigestInput): Promise<PutApiReposOwnerRepoBuildCacheAcKeydigestResponse> =>
-  transport.request("PUT", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/build-cache/ac/${segment(input.path.keyDigest)}`) as Promise<PutApiReposOwnerRepoBuildCacheAcKeydigestResponse>
+  transport.request("PUT", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/build-cache/ac/${segment(input.path.keyDigest)}`, input.body) as Promise<PutApiReposOwnerRepoBuildCacheAcKeydigestResponse>
 
 export interface DeleteApiReposOwnerRepoBuildCacheAcKeydigestInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly keyDigest: string }
@@ -3923,11 +3928,12 @@ export type PatchApiReposOwnerRepoIssuesCommentsIdResponse = IssueComment
 
 export interface PatchApiReposOwnerRepoIssuesCommentsIdInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
+  readonly body: AnyJSON
 }
 
 /** PATCH /api/repos/{owner}/{repo}/issues/comments/{id} */
 export const patchApiReposOwnerRepoIssuesCommentsId = (transport: Transport, input: PatchApiReposOwnerRepoIssuesCommentsIdInput): Promise<PatchApiReposOwnerRepoIssuesCommentsIdResponse> =>
-  transport.request("PATCH", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/issues/comments/${segment(input.path.id)}`) as Promise<PatchApiReposOwnerRepoIssuesCommentsIdResponse>
+  transport.request("PATCH", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/issues/comments/${segment(input.path.id)}`, input.body) as Promise<PatchApiReposOwnerRepoIssuesCommentsIdResponse>
 
 export interface DeleteApiReposOwnerRepoKeysIdInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
@@ -4101,11 +4107,12 @@ export type PatchApiReposOwnerRepoWikiSlugResponse = AnyJSON
 
 export interface PatchApiReposOwnerRepoWikiSlugInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly slug: string }
+  readonly body: AnyJSON
 }
 
 /** PATCH /api/repos/{owner}/{repo}/wiki/{slug} */
 export const patchApiReposOwnerRepoWikiSlug = (transport: Transport, input: PatchApiReposOwnerRepoWikiSlugInput): Promise<PatchApiReposOwnerRepoWikiSlugResponse> =>
-  transport.request("PATCH", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/wiki/${segment(input.path.slug)}`) as Promise<PatchApiReposOwnerRepoWikiSlugResponse>
+  transport.request("PATCH", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/wiki/${segment(input.path.slug)}`, input.body) as Promise<PatchApiReposOwnerRepoWikiSlugResponse>
 
 export type GetApiReposOwnerRepoWorkflowRunsIdArtifactsNameResponse = AnyJSON
 
@@ -4276,11 +4283,12 @@ export type PostApiReposOwnerRepoAgentSessionsIdMessagesResponse = AnyJSON
 
 export interface PostApiReposOwnerRepoAgentSessionsIdMessagesInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
+  readonly body: AnyJSON
 }
 
 /** POST /api/repos/{owner}/{repo}/agent/sessions/{id}/messages */
 export const postApiReposOwnerRepoAgentSessionsIdMessages = (transport: Transport, input: PostApiReposOwnerRepoAgentSessionsIdMessagesInput): Promise<PostApiReposOwnerRepoAgentSessionsIdMessagesResponse> =>
-  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/agent/sessions/${segment(input.path.id)}/messages`) as Promise<PostApiReposOwnerRepoAgentSessionsIdMessagesResponse>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/agent/sessions/${segment(input.path.id)}/messages`, input.body) as Promise<PostApiReposOwnerRepoAgentSessionsIdMessagesResponse>
 
 export interface GetApiReposOwnerRepoAgentSessionsIdStreamInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
@@ -4344,11 +4352,12 @@ export type PutApiReposOwnerRepoBuildCacheCasDigestResponse = AnyJSON
 
 export interface PutApiReposOwnerRepoBuildCacheCasDigestInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly digest: string }
+  readonly body: Uint8Array
 }
 
 /** PUT /api/repos/{owner}/{repo}/build-cache/cas/{digest} */
 export const putApiReposOwnerRepoBuildCacheCasDigest = (transport: Transport, input: PutApiReposOwnerRepoBuildCacheCasDigestInput): Promise<PutApiReposOwnerRepoBuildCacheCasDigestResponse> =>
-  transport.request("PUT", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/build-cache/cas/${segment(input.path.digest)}`) as Promise<PutApiReposOwnerRepoBuildCacheCasDigestResponse>
+  transport.request("PUT", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/build-cache/cas/${segment(input.path.digest)}`, input.body) as Promise<PutApiReposOwnerRepoBuildCacheCasDigestResponse>
 
 export interface HeadApiReposOwnerRepoBuildCacheCasDigestInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly digest: string }
@@ -4707,11 +4716,12 @@ export type PostApiReposOwnerRepoIssuesResponse = Issue
 
 export interface PostApiReposOwnerRepoIssuesInput {
   readonly path: { readonly owner: string; readonly repo: string }
+  readonly body: AnyJSON
 }
 
 /** POST /api/repos/{owner}/{repo}/issues */
 export const postApiReposOwnerRepoIssues = (transport: Transport, input: PostApiReposOwnerRepoIssuesInput): Promise<PostApiReposOwnerRepoIssuesResponse> =>
-  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/issues`) as Promise<PostApiReposOwnerRepoIssuesResponse>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/issues`, input.body) as Promise<PostApiReposOwnerRepoIssuesResponse>
 
 export type GetApiReposOwnerRepoIssuesNumberResponse = Issue
 
@@ -4727,11 +4737,12 @@ export type PatchApiReposOwnerRepoIssuesNumberResponse = Issue
 
 export interface PatchApiReposOwnerRepoIssuesNumberInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly number: string }
+  readonly body: AnyJSON
 }
 
 /** PATCH /api/repos/{owner}/{repo}/issues/{number} */
 export const patchApiReposOwnerRepoIssuesNumber = (transport: Transport, input: PatchApiReposOwnerRepoIssuesNumberInput): Promise<PatchApiReposOwnerRepoIssuesNumberResponse> =>
-  transport.request("PATCH", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/issues/${segment(input.path.number)}`) as Promise<PatchApiReposOwnerRepoIssuesNumberResponse>
+  transport.request("PATCH", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/issues/${segment(input.path.number)}`, input.body) as Promise<PatchApiReposOwnerRepoIssuesNumberResponse>
 
 export type GetApiReposOwnerRepoIssuesNumberCommentsResponse = Array<IssueComment>
 
@@ -4747,11 +4758,12 @@ export type PostApiReposOwnerRepoIssuesNumberCommentsResponse = IssueComment
 
 export interface PostApiReposOwnerRepoIssuesNumberCommentsInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly number: string }
+  readonly body: AnyJSON
 }
 
 /** POST /api/repos/{owner}/{repo}/issues/{number}/comments */
 export const postApiReposOwnerRepoIssuesNumberComments = (transport: Transport, input: PostApiReposOwnerRepoIssuesNumberCommentsInput): Promise<PostApiReposOwnerRepoIssuesNumberCommentsResponse> =>
-  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/issues/${segment(input.path.number)}/comments`) as Promise<PostApiReposOwnerRepoIssuesNumberCommentsResponse>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/issues/${segment(input.path.number)}/comments`, input.body) as Promise<PostApiReposOwnerRepoIssuesNumberCommentsResponse>
 
 export interface GetApiReposOwnerRepoIssuesNumberEventsInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly number: string }
