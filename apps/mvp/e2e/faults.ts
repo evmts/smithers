@@ -10,8 +10,11 @@ import { guard } from "./target"
 // `/app?faults` runs the real services behind those switches, healthy until a test throws one; `/app?faults=down`
 // opens it with sync already down. Happy paths open `/app`, on the real services alone.
 
-/** The app on its faulty services, healthy, or opened with a shape switch already thrown. */
-export const faultyApp = (opening?: "down" | "refuse" | `refuse-${number}` | "stall" | "corrupt") => {
+/**
+ * The app on its faulty services, healthy, or opened with a switch already thrown: a shape switch, or `session-503`,
+ * every session read, the engine worker's included, answering 503.
+ */
+export const faultyApp = (opening?: "down" | "refuse" | `refuse-${number}` | "stall" | "corrupt" | "session-503") => {
   // A dev build only: `requires("faults")`.
   guard("faults")
   return opening === undefined ? "/app?faults" : `/app?faults=${opening}`
@@ -48,6 +51,13 @@ export const faults = (page: Page) => {
       asked: async (): Promise<ReadonlyArray<Question>> => {
         await built()
         return page.evaluate(() => (window as unknown as OnWindow).faults.questions.asked())
+      },
+    },
+    session: {
+      /** Back to the real session read, in the tab and its engine worker: ChatApi says who is signed in again. */
+      heal: async () => {
+        await built()
+        await page.evaluate(() => (window as unknown as OnWindow).faults.session.heal())
       },
     },
     engine: {

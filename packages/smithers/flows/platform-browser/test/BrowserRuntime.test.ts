@@ -6,6 +6,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { EngineStore, RunCatalogRead } from "@smthrs/engine-store"
 import { FlowRuntime } from "@smthrs/flow"
+import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -15,7 +16,7 @@ import * as PubSub from "effect/PubSub"
 import * as Queue from "effect/Queue"
 import * as Scope from "effect/Scope"
 import { afterEach, beforeEach, vi } from "vitest"
-import { BrowserRuntime, TabChannel, WebLock } from "../src/index.ts"
+import { BrowserRuntime, type SharedSqlite, TabChannel, WebLock } from "../src/index.ts"
 import * as Engines from "./fixtures/Engines.ts"
 import { flows, registration, Sleeper, Steps } from "./fixtures/Flows.ts"
 import * as MemoryOpfs from "./fixtures/MemoryOpfs.ts"
@@ -98,6 +99,40 @@ describe("BrowserRuntime over OPFS", () => {
       for (let index = 0; index < 2; index++) yield* Layer.build(host(true)).pipe(Effect.scoped)
       expect(authorized).toBe(3)
       expect(registered).toBe(2)
+    }))
+
+  it.effect("the database a successful check was given stays usable while the activation serves", () =>
+    Effect.gen(function*() {
+      let kept: SharedSqlite.Service | undefined
+      const host = BrowserRuntime.layerHost(
+        {
+          name: "identity-recheck",
+          sqlite: MemorySqlite.build,
+          authorize: (database) =>
+            Effect.andThen(
+              database.execute("CREATE TABLE IF NOT EXISTS device_owner (person TEXT)"),
+              Effect.sync(() => {
+                kept = database
+              })
+            )
+        },
+        registration(Effect.succeed)
+      )
+      yield* Effect.gen(function*() {
+        const context = yield* Layer.build(host)
+        // Later, while the engine serves, the host checks again and records an owner, each statement on its own.
+        yield* kept!.execute("INSERT INTO device_owner (person) VALUES (?)", ["person-1"])
+        expect(yield* kept!.execute("SELECT person FROM device_owner")).toEqual([{ person: "person-1" }])
+        const runtime = Context.get(context, FlowRuntime.FlowRuntime)
+        expect(yield* runtime.execute(Steps, { executionId: "after-recheck", payload: { prefix: "c" } })).toBe(
+          "c:three"
+        )
+      }).pipe(Effect.scoped)
+      // The next activation's check reads what the later one recorded.
+      yield* Effect.gen(function*() {
+        yield* Layer.build(host)
+        expect(yield* kept!.execute("SELECT person FROM device_owner")).toEqual([{ person: "person-1" }])
+      }).pipe(Effect.scoped)
     }))
 
   it.effect("layerHost keeps a run's result in OPFS across engines", () =>

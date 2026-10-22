@@ -4,11 +4,15 @@
 // side splits in two: `tabEngine` starts the worker needing nothing of the tab, and `tabAnswers` answers it once the
 // tab's store is open.
 import { Persistence } from "@smthrs/effect-tanstack-db"
-import { BrowserEngine } from "@smthrs/platform-browser"
-import { Context, Effect, Exit, Layer, ManagedRuntime, Option, Scope, Stream } from "effect"
+import { BrowserEngine, TabChannel } from "@smthrs/platform-browser"
+import { Context, Effect, Exit, Fiber, Layer, ManagedRuntime, Option, Scope, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { stop, testFile, usage } from "../../worker/test/harness.ts"
 import { Answer } from "../features/agent/flows"
+import { sessionChannel } from "../features/auth/contract"
+import { REFRESH_RETRY } from "../features/auth/flows"
+import { SessionCall } from "../features/auth/schema"
+import { answerAskingTab } from "./askingTab"
 import type { ThemeMode } from "../features/theme/contract"
 import { WriteTheme } from "../features/theme/flows"
 import { ThemeStore } from "../features/theme/store"
@@ -78,6 +82,38 @@ describe("the device's engine", () => {
     expect(device.painted).toEqual(["dark"])
     expect(await answerRow(runtime, answerId)).toMatchObject({ status: "done", text: "Dark mode is on." })
   })
+
+  test("a session refresh waiting out its backoff holds up no other flow on the leader's engine", async () => {
+    const agent = await openAgent(runtime, () => Stream.empty)
+    const device = await openDevice(agent.fetch)
+    devices.push(device)
+    // The tab's side of auth/refresh, on a ChatApi that never says who is signed in: the engine asks again and again.
+    const asked: Array<number> = []
+    const scope = Effect.runSync(Scope.make())
+    await device.run(
+      Scope.provide(scope)(
+        answerAskingTab({
+          channel: sessionChannel(device.name),
+          input: SessionCall,
+          answer: () => Effect.sync(() => (asked.push(Date.now()), { outcome: "unreachable" as const })),
+        }),
+      ).pipe(Effect.provide(TabChannel.layer)),
+    )
+    try {
+      const refreshing = Effect.runFork(device.dispatch.dispatch("auth/refresh", {}, { door: "sync" }))
+      await vi.waitFor(() => expect(asked.length).toBeGreaterThanOrEqual(2), { timeout: 10_000, interval: 20 })
+      // The refresh is between attempts, its run still open: another flow starts and ends at once.
+      const startedAt = Date.now()
+      const set = await Effect.runPromise(device.dispatch.dispatch("app/theme/set", { mode: "dark" }, { door: "button" }))
+      expect(set).toEqual({ _tag: "Done", value: { mode: "dark" } })
+      expect(Date.now() - startedAt).toBeLessThan(REFRESH_RETRY.initialMs * 2)
+      expect(device.painted).toEqual(["dark"])
+      expect(refreshing.pollUnsafe()).toBeUndefined()
+      await Effect.runPromise(Fiber.interrupt(refreshing))
+    } finally {
+      await Effect.runPromise(Scope.close(scope, Exit.void))
+    }
+  }, 30_000)
 })
 
 describe("the tab's side", () => {

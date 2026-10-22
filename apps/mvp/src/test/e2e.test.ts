@@ -3,7 +3,9 @@ import { afterEach, expect, test, vi } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import type { ChatView } from "../features/chat/chat"
 import { nodeDevice, TestChatApi } from "./chatApi"
-import { opening, startWithFaults, type Switches } from "./e2e"
+import { AuthClient, AuthUnreachable } from "../features/auth/api"
+import { AuthFaults, faultyAuth, faultySession } from "./authFaults"
+import { opening, sessionDown, startWithFaults, type Switches } from "./e2e"
 
 // The end-to-end entry's composition: the app on faulty services, with their switches on the window.
 
@@ -19,6 +21,28 @@ test("?faults names the switch the shape source opens with, and nothing else ope
   for (const search of ["?faults=down", "?faults=refuse", "?faults=refuse-502", "?faults=stall", "?faults=corrupt"]) {
     expect(opening(search)).toBeInstanceOf(Function)
   }
+})
+
+test("?faults=session-503 refuses every session read, the engine worker's too, until the page heals it", async () => {
+  expect([sessionDown("?faults=session-503"), sessionDown("?faults"), sessionDown("?faults=down")]).toEqual([true, false, false])
+  const answer = { signedIn: false as const, available: true }
+  const page = ManagedRuntime.make(
+    faultyAuth(sessionDown("?faults=session-503")).pipe(
+      Layer.provide(Layer.succeed(AuthClient, AuthClient.of({ session: Effect.succeed(answer), signOut: Effect.void }))),
+    ),
+  )
+  runtimes.push(page)
+  const worker = faultySession(Effect.succeed(answer), true)
+  const read = () => page.runPromise(Effect.flatMap(Effect.service(AuthClient), (client) => Effect.result(client.session)))
+  const refused = { _tag: "Failure", failure: new AuthUnreachable({ status: 503 }) }
+  expect(await read()).toMatchObject(refused)
+  expect(await Effect.runPromise(Effect.result(worker))).toMatchObject(refused)
+  const faults = await page.runPromise(Effect.service(AuthFaults))
+  await page.runPromise(faults.heal)
+  expect(await read()).toMatchObject({ _tag: "Success", success: answer })
+  await until(async () => expect(await Effect.runPromise(Effect.result(worker))).toMatchObject({ _tag: "Success", success: answer }))
+  await page.runPromise(faults.down)
+  await until(async () => expect(await Effect.runPromise(Effect.result(worker))).toMatchObject(refused))
 })
 
 // The faulty services' window switches, on the app as `?faults` opens it: healthy until a test throws one.
@@ -42,8 +66,8 @@ const openOnWindow = async (search: string, name: string) => {
     search,
     window,
   )
-  // The boot program renders once its layers are up, on its own fiber: wait for it.
-  await vi.waitFor(() => expect(rendered).toHaveLength(1))
+  // The switches are on the window once the services are built; the program renders a moment later.
+  await until(() => expect(rendered).toHaveLength(1))
   return { host, api, chat: rendered[0]!, faults: window.faults!, stop }
 }
 
@@ -93,7 +117,7 @@ test.each([
     search,
     window,
   )
-  await vi.waitFor(() => expect(rendered).toHaveLength(1))
+  await until(() => expect(rendered).toHaveLength(1))
   const connection = rendered[0]!.queries.connection
   await connection.preload()
   await until(() => expect(connection.toArray[0]).toMatchObject(failed))

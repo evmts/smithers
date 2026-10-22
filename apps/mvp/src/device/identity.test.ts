@@ -1,15 +1,18 @@
 import { createServer, type IncomingHttpHeaders } from "node:http"
 import type { AddressInfo } from "node:net"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
-import { Effect, Exit, Logger, Metric } from "effect"
-import { afterEach, describe, expect, test } from "vitest"
-import { AuthUnreachable } from "../features/auth/api"
+import { Cause, Deferred, Effect, Exit, Fiber, Logger, Metric } from "effect"
+import { afterEach, describe, expect, test, vi } from "vitest"
+import { FetchHttpClient } from "effect/http"
+import { TestClock } from "effect/testing"
+import { AuthUnreachable, getSession } from "../features/auth/api"
 import { NO_DEVICE_DATA, type SessionState } from "../features/auth/contract"
 import { deviceFrom, type Fixture } from "../test/deviceFixture"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import production from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
   activationGate,
+  type Adoption,
   answer,
   authorizeDevice,
   boundFetch,
@@ -537,6 +540,102 @@ describe("requests", () => {
       await expect(read(waiting)).rejects.toEqual(new DeviceIdentityRefused({ reason: "reauthorizing" }))
       expect(reauthorized).toBe(1)
       sealed = false
+    } finally {
+      await api.close()
+    }
+  })
+
+  test("a person's session on the visitor's data adopts it in place: not now fails as unsent, adopted goes on as theirs", async () => {
+    const alice = { signedIn: true, personId: "alice", login: "alice", role: "member" }
+    const api = await serve(() => alice)
+    let owner = VISITOR
+    let reauthorized = 0
+    const asked: Array<SessionState> = []
+    const outcomes: Array<Adoption> = ["unavailable", "adopted"]
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const adopt = async (session: SessionState) => {
+      asked.push(session)
+      const outcome = outcomes.shift()!
+      if (outcome === "adopted") {
+        await held
+        owner = "alice"
+      }
+      return outcome
+    }
+    const bound = boundFetch(fetch, { origin: api.origin, principal: () => owner, reauthorize: async () => void reauthorized++, adopt })
+    try {
+      await expect(bound(`${api.origin}/api/auth/session`)).rejects.toMatchObject({ reason: "adopting" })
+      const reading = bound(`${api.origin}/api/auth/session`)
+      await vi.waitFor(() => expect(asked).toHaveLength(2))
+      // A write made while the data is being adopted waits, then goes as the person's.
+      const writing = bound(`${api.origin}/api/questions`, { method: "POST", body: "{}" })
+      for (let turn = 0; turn < 10; turn++) await Promise.resolve()
+      expect(api.seen.map(({ url }) => url)).toEqual(["/api/auth/session", "/api/auth/session"])
+      release()
+      expect((await reading).status).toBe(200)
+      expect((await writing).status).toBe(200)
+      expect(api.person()).toEqual([VISITOR, VISITOR, "alice"])
+      expect(asked).toEqual([alice, alice])
+      expect(reauthorized).toBe(0)
+    } finally {
+      await api.close()
+    }
+  })
+
+  test("the session's Effect deadline aborts adoption when a leader never answers", async () => {
+    const api = await serve(() => ({ signedIn: true, personId: "alice", login: "alice", role: "member" }))
+    let reauthorized = 0
+    let signal: AbortSignal | undefined
+    try {
+      await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+        const started = yield* Deferred.make<void>()
+        const bound = boundFetch(fetch, {
+          origin: api.origin,
+          principal: () => VISITOR,
+          reauthorize: async () => void reauthorized++,
+          // Fault: the leader never sends a receipt. As in the page, the caller's abort ends the wait.
+          adopt: (_session, requestSignal) => {
+            signal = requestSignal
+            Deferred.doneUnsafe(started, Effect.void)
+            return new Promise<Adoption>((resolve) => requestSignal.addEventListener("abort", () => resolve("refused"), { once: true }))
+          },
+        })
+        const reading = yield* getSession(api.origin, "15 seconds").pipe(
+          Effect.provide(FetchHttpClient.layer),
+          Effect.provideService(FetchHttpClient.Fetch, bound),
+          Effect.exit,
+          Effect.forkChild,
+        )
+        yield* Deferred.await(started)
+        expect(signal?.aborted).toBe(false)
+        yield* TestClock.adjust("15 seconds")
+        const result = yield* Fiber.join(reading)
+        expect(Exit.isFailure(result) ? Cause.squash(result.cause) : result).toEqual(new AuthUnreachable({}))
+      })).pipe(Effect.provide(TestClock.layer())))
+      await vi.waitFor(() => expect(reauthorized).toBe(1))
+      expect(signal?.aborted).toBe(true)
+      expect(api.seen.map(({ url }) => url)).toEqual(["/api/auth/session"])
+    } finally {
+      await api.close()
+    }
+  })
+
+  test("a refused adoption reopens the page; data opened for someone else never asks to be adopted", async () => {
+    const api = await serve(() => ({ signedIn: true, personId: "alice", login: "alice", role: "member" }))
+    try {
+      for (const principal of [VISITOR, "bob"]) {
+        let reauthorized = 0
+        let asked = 0
+        const bound = boundFetch(fetch, {
+          origin: api.origin,
+          principal: () => principal,
+          reauthorize: async () => void reauthorized++,
+          adopt: async () => (asked++, "refused" as const),
+        })
+        await expect(bound(`${api.origin}/api/auth/session`)).rejects.toMatchObject({ reason: "reauthorizing" })
+        expect([asked, reauthorized]).toEqual([principal === VISITOR ? 1 : 0, 1])
+      }
     } finally {
       await api.close()
     }

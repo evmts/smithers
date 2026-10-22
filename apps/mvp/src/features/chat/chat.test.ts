@@ -1,6 +1,6 @@
 import { outboxPrincipal } from "../../device/identity"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
-import type { Outbox } from "@smthrs/effect-tanstack-db"
+import { Outbox } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine, WebLock } from "@smthrs/platform-browser"
 import { Effect, Exit, Fiber, ManagedRuntime, Metric, Option, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
@@ -25,6 +25,7 @@ import {
 } from "../../test/chatApi"
 import { EngineFaults, type QuestionFault, QuestionFaults } from "../../test/faults"
 import { Chat } from "./chat"
+import { DEVICE_ADOPTED_EVENT } from "../auth/contract"
 import { bindConnectivity } from "./connectivity"
 import { COULDNT_ANSWER, MAX_QUESTION_LENGTH } from "./contract"
 import {
@@ -376,7 +377,8 @@ describe("the agent", () => {
     asked(tab.actions.ask("hello"))
     const refused = Metric.withAttributes(dispatches, { flow: "chat/Answer", door: "composer", outcome: "error" })
     await until(() => expect(tab.count(refused)).toBe(1), agentWithin)
-    expect(tab.shown()).toEqual(["user done hello", "assistant streaming "])
+    // The refusal receipt can precede the independent outbox write settling and its shape reaching this tab.
+    await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming "]), agentWithin)
     expect(tab.count(Metric.withAttributes(dispatches, { flow: "chat/Close", door: "composer", outcome: "done" }))).toBe(0)
   })
 
@@ -430,6 +432,10 @@ describe("sending", () => {
       tab.failNext(fault)
       const { questionId, answerId } = asked(tab.actions.ask("hello"))
       await until(() => expect(tab.sentQuestions()).toHaveLength(1))
+      // Retry follows the failed send's completion, not its launch. Faults that reach ChatApi await its real reply.
+      if (fault !== "duplicate") {
+        await until(() => expect(tab.count(Metric.withAttributes(Outbox.attempts, { name: "ask", outcome: "retry" }))).toBeGreaterThanOrEqual(1))
+      }
       tab.actions.retry()
       await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming "]))
       const sent = tab.sentQuestions()
@@ -813,6 +819,21 @@ describe("the connection pill", () => {
     expect(tab.count(Metric.withAttributes(syncRetries, { via: "online" }))).toBe(1)
     await until(() => expect(tab.connection()).toMatchObject({ status: "up" }))
     expect(tab.queued()).toBe(0)
+    expect(tab.shown()).toEqual(["user done one", "assistant streaming "])
+  })
+
+  test("the device adopted in place sends a waiting question at once, as the browser coming back online does", async () => {
+    const tab = await openFaulty(quick)
+    const target = new EventTarget()
+    await tab.runtime.runPromise(Scope.provide(bindConnectivity(target), await tab.runtime.runPromise(Scope.make())))
+    await until(() => expect(tab.connection()).toMatchObject({ status: "up" }))
+    // A question ChatApi didn't take waits out the outbox's backoff, as one sent as nobody's would.
+    tab.failNext("unreachable")
+    asked(tab.actions.ask("one"))
+    await until(() => expect(tab.sentQuestions()).toHaveLength(1))
+    target.dispatchEvent(new Event(DEVICE_ADOPTED_EVENT))
+    expect(tab.count(Metric.withAttributes(syncRetries, { via: "adopted" }))).toBe(1)
+    await until(() => expect(tab.queued()).toBe(0))
     expect(tab.shown()).toEqual(["user done one", "assistant streaming "])
   })
 

@@ -12,6 +12,12 @@ export const DEVICE_PERSON_HEADER = "x-smithers-device-person"
 /** {@link DEVICE_PERSON_HEADER}'s value for a page or worker that opened none of the device's data. */
 export const NO_DEVICE_DATA = "@none"
 
+/**
+ * The window event the page dispatches once the person signed in adopts, in place, the visitor's data it opened
+ * (src/device/identity.ts): what the page syncs and sends goes again now, as theirs.
+ */
+export const DEVICE_ADOPTED_EVENT = "smithers-device-adopted"
+
 /** Every sign-in route starts with this. */
 export const AUTH_ROUTE = "/api/auth"
 

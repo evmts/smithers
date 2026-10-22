@@ -1,7 +1,7 @@
 import { CALLBACK_ROUTE, SIGN_IN, SIGN_IN_TO_ASK, SIGN_OUT } from "../src/features/auth/contract"
 import { QUESTIONS_ROUTE, SHAPE_ROUTE } from "../src/features/chat/contract"
 import type { Dialog, Page } from "@playwright/test"
-import { faults } from "./faults"
+import { faultyApp, faults } from "./faults"
 import { expect, QUEUED, type Tab, test } from "./devices"
 import { step, test as pageTest } from "./fixtures"
 import { appHome, baseURL, me, requires, sessionFiles, signedOut } from "./target"
@@ -364,7 +364,7 @@ test("a signed-out follower cannot read the live owner's engine", { annotation: 
   await expect(alice.page.getByRole("table", { name: "Runs" })).toContainText("watch/set")
 })
 
-test("an ownerless offline activation reopens under verified authority when the network returns", { annotation: { type: "summary", description: "After device storage is evicted offline, reconnecting verifies the account and asking succeeds without a manual reload." } }, async ({ devices }) => {
+test("an ownerless offline activation takes the verified person in place when the network returns", { annotation: { type: "summary", description: "After device storage is evicted offline, reconnecting verifies the account in place, with no reload, and asking succeeds." } }, async ({ devices }) => {
   requires("member", "ownConversation")
   test.setTimeout(180_000)
   const [tab] = await devices.open("Recovered device")
@@ -395,28 +395,79 @@ test("an ownerless offline activation reopens under verified authority when the 
   // chrome and no workspace, which only ChatApi can open (src/features/branch/actions.ts, `offline`).
   await tab.ready()
   expect(await tab.page.evaluate(() => navigator.onLine), "the evicted device activates offline").toBe(false)
+  await tab.page.evaluate(() => Object.assign(window, { e2eSamePage: true }))
   await tab.device.online()
   await network.send("Network.overrideNetworkState", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
   expect(await tab.page.evaluate(() => navigator.onLine), "the browser reports connectivity restored").toBe(true)
   await expect.poll(() => tab.log.some((line) => line.includes("e2e.identity_network") && line.includes("window_online")), { message: "the browser delivered its real online event" }).toBe(true)
-  // Offline, the empty device opened as a visitor's. The online session names a person, so every tab loads again and
-  // the new activation makes them its owner: never a new principal on the existing runtime.
-  const reopened = () => tab.log.findIndex((line) => line.includes("auth.device_identity") && line.includes("reopened"))
-  await expect.poll(reopened, { timeout: 60_000 }).toBeGreaterThanOrEqual(0)
-  // The page that loads again activates under the verified person, on every target: the app's home locally, the run's
-  // own branch on a deployment, which has no Sign out of its own.
-  await expect
-    .poll(() => tab.log.slice(reopened()).some((line) => line.includes("auth.device_identity") && line.includes("verified")), {
-      message: "the reopened page activates as the signed-in person",
-      timeout: 60_000,
-    })
-    .toBe(true)
+  // The leader adopts the visitor's data without reloading this page. A branch opened offline still reopens
+  // its workspace when connectivity returns; wait for that route's conversation before asking.
+  await expect.poll(() => tab.log.some((line) => line.includes("auth.device_identity") && line.includes("adopted")), { timeout: 60_000 }).toBe(true)
+  expect(await tab.page.evaluate(() => (window as { e2eSamePage?: boolean }).e2eSamePage), "the page never reloaded").toBe(true)
   await expect(tab.conversation, "the verified page shows its conversation").toBeVisible({ timeout: 30_000 })
   const text = `Recovered authority ${devices.word}`
   const accepted = tab.page.waitForResponse((response) => new URL(response.url()).pathname === QUESTIONS_ROUTE && response.request().postDataJSON()?.text === text)
   await tab.ask(text)
   expect((await accepted).status()).toBe(202)
 })
+
+test("an evicted device's earlier owner keeps their queued question: the next person adopts the device in place and never sends it", { annotation: { type: "summary", description: "The browser evicts the device store but keeps the outbox; the next person to sign in takes the device in place, and the earlier owner's queued question is never sent as them." } }, async ({ devices }) => {
+  requires("devSignIn", "devPeople")
+  test.setTimeout(180_000)
+  const [tab] = await devices.open("Shared laptop")
+  const origin = new URL(tab.page.url()).origin
+  const pending = `Earlier owner's question ${devices.word}`
+  await test.step("The owner asks offline: the question waits in the outbox", async () => {
+    await tab.device.offline()
+    await tab.ask(pending)
+    await expect.poll(() => outboxSize(tab.page), { timeout: 30_000 }).toBeGreaterThan(0)
+  })
+  await test.step("The browser evicts the device store and keeps the outbox; a teammate signs in", async () => {
+    // Leave the app while still offline, so nothing sends the question, then evict OPFS from a page of the origin
+    // that runs no app: no worker or collection holds the files open.
+    await tab.page.goto("about:blank")
+    await tab.device.context.setOffline(false)
+    await tab.page.goto("/api/auth/session")
+    await tab.page.evaluate(async () => {
+      await navigator.locks.request("smithers-data", { mode: "exclusive" }, () =>
+        navigator.locks.request("smithers", { mode: "exclusive" }, async () => {
+          const directory = await navigator.storage.getDirectory()
+          await directory.removeEntry("smithers", { recursive: true })
+        }))
+    })
+    expect(await outboxSize(tab.page), "the outbox kept the earlier owner's question").toBeGreaterThan(0)
+    const secure = origin.startsWith("https:")
+    await tab.device.context.addCookies([{ name: `${secure ? "__Host-" : ""}smithers_dev_person`, value: "teammate", url: origin, secure }])
+  })
+  const sent: Array<number> = []
+  tab.page.on("request", (request) => {
+    if (new URL(request.url()).pathname === QUESTIONS_ROUTE && request.postDataJSON()?.text === pending) sent.push(Date.now())
+  })
+  await test.step("The device opens offline as a visitor's; online, the teammate takes it in place", async () => {
+    await tab.device.offline()
+    await tab.page.goto(appHome())
+    const network = await tab.device.context.newCDPSession(tab.page)
+    await network.send("Network.overrideNetworkState", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+    await tab.ready()
+    await tab.page.evaluate(() => Object.assign(window, { e2eSamePage: true }))
+    await tab.device.online()
+    await network.send("Network.overrideNetworkState", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+    await expect.poll(() => tab.log.some((line) => line.includes("auth.device_identity") && line.includes("adopted")), { timeout: 60_000 }).toBe(true)
+    await expect(tab.page.getByRole("button", { name: SIGN_OUT })).toBeVisible({ timeout: 30_000 })
+    expect(await tab.page.evaluate(() => (window as { e2eSamePage?: boolean }).e2eSamePage), "the page never reloaded").toBe(true)
+  })
+  await test.step("The earlier owner's question is never shown or sent as the teammate, and stays sealed in the outbox", async () => {
+    await expect(tab.conversation).toBeVisible({ timeout: 30_000 })
+    const text = `Teammate's question ${devices.word}`
+    const accepted = tab.page.waitForResponse((response) => new URL(response.url()).pathname === QUESTIONS_ROUTE && response.request().postDataJSON()?.text === text)
+    await tab.ask(text)
+    expect((await accepted).status()).toBe(202)
+    await expect(tab.question(pending)).toHaveCount(0)
+    expect(sent, "the earlier owner's question never left as the teammate").toEqual([])
+    expect(await outboxSize(tab.page), "it stays in the outbox, sealed for its owner").toBeGreaterThan(0)
+  })
+})
+
 
 pageTest.describe("github", () => {
   requires("githubSignIn")
@@ -457,5 +508,32 @@ pageTest.describe("github", () => {
       // This browser is still a visitor: the session never reached it.
       expect(await (await page.request.get("/api/auth/session")).json()).toMatchObject({ signedIn: false })
     })
+  })
+})
+
+test("a failed first session check: the composer comes back by itself once ChatApi answers", { annotation: { type: "summary", description: "A new device whose first session check fails shows the sign-in prompt, then the composer once ChatApi answers, with no click and no reload." } }, async ({ devices }) => {
+  requires("devSignIn", "faults")
+  test.setTimeout(180_000)
+  // A new device, signed in, opens while ChatApi answers every session read 503, the engine worker's included.
+  const tab = await devices.openNew("New device", faultyApp("session-503"))
+  const page = tab.page
+  await test.step("ChatApi can't say who is signed in: the sign-in prompt shows", async () => {
+    await expect(page.getByText(SIGN_IN_TO_ASK)).toBeVisible({ timeout: 30_000 })
+    await expect(tab.chatButton).toBeHidden()
+  })
+  await test.step("ChatApi answers again", async () => {
+    // A mark on this page: a reload would lose it.
+    await page.evaluate(() => Object.assign(window, { e2eSamePage: true }))
+    await faults(page).session.heal()
+  })
+  await test.step("The composer comes back by itself, on the same page", async () => {
+    await expect(tab.chatButton).toBeVisible({ timeout: 35_000 })
+    await expect(page.getByText(SIGN_IN_TO_ASK)).toBeHidden()
+    expect(await page.evaluate(() => (window as { e2eSamePage?: boolean }).e2eSamePage), "the page never reloaded").toBe(true)
+    expect(tab.log.some((line) => line.includes("auth.device_identity") && line.includes("adopted")), "the visitor's data is the person's now").toBe(true)
+  })
+  await test.step("Asking works", async () => {
+    await tab.askAndWaitTaken(`After the outage ${devices.word}`)
+    expect(await page.evaluate(() => (window as { e2eSamePage?: boolean }).e2eSamePage), "still the same page").toBe(true)
   })
 })

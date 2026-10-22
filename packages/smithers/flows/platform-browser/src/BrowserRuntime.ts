@@ -85,7 +85,10 @@ export interface HostOptions extends Options {
    * failure ends this activation as an engine that cannot be built does; the
    * tab hears `EngineStopped`. Unlike {@link Prepare}, it runs on every
    * activation and is never recorded as done. A transaction it leaves open is
-   * rolled back before anything else runs.
+   * rolled back before anything else runs. The `database` it is given stays
+   * usable while this activation serves: a host may check again later, such
+   * as to record a new owner of the device, with statements that each commit
+   * on their own.
    */
   readonly authorize?: Authorize | undefined
 }

@@ -210,6 +210,10 @@ signed in.
   `EngineStopped`.
 - **Leaves nothing open.** A transaction the check opens is rolled back
   before the engine is built.
+- **Checks again later.** The `database` a successful check was given stays
+  usable while that activation serves, so the worker can check again without
+  restarting the engine, such as to record a new owner once its person signs
+  in. Each such statement commits on its own.
 
 ## Tabs reach the leader over a channel
 

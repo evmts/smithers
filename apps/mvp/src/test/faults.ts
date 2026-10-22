@@ -5,10 +5,13 @@ import { AuthClient } from "../features/auth/api"
 import { ChatClient, type Question, QuestionNotTaken } from "../features/chat/api"
 import { type AppOptions, realServices } from "../boot"
 import { ClientEngine, DispatchFailed } from "../flows/dispatch"
+import { faultyAuth } from "./authFaults"
+
+export { AuthFaults } from "./authFaults"
 
 // The test implementations of the services the browser reaches the world through (docs/rules.md,
-// test.faults-by-injection): ChatApi's client, Electric's shape source and this tab's engine, each the real one behind
-// switches. Unit
+// test.faults-by-injection): ChatApi's client, sign-in's client (src/test/authFaults.ts), Electric's shape source and
+// this tab's engine, each the real one behind switches. Unit
 // tests of unhappy paths and the end-to-end entry (src/test/e2e.ts) use them; every happy-path test uses the real ones,
 // which is what proves them. Production never loads this file.
 
@@ -168,19 +171,23 @@ const recoveringSource = (failures: number) => Layer.effectContext(Effect.gen(fu
 }))
 
 /**
- * The browser's services with switches: ChatApi's real client behind `QuestionFaults`, sign-in's real client,
- * Electric's real shape source behind `ShapeSource.Faults`, and this tab's real engine behind `EngineFaults`. Pass it
- * to `appLayer` or `start` in place of `realServices`. `shapes` throws the shape source's switches before the app
- * syncs, for an app that must open with sync already failing.
+ * The browser's services with switches: ChatApi's real client behind `QuestionFaults`, sign-in's real client behind
+ * `AuthFaults`, Electric's real shape source behind `ShapeSource.Faults`, and this tab's real engine behind
+ * `EngineFaults`. Pass it to `appLayer` or `start` in place of `realServices`. `shapes` throws the shape source's
+ * switches before the app syncs, for an app that must open with sync already failing; `sessionDown` opens it with every
+ * session read answering 503.
  */
 export const faultyServices = (
   options: Pick<AppOptions, "origin" | "answerWithin">,
   shapes?: (switches: ShapeSource.Switches) => Effect.Effect<void>,
   recover = 0,
+  sessionDown = false,
 ) =>
   Layer.mergeAll(
     faultyClient.pipe(Layer.provide(realServices(options))),
-    AuthClient.layer({ origin: options.origin, within: options.answerWithin ?? "15 seconds" }),
+    faultyAuth(sessionDown).pipe(
+      Layer.provide(AuthClient.layer({ origin: options.origin, within: options.answerWithin ?? "15 seconds" })),
+    ),
     recoveringSource(recover).pipe(Layer.provideMerge(ShapeSource.layerFaulty(shapes))),
     faultyEngine,
   )

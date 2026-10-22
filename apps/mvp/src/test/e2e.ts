@@ -3,7 +3,7 @@ import type { Interpreter } from "@smthrs/flow"
 import { Effect } from "effect"
 import { type AppOptions, type BootOptions, start } from "../boot"
 import type { Question } from "../features/chat/api"
-import { EngineFaults, ShapeRecovery, type QuestionFault, QuestionFaults, faultyServices } from "./faults"
+import { AuthFaults, EngineFaults, ShapeRecovery, type QuestionFault, QuestionFaults, faultyServices } from "./faults"
 
 // The app on faulty services, for the end-to-end tests of unhappy paths (docs/rules.md, test.faults-by-injection).
 // Under `alchemy dev`, main.tsx loads this module when the page's URL carries `?faults`; a production build drops that
@@ -27,11 +27,16 @@ export interface Switches {
     readonly releaseStarts: () => void
     readonly refuseResults: (flow: string, code: Interpreter.InterpreterError["code"]) => void
   }
+  /** Every session read, the tab's and its engine worker's, answers 503 while down (src/test/authFaults.ts). */
+  readonly session: { readonly down: () => void; readonly heal: () => void }
 }
+
+/** Whether the page opens with every session read answering 503, from `?faults=session-503`. */
+export const sessionDown = (search: string): boolean => new URLSearchParams(search).get("faults") === "session-503"
 
 /**
  * The shape source's switch the page opens with, from `?faults=<switch>`: `down`, `refuse` (400), `refuse-<status>`,
- * `stall` or `corrupt`. Bare `?faults` opens it healthy.
+ * `stall` or `corrupt`. Bare `?faults`, or `?faults=session-503`, opens it healthy.
  */
 export const opening = (search: string): ((switches: ShapeSource.Switches) => Effect.Effect<void>) | undefined => {
   const value = new URLSearchParams(search).get("faults") ?? ""
@@ -57,8 +62,8 @@ export const opening = (search: string): ((switches: ShapeSource.Switches) => Ef
 export const startWithFaults = async (page: AppOptions & BootOptions, search: string, target: object) => {
   let rendered!: () => void
   const ready = new Promise<void>((resolve) => { rendered = resolve })
-  const { runtime, stop } = start({ ...page, render: (...views) => { page.render(...views); rendered() } }, faultyServices(page, opening(search), new URLSearchParams(search).get("faults") === "recovery" ? 3 : 0))
-  const [shapes, questions, engine] = await runtime.runPromise(Effect.all([ShapeSource.Faults, QuestionFaults, EngineFaults]))
+  const { runtime, stop } = start({ ...page, render: (...views) => { page.render(...views); rendered() } }, faultyServices(page, opening(search), new URLSearchParams(search).get("faults") === "recovery" ? 3 : 0, sessionDown(search)))
+  const [shapes, questions, engine, session] = await runtime.runPromise(Effect.all([ShapeSource.Faults, QuestionFaults, EngineFaults, AuthFaults]))
   const recovery = await runtime.runPromise(Effect.service(ShapeRecovery))
   const faults: Switches = {
     shapes: {
@@ -77,6 +82,10 @@ export const startWithFaults = async (page: AppOptions & BootOptions, search: st
       holdStarts: () => runtime.runSync(engine.holdStarts),
       releaseStarts: () => runtime.runSync(engine.releaseStarts),
       refuseResults: (flow, code) => runtime.runSync(engine.refuseResults(flow, code)),
+    },
+    session: {
+      down: () => runtime.runSync(session.down),
+      heal: () => runtime.runSync(session.heal),
     },
   }
   Object.assign(target, { faults })

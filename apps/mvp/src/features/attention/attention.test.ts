@@ -222,10 +222,12 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     await benDevice.run(show(null))
     const session = (row: object) =>
       benDevice.run(Effect.flatMap(AuthStore, (auth) => Effect.orDie(auth.session.update(SESSION, (draft) => void Object.assign(draft, row)))))
-    // Signed out, or a Guest, the tab asks nothing; once sign-in says who, it follows home again as them.
+    // Signed out, or a Guest, the tab asks nothing; Ben signed in again followed home already. Once sign-in says
+    // someone else, it follows home again as them.
     await session({ status: "signed_out", login: null, role: null })
     await session({ status: "signed_in", login: "ben", role: "guest" })
     await session({ status: "signed_in", login: "ben", role: "maintainer" })
+    await session({ status: "signed_in", login: "ann", role: "member" })
     await until(() => expect(watched(benDevice)).toBe(3))
   })
 })
@@ -479,7 +481,7 @@ describe("a clone in the feed", { timeout: ENGINE_WITHIN }, () => {
     )
     expect(ann.count(Metric.withAttributes(panelActs, { act: "retry", outcome: "started" }))).toBe(1)
     // Open goes to the repository.
-    ann.attention.actions.open(subject, "page")
+    ann.attention.actions.open(subject, "conversation")
     expect(ann.host.navigated).toEqual(["/acme/widgets"])
   })
 

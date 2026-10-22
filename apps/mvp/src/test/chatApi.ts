@@ -61,6 +61,7 @@ import type { CuratedFile } from "../../worker/home/Curated.ts"
 import * as RemoteRuns from "../../worker/RemoteRuns.ts"
 import * as RepoApi from "../../worker/RepoApi.ts"
 import * as RunCredentials from "../../worker/RunCredentials.ts"
+import * as SignIn from "../../worker/SignIn.ts"
 import * as StackApi from "../../worker/stack/Api.ts"
 import * as Stack from "../../worker/stack/Stack.ts"
 import {
@@ -78,6 +79,7 @@ import { outsideWeb, type Page } from "../../worker/test/pages.ts"
 import { appLayer, type AppOptions, type Host, realServices } from "../boot"
 import { NOTIFICATIONS_TABLE } from "../features/attention/contract"
 import { bindSessionConnectivity } from "../features/auth/auth"
+import { SESSION_ROUTE } from "../features/auth/contract"
 import { SHARES_TABLE } from "../features/branch/contract"
 import { MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
 import type { TextsClient } from "../features/coedit/api"
@@ -555,8 +557,27 @@ export class TestChatApi extends Context.Service<
         // as a Durable Object would, and runs none: no answer here lives 25 minutes.
         const expiries = Flows.FlowStarter.of({ start: () => Effect.void })
 
+        // Who a browser is signed in as (`GET /api/auth/session`), from sign-in's own route as `alchemy dev` serves it
+        // without the GitHub App (worker/DevChatApi.ts): the request's person as the fallback, or signed out with no actor.
+        // No role goes stale without the App, so no role check starts.
+        const signInOf = (person: Actor.Actor | null) =>
+          SignIn.make(database, person === null ? {} : { fallback: { actor: person, login: person.login ?? person.subject.id } }).pipe(
+            Effect.provide(FetchHttpClient.layer),
+            Effect.provideService(ConfigProvider.ConfigProvider, config),
+          )
+        const signedIn = new Map([[undefined as string | undefined, yield* signInOf(actor)]])
+        for (const [name, person] of Object.entries(people)) signedIn.set(name, yield* signInOf(person))
+        const roleChecks = SignIn.RoleChecks.of({ start: () => Effect.void })
+
         const routed = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
           const path = request.url.split("?")[0]!
+          if (path === SESSION_ROUTE) {
+            const named = request.headers[PERSON_HEADER]
+            return signedIn.get(named !== undefined && Object.hasOwn(people, named) ? named : undefined)!.fetch.pipe(
+              Effect.provideService(SignIn.RoleChecks, roleChecks),
+              Effect.provideService(Flows.FlowStarter, expiries),
+            )
+          }
           if (BranchApi.handles(path)) {
             return branchApi.fetch.pipe(
               Effect.provideService(Flows.FlowStarter, branchStarter),

@@ -449,6 +449,16 @@ class Devices {
     return this.openOn(false, names, { name: "smithers_dev_person", value: person })
   }
 
+  // Opens one new device straight at `path`, as a person's first visit: no service worker in control yet and no second
+  // load, so the page's first activation is the one the test watches. On the app's faulty services when `path` opens
+  // them (`faultyApp`, e2e/faults.ts).
+  openNew(name: string, path: string) {
+    return step(`Open ${name}, a new device`, async () => {
+      const [tab] = await this.openEach(path.includes("faults"), [name], undefined, path)
+      return tab!
+    })
+  }
+
   private openOn(faulty: boolean, names: Array<string>, cookie?: { readonly name: string; readonly value: string }) {
     // A dev build's faulty services and local development's people: `requires("faults")`, `requires("devPeople")`.
     if (faulty) guard("faults")
@@ -457,7 +467,12 @@ class Devices {
     return step(`Open ${names.join(", ")}${how}`, () => this.openEach(faulty, names, cookie))
   }
 
-  private async openEach(faulty: boolean, names: Array<string>, cookie?: { readonly name: string; readonly value: string }) {
+  private async openEach(
+    faulty: boolean,
+    names: Array<string>,
+    cookie?: { readonly name: string; readonly value: string },
+    path?: string,
+  ) {
     return Promise.all(
       names.map(async (name) => {
         const context = await this.browser.newContext({
@@ -475,7 +490,7 @@ class Devices {
         }
         const device = new Device(name, context, faulty)
         this.all.push(device)
-        return this.tab(device, name)
+        return path === undefined ? this.tab(device, name) : this.openTab(device, name, path)
       }),
     )
   }
@@ -488,15 +503,15 @@ class Devices {
     return step(`Open tab ${name}`, () => this.openTab(device, name))
   }
 
-  private async openTab(device: Device, name: string) {
-    const first = device.tabs.length === 0
+  private async openTab(device: Device, name: string, path?: string) {
+    const first = device.tabs.length === 0 && path === undefined
     const page = await device.context.newPage()
     await page.addInitScript(label, name)
     await page.addInitScript(watchForSpinners)
     await recordActions(page, this.testInfo, name)
     const tab = new Tab(name, device, page, this.startedAt)
     device.tabs.push(tab)
-    await page.goto(device.faulty ? faultyApp() : appHome())
+    await page.goto(path ?? (device.faulty ? faultyApp() : appHome()))
     await tab.ready()
     if (first) {
       await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined))

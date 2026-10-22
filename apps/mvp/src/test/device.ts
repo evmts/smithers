@@ -53,6 +53,9 @@ const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
   postMessage: () => {},
 })
 
+/** The services a built context holds. */
+type ServicesOf<C> = C extends Context.Context<infer S> ? S : never
+
 /** A tab and its engine's leader, closed with `close`. */
 export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: DeviceTelemetry = {}, memorySources?: HostOptions["memorySources"]) => {
   const scope = Effect.runSync(Scope.make())
@@ -125,6 +128,8 @@ export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: Devi
   }
 
   return {
+    /** The engine's name: its Web Lock and the channels its steps ask its tabs on. */
+    name,
     painted,
     navigated,
     openTab,
@@ -134,7 +139,8 @@ export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: Devi
     engine: Context.get(context, BrowserEngine.BrowserEngine),
     store: Context.get(context, ThemeStore),
     /** Runs `effect` with the tab's services, its telemetry included, as the browser runs an action. */
-    run: <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromiseWith(context)(effect),
+    run: <A, E, R extends ServicesOf<typeof context>>(effect: Effect.Effect<A, E, R>) =>
+      Effect.runPromiseWith(context)(effect),
     close: async () => {
       await Effect.runPromise(Scope.close(scope, Exit.void))
       await Effect.runPromise(Fiber.interrupt(leader))

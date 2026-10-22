@@ -248,6 +248,13 @@ export const readReceipt = (value: unknown): Receipt | undefined => {
   }
 }
 
+/**
+ * How asking the leader to adopt the visitor's data for the person signed in ended: adopted, so this page's data is
+ * theirs now; refused, so the page reopens; or not now (ChatApi couldn't say, or no one is signed in any more), so the
+ * answer fails as unsent and the session is asked again.
+ */
+export type Adoption = "adopted" | "refused" | "unavailable"
+
 /** How a page or worker binds its requests, and when a session answer means its activation must be made again. */
 export interface Binding {
   readonly origin: string
@@ -262,6 +269,12 @@ export interface Binding {
    * who: a session answer naming a signed-in person then reopens it, so the owner's data opens once they are back.
    */
   readonly reopensOnSignIn?: (() => boolean) | undefined
+  /**
+   * Asks the leader to adopt, in place, the visitor's data this context opened for `session`'s person (decision 0023,
+   * "Adopting in place"): a session answer naming a person on a context bound to `VISITOR` asks this before it
+   * reopens anything. The request signal carries its caller's Effect deadline through the adoption wait.
+   */
+  readonly adopt?: ((session: State, signal: AbortSignal) => Promise<Adoption>) | undefined
 }
 
 /**
@@ -279,17 +292,21 @@ export const stale = (principal: string, reopensOnSignIn: boolean, session: Stat
  * device's says so (`NO_DEVICE_DATA`) and acts as its cookie's person. With `reauthorize`, every session answer checks
  * the activation again: its own, or one it reads after a `401`. A stale one (`stale`) starts a new activation, and this
  * request and every later one fail as unsent, so a queued write waits for its owner instead of being refused, until the
- * page has loaded again. This is the one place a page acts on who is signed in now; Auth's session reads, startup and
- * reconnect alike, pass through it.
+ * page has loaded again; a context bound to the visitor's data asks its leader to `adopt` it for the person first, and
+ * reopens only when that is refused. This is the one place a page acts on who is signed in now; Auth's session reads,
+ * startup, reconnect and `auth/refresh` alike, pass through it.
  */
 export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typeof globalThis.fetch => {
-  const { origin, principal, ready = Promise.resolve(), reauthorize, reopensOnSignIn = () => false } = binding
+  const { origin, principal, ready = Promise.resolve(), reauthorize, reopensOnSignIn = () => false, adopt } = binding
   let recovering: Promise<void> | undefined
+  let adopting: Promise<Adoption> | undefined
   return async (input, init) => {
     const request = new Request(input, init)
     const url = new URL(request.url)
     if (url.origin !== origin || !url.pathname.startsWith("/api/")) return next(request)
     await ready
+    // A request made while the visitor's data is being adopted goes once it is, as its new owner's.
+    await adopting
     if (recovering !== undefined) {
       await recovering
       throw new DeviceIdentityRefused({ reason: "reauthorizing" })
@@ -307,6 +324,12 @@ export const boundFetch = (next: typeof globalThis.fetch, binding: Binding): typ
       : undefined
     const session = answered?.ok === true ? readSession(await answered.json().catch(() => undefined)) : undefined
     if (stale(bound, reopensOnSignIn(), session)) {
+      // The visitor's data this context opened becomes the person's in place: the answer goes on as theirs.
+      const adoption = bound === VISITOR && adopt !== undefined
+        ? await (adopting ??= adopt(session!, request.signal).finally(() => (adopting = undefined)))
+        : "refused"
+      if (adoption === "adopted") return response
+      if (adoption === "unavailable") throw new DeviceIdentityRefused({ reason: "adopting" })
       await (recovering ??= reauthorize())
       throw new DeviceIdentityRefused({ reason: "reauthorizing" })
     }

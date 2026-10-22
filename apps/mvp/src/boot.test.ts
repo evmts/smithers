@@ -309,6 +309,7 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
     "online",
     "online",
     "pageshow",
+    "smithers-device-adopted",
     "unhandledrejection",
   ])
   expect(chat!.queries.conversation.status).toBe("cleaned-up")

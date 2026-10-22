@@ -338,8 +338,11 @@ export const loadEarlier = Effect.gen(function* () {
   yield* Metric.update(historyLoads, 1)
 }).pipe(Effect.orDie)
 
-/** How a person asked to sync and send now: the Retry button, or the browser coming back online. */
-export type RetryVia = "button" | "online"
+/**
+ * How a person asked to sync and send now: the Retry button, the browser coming back online, or the device adopted in
+ * place by the person who signed in, whose requests now go as theirs (decision 0023, "Adopting a fresh device").
+ */
+export type RetryVia = "button" | "online" | "adopted"
 
 /** Syncs and sends now: every shape request and write waiting out its backoff goes at once. */
 export const retry = (via: RetryVia) =>

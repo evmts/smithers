@@ -4,7 +4,7 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { Chat } from "../features/chat/chat"
 import { ChatStore } from "../features/chat/store"
 import { IssueWrites } from "../features/issues/writes"
-import { nodeDevice, openTab, TestChatApi } from "../test/chatApi"
+import { member, nodeDevice, openTab, TestChatApi } from "../test/chatApi"
 import { deviceFrom, type Fixture, prepare } from "../test/deviceFixture"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
@@ -29,7 +29,11 @@ test.each([deployed, currentDeployed])(
   "build $build opens with its draft, its queued question sent, and its writes accounted for",
   async (deployed) => {
     const fixture = deployed as Fixture
-    const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("test_device"))))
+    // The person the old build confirmed comes back: ChatApi says they are signed in, under the login the device kept.
+    const person = { ...member, login: "codeplanesmithers" }
+    const server = ManagedRuntime.make(
+      TestChatApi.layerWith({ actor: person }).pipe(Layer.provideMerge(TestDatabase.layer("test_device"))),
+    )
     runtimes.push(server)
     const api = await server.runPromise(Effect.service(TestChatApi))
     const { outbox, path } = await deviceFrom(fixture)

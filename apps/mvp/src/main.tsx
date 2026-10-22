@@ -30,8 +30,8 @@ import { TodosProvider } from "./features/todos/components/TodosContext"
 import { ViewsProvider } from "./features/views/components/ViewsContext"
 import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
-import { activationGate, boundFetch, outboxPrincipal, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt } from "./device/identity"
-import { NO_DEVICE_DATA } from "./features/auth/contract"
+import { activationGate, type Adoption, boundFetch, outboxPrincipal, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt, type Receipt, VISITOR } from "./device/identity"
+import { DEVICE_ADOPTED_EVENT, NO_DEVICE_DATA, type SessionState } from "./features/auth/contract"
 import { inMemory, memoryStorage, pageWipe, unwiped } from "./wipe"
 import "./styles/fonts.css"
 
@@ -93,9 +93,52 @@ const reopen = () => {
   console.info("auth.device_identity", { outcome: "reopened" })
   wipe.reopen()
 }
+// Adopting in place (decision 0023, "Adopting in place"): a page that opened the visitor's data asks its leader to
+// claim it for the person signed in now, instead of reopening every page, and waits for the receipt.
+let adoption: { readonly personId: string | undefined; readonly settle: (outcome: Adoption) => void } | undefined
+const adopted = (receipt: Receipt) => {
+  // Every page on the visitor's data takes the person who adopted it, whichever page asked.
+  if (receipt.outcome === "verified" && receipt.owner !== undefined && receipt.owner !== VISITOR && deviceOwner === VISITOR) {
+    deviceOwner = receipt.owner
+    // The person came to the visitor's data only now: the outbox's writes stored before writes named who queued them
+    // stay sealed, never theirs (`Receipt.continuous`, false for an adoption).
+    deviceContinuous = receipt.continuous === true
+    console.info("auth.device_identity", { outcome: "adopted" })
+    // What this page syncs and sends goes again now, as theirs.
+    window.dispatchEvent(new Event(DEVICE_ADOPTED_EVENT))
+  }
+  if (adoption === undefined || receipt.owner === undefined) return
+  adoption.settle(
+    receipt.owner === adoption.personId && deviceOwner === receipt.owner
+      ? "adopted"
+      : receipt.owner === VISITOR
+      ? "unavailable"
+      : "refused",
+  )
+}
+const adopt = (session: SessionState, signal: AbortSignal) =>
+  activation.state() !== "retained" || deviceOwner !== VISITOR
+    ? Promise.resolve<Adoption>("refused")
+    : new Promise<Adoption>((resolve) => {
+      // The request's Effect timeout aborts this wait too: an older leader that never answers reopens the page.
+      const aborted = () => adoption?.settle("refused")
+      adoption = {
+        personId: session.signedIn ? session.personId : undefined,
+        settle: (outcome) => {
+          signal.removeEventListener("abort", aborted)
+          adoption = undefined
+          resolve(outcome)
+        },
+      }
+      signal.addEventListener("abort", aborted, { once: true })
+      if (signal.aborted) aborted()
+      else identity.postMessage({ request: "adopt" })
+    })
 const accept = (message: unknown) => {
   const receipt = readReceipt(message)
-  if (receipt === undefined || activation.state() !== "pending") return
+  if (receipt === undefined) return
+  if (activation.state() === "retained") return adopted(receipt)
+  if (activation.state() !== "pending") return
   if (receipt.owner !== undefined) {
     deviceOwner = receipt.owner
     deviceContinuous = receipt.continuous === true
@@ -196,17 +239,18 @@ const host: Host = {
   // file first shows, so its bundle loads only then (docs/features/code-intelligence.md).
   codeIntelWorker: () => new Worker(new URL("./features/code-intel/language.worker.ts", import.meta.url), { type: "module" }),
   // This tab's engine worker: it runs every client flow, the agent among them, once its tab leads (decision 0011). Under
-  // the dev server, `?agent=<script>` names a scripted model for the end-to-end tests (src/test/scriptedAgent.ts); the
-  // worker reads it from its name, and a production build drops the branch.
+  // the dev server, the end-to-end tests' parameters reach it in its name, `dev:<parameters>`: `?agent=<script>` names a
+  // scripted model (src/test/scriptedAgent.ts), and `?faults=session-503` opens its session read refused
+  // (src/test/authFaults.ts). A production build drops the branch.
   engineName: ENGINE_NAME,
   engineWorker: () => {
     // A page already on memory never starts a worker that could lead over the device's data.
     if (activation.state() === "memory") return inMemory(host, sealed).engineWorker()
+    const search = new URLSearchParams(window.location.search)
+    const dev = new URLSearchParams([...search].filter(([key]) => key === "agent" || key === "faults"))
     // Vite reads the worker's `type` statically, so it comes after the spread.
     const worker = new Worker(new URL("./flows/engine.worker.ts", import.meta.url), {
-      ...(import.meta.env.DEV && new URLSearchParams(window.location.search).has("agent")
-        ? { name: `agent:${new URLSearchParams(window.location.search).get("agent")}` }
-        : {}),
+      ...(import.meta.env.DEV && dev.toString() !== "" ? { name: `dev:${dev}` } : {}),
       type: "module",
     })
     engineWorker = worker
@@ -316,6 +360,7 @@ const page = {
     ready: activation.ready,
     reauthorize: async () => void reopen(),
     reopensOnSignIn: () => activation.state() === "memory" && sealedUntilSignIn,
+    adopt,
   }),
   reload: () => window.location.reload(),
   host,
