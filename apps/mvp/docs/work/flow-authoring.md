@@ -21,8 +21,12 @@ Fixes, by subject:
 - **Answer with defaults:** Answer includes each unanswered blocking question's shown default (`src/features/flows-ui/actions.ts`; `src/features/flows-ui/tab.test.ts`).
 - **Why a round failed and failed checks:** Closed failure codes, card words, failure telemetry and checks that fail the round while keeping its file (`src/features/flows-ui/failure.ts`, `contract.ts`, `metrics.ts` and `steps.ts` in that folder).
 - **The card follows its round, Draft again and no double Draft:** Read this device's round status, restart at a free round and join duplicate Draft presses to one execution (`src/features/flows-ui/round.ts`, `store.ts` and `actions.ts` in that folder).
-- **Delete a draft:** Stop this device's round, delete the draft and reject late writes (`src/features/flows-ui/steps.ts`, `worker/PersonalFlows.ts`, `db/migrations/0039_flow_draft_deleted.ts`).
+- **Delete a draft:** Stop this device's round, delete the draft and reject late writes (`src/features/flows-ui/steps.ts`, `worker/PersonalFlows.ts`, `db/migrations/0040_flow_draft_deleted.ts`).
 - **One save per draft:** Claim the ready draft inside the transaction; simultaneous saves return the one revision, and a claim that finds the draft no longer ready refuses `not_ready` (`worker/PersonalFlows.ts`, `worker/PersonalFlows.test.ts`).
+
+### Evidence: 2026-10-22, production
+
+`e2e/flows.spec.ts` against https://smithers.sh on main 6ea8caeea2fa (01:05 to 01:12 PDT): draft, save, run, the run graph, Stop and Retry passed in 1.7 min, and deleting a draft while it drafts passed in 45 s. The code test failed: a toast the test account's other runs left in the toast stack covered the code page's Save button, below a 28-row file, for the rest of the test's 5 minutes. Save now sits in the code card's header, by the file's name (`components/FlowCodeCard.tsx`). GIFs: `flows-flows-draft-a-flow-save-it-run-it-watch-its-run-page-then-st.gif` and `flows-flows-delete-a-draft-while-it-drafts-and-it-leaves-your-draf.gif`.
 
 **Remaining:** Production proof after deployment, then the QuickJS realm flow host for hand-edited code ([decision 0017](../decisions/0017-everything-is-a-plugin.md), slice 5; [sandbox work](personal-code-flow-sandbox.md)). The [FLOW-2 addendum](../rulings.md#10-flows) records Will's answer to 0017 question 2, "quickjs is a sandbox". Until that host lands, hand-edited code keeps the `FlowNeedsSandbox` refusal (`src/features/flows-ui/steps.ts`).
 
