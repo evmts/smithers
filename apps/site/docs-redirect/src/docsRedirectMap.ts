@@ -138,6 +138,8 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
   ])],
   ["cli", new Map([
     ["/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/docs"],
+    ["/backend-safety/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/backend-safety.md"],
+    ["/command-safety/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/command-safety.md"],
     ["/concepts/command-surface/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/command-surface.md"],
     ["/concepts/local-and-remote/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/local-and-remote.md"],
     ["/concepts/output-and-exit-codes/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/concepts/output-and-exit-codes.md"],
@@ -157,6 +159,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/guides/wire-the-mcp-server/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/wire-the-mcp-server.md"],
     ["/installation/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/installation.md"],
     ["/migration/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/migration.md"],
+    ["/product-api-contracts/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/product-api-contracts.md"],
     ["/quickstart/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/quickstart.md"],
     ["/reference/api/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md"],
     ["/reference/cli/", "https://github.com/smithersai/smithers/tree/main/packages/smithers/docs/reference/cli"],

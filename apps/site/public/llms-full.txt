@@ -6270,7 +6270,8 @@ const maxWaitMillis = 3_600_000
 
 `defaultWaitMillis` is how long a refusal that names no deadline parks for.
 `maxWaitMillis` is the longest wait a refusal may buy before it stays a
-failure.
+failure. A non-finite deadline or a NaN maximum refuses parking. An invalid
+fallback does not prevent parking on an explicit finite provider deadline.
 
 ### QuotaPolicy.makeUnclassified, QuotaPolicy.layerUnclassified
 
@@ -7320,7 +7321,9 @@ interface Ports {
 ```
 
 The host's own run path. Each port returns data or a promise of it; the flow
-returns it as plain JSON. A thrown error becomes the call's failure text.
+returns it as plain JSON. Ports retain their receiver. Thrown errors, rejected
+promises, and serialization failures become opaque call failures; host exception
+text never enters the model-visible result or the flow-call failure record.
 The model chooses every `id` and `flow`, so the host scopes them: `inspect`
 answers only runs this session may read, and `run` refuses flows that are not
 model-invocable and routes the launch through the host's own approval.
@@ -7333,6 +7336,11 @@ model-invocable and routes the launch through the host's own approval.
 contributes. `Topic` is the guide's topic schema and `name` is `"smithers"`.
 
 ## PromoteFlows
+
+Saving a flow returns its written files even when registry refresh fails, with
+an optional `warning` naming the failure code. A failed refresh logs and annotates
+that code without including registry error text. Model descriptions are omitted
+from span attributes; validated flow ids identify the save.
 
 Turning the script the model just ran into a saved flow, as two ordinary flows.
 For the walkthrough, see [Save the script a run wrote as a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/guides/promote-flows.md).
@@ -7373,10 +7381,10 @@ host whose flows are laid out differently replaces both through `Options`.
 
 ### PromoteFlows flow declarations and schemas
 
-| Export                                                                        | Declaration                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `showScriptFlow`, `ShowScriptInput`, `ShowScriptOutput`                       | `flows/show-script`: return the source of every cell this turn has executed, plus the rules and the skeleton. Input `{ bestPractices? }` (extra guidance appended after the house rules). Output `{ cells, bestPractices, template }`.                                                                                                                                                                   |
-| `writeFlowFlow`, `writeFlowCapabilities`, `WriteFlowInput`, `WriteFlowOutput` | `flows/write-flow`: write `flow.ts`, `flow.e2e.ts`, and the fixture under `.smithers/flows/<id>/`. Input `{ id, description, flowSource, testSource, fixtureJson }`. Output `{ files }`, the root-relative paths written. Declares `writes: [".smithers/flows/**"]` and `capabilities: writeFlowCapabilities` (`["fs:write:/.smithers/flows/**"]`), so a run whose envelope lacks that write is refused. |
+| Export                                                                        | Declaration                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `showScriptFlow`, `ShowScriptInput`, `ShowScriptOutput`                       | `flows/show-script`: return the source of every cell this turn has executed, plus the rules and the skeleton. Input `{ bestPractices? }` (extra guidance appended after the house rules). Output `{ cells, bestPractices, template }`.                                                                                                                                                                                                                                       |
+| `writeFlowFlow`, `writeFlowCapabilities`, `WriteFlowInput`, `WriteFlowOutput` | `flows/write-flow`: write `flow.ts`, `flow.e2e.ts`, and the fixture under `.smithers/flows/<id>/`. Input `{ id, description, flowSource, testSource, fixtureJson }`. Output `{ files, warning? }`, the root-relative paths written and a warning if the registry refresh failed after saving. Declares `writes: [".smithers/flows/**"]` and `capabilities: writeFlowCapabilities` (`["fs:write:/.smithers/flows/**"]`), so a run whose envelope lacks that write is refused. |
 
 ## FlowStore
 
@@ -8076,6 +8084,12 @@ also uses.
 
 ## MemoryCalibration
 
+`Costs` requires finite, nonnegative values with a positive total. `Decided`
+requires `tau` and reliability values in [0, 1]; a non-null reliability table
+has exactly ten entries. `Current` is an Effect context reference defaulting to
+`initial`. Hosts provide `Memory.thresholds(root)` to it so transcript mining
+uses their fitted fact calibration.
+
 The threshold math behind every `memory` decision. `tau(costs)` is the
 cost-optimal threshold `extra / (miss + extra)`; `calibrated` maps a raw Jev
 probability through a ten-bucket reliability table; `include` compares it with
@@ -8087,6 +8101,11 @@ descend, 0.50 for commits and dependency pages, 0.70 to accept a mined fact.
 `digest` joins every `memory` step key.
 
 ## MemoryMine
+
+`judge` and `settle` read the fact setting from `MemoryCalibration.Current`.
+`accepts(p, decided?)` also accepts an explicit setting, including its reliability
+table; its default is the declared initial fact setting. Concurrent writes of
+the same normalized fact return the first stored note, preserving its provenance.
 
 A run's transcript, mined once at run end. `Agent.run` calls `settle` when
 `supervisor.remember` is on and a bank is writable; the `memory/mine` file flow
@@ -11950,7 +11969,11 @@ executes these callbacks. The stall threshold is
 `Math.ceil(stallAfterMs / intervalMs)` checks. Observations are journaled as
 `control.status.observed` and projected as `statusRollup`; they never authorize
 a lifecycle mutation. See [Configure observational health](https://control.smithers.sh/guides/observe-health/)
-for checker configuration, defaults, and validation.
+for checker configuration, defaults, and validation. Discovery pages through all
+active statuses in `smithers/health/Discovery`, a durable `@smthrs/flow` poll.
+Its five-second waits and repeated scans are flow steps, including discovery of
+runs written by other processes and recovery after a failed read. Each scoped
+host rebuilds its monitors; the same discovery lineage resumes after restart.
 
 ## CloudSandbox
 
@@ -12001,7 +12024,7 @@ The Node composition for the command tree.
 | `rebuildableTransport`                                     | constructor                                                                                                                                                                                                                                                      | The replaceable HTTP dispatcher a model captures and uses after seat resolution returns.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `environmentDispatcher`, `layerRebuildableRequestExecutor` | constructor, layer                                                                                                                                                                                                                                               | The Undici connection pool an environment's proxy settings describe, and the model transport built over it. The executor throws the pool away after three consecutive transport failures and builds another, which is the only repair for a session the provider destroyed. Node hosts share this pool lifecycle. `RequestExecutor.layer` over a plain client cannot replace anything.                                                                                                                                                                                                                                                                                                                                                                               |
 | `ModuleRegistration`                                       | `Layer<Executable.Catalog, never, host registration services>`                                                                                                                                                                                                   | Optional trusted native module registrations; see [native module hosts](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/native-module-host.md) for authority and single-executor requirements.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `layerExecutor`                                            | `(registry, engine, root, options: { environment, mcpServers?, grants?, requestExecutor?, quotaPolicy?, executionRoot?, stateRoot?, modules?, sandboxProviders? }) => Layer<ControlExecutor, never, ControlRuntime \| Journal \| NotificationQueue \| Registry>` | The production run executor. Pass the same `GrantStore` the filesystem gets. `executionRoot` selects the execution checkout; `stateRoot` selects the directory containing `.flows/engine.db`. Both default to `root`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `layerExecutor`                                            | `(registry, engine, root, options: { environment, mcpServers?, grants?, requestExecutor?, quotaPolicy?, executionRoot?, stateRoot?, modules?, sandboxProviders? }) => Layer<ControlExecutor \| FlowRuntime, never, ControlRuntime \| Journal \| NotificationQueue \| Registry>` | The production run executor and its flow runtime, shared by durable host health discovery. Pass the same `GrantStore` the filesystem gets. `executionRoot` selects the execution checkout; `stateRoot` selects the directory containing `.flows/engine.db`. Both default to `root`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `layerControl`                                             | `(config, registry?, engine?, modules?) => Layer`                                                                                                                                                                                                                | `Control` alone, over the registry and engine you supply.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `layerOutput`                                              | `Layer<Output>`                                                                                                                                                                                                                                                  | Deterministic rendering that also publishes its status as `process.exitCode`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `layer`                                                    | `(config, modules?) => Layer`                                                                                                                                                                                                                                    | The complete command-handler environment. This is the production layer for `smthrs`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -12283,6 +12306,14 @@ implement the one the operator picks.
 
 The implementation writes under the project root and never commits: the grant
 store denies `.git/` and `.flows/`, and there is no process-spawn grant at all.
+
+Briefs teach `.smithers/flows/<name>/flow.ts` with a named default `Flow.make`
+export. CI follow-ups use Smithers flow checks. Check discovery retains distinct
+commands with the same check name, qualifying later IDs with their command tool
+(for example `test:make` and `test:go`). Installation recipes freeze existing
+lockfiles and disable lockfile creation when none exists.
+Yarn 2+ and unversioned Yarn require an existing lockfile; lockless installation
+is available only for a declared Yarn 1 version.
 
 ## Providers
 
@@ -12895,7 +12926,7 @@ engine observations. Mutation methods remain refused.
 | `ControlExecutor` | class    | `Context.Service<ControlExecutor, Service>` at key `/control/ControlExecutor`                                                                            |
 | `make`            | function | `(implementation: Service) => Service`                                                                                                                   |
 | `makeNoop`        | function | `(overrides?: Partial<Service>) => Service`. Accepts every launch as `pending` and starts nothing.                                                       |
-| `makeObserving`   | function | `(service: Service) => Service`. The same executor with `launch` and `resumeRun` refused as defects, for a host composed to observe runs and drive none. |
+| `makeObserving`   | function | `(service: Service) => Service`. The same executor with `launch` and `resumeRun` refused as defects and parked settlement left to the driving host, for a host composed to observe runs and drive none. |
 | `layer`           | layer    | `(implementation: Service) => Layer<ControlExecutor>`                                                                                                    |
 | `layerNoop`       | layer    | `(overrides?: Partial<Service>) => Layer<ControlExecutor>`                                                                                               |
 
@@ -13023,21 +13054,21 @@ is `smt1.<claims>.<signature>`. `smthrs token mint` is the command over it.
 
 | Export           | Kind       | Signature                                                                                                     |
 | ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------- |
-| `ClientConfig`   | interface  | `{ url: string; credential?: string }`. `credential` is attached as a bearer token on every HTTP RPC request. |
+| `ClientConfig`   | interface  | `{ url: string; credential?: string; watchTransport?: "http" \| "socket" }`. `credential` is attached as a bearer token on every HTTP RPC request. |
 | `layer`          | layer      | `(config: ClientConfig) => Layer<Control, ...>`                                                               |
 | `isControlError` | refinement | `(value: unknown) => value is ControlError`, derived from `ControlErrorSchema`.                               |
 
-Unary procedures use HTTP at `url`; `watch` uses the abstract WebSocket the
-platform layer supplies. Declared control failures cross the wire as
-themselves; everything else becomes a `TransportError` whose `retryable` flag
-classifies the transport phase.
+Unary procedures use HTTP at `url`. With a credential, `watch` uses the same
+HTTP protocol and bearer; without one it defaults to the platform Socket
+service. `watchTransport` explicitly selects either transport. An HTTP-only
+configuration requires no Socket service. For an explicit socket, its upgrade
+authentication belongs to the supplied platform Socket layer.
 
-In rc.0, `ClientConfig.credential` authenticates HTTP calls only; it does not
-authenticate the `watch` WebSocket upgrade. Authenticated remote watch requires
-a socket implementation that sends the Authorization header, or a trusted
-proxy that authenticates the caller and supplies it. The default client fails
-closed against a credentialed gateway. Tokens in URL query strings are not
-supported.
+Declared control failures cross the wire as themselves; everything else
+becomes a `TransportError` whose `retryable` flag classifies the transport
+phase. Locally agent-attributed approval decisions and signals fail
+`Unauthorized` before RPC, so an agent cannot borrow the client’s operator
+credential.
 
 ## Lineage
 
@@ -13170,7 +13201,9 @@ Out-of-range bounds fail with `InvalidInput` before the first beat.
 ## Channels
 
 Verified ingress. A channel verifies opaque transport data before it decodes or
-maps it, and dispatches the result through `Control`.
+maps it, and dispatches the result through `Control`. Starts record the channel
+principal in `launchedBy`; signals reach only runs launched by that same
+principal’s id and kind, with human waits additionally requiring approval authority.
 
 | Export               | Kind              | Signature                                                                                            |
 | -------------------- | ----------------- | ---------------------------------------------------------------------------------------------------- |
@@ -19230,8 +19263,12 @@ document, so a command that names none is not cut sooner than its flow says.
 `memoryBytes` is a run budget rather than a frame budget because a realm outlives
 its frames. `runtime.setMemoryLimit` covers the object graph but does not count
 string data on the shipped QuickJS variant, so the panel probe weighs the realm's
-own names and a frame that opens over the ceiling is refused before it runs. The
-reading is cleared with the refusal, because freeing is itself done by a cell.
+own names and a frame that opens over the ceiling is refused before it runs.
+That refusal persists for the realm: allowing an arbitrary recovery cell would
+also allow further allocations. Close the realm's scope to release its memory.
+A missed or failed probe invalidates the last reading. Admission retries the
+probe under the next frame's budget and runs user code only after a complete
+reading within the ceiling.
 
 ## Bytes
 
@@ -19241,8 +19278,9 @@ this unit, including CJK and emoji payloads. Elision notices state the real
 UTF-8 byte count.
 
 The supplemental memory probe is a separate estimate, not a UTF-8 byte count or
-an exact heap measurement. Strings and property names contribute their UTF-16
-code-unit lengths. Objects have a base weight of 8; non-string scalars,
+an exact heap measurement. Strings and property names contribute twice their UTF-16
+code-unit lengths, a constant-time upper bound for QuickJS's one- or two-byte
+storage. Objects have a base weight of 8; non-string scalars,
 functions, accessors and cycle references have fixed weights of 8. The probe walks named globals, array indices,
 enumerable own string-keyed data properties, Map keys and values, and Set values.
 Collection entries use the same traversal budget as properties: 200,000 values
