@@ -62,6 +62,57 @@ const record = (collection: ElectricCollection.ElectricCollection<Row>) =>
   })
 
 describe.skipIf(!electricUp)("make", () => {
+  test("a source isolates client cache keys without changing the URL sent to Electric", async () => {
+    const result = await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      const source = yield* ShapeSource.ShapeSource
+      const requests: Array<string> = []
+      const isolated = {
+        ...source,
+        cacheNamespace: "separate realm & cache",
+        request: (url: string, init: RequestInit) => {
+          requests.push(url)
+          return source.request(url, init)
+        }
+      }
+      yield* write({ id: "a", text: "one", n: 1 })
+      const notes = yield* notesOf(table).pipe(Effect.provideService(ShapeSource.ShapeSource, isolated))
+      yield* notes.preload
+      yield* write({ id: "b", text: "two", n: 2 })
+      yield* notes.awaitMatch(changeTo("b"), "5 seconds")
+      return { rows: ids(yield* notes.toArray), requests }
+    }))
+    expect(result.rows).toEqual(["a", "b"])
+    expect(result.requests.length).toBeGreaterThan(0)
+    for (const request of result.requests) {
+      const url = new URL(request)
+      expect(url.origin).toBe(new URL(ELECTRIC_URL).origin)
+      expect(url.pathname).toBe("/v1/shape")
+      expect(url.searchParams.has("smithers-cache-namespace")).toBe(false)
+      expect(url.searchParams.has("table")).toBe(true)
+    }
+  })
+
+  test.each([401, 403])("a fault-injected %s refusal retains cache isolation and status", async (status) => {
+    const events = await run(Effect.gen(function*() {
+      const { table } = yield* scratchTable
+      const namespace = crypto.randomUUID()
+      const { notes, retainedNamespace } = yield* Effect.gen(function*() {
+        const source = yield* ShapeSource.ShapeSource
+        return { notes: yield* notesOf(table), retainedNamespace: source.cacheNamespace }
+      }).pipe(
+        Effect.provide(ShapeSource.layerFaulty((faults) => faults.refuse(status))),
+        Effect.provideService(ShapeSource.ShapeSource, { ...ShapeSource.fetchSource, cacheNamespace: namespace })
+      )
+      expect(retainedNamespace).toBe(namespace)
+      const events = yield* record(notes)
+      yield* notes.preload.pipe(Effect.forkScoped)
+      yield* eventually(() => events.includes(`Stopped:${status}`))
+      return events
+    }))
+    expect(events).toEqual(["Sent", `Stopped:${status}`])
+  })
+
   test("loads the shape, decoded by the schema with int8 parsed, and follows later writes", async () => {
     const rows = await run(Effect.gen(function*() {
       const { table, write } = yield* scratchTable

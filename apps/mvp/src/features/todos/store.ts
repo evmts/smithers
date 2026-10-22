@@ -1,4 +1,4 @@
-import { ElectricCollection } from "@smthrs/effect-electric"
+import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import { Cache, Clock, Context, Effect, Exit, Layer, Option, Scope, Stream } from "effect"
 import { ChatStore } from "../chat/store"
@@ -100,6 +100,8 @@ export const accessOf = (event: ElectricCollection.SyncEvent): Access["status"] 
 const make = Effect.fnUntraced(function* (config: TodosConfig) {
   const scope = yield* Effect.scope
   const persistence = yield* Persistence.Persistence
+  // Stack shapes open later; retain the source supplied when this store was built.
+  const source = yield* ShapeSource.ShapeSource
   const chat = yield* ChatStore
   const { sending, requested } = yield* StackWrites
   const drafts = yield* Collection.persisted<Draft, string>({
@@ -182,7 +184,11 @@ const make = Effect.fnUntraced(function* (config: TodosConfig) {
       )
       stacks.set(id, stack)
       return stack
-    }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence))
+    }).pipe(
+      Scope.provide(scope),
+      Effect.provideService(Persistence.Persistence, persistence),
+      Effect.provideService(ShapeSource.ShapeSource, source),
+    )
   // Opening a stack twice at once opens it once: the cache runs one lookup per repository and keeps it.
   const opening = yield* Cache.makeWith(open, {
     capacity: Number.MAX_SAFE_INTEGER,

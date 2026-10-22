@@ -78,3 +78,9 @@ writes the row and waits for its transaction, and runs with
 - [The sync policy](docs/sync-policy.md): retries, `reconnect`, and what the
   sync status means for a UI.
 - [Proxy shapes through your server](docs/shape-proxy.md).
+
+When a host embeds independent browser realms in one JavaScript realm (for example Node integration fixtures),
+provide a distinct `ShapeSource.Source.cacheNamespace` for each realm. Electric's module-level replay caches use
+separate keys; every collection of that source shares the namespace. It never reaches the server, and does not
+change the application's origin. `layerFaulty` retains the wrapped source's namespace, including when it refuses
+a request. Ordinary browser tabs use the default source without a namespace.

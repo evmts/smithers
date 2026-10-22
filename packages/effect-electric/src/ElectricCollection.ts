@@ -346,7 +346,14 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     // A request the policy gave up on goes back to Electric as it failed, so Electric stops the shape. So does an
     // unreadable batch, before Electric takes its offset: `reconnect` sends the same request again.
     const request = (input: RequestInfo | URL, init: RequestInit | undefined) =>
-      attempt(new URL(String(input)), init).pipe(
+      attempt(
+        (() => {
+          const url = new URL(String(input))
+          if (source.cacheNamespace !== undefined) url.searchParams.delete("smithers-cache-namespace")
+          return url
+        })(),
+        init
+      ).pipe(
         Effect.retry(policy),
         Effect.catch((failure) =>
           failure.status === undefined
@@ -366,6 +373,13 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     const decode = Schema.decodeUnknownSync(columnwise(options.schema))
     const shapeOptions: ShapeStreamOptions = {
       ...options.shape,
+      ...(source.cacheNamespace === undefined ? {} : {
+        url: (() => {
+          const url = new URL(options.shape.url)
+          url.searchParams.set("smithers-cache-namespace", source.cacheNamespace)
+          return url.href
+        })()
+      }),
       // Keep the host fetch's helpers (including Bun's preconnect) on the Effect-backed adapter.
       fetchClient: Object.assign(
         (input: RequestInfo | URL, init?: RequestInit) =>

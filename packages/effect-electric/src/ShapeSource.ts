@@ -49,6 +49,11 @@ export class RequestFailed extends Data.TaggedError("RequestFailed")<{ readonly 
  * @since 0.1.0
  */
 export interface Source {
+  /**
+   * Isolates Electric's module-level URL caches when independent browser realms are hosted in one JavaScript
+   * realm. Stable for this source's collections; absent in a normal browser tab. Never sent to the server.
+   */
+  readonly cacheNamespace?: string | undefined
   readonly request: (url: string, init: RequestInit) => Effect.Effect<Response, RequestFailed>
 }
 
@@ -189,6 +194,7 @@ export const layerFaulty = (
     // Down and refuse act when a request starts; stall, corrupt, cut and drop when its response arrives, so a stall also
     // holds a long poll that was already waiting at Electric.
     const source: Source = {
+      cacheNamespace: real.cacheNamespace,
       request: (url, init) =>
         Effect.gen(function*() {
           const parsed = new URL(url)

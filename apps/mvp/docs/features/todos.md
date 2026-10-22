@@ -287,3 +287,5 @@ Retry uses the same `worker/stack/TodoRuns.ts` adapter as durable Drop and admis
 ### Admission after a failed base (2026-10-22)
 
 The writer admits no queued TODO beyond the first failed predecessor. A person’s Drop removes that dependency and releases the queue. A PR closed unmerged fails queued successors `base_closed`; a missing published base branch also refuses `base_closed`, never falling back to main. Already published descendants retain the existing close-and-fail behavior. Retrying the failed predecessor preserves its position; its publication releases the held TODO onto its branch.
+
+Stack initialization retains the store’s shape source, including cache isolation and injected access refusals. A prompt shape refused with 401 or 403 keeps access at `sign_in` or `forbidden` even when the TODO shape succeeds.

@@ -1205,10 +1205,17 @@ const app = (
     nodeDevice({ ...(answers === false ? {} : { agent: api }), ...(reopenRoute === undefined ? {} : { reopenRoute }) })
 })
 
+// Real browser tabs have separate JavaScript module state. Node fixtures need an explicit realm for
+// Electric's URL-keyed replay caches, while requests, navigation and workers retain the same real origin.
+const isolateShapes = Layer.effect(ShapeSource.ShapeSource, Effect.map(ShapeSource.ShapeSource, (source) => ({
+  ...source,
+  cacheNamespace: crypto.randomUUID(),
+})))
+
 /** The browser app on `api` (`appLayer`, as main.tsx's `start` builds it), with the real services. */
 export const tabLayer = (api: TestChatApi["Service"], options: TabOptions = {}) => {
   const tab = app(api, options)
-  const layer = appLayer(tab, Layer.merge(realServices(tab), options.replace ?? Layer.empty))
+  const layer = appLayer(tab, isolateShapes.pipe(Layer.provideMerge(Layer.merge(realServices(tab), options.replace ?? Layer.empty))))
   const started = options.sessionLifecycle === false
     ? layer
     : Layer.effectDiscard(bindSessionConnectivity(new EventTarget())).pipe(Layer.provideMerge(layer))
@@ -1220,7 +1227,7 @@ export const tabLayer = (api: TestChatApi["Service"], options: TabOptions = {}) 
 /** The browser app on `api` with the faulty services and their switches (src/test/faults.ts). */
 export const faultyTabLayer = (api: TestChatApi["Service"], options: TabOptions = {}, start?: StartFaults) => {
   const tab = app(api, options)
-  const layer = appLayer(tab, faultyServices(tab, start, options.shapeFailures))
+  const layer = appLayer(tab, isolateShapes.pipe(Layer.provideMerge(faultyServices(tab, start, options.shapeFailures))))
   const started = options.sessionLifecycle === false
     ? layer
     : Layer.effectDiscard(bindSessionConnectivity(new EventTarget())).pipe(Layer.provideMerge(layer))
