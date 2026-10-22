@@ -26,6 +26,7 @@ page:  its own home, a section you may see ─▶ [Home] [Code] and RepositoryHo
 - **ChatApi decides the audience** from the session (`audienceOf`, `src/features/home/contract.ts`), in `GET /api/repos/<owner>/<name>/home`. It answers a curated home with only the sections that audience may see, so a maintainers' section never reaches anyone else's browser.
 - **A repository's own `.smithers/home.json` is public in its repository,** so its declaration isn't secret. The page shows the sections the answered audience may see, widened by the file's own `contributors` (`Home.widen`); before ChatApi answers, everyone's.
 - **A live block's rows come from their own shape,** which checks the role again: the stack is Member and above (`/api/shapes/todos`), a person's runs are their own, the issues are the synced repository's.
+- **A person opens on their own view and may switch down** (SCOPE-14). `View as` lists their own view and each lower one that shows something: a maintainer `Maintainer`, `Contributor` and `User`, a contributor `Contributor` and `User`. A view above theirs never shows, and a person with one view, such as a signed-out visitor, sees no switcher, even on a home open to anyone that shows them its contributors' sections. Switching hides sections the page already has (`home.actions.view`, the current row's `viewing`); it asks nothing, and opening another repository goes back to the person's own view.
 - Roles are the deployment's repository's (decision 0007 phase 1, [sign-in](sign-in.md#roles-and-role-checks)); per-repository roles are 0007 phase 2.
 
 ## Making a home
@@ -51,7 +52,7 @@ Commit `.smithers/home.json` to the default branch: a bare `blocks` list is one 
 }
 ```
 
-The home shows once the app has the commit: after the clone, or once the repository's mirror syncs that commit. `@smthrs/views`' [Read a repository's home](../../../../packages/smithers/ui/views/docs/read-a-home.md) lists every field and bound. `.smithers/FACTORY.ts` can also project a one-section file with `@smthrs/targets`' `Smithers.Factory.Home`, which writes the same format.
+The home shows once the app has the commit: after the clone, or once the repository's mirror syncs that commit; before either, from what GitHub says ([before a clone](#before-a-clone)). `@smthrs/views`' [Read a repository's home](../../../../packages/smithers/ui/views/docs/read-a-home.md) lists every field and bound. `.smithers/FACTORY.ts` can also project a one-section file with `@smthrs/targets`' `Smithers.Factory.Home`, which writes the same format.
 
 | Block | What the page draws |
 |---|---|
@@ -73,6 +74,10 @@ The home shows once the app has the commit: after the clone, or once the reposit
 | `view` | nothing yet: a flow's own view in the presentation realm comes later |
 
 A block of a kind the app doesn't know is skipped and counted (`skipped`). A file over 8 sections or 32 blocks, a section or block of a known kind that breaks its bounds (HTML in a string, a link that isn't `http` or `https`, a path that leaves the repository), a binary file, one over RepoApi's 512 KiB, or text that isn't JSON makes the home invalid: the page shows the tree under `Home is invalid`, never half a home.
+
+## Before a clone
+
+A repository nobody cloned still opens on its own home. What GitHub says of it (`GET /api/repos/<owner>/<name>/about`, [repo.md](repo.md#about)) carries its `.smithers/home.json` at the newest commit, so `home.actions.open` reads it from the `abouts` row the page loads anyway (`aboutOf`, `src/features/repo/actions.ts`) and draws it, keyed `<repoId>@<sha>` as a clone's read would be. A signed-out visitor to `smithersai/vibelang` sees VibeLang's landing page before anyone cloned it. Until that read ends the page shows nothing under the header, as while ChatApi is first asked. Only a home that shows whole without the clone is drawn: one with a `markdown` block, whose file needs the clone, an invalid one, or none, leaves the tree's page until the clone. Once the repository is ready on this device, its clone's read wins.
 
 ## Curated homes
 
@@ -100,9 +105,10 @@ An `action` block naming `branch.new` is New branch, the maintainer's one promin
 | `homes` | persisted collection (`Collection.persisted`, schema version 2), keyed `<repoId>@<sha>`: `declared` with its sections, who counts as a contributor and `skipped`, `absent`, `invalid` with its reason, or `unreadable`. A home at a commit never changes, so it is read once and kept on the device; `unreadable` is read again on the next open |
 | `curated-homes` | persisted collection (version 1), keyed by repository: the curated home ChatApi last answered, `declared` with its default branch and the sections the person may see, or `absent`. Asked again on every open; a failed answer keeps it |
 | `home-files` | local, keyed `<homeKey>:<path>`: each Markdown block's file, `loading`, `text` or `failed`; a failed one is read again on the next open |
-| `home-current` | local, one row: the routed repository and its id, its home's key once the repository is ready, its default branch, the audience ChatApi answered, whether the answer is on its way, the repository whose stack it opened, and the actions running and the last one's failure |
+| `home-current` | local, one row: the routed repository and its id, its home's key once the repository is ready, its default branch, the audience ChatApi answered, the lower view the person switched to, whether the answer is on its way, whether its own home is still read from what GitHub says, the repository whose stack it opened, and the actions running and the last one's failure |
 | `warm(owner, name)` | what a repository route calls first, on a link's hover or focus and before every navigation: reads the curated home and, once the repository is ready, its own home and its Markdown blocks' files, without touching the shown page; ends once read, or after the repository store's `pageWait` |
 | `open(owner, name)` | the routes' action once warm: names the repository at once, with its home's key when the repository is ready, so a warmed home shows at once (another page of the same repository keeps the home it shows), then in the store's scope asks ChatApi through `HomeClient` and, once the repository is ready (`ready`, `src/features/repo/actions.ts`), reads its home at the head through `RepoClient`, then each Markdown block's file. After each, a `stack` block the person may see opens the repository's stack (`TodosStore.stackOf`). Opening another repository interrupts a wait |
+| `view(audience)` | the view switcher: the person's own view or a lower one that shows something; any other changes nothing |
 | `run(flow, login)` | an action block: `branch.new` dispatches `branch/create` through `FlowDispatch` and answers the new branch's workspace to open |
 | `homePageOf`, `tabsOf`, `offered`, `draftFor`, `filesOf`, `liveKindsOf`, `issuesOf`, `stackOf`, `runsOf`, `flowsOf` | pure: what the page shows from the rows (`view.ts`) |
 | live queries | the issues' `items` and sync rows (`IssuesStore`), this person's runs (`StatusStore`) and the opened stack (`TodosStore`), read by the store when the tab has them; `HomePage` adds this person's flows (`FlowsUi`) |
@@ -117,7 +123,8 @@ Reading a home runs no flow: it is a read at an immutable commit, which RepoApi 
 
 | Record | Kind | Fields |
 |---|---|---|
-| `home.resolve` | log and span; Warn `unreadable` | `outcome` (`declared`, `absent`, `invalid`, `unreadable`, `cached`), `blocks`, `skipped`, `reason`, `status`, `durationMs` |
+| `home.resolve` | log and span; Warn `unreadable` | `outcome` (`declared`, `absent`, `invalid`, `unreadable`, `cached`, and `preview` for a home drawn [before a clone](#before-a-clone)), `blocks`, `skipped`, `reason`, `status`, `durationMs` |
+| `home.preview` | span | reading the repository's own home from what GitHub says, before a clone |
 | `home.file.load` | log; Warn `failed` | `outcome`, `status`, `durationMs` |
 | `home.answer` | log and span; Warn `unreadable` | `outcome` (`declared`, `absent`, `unreadable`), `audience`, `sections`, `status`, `durationMs` |
 | `home.action` | log and span; Warn on a failure | `flow`, `outcome` (`done`, or why not: `not_configured`, `forbidden`, `not_found`, `unavailable`, …), `durationMs` |
@@ -131,15 +138,15 @@ No record carries a section, a block, a title, a text, a path, a link, a branch'
 
 | Test | Proves |
 |---|---|
-| `src/features/home/home.test.ts` | on a tab against RepoApi's real handler and ChatApi's home route, the compose Postgres and Electric, and the scripted Code Storage: a declared home's blocks, skipped kinds, its Markdown files read once each at the same commit and a missing one read again on the next open, the tabs and the workspace link; the home kept on the device and not read again; a default branch named with a `/`; no home, an empty home; each invalid reason; Code Storage down as `unreadable`, read again on the next open; the wait for a repository that isn't ready, interrupted by another; a curated home before the clone, by audience, and the repository's own home winning; ChatApi failing (a faulty `HomeClient`) and a kept curated home; every record, and a sentinel in no log line |
+| `src/features/home/home.test.ts` | on a tab against RepoApi's real handler and ChatApi's home route, the compose Postgres and Electric, the scripted Code Storage and GitHub: a repository's own home before a clone, by audience, and a Markdown, invalid or missing one leaving the tree; switching down to each lower view and never up; a declared home's blocks, skipped kinds, its Markdown files read once each at the same commit and a missing one read again on the next open, the tabs and the workspace link; the home kept on the device and not read again; a default branch named with a `/`; no home, an empty home; each invalid reason; Code Storage down as `unreadable`, read again on the next open; the wait for a repository that isn't ready, interrupted by another; a curated home before the clone, by audience, and the repository's own home winning; ChatApi failing (a faulty `HomeClient`) and a kept curated home; every record, and a sentinel in no log line |
 | `src/features/home/live.test.ts` | the whole app (`appLayer`) against ChatApi's real routes: a visitor's home asks no stack; a Member's stack block opens the stack and a committed TODO shows in it; a Maintainer's issues block reads synced issues; New branch on Code Storage makes a branch at main and answers its workspace, pressed twice runs once, and on GitHub says `not_configured` |
-| `src/features/home/view.test.ts` | what the page shows from each row and audience, the opt-in, the curated home's place, encoded links, the tabs, the composer's command, the files, each live block's rows, and VibeLang's draft home |
+| `src/features/home/view.test.ts` | what the page shows from each row and audience, the views each audience may switch to, the opt-in, the curated home's place, encoded links, the tabs, the composer's command, the files, each live block's rows, and VibeLang's draft home |
 | `worker/home/Api.test.ts` | the route by role, the opt-in, names without case, no curated home, an invalid file, sessions down, the method, records with no section's words; every curated file reads; Effect's home's sections |
 | `worker/branch/Branches.test.ts` | `create: true`: made on Code Storage at the default branch's head and tracked, again at once; one the forge has tracked as it is; refusals and failures; GitHub as the forge `not_configured`; Members only |
 | `packages/smithers/ui/views/test/Home*.test.ts` | `Home.read`: sections and audiences, every block and bound, HTML refused, unknown kinds skipped, the opt-in, `sees`, `visible`, `widen`, this repository's `.smithers/home.json`, fuzzing with kept counterexamples |
 | `packages/smithers/ui/tests/repository-home.test.tsx` | `RepositoryHome`: sections and their labels, every kind, the hero, code coloring and Copy, cards, stats, releases, the live blocks and their notices, in-app links, actions and their keys, files' states, the ask links' plain and modified clicks, offered app blocks |
 | `e2e/home.spec.ts` | in a real browser on `smithersai/home-fixture`: the home draws its blocks (an unknown kind and an app the composer hasn't skipped), survives a reload, Code opens the tree, a file opens by its URL with the tabs, Home comes back, and the prompt and an app block open the workspace's composer, the app block's command in it; `octocat/Spoon-Knife` opens on its tree with no tabs. It skips locally without `CODE_STORAGE_*` |
-| `e2e/home-effect.spec.ts` | `Effect-TS/effect`'s curated home signed out, as a Member and as a Maintainer: each sees its own sections and none above; New branch with `B` opens a new branch's workspace (skips without `CODE_STORAGE_*`) |
+| `e2e/home-effect.spec.ts` | `Effect-TS/effect`'s curated home signed out, as a Member and as a Maintainer: each sees its own sections and none above, and switches down to each lower view; New branch with `B` opens a new branch's workspace (skips without `CODE_STORAGE_*`) |
 
 ## Not built yet
 

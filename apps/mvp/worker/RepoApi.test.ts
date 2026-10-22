@@ -764,17 +764,37 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
       },
       root: [{ name: "README.md", kind: "file" }, { name: "index.html", kind: "file" }, { name: "docs", kind: "dir" }],
       readme: { path: "README.md", text: "### Well hello there!\n\nFork me.\n" },
+      home: null,
       installUrl: "https://github.com/apps/smithers/installations/new",
     })
-    // Eleven reads of GitHub, once: the second request is the cache's.
-    expect(h.github.calls).toHaveLength(11)
+    // Twelve reads of GitHub, once: the second request is the cache's. The home is read last, at the newest commit.
+    expect(h.github.calls).toHaveLength(12)
+    expect(h.github.calls.at(-1)).toBe("/contents/.smithers/home.json")
     expect((await h.fetch(aboutRoute("octocat", "spoon-knife"))).status).toBe(200)
-    expect(h.github.calls).toHaveLength(11)
+    expect(h.github.calls).toHaveLength(12)
     expect(h.line("repo.about").map((line) => line.annotations)).toEqual([
       expect.objectContaining({ repoId: "github/octocat/spoon-knife", status: 200, cached: "miss" }),
       expect.objectContaining({ repoId: "github/octocat/spoon-knife", status: 200, cached: "hit" }),
     ])
     expect(h.count(RepoMetrics.reads, { kind: "about", status: "200" })).toBe(2)
+  })
+
+  test("a repository's own home, at its newest commit: its text, or none when GitHub refuses it or it is too large", async () => {
+    const h = await repoHarness(runtime, { actor: null })
+    const text = JSON.stringify({ docs: "https://docs.example.com/llms.txt", blocks: [{ type: "text", text: "Hi" }] })
+    h.github.publish("octocat", "Homed", spoonKnife({ fullName: "octocat/Homed", home: { text } }))
+    expect(await (await h.fetch(aboutRoute("octocat", "Homed"))).json()).toMatchObject({ home: text })
+
+    h.github.publish("octocat", "Huge", spoonKnife({ fullName: "octocat/Huge", home: { text, size: 600 * 1024 } }))
+    expect(await (await h.fetch(aboutRoute("octocat", "Huge"))).json()).toMatchObject({ home: null })
+
+    h.github.publish("octocat", "Empty", spoonKnife({ fullName: "octocat/Empty", home: { text }, commits: [] }))
+    const empty = await (await h.fetch(aboutRoute("octocat", "Empty"))).json()
+    expect(empty).toMatchObject({ home: null, head: null })
+
+    h.github.publish("octocat", "Refused", spoonKnife({ fullName: "octocat/Refused", home: { text } }))
+    h.github.fail("/contents/.smithers/home.json", 500)
+    expect(await (await h.fetch(aboutRoute("octocat", "Refused"))).json()).toMatchObject({ home: null })
   })
 
   test("only the repository must answer: parts GitHub refuses are left out; its license and homepage as it has them", async () => {

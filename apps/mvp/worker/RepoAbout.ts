@@ -1,4 +1,5 @@
 import { type Core, GitHub } from "@smthrs/integrations"
+import { Home } from "@smthrs/views"
 import { Config, Data, Duration, Effect, Option, Redacted, Schema } from "effect"
 import type { HttpClient } from "effect/http"
 import {
@@ -13,8 +14,9 @@ import { DEFAULT_API_URL } from "./github/Config.ts"
 import * as ReadToken from "./github/ReadToken.ts"
 
 // What GitHub says of a repository (docs/features/repo.md#about): its description, topics, languages, latest release,
-// contributors, counts, last commit, top folder and README. The repository page shows it from the first visit, before
-// anyone clones the repository, so the page is never empty. One read is eleven GitHub calls, made at once; RepoApi keeps
+// contributors, counts, last commit, top folder, README and own home. The repository page shows it from the first visit,
+// before anyone clones the repository, so the page is never empty. One read is eleven GitHub calls made at once, then
+// the home at the newest commit they named; RepoApi keeps
 // the answer in the immutable cache under the hour it was read in, so a repository costs GitHub's quota once an hour.
 // Only the repository itself must answer: a part GitHub refuses is left out, unless GitHub is rate limiting, when the
 // whole read fails and nothing is cached.
@@ -127,7 +129,7 @@ const homepageOf = (value: string | null | undefined): string | null => {
   return /^https?:\/\/\S+$/i.test(trimmed) && URL.canParse(trimmed) ? trimmed : null
 }
 
-/** A README's text from GitHub's base64 body: none when it is over the view's limit or isn't text. */
+/** A README's, or a home's, text from GitHub's base64 body: none when it is over the view's limit or isn't text. */
 const readmeText = (readme: typeof ReadmeJson.Type): string | null => {
   if (readme.size > MAX_BLOB_BYTES || readme.encoding !== "base64" || readme.content === undefined) return null
   try {
@@ -193,6 +195,11 @@ export const read = (client: GitHub.GitHubClient.GitHubClient, owner: string, na
         : []
     )
     const readmeBody = readme === null ? null : readmeText(readme)
+    const head = commits === null ? null : headOf(commits.first)
+    // The repository's own home at that very commit, so a page before the clone draws the home the clone will have.
+    const home = head === null ? null : yield* optional(
+      client.request("GET", `${base}/contents/${Home.path}`, undefined, { schema: ReadmeJson, query: { ref: head.sha } }),
+    )
     return {
       name: repository.full_name,
       description: repository.description?.trim() || null,
@@ -223,9 +230,10 @@ export const read = (client: GitHub.GitHubClient.GitHubClient, owner: string, na
       commits: commits?.total ?? null,
       branches: branches?.total ?? null,
       tags: tags?.total ?? null,
-      head: commits === null ? null : headOf(commits.first),
+      head,
       root: rootEntries === undefined ? null : rootEntries.slice(0, ABOUT_ROOT_ENTRIES),
       readme: readme === null || readmeBody === null ? null : { path: readme.path, text: readmeBody },
+      home: home === null ? null : readmeText(home),
       installUrl: installUrl(appSlug),
     } satisfies About
   }).pipe(Effect.withSpan("repo.about.github"))

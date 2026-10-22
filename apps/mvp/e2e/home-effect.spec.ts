@@ -59,10 +59,11 @@ test.describe("Effect-TS/effect's home", () => {
         await landing(page)
         await page.getByRole("heading", { name: "Releases" }).scrollIntoViewIfNeeded()
       })
-      await step("No contributor or maintainer section reached this browser", async () => {
+      await step("No contributor or maintainer section reached this browser, and no view to switch to", async () => {
         await expect(page.getByRole("region", { name: "Your work" })).toHaveCount(0)
         await expect(page.getByRole("region", { name: "Today" })).toHaveCount(0)
         await expect(page.getByRole("button", { name: "New branch" })).toHaveCount(0)
+        await expect(page.getByRole("radiogroup", { name: "View as" })).toHaveCount(0)
       })
       await step("Code: the tree, one tab away", async () => {
         const tabs = page.getByRole("navigation", { name: "Repository pages" })
@@ -94,6 +95,15 @@ test.describe("Effect-TS/effect's home", () => {
         await expect(page.getByRole("button", { name: "New branch" })).toHaveCount(0)
       })
       await step("Below: the landing page", () => landing(page))
+      await step("View as: Contributor or User, never Maintainer", async () => {
+        const views = page.getByRole("radiogroup", { name: "View as" })
+        await expect(views.getByRole("radio")).toHaveText(["Contributor", "User"])
+        await expect(views.getByRole("radio", { name: "Contributor" })).toHaveAttribute("aria-checked", "true")
+        await views.getByRole("radio", { name: "User" }).click()
+        await expect(homeOf(page)).toHaveAttribute("data-audience", "everyone")
+        await expect(page.getByRole("region", { name: "Your work" })).toHaveCount(0)
+        await landing(page)
+      })
     },
   )
 
@@ -119,6 +129,19 @@ test.describe("Effect-TS/effect's home", () => {
         await expect(sections.nth(0)).toHaveAttribute("aria-label", "Today")
         await expect(sections.nth(1)).toHaveAttribute("aria-label", "Your work")
         await landing(page)
+      })
+      await step("View as Contributor, then User, then back to Maintainer", async () => {
+        const views = page.getByRole("radiogroup", { name: "View as" })
+        await expect(views.getByRole("radio")).toHaveText(["Maintainer", "Contributor", "User"])
+        await views.getByRole("radio", { name: "Contributor" }).click()
+        await expect(homeOf(page)).toHaveAttribute("data-audience", "contributor")
+        await expect(page.getByRole("region", { name: "Today" })).toHaveCount(0)
+        await expect(page.getByRole("region", { name: "Your work" })).toBeVisible()
+        await views.getByRole("radio", { name: "User" }).click()
+        await expect(page.getByRole("region", { name: "Your work" })).toHaveCount(0)
+        await landing(page)
+        await views.getByRole("radio", { name: "Maintainer" }).click()
+        await expect(page.getByRole("region", { name: "Today" })).toBeVisible()
       })
     },
   )

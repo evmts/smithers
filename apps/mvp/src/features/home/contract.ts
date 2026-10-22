@@ -19,6 +19,14 @@ export const ACTION_FAILED = "Couldn't make a branch"
 export const HOME_TAB = "Home"
 export const CODE_TAB = "Code"
 
+/** The view switcher's name, and each view's word (SCOPE-14: "switch to contributor or user"). */
+export const VIEW_AS = "View as"
+export const VIEW_WORDS: Readonly<Record<Home.Audience, string>> = {
+  maintainer: "Maintainer",
+  contributor: "Contributor",
+  everyone: "User",
+}
+
 /** The one line over the tree when a declared home can't show. */
 export const HOME_INVALID = "Home is invalid"
 export const HOME_UNREADABLE = "Couldn't read home"

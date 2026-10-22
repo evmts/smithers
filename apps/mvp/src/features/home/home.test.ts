@@ -6,6 +6,7 @@ import { openTab, type Tab } from "../../test/repoDevice"
 import { Deferred, Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { CuratedFile } from "../../../worker/home/Curated.ts"
+import { spoonKnife } from "../../../worker/test/githubRest"
 import { RepoClient } from "../repo/api"
 import { RepoStore } from "../repo/store"
 import { HomeClient, HomeRefused } from "./api"
@@ -218,8 +219,11 @@ describe("a repository's home", () => {
     const tab = await open(h)
     // Not cloned: nothing while ChatApi is first asked; then, with no curated home, the tree's page, which says why.
     tab.home.actions.open("octocat", "Spoon-Knife")
-    expect(page(tab)).toMatchObject({ page: { kind: "loading" }, current: { owner: "octocat", key: null, answering: true } })
-    await waitFor(() => expect(page(tab).current.answering).toBe(false))
+    expect(page(tab)).toMatchObject({
+      page: { kind: "loading" },
+      current: { owner: "octocat", key: null, answering: true, previewing: true },
+    })
+    await waitFor(() => expect(page(tab).current).toMatchObject({ answering: false, previewing: false }))
     expect(page(tab)).toMatchObject({ page: { kind: "tree", notice: null }, curated: { state: "absent" } })
     tab.home.actions.open("maya", "tinyhttp")
     await waitFor(() => expect(page(tab).page.kind).toBe("home"))
@@ -227,6 +231,60 @@ describe("a repository's home", () => {
     // A name GitHub couldn't have opens nothing.
     tab.home.actions.open("app", "x y")
     expect(page(tab)).toMatchObject({ page: { kind: "tree", notice: null }, current: { owner: "app", key: null } })
+  })
+})
+
+describe("a repository's own home before any clone", () => {
+  const vibe = JSON.stringify({
+    docs: "https://vibelang.sh/llms.txt",
+    sections: [
+      { title: "Today", audience: "maintainer", blocks: [{ type: "runs" }] },
+      { title: "Contribute", audience: "contributor", blocks: [{ type: "prompt" }] },
+      { blocks: [{ type: "hero", title: `VibeLang ${SECRET}` }] },
+    ],
+  })
+  const head = spoonKnife().commits[0]!.sha
+
+  test("shows from what GitHub says, at its newest commit, by the person's audience, kept on the device", async () => {
+    const h = await repoHarness(server, { actor: null })
+    h.github.publish("smithersai", "vibelang", spoonKnife({ fullName: "smithersai/vibelang", home: { text: vibe } }))
+    const tab = await open(h)
+    tab.home.actions.open("smithersai", "vibelang")
+    await waitFor(() => expect(kinds(tab)).toEqual([["hero"]]))
+    expect(page(tab).page).toMatchObject({ source: "declared", audience: "everyone", askHref: "/smithersai/vibelang/tree/main" })
+    expect(page(tab).current).toMatchObject({ key: `github/smithersai/vibelang@${head}`, previewing: false })
+    expect(page(tab).tabs).toEqual({ owner: "smithersai", repo: "vibelang", ref: "main", _splat: "" })
+    expect(tab.count(resolves, { outcome: "preview" })).toBe(1)
+    expect(JSON.stringify(tab.logs)).not.toContain(SECRET)
+
+    const member = await repoHarness(server)
+    member.github.publish("smithersai", "vibelang", spoonKnife({ fullName: "smithersai/vibelang", home: { text: vibe } }))
+    const inside = await open(member)
+    inside.home.actions.open("smithersai", "vibelang")
+    await waitFor(() => expect(kinds(inside)).toEqual([["prompt"], ["hero"]]))
+  })
+
+  test("a home with a Markdown block, an invalid one or none waits for the clone: the tree's page until then", async () => {
+    const h = await repoHarness(server)
+    const markdown = JSON.stringify({ blocks: [{ type: "markdown", path: "docs/intro.md" }] })
+    h.github.publish("maya", "notes", spoonKnife({ fullName: "maya/notes", home: { text: markdown } }))
+    h.github.publish("maya", "broken", spoonKnife({ fullName: "maya/broken", home: { text: "{" } }))
+    h.github.publish("maya", "plain", spoonKnife({ fullName: "maya/plain" }))
+    const tab = await open(h)
+    for (const name of ["notes", "broken", "plain", "missing"]) {
+      tab.home.actions.open("maya", name)
+      await waitFor(() => expect(page(tab).current).toMatchObject({ name, answering: false, previewing: false }))
+      expect(page(tab).page).toEqual({ kind: "tree", notice: null })
+    }
+  })
+
+  test("once the repository is ready, its clone's home is read instead", async () => {
+    const h = await repoHarness(server)
+    await seeded(h, { [HOME_FILE]: declared })
+    h.github.publish("maya", "tinyhttp", spoonKnife({ fullName: "maya/tinyhttp", home: { text: vibe } }))
+    const tab = await open(h)
+    tab.home.actions.open("maya", "tinyhttp")
+    await waitFor(() => expect(kinds(tab)).toEqual([["prompt", "text", "links", "markdown", "markdown", "markdown", "app"]]))
   })
 })
 
@@ -258,6 +316,51 @@ describe("Smithers' curated home", () => {
     const tab = await open(inside)
     tab.home.actions.open("octocat", "Spoon-Knife")
     await waitFor(() => expect(kinds(tab)).toEqual([["runs"], ["prompt"], ["hero"]]))
+  })
+
+  test("a Maintainer switches down to the contributor and user views; another repository opens on their own", async () => {
+    const maintainer = { subject: { kind: "person" as const, id: "maya" }, role: "maintainer" as const }
+    const h = await repoHarness(server, {
+      homes: [curatedFor("octocat/Spoon-Knife"), curatedFor("octocat/hello-world")],
+      actor: maintainer,
+    })
+    const tab = await open(h)
+    tab.home.actions.open("octocat", "Spoon-Knife")
+    await waitFor(() => expect(kinds(tab)).toEqual([["runs"], ["prompt"], ["hero"]]))
+    expect(page(tab).page).toMatchObject({ audience: "maintainer", views: ["maintainer", "contributor", "everyone"] })
+
+    tab.home.actions.view("contributor")
+    expect(kinds(tab)).toEqual([["prompt"], ["hero"]])
+    tab.home.actions.view("everyone")
+    expect(kinds(tab)).toEqual([["hero"]])
+    expect(page(tab).page).toMatchObject({ audience: "everyone", views: ["maintainer", "contributor", "everyone"] })
+    tab.home.actions.view("maintainer")
+    expect(kinds(tab)).toEqual([["runs"], ["prompt"], ["hero"]])
+
+    tab.home.actions.view("everyone")
+    tab.home.actions.open("octocat", "hello-world")
+    await waitFor(() => expect(kinds(tab)).toEqual([["runs"], ["prompt"], ["hero"]]))
+    expect(page(tab).current.viewing).toBeNull()
+  })
+
+  test("a Member may view as a user, never as a maintainer; a visitor has no view to switch to", async () => {
+    const h = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")] })
+    const tab = await open(h)
+    tab.home.actions.open("octocat", "Spoon-Knife")
+    await waitFor(() => expect(kinds(tab)).toEqual([["prompt"], ["hero"]]))
+    tab.home.actions.view("maintainer")
+    expect(kinds(tab)).toEqual([["prompt"], ["hero"]])
+    expect(page(tab).current.viewing).toBeNull()
+    tab.home.actions.view("everyone")
+    expect(kinds(tab)).toEqual([["hero"]])
+
+    const out = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], actor: null })
+    const visitor = await open(out)
+    visitor.home.actions.open("octocat", "Spoon-Knife")
+    await waitFor(() => expect(kinds(visitor)).toEqual([["hero"]]))
+    expect(page(visitor).page).toMatchObject({ views: [] })
+    visitor.home.actions.view("contributor")
+    expect(kinds(visitor)).toEqual([["hero"]])
   })
 
   test("a repository's own home wins over the curated one; without one, the curated home shows", async () => {
@@ -293,7 +396,7 @@ describe("Smithers' curated home", () => {
       faulty.pipe(Layer.provide(HomeClient.layer({ origin: h.origin, within: "10 seconds" })), Layer.provide(fetchLayer(h))),
     )
     tab.home.actions.open("octocat", "Spoon-Knife")
-    await waitFor(() => expect(page(tab).current.answering).toBe(false))
+    await waitFor(() => expect(page(tab).current).toMatchObject({ answering: false, previewing: false }))
     expect(page(tab)).toMatchObject({ page: { kind: "tree", notice: null }, curated: undefined, current: { audience: null } })
     expect(tab.lines("home.answer")[0]).toMatchObject({ level: "WARN", annotations: { outcome: "unreadable", status: 503 } })
     expect(tab.count(answers, { outcome: "unreadable" })).toBe(1)

@@ -31,6 +31,8 @@ export type HomePage =
     readonly source: "declared" | "curated"
     readonly sections: ReadonlyArray<Home.Section>
     readonly audience: Home.Audience
+    /** The views the person may switch to, their own first (SCOPE-14); none when there is only one. */
+    readonly views: ReadonlyArray<Home.Audience>
     readonly defaultBranch: string
     readonly askHref: string
   }
@@ -42,42 +44,57 @@ const shownTo = (sections: ReadonlyArray<Home.Section>, audience: Home.Audience)
   Home.visible(sections, audience).filter((section) => section.blocks.length > 0)
 
 /**
+ * The views a person whose own is `own` may switch to on `sections`, their own first: theirs and each lower one that
+ * shows something (SCOPE-14). None when that is one view: one view is no choice. A view above their own never shows.
+ */
+const viewsOf = (sections: ReadonlyArray<Home.Section>, own: Home.Audience): ReadonlyArray<Home.Audience> => {
+  const views = [...Home.audiences].reverse().filter((view) => Home.sees(own, view) && shownTo(sections, view).length > 0)
+  return views.length > 1 ? views : []
+}
+
+/**
  * The page, from the current row and the repository's two homes. The repository's own home wins: once the repository
  * is ready on this device, nothing shows while its home is read; a declared home the person may see shows; a broken
- * one shows the tree under its line. Without one, Smithers' curated home shows, nothing while ChatApi is first asked,
- * and else the tree. Until ChatApi says who the person is, they see only everyone's sections, or a contributor's on a
- * home open to anyone.
+ * one shows the tree under its line. Without one, Smithers' curated home shows, nothing while ChatApi is first asked
+ * or the repository's own home is read from what GitHub says, and else the tree. Until ChatApi says who the person is, they see only everyone's sections, or a contributor's on a
+ * home open to anyone. A person who switched to a lower view they may see sees its sections instead (SCOPE-14).
  */
 export const homePageOf = (current: CurrentRow, home: HomeRow | undefined, curated: CuratedRow | undefined): HomePage => {
   if (current.repoId === null) return { kind: "tree", notice: null }
   const audience = current.audience ?? "everyone"
   const page = (
     source: "declared" | "curated",
-    sections: ReadonlyArray<Home.Section>,
+    all: ReadonlyArray<Home.Section>,
     defaultBranch: string,
-    seen: Home.Audience = audience,
-  ): HomePage => ({
-    kind: "home",
-    source,
-    sections,
-    audience: seen,
-    defaultBranch,
-    askHref: codeHref(current.owner, current.name, defaultBranch),
-  })
+    own: Home.Audience = audience,
+  ): HomePage => {
+    // Switching follows who the person is, never the home's word: a visitor on a home open to anyone sees its
+    // contributors' sections, but has no view to switch to (SCOPE-14).
+    const views = viewsOf(all, audience)
+    const seen = current.viewing !== null && views.includes(current.viewing) ? current.viewing : own
+    return {
+      kind: "home",
+      source,
+      sections: shownTo(all, seen),
+      audience: seen,
+      views,
+      defaultBranch,
+      askHref: codeHref(current.owner, current.name, defaultBranch),
+    }
+  }
   if (current.key !== null && current.defaultBranch !== null) {
     if (home === undefined) return { kind: "loading" }
     // The repository's own file is public: opening its contributors' sections to anyone only widens what it shows.
     const widened = Home.widen(audience, home.contributors)
     const sections = home.state === "declared" ? shownTo(home.sections, widened) : []
-    if (sections.length > 0) return page("declared", sections, current.defaultBranch, widened)
+    if (sections.length > 0) return page("declared", home.sections, current.defaultBranch, widened)
     if (home.state === "invalid") return { kind: "tree", notice: HOME_INVALID }
     if (home.state === "unreadable") return { kind: "tree", notice: HOME_UNREADABLE }
   }
   if (curated?.state === "declared" && curated.defaultBranch !== null) {
-    const sections = shownTo(curated.sections, audience)
-    if (sections.length > 0) return page("curated", sections, curated.defaultBranch)
+    if (shownTo(curated.sections, audience).length > 0) return page("curated", curated.sections, curated.defaultBranch)
   }
-  if (curated === undefined && current.answering) return { kind: "loading" }
+  if ((curated === undefined && current.answering) || current.previewing) return { kind: "loading" }
   return { kind: "tree", notice: null }
 }
 

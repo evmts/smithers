@@ -1,6 +1,5 @@
 // GitHub's REST API, scripted, as RepoApi's about route reaches it (docs/features/repo.md#about): a third-party
-// provider, scripted like the model and Code Storage, on the fetch seam. It answers the ten reads the about route
-// makes, from the repositories a test publishes, with GitHub's own shapes: base64 READMEs, `Link` headers that name
+// provider, scripted like the model and Code Storage, on the fetch seam. It answers the reads the about route makes, from the repositories a test publishes, with GitHub's own shapes: base64 READMEs, `Link` headers that name
 // the last page of a one-item page, 404 for a missing release or README, 202 with no body while GitHub computes
 // contributors. A test arms a fault per path suffix: a status, or a rate limit. The real GitHub is the e2e tests'.
 
@@ -27,6 +26,8 @@ export interface RestRepository {
   readonly contributors: ReadonlyArray<{ readonly login?: string; readonly avatar?: string }> | null
   readonly contributorCount: number
   readonly readme: { readonly path: string; readonly text: string; readonly size?: number } | null
+  /** `.smithers/home.json` at the newest commit; none when absent. */
+  readonly home?: { readonly text: string; readonly size?: number }
   readonly root: ReadonlyArray<{ readonly name: string; readonly type: string }> | null
   /** Newest first. */
   readonly commits: ReadonlyArray<{
@@ -141,6 +142,16 @@ export const scriptedGitHub = () => {
         })
       case "/contents/":
         return repository.root === null ? notFound() : json(200, repository.root)
+      case "/contents/.smithers/home.json":
+        // Only at the newest commit, which the read names as `ref`.
+        return repository.home === undefined || url.searchParams.get("ref") !== repository.commits[0]?.sha
+          ? notFound()
+          : json(200, {
+            path: ".smithers/home.json",
+            size: repository.home.size ?? new TextEncoder().encode(repository.home.text).length,
+            encoding: "base64",
+            content: base64(repository.home.text),
+          })
       case "/commits": {
         const newest = repository.commits[0]
         return counted(url, repository.commits.length, newest === undefined ? undefined : {

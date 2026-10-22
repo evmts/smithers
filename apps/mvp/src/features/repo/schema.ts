@@ -91,8 +91,9 @@ export type AboutCommit = typeof AboutCommit.Type
 /**
  * `GET /api/repos/<owner>/<name>/about`'s body: what GitHub says of a repository, cloned or not (docs/features/repo.md#about).
  * `name` is GitHub's own `owner/name`. Counts are `null` when GitHub didn't give them; `root` and `readme` are GitHub's
- * top folder and README at the default branch, for the page before a clone; `installUrl` is where the Smithers GitHub
- * App is installed.
+ * top folder and README at the default branch, for the page before a clone; `home` is the repository's
+ * `.smithers/home.json` text at `head`, `null` when it has none GitHub gave (absent from an answer cached before it was
+ * read); `installUrl` is where the Smithers GitHub App is installed.
  */
 export const About = Schema.Struct({
   name: Schema.String,
@@ -118,6 +119,7 @@ export const About = Schema.Struct({
   head: Schema.NullOr(AboutCommit),
   root: Schema.NullOr(Schema.Array(AboutEntry)),
   readme: Schema.NullOr(Schema.Struct({ path: Schema.String, text: Schema.String })),
+  home: Schema.optionalKey(Schema.NullOr(Schema.String)),
   installUrl: Schema.NullOr(Schema.String),
 })
 export type About = typeof About.Type

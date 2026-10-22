@@ -211,6 +211,18 @@ const ensureAbout = (owner: string, name: string, id: string) =>
     yield* Effect.forkIn(load, store.scope, { startImmediately: true })
   })
 
+/**
+ * What GitHub says of `owner/name`, once this tab has loaded it: loads it unless this tab has it or is loading it, then
+ * waits for the load to end, `ready`, `missing` or `failed`. The home reads a repository's own home from it before a
+ * clone.
+ */
+export const aboutOf = (owner: string, name: string) =>
+  Effect.gen(function* () {
+    const id = repoId(owner, name)
+    yield* ensureAbout(owner, name, id)
+    return yield* until((yield* RepoStore).abouts, id, loaded)
+  })
+
 /** Loads a file at `sha` unless this tab has it or is loading it; a failed one loads again when `again`, as a tree. */
 const ensureBlob = (repository: Repository, sha: string, path: string, again: boolean) =>
   Effect.gen(function* () {

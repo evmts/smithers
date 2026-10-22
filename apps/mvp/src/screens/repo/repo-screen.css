@@ -35,3 +35,5 @@
 /* A repository's own home (decision 0014 §4): its Home and Code tabs, the line over the tree, and the home itself. */
 .home-tabs { margin-top: -0.25rem; }
 .home-page { flex: 1; min-height: 0; }
+/* The view switcher (SCOPE-14), at the home's top right, level with the tabs above it. */
+.home-views { align-self: flex-end; margin-top: -0.5rem; }

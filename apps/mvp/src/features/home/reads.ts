@@ -30,10 +30,14 @@ export const homeRowOf = (key: string, result: ReadResult): HomeRow => {
     return status === 404 ? row("absent") : status === 413 ? row("invalid", "too_large") : row("unreadable")
   }
   const text = textOf(result.success.bytes)
-  if (text === undefined) return row("invalid", "binary")
+  return text === undefined ? row("invalid", "binary") : homeRowOfText(key, text)
+}
+
+/** The home `.smithers/home.json`'s text declares: `declared` with its sections, or `invalid` with `Home.read`'s reason. */
+export const homeRowOfText = (key: string, text: string): HomeRow => {
   const read = Home.read(text)
   return read._tag === "Invalid"
-    ? row("invalid", read.reason)
+    ? { key, state: "invalid", sections: [], contributors: "role", skipped: 0, reason: read.reason }
     : {
       key,
       state: "declared",

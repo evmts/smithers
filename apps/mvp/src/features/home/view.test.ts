@@ -63,6 +63,7 @@ describe("homePageOf: the repository's own home", () => {
       source: "declared",
       sections: [everyone],
       audience: "everyone",
+      views: [],
       defaultBranch: "main",
       askHref: "/maya/tinyhttp/tree/main",
     })
@@ -120,6 +121,7 @@ describe("homePageOf: Smithers' curated home", () => {
       source: "curated",
       sections: [members, everyone],
       audience: "contributor",
+      views: ["contributor", "everyone"],
       defaultBranch: "develop",
       askHref: "/maya/tinyhttp/tree/develop",
     })
@@ -144,6 +146,69 @@ describe("homePageOf: Smithers' curated home", () => {
     })
     // A curated home whose sections the person may not see is none to them.
     expect(homePageOf(opened, undefined, curated({ sections: [members] }))).toEqual({ kind: "tree", notice: null })
+  })
+})
+
+describe("homePageOf: the views a person may switch to (SCOPE-14)", () => {
+  const home = row({ sections: [maintainers, members, everyone] })
+  const shown = (audience: Home.Audience | null, viewing: Home.Audience | null, homeRow: HomeRow = home) => {
+    const page = homePageOf({ ...ready, audience, viewing }, homeRow, undefined)
+    return page.kind === "home"
+      ? { audience: page.audience, views: page.views, sections: page.sections.map((section) => section.audience) }
+      : page.kind
+  }
+
+  test("a maintainer opens on the maintainer view, and may switch to contributor or user", () => {
+    expect(shown("maintainer", null)).toEqual({
+      audience: "maintainer",
+      views: ["maintainer", "contributor", "everyone"],
+      sections: ["maintainer", "contributor", "everyone"],
+    })
+    expect(shown("maintainer", "contributor")).toEqual({
+      audience: "contributor",
+      views: ["maintainer", "contributor", "everyone"],
+      sections: ["contributor", "everyone"],
+    })
+    expect(shown("maintainer", "everyone")).toMatchObject({ audience: "everyone", sections: ["everyone"] })
+  })
+
+  test("a contributor may switch to user only, and never sees a view above their own", () => {
+    expect(shown("contributor", null)).toEqual({
+      audience: "contributor",
+      views: ["contributor", "everyone"],
+      sections: ["contributor", "everyone"],
+    })
+    expect(shown("contributor", "everyone")).toMatchObject({ audience: "everyone", sections: ["everyone"] })
+    // A view above the person's own, kept from another repository or written by hand, shows their own.
+    expect(shown("contributor", "maintainer")).toMatchObject({ audience: "contributor", sections: ["contributor", "everyone"] })
+  })
+
+  test("a signed-out visitor, or a person with no role, has no views to switch to", () => {
+    expect(shown("everyone", null)).toEqual({ audience: "everyone", views: [], sections: ["everyone"] })
+    expect(shown(null, null)).toEqual({ audience: "everyone", views: [], sections: ["everyone"] })
+    expect(shown("everyone", "maintainer")).toEqual({ audience: "everyone", views: [], sections: ["everyone"] })
+  })
+
+  test("on a home open to anyone, a visitor sees its contributors' sections but has no view to switch to", () => {
+    // SCOPE-14: a signed-out visitor never sees a contributor option, even where the home shows them its sections.
+    const open = row({ sections: [maintainers, members, everyone], contributors: "anyone" })
+    expect(shown("everyone", null, open)).toEqual({ audience: "contributor", views: [], sections: ["contributor", "everyone"] })
+    expect(shown("everyone", "everyone", open)).toEqual({ audience: "contributor", views: [], sections: ["contributor", "everyone"] })
+    expect(shown("contributor", "everyone", open)).toMatchObject({ audience: "everyone", views: ["contributor", "everyone"] })
+  })
+
+  test("a view with nothing to show isn't offered, and asking for it shows the person's own", () => {
+    const noVisitors = row({ sections: [maintainers, members] })
+    expect(shown("maintainer", null, noVisitors)).toMatchObject({ views: ["maintainer", "contributor"] })
+    expect(shown("maintainer", "everyone", noVisitors)).toMatchObject({ audience: "maintainer" })
+    // One view is no choice.
+    expect(shown("contributor", null, noVisitors)).toEqual({ audience: "contributor", views: [], sections: ["contributor"] })
+  })
+
+  test("the curated home switches the same way, over the sections ChatApi sent", () => {
+    const page = homePageOf({ ...opened, audience: "maintainer", viewing: "contributor" }, undefined, curated())
+    expect(page).toMatchObject({ source: "curated", audience: "contributor", views: ["maintainer", "contributor", "everyone"] })
+    expect(page.kind === "home" ? page.sections : []).toEqual([members, everyone])
   })
 })
 

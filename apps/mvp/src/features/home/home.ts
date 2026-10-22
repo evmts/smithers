@@ -1,9 +1,10 @@
+import type { Home as HomeDocument } from "@smthrs/views"
 import { Context, Effect, Layer, Option } from "effect"
 import type { RepoClient } from "../repo/api"
 import type { RepoStore } from "../repo/store"
 import { TodosStore } from "../todos/store"
 import type { FlowDispatch } from "../../flows/dispatch"
-import { open, runAction, warm } from "./actions"
+import { open, runAction, view, warm } from "./actions"
 import type { HomeClient } from "./api"
 import { HomeStore } from "./store"
 
@@ -11,6 +12,7 @@ import { HomeStore } from "./store"
 // sight. React renders the queries with `useLiveQuery`, and a repository route's loader calls `open`.
 
 type Store = HomeStore["Service"]
+type HomeAudience = HomeDocument.Audience
 type Stacks = TodosStore["Service"]
 
 /** What a frontend reads live. */
@@ -43,6 +45,8 @@ export interface HomeActions {
    * to open (New branch: the new branch's workspace), or nothing when it failed, another repository is open, or it isn't an action the home runs.
    */
   readonly run: (flow: string, login: string | null) => Promise<string | undefined>
+  /** The view switcher: shows the routed home as `audience`, the person's own or a lower one (SCOPE-14). */
+  readonly view: (audience: HomeAudience) => void
 }
 
 export class Home extends Context.Service<Home, { readonly queries: HomeQueries; readonly actions: HomeActions }>()(
@@ -72,6 +76,7 @@ export class Home extends Context.Service<Home, { readonly queries: HomeQueries;
           open: (owner, name) => run(open(owner, name)),
           warm: (owner, name) => promise(warm(owner, name)),
           run: (flow, login) => promise(runAction(flow, login)),
+          view: (audience) => run(view(audience)),
         },
       })
     }),

@@ -1,4 +1,4 @@
-import { RepositoryHome, type RepositoryHomeLive, Skeleton } from "@smthrs/ui"
+import { RepositoryHome, type RepositoryHomeLive, SegmentedControl, Skeleton } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useNavigate } from "@tanstack/react-router"
 import type { ReactNode } from "react"
@@ -6,7 +6,7 @@ import { useChat } from "../../../AppContext"
 import { useAuth } from "../../auth/components/AuthContext"
 import { useFlowsUi } from "../../flows-ui/components/FlowsUiContext"
 import { ISSUES_STREAM } from "../../issues/contract"
-import { ACTION_FAILED } from "../contract"
+import { ACTION_FAILED, VIEW_AS, VIEW_WORDS } from "../contract"
 import { draftFor, filesOf, flowsOf, homePageOf, issuesOf, liveKindsOf, offered, runsOf, stackOf } from "../view"
 import { useHome } from "./HomeContext"
 
@@ -16,7 +16,8 @@ import { useHome } from "./HomeContext"
 // navigation's wait.
 // A prompt, app or flow button opens the default branch's workspace with its composer open, starting it with the
 // button's command when it has one. An action (New branch) runs its flow and opens what it made. The live blocks draw
-// the rows this device synced.
+// the rows this device synced. A person who may see more than one view switches between their own and the lower ones
+// (SCOPE-14); a view above theirs never shows.
 export function HomePage({ tree }: { readonly tree: ReactNode }) {
   const { queries, actions } = useHome()
   const auth = useAuth()
@@ -68,6 +69,19 @@ export function HomePage({ tree }: { readonly tree: ReactNode }) {
     void actions.run(flow, session?.login ?? null).then((href) => href === undefined ? undefined : navigate({ href }))
   return (
     <>
+    {page.views.length === 0 ? null : (
+      <SegmentedControl
+        className="home-views"
+        size="sm"
+        aria-label={VIEW_AS}
+        value={page.audience}
+        options={page.views.map((view) => ({ value: view, label: VIEW_WORDS[view] }))}
+        onValueChange={(value) => {
+          const view = page.views.find((each) => each === value)
+          if (view !== undefined) actions.view(view)
+        }}
+      />
+    )}
     {current.failure === null ? null : <p className="home-notice" role="status">{ACTION_FAILED}</p>}
     <RepositoryHome
       className="home-page"

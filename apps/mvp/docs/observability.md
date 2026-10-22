@@ -422,7 +422,7 @@ The browser's read of a repository's homes and its actions ([home.md](features/h
 
 | Record | Kind | Fields |
 |---|---|---|
-| `home.resolve` | log and span; Warn `unreadable`, Info otherwise | `outcome` (`declared`, `absent`, `invalid`, `unreadable`, or `cached` for a home this device had), `blocks` (in all sections), `skipped` (of a kind the app doesn't know), `reason` (an invalid home's: `json`, `shape`, `sections`, `section`, `blocks`, `block`, `binary`, `too_large`), `status` (RepoApi's, for a refusal), `durationMs`; the span's `smithers.home.outcome`, `smithers.home.blocks`, `smithers.home.skipped` |
+| `home.resolve` | log and span; Warn `unreadable`, Info otherwise | `outcome` (`declared`, `absent`, `invalid`, `unreadable`, `cached` for a home this device had, or `preview` for a repository's own home read from what GitHub says before a clone), `blocks` (in all sections), `skipped` (of a kind the app doesn't know), `reason` (an invalid home's: `json`, `shape`, `sections`, `section`, `blocks`, `block`, `binary`, `too_large`), `status` (RepoApi's, for a refusal), `durationMs`; the span's `smithers.home.outcome`, `smithers.home.blocks`, `smithers.home.skipped` |
 | `home.file.load` | log; Warn `failed`, Info `text` | `outcome`, `status`, `durationMs`: a file a Markdown block names |
 | `home.answer` | log and span; Warn `unreadable` | `outcome` (`declared`, `absent`, `unreadable`), `audience`, `sections`, `status`, `durationMs`: ChatApi's answer of who the person is and the curated home |
 | `home.action` | log and span; Warn on a failure | `flow`, `outcome` (`done` or the flow's refusal), `durationMs`; the span's `smithers.home.flow`, `smithers.home.outcome` |

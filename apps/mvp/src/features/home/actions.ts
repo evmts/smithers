@@ -1,6 +1,7 @@
+import type { Home } from "@smthrs/views"
 import { Clock, Effect, FiberHandle, Option, Random, Semaphore } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
-import { isReady, put, ready, shownRepository } from "../repo/actions"
+import { aboutOf, isReady, put, ready, shownRepository } from "../repo/actions"
 import { RepoClient } from "../repo/api"
 import { isRepository, repoId } from "../repo/contract"
 import { RepoStore } from "../repo/store"
@@ -8,14 +9,15 @@ import { TodosStore } from "../todos/store"
 import { HomeClient } from "./api"
 import { codeHref, HOME_FILE, NEW_BRANCH } from "./contract"
 import { recordAction, recordAnswer, recordFile, recordResolve } from "./metrics"
-import { fileRowOf, homeRowOf, markdownPaths, type ReadResult } from "./reads"
+import { fileRowOf, homeRowOf, homeRowOfText, markdownPaths, type ReadResult } from "./reads"
 import { CURRENT, type CuratedRow, type CurrentRow, fileKey, homeKey, type HomeRow } from "./rows"
 import { HomeStore } from "./store"
 import { homePageOf, liveKindsOf } from "./view"
 
 // What the tab does for a repository's home (decision 0014 §4). Opening a repository asks ChatApi, at once, who the
-// person is on it and for Smithers' curated home for it; and once the repository is ready on this device, reads its
-// own home at the default branch's head, then the files its Markdown blocks name, each at the same commit. Reading
+// person is on it and for Smithers' curated home for it; before a clone, reads its own home from what GitHub says of
+// it; and once the repository is ready on this device, reads its own home at the default branch's head, then the files
+// its Markdown blocks name, each at the same commit. Reading
 // runs no flow and changes nothing: a home at a commit never changes, so it is read once and kept. A live block the
 // person may see has its rows synced: a `stack` block opens the repository's stack.
 
@@ -123,7 +125,8 @@ const declared = (id: string) =>
   Effect.gen(function* () {
     const repository = yield* ready(id)
     const key = homeKey(id, repository.headSha)
-    yield* setCurrent({ key, defaultBranch: repository.defaultBranch })
+    // Ready on this device: its own read wins over what GitHub says.
+    yield* setCurrent({ key, defaultBranch: repository.defaultBranch, previewing: false })
     const home = yield* resolve(repository, key, repository.headSha)
     yield* Effect.forEach(
       markdownPaths(home.sections),
@@ -131,6 +134,38 @@ const declared = (id: string) =>
       { concurrency: "unbounded", discard: true },
     )
   })
+
+/**
+ * The repository's own home before a clone: what GitHub says of it carries its `.smithers/home.json` at its newest
+ * commit, so a visitor sees the home the clone will have. Only until the repository is ready on this device, whose own
+ * read wins, and only a home that shows whole without the clone: one with a Markdown block, whose file needs the
+ * clone, an invalid one, or none, leaves the tree's page until then.
+ */
+const preview = (owner: string, name: string, id: string) =>
+  Effect.gen(function* () {
+    const store = yield* HomeStore
+    if (isReady(yield* (yield* RepoStore).repositories.get(id))) return
+    const startedAt = yield* Clock.currentTimeMillis
+    const about = (yield* aboutOf(owner, name)).about
+    const text = about?.home ?? null
+    if (about === null || about.head === null || text === null) return
+    const key = homeKey(id, about.head.sha)
+    const row = homeRowOfText(key, text)
+    if (row.state !== "declared" || markdownPaths(row.sections).length > 0) return
+    if (Option.isNone(yield* store.homes.get(key))) yield* put<HomeRow>(store.homes, key, row)
+    const current = Option.getOrThrow(yield* store.current.get(CURRENT))
+    if (current.repoId !== id || current.key !== null) return
+    yield* setCurrent({ key, defaultBranch: about.defaultBranch })
+    yield* recordResolve(row, "preview", (yield* Clock.currentTimeMillis) - startedAt, undefined)
+  }).pipe(
+    Effect.ensuring(
+      Effect.flatMap(HomeStore, ({ current }) =>
+        Effect.orDie(current.update(CURRENT, (row) => {
+          if (row.repoId === id) row.previewing = false
+        }))),
+    ),
+    Effect.withSpan("home.preview"),
+  )
 
 /**
  * Reads `owner/name`'s homes into this tab without showing them: Smithers' curated one, which ChatApi answers, and,
@@ -188,7 +223,9 @@ export const open = (owner: string, name: string) =>
         key: null,
         defaultBranch: null,
         audience: null,
+        viewing: null,
         answering: false,
+        previewing: false,
         stack: null,
         failure: null,
         running: [],
@@ -210,12 +247,15 @@ export const open = (owner: string, name: string) =>
       name,
       repoId: id,
       answering: true,
-      ...(same ? {} : { ...head, audience: null, stack: null, failure: null, running: [] }),
+      ...(same ? {} : { ...head, previewing: head.key === null, audience: null, viewing: null, stack: null, failure: null, running: [] }),
     })
     const part = <R>(load: Effect.Effect<void, never, R>) => Effect.andThen(load, syncLive(id))
     yield* FiberHandle.run(
       store.loader,
-      Effect.all([part(answer(owner, name, id)), part(declared(id))], { concurrency: "unbounded", discard: true }),
+      Effect.all([part(answer(owner, name, id)), part(declared(id)), part(preview(owner, name, id))], {
+        concurrency: "unbounded",
+        discard: true,
+      }),
       { startImmediately: true },
     )
   }).pipe(Effect.annotateLogs({ feature: "home" }))
@@ -262,3 +302,19 @@ export const runAction = (flow: string, login: string | null) =>
     yield* setCurrent({ running: now.running.filter((each) => each !== flow), failure: reason })
     return done === undefined ? undefined : codeHref(owner, name, done.name)
   }).pipe(Effect.withSpan("home.action"), Effect.annotateLogs({ feature: "home" }))
+
+/**
+ * Shows the routed repository's home in the view `audience` (SCOPE-14): the person's own or a lower one that shows
+ * something. Any other view, one above their own included, changes nothing: who sees what stays ChatApi's to decide,
+ * and a lower view only hides sections the page already has. Opening another repository goes back to their own.
+ */
+export const view = (audience: Home.Audience) =>
+  Effect.gen(function* () {
+    const store = yield* HomeStore
+    const current = Option.getOrThrow(yield* store.current.get(CURRENT))
+    const declared = Option.getOrUndefined(yield* store.homes.get(current.key ?? ""))
+    const curated = Option.getOrUndefined(yield* store.curated.get(current.repoId ?? ""))
+    const page = homePageOf({ ...current, viewing: null }, declared, curated)
+    if (page.kind !== "home" || !page.views.includes(audience)) return
+    yield* setCurrent({ viewing: audience === page.audience ? null : audience })
+  }).pipe(Effect.annotateLogs({ feature: "home" }))

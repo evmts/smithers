@@ -52,9 +52,11 @@ export const CURRENT = "current"
 /**
  * Whose home the routed page shows: the repository and its id (`null` for a name GitHub couldn't have); once it is
  * ready on this device its home's key (`null` before) and its default branch; who ChatApi says the person is on it
- * (`null` until it answers); whether the curated home's answer is still on its way; the repository whose stack
- * this tab opened for a `stack` block (`null` before); the action blocks' flows running now; and why the last one
- * failed, `null` when it didn't.
+ * (`null` until it answers); the lower view the person switched to (`null`: their own, the highest they may see,
+ * SCOPE-14); whether the curated home's answer is still on its way; whether the repository's own home is still being
+ * read from what GitHub says, before a clone; the repository whose stack this tab opened for a
+ * `stack` block (`null` before); the action blocks' flows running now; and why the last one failed, `null` when it
+ * didn't.
  */
 export const CurrentRow = Schema.Struct({
   id: Schema.Literal(CURRENT),
@@ -64,7 +66,9 @@ export const CurrentRow = Schema.Struct({
   key: Schema.NullOr(Schema.String),
   defaultBranch: Schema.NullOr(Schema.String),
   audience: Schema.NullOr(Home.Audience),
+  viewing: Schema.NullOr(Home.Audience),
   answering: Schema.Boolean,
+  previewing: Schema.Boolean,
   stack: Schema.NullOr(Schema.String),
   running: Schema.Array(Schema.String),
   failure: Schema.NullOr(Schema.String),
@@ -80,7 +84,9 @@ export const emptyCurrent: CurrentRow = {
   key: null,
   defaultBranch: null,
   audience: null,
+  viewing: null,
   answering: false,
+  previewing: false,
   stack: null,
   running: [],
   failure: null,
