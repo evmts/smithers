@@ -158,6 +158,10 @@ const rolesRepositoryOf = (run: Run) => (run.env.GITHUB_REPOSITORY ?? "smithersa
 /** Whether the local dev server signs people in through GitHub instead of as local development's people. */
 const githubAppLocally = (run: Run) => set(run, "GITHUB_APP_CLIENT_ID")
 
+/** Whether a deployment run names a scratch repository to write issues to, never a smithersai one. */
+const scratchSet = (run: Run) =>
+  run.target === "deployment" && set(run, "E2E_ISSUES_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_ISSUES_REPOSITORY!)
+
 const needs = {
   faults: devBuildOnly("the app's faulty services (`/app?faults`, e2e/faults.ts) are in dev builds only"),
   scriptedAgent: devBuildOnly("the scripted model (`/app?agent=<script>`) is in dev builds only"),
@@ -221,8 +225,14 @@ const needs = {
     reason: "it runs TODOs to pull requests: run against a live instance whose GITHUB_REPOSITORY is a scratch repository, named in E2E_FACTORY_REPOSITORY, never a smithersai one",
   },
   githubScratch: {
-    met: (run) => run.target === "deployment" && set(run, "E2E_ISSUES_REPOSITORY") && !/^smithersai\//i.test(run.env.E2E_ISSUES_REPOSITORY!),
+    met: scratchSet,
     reason: "it writes issues to GitHub as a real person: run against a deployment with E2E_ISSUES_REPOSITORY set to a scratch repository it syncs, never a smithersai one",
+  },
+  secondRepository: {
+    met: (run) =>
+      scratchSet(run) &&
+      run.env.E2E_ISSUES_REPOSITORY!.toLowerCase() !== (run.env.E2E_SYNCED_REPOSITORY ?? "smithersai/smithers").toLowerCase(),
+    reason: "it opens an issue on a repository other than the deployment's own (decision 0079): run against a deployment whose GITHUB_REPOSITORY, E2E_SYNCED_REPOSITORY (smithersai/smithers unless set), isn't the scratch repository E2E_ISSUES_REPOSITORY",
   },
   dogfood: {
     met: (run) => run.target === "deployment" && run.env.E2E_DOGFOOD === "smithersai/smithers",

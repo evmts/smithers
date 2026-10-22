@@ -35,6 +35,8 @@ Drop ─▶ todo/drop ─▶ the same outbox and route
 | Retry own TODO | Member or above, in person or through the agent |
 | Retry anyone’s TODO | Maintainer or above, in person or through the agent |
 
+Every role here is the person's on the repository the route names ([decision 0079](../decisions/0079-roles-per-repository.md)): on the deployment's own (`GITHUB_REPOSITORY`), the session's; on any other the App is installed on, their GitHub permission there, read with the App and kept 5 minutes (`worker/github/RepoRoles.ts`). A change applies only while that role still holds, in the stack's own transaction. Local development without the App keeps the developer's role everywhere.
+
 ## Routes
 
 `worker/stack/Api.ts`; ChatApi routes these paths to it before RepoApi (`StackApi.handles`).
@@ -51,15 +53,19 @@ The stack route's body is `{ opId, op: "commit", title, prompt, acceptance?, iss
 |---|---|---|
 | 400 | `invalid` | not that body |
 | 401 | `authentication` | signed out |
-| 403 | `forbidden` | not a Member, or an agent, flow or sandbox acting for the person |
-| 404 | `not_found` | a drop of a number the stack never had |
+| 403 | `forbidden` | not a Member on that repository, an agent, flow or sandbox acting for the person, or a role that changed between the read and the change |
+| 404 | `not_found` | a drop of a number the stack never had, or a repository `GITHUB_ALLOWED_REPOSITORIES` leaves out |
+| 404 | `app_not_installed` | another repository the App isn't installed on |
 | 409 | `conflict` | the op id was used for another change |
 | 409 | `stack_full` | `max_open` TODOs are open |
 | 409 | `merged` | a drop of a merged TODO |
 | 413 | `too_large` | a body over `MAX_STACK_BODY_BYTES` |
+| 429 | `rate_limited` | GitHub rate limited the role's read; `Retry-After` is its wait, and the device sends again |
+| 503 | `not_configured` | another repository, on a deployment without the App |
+| 503 | `github_unavailable` | GitHub didn't answer the role's read; the device sends again |
 | 503 | `unavailable` | Postgres, sessions or the run host couldn't answer; the device sends again |
 
-A shape request whose `repo` names no repository reads no repository's rows; sessions that can't be read are `503` with `Retry-After: 5`, so a device keeps its rows.
+A shape request whose `repo` names no repository reads no repository's rows; on another repository, a role the deployment can't read there is `403`, and GitHub not answering `503`; sessions that can't be read are `503` with `Retry-After: 5`, so a device keeps its rows.
 
 ## Flows
 

@@ -227,13 +227,24 @@ export const WritePayload = Schema.Union([
 export type WritePayload = typeof WritePayload.Type
 const decodePayload = Schema.decodeUnknownSync(WritePayload)
 
-/** What `insertWrite` did: inserted it in transaction `txid`, or found the write id already taken. */
+/**
+ * What `insertWrite` did: inserted it in transaction `txid`, found the write id already taken, or found the role the
+ * route decided with no longer held (decision 0079 §6), and recorded nothing.
+ */
 export type Inserted =
   | { readonly kind: "inserted"; readonly txid: number }
   | { readonly kind: "existing"; readonly status: WriteStatus; readonly payloadHash: string }
+  | { readonly kind: "stale" }
+  /** The write id is another repository's or another person's write: a resend names the same of both. */
+  | { readonly kind: "taken" }
 
-/** Records a write the route admitted, once per write id. */
-export const insertWrite = (write: {
+/**
+ * Records a write the route admitted, once per write id. A new write is recorded only while `holds` answers true in
+ * the same transaction: on a repository other than the deployment's own, that the person still has the role the route
+ * decided with (`RepoRoles.holds`, decision 0079 §6). A write already recorded answers as it stands, to its own
+ * person on its own repository only.
+ */
+export const insertWrite = <E = never, R = never>(write: {
   readonly id: string
   readonly repoId: string
   readonly actorId: string
@@ -241,19 +252,33 @@ export const insertWrite = (write: {
   readonly via: WriteVia
   readonly payload: WritePayload
   readonly payloadHash: string
-}) =>
+}, holds: Effect.Effect<boolean, E, R> = Effect.succeed(true) as Effect.Effect<boolean, E, R>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [inserted] = yield* sql<{ readonly txid: string }>`
-      INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash)
-      VALUES (${write.id}::uuid, ${write.repoId}, ${write.actorId}, ${write.sessionId}::uuid, ${write.via},
-        ${write.payload.op}, ${JSON.stringify(write.payload)}::jsonb, ${write.payloadHash})
-      ON CONFLICT (id) DO NOTHING
-      RETURNING pg_current_xact_id()::xid::text AS txid`
-    if (inserted !== undefined) return { kind: "inserted", txid: Number(inserted.txid) } satisfies Inserted
-    const [existing] = yield* sql<{ readonly status: WriteStatus; readonly payloadHash: string }>`
-      SELECT status, payload_hash AS "payloadHash" FROM github_writes WHERE id = ${write.id}::uuid`
-    return { kind: "existing", status: existing!.status, payloadHash: existing!.payloadHash } satisfies Inserted
+    const existing = Effect.map(
+      sql<{ readonly status: WriteStatus; readonly payloadHash: string; readonly repoId: string; readonly actorId: string }>`
+        SELECT status, payload_hash AS "payloadHash", repo_id AS "repoId", actor_id AS "actorId"
+        FROM github_writes WHERE id = ${write.id}::uuid`,
+      ([found]): Inserted | undefined =>
+        found === undefined
+          ? undefined
+          : found.repoId !== write.repoId || found.actorId !== write.actorId
+          ? { kind: "taken" }
+          : { kind: "existing", status: found.status, payloadHash: found.payloadHash },
+    )
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      const found = yield* existing
+      if (found !== undefined) return found
+      if (!(yield* holds)) return { kind: "stale" } satisfies Inserted
+      const [inserted] = yield* sql<{ readonly txid: string }>`
+        INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash)
+        VALUES (${write.id}::uuid, ${write.repoId}, ${write.actorId}, ${write.sessionId}::uuid, ${write.via},
+          ${write.payload.op}, ${JSON.stringify(write.payload)}::jsonb, ${write.payloadHash})
+        ON CONFLICT (id) DO NOTHING
+        RETURNING pg_current_xact_id()::xid::text AS txid`
+      if (inserted !== undefined) return { kind: "inserted", txid: Number(inserted.txid) } satisfies Inserted
+      return (yield* existing)!
+    }))
   })
 
 /** A write as its flow reads it. */
@@ -263,6 +288,8 @@ export interface Write {
   readonly actorId: string
   /** The person's GitHub login, for the agent's attribution line; null when no person row has it. */
   readonly login: string | null
+  /** The person's GitHub account id, which an agent's write checks the person's role by; null with no person row. */
+  readonly accountId: number | null
   readonly sessionId: string | null
   readonly via: WriteVia
   readonly op: WriteOp
@@ -284,6 +311,7 @@ export const writeOf = (id: string) =>
       readonly repoId: string
       readonly actorId: string
       readonly login: string | null
+      readonly accountId: string | null
       readonly sessionId: string | null
       readonly via: WriteVia
       readonly op: WriteOp
@@ -295,12 +323,13 @@ export const writeOf = (id: string) =>
       readonly createdAt: string
     }>`
       SELECT w.id::text, w.repo_id AS "repoId", w.actor_id AS "actorId", p.github_login AS login,
-        w.session_id::text AS "sessionId", w.via, w.op, w.payload, w.status, w.attempts, w.item_number AS "itemNumber",
+        p.github_id::text AS "accountId", w.session_id::text AS "sessionId", w.via, w.op, w.payload, w.status, w.attempts, w.item_number AS "itemNumber",
         w.github_id::text AS "githubId", (extract(epoch FROM w.created_at) * 1000)::bigint::text AS "createdAt"
       FROM github_writes w LEFT JOIN people p ON p.id::text = w.actor_id
       WHERE w.id = ${id}::uuid`
     return Option.map(Option.fromNullishOr(row), (found): Write => ({
       ...found,
+      accountId: found.accountId === null ? null : Number(found.accountId),
       payload: decodePayload(found.payload),
       githubId: found.githubId === null ? null : Number(found.githubId),
       createdAt: Number(found.createdAt),

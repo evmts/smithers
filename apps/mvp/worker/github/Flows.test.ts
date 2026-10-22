@@ -56,8 +56,9 @@ const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://sm
 /** A database whose client can't even be built, as when a host's connection string fails to resolve. */
 const unbuildable = Layer.effect(SqlClient.SqlClient, Effect.fail(new Error("no connection string")))
 
-/** A person `maya` signed in with a token the scripted GitHub takes. */
+/** A person `maya` signed in with a token the scripted GitHub takes, a writer there, as her agent's writes check. */
 const maya = async (github: ReturnType<typeof scriptedGitHub>, expiresInMs?: number | null) => {
+  github.roles.set("maya", "write")
   const token = github.userToken("maya")
   return { token, ...(await signedIn(runtime, { login: "maya", token, ...(expiresInMs === undefined ? {} : { expiresInMs }) })) }
 }
@@ -184,6 +185,23 @@ describe("github/Write", () => {
     expect(github.issues.size).toBe(1)
     expect(github.seen("POST", /\/issues$/)).toHaveLength(0)
     expect((await items(runtime))[0]).toMatchObject({ number: 1, writeId, body: "Steps to reproduce" })
+  })
+
+  test("a resumed agent write adopts its earlier issue after role revocation, but cannot post a new comment", async () => {
+    const github = scriptedGitHub()
+    const person = await maya(github)
+    const writeId = await admit(runtime, { actorId: person.personId, sessionId: null, via: "agent", payload: issueWrite() })
+    github.open("Already written", GitHub.Issues.withWriteMarker("Before revocation", writeId), BOT_LOGIN)
+    github.roles.set("maya", "read")
+    const { services: value } = await services(runtime, github)
+    expect((await runWrite(writeId, value)).exit).toEqual(Exit.succeed({ status: "done", itemNumber: 1 }))
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(0)
+    const commentId = await admit(runtime, {
+      actorId: person.personId, sessionId: null, via: "agent", payload: { op: "issue/comment", number: 1, body: "After revocation" },
+    })
+    expect((await runWrite(commentId, value)).exit).toEqual(Exit.succeed({ status: "refused", itemNumber: null }))
+    expect(github.seen("POST", /\/comments$/)).toHaveLength(0)
+    expect(await writeRow(runtime, commentId)).toMatchObject({ failure: "not_allowed" })
   })
 
   test.each([
@@ -433,12 +451,29 @@ describe("github/Write", () => {
     expect(await records(failing)).toEqual([expect.objectContaining({ tokenKind: "user", errorCode: expect.any(String) })])
   })
 
-  test("the agent acting for someone with no person row says so without a name", async () => {
+  test("the agent writes only for a person who is still a Member there, as the account sign-in knows; else refused, nothing written", async () => {
     const github = scriptedGitHub()
-    const writeId = await admit(runtime, { actorId: "local-developer", sessionId: null, via: "agent", payload: issueWrite() })
     const { services: value } = await services(runtime, github)
-    expect((await runWrite(writeId, value)).exit).toEqual(Exit.succeed({ status: "done", itemNumber: 1 }))
-    expect(github.issues.get(1)!.body).toContain("Smithers for @unknown")
+    // Nobody sign-in knows: no account to check.
+    const nobody = await admit(runtime, { actorId: "local-developer", sessionId: null, via: "agent", payload: issueWrite() })
+    expect((await runWrite(nobody, value)).exit).toEqual(Exit.succeed({ status: "refused", itemNumber: null }))
+    expect(await writeRow(runtime, nobody)).toMatchObject({ failure: "not_allowed" })
+    expect(github.seen("GET", /\/permission$/)).toEqual([])
+    // Maya, now only a reader there; then a login someone else took after a rename.
+    const person = await maya(github)
+    for (const change of [() => github.roles.set("maya", "read"), () => github.accounts.set("maya", 1)]) {
+      github.roles.set("maya", "write")
+      change()
+      const writeId = await admit(runtime, { actorId: person.personId, sessionId: null, via: "agent", payload: issueWrite() })
+      expect((await runWrite(writeId, value)).exit).toEqual(Exit.succeed({ status: "refused", itemNumber: null }))
+      expect(await writeRow(runtime, writeId)).toMatchObject({ failure: "not_allowed" })
+    }
+    // Gone from the repository: GitHub knows no permission for her.
+    github.accounts.delete("maya")
+    github.roles.delete("maya")
+    const gone = await admit(runtime, { actorId: person.personId, sessionId: null, via: "agent", payload: issueWrite() })
+    expect((await runWrite(gone, value)).exit).toEqual(Exit.succeed({ status: "refused", itemNumber: null }))
+    expect(github.issues.size).toBe(0)
   })
 
   test("a commitment from someone with no GitHub login is no Maintainer's: refused, nothing labeled", async () => {

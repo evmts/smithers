@@ -180,7 +180,7 @@ const send = (requested: Collection.Collection<Requested, string>, { rows }: { r
       ? Effect.fail(new WriteNotTaken({ status: 403 }))
       : (yield* IssuesClient).write(owner, name, requestOf(row), row.credential))
     const status = answer._tag === "Success" ? undefined : answer.failure.status
-    const reason = answer._tag === "Success" ? undefined : refusalOf(status)
+    const reason = answer._tag === "Success" ? undefined : refusalOf(status, answer.failure.code)
     const outcome = answer._tag === "Success"
       ? answer.success.txid === null ? "existing" : "started"
       : reason === undefined

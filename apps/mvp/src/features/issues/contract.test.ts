@@ -77,7 +77,7 @@ describe("ids and keys", () => {
 
 describe("Not sent", () => {
   test("the route's refusals by status; anything else is sent again", () => {
-    expect([400, 401, 403, 404, 409, 413].map(refusalOf)).toEqual([
+    expect([400, 401, 403, 404, 409, 413].map((status) => refusalOf(status))).toEqual([
       "invalid",
       "authentication",
       "forbidden",
@@ -86,6 +86,19 @@ describe("Not sent", () => {
       "too_large",
     ])
     for (const status of [undefined, 200, 202, 408, 429, 500, 502, 503]) expect(refusalOf(status)).toBeUndefined()
+  })
+
+  test("a 404's code tells the App not installed from a repository not found (decision 0065 §7)", () => {
+    expect(refusalOf(404, "app_not_installed")).toBe("app_not_installed")
+    expect(NOT_SENT_COPY[refusalOf(404, "app_not_installed")!]).toBe("App not installed")
+    expect(refusalOf(404, "not_found")).toBe("not_found")
+    expect(refusalOf(404)).toBe("not_found")
+    // Rate limited and GitHub down are sent again, whatever their code says.
+    expect([refusalOf(429, "rate_limited"), refusalOf(503, "github_unavailable"), refusalOf(403, "app_not_installed")]).toEqual([
+      undefined,
+      undefined,
+      "forbidden",
+    ])
   })
 
   test("every reason has its words", () => {

@@ -1,7 +1,7 @@
 import { COMMITMENTS, commitmentLabel } from "../../src/features/issues/lifecycle.ts"
 import { triageOf } from "../../src/features/issues/contract.ts"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
-import { GitHub } from "@smthrs/integrations"
+import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import { Clock, Effect, Layer, Metric, Option, type Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
@@ -15,10 +15,12 @@ import {
 } from "../../src/features/issues/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.ts"
+import { roleOf } from "../GitHubAuth.ts"
 import { classify, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
 import { fetchIssue, project } from "./Project.ts"
+import { permissionOf } from "./RepoRoles.ts"
 import * as Store from "./Store.ts"
 import type { TokenUnavailable } from "./Tokens.ts"
 import * as TriageStore from "./TriageStore.ts"
@@ -243,16 +245,37 @@ export const steps = <E, R>(services: Services<E, R>) => {
         Effect.gen(function* () {
           // Counted for the write's record; `Action.once` decides what was made, by the write's marker alone.
           yield* Store.beginAttempt(write.id)
+          // The agent writes as the App, so GitHub checks nothing of the person: each attempt checks again that they
+          // are still a Member or above there, as the account sign-in knows (decisions 0007 §6 and 0079). A person's
+          // own write goes with their own token, which GitHub checks.
+          const actsForMember = write.via !== "agent" ? Effect.succeed(true) : Effect.gen(function* () {
+            // Store.writeOf reads both NOT NULL people columns through the same LEFT JOIN.
+            if (write.login === null) return false
+            const permission = yield* GitHub.Collaborators.permission(repository.owner, repository.name, write.login)
+            if (Option.isNone(permission) || permission.value.userId !== write.accountId) return false
+            const role = roleOf(permissionOf(permission.value))
+            return role === "admin" || role === "maintainer" || role === "member"
+          })
+          // Recovery may adopt an earlier write after permission was revoked; only a new POST needs authority.
+          const authorized = <A, E, R>(operation: Action.Keyed<A, E, R>) => Action.keyed({
+            find: operation.find,
+            perform: (key: string) => Effect.gen(function* () {
+              if (!(yield* actsForMember)) return yield* Effect.fail(new Core.IntegrationError.IntegrationError(
+                "delivery-failed", "The account may no longer write to this repository.", { status: 403 },
+              ))
+              return yield* operation.perform(key)
+            }),
+          })
           const comment = (number: number, text: string) =>
             Effect.map(
-              Action.once("comment", GitHub.Once.comment(repository.owner, repository.name, number, attributed(text)), keyed),
+              Action.once("comment", authorized(GitHub.Once.comment(repository.owner, repository.name, number, attributed(text))), keyed),
               (made) => ({ number, githubId: made.id }),
             )
           if (payload.op === "issue/create") {
             const since = new Date(write.createdAt - MARKER_SLACK_MS).toISOString()
             const issue = yield* Action.once(
               "issue",
-              GitHub.Once.issue(repository.owner, repository.name, { title: payload.title, body: attributed(payload.body), since }),
+              authorized(GitHub.Once.issue(repository.owner, repository.name, { title: payload.title, body: attributed(payload.body), since })),
               keyed,
             )
             return { number: issue.number, githubId: issue.id }

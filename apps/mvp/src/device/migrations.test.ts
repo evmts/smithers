@@ -20,6 +20,7 @@ import { ViewV2 } from "./views-history"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
+  ConversationPendingStore,
   PluginDraftsStore,
   SteerSentStore,
   SpendSeenStore,
@@ -245,10 +246,51 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
 })
 
 
+test("a stack change build fed1790a60 kept opens at version 3 as it was (decision 0079)", async () => {
+  const row = {
+    id: "4b0d6f2a-8c1e-4e3f-9a5b-6c7d8e9f0a1b",
+    repo: "smithersai/vibelang",
+    op: "commit",
+    title: "Retry webhook delivery",
+    prompt: "Retry a failed delivery three times.",
+    acceptance: [],
+    number: 0,
+    repoId: "github/smithersai/vibelang",
+    queuedAt: 1_761_000_000_000,
+    status: "not_sent",
+    reason: "forbidden",
+    taken: null,
+  }
+  const { path } = await deviceFrom({
+    build: "fed1790a60",
+    collections: { "todo-requested": { kind: "local", version: 1, key: "id", rows: [row] } },
+    outbox: {},
+  })
+  await prepare(path, deviceRegistry)
+  const kept = await opened(path, TodoRequestedStore)
+  expect(kept).toEqual([row])
+  expect(kept.every(Schema.is(TodoRequestedStore.schema))).toBe(true)
+})
+
+test("a version 2 retry request retains its refusal when migrating to repository roles", async () => {
+  const row = {
+    id: "4b0d6f2a-8c1e-4e3f-9a5b-6c7d8e9f0a1b", repo: "acme/widgets", op: "retry",
+    title: "", prompt: "", acceptance: [], number: 7, repoId: "github/acme/widgets", queuedAt: 123,
+    status: "not_sent", reason: "not_retryable", taken: null,
+  }
+  const { path } = await deviceFrom({
+    build: "todo-retry-v2",
+    collections: { "todo-requested": { kind: "local", version: 2, key: "id", rows: [row] } }, outbox: {},
+  })
+  await prepare(path, deviceRegistry)
+  expect(await opened(path, TodoRequestedStore)).toEqual([row])
+})
+
 test("cached homes and timeline summaries restore and replace by their declared identity", async () => {
   const { path } = await deviceFrom({ build: "empty", collections: {}, outbox: {} } as Fixture)
   await prepare(path, deviceRegistry)
   const cases = [
+    [ConversationPendingStore, { conversationId: "conversation", archived: true, at: 1 }, "archived", false],
     [PluginDraftsStore, { id: "note", text: "Before" }, "text", "After"],
     [SteerSentStore, { id: "steer", runId: "run", body: "Before", queuedAt: 1, status: "sent", reason: null }, "body", "After"],
     [HomesStore, { key: "repo@sha", state: "absent", sections: [], contributors: "role", skipped: 0, reason: null }, "reason", "missing"],
@@ -264,7 +306,7 @@ test("cached homes and timeline summaries restore and replace by their declared 
       const collection = yield* Collection.persisted(store as Migrations.Local<any, string>)
       yield* collection.restored
       yield* collection.insert(row)
-      const key = "key" in row ? row.key : "id" in row ? row.id : row.kind
+      const key = "conversationId" in row ? row.conversationId : "key" in row ? row.key : "id" in row ? row.id : row.kind
       yield* (yield* collection.update(key, (draft) => { draft[field] = next })).persisted
     })).pipe(Effect.provide(persistenceOn(path, deviceRegistry))))
     expect(await opened(path, store as Migrations.Local<any, string>)).toEqual([{ ...row, [field]: next }])

@@ -41,7 +41,8 @@ export class StackWrites extends Context.Service<
         id: "todo-requested",
         schema: RequestedRow,
         getKey: (row) => row.id,
-        schemaVersion: 2,
+        // Version 3 adds repository installation refusals after retry (version 2).
+        schemaVersion: 3,
       })
       const context = yield* Effect.context<StackClient>()
       const mutation: Outbox.Mutation<never> = (params) => send(requested, params).pipe(Effect.provideContext(context))

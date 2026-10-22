@@ -114,6 +114,7 @@ import { TERMINALS_TABLE } from "../features/terminal/contract"
 import type { ThemeMode } from "../features/theme/contract"
 import type { StackClient } from "../features/todos/api"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
+import * as RepoRoles from "../../worker/github/RepoRoles.ts"
 import { VIEWS_TABLE } from "../features/views/contract"
 import { clientFlows } from "../flows/declarations"
 import { workerRegistrations } from "../flows/registrations"
@@ -448,19 +449,20 @@ export class TestChatApi extends Context.Service<
         // (a comparison's files) reach the scripted GitHub as the App.
         const repository = repositoryOf(TEST_REPOSITORY)
         const scripted = scriptedGitHub(repository.owner, repository.name)
-        const github = yield* GitHubApi.make(database, {
+        const app = Option.some({
+          appId: APP_ID,
+          privateKey: yield* Effect.promise(harnessAppKey),
+          webhookSecret: Option.none(),
           repository,
-          app: Option.some({
-            appId: APP_ID,
-            privateKey: yield* Effect.promise(harnessAppKey),
-            webhookSecret: Option.none(),
-            repository,
-            apiBaseUrl: SCRIPTED_API
-          }),
-          http: scripted.http
-        }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+          apiBaseUrl: SCRIPTED_API,
+        })
+        // Who has which role where (decision 0079): the session's on the test repository, the deployment's own.
+        const roles = yield* RepoRoles.make(database, { repository, app, http: scripted.http })
+        const github = yield* GitHubApi.make(database, { repository, app, roles, http: scripted.http }).pipe(
+          Effect.provideService(ConfigProvider.ConfigProvider, config),
+        )
         // The stack's routes, as ChatApi routes them (worker/ChatApi.ts): no host runs a TODO, so every TODO stays Queued.
-        const stack = yield* StackApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        const stack = yield* StackApi.make(database, roles).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // A repository's home, as ChatApi routes it (worker/ChatApi.ts): the curated homes a test gives, else the real ones.
         const home = HomeApi.make({ roles: repository, ...(options.homes === undefined ? {} : { files: options.homes }) })
         // A repository's docs, as ChatApi routes them (worker/ChatApi.ts): the index its home names, or the curated home

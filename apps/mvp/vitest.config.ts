@@ -128,6 +128,8 @@ export default defineConfig({
         "db/migrations/0048_github_projection_fences.ts",
         "db/migrations/0049_triage_write_claims.ts",
         "db/migrations/0050_drop_merge_unknown.ts",
+        // Roles on repositories other than the deployment's own (decision 0079).
+        "db/migrations/0051_github_repo_roles.ts",
         // Issue triage: its settings, decisions and pins (docs/features/issues.md#triage).
         "db/migrations/0018_triage.ts",
         // Repository secrets: the write routes, the flows, the shape and the sandbox egress (docs/features/secrets.md).

@@ -112,7 +112,7 @@ Not built yet: confirmation receipts and the host's confirm dialog for protected
 
 ## Roles and role checks
 
-The role is the person's permission on `GITHUB_REPOSITORY` (`GET /repos/<owner>/<name>` with their token), mapped as decision 0007 §9 says, never with more power than GitHub gives:
+The session's role is the person's permission on `GITHUB_REPOSITORY`, the deployment's own repository (`GET /repos/<owner>/<name>` with their token), mapped as decision 0007 §9 says, never with more power than GitHub gives. It decides nothing on any other repository: there the role is the person's GitHub permission on that one, read with the App ([decision 0079](../decisions/0079-roles-per-repository.md), `worker/github/RepoRoles.ts`).
 
 | GitHub | Role |
 |---|---|

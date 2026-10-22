@@ -11,7 +11,7 @@ import { WriteTaken } from "./schema"
  * ChatApi didn't take the write: no whole answer within the deadline, or no network (`status` absent), any status but
  * 200 and 202 (`status`), or a 200 or 202 whose body isn't the contract's.
  */
-export class WriteNotTaken extends Data.TaggedError("WriteNotTaken")<{ readonly status?: number }> {}
+export class WriteNotTaken extends Data.TaggedError("WriteNotTaken")<{ readonly status?: number; readonly code?: string }> {}
 
 /** A write as the route takes it. It names nobody: who acts is the session's or the run credential's to say. */
 export type WriteRequest =
@@ -35,6 +35,10 @@ export type WriteRequest =
   | { readonly writeId: string; readonly op: Extract<WriteOp, "triage/pause"> }
 
 const decodeTaken = Schema.decodeUnknownEffect(WriteTaken)
+
+/** A refusal's `{ code }`, when its body has one. */
+const decodeCode = (body: unknown): string | undefined =>
+  Option.getOrUndefined(Option.map(Schema.decodeUnknownOption(Schema.Struct({ code: Schema.String }))(body), ({ code }) => code))
 
 /**
  * `POST /api/repos/<owner>/<name>/writes`: `202` took a new write, `200` had it already. With `credential`, the write
@@ -66,6 +70,11 @@ export const postWrite = (
       : withoutCookie(client.execute(withBearer(request, authority))))
       .pipe(Effect.mapError(() => new WriteNotTaken({})))
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    if (response.status === 404) {
+      // One status, two reasons (decision 0079 §7): the body's code says whether the App isn't installed.
+      const code = yield* response.json.pipe(Effect.map(decodeCode), Effect.orElseSucceed(() => undefined))
+      return yield* new WriteNotTaken(code === undefined ? { status: 404 } : { status: 404, code })
+    }
     if (response.status !== 200 && response.status !== 202) return yield* new WriteNotTaken({ status: response.status })
     return yield* response.json.pipe(
       Effect.flatMap(decodeTaken),

@@ -89,6 +89,7 @@ describe("needs", () => {
       "liveModel",
       "factoryRepository",
       "githubScratch",
+      "secondRepository",
       "dogfood",
       "githubApp",
       "longRun",
@@ -213,6 +214,14 @@ describe("needs", () => {
   it("for Code Storage, are met locally only with its organization and key set", () => {
     expect(NEEDS.codeStorage.met({ ...local, env: { CODE_STORAGE_ORG: "o" } })).toBe(false)
     expect(NEEDS.codeStorage.met({ ...local, env: { CODE_STORAGE_ORG: "o", CODE_STORAGE_KEY: "" } })).toBe(false)
+  })
+
+  it("for a second repository, are met only when the scratch repository isn't the deployment's own", () => {
+    const scratch = { E2E_ISSUES_REPOSITORY: "roninjin10/smithers-github-tests" }
+    expect(NEEDS.secondRepository.met(deployedAs("member", scratch))).toBe(true)
+    expect(NEEDS.secondRepository.met(deployedAs("member", { ...scratch, E2E_SYNCED_REPOSITORY: "Roninjin10/Smithers-GitHub-Tests" }))).toBe(false)
+    expect(NEEDS.secondRepository.met(deployedAs("member"))).toBe(false)
+    expect(NEEDS.secondRepository.met({ ...local, env: scratch })).toBe(false)
   })
 
   it("for GitHub writes, are met only in a deployment with a scratch repository that isn't smithersai's", () => {

@@ -2,7 +2,7 @@ import { GitHub } from "@smthrs/integrations"
 import { Clock, Effect, Metric, Option, type Redacted, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import type { SessionKeys } from "../SessionKeys.ts"
-import { classify, statusOf } from "./Calls.ts"
+import { classify, isRateLimited, statusOf } from "./Calls.ts"
 import type { Repository } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
 import * as Store from "./Store.ts"
@@ -27,11 +27,13 @@ export const REFRESH_WAIT_MS = 5_000
  * - `refreshing`: the session's token is being refreshed; retried after `retryAfterMillis`;
  * - `app_not_installed`: the App isn't installed on the repository;
  * - `not_allowed`: the App was refused the permission the step needs;
- * - `unavailable`: GitHub or Postgres couldn't answer; retried, after `retryAfterMillis` when GitHub said.
+ * - `unavailable`: GitHub or Postgres couldn't answer; retried, after `retryAfterMillis` when GitHub said, and
+ *   `rateLimited` when GitHub refused for its rate limit.
  */
 export class TokenUnavailable extends Schema.TaggedError<TokenUnavailable>()("@smthrs/mvp/github/TokenUnavailable", {
   reason: Schema.Literals(["sign_in_required", "refreshing", "app_not_installed", "not_allowed", "unavailable"]),
   retryAfterMillis: Schema.optional(Schema.Number),
+  rateLimited: Schema.optional(Schema.Boolean),
 }) {}
 
 /** What the tokens need: the App, and, when sign-in is configured, the session keys and the role check that refreshes. */
@@ -47,9 +49,10 @@ export interface Services {
  * The access an installation token is minted with: reading issues, writing them (triage's labels included), or reading
  * the repository's files (`contents`: triage's guidelines); reading a pull request with its diff (`pulls`), publishing
  * a TODO's branch, commit and pull request (`publish`), reviewing one (`review`, a comment review's findings), or reporting a
- * check on a commit (`status`, GH-10's write-only commit statuses).
+ * check on a commit (`status`, GH-10's write-only commit statuses), or a person's permission on the repository
+ * (`metadata`, decision 0079 §3).
  */
-export type Access = "read" | "write" | "contents" | "pulls" | "publish" | "review" | "status"
+export type Access = "read" | "write" | "contents" | "pulls" | "publish" | "review" | "status" | "metadata"
 
 /** The permissions GitHub mints a token with for `access`: only what the step needs. */
 export const permissionsOf = (access: Access): Readonly<Record<string, "read" | "write">> => {
@@ -64,6 +67,8 @@ export const permissionsOf = (access: Access): Readonly<Record<string, "read" | 
       return { issues: "read", pull_requests: "write", contents: "read" }
     case "status":
       return { statuses: "write" }
+    case "metadata":
+      return { metadata: "read" }
     default:
       return { issues: access }
   }
@@ -71,11 +76,13 @@ export const permissionsOf = (access: Access): Readonly<Record<string, "read" | 
 
 const unavailable = (error: unknown) => {
   const classified = classify(error)
-  return new TokenUnavailable(
-    classified.kind === "retry" && classified.retryAfterMillis !== undefined
-      ? { reason: "unavailable", retryAfterMillis: classified.retryAfterMillis }
-      : { reason: "unavailable" },
-  )
+  return new TokenUnavailable({
+    reason: "unavailable",
+    ...(classified.kind === "retry" && classified.retryAfterMillis !== undefined
+      ? { retryAfterMillis: classified.retryAfterMillis }
+      : {}),
+    ...(isRateLimited(error) ? { rateLimited: true } : {}),
+  })
 }
 
 /** Counts and logs one token, by kind and outcome; never the token. */
@@ -151,8 +158,9 @@ export const make = (services: Services) => {
         yield* counted("app", "app_not_installed", { access })
         return yield* new TokenUnavailable({ reason: "app_not_installed" })
       }
-      // The App wasn't granted the permission (decision 0012 question 2): Will adds it in the App's settings.
-      if (status === 422 || status === 403) {
+      // The App wasn't granted the permission (decision 0012 question 2): Will adds it in the App's settings. A 403
+      // for GitHub's rate limit is no refusal: it passes on, retried.
+      if (status === 422 || (status === 403 && !isRateLimited(minted.failure))) {
         yield* counted("app", "not_allowed", { access, status })
         return yield* new TokenUnavailable({ reason: "not_allowed" })
       }

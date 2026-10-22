@@ -10,7 +10,7 @@ import * as Flows from "../Flows.ts"
 // The stack's routes (worker/stack/Api.ts, decision 0016 §1 and §5) through the real handler on this file's schema of
 // the compose Postgres and Electric (`pnpm db:up`): every refusal of `POST /api/repos/<owner>/<name>/stack`, a commit and
 // a drop end to end, repeated ops, the run host's seam, the shapes' access, and records free of titles and prompts.
-import { Context, Deferred, Effect, Layer } from "effect"
+import { Context, Deferred, Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import {
@@ -25,13 +25,17 @@ import {
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { eventually, testFile, uuid } from "../test/harness.ts"
 import * as Api from "./Api.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
+import { rolesThatRead } from "../github/test/fixtures.ts"
+import { app } from "../github/test/harness.ts"
+import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as Stack from "./Stack.ts"
-import { runs, stackHarness, type StackHarness } from "./test/stack.ts"
+import { OWN_REPOSITORY, runs, stackHarness, type StackHarness } from "./test/stack.ts"
 
 const runtime = testFile("stack_api")
 beforeEach(() =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks`))
+    sql`TRUNCATE stack_ops, todo_attempts, todo_requests, todos, stacks, github_repo_roles, github_repositories`))
 )
 
 const member: Actor = { subject: { kind: "person", id: "person-member" }, role: "member", login: "maya" }
@@ -464,3 +468,130 @@ test("Retry waits for the engine's terminal cancellation receipt, then replaces 
     for (const attempt of started.slice(1)) yield* flows.interrupt(Pause.Pause, `todo:${attempt.attemptId}`)
   })))
 }, 60_000)
+
+describe("another repository's stack (decision 0079)", () => {
+  // The deployment's own repository is octo/hello; the scripted GitHub's acme/widgets is a second one.
+  const OTHER = stackRoute("acme", "widgets")
+  // Maya as sign-in recorded her, a Member of octo/hello by her session: GitHub is asked about her login and account.
+  const MAYA = "9f3a5d1b-6e4f-4b8c-0d1e-4f5a6b7c8d9e"
+  const maya: Actor = { ...member, subject: { kind: "person", id: MAYA } }
+  beforeEach(() =>
+    sql(`INSERT INTO people (id, github_id, github_login) VALUES ('${MAYA}', ${accountIdOf("maya")}, 'maya')
+      ON CONFLICT (id) DO NOTHING`)
+  )
+  let key: Awaited<ReturnType<typeof appKey>> | undefined
+  const onGitHub = async (github: ScriptedGitHub, actor: Actor = maya) =>
+    stackHarness(runtime, {
+      actor,
+      roles: { app: Option.some(app({ privateKey: key ??= await appKey() })), http: github.http },
+    })
+
+  test("a Member of the deployment's own repository commits to another only when GitHub makes them one there", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "read")
+    const h = await onGitHub(github)
+    expect(await json(await post(h, commitBody(), {}, OTHER))).toEqual([403, { code: "forbidden" }])
+    expect(await sql(`SELECT * FROM todos`)).toEqual([])
+    // GitHub makes Maya a writer; once the 5 minutes are up, she commits there.
+    github.roles.set("maya", "write")
+    await sql(`UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes'`)
+    const body = commitBody()
+    expect(await json(await post(h, body, {}, OTHER))).toEqual([
+      202,
+      { txid: expect.any(Number), opId: body.opId, outcome: "committed", number: 1 },
+    ])
+    expect(await sql(`SELECT repo_id AS "repoId" FROM todos`)).toEqual([{ repoId: "github/acme/widgets" }])
+    // The deployment's own repository still takes the session's role, asking GitHub nothing.
+    const before = github.calls.length
+    expect((await post(h, commitBody())).status).toBe(202)
+    expect(github.calls.length).toBe(before)
+  })
+
+  test("retry authority comes from the target repository, including ownership and Maintainer overrides", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const h = await onGitHub(github, { ...maya, role: "admin" })
+    expect((await post(h, commitBody(), {}, OTHER)).status).toBe(202)
+    await sql(`UPDATE todos SET state = 'failed', created_by = 'another-person'`)
+    const retry = { opId: uuid(), op: "retry", number: 1 }
+    // Admin here is only Member there: cannot retry another person's TODO.
+    expect((await post(h, retry, {}, OTHER)).status).toBe(403)
+    github.roles.set("maya", "read")
+    await sql(`UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes'`)
+    expect((await post(h, retry, {}, OTHER)).status).toBe(403)
+    github.roles.set("maya", "maintain")
+    await sql(`UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes'`)
+    expect((await post(h, retry, {}, OTHER)).status).toBe(202)
+    expect((await post(h, retry, {}, OTHER)).status).toBe(200)
+  })
+
+  test("refusals say what is true: the App not installed 404, a rate limit 429 with GitHub's wait, no App 503", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    github.installed = false
+    expect(await json(await post(await onGitHub(github), commitBody(), {}, OTHER))).toEqual([404, { code: "app_not_installed" }])
+    github.installed = true
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "12" } })
+    const limited = await post(await onGitHub(github), commitBody(), {}, OTHER)
+    expect([limited.status, limited.headers.get("retry-after"), await limited.json()]).toEqual([429, "12", { code: "rate_limited" }])
+    const unconfigured = await stackHarness(runtime, { actor: maya })
+    expect(await json(await post(unconfigured, commitBody(), {}, OTHER))).toEqual([503, { code: "not_configured" }])
+    expect(await sql(`SELECT * FROM todos`)).toEqual([])
+  })
+
+  test("a role that changes between the read and the change refuses the change, recording nothing", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const h = await onGitHub(github)
+    expect((await post(h, commitBody(), {}, OTHER)).status).toBe(202)
+    // A refresh lands after the route read Member: the change's transaction finds Guest.
+    await sql(`UPDATE github_repo_roles SET role = 'guest'`)
+    const applied = await runtime.runPromise(Stack.apply({
+      opId: uuid(),
+      repoId: "github/acme/widgets",
+      actor: { id: MAYA, login: "maya" },
+      via: "person",
+      op: { kind: "commit", title: "T", prompt: "P", acceptance: [] },
+    }, {
+      runs: false,
+      holds: RepoRoles.holds({ repoId: "github/acme/widgets", personId: MAYA, role: "member" }),
+    }))
+    expect(applied).toEqual({ kind: "stale" })
+    expect(await sql(`SELECT count(*)::int AS n FROM todos`)).toEqual([{ n: 1 }])
+  })
+
+  test("the TODO shapes: another repository's rows only for a Member there", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "read")
+    const h = await onGitHub(github)
+    for (const route of [TODOS_SHAPE_ROUTE, TODO_REQUESTS_SHAPE_ROUTE]) {
+      expect([route, (await h.fetch(`${route}?repo=acme/widgets&offset=-1`)).status]).toEqual([route, 403])
+    }
+    expect(h.electric).toEqual([])
+    github.roles.set("maya", "write")
+    await sql(`UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes'`)
+    expect((await h.fetch(`${TODOS_SHAPE_ROUTE}?repo=acme/widgets&offset=-1`)).status).toBe(200)
+    expect(Object.fromEntries(h.electric[0]!.searchParams)).toMatchObject({ "params[1]": "github/acme/widgets" })
+    // GitHub down: no stale role decides. Rate limited: 503 with GitHub's wait. Not installed: 403.
+    await sql(`UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes'`)
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+    expect((await h.fetch(`${TODOS_SHAPE_ROUTE}?repo=acme/widgets&offset=-1`)).status).toBe(503)
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "9" } })
+    const limited = await h.fetch(`${TODOS_SHAPE_ROUTE}?repo=acme/widgets&offset=-1`)
+    expect([limited.status, limited.headers.get("retry-after")]).toEqual([503, "9"])
+    github.installed = false
+    await sql(`TRUNCATE github_repositories`)
+    expect((await h.fetch(`${TODOS_SHAPE_ROUTE}?repo=acme/widgets&offset=-1`)).status).toBe(403)
+    // A request that names no repository: a Guest by the session is refused, as before.
+    const guestHere = await onGitHub(github, { ...guest, subject: { kind: "person", id: MAYA } })
+    expect((await guestHere.fetch(`${TODOS_SHAPE_ROUTE}?offset=-1`)).status).toBe(403)
+  })
+
+  test("a role that changed between the route's read and the stack's transaction refuses the change, recording nothing", async () => {
+    // GitHub made Maya a Guest after the route read Member: the stack's transaction finds the row as it stands.
+    await sql(`INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/widgets', '${MAYA}', 'guest')`)
+    const h = await stackHarness(runtime, { actor: maya, faultyRoles: rolesThatRead(OWN_REPOSITORY, "member") })
+    expect(await json(await post(h, commitBody(), {}, OTHER))).toEqual([403, { code: "forbidden" }])
+    expect(await sql(`SELECT * FROM todos`)).toEqual([])
+  })
+})

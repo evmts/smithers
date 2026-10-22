@@ -9,10 +9,13 @@ import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { digestSync } from "@smthrs/crypto"
 import * as SessionKeys from "../../SessionKeys.ts"
 import * as SessionStore from "../../SessionStore.ts"
+import type { Role } from "../../Actor.ts"
 import type { testFile } from "../../test/harness.ts"
 import { SECRET } from "../../test/signIn.ts"
 import type * as Apply from "../Apply.ts"
 import * as ModelEndpoint from "../../ModelEndpoint.ts"
+import type { Repository } from "../Config.ts"
+import type * as RepoRoles from "../RepoRoles.ts"
 import * as Store from "../Store.ts"
 import * as Tokens from "../Tokens.ts"
 import type * as Triage from "../Triage.ts"
@@ -30,7 +33,8 @@ export const reset = (runtime: Runtime) =>
       SqlClient.SqlClient,
       (sql) =>
         sql`TRUNCATE github_projection_fences, items, comments, github_writes, github_sync, github_deliveries, github_repositories, sessions,
-          sign_in_attempts, people, triage_settings, triage_decisions, model_usage, model_budget_days, model_roles CASCADE`,
+          sign_in_attempts, people, triage_settings, triage_decisions, model_usage, model_budget_days, model_roles,
+          github_repo_roles CASCADE`,
     ),
   )
 
@@ -224,3 +228,13 @@ export const services = async (
   }
   return { services: value, refreshes }
 }
+
+/**
+ * `RepoRoles` that read `role` for everyone on every repository: what a route sees when the role changed on GitHub after
+ * its read, before the write's transaction, which then finds the row as it stands (decision 0079 §6).
+ */
+export const rolesThatRead = (repository: Repository, role: Role): RepoRoles.RepoRoles<never> => ({
+  repository,
+  resolve: (actor, target) =>
+    Effect.succeed({ role, held: Option.some({ repoId: target.id, personId: actor.subject.id, role }) }),
+})

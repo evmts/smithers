@@ -42,6 +42,7 @@ import { DomainProvider } from "./domains/Provider.ts"
 import * as SecretsApi from "./secrets/Api.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
+import * as RepoRoles from "./github/RepoRoles.ts"
 import * as StackApi from "./stack/Api.ts"
 import * as Stack from "./stack/Stack.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
@@ -120,15 +121,21 @@ export const program = (options: ProgramOptions = {}) =>
       ),
     )
     const forge = Forge.layerConfig.pipe(Layer.provide(FetchHttpClient.layer))
-    // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes, for the one
-    // repository sign-in reads roles on.
-    const github = yield* GitHubApi.make(database, {
-      repository: yield* GitHubConfig.repository,
-      app: yield* GitHubConfig.configured,
+    // Who has which role on which repository (decision 0079): the session's on the deployment's own, GitHub's, read
+    // with the App, on any other it may act on. Local development without the App keeps the developer's everywhere.
+    const repository = yield* GitHubConfig.repository
+    const app = yield* GitHubConfig.configured
+    const roles = yield* RepoRoles.make(database, {
+      repository,
+      app,
+      allowed: yield* RepoRoles.allowed,
+      local: options.fallback !== undefined && Option.isNone(app),
     })
+    // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes.
+    const github = yield* GitHubApi.make(database, { repository, app, roles })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
-    const stack = yield* StackApi.make(database)
+    const stack = yield* StackApi.make(database, roles)
     // A TODO's run, watched from its page (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare): the engine's own
     // read of it, from the engine's schema, and its row of the engine's change feed through Electric. A Member steers
     // its agent by admitting a message to the run's queue in the same schema (docs/features/runs.md#steering).

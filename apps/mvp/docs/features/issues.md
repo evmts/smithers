@@ -59,17 +59,22 @@ items, comments ◀── Electric ◀── Postgres ◀──┘
 | `GET /api/shapes/triage-settings` | its `triage_settings` row with `TRIAGE_SETTINGS_COLUMNS` (never who enabled it) |
 | `GET /api/shapes/github-writes` | the signed-in person's own `github_writes`, status only (`WRITE_COLUMNS`); signed out, none; sessions unreadable, `503` with `Retry-After: 5` |
 
-The writes route's body is `{ writeId, op: "issue/create", title, body }`, `{ writeId, op: "issue/comment", number, body }`, or one of triage's: `{ writeId, op: "issue/triage", number, decision: "accept" | "reject", reason? }`, `{ writeId, op: "triage/run", number }`, `{ writeId, op: "triage/enable", dailyTokens? }`, `{ writeId, op: "triage/pause" }`. A UUID write id, a title of 1 to 256 characters not blank, a body up to 65,000 characters (a comment's not blank), a reason of 1 to 300 characters not blank, a daily budget of 1 to 10,000,000 tokens, a number of 1 to 2,147,483,647, and at most `MAX_WRITE_BYTES`. Triage's writes are the person's only, at the minimums in [triage](#triage). Its refusals are `{ code }`, `Cache-Control: no-store`:
+The writes route's body is `{ writeId, op: "issue/create", title, body }`, `{ writeId, op: "issue/comment", number, body }`, or one of triage's: `{ writeId, op: "issue/triage", number, decision: "accept" | "reject", reason? }`, `{ writeId, op: "triage/run", number }`, `{ writeId, op: "triage/enable", dailyTokens? }`, `{ writeId, op: "triage/pause" }`. A UUID write id, a title of 1 to 256 characters not blank, a body up to 65,000 characters (a comment's not blank), a reason of 1 to 300 characters not blank, a daily budget of 1 to 10,000,000 tokens, a number of 1 to 2,147,483,647, and at most `MAX_WRITE_BYTES`. Triage's writes are the person's only, at the minimums in [triage](#triage).
+
+**Which repository** ([decision 0079](../decisions/0079-roles-per-repository.md)). Opening an issue and commenting go to any repository the deployment may act on: its own (`GITHUB_REPOSITORY`), and any other the App is installed on that `GITHUB_ALLOWED_REPOSITORIES` doesn't leave out. Triage, commitments and merging go only to its own. The role is the person's on the repository the path names: on the deployment's own, the session's; on another, their GitHub permission there, read with an installation token for that repository (`metadata: read`), mapped as on sign-in, and kept 5 minutes in `github_repo_roles` (`worker/github/RepoRoles.ts`). GitHub is asked about the login and account sign-in recorded, and its answer must name that account. The write's transaction records it only while that row still holds the role, and the agent's write, which goes as the App, checks the person on GitHub again each time `github/Write` runs, on every repository: no longer a Member there, or another account under the login, and it settles refused (`not_allowed`). Its refusals are `{ code }`, `Cache-Control: no-store`, in this order:
 
 | Status | `code` | When |
 |---|---|---|
 | 400 | `invalid` | not that body |
 | 401 | `authentication` | signed out, or a person's write without a session (local development's developer) |
-| 403 | `forbidden` | no role on the repository, or the agent's write from a Guest |
-| 404 | `not_found` | a repository this deployment doesn't sync |
-| 409 | `conflict` | the write id was taken by another payload |
+| 403 | `forbidden` | no role on the repository, one below the write's minimum, the agent's write from a Guest, or a role that changed between the read and the write |
+| 404 | `not_found` | not a repository, one `GITHUB_ALLOWED_REPOSITORIES` leaves out, or triage, a commitment or a merge on a repository other than the deployment's own |
+| 404 | `app_not_installed` | the App isn't installed on the repository (GitHub can't tell that from an absent one); the device shows App not installed |
+| 409 | `conflict` | the write id was taken by another payload, another repository's write or another person's |
 | 413 | `too_large` | a body over `MAX_WRITE_BYTES` |
+| 429 | `rate_limited` | GitHub rate limited the role's read; `Retry-After` is GitHub's wait, and the device sends again |
 | 503 | `not_configured` | no GitHub App |
+| 503 | `github_unavailable` | GitHub didn't answer the role's read; the device sends again. A stale role never decides |
 | 503 | `unavailable` | Postgres, sessions or the Durable Object couldn't answer; the device sends again |
 
 ## Writes
@@ -186,7 +191,8 @@ Migrations `0016_github_issues` and `0018_triage`. Synced tables are `REPLICA ID
 | `GITHUB_APP_ID` | none | the Smithers GitHub App's ID; without it, or the key, nothing syncs or writes (`503 not_configured`) |
 | `GITHUB_APP_PRIVATE_KEY` | none | its private key, PEM as GitHub downloads it (PKCS#1) or PKCS#8; `\n`-escaped newlines are fine. A redacted secret |
 | `GITHUB_WEBHOOK_SECRET` | none | the webhook's secret; without it the webhook route refuses every delivery and Reconcile alone keeps the rows fresh |
-| `GITHUB_REPOSITORY` | `smithersai/smithers` | the one repository G0 syncs, the one sign-in reads roles on |
+| `GITHUB_REPOSITORY` | `smithersai/smithers` | the deployment's own repository: the one G0 syncs, the one sign-in reads roles on |
+| `GITHUB_ALLOWED_REPOSITORIES` | none: every repository the App is installed on | `owner/name`s, comma-separated: the other repositories the deployment writes issues and TODOs to. Malformed, the deployment's config fails ([decision 0079](../decisions/0079-roles-per-repository.md)) |
 | `GITHUB_API_URL` | `https://api.github.com` | an http(s) URL |
 
 ChatApi and the `FlowExecution` Durable Object read them with Effect `Config`, so Alchemy binds each one set in the deploying environment ([infrastructure.md](../infrastructure.md#credentials)). A person's own writes also need sign-in configured ([sign-in.md](sign-in.md#configuration)).
@@ -199,7 +205,7 @@ What the App needs, set by its owner in the App's settings on GitHub; each insta
 - **Webhook:** active, URL `<deployment url>/api/github/webhook` (for local development, a tunnel to `http://localhost:1337/api/github/webhook`), content type `application/json`, a secret that is also `GITHUB_WEBHOOK_SECRET`.
 - **Subscribe to events:** Issues, Issue comment, Pull request, Pull request review. (0012 §2's other events wait for branches.)
 - **Secrets:** the App ID as `GITHUB_APP_ID` and a generated private key as `GITHUB_APP_PRIVATE_KEY`.
-- **Installation:** on `GITHUB_REPOSITORY`, and on the scratch repository the live tests use.
+- **Installation:** on `GITHUB_REPOSITORY`, on the scratch repository the live tests use, and on each other repository the deployment should write to (decision 0079). An installation lets the deployment act there; it gives nobody a role.
 
 Spike S0 (0012 §10) isn't needed for this slice: it concerns Code Storage's App mode and pushing branches, which issues don't touch.
 
@@ -262,7 +268,7 @@ The live run found two defects, each fixed with a regression test:
 - Triage: notifying Maintainers when triage pauses for a demoted enabler (0009) logs an Error only; a free-text reason from the flow (it gives one of five codes); Discard on a triage write that wasn't sent; the `?q=triage:proposed` filter; a repository's own triage flow (0005). The flow's spend doesn't raise the deployment's spend alerts.
 - `GITHUB_SYNC_MAX_ITEMS` and the 24-hour full listing that tombstones deleted issues GitHub stops listing; a webhook's `issues.deleted` re-read tombstones them today.
 - The `installation` and `installation_repositories` events, and a cron for Reconcile (`@smthrs/triggers` on Cloudflare, W9).
-- Per-request shape authorization (0007 phase 2): one repository, the one sign-in reads roles on.
+- Per-request shape authorization (0007 phase 2): the issues' shapes, the webhook and Reconcile serve one repository, the deployment's own; an issue opened on another is its write's row and its item, not yet a synced list (decision 0079, Slice 1).
 
 
 ## Issue lifecycle (0018, implementation in progress)

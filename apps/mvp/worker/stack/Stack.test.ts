@@ -628,9 +628,9 @@ test("drop retains published successor admissions after its old run is cancelled
   const published = await runtime.runPromise(Stack.report(attempt, { kind: "published", headSha: "a".repeat(40), prNumber: 1, draft: false }, { runs: true }))
   const dropping = drop(1)
   const receipt = await applyOn(dropping, true)
-  expect(receipt.kind !== "conflict" && receipt.receipt.starts).toEqual(published.starts)
+  expect((receipt.kind === "applied" || receipt.kind === "repeated") && receipt.receipt.starts).toEqual(published.starts)
   const replay = await applyOn(dropping, true)
-  expect(replay.kind !== "conflict" && replay.receipt.starts).toEqual(published.starts)
+  expect((replay.kind === "applied" || replay.kind === "repeated") && replay.receipt.starts).toEqual(published.starts)
   expect(await sql("SELECT id FROM todo_attempts")).toHaveLength(2)
 })
 
@@ -641,9 +641,9 @@ test.each(["working", "in_review"] as const)("only an engine-confirmed cancelled
   if (state === "in_review") await runtime.runPromise(Stack.report(first, { kind: "published", headSha: "b".repeat(40), prNumber: 1, draft: false }, { runs: true }))
   const retry: Stack.Change = { ...drop(1), op: { kind: "retry", number: 1 } }
   const running = await runtime.runPromise(Stack.apply(retry, { runs: true }))
-  expect(running.kind !== "conflict" && running.receipt.outcome).toBe("not_retryable")
+  expect(running).toMatchObject({ kind: "applied", receipt: { outcome: "not_retryable" } })
   const stopped = await runtime.runPromise(Stack.apply({ ...retry, opId: uuid() }, { runs: true, stoppedAttemptId: first.attemptId }))
-  expect(stopped.kind !== "conflict" && stopped.receipt.starts[0]).toMatchObject({ ordinal: 2, todoId: first.todoId })
+  expect(stopped).toMatchObject({ kind: "applied", receipt: { starts: [expect.objectContaining({ ordinal: 2, todoId: first.todoId })] } })
   const stale = await runtime.runPromise(Stack.report(first, { kind: "finished", state: "failed", failure: "implement" }, { runs: true }))
   expect(stale.outcome).toBe("stale")
 })

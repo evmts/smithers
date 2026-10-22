@@ -85,6 +85,8 @@ export type Applied =
   | { readonly kind: "applied"; readonly txid: number; readonly version: number; readonly receipt: Receipt }
   | { readonly kind: "repeated"; readonly receipt: Receipt }
   | { readonly kind: "conflict" }
+  /** `holds` answered false: the person's role changed after the route read it; nothing was recorded. */
+  | { readonly kind: "stale" }
 
 /**
  * Starts and stops the `todo` runs of the attempts the writer records (decision 0016 §1, "Starting runs"): Track B's
@@ -143,10 +145,15 @@ interface Loaded extends Row {
 
 /**
  * Applies `change` to its repository's stack in one transaction; `runs` says whether this host runs TODOs (a
- * `TodoRuns` is provided), and without it no TODO starts. Records a span `stack.apply`, a log line and a count of
- * `changes` by op and outcome, with the repository, op id, number and version: never a title or a prompt.
+ * `TodoRuns` is provided), and without it no TODO starts. A new op applies only while `holds` answers true in the same
+ * transaction: on a repository other than the deployment's own, that the person still has the role the route decided
+ * with (`RepoRoles.holds`, decision 0079 §6). Records a span `stack.apply`, a log line and a count of `changes` by op
+ * and outcome, with the repository, op id, number and version: never a title or a prompt.
  */
-export const apply = (change: Change, options: { readonly runs: boolean; readonly stoppedAttemptId?: string }) =>
+export const apply = <E = never, R = never>(
+  change: Change,
+  options: { readonly runs: boolean; readonly stoppedAttemptId?: string; readonly holds?: Effect.Effect<boolean, E, R> },
+) =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
     const sql = yield* SqlClient.SqlClient
@@ -163,6 +170,7 @@ export const apply = (change: Change, options: { readonly runs: boolean; readonl
           ? ({ kind: "repeated", receipt: decodeReceipt(prior.result) } satisfies Applied)
           : ({ kind: "conflict" } satisfies Applied)
       }
+      if (options.holds !== undefined && !(yield* options.holds)) return { kind: "stale" } satisfies Applied
       const named = change.op.kind !== "commit" ? change.op.number : 0
       if (change.op.kind === "retry" && !change.retryAny) {
         const [owner] = yield* sql<{ readonly createdBy: string }>`
@@ -288,7 +296,11 @@ export const apply = (change: Change, options: { readonly runs: boolean; readonl
         moved,
       } as const
     }))
-    const outcome = applied.kind === "applied" ? applied.receipt.outcome : applied.kind === "repeated" ? "repeated" : "conflict"
+    const outcome = applied.kind === "applied"
+      ? applied.receipt.outcome
+      : applied.kind === "repeated"
+      ? "repeated"
+      : applied.kind
     const fields: Record<string, string | number> = {
       repoId: change.repoId,
       opId: change.opId,
@@ -297,7 +309,9 @@ export const apply = (change: Change, options: { readonly runs: boolean; readonl
       outcome,
       durationMs: (yield* Clock.currentTimeMillis) - startedAt,
     }
-    if (applied.kind !== "conflict" && applied.receipt.number !== undefined) fields.number = applied.receipt.number
+    if ((applied.kind === "applied" || applied.kind === "repeated") && applied.receipt.number !== undefined) {
+      fields.number = applied.receipt.number
+    }
     if (applied.kind === "applied") {
       fields.version = applied.version
       for (const { from, to } of applied.moved) {
@@ -306,7 +320,7 @@ export const apply = (change: Change, options: { readonly runs: boolean; readonl
     }
     yield* Metric.update(Metric.withAttributes(changes, { op: change.op.kind, outcome }), 1)
     yield* Effect.annotateCurrentSpan(fields)
-    yield* Effect.logWithLevel(applied.kind === "conflict" ? "Warn" : "Info")("stack.apply").pipe(
+    yield* Effect.logWithLevel(applied.kind === "conflict" || applied.kind === "stale" ? "Warn" : "Info")("stack.apply").pipe(
       Effect.annotateLogs(fields),
     )
     if (applied.kind === "applied") {

@@ -26,12 +26,12 @@ import { SteerSending, SteerSent } from "../features/runs/schema"
 import { Run } from "../features/status/schema"
 import { Preference } from "../features/theme/schema"
 import { Summary } from "../features/timeline/store"
-import { TodoSendingV1, TodoRequestedV1 } from "./history"
+import { TodoSendingV1, TodoRequestedV2 } from "./history"
 import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending, Todo, TodoRequest } from "../features/todos/schema"
 import { View } from "../features/views/schema"
 import { CuratedRowV1, HomeRowV2 } from "./home-history"
 import { Draft as PluginDraft } from "../plugins/schema"
-import { AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, RequestedV1 } from "./history"
+import { AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, RequestedV1, TodoRequestedV1 } from "./history"
 
 // Every store this device keeps, and its history (decision 0021): each persisted collection, synced or local, and
 // each payload the outbox carries. A store's collection opens only at the version declared here (the app's
@@ -119,11 +119,14 @@ export const SpendSeenStore = Migrations.local({ id: "spend-seen", versions: [Se
 /** TODO drafts. */
 export const TodoDraftsStore = Migrations.local({ id: "todo-drafts", versions: [TodoDraft], getKey: (row) => row.id })
 
-/** Changes to a stack the server took or refused. */
+/**
+ * Changes to a stack the server took or refused. Version 3 (after TODO retry version 2): a change to a repository the App
+ * isn't installed on stays Not sent as App not installed (decision 0079); every version 2 row is a version 3 row.
+ */
 export const TodoRequestedStore = Migrations.local({
   id: "todo-requested",
-  versions: [TodoRequestedV1, TodoRequested],
-  migrations: [Migrations.step(TodoRequestedV1, TodoRequested, (row) => row)],
+  versions: [TodoRequestedV1, TodoRequestedV2, TodoRequested],
+  migrations: [Migrations.step(TodoRequestedV1, TodoRequestedV2, (row) => row), Migrations.step(TodoRequestedV2, TodoRequested, (row) => row)],
   getKey: (row) => row.id,
 })
 

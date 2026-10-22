@@ -34,7 +34,7 @@ const keepOn = (failing: boolean) => {
         id: "todo-requested",
         schema: RequestedRow,
         getKey: (kept) => kept.id,
-        schemaVersion: 2,
+        schemaVersion: 3,
       })
       yield* requested.preload
       if (failing) store.failWrites()

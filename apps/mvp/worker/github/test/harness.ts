@@ -39,11 +39,12 @@ import { FlowStarter, StartConflict } from "../../Flows.ts"
 import { build } from "../../test/flowHost.ts"
 import { signedIn as signedInAs, type testFile } from "../../test/harness.ts"
 import * as Api from "../Api.ts"
-import type { GitHubApp } from "../Config.ts"
+import type { GitHubApp, Repository } from "../Config.ts"
+import * as RepoRoles from "../RepoRoles.ts"
 import * as Host from "../Host.ts"
 import type * as Triage from "../Triage.ts"
 import { REPOSITORY, services as flowServices } from "./fixtures.ts"
-import { APP_ID, SCRIPTED_API, type ScriptedGitHub, scriptedGitHub } from "./scriptedGitHub.ts"
+import { APP_ID, appKey, SCRIPTED_API, type ScriptedGitHub, scriptedGitHub } from "./scriptedGitHub.ts"
 
 type Runtime = ReturnType<typeof testFile>
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
@@ -97,7 +98,18 @@ export interface Options {
   readonly judge?: Triage.Services["judge"]
   /** The database the routes use: the file's schema unless set. */
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
+  /**
+   * The deployment's own repository: `REPOSITORY` unless set. Another one makes `github`'s repository a second
+   * repository the deployment acts on, whose roles GitHub gives (decision 0079).
+   */
+  readonly own?: Repository
+  /** `GITHUB_ALLOWED_REPOSITORIES`, as ids: none unless set. */
+  readonly allowed?: ReadonlySet<string>
+  /** Who has which role where: the real `RepoRoles` unless set, as a test of a faulty one sets it. */
+  readonly roles?: RepoRoles.RepoRoles<never>
 }
+
+let harnessKey: Promise<Redacted.Redacted<string>> | undefined
 
 /** The GitHub routes as a web handler, with what they started and recorded. */
 export const githubHarness = async (runtime: Runtime, options: Options = {}) => {
@@ -167,12 +179,19 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
       }),
   })
 
+  const own = options.own ?? REPOSITORY
+  // A real key, made once per file: a role on another repository is read with the App (decision 0079 §3).
+  const configured = options.app === null
+    ? Option.none<GitHubApp>()
+    : Option.some(options.app ?? app({ privateKey: await (harnessKey ??= appKey()) }))
+  const roles = options.roles ?? await runtime.runPromise(observed(RepoRoles.make(database, {
+    repository: own,
+    app: configured,
+    allowed: Option.fromUndefinedOr(options.allowed),
+    http: github.http,
+  })))
   const routes = await runtime.runPromise(
-    observed(Api.make(database, {
-      repository: REPOSITORY,
-      app: options.app === null ? Option.none() : Option.some(options.app ?? app()),
-      http: github.http,
-    }).pipe(Effect.provideService(Scope.Scope, scope))),
+    observed(Api.make(database, { repository: own, app: configured, roles, http: github.http }).pipe(Effect.provideService(Scope.Scope, scope))),
   )
   // Electric, as the routes call it: each table in this file's schema.
   const tables = new Set([

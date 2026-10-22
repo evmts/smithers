@@ -144,6 +144,11 @@ export interface ScriptedGitHub {
    * organization's custom role with the base permission GitHub reports for it.
    */
   readonly roles: Map<string, string | { readonly roleName: string; readonly permission: string }>
+  /**
+   * The account each login names now, by login: `accountIdOf(login)` unless set. Setting another id is a login that
+   * changed hands after a rename.
+   */
+  readonly accounts: Map<string, number>
   /** Whether the repository is private. */
   private: boolean
   /** GitHub's clock, in epoch ms: the real one, moved on a second at least by each change, so `updated_at` is ordered. */
@@ -207,6 +212,9 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
   })
 
 const decoder = new TextDecoder()
+
+/** The account id GitHub gives `login` unless `accounts` says otherwise: the one `fixtures.signedIn` records. */
+export const accountIdOf = (login: string) => login.length * 1000
 
 /** A scripted GitHub at `https://api.github.test` with the repository `owner/name`, the App installed and granted write. */
 export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub => {
@@ -378,7 +386,14 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       const named = typeof role === "string"
         ? { roleName: role, permission: role === "maintain" ? "write" : role === "triage" ? "read" : role }
         : role
-      return { response: json({ permission: named.permission, role_name: named.roleName, user: { login: collaborator[1] } }) }
+      const login = collaborator[1]!
+      return {
+        response: json({
+          permission: named.permission,
+          role_name: named.roleName,
+          user: { login, id: github.accounts.get(login) ?? accountIdOf(login) },
+        }),
+      }
     }
     if (rest === "/issues" && method === "GET") {
       const listed = sorted(url, live.filter((issue) => issue.updatedAt >= since(url)))
@@ -974,6 +989,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
     labels: new Map(),
     files: new Map(),
     roles: new Map(),
+    accounts: new Map(),
     private: false,
     now: Date.now(),
     minted: [],

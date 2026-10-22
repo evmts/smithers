@@ -89,3 +89,12 @@ export const TodoRequestedV1 = Schema.Struct({
   reason: Schema.NullOr(Schema.Literals(["invalid", "authentication", "forbidden", "not_found", "conflict", "stack_full", "merged", "too_large"])),
   taken: Schema.NullOr(Schema.Number),
 })
+
+export type TodoRequestedV1 = typeof TodoRequestedV1.Type
+
+/** TODO requests with retry, before repository installation refusals. */
+export const TodoRequestedV2 = Schema.Struct({
+  ...TodoRequestedV1.fields,
+  op: Schema.Literals(["commit", "drop", "retry"]),
+  reason: Schema.NullOr(Schema.Literals(["invalid", "authentication", "forbidden", "not_found", "conflict", "stack_full", "merged", "not_retryable", "too_large"])),
+})

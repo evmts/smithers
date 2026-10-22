@@ -21,9 +21,11 @@ import {
   TODOS_SHAPE_ROUTE,
   TODOS_TABLE,
 } from "../../src/features/todos/contract.ts"
-import { refusesPersonOnly, Sessions } from "../Actor.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
+import { repositoryOf as repositoryNamed } from "../github/Config.ts"
+import * as RepoRoles from "../github/RepoRoles.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import { mayChange, mayRead, mayRetryAny, viaOf } from "./Access.ts"
 import * as Stack from "./Stack.ts"
@@ -31,12 +33,14 @@ import * as Stack from "./Stack.ts"
 // The stack's routes in ChatApi (decision 0016 §1, docs/features/todos.md#routes):
 //
 // - `POST /api/repos/<owner>/<name>/stack`: the one way a person, a button, a slash command, the agent or the API changes
-//   a stack. Its body is a closed union of changes, admitted by sign-in, the person's role and bounds, and keyed by the
-//   outbox's op id; the writer (worker/stack/Stack.ts) applies it in one transaction. A repeated op id answers what it
+//   a stack. Its body is a closed union of changes, admitted by sign-in, the person's role on that repository
+//   (`RepoRoles`, decision 0079) and bounds, and keyed by the outbox's op id; the writer (worker/stack/Stack.ts) applies it in one transaction. A repeated op id answers what it
 //   answered; another payload under it is `409 conflict`. Who acts comes from the session (`Actor.act`), never from the
 //   body: only a person in person commits or drops (decision 0016 §3).
 // - `GET /api/shapes/todos?repo=<owner>/<name>` and `GET /api/shapes/todo-requests?repo=...`: one repository's TODOs and
-//   their prompts, for a Member or above. Signed out, `401`; no role, `403`; sessions unreadable, `503`. Never cached.
+//   their prompts, for a Member or above on that repository. Signed out, `401`; no role, or one the deployment can't
+//   read there (the App not installed, the repository left out), `403`; sessions or GitHub unreadable, `503`. Never
+//   cached.
 //
 // Nothing here records a title, a prompt or a login: only ids, numbers, codes and durations.
 
@@ -101,21 +105,31 @@ export const handles = (path: string): boolean =>
 /** What a shape filters on when its `repo` isn't a repository: no repository's id, so it holds no rows. */
 const NO_REPOSITORY = "-"
 
-/** The repository a shape request names in `?repo=<owner>/<name>`: its id, or `NO_REPOSITORY`. */
-const repositoryOf = (url: string): string => {
+/** The repository a shape request names in `?repo=<owner>/<name>`, or `undefined`. */
+const repositoryOf = (url: string) => {
   const [owner = "", name = "", ...rest] = (new URL(url, "http://localhost").searchParams.get("repo") ?? "").split("/")
-  return rest.length === 0 && isRepository(owner, name) ? repoId(owner, name) : NO_REPOSITORY
+  return rest.length === 0 && isRepository(owner, name) ? repositoryNamed(`${owner}/${name}`) : undefined
 }
 
+/** A shape's refusal for a role `RepoRoles` couldn't give: GitHub or Postgres not answering is `503`, the rest `403`. */
+const shapeRefusal = (refused: RepoRoles.RoleRefused) =>
+  RepoRoles.REFUSALS[refused.code] === 503 || refused.code === "rate_limited"
+    ? new ShapeProxy.Refused({ status: 503, retryAfter: refused.retryAfterSeconds })
+    : new ShapeProxy.Refused({ status: 403 })
+
 const noStore = { "cache-control": "no-store" }
-const refusal = (status: number, code: StackRefusal) =>
-  HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+const refusal = (status: number, code: StackRefusal, retryAfterSeconds?: number) =>
+  HttpServerResponse.jsonUnsafe({ code }, {
+    status,
+    headers: retryAfterSeconds === undefined ? noStore : { ...noStore, "retry-after": String(retryAfterSeconds) },
+  })
 
 /**
  * Reads Electric's connection and returns the stack's routes over `database`, which opens a Postgres client for each
- * request's scope. They read who is asking from `Sessions`; a host that runs TODOs provides `Stack.TodoRuns`.
+ * request's scope. They read who is asking from `Sessions`, and their role on the repository from `roles`; a host that
+ * runs TODOs provides `Stack.TodoRuns`.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, roles: RepoRoles.RepoRoles<R>) =>
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
 
@@ -127,8 +141,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           const request = yield* HttpServerRequest.HttpServerRequest
           const actor = yield* ShapeAccess.actor
           if (Option.isNone(actor)) return yield* new ShapeProxy.Refused({ status: 401 })
-          if (!mayRead(actor)) return yield* new ShapeProxy.Refused({ status: 403 })
-          return { table, where: "repo_id = $1", params: { "1": repositoryOf(request.url) }, columns }
+          const repository = repositoryOf(request.url)
+          // A request that names no repository reads no repository's rows.
+          if (repository === undefined) {
+            if (!mayRead(actor)) return yield* new ShapeProxy.Refused({ status: 403 })
+            return { table, where: "repo_id = $1", params: { "1": NO_REPOSITORY }, columns }
+          }
+          const resolved = yield* roles.resolve(actor.value, repository).pipe(Effect.mapError(shapeRefusal))
+          if (!mayRead(Option.some<Actor>({ ...actor.value, role: resolved.role }))) {
+            return yield* new ShapeProxy.Refused({ status: 403 })
+          }
+          return { table, where: "repo_id = $1", params: { "1": repository.id }, columns }
         }),
         name,
         metric,
@@ -171,7 +194,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           // (decision 0017 slice 0).
           const act = admitted.op === "commit" ? "todo/commit" : "todo/drop"
           if (admitted.op !== "retry" && (yield* refusesPersonOnly(who, act))) return refused("forbidden")
-          if (admitted.op === "retry" ? !mayRead(Option.some(who)) : !mayChange(who)) return refused("forbidden")
+          // The role is the person's on this repository, never another's (decision 0079).
+          const resolved = yield* roles.resolve(who, repositoryNamed(`${target.owner}/${target.name}`)).pipe(Effect.result)
+          if (resolved._tag === "Failure") {
+            const { code, retryAfterSeconds } = resolved.failure
+            fields.outcome = code
+            return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
+          }
+          const scopedActor = { ...who, role: resolved.success.role }
+          if (admitted.op === "retry" ? !mayRead(Option.some(scopedActor)) : !mayChange(scopedActor)) return refused("forbidden")
+          const held = resolved.success.held
           let stoppedAttemptId: string | undefined
           if (admitted.op === "retry" && Option.isSome(runs) && runs.value.isStopped !== undefined) {
             const candidate = yield* Stack.retryCandidate(repoId(target.owner, target.name), admitted.number).pipe(Effect.provide(database))
@@ -183,7 +215,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
               repoId: repoId(target.owner, target.name),
               actor: { id: who.subject.id, login: who.login ?? who.subject.id },
               via,
-              retryAny: mayRetryAny(who),
+              retryAny: mayRetryAny(scopedActor),
               op: admitted.op === "commit"
                 ? {
                   kind: "commit",
@@ -194,10 +226,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
                 }
                 : { kind: admitted.op, number: admitted.number },
             },
-            { runs: Option.isSome(runs), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },
+            { runs: Option.isSome(runs), ...(Option.isSome(held) ? { holds: RepoRoles.holds(held.value) } : {}), ...(stoppedAttemptId === undefined ? {} : { stoppedAttemptId }) },
           ).pipe(Effect.provide(database), Effect.catchTag("@smthrs/mvp/stack/RetryForbidden", () => Effect.succeed({ kind: "forbidden" as const })))
           if (applied.kind === "forbidden") return refused("forbidden")
           if (applied.kind === "conflict") return refused("conflict")
+          // The role changed between the read and the change: decided again on the next send.
+          if (applied.kind === "stale") return refused("forbidden")
           const receipt = applied.receipt
           if (Stack.isRefusal(receipt.outcome)) return refused(receipt.outcome)
           // A repeated op starts and stops the same runs again, which changes nothing, so a start an earlier answer

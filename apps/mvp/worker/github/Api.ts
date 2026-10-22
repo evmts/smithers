@@ -60,7 +60,7 @@ import {
   RUNS_TABLE,
   SHA,
 } from "../../src/features/pulls/contract.ts"
-import { REPOS_ROUTE, repoId } from "../../src/features/repo/contract.ts"
+import { isRepository, REPOS_ROUTE, repoId } from "../../src/features/repo/contract.ts"
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
@@ -70,11 +70,12 @@ import * as ShapeAccess from "../ShapeAccess.ts"
 import { Apply, PULL_EVENTS } from "./Apply.ts"
 import * as Compare from "./Compare.ts"
 import { statusOf } from "./Calls.ts"
-import { apiUrl, type GitHubApp, type Repository } from "./Config.ts"
+import { apiUrl, type GitHubApp, type Repository, repositoryOf } from "./Config.ts"
 import { Merge } from "./Merge.ts"
 import * as Metrics from "./Metrics.ts"
 import { Reconcile } from "./Reconcile.ts"
 import * as ReadToken from "./ReadToken.ts"
+import * as RepoRoles from "./RepoRoles.ts"
 import * as Store from "./Store.ts"
 import { TriageRun } from "./Triage.ts"
 import * as TriageStore from "./TriageStore.ts"
@@ -84,9 +85,11 @@ import { Write } from "./Write.ts"
 // - `POST /api/github/webhook`: GitHub's webhook. Verified with `X-Hub-Signature-256` (`Core.Channel` from
 //   `@smthrs/integrations`), it starts `github/Apply` for the issue it names, one execution per delivery, and records
 //   the delivery; it never writes a row itself. A payload names a subject; it never sets state.
-// - `POST /api/repos/<owner>/<name>/writes`: the one door every git write goes through. It checks sign-in, the role,
-//   the App, the repository, the bounds and the payload's hash, records the write, and starts `github/Write` keyed by
-//   the device's write id. The settled row is the result; nothing waits on the remote run.
+// - `POST /api/repos/<owner>/<name>/writes`: the one door every git write goes through. It checks sign-in, the App,
+//   the person's role on the repository the path names (`RepoRoles`, decision 0079), the bounds and the payload's
+//   hash, records the write while that role holds, and starts `github/Write` keyed by the device's write id. The
+//   settled row is the result; nothing waits on the remote run. Opening an issue and commenting go to any repository
+//   the deployment may act on; every other write only to its own.
 // - `GET /api/shapes/{items,comments,github-sync}`: the synced repository's rows, each with its column list, for a
 //   signed-in person with a role on it, or for anyone once GitHub said the repository is public. A read of `items`
 //   that finds the sync older than 5 minutes starts `github/Reconcile` without waiting.
@@ -94,12 +97,19 @@ import { Write } from "./Write.ts"
 // - Triage (§5): the writes route takes a person's Accept or Not accepted, Run triage again, and Enable and Pause, each
 //   at its own minimum role; `issues.opened` starts `triage/Run` while triage is on; and `GET
 //   /api/shapes/triage-settings` serves whether it is.
-// G0 syncs one repository, `GITHUB_REPOSITORY`, the one sign-in reads roles on (decision 0012, Consequences).
+// The webhook, the shapes and Reconcile serve one repository, `GITHUB_REPOSITORY`, the deployment's own (decision
+// 0012, Consequences; decision 0079, Slice 1).
 
 const noStore = { "cache-control": "no-store" }
 
-const refuse = (status: number, code: WriteRefusal | "not_configured" | "invalid_signature") =>
-  HttpServerResponse.jsonUnsafe({ code }, { status, headers: noStore })
+const refuse = (status: number, code: WriteRefusal | "not_configured" | "invalid_signature", retryAfterSeconds?: number) =>
+  HttpServerResponse.jsonUnsafe({ code }, {
+    status,
+    headers: retryAfterSeconds === undefined ? noStore : { ...noStore, "retry-after": String(retryAfterSeconds) },
+  })
+
+/** The writes any repository the deployment may act on takes (decision 0079, Slice 1); the rest only its own. */
+const ANY_REPOSITORY: ReadonlySet<string> = new Set(["issue/create", "issue/comment"])
 
 /** No person's id: what a signed-out writes shape filters on, so it holds no rows. */
 const NOBODY = ""
@@ -273,10 +283,14 @@ const subjectOf = (event: string, payload: unknown) =>
     }))
     : Option.none()
 
-/** What the routes need besides Postgres: the synced repository, and the GitHub App when it is configured. */
-export interface Options {
+/**
+ * What the routes need besides Postgres: the deployment's own repository, the GitHub App when it is configured, and
+ * who has which role on which repository.
+ */
+export interface Options<R = never> {
   readonly repository: Repository
   readonly app: Option.Option<GitHubApp>
+  readonly roles: RepoRoles.RepoRoles<R>
   /** How the routes' own reads reach GitHub (the compare route's): `fetch` unless set. */
   readonly http?: HttpClient.HttpClient
 }
@@ -286,7 +300,7 @@ export interface Options {
  * of each request; `Sessions` (who is asking) and `FlowStarter` (where a remote flow starts) come from the request's
  * context, as RepoApi's do.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options) =>
+export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, options: Options<R>) =>
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const { repository } = options
@@ -460,11 +474,22 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
           if (Option.isNone(actor)) return refused(503, "unavailable")
           if (Option.isNone(actor.value)) return refused(401, "authentication")
-          const who = actor.value.value
-          // Every write needs a role on the repository. No role means a repository the person can't see.
-          if (who.role === null) return refused(403, "forbidden")
+          const signed = actor.value.value
+          if (!isRepository(target.owner, target.name)) return refused(404, "not_found")
+          const repo = repositoryOf(`${target.owner}/${target.name}`)
+          const own = repo.id === repository.id
+          // Every write needs a role on the repository. No role means a repository the person can't see. On the
+          // deployment's own repository that is the session's role, checked before the App as it always was.
+          if (own && signed.role === null) return refused(403, "forbidden")
           if (Option.isNone(options.app)) return refused(503, "not_configured")
-          if (repoId(target.owner, target.name) !== repository.id) return refused(404, "not_found")
+          const resolved = yield* options.roles.resolve(signed, repo).pipe(Effect.result)
+          if (resolved._tag === "Failure") {
+            const { code, retryAfterSeconds } = resolved.failure
+            fields.outcome = code
+            return refuse(RepoRoles.REFUSALS[code], code, retryAfterSeconds)
+          }
+          const who: Actor = { ...signed, role: resolved.success.role }
+          if (who.role === null) return refused(403, "forbidden")
           const text = yield* readBounded(request, MAX_WRITE_BYTES).pipe(Effect.result)
           if (text._tag === "Failure") {
             return text.failure.reason === "too_large" ? refused(413, "too_large") : refused(400, "invalid")
@@ -476,6 +501,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           fields.op = write.op
           fields.via = via
           fields.writeId = write.writeId
+          if (!own && !ANY_REPOSITORY.has(write.op)) return refused(404, "not_found")
           // Triage is the person's own act: anyone acting for them is refused, and counted as such (decision 0017).
           if (write.op !== "issue/create" && write.op !== "issue/comment" && (yield* refusesPersonOnly(who, write.op))) {
             return refused(403, "forbidden")
@@ -490,15 +516,20 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (write.op === "triage/enable" && who.login === undefined) return refused(401, "authentication")
           const payload = payloadOf(write)
           const payloadHash = digestSync(JSON.stringify({ via, ...payload }))
+          const held = resolved.success.held
           const inserted = yield* Store.insertWrite({
             id: write.writeId,
-            repoId: repository.id,
+            repoId: repo.id,
             actorId: who.subject.id,
             sessionId: via === "person" ? who.session ?? null : null,
             via,
             payload,
             payloadHash,
-          }).pipe(Effect.provide(database))
+          }, Option.isSome(held) ? RepoRoles.holds(held.value) : undefined).pipe(Effect.provide(database))
+          // The role changed between the read and the write: decided again on the next send.
+          if (inserted.kind === "stale") return refused(403, "forbidden")
+          // Another repository's or another person's write id is never theirs to resend.
+          if (inserted.kind === "taken") return refused(409, "conflict")
           if (inserted.kind === "existing" && inserted.payloadHash !== payloadHash) return refused(409, "conflict")
           // A new write starts its run; a resend starts the same execution again, which changes nothing, so a start
           // that never reached its Durable Object gets there now. Run triage again is its own run: `triage/Run`

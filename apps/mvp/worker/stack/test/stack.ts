@@ -2,7 +2,7 @@
 // (`pnpm db:up`) and the compose Electric, recording every log line, span and metric. Who is signed in is a test's
 // `Sessions`; a host that runs TODOs is a test's `TodoRuns`, recording each start and stop, or failing them.
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { ConfigProvider, Effect, Layer, Logger, Metric, Tracer } from "effect"
+import { ConfigProvider, Effect, Layer, Logger, Metric, Option, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../../../src/features/todos/contract.ts"
@@ -11,6 +11,8 @@ import type { testFile } from "../../test/harness.ts"
 import { signedIn } from "../../test/harness.ts"
 import * as Api from "../Api.ts"
 import * as Stack from "../Stack.ts"
+import { repositoryOf } from "../../github/Config.ts"
+import * as RepoRoles from "../../github/RepoRoles.ts"
 
 type Runtime = ReturnType<typeof testFile>
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
@@ -65,7 +67,14 @@ export interface StackOptions {
   readonly sessions?: Layer.Layer<Actor.Sessions>
   /** The host's `TodoRuns`: none unless set, as on a host that runs no TODOs. */
   readonly runs?: Runs
+  /** Who has which role where: the deployment's own repository `octo/hello` and no App unless set (decision 0079). */
+  readonly roles?: Partial<RepoRoles.Options>
+  /** A faulty `RepoRoles` in place of the real one. */
+  readonly faultyRoles?: RepoRoles.RepoRoles<never>
 }
+
+/** The deployment's own repository in these tests: the one whose role is the session's. */
+export const OWN_REPOSITORY = repositoryOf("octo/hello")
 
 /** The stack's routes on the file's schema, as ChatApi routes them. */
 export const stackHarness = async (runtime: Runtime, options: StackOptions = {}) => {
@@ -97,7 +106,10 @@ export const stackHarness = async (runtime: Runtime, options: StackOptions = {})
       Effect.provideService(Metric.MetricRegistry, registry),
       Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
     )
-  const api = await runtime.runPromise(observed(Api.make(scratch.database)))
+  const roles = options.faultyRoles ?? await runtime.runPromise(
+    observed(RepoRoles.make(scratch.database, { repository: OWN_REPOSITORY, app: Option.none(), ...options.roles })),
+  )
+  const api = await runtime.runPromise(observed(Api.make(scratch.database, roles)))
   const routes = options.runs === undefined ? api.fetch : api.fetch.pipe(Effect.provide(options.runs.layer))
   const handler = HttpEffect.toWebHandler(
     observed(

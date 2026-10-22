@@ -191,6 +191,7 @@ A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_B
 | `MODEL_DAILY_TOKEN_BUDGET`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_MAX_MESSAGES`, `MODEL_MAX_REQUEST_BYTES`, `MODEL_RESERVATION_EXPIRY` | no | ChatApi | [model-endpoint.md](features/model-endpoint.md#configuration) |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | for sign-in | ChatApi | the Smithers GitHub App's client; without them nobody can sign in, so nobody can ask ([sign-in.md](features/sign-in.md#configuration)) |
 | `GITHUB_REPOSITORY`, `SESSION_MAX_AGE_DAYS`, `ROLE_RECHECK_MINUTES` | no | ChatApi | [sign-in.md](features/sign-in.md#configuration) |
+| `GITHUB_ALLOWED_REPOSITORIES` | no | ChatApi | [issues.md](features/issues.md#configuration) |
 | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` | for issues | ChatApi, FlowExecution | the Smithers GitHub App's ID and private key; without them nothing syncs or writes to GitHub ([issues.md](features/issues.md#configuration)) |
 | `FLOW_EXECUTION_LOCATION` | no | ChatApi, FlowExecution | the Durable Object location hint new remote flow executions are created at, such as `enam` beside a database in us-east-1; unset, near their first caller ([Placement](#placement)) |
 | `TODO_RUNS` | no | ChatApi | `false` switches the coding factory's `todo` run off, so every TODO stays Queued; on otherwise, with the GitHub App ([todos.md](features/todos.md#the-run)) |

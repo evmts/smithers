@@ -152,9 +152,11 @@ export type WriteFailure = (typeof WRITE_FAILURES)[number]
 
 /**
  * The refusal codes the writes route answers with, as `{ code }`: `invalid` (400), `authentication` (401), `forbidden`
- * (403: no role on the repository), `not_found` (404: a repository this deployment doesn't sync), `conflict` (409: the
- * write id was used for another payload), `too_large` (413), `not_configured` (503: no GitHub App) and `unavailable`
- * (503).
+ * (403: no role on the repository, or one below the write's minimum), `not_found` (404: a repository this deployment
+ * doesn't act on, or a write it takes only on its own repository), `app_not_installed` (404: the App isn't installed on
+ * the repository), `conflict` (409: the write id was used for another payload), `too_large` (413), `rate_limited`
+ * (429: GitHub's rate limit, with `Retry-After`), `not_configured` (503: no GitHub App), `github_unavailable` (503:
+ * GitHub didn't answer) and `unavailable` (503), as decision 0079 §7 orders them.
  */
 export const WRITE_REFUSALS = [
   "invalid",
@@ -165,6 +167,9 @@ export const WRITE_REFUSALS = [
   "too_large",
   "not_configured",
   "unavailable",
+  "app_not_installed",
+  "rate_limited",
+  "github_unavailable",
 ] as const
 export type WriteRefusal = (typeof WRITE_REFUSALS)[number]
 
@@ -239,12 +244,19 @@ export const NOT_SENT_REASONS = [
   "not_allowed",
   "app_not_installed",
   "unavailable",
-] as const satisfies ReadonlyArray<Exclude<WriteRefusal, "unavailable" | "not_configured"> | WriteFailure>
+] as const satisfies ReadonlyArray<
+  Exclude<WriteRefusal, "unavailable" | "not_configured" | "rate_limited" | "github_unavailable"> | WriteFailure
+>
 export type NotSentReason = (typeof NOT_SENT_REASONS)[number]
 
-/** The route's refusal of a send, by status: the rest (429, 5xx, no answer) are sent again. */
-export const refusalOf = (status: number | undefined): NotSentReason | undefined =>
-  status === 400
+/**
+ * The route's refusal of a send, by status, and by `code` where one status has two reasons (a 404's App not installed,
+ * decision 0079 §7): the rest (429, 5xx, no answer) are sent again.
+ */
+export const refusalOf = (status: number | undefined, code?: string): NotSentReason | undefined =>
+  status === 404 && code === "app_not_installed"
+    ? "app_not_installed"
+    : status === 400
     ? "invalid"
     : status === 401
     ? "authentication"

@@ -33,6 +33,10 @@ export const classify = (error: unknown): Classified => {
   return status === undefined ? { kind: "retry" } : { kind: "refused", status }
 }
 
+/** Whether GitHub refused a call for its rate limit, primary or secondary (`@smthrs/integrations`' `rateLimited`). */
+export const isRateLimited = (error: unknown): boolean =>
+  Core.IntegrationError.isIntegrationError(error) && error.details?.["rateLimited"] === true
+
 /** GitHub's status for a failed call, when it answered one: for log lines. */
 export const statusOf = (error: unknown): number | undefined =>
   Core.IntegrationError.isIntegrationError(error) ? numberOf(error.details?.["status"]) : undefined

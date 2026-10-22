@@ -162,6 +162,10 @@ export const STACK_REFUSALS = [
   "not_retryable",
   "too_large",
   "unavailable",
+  "app_not_installed",
+  "rate_limited",
+  "github_unavailable",
+  "not_configured",
 ] as const
 export type StackRefusal = (typeof STACK_REFUSALS)[number]
 
@@ -177,6 +181,11 @@ export const REFUSAL_STATUS: Readonly<Record<StackRefusal, number>> = {
   not_retryable: 409,
   too_large: 413,
   unavailable: 503,
+  // The role on a repository other than the deployment's own couldn't be read (decision 0079 §7).
+  app_not_installed: 404,
+  rate_limited: 429,
+  github_unavailable: 503,
+  not_configured: 503,
 }
 
 /** What a stack's writer settles a change as: done (`committed`, `dropped`), or refused for the stack's state. */
@@ -197,7 +206,8 @@ export const NOT_SENT_REASONS = [
   "merged",
   "not_retryable",
   "too_large",
-] as const satisfies ReadonlyArray<Exclude<StackRefusal, "unavailable">>
+  "app_not_installed",
+] as const satisfies ReadonlyArray<Exclude<StackRefusal, "unavailable" | "rate_limited" | "github_unavailable" | "not_configured">>
 export type NotSentReason = (typeof NOT_SENT_REASONS)[number]
 
 /** The route's refusal of a send, by its `code`: the codes this device never sends again; the rest are sent again. */
@@ -215,6 +225,7 @@ export const NOT_SENT_COPY: Readonly<Record<NotSentReason, string>> = {
   merged: "Merged",
   not_retryable: "Can’t retry",
   too_large: "Too long",
+  app_not_installed: "App not installed",
 }
 
 /**

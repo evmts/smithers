@@ -66,6 +66,20 @@ test("any other status is not taken, with its status", async () => {
   expect(await send(origin)).toMatchObject({ _tag: "Failure", failure: { _tag: "WriteNotTaken", status: 409 } })
 })
 
+test("a 404 carries its code, so App not installed isn't Not found; a body with none, or none at all, has no code", async () => {
+  const notInstalled = await serve(json(404, { code: "app_not_installed" }))
+  const refused = await send(notInstalled.origin)
+  expect(refused._tag === "Failure" && refused.failure).toEqual(
+    expect.objectContaining({ _tag: "WriteNotTaken", status: 404, code: "app_not_installed" }),
+  )
+  for (const respond of [json(404, { message: "no" }), (_: IncomingMessage, response: ServerResponse) => response.writeHead(404).end()]) {
+    const { origin } = await serve(respond)
+    const plain = await send(origin)
+    expect(plain).toMatchObject({ _tag: "Failure", failure: { _tag: "WriteNotTaken", status: 404 } })
+    expect(plain._tag === "Failure" && plain.failure.code).toBeUndefined()
+  }
+})
+
 test("a 202 whose body isn't the contract's, or is cut short, is not taken, with its status", async () => {
   const wrong = await serve(json(202, { txid: "41" }))
   expect(await send(wrong.origin)).toMatchObject({ _tag: "Failure", failure: { status: 202 } })
@@ -147,4 +161,15 @@ test("a renewal refused by the server preserves its status and never posts a wri
   const gateway = await serve(json(403, {}))
   expect(await sendAsRun(gateway.origin, credential)).toMatchObject({ _tag: "Failure", failure: { status: 403 } })
   expect(gateway.asked.map((r) => r.url)).toEqual(["/api/runs/queued-run/credential"])
+})
+
+
+test("a malformed 404 body keeps the refusal status without inventing a code", async () => {
+  const gateway = await serve((_, response) => {
+    response.writeHead(404, { "content-type": "application/json" })
+    response.end('{"code":')
+  })
+  const result = await send(gateway.origin)
+  expect(result).toMatchObject({ _tag: "Failure", failure: { status: 404 } })
+  expect(result._tag === "Failure" && result.failure.code).toBeUndefined()
 })

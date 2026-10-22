@@ -2,7 +2,10 @@
 // file's schema of the compose Postgres and Electric (`pnpm db:up`), with remote flows recorded or run on the Node host
 // against the scripted GitHub (worker/github/test/harness.ts). Unhappy paths give the routes a faulty service; nothing
 // intercepts a request.
-import { Effect, Layer, Option, Redacted } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Redacted } from "effect"
+import { FetchHttpClient, HttpEffect } from "effect/http"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -16,6 +19,7 @@ import {
   MAX_WRITE_BYTES,
   reconcileBucketStart,
   reconcileExecutionId,
+  refusalOf,
   SYNC_SHAPE_ROUTE,
   writeExecutionId,
   writesRoute,
@@ -24,11 +28,12 @@ import {
 import * as Actor from "../Actor.ts"
 import { FlowStarter, StartUnavailable } from "../Flows.ts"
 import { testFile } from "../test/harness.ts"
-import { handles, parseWritesPath } from "./Api.ts"
+import { handles, make, parseWritesPath } from "./Api.ts"
 import * as Metrics from "./Metrics.ts"
-import { comments, items, REPOSITORY, reset, signedIn, sql, writeRow } from "./test/fixtures.ts"
+import * as RepoRoles from "./RepoRoles.ts"
+import { comments, items, REPOSITORY, reset, rolesThatRead, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { app, delivery, githubHarness, member, sign, WEBHOOK_SECRET } from "./test/harness.ts"
-import { scriptedGitHub } from "./test/scriptedGitHub.ts"
+import { type ScriptedGitHub, scriptedGitHub } from "./test/scriptedGitHub.ts"
 
 const runtime = testFile("github_api")
 
@@ -182,7 +187,9 @@ describe("POST /api/github/webhook", () => {
   })
 
   test("a start or Postgres that fails answers 503, so GitHub shows the delivery failed", async () => {
+    const actor = member()
     const refusing = await githubHarness(runtime, {
+      actor,
       starter: FlowStarter.of({ start: () => Effect.fail(new StartUnavailable({ errorCode: "down" })) }),
     })
     expect((await refusing.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("issues", issuesEvent(1)))).status).toBe(503)
@@ -258,6 +265,8 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
 
   test("end to end on the Node host: a person's issue and the agent's comment reach GitHub and settle with their rows", async () => {
     const github = scriptedGitHub("acme", "widgets")
+    // The agent's write checks again that Maya is a Member there.
+    github.roles.set("maya", "write")
     const token = github.userToken("maya")
     const person = await signedIn(runtime, { login: "maya", token })
     const actor = member(person.personId, person.sessionId)
@@ -316,9 +325,13 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
     expect(await sql(runtime, `SELECT via FROM github_writes`)).toEqual([{ via: "person" }])
   })
 
-  test("bounds: another repository, a bad body, a blank title, a write too large, a person with no session", async () => {
+  test("bounds: a repository the App isn't on, a bad body, a blank title, a write too large, a person with no session", async () => {
     const h = await githubHarness(runtime)
-    expect((await h.fetch(writesRoute("someone", "else"), post(createWrite()))).status).toBe(404)
+    // A repository the App isn't installed on, asked about for someone GitHub could know.
+    const person = await signedIn(runtime, { login: "maya", token: Redacted.make("ghu_unused") })
+    const elsewhere = await githubHarness(runtime, { actor: { ...member(person.personId, person.sessionId), login: "maya" } })
+    const refused = await elsewhere.fetch(writesRoute("someone", "else"), post(createWrite()))
+    expect([refused.status, await refused.json()]).toEqual([404, { code: "app_not_installed" }])
     for (const body of [
       "not json",
       createWrite({ writeId: "not-a-uuid" }),
@@ -354,7 +367,9 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
       sessions: Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) })),
     })
     expect((await sessionsDown.fetch(writesRoute("acme", "widgets"), post(createWrite()))).status).toBe(503)
+    const actor = member()
     const refusing = await githubHarness(runtime, {
+      actor,
       starter: FlowStarter.of({ start: () => Effect.fail(new StartUnavailable({ errorCode: "down" })) }),
     })
     const write = createWrite()
@@ -364,8 +379,8 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
       outcome: "unavailable",
       errorCode: "@smthrs/mvp/flows/StartUnavailable",
     })
-    // The row stayed pending: the resend starts it.
-    const h = await githubHarness(runtime)
+    // The row stayed pending: the same person's resend starts it.
+    const h = await githubHarness(runtime, { actor })
     expect((await h.fetch(writesRoute("acme", "widgets"), post(write))).status).toBe(200)
     expect(h.starts).toHaveLength(1)
   })
@@ -376,6 +391,207 @@ describe("POST /api/repos/<owner>/<name>/writes", () => {
     const text = JSON.stringify({ logs: h.logs, spans: h.spans.map((span) => [...span.attributes]) })
     expect(text).toContain("github.write.request")
     expect(text).not.toContain(SENTINEL)
+  })
+})
+
+describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 0079)", () => {
+  // The deployment's own repository is acme/home; the scripted GitHub's acme/widgets is a second one it acts on.
+  const OWN = { owner: "acme", name: "home", id: "github/acme/home" } as const
+  const route = writesRoute("acme", "widgets")
+  /** Maya, signed in: sign-in's person, whose login and account GitHub is asked about. */
+  const maya = async (role: Actor.Actor["role"] = "member", login = "maya"): Promise<Actor.Actor> => {
+    const person = await signedIn(runtime, { login, token: Redacted.make("ghu_unused") })
+    return { ...member(person.personId, person.sessionId), role, login }
+  }
+  const permissionReads = (h: { readonly github: ScriptedGitHub }) =>
+    h.github.seen("GET", /\/collaborators\/maya\/permission$/)
+
+  test("opening an issue and commenting: the role is GitHub's there, read once with the App, and the write is that repository's", async () => {
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya("guest") })
+    h.github.roles.set("maya", "write")
+    const write = createWrite()
+    expect((await h.fetch(route, post(write))).status).toBe(202)
+    const comment = { writeId: crypto.randomUUID(), op: "issue/comment", number: 1, body: "Me too" }
+    expect((await h.fetch(route, post(comment))).status).toBe(202)
+    expect(await sql(runtime, `SELECT repo_id AS "repoId", op FROM github_writes ORDER BY created_at`)).toEqual([
+      { repoId: "github/acme/widgets", op: "issue/create" },
+      { repoId: "github/acme/widgets", op: "issue/comment" },
+    ])
+    expect(h.starts.map((start) => start.flow)).toEqual(["github/Write", "github/Write"])
+    // Read once, as the App, with a token minted for that repository with Metadata: read only.
+    expect(permissionReads(h)).toEqual([expect.objectContaining({ token: "installation" })])
+    expect(h.github.minted.map((minted) => minted.body)).toEqual([
+      { repositories: ["widgets"], permissions: { metadata: "read" } },
+    ])
+    expect(await sql(runtime, `SELECT repo_id AS "repoId", role FROM github_repo_roles`)).toEqual([
+      { repoId: "github/acme/widgets", role: "member" },
+    ])
+    expect(h.count(RepoRoles.reads, { source: "github", outcome: "member" })).toBe(1)
+    expect(h.count(RepoRoles.reads, { source: "cached", outcome: "member" })).toBe(1)
+  })
+
+  test("the session's role on the deployment's own repository never decides another's", async () => {
+    // An Admin of acme/home whom GitHub knows nothing of on acme/widgets has no role there.
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya("admin") })
+    const response = await h.fetch(route, post(createWrite()))
+    expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+    expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
+    // A person sign-in recorded no account for has nobody to ask GitHub about, whatever login the request carries.
+    const nameless = await githubHarness(runtime, { own: OWN, actor: { ...member(), role: "admin", login: "maya" } })
+    expect((await nameless.fetch(route, post(createWrite()))).status).toBe(403)
+    expect(nameless.github.seen("GET", /\/permission$/)).toEqual([])
+  })
+
+  test("end to end on the Node host: an issue opened on a second repository reaches GitHub as the person", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "read")
+    const person = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const actor: Actor.Actor = { ...member(person.personId, person.sessionId), login: "maya" }
+    const h = await githubHarness(runtime, { own: OWN, actor, run: true, github })
+    const issue = createWrite({ title: "Opened on a second repository" })
+    expect((await h.fetch(route, post(issue))).status).toBe(202)
+    await h.settled()
+    expect(await writeRow(runtime, issue.writeId)).toMatchObject({ status: "done", itemNumber: 1 })
+    expect([github.issues.get(1)!.login, github.issues.get(1)!.title]).toEqual(["maya", "Opened on a second repository"])
+    // Its row is acme/widgets', not the deployment's own repository's.
+    expect(await items(runtime)).toEqual([expect.objectContaining({ number: 1, writeId: issue.writeId })])
+  })
+
+  test.each([
+    ["signed out", { actor: null }, (): void => {}, 401, "authentication"],
+    ["no GitHub App", { app: null }, (): void => {}, 503, "not_configured"],
+    ["left out of GITHUB_ALLOWED_REPOSITORIES", { allowed: new Set(["github/acme/other"]) }, (): void => {}, 404, "not_found"],
+    ["the App not installed there", {}, (github: ScriptedGitHub): void => void (github.installed = false), 404, "app_not_installed"],
+    ["no role there", {}, (github: ScriptedGitHub): void => void github.roles.delete("maya"), 403, "forbidden"],
+    [
+      "GitHub down",
+      {},
+      (github: ScriptedGitHub): void => void github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 }),
+      503,
+      "github_unavailable",
+    ],
+  ] as const)("%s: %i %s, nothing recorded", async (_, options, fault, status, code) => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    fault(github)
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya(), github, ...options })
+    const response = await h.fetch(route, post(createWrite()))
+    expect([response.status, await response.json()]).toEqual([status, { code }])
+    expect(h.starts).toEqual([])
+    expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
+    // Only a refusal GitHub gave records a role; a deployment that may not act there never asks.
+    if (code === "not_found" || code === "not_configured" || code === "authentication") expect(github.calls).toEqual([])
+  })
+
+  test("GitHub's rate limit: 429 rate_limited with GitHub's wait, which the device waits out and sends again", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 429, headers: { "retry-after": "30" } })
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya(), github })
+    const write = createWrite()
+    const limited = await h.fetch(route, post(write))
+    expect([limited.status, limited.headers.get("retry-after"), await limited.json()]).toEqual([
+      429,
+      "30",
+      { code: "rate_limited" },
+    ])
+    expect(refusalOf(429)).toBeUndefined()
+    expect((await h.fetch(route, post(write))).status).toBe(202)
+  })
+
+  test("a stale role is read again, and GitHub down never lets it decide", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya(), github })
+    expect((await h.fetch(route, post(createWrite()))).status).toBe(202)
+    await sql(runtime, `UPDATE github_repo_roles SET checked_at = now() - interval '6 minutes'`)
+    github.faults.push({ match: (_, path) => path.endsWith("/permission"), status: 502 })
+    expect((await h.fetch(route, post(createWrite()))).status).toBe(503)
+    // Removed on GitHub: the next read says so.
+    github.roles.delete("maya")
+    expect((await h.fetch(route, post(createWrite()))).status).toBe(403)
+    expect(permissionReads(h)).toHaveLength(3)
+    expect(await sql(runtime, `SELECT role FROM github_repo_roles`)).toEqual([{ role: null }])
+  })
+
+  test("only opening an issue and commenting go to another repository: triage, commitments and merging are 404", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "maintain")
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya(), github })
+    for (const write of [
+      { writeId: crypto.randomUUID(), op: "issue/triage", number: 1, decision: "accept" },
+      { writeId: crypto.randomUUID(), op: "issue/commitment", number: 1, commitment: "now" },
+      { writeId: crypto.randomUUID(), op: "triage/run", number: 1 },
+      { writeId: crypto.randomUUID(), op: "triage/enable" },
+      { writeId: crypto.randomUUID(), op: "triage/pause" },
+      { writeId: crypto.randomUUID(), op: "pr/merge", number: 1, headSha: "a".repeat(40), baseSha: "b".repeat(40) },
+    ]) {
+      const response = await h.fetch(route, post(write))
+      expect([write.op, response.status, await response.json()]).toEqual([write.op, 404, { code: "not_found" }])
+    }
+    expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
+  })
+
+  test("a write id is its repository's and its person's: resent to another repository, or by another person, 409", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    const actor = await maya()
+    const h = await githubHarness(runtime, { own: OWN, actor, github })
+    const write = createWrite()
+    expect((await h.fetch(route, post(write))).status).toBe(202)
+    // The deployment's own repository, where Maya's session makes her a Member: the id is acme/widgets' write.
+    const own = await h.fetch(writesRoute("acme", "home"), post(write))
+    expect([own.status, await own.json()]).toEqual([409, { code: "conflict" }])
+    const other = await githubHarness(runtime, { own: OWN, actor: { ...actor, subject: { kind: "person", id: crypto.randomUUID() } }, github })
+    expect((await other.fetch(writesRoute("acme", "home"), post(write))).status).toBe(409)
+    expect(h.starts).toHaveLength(1)
+  })
+
+  test("the agent's write checks the person again when it runs: removed on GitHub meanwhile, it is refused, nothing written", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("maya", "write")
+    github.open("Crash", "Steps")
+    const person = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const agent: Actor.Actor = { ...member(person.personId, person.sessionId), login: "maya", act: { kind: "agent", id: "answer-1" } }
+    const reply = { writeId: crypto.randomUUID(), op: "issue/comment", number: 1, body: "On it" }
+    // Taken while Maya is a Member; then removed before the run writes.
+    expect((await (await githubHarness(runtime, { own: OWN, actor: agent, github })).fetch(route, post(reply))).status).toBe(202)
+    github.roles.delete("maya")
+    const running = await githubHarness(runtime, { own: OWN, actor: agent, run: true, github })
+    expect((await running.fetch(route, post(reply))).status).toBe(200)
+    await running.settled()
+    expect(await writeRow(runtime, reply.writeId)).toMatchObject({ status: "refused", failure: "not_allowed" })
+    expect(github.issues.get(1)!.comments).toEqual([])
+    // A login that changed hands is someone else: refused too.
+    github.roles.set("maya", "write")
+    github.accounts.set("maya", 1)
+    const again = { ...reply, writeId: crypto.randomUUID() }
+    const runAgain = await githubHarness(runtime, { own: OWN, actor: agent, run: true, github })
+    expect((await runAgain.fetch(route, post(again))).status).toBe(202)
+    await runAgain.settled()
+    expect(await writeRow(runtime, again.writeId)).toMatchObject({ status: "refused", failure: "not_allowed" })
+    expect(github.issues.get(1)!.comments).toEqual([])
+  })
+
+  test("a role that changed between the route's read and the write's transaction refuses the write, recording nothing", async () => {
+    const actor = await maya()
+    // GitHub made Maya a Guest after the route read Member: the write's transaction finds the row as it stands.
+    await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role) VALUES ('github/acme/widgets', '${actor.subject.id}', 'guest')`)
+    const h = await githubHarness(runtime, { own: OWN, actor, roles: rolesThatRead(OWN, "member") })
+    const response = await h.fetch(route, post({ writeId: crypto.randomUUID(), op: "issue/comment", number: 1, body: "Me too" }))
+    expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+    expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
+    expect(h.starts).toEqual([])
+  })
+
+  test("no record carries the person's login", async () => {
+    const github = scriptedGitHub("acme", "widgets")
+    github.roles.set("login-sentinel-7d1", "write")
+    const h = await githubHarness(runtime, { own: OWN, actor: await maya("member", "login-sentinel-7d1"), github })
+    expect((await h.fetch(route, post(createWrite()))).status).toBe(202)
+    const text = JSON.stringify({ logs: h.logs, spans: h.spans.map((span) => [...span.attributes]) })
+    expect(text).toContain("github.repo_role")
+    expect(text).not.toContain("login-sentinel-7d1")
   })
 })
 
@@ -436,7 +652,9 @@ describe("the shapes", () => {
     await sql(runtime, `UPDATE github_sync SET synced_at = now() - interval '1 hour'`)
     expect((await shape(off, ITEMS_SHAPE_ROUTE)).status).toBe(200)
     expect(off.starts).toEqual([])
+    const actor = member()
     const refusing = await githubHarness(runtime, {
+      actor,
       starter: FlowStarter.of({ start: () => Effect.fail(new StartUnavailable({ errorCode: "down" })) }),
     })
     expect((await shape(refusing, ITEMS_SHAPE_ROUTE)).status).toBe(200)
@@ -572,4 +790,51 @@ test("a cached public grant fails closed when current GitHub metadata is unavail
   expect((await h.fetch(`${COMMENTS_SHAPE_ROUTE}?offset=-1`)).status).toBe(503)
   expect(h.count(Metrics.visibilityReads, { outcome: "unavailable" })).toBe(1)
   expect(h.line("github.visibility")[0]!.annotations).toMatchObject({ outcome: "unavailable" })
+})
+
+
+test("an encoded invalid repository is refused before a write is admitted", async () => {
+  const h = await githubHarness(runtime)
+  const response = await h.fetch("/api/repos/acme%2Fother/widgets/writes", post(createWrite()))
+  expect(response.status).toBe(404)
+  expect(await response.json()).toEqual({ code: "not_found" })
+  expect(await sql(runtime, "SELECT id FROM github_writes")).toEqual([])
+})
+
+test.each([undefined, "metadata-fixture-token"])("default metadata transport checks current visibility with configured token %s", async (token) => {
+  const seen: Array<string | undefined> = []
+  let status = 200
+  const server = createServer((request, response) => {
+    expect(request.url).toBe("/repos/acme/widgets")
+    seen.push(request.headers.authorization)
+    response.writeHead(status, { "content-type": "application/json" })
+    response.end(JSON.stringify(status === 200 ? { private: true } : { message: "Not Found" }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
+    const config = ConfigProvider.fromUnknown({
+      ELECTRIC_URL: LOCAL_ELECTRIC_URL,
+      GITHUB_API_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+      ...(token === undefined ? {} : { GITHUB_TOKEN: token }),
+    })
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scratch = yield* TestDatabase.Scratch
+      const routes = yield* make(scratch.database, { repository: REPOSITORY, app: Option.none(), roles: rolesThatRead(REPOSITORY, "member") })
+      const handler = HttpEffect.toWebHandler(routes.fetch.pipe(
+        Effect.provide(Actor.signedOut),
+        Effect.provideService(FlowStarter, FlowStarter.of({ start: () => Effect.void })),
+        Effect.provide(FetchHttpClient.layer),
+      ))
+      for (status of [200, 404, 410]) {
+        const response = yield* Effect.promise(() => handler(new Request(`http://app.test${COMMENTS_SHAPE_ROUTE}?offset=-1`)))
+        expect(response.status).toBe(401)
+        expect(yield* Effect.promise(() => response.json())).toEqual({ code: "authentication" })
+      }
+    })).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
+    expect(seen).toEqual(Array(3).fill(token === undefined ? undefined : `Bearer ${token}`))
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  }
 })
