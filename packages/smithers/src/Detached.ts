@@ -28,6 +28,7 @@ import { spawn } from "node:child_process"
 import type { ChildProcess } from "node:child_process"
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, renameSync, unlinkSync } from "node:fs"
 import { join } from "node:path"
+import * as CliError from "./CliError.ts"
 import * as Failure from "./internal/Failure.ts"
 import * as Project from "./Project.ts"
 
@@ -444,7 +445,14 @@ export const launch = async (options: Options): Promise<Launched | Rejected> => 
     carry = text.slice(cut).slice(-carryBytes)
     for (const runId of announcedRunIds(text.slice(0, cut), nonce)) {
       if (!candidates.includes(runId)) {
-        if (candidates.length >= 1024) throw new Error("Detached admission candidate limit exceeded (1024).")
+        if (candidates.length >= 1024) {
+          throw new CliError.ResourceLimitError({
+            operation: "Detached admission candidate limit",
+            subject: "the launch",
+            limit: 1024,
+            unit: "events"
+          })
+        }
         candidates.push(runId)
       }
     }

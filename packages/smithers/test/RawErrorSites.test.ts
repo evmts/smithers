@@ -45,16 +45,6 @@ const reviewed: ReadonlyArray<readonly [file: string, line: string, why: string]
     "the generic sentence around a thrown non-Error"
   ],
   [
-    "src/internal/backend/Client.ts",
-    "if (!Failure.isTagged(error)) return new Error(message)",
-    "re-states an already designed sentence with this session's secrets redacted"
-  ],
-  [
-    "src/internal/backend/Client.ts",
-    "return new Error(message)",
-    "re-states an already designed sentence with this session's secrets redacted"
-  ],
-  [
     "src/internal/backend/Commands.ts",
     "if (!handler) throw new Error(`Missing backend command: ${name}`)",
     "static command-table invariant, thrown while the module loads, never on an operator path"
