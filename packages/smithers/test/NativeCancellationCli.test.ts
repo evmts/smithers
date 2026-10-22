@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as NodeControl from "../src/NodeControl.ts"
 import { commitCancelBeforeCleanup } from "./fixtures/cancel-before-cleanup.ts"
+import { settleNativeCancellation } from "./fixtures/settle-native-cancellation.ts"
 
 const bin = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 const preload = fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url))
@@ -165,6 +166,13 @@ describe("native CLI cancellation", { timeout: 120_000 }, () => {
         expect(control).toHaveLength(1)
         expect(control[0]?.status).toBe("cancelled")
         expect(JSON.parse(control[0]!.state_json).status).toBe("cancelled")
+        if (mode.startsWith("released")) {
+          // ba5cfef17811 leaves observing cancellation cleanup to a driving host.
+          expect(rows(root, "engine").find((row) => row.run_id === runId)?.cancel_requested_at_ms).toEqual(
+            expect.any(Number)
+          )
+          await settleNativeCancellation(root, () => rows(root, "engine").every((row) => row.status === "cancelled"))
+        }
         const engine = rows(root, "engine")
         expect(engine.length).toBeGreaterThanOrEqual(2)
         expect(engine.every((row) => row.status === "cancelled")).toBe(true)

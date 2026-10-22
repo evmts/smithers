@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url"
 import { expect, it } from "vitest"
 import * as NodeControl from "../src/NodeControl.ts"
 import { commitCancelBeforeCleanup } from "./fixtures/cancel-before-cleanup.ts"
+import { settleNativeCancellation } from "./fixtures/settle-native-cancellation.ts"
 
 const modules = fileURLToPath(new URL("../node_modules", import.meta.url))
 const source = `import { Action, Flow } from "@smthrs/flow"
@@ -134,6 +135,11 @@ it.each(["new request", "committed request before native cleanup", "cancel with 
       )
       expect(existsSync(importMarker)).toBe(false)
       expect(receipt).toMatchObject({ _tag: "Terminal", status: "cancelled" })
+      // ba5cfef17811 makes observing hosts record intent without driving cleanup.
+      expect(rows(root).find((row) => row.run_id === runId)?.cancel_requested_at_ms).toEqual(expect.any(Number))
+      expect(rows(root).map((row) => row.status)).toEqual(before.map(() => "suspended"))
+      await settleNativeCancellation(root, () => rows(root).every((row) => row.status === "cancelled"))
+      expect(existsSync(importMarker)).toBe(false)
       expect(rows(root).map((row) => ({ runId: row.run_id, status: row.status }))).toEqual(
         before.map((row) => ({ runId: row.run_id, status: "cancelled" }))
       )
