@@ -1142,7 +1142,16 @@ export const make = (
     // CLIs on one host appear to own the same fence and allowed the loser to
     // re-drive work claimed by the winner.
     const owner = Object.freeze({ hostId: hostname(), pid: process.pid, nonce: randomUUID() })
-    const database = native.database(file).pipe(Layer.orDie)
+    const database = native.database(file).pipe(
+      Layer.tap(() =>
+        authority.databases?.control !== undefined || process.platform === "win32" ?
+          Effect.void :
+          Effect.flatMap(FileSystem.FileSystem, (fs) => fs.chmod(dirname(file), 0o700)).pipe(
+            Effect.provide(native.host)
+          )
+      ),
+      Layer.orDie
+    )
     // A control plane that cannot open its own database has nothing to serve, so
     // a failed open, migration, or journal start is a startup defect rather than
     // a typed control-plane error every command would have to carry.
