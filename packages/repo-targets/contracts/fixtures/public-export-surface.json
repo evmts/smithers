@@ -1728,6 +1728,22 @@
         }
       },
       "reason": "DUR-2: blocking scoring helpers for caller-owned durable actions replace Runner and RunnerLive without a background queue."
+    },
+    {
+      "name": "@smthrs/model",
+      "subpath": "./WireTrace",
+      "development": "./src/WireTrace.ts",
+      "published": {
+        "import": {
+          "types": "./dist/esm/WireTrace.d.ts",
+          "default": "./dist/esm/WireTrace.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WireTrace.d.ts",
+          "default": "./dist/cjs/WireTrace.js"
+        }
+      },
+      "reason": "Reviewed in 9d77a930: model-wire-trace-host changeset and model docs/api.md declare the injected WireTrace service and host layer."
     }
   ],
   "removed": [
