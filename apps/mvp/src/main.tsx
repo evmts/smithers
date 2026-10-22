@@ -174,6 +174,8 @@ const host: Host = {
   clipboard: (text) => navigator.clipboard.writeText(text),
   // `app/navigate` observes the router completing or failing before answering the asking tab.
   navigate: (path) => router.navigate({ href: path }),
+  // A branch's page opened offline loads its route again once the browser is back online (src/features/branch/actions.ts).
+  reopenRoute: () => void router.invalidate(),
   // `app/web/open` (src/features/web/url.ts): `http:` pages on this machine open in a new tab only under the dev
   // server. A person's own `/web … tab` opens its tab here, inside their keypress, when the browser still allows it:
   // `window.open` takes the click's activation when it opens a tab, so an activation still there after it means the

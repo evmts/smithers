@@ -18,6 +18,7 @@ import {
   Scope,
   Semaphore,
   Stream,
+  SubscriptionRef,
 } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { ChatDraftsStore, outboxUpgrade } from "../../device/registry"
@@ -153,6 +154,8 @@ export class ChatStore extends Context.Service<
     readonly lastQueuedAt: Ref.Ref<number>
     /** The browser went offline (`true`) or online (`false`). */
     readonly browserOffline: (offline: boolean) => Effect.Effect<void>
+    /** Whether the browser says it is online: `isOnline` at boot, then its `online` and `offline` events. */
+    readonly browserOnline: SubscriptionRef.SubscriptionRef<boolean>
     /** Retry: syncs and sends now, and gives failing requests `unreachableAfter` again. */
     readonly retryNow: Effect.Effect<void>
     /**
@@ -489,6 +492,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     overdue: false,
     engine: false,
   })
+  const browserOnline = yield* SubscriptionRef.make(host.isOnline())
   const deadline = yield* FiberHandle.make<void, never>()
   // A request sent after failures, or after a restart, that hasn't failed within `reachedAfter` reached Electric: a live
   // request is held there until Postgres changes, so it may not answer for a long time.
@@ -611,7 +615,9 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     pageSize,
     lastQueuedAt: yield* Ref.make(0),
     lead: leader.take,
-    browserOffline: (offline) => update(() => ({ offline })),
+    browserOffline: (offline) =>
+      Effect.andThen(SubscriptionRef.set(browserOnline, !offline), update(() => ({ offline }))),
+    browserOnline,
     // Suspended, so it reconnects the branch conversations open when Retry is pressed, not those open at boot (none).
     retryNow: Effect.suspend(() =>
       Effect.all(

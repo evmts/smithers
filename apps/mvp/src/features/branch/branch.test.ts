@@ -20,6 +20,7 @@ import {
   type TabOptions,
   TestChatApi,
 } from "../../test/chatApi"
+import { retry, wentOffline } from "../chat/actions"
 import { Chat } from "../chat/chat"
 import { BranchClient, TrackRefused } from "./api"
 import { Branch } from "./branch"
@@ -32,7 +33,7 @@ import { Presence } from "../presence/presence"
 import { PresenceStore } from "../presence/store"
 import { CONVERSATION_NAMESPACE } from "./contract"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
-import { opens, tracks } from "./metrics"
+import { opens, reopens, tracks } from "./metrics"
 import { requestTrack } from "./steps"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -75,6 +76,9 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
         sql<{ readonly name: string; readonly mode: string }>`
           SELECT name, mode FROM branches WHERE repo_id = 'github/octo/hello' ORDER BY name`))),
     opened: (outcome: string) => runtime.runSync(Metric.value(Metric.withAttributes(opens, { outcome }))).count,
+    /** Branch pages opened offline that the browser coming back online reopened, or found abandoned. */
+    reopens: (outcome: "reopened" | "abandoned") =>
+      runtime.runSync(Metric.value(Metric.withAttributes(reopens, { outcome }))).count,
     dispatched: () =>
       runtime.runSync(
         Metric.value(Metric.withAttributes(dispatches, { flow: "branch/track", door: "view", outcome: "done" })),
@@ -207,6 +211,61 @@ describe("opening a branch", () => {
     expect(tab.opened(status)).toBe(1)
     expect(tab.api.branches.github.seen).toEqual([])
     expect(await tab.rows()).toEqual([])
+  }, WITHIN)
+
+  test("offline, the page shows at once without waiting for an answer, and opens the branch again once the browser is back online", async () => {
+    let reopened = 0
+    const tab = await open({ reopenRoute: () => void reopened++ })
+    // ChatApi can't answer while the browser is offline: GitHub holds its answer, so the request never ends by itself.
+    const release = tab.api.branches.github.hold()
+
+    const opening = tab.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(tab.api.branches.github.seen).toHaveLength(1))
+    expect(tab.current()).toMatchObject({ status: "tracking" })
+    await tab.runtime.runPromise(wentOffline)
+
+    expect(await opening).toBeUndefined()
+    expect(tab.current()).toMatchObject({ owner: "octo", repo: "hello", name: "feature/one", status: "offline", branchId: null })
+    expect(tab.opened("offline")).toBe(1)
+    expect(tab.place()).toBeNull()
+    expect(reopened).toBe(0)
+
+    // Back online, the route opens again, once; its loader then tracks the branch.
+    release()
+    await tab.runtime.runPromise(retry("online"))
+    await until(() => expect(reopened).toBe(1))
+    const branchId = await tab.actions.open("octo", "hello", "feature/one")
+    expect(tab.current()).toMatchObject({ status: "ready", branchId })
+
+    // A branch opened while the browser is offline doesn't wait at all; leaving it before the browser is back stops the
+    // route opening again.
+    await tab.runtime.runPromise(wentOffline)
+    expect(await tab.actions.open("octo", "hello", "main")).toBeUndefined()
+    expect(tab.current()).toMatchObject({ name: "main", status: "offline" })
+    await tab.actions.leave()
+    await tab.runtime.runPromise(retry("online"))
+
+    // So does its navigation's signal aborting: a newer navigation took over, or the page closed for another route.
+    const closed = new AbortController()
+    await tab.runtime.runPromise(wentOffline)
+    expect(await tab.actions.open("octo", "hello", "main", closed.signal)).toBeUndefined()
+    closed.abort()
+    await tab.runtime.runPromise(retry("online"))
+
+    // Even when it aborts while the open still waits, before the browser goes offline.
+    const hold = tab.api.branches.github.hold()
+    const abandoned = new AbortController()
+    const late = tab.actions.open("octo", "hello", "feature/two", abandoned.signal)
+    await until(() => expect(tab.current()).toMatchObject({ name: "feature/two", status: "tracking" }))
+    abandoned.abort()
+    await tab.runtime.runPromise(wentOffline)
+    expect(await late).toBeUndefined()
+    await tab.runtime.runPromise(retry("online"))
+    hold()
+    // Both aborted pages woke with the browser back online, and neither opened its route.
+    await until(() => expect(tab.reopens("abandoned")).toBe(2))
+    expect(tab.reopens("reopened")).toBe(1)
+    expect(reopened).toBe(1)
   }, WITHIN)
 
   test("a tab whose engine can't run fails to open the branch, and keeps the home conversation", async () => {

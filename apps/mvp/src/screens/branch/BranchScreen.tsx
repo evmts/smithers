@@ -36,7 +36,8 @@ export function BranchScreen() {
   return (
     <main className="branch-screen" aria-label="Repository" data-workspace={open || denied ? "true" : "false"}>
       <RepoHeader />
-      {open ? <BranchHeader access={access} /> : null}
+      {/* Offline before tracking answered: the pending view's public chrome until the route opens again online. */}
+      {open ? <BranchHeader access={access} /> : current?.status === "offline" ? <BranchHeader access={undefined} pending /> : null}
       <div className="branch-screen-view">
         {open && search.terminal !== undefined
           ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} />

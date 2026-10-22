@@ -108,6 +108,8 @@ export interface Host extends ChatHost {
   readonly title?: TabTitle["Service"]
   /** Takes this tab to `path`, an app path: the router's `navigate` (src/features/navigation/tab.ts). */
   readonly navigate: (path: string) => void | Promise<void>
+  /** Opens this tab's route again in place: the router's `invalidate`. A branch opened offline opens again with it. */
+  readonly reopenRoute: () => void
   /** Which outside pages open, and a tab opened from the person's own click or key (src/features/web/actions.ts). */
   readonly web: WebHost
   /**
@@ -191,7 +193,7 @@ export const appLayer = <S = never>(
     Spend.layer.pipe(Layer.provideMerge(SpendStore.layer({ origin }))),
     // The branch workspace (docs/features/branch-workspace.md): the route's branch, who it is shared with, who is on it,
     // and its terminal.
-    Branch.layer({ origin }),
+    Branch.layer({ origin, reopenRoute: host.reopenRoute }),
     Terminal.layer({ origin }),
     // Git issues (decision 0012): the issue pages, and this tab's answers to the issue writes' steps it started.
     Issues.layer,

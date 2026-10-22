@@ -10,6 +10,7 @@ import { Attention } from "../../features/attention/attention"
 import { Auth } from "../../features/auth/auth"
 import { Branch } from "../../features/branch/branch"
 import { BranchStore } from "../../features/branch/store"
+import { retry, wentOffline } from "../../features/chat/actions"
 import { Chat } from "../../features/chat/chat"
 import { CodeIntel } from "../../features/code-intel/codeIntel"
 import { FlowsUi } from "../../features/flows-ui/flowsUi"
@@ -36,10 +37,13 @@ afterEach(async () => {
   for (const dispose of disposables.splice(0).reverse()) await dispose()
 })
 
-const open = async () => {
+const open = async (reopenRoute?: () => void) => {
   const room = await roomHost()
   disposables.push(room.close)
-  const runtime = openFaultyApp({ webSocket: dialing(room.origin, { id: "person-member", name: "member" }) })
+  const runtime = openFaultyApp({
+    webSocket: dialing(room.origin, { id: "person-member", name: "member" }),
+    ...(reopenRoute === undefined ? {} : { reopenRoute }),
+  })
   disposables.push(() => runtime.dispose())
   const [repo, home, views, branch, terminal, issues, pulls, todos, runs, flows, chat, attention, auth, intel, fault, api, status, commands, theme] =
     await runtime.runPromise(Effect.all([
@@ -77,6 +81,9 @@ const open = async () => {
         mine: false, status: "open", createdAt: "2026-10-21T00:00:00Z" })
     })),
     exported: async () => { await runtime.dispose(); return read(api.telemetry) },
+    /** The browser's `offline` and `online` events, as chat's connectivity binding runs them. */
+    offline: () => runtime.runPromise(wentOffline),
+    online: () => runtime.runPromise(retry("online")),
     render: branchRenderer({ chat, auth, repo, branch, intel, status, commands, theme, terminal, attention }),
   }
 }
@@ -176,4 +183,42 @@ test("pending chrome names the destination and hides the previous branch through
   const verified = render()
   expect(verified).toContain('aria-label="Terminal"')
   expect(verified).not.toContain("previous-owner")
+}, 90_000)
+
+test("offline, an evicted device's branch page shows its chrome at once, and its route opens the workspace once the browser is back online", async () => {
+  let router: ReturnType<typeof onBranch> | undefined
+  const tab = await open(() => void router?.invalidate())
+  router = onBranch(tab.context)
+  const entering = router.load()
+  await vi.waitFor(() => expect(tab.current()?.status).toBe("tracking"), { timeout: 10_000 })
+  // Tracking can't answer: the engine holds its start, as it would wait on a ChatApi it can't reach.
+  await tab.offline()
+  await entering
+  await vi.waitFor(() => expect(tab.current()?.status).toBe("offline"), { timeout: 10_000 })
+  const offline = tab.render(router)
+  expect(offline).toContain('aria-label="Branch"')
+  expect(offline).toContain("work")
+  expect(offline).toContain('href="/octo/hello/tree/work?terminal=me"')
+  expect(offline).not.toMatch(/>Owner<|>Can edit<|>Can view<|>Share</)
+  expect(offline).not.toContain('aria-label="Conversation"')
+
+  await tab.release()
+  await tab.online()
+  await vi.waitFor(() => expect(tab.current()?.status).toBe("ready"), { timeout: 40_000 })
+  await vi.waitFor(() => expect(router!.state.status).toBe("idle"), { timeout: 40_000 })
+  const verified = tab.render(router)
+  expect(verified).toContain("Owner")
+  expect(verified).toContain('aria-label="Conversation"')
+
+  // A ref that can't be a branch has no chrome, offline or not.
+  await tab.offline()
+  const missing = createRouter({
+    ...productionRouter.options,
+    context: tab.context,
+    origin: "http://localhost",
+    history: createMemoryHistory({ initialEntries: ["/octo/hello/tree/not..a-branch"] }),
+  })
+  await missing.load()
+  await vi.waitFor(() => expect(tab.current()?.status).toBe("missing"), { timeout: 10_000 })
+  expect(tab.render(missing)).not.toContain('aria-label="Branch"')
 }, 90_000)

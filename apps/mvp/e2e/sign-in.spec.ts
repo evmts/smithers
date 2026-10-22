@@ -391,6 +391,8 @@ test("an ownerless offline activation reopens under verified authority when the 
   // navigator.onLine to true. Correct only its connection state; context.setOffline owns the HTTP fault.
   const network = await tab.device.context.newCDPSession(tab.page)
   await network.send("Network.overrideNetworkState", { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+  // Offline, the evicted device opens as a visitor's: the app's home, or a deployment run's own branch with its public
+  // chrome and no workspace, which only ChatApi can open (src/features/branch/actions.ts, `offline`).
   await tab.ready()
   expect(await tab.page.evaluate(() => navigator.onLine), "the evicted device activates offline").toBe(false)
   await tab.device.online()
@@ -401,6 +403,7 @@ test("an ownerless offline activation reopens under verified authority when the 
   // the new activation makes them its owner: never a new principal on the existing runtime.
   await expect.poll(() => tab.log.some((line) => line.includes("auth.device_identity") && line.includes("reopened")), { timeout: 60_000 }).toBe(true)
   await expect(tab.page.getByRole("button", { name: SIGN_OUT })).toBeVisible({ timeout: 30_000 })
+  await expect(tab.conversation, "the verified page shows its conversation").toBeVisible({ timeout: 30_000 })
   const text = `Recovered authority ${devices.word}`
   const accepted = tab.page.waitForResponse((response) => new URL(response.url()).pathname === QUESTIONS_ROUTE && response.request().postDataJSON()?.text === text)
   await tab.ask(text)

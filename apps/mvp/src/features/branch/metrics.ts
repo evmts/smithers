@@ -9,7 +9,16 @@ export const tracks = Metric.counter("smithers_web_branch_tracks", {
   incremental: true,
 })
 
-/** Branch pages opened, by `outcome`: `ready`, `missing`, `sign_in`, `forbidden` or `failed`. */
+/**
+ * Branch pages opened offline, once the browser is back online, by `outcome`: `reopened` (the route loads again), or
+ * `abandoned` (its navigation was aborted: a newer one took over, or the page closed).
+ */
+export const reopens = Metric.counter("smithers_web_branch_reopens", {
+  description: "Branch pages opened offline, once the browser is back online, by outcome",
+  incremental: true,
+})
+
+/** Branch pages opened, by `outcome`: `ready`, `missing`, `sign_in`, `forbidden`, `failed` or `offline`. */
 export const opens = Metric.counter("smithers_web_branch_opens", {
   description: "Branch pages opened in this browser, by outcome",
   incremental: true,

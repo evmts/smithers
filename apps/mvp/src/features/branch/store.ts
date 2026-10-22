@@ -9,6 +9,13 @@ import { CURRENT, Current } from "./schema"
 export const currentQuery = (current: Collection.Collection<Current, string>) =>
   LiveQuery.make((q) => q.from({ current: current.tanstack }).findOne())
 
+/** Opens this tab's route again in place, so its loader opens the branch once more: the router's `invalidate`. */
+export class BranchRoute extends Context.Service<BranchRoute, { readonly reopen: Effect.Effect<void> }>()(
+  "@smthrs/mvp/branch/BranchRoute",
+) {
+  static readonly layer = (reopen: () => void) => Layer.succeed(BranchRoute, BranchRoute.of({ reopen: Effect.sync(reopen) }))
+}
+
 /**
  * The branch workspace's state for one tab: the route's branch, what follows whether its owner shares it, and the scope
  * its work runs in.

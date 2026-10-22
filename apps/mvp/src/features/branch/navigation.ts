@@ -11,7 +11,7 @@ export const openBranchPage = async (
 ): Promise<void> => {
   try {
     if (signal.aborted) return
-    const branchId = await branch.actions.open(params.owner, params.repo, params.ref)
+    const branchId = await branch.actions.open(params.owner, params.repo, params.ref, signal)
     if (signal.aborted) return
     const { presence, coedit } = branch
     if (branchId === undefined) {

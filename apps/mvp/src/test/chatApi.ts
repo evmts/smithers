@@ -902,6 +902,8 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     theme: { paint: (mode) => void painted.push(mode), mirror: () => {}, system: () => "light", painted: () => painted.at(-1) },
     clipboard: async (text) => void copied.push(text),
     navigate: (path) => void navigated.push(path),
+    // No router runs here: a test that opens a branch offline gives its own (`TabOptions.reopenRoute`).
+    reopenRoute: () => {},
     // No person's click or key reaches a test device, so no tab opens from one; a test of the gesture gives its own.
     web: { policy: { localHttp: false, appOrigin: CHATAPI_ORIGIN }, openTab: () => false },
     engineWorker: agent === undefined ? idleWorker : leaderWorker(agent, engineName, agent.engineStore()),
@@ -1007,6 +1009,8 @@ export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">
   readonly sessionLifecycle?: boolean
   /** The WebSocket a tab's rooms dial, in place of the global one: a room host on loopback (src/test/rooms.ts). */
   readonly webSocket?: Socket.WebSocketConstructor["Service"]
+  /** The default device's `reopenRoute`: what opening the tab's route again does; nothing unless set. */
+  readonly reopenRoute?: () => void
   /**
    * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient`, `TextsClient` or
    * `PullsClient` (test.faults-by-injection).
@@ -1027,13 +1031,13 @@ export type StartFaults = (switches: ShapeSource.Switches) => Effect.Effect<void
 
 const app = (
   api: TestChatApi["Service"],
-  { answers, host, replace: _replace, webSocket: _webSocket, sessionLifecycle: _sessionLifecycle, ...options }: TabOptions,
+  { answers, host, reopenRoute, replace: _replace, webSocket: _webSocket, sessionLifecycle: _sessionLifecycle, ...options }: TabOptions,
 ): AppOptions => ({
   ...options,
   origin: api.origin,
   fetch: api.fetch,
   reload: api.reload,
-  host: host ?? nodeDevice(answers === false ? {} : { agent: api }),
+  host: host ?? nodeDevice({ ...(answers === false ? {} : { agent: api }), ...(reopenRoute === undefined ? {} : { reopenRoute }) }),
 })
 
 /** The browser app on `api` (`appLayer`, as main.tsx's `start` builds it), with the real services. */

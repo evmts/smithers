@@ -28,7 +28,8 @@ export const Refused = Schema.Struct({ code: Schema.Literals(REFUSALS) })
  * - `tracking` while `branch/track` runs;
  * - `ready` with the branch's ids, mode and what this person may do on it;
  * - `missing` when GitHub has no such branch, `sign_in` or `forbidden` when this person may not open it, `failed`
- *   when it couldn't be reached.
+ *   when it couldn't be reached;
+ * - `offline` when the browser went offline before it answered: the route opens it again once the browser is back.
  */
 export const CURRENT = "current"
 export const Current = Schema.Struct({
@@ -36,7 +37,7 @@ export const Current = Schema.Struct({
   owner: Schema.String,
   repo: Schema.String,
   name: Schema.String,
-  status: Schema.Literals(["none", "tracking", "ready", "missing", "sign_in", "forbidden", "failed"]),
+  status: Schema.Literals(["none", "tracking", "ready", "missing", "sign_in", "forbidden", "failed", "offline"]),
   branchId: Schema.NullOr(Schema.String),
   conversationId: Schema.NullOr(Schema.String),
   mode: Schema.NullOr(Schema.Literals(MODES)),

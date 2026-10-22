@@ -506,7 +506,7 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 | `sandbox.box_request` (log) | | ChatApi | `errorCode`: a box's request that couldn't reach its object (502) |
 | `smithers_cloudflare_terminal_connects`, `_sessions_open`, `_bytes`, `_sessions`, `smithers_cloudflare_sandbox_wakes`, `smithers_cloudflare_sandbox_rearms` | counters | `SandboxObject` (`@smthrs/platform-cloudflare`) | `access`, `outcome`, `direction` |
 | `git.proxy` (log), `GitProxy.uploadPack` (span), `git_proxy_requests` | | `SandboxObject` (`@smthrs/effect-code-storage`) | `service`, `outcome`, `status`, `durationMs` |
-| `branch.track`, `branch.open`, `smithers_web_branch_tracks`, `smithers_web_branch_opens`, `chat conversation opened`, `chat conversation shown` | browser | the engine worker and the tab | `outcome`, `status`, `durationMs`, `conversation`, `conversationId` |
+| `branch.track`, `branch.open`, `smithers_web_branch_tracks`, `smithers_web_branch_opens`, `smithers_web_branch_reopens`, `chat conversation opened`, `chat conversation shown` | browser | the engine worker and the tab | `outcome`, `status`, `durationMs`, `conversation`, `conversationId` |
 | `terminal.open`, `terminal.open.press`, `terminal.connect`, `smithers_web_terminal_opens`, `terminal_open_ms`, `terminal_reconnects`, `terminal_bytes`, `terminal_ended` | browser | the engine worker and the tab | `outcome`, `status`, `terminalId`, `branchId`, `durationMs`, `code`, `direction`, `reason` |
 | `branch.share` | log, span | ChatApi | `branchId`, `change` (`person`, `access`, `remove`, `link`), `outcome` (`changed`, `unchanged`, or the refusal), `revoked`, `status`, `durationMs`, `errorCode` |
 | `smithers_branch_shares` | counter | ChatApi | `change`, `outcome` |
