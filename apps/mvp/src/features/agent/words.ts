@@ -46,10 +46,11 @@ const FAILURE_TAG = /\b(?:[A-Z][a-z]+)+(?:Refused|Forbidden|Unavailable|NotFound
 const ID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
 
 /**
- * A fenced code block, closed: what a person asked to see, such as their own flow's code, which may name the flows it
- * calls. An unclosed fence hides nothing.
+ * A fenced code block, closed as Markdown closes it, by a fence of the same character at least as long, either one
+ * indented up to three spaces: what a person
+ * asked to see, such as their own flow's code, which may name the flows it calls. An unclosed fence hides nothing.
  */
-const FENCED = /^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[ \t]*$/gm
+const FENCED = /^ {0,3}(?:(`{3,})(?!`)[^`\n]*\n[\s\S]*?^ {0,3}\1`*|(~{3,})(?!~)[^\n]*\n[\s\S]*?^ {0,3}\2~*)[ \t]*$/gm
 
 /** The internal names `text` shows a person, each once, in the order they first appear, past its fenced code. */
 export const internalNames = (text: string): ReadonlyArray<string> => {

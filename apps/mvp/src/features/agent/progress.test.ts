@@ -39,7 +39,7 @@ describe("fold", () => {
   })
 
   test("the text is the reply's ctx.done literal as far as it has arrived; a new call or a retry starts it over", () => {
-    const first = replay(delta("```cell\nconst a = 1\n"), delta("ctx.done(\"Hel"), delta("lo"))
+    const first = replay(delta("```cell\n"), delta("ctx.done(\"Hel"), delta("lo"))
     const cut = fold(first, event({ _tag: "model-retried" }))
     const again = replay(
       delta("```cell\nctx.done(\"Hi\")\n```"),
@@ -63,6 +63,32 @@ describe("fold", () => {
     expect(fold(waiting, cellSettled("settled")).text).toBe("Deleted your flow.")
     expect(fold(waiting, cellSettled("raised")).text).toBe("Looking.")
     expect(fold(fold(waiting, cellSettled("raised")), cellSettled("settled")).text).toBe("Looking.")
+    // Any code before ctx.done holds it, however the call is spelled.
+    for (const code of ["await ctx . call(\"flow/delete\", {})", "const c = ctx; await c.call(\"flow/delete\", {})", "const a = 1"]) {
+      expect(replay(delta(`\`\`\`cell\n${code}\nctx.done("Deleted your flow.")\n\`\`\``)).text).toBe("")
+    }
+    // Only a lone ctx.done of one literal streams: a done in another block, or an interpolation, holds it.
+    const fence = "```"
+    expect(replay(delta(`${fence}text\nctx.done("Example")\n${fence}\n${fence}cell\nawait ctx.call("flow/delete", {})\nctx.done("Deleted.")\n${fence}`)).text)
+      .toBe("")
+    expect(replay(delta(`${fence}cell\nctx.done(\`Deleted \${await ctx.call("flow/delete", {})}\`)\n${fence}`)).text).toBe("")
+    expect(replay(delta(`${fence}cell\nctx.done('Done.');\n${fence}`)).text).toBe("Done.")
+    // A text that streamed before the reply showed more is taken back to what the answer showed before the reply.
+    const taken = replay(
+      delta("```cell\nctx.done(\"Looking.\")\n```"),
+      event({ _tag: "model-requested" }),
+      delta("```cell\nctx.done(`Deleted your flow."),
+      delta("${await ctx.call(\"flow/delete\", {})}`)\n```"),
+    )
+    expect(taken.text).toBe("Looking.")
+    // With nothing shown before, it is taken back to nothing, written as such: an unset text would leave the row's.
+    const first = replay(delta("```cell\nctx.done(`Deleted your flow."), delta("${await ctx.call(\"flow/delete\", {})}`)"))
+    expect(first.text).toBe("")
+    // A block of any tag before the cell runs too.
+    for (const tag of ["js", "ts", "typescript", "javascript", ""]) {
+      const reply = `\`\`\`${tag}\nawait ctx.call("flow/delete", {})\n\`\`\`\n\`\`\`cell\nctx.done("Deleted your flow.")\n\`\`\``
+      expect([tag, replay(delta(reply)).text]).toEqual([tag, ""])
+    }
   })
 
   test("sums each call's tokens, and remembers how a model call failed", () => {

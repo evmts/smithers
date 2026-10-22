@@ -13,6 +13,15 @@ describe("internalNames", () => {
     const fence = "`".repeat(3)
     expect(internalNames(`Here it is:\n${fence}ts\nflows: ["app/web/open"]\n${fence}\nIt opens the docs.`)).toEqual([])
     expect(internalNames(`${fence}ts\nconst a = 1\n${fence}\nI ran app/web/open.`)).toEqual(["app/web/open"])
+    // A longer fence closes a shorter one, as Markdown renders it: what follows is prose.
+    expect(internalNames(`${fence}ts\nconst a = 1\n${fence}\`\nI ran app/web/open.\n${fence}\n`)).toEqual(["app/web/open"])
+    expect(internalNames(`~~~\nflows: ["app/web/open"]\n~~~~\nDone.`)).toEqual([])
+    // Up to three spaces may indent a fence, at either end.
+    expect(internalNames(`${fence}ts\nconst a = 1\n  ${fence}\nI ran app/web/open.\n${fence}`)).toEqual(["app/web/open"])
+    expect(internalNames(`   ${fence}ts\nflows: ["app/web/open"]\n ${fence}\nDone.`)).toEqual([])
+    // A shorter fence never closes a longer one.
+    expect(internalNames(`~~~~\napp/web/open\n~~~`)).toEqual(["app/web/open"])
+    expect(internalNames(`${fence}\`\napp/web/open\n${fence}`)).toEqual(["app/web/open"])
     // A fence never closed hides nothing.
     expect(internalNames(`${fence}ts\nI ran app/web/open.`)).toEqual(["app/web/open"])
   })

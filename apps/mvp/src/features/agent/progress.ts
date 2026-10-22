@@ -23,6 +23,8 @@ export interface Progress {
    * for the person's approval, and the text would say done what isn't.
    */
   readonly held?: string | undefined
+  /** What the answer showed when the current reply began: what a reply that turns out to hold its text goes back to. */
+  readonly before?: string | undefined
   readonly parts: ReadonlyArray<Part>
   readonly inputTokens: number
   readonly outputTokens: number
@@ -40,8 +42,22 @@ export const empty: Progress = {
   modelFailure: undefined,
 }
 
-/** Whether a reply's cell calls a flow, so its `ctx.done(` text holds only once the cell settles. */
-const CALLS = /\bctx\.call\s*\(/
+/** A reply's fenced blocks, closed or still streaming, as the harness reads them, whatever their tag. */
+const FENCE = /^```[^\n`]*\r?\n([\s\S]*?)(?:\n?^```[ \t]*(?=\r?$)|(?![\s\S]))/gm
+
+/**
+ * Whether a reply's blocks do anything but one `ctx.done(` of a literal: then its text holds until the cell settles,
+ * since a call may fail or wait for the person, however it is spelled. Every block counts, whatever its tag, a superset
+ * of the ones the harness runs (`cell`, `js`, `ts` and their long names).
+ */
+const doesMore = (reply: string): boolean => {
+  const program = [...reply.matchAll(FENCE)].map((block) => block[1]).join("\n")
+  return !DONE_ALONE.test(program)
+}
+
+/** A program that is one `ctx.done(` of one literal, closed or still arriving, with no `${` to run code in it. */
+const DONE_ALONE =
+  /^\s*ctx\.done\s*\(\s*(?:"(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?|`(?:[^`\\$]|\\.|\$(?!\{))*`?)?\s*\)?\s*;?\s*$/
 
 /** A rate-limit code or status on a failed model call. */
 const rateLimited = (code: string, httpStatus: number | undefined) =>
@@ -72,12 +88,13 @@ export const fold = (progress: Progress, event: AgentEvent.AgentEvent): Progress
     }
     case "model-requested":
     case "model-retried":
-      return { ...progress, reply: "", held: undefined }
+      return { ...progress, reply: "", held: undefined, before: progress.text }
     case "model-delta": {
       if (event.delta.type !== "text-delta") return progress
       const reply = progress.reply + event.delta.text
       const text = Option.getOrUndefined(DoneText.project(reply))
-      if (text !== undefined && CALLS.test(reply)) return { ...progress, reply, held: text }
+      // Holding, the answer takes back anything this reply showed before it was seen to do more.
+      if (text !== undefined && doesMore(reply)) return { ...progress, reply, held: text, text: progress.before ?? "" }
       return text === undefined || text === progress.text ? { ...progress, reply } : { ...progress, reply, text }
     }
     case "cell-settled": {
