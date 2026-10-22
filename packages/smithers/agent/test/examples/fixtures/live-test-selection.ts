@@ -3,7 +3,9 @@
  *
  * @since 0.1.0
  */
+import { registerRootCleanup } from "../../../../../repo-targets/test-utils/vitest-root-temp.mjs"
 import assert from "node:assert/strict"
+import { existsSync } from "node:fs"
 import { createVitest } from "vitest/node"
 
 const implementations = new Set([
@@ -26,7 +28,9 @@ const runner = await createVitest("test", { config: false, watch: false, maxWork
     }
   }]
 })
+const rootScratch: string = Reflect.get(runner, "_tmpDir")
 try {
+  registerRootCleanup(runner)
   // Static collection cannot evaluate environment-dependent skipIf conditions
   // or Effect test options. Import the declarations without running their bodies.
   const { testModules, unhandledErrors } = await runner.collect([
@@ -46,4 +50,5 @@ try {
   process.stdout.write(JSON.stringify(tests))
 } finally {
   await runner.close()
+  assert.equal(existsSync(rootScratch), false, "collection must reclaim root SSR scratch")
 }
