@@ -12,10 +12,10 @@ import { Mode, Preference, THEME } from "./schema"
 
 /** What the browser gives the theme: the page to paint, the mirror, and what the page shows without a preference. */
 export interface ThemeHost {
-  /** Sets `<html data-theme>` to `mode`. */
-  readonly paint: (mode: ThemeMode) => void
-  /** Writes the mode where index.html reads it before the store opens: `localStorage`. */
-  readonly mirror: (mode: ThemeMode) => void
+  /** Sets `<html data-theme>` to `mode`, or removes it to follow the system. */
+  readonly paint: (mode: ThemeMode | undefined) => void
+  /** Writes the mode to `localStorage`, or removes the mirror to follow the system. */
+  readonly mirror: (mode: ThemeMode | undefined) => void
   /** The system's mode (`prefers-color-scheme`): what the page shows while there is no preference. */
   readonly system: () => ThemeMode
   /**
@@ -68,7 +68,7 @@ export class ThemeStore extends Context.Service<
             Effect.sync(() => {
               for (const change of changes) {
                 // Without a preference the page follows the system again.
-                const mode = change.type === "delete" ? host.system() : change.value.mode
+                const mode = change.type === "delete" ? undefined : change.value.mode
                 host.paint(mode)
                 host.mirror(mode)
               }

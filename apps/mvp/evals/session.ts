@@ -162,7 +162,7 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
         calls: [...inspection.children]
           .sort((a, b) => a.createdAtMs - b.createdAtMs)
           .map((child) => ({ flow: child.flowName, input: parsed(child.input.text), status: child.status })),
-        painted: [...device.painted],
+        painted: device.painted.filter((mode) => mode !== undefined),
         navigated: [...device.navigated],
         views: views.map((view): View => ({
           template: view.template,

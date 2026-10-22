@@ -10,7 +10,7 @@ import { build } from "../../../worker/test/flowHost.ts"
 import { ClientEngine, FlowDispatch } from "../../flows/dispatch"
 import { TabCallFailed, TabPort } from "../../flows/tabPort"
 import type { ThemeMode } from "./contract"
-import { Preferences, PreferencesUnavailable, registration, SetTheme, workerPreferences } from "./flows"
+import { Preferences, registration, SetTheme, workerPreferences } from "./flows"
 import { tabHandlers, tabPreferences, ThemeStore } from "./store"
 import { Theme } from "./theme"
 
@@ -21,8 +21,8 @@ afterEach(async () => {
 
 /** A tab's theme store in Node, on a host that records what it painted and mirrored. */
 const openStore = async (system: ThemeMode = "light", paintedAtBoot?: ThemeMode) => {
-  const painted: Array<ThemeMode> = []
-  const mirrored: Array<ThemeMode> = []
+  const painted: Array<ThemeMode | undefined> = []
+  const mirrored: Array<ThemeMode | undefined> = []
   const scope = Effect.runSync(Scope.make())
   disposables.push(() => Effect.runPromise(Scope.close(scope, Exit.void)))
   const context = await Effect.runPromise(
@@ -33,14 +33,14 @@ const openStore = async (system: ThemeMode = "light", paintedAtBoot?: ThemeMode)
           mirror: (m) => void mirrored.push(m),
           system: () => system,
           // What index.html painted from the mirror before the store opened, then each paint since.
-          painted: () => painted.at(-1) ?? paintedAtBoot,
+          painted: () => painted.length > 0 ? painted.at(-1) : paintedAtBoot,
         })
           .pipe(Layer.provide(Persistence.memory)),
       ),
     ),
   )
   const run = <A, E>(effect: Effect.Effect<A, E, ThemeStore>) => Effect.runPromise(Effect.provide(effect, context))
-  return { run, store: Context.get(context, ThemeStore), painted, mirrored }
+  return { run, store: Context.get(context, ThemeStore), painted, mirrored, setSystem: (mode: ThemeMode) => { system = mode } }
 }
 
 const until = (check: () => boolean) => vi.waitFor(() => expect(check()).toBe(true), { timeout: 2_000, interval: 10 })
@@ -72,14 +72,18 @@ describe("ThemeStore", () => {
   })
 
   test("follows the system again when the preference is gone", async () => {
-    const { store, painted } = await openStore("dark")
+    const { store, painted, mirrored, setSystem } = await openStore("dark", "dark")
     await Effect.runPromise(store.write("light"))
     await until(() => painted.at(-1) === "light")
 
     await Effect.runPromise(store.preferences.delete("theme"))
-    await until(() => painted.at(-1) === "dark")
+    await until(() => painted.length === 2)
 
+    expect(painted).toEqual(["light", undefined])
+    expect(mirrored).toEqual(["light", undefined])
     expect(await Effect.runPromise(store.current)).toBe("dark")
+    setSystem("light")
+    expect(await Effect.runPromise(store.current)).toBe("light")
   })
 
   test("the tab's Preferences and its answers to the engine worker write the same store", async () => {
@@ -117,10 +121,10 @@ describe("the engine worker's Preferences", () => {
     expect(calls).toEqual([["app/theme/write", { mode: "dark" }]])
   })
 
-  test("a tab that doesn't answer is PreferencesUnavailable", async () => {
-    const exit = await over((method) => Effect.fail(new TabCallFailed({ method, reason: "timeout" })))
-
-    expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new PreferencesUnavailable())
+  test.each(["timeout", "unknown_method", "refused"] as const)("preserves the tab failure reason: %s", async (reason) => {
+    const cause = new TabCallFailed({ method: "app/theme/write", reason })
+    const exit = await over(() => Effect.fail(cause))
+    expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toMatchObject({ _tag: "@smthrs/mvp/theme/PreferencesUnavailable", cause })
   })
 })
 
@@ -129,7 +133,7 @@ describe("the theme button's toggle", () => {
   const openTheme = async (system: ThemeMode) => {
     const scope = Effect.runSync(Scope.make())
     disposables.push(() => Effect.runPromise(Scope.close(scope, Exit.void)))
-    const painted: Array<ThemeMode> = []
+    const painted: Array<ThemeMode | undefined> = []
     const store = ThemeStore.layer({
       paint: (m) => void painted.push(m),
       mirror: () => {},

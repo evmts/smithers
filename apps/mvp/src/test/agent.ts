@@ -92,8 +92,8 @@ export const openAgent = async (
     const url = new URL(input instanceof Request ? input.url : String(input))
     return h.fetch(`${url.pathname}${url.search}`, input instanceof Request ? input : init)
   }) as typeof globalThis.fetch
-  const painted: Array<ThemeMode> = []
-  const mirrored: Array<ThemeMode> = []
+  const painted: Array<ThemeMode | undefined> = []
+  const mirrored: Array<ThemeMode | undefined> = []
   const device = ThemeStore.layer({
     paint: (mode) => void painted.push(mode),
     mirror: (mode) => void mirrored.push(mode),

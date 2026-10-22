@@ -49,7 +49,7 @@ const open = async (
 ) => {
   const scope = Effect.runSync(Scope.make())
   scopes.push(scope)
-  const painted: Array<"light" | "dark"> = []
+  const painted: Array<"light" | "dark" | undefined> = []
   const store = ThemeStore.layer({
     paint: (mode) => void painted.push(mode),
     mirror: () => {},
@@ -407,7 +407,7 @@ describe("FlowDispatch", () => {
   test("binds the app's registry over this device's engine, minting an execution id per dispatch", async () => {
     const scope = Effect.runSync(Scope.make())
     scopes.push(scope)
-    const painted: Array<"light" | "dark"> = []
+    const painted: Array<"light" | "dark" | undefined> = []
     const store = ThemeStore.layer({
       paint: (mode) => void painted.push(mode),
       mirror: () => {},

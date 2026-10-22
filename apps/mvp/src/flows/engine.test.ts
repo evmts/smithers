@@ -91,7 +91,7 @@ describe("the tab's side", () => {
     expect(Context.get(engine, TabWorker)).toBe(worker)
     expect(await write("dark")).toEqual(unanswered)
 
-    const painted: Array<ThemeMode> = []
+    const painted: Array<ThemeMode | undefined> = []
     const store = ThemeStore.layer({
       paint: (mode) => void painted.push(mode),
       mirror: () => {},

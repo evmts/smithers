@@ -1,7 +1,7 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node, Placement } from "@smthrs/plan"
 import { Context, Effect, Layer, Schema } from "effect"
-import { TabPort } from "../../flows/tabPort"
+import { TabCallFailed, TabPort } from "../../flows/tabPort"
 import { Mode } from "./schema"
 
 // `app/theme/set { mode }` (docs/features/flows.md#the-theme): the first client flow. A setter, not a toggle, so a
@@ -12,7 +12,7 @@ import { Mode } from "./schema"
 /** This device's preferences could not be written: the tab that holds them didn't answer. */
 export class PreferencesUnavailable extends Schema.TaggedError<PreferencesUnavailable>()(
   "@smthrs/mvp/theme/PreferencesUnavailable",
-  {},
+  { cause: Schema.optional(TabCallFailed) },
 ) {}
 
 /** Where this device's preferences are written. */
@@ -58,7 +58,7 @@ export const workerPreferences = Layer.effect(
     const port = yield* TabPort
     return Preferences.of({
       setTheme: (mode) =>
-        port.call(WriteTheme.name, { mode }).pipe(Effect.asVoid, Effect.mapError(() => new PreferencesUnavailable())),
+        port.call(WriteTheme.name, { mode }).pipe(Effect.asVoid, Effect.mapError((cause) => new PreferencesUnavailable({ cause }))),
     })
   }),
 )

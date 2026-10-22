@@ -734,7 +734,7 @@ export interface NodeDevice extends Host {
   /** How many rows the device's SQLite file holds for `collection`. */
   readonly stored: (collection: string) => number
   /** Every mode the theme painted on this device's page, in order. */
-  readonly painted: ReadonlyArray<ThemeMode>
+  readonly painted: ReadonlyArray<ThemeMode | undefined>
   /** Every text written to this device's clipboard, in order. */
   readonly copied: ReadonlyArray<string>
   /** Every path this device's tabs navigated to, in order. */
@@ -875,7 +875,7 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
   }
   const device = `mvp-device-${crypto.randomUUID()}`
   const locks = navigator.locks
-  const painted: Array<ThemeMode> = []
+  const painted: Array<ThemeMode | undefined> = []
   const copied: Array<string> = []
   const navigated: Array<string> = []
   const engineName = `${device}-engine`

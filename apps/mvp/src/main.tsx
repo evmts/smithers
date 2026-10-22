@@ -152,10 +152,14 @@ const host: Host = {
   // The theme paints `<html data-theme>`, which @smthrs/ui's palette reads, and mirrors the mode into localStorage,
   // which index.html paints from before the store opens. Without a preference the page follows the system.
   theme: {
-    paint: (mode) => document.documentElement.setAttribute(THEME_ATTRIBUTE, mode),
+    paint: (mode) => {
+      if (mode === undefined) document.documentElement.removeAttribute(THEME_ATTRIBUTE)
+      else document.documentElement.setAttribute(THEME_ATTRIBUTE, mode)
+    },
     mirror: (mode) => {
       try {
-        localStorage.setItem(THEME_MIRROR_KEY, mode)
+        if (mode === undefined) localStorage.removeItem(THEME_MIRROR_KEY)
+        else localStorage.setItem(THEME_MIRROR_KEY, mode)
       } catch {
         // Storage blocked: the store still has the mode, and the next load paints it once the store opens.
       }

@@ -72,7 +72,7 @@ export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: Devi
   )
 
   // The tab: its store, its view of the engine, and dispatch; its "worker" is port2.
-  const painted: Array<ThemeMode> = []
+  const painted: Array<ThemeMode | undefined> = []
   const terminated: Array<boolean> = []
   const worker = {
     postMessage: (message: unknown) => channel.port2.postMessage(message),
