@@ -266,9 +266,11 @@ discover configured provider environment variables; each entry names an `id`,
 `provider`, and optional `tokenEnv` or `credentialId`. Workspace configuration
 selects among host-authorized pairings rather than creating them: an entry may
 name only its provider's own credential variables plus any listed in
-`SMITHERS_INTEGRATION_TOKEN_ENV`, and only its provider's public API origin plus
-the one named by `SMITHERS_GITHUB_API_BASE_URL`, `SMITHERS_LINEAR_API_BASE_URL`,
-or `SMITHERS_TELEGRAM_API_BASE_URL`.
+`SMITHERS_INTEGRATION_TOKEN_ENV`. A stored `credentialId` must be listed in the
+host's comma-separated `SMITHERS_GITHUB_CREDENTIAL_IDS`; none are authorized by
+default. Destinations are restricted to GitHub's public API origin and the one
+named by `SMITHERS_GITHUB_API_BASE_URL`. These host settings stay outside the
+repository configuration.
 
 `serve` (also available as `gateway`) hosts the trigger scheduler; `triggers serve` runs it separately.
 Scheduled and manual occurrences preserve approval requirements. Disabling a
@@ -283,7 +285,11 @@ before the run ID is recorded remains `cancelling` while the scheduler
 reconciles the durable launch key. Any accepted run is recorded and cancelled.
 Recovery retries interrupted cancellation. An unresolved cancellation reports
 an error so the scheduler retains the active handle for recovery. Cancelling
-a waiting plan prevents its launch.
+a waiting plan prevents its launch. Inspections serialize across processes on
+`.flows/trigger-inspections.db`, independently of the control database, so a
+stale parked receipt cannot undo another inspection's unresolved launch. A
+crashed inspector releases the database lock; the next inspection reconciles
+the same durable launch key.
 
 ## Telemetry
 

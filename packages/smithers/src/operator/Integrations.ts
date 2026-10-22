@@ -62,7 +62,8 @@ const authority = {
   github: {
     tokenEnv: ["SMITHERS_GITHUB_TOKEN", "GITHUB_TOKEN"],
     apiBaseUrl: GitHub.Config.DEFAULT_API_BASE_URL,
-    apiBaseUrlEnv: "SMITHERS_GITHUB_API_BASE_URL"
+    apiBaseUrlEnv: "SMITHERS_GITHUB_API_BASE_URL",
+    credentialIdsEnv: "SMITHERS_GITHUB_CREDENTIAL_IDS"
   }
 } as const
 
@@ -109,6 +110,17 @@ const authorize = (item: Integration, env: Readonly<Record<string, string | unde
       "policy",
       `Integration ${item.id} names unauthorized credential variable ${item.tokenEnv}; list it in SMITHERS_INTEGRATION_TOKEN_ENV to authorize it`
     )
+  }
+  if (item.credentialId !== undefined) {
+    const allowed = (env[authority[item.provider].credentialIdsEnv] ?? "").split(",").map((id) => id.trim())
+    if (!allowed.includes(item.credentialId)) {
+      throw refused(
+        "policy",
+        `Integration ${item.id} names an unauthorized stored credential; list its ID in ${
+          authority[item.provider].credentialIdsEnv
+        } to authorize it`
+      )
+    }
   }
   const target = originOf(item.apiBaseUrl)
   if (target !== undefined && !authorizedOrigins(item.provider, env).has(target)) {
@@ -184,6 +196,7 @@ const select = (entries: ReadonlyArray<Integration>, id?: string) => {
 }
 
 const secret = async (options: LocalOptions, entry: Integration): Promise<string> => {
+  authorize(entry, Environment.ambientEnvironment())
   if (entry.credentialId !== undefined) {
     return withCredentials(options, (service) =>
       service.get(entry.credentialId!).pipe(

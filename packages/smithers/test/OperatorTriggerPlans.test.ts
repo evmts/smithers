@@ -1,13 +1,14 @@
 import * as Control from "@smthrs/control/Control"
 import { Unavailable } from "@smthrs/control/ControlError"
 import * as ControlLive from "@smthrs/control/ControlLive"
+import { DatabaseMetrics } from "@smthrs/database"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import * as Scheduler from "@smthrs/triggers/Scheduler"
 import * as SqlTriggerStore from "@smthrs/triggers/SqlTriggerStore"
 import * as Trigger from "@smthrs/triggers/Trigger"
 import * as TriggerStore from "@smthrs/triggers/TriggerStore"
-import { Effect, Layer, Option } from "effect"
+import { Deferred, Effect, Fiber, Layer, Metric, Option } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -298,6 +299,92 @@ describe("durable trigger approval plans", () => {
     expect(await run(root, active(other))).toBe(false)
     expect(await TriggerPlans.inspect(root, other)).toMatchObject({ status: "failed" })
     expect(rows(root, "SELECT * FROM control_runs")).toHaveLength(0)
+  })
+
+  it("retains the recovery monitor when an older parked inspection overlaps an accepted launch", async () => {
+    const root = fixture()
+    const handle = await run(root, start)
+    const pending = await TriggerPlans.inspect(root, handle)
+    const parked = Deferred.makeUnsafe<void>()
+    const releaseParked = Deferred.makeUnsafe<void>()
+    const accepted = Deferred.makeUnsafe<void>()
+    const releaseAccepted = Deferred.makeUnsafe<void>()
+    let calls = 0
+    const delayedReceipts = Layer.effect(
+      Control.Control,
+      Effect.gen(function*() {
+        const control = yield* Control.Control
+        return Control.make({
+          ...control,
+          run: (request) =>
+            Effect.gen(function*() {
+              const attempt = ++calls
+              const receipt = yield* control.run(request)
+              if (attempt === 1) {
+                expect(receipt._tag).toBe("Parked")
+                yield* Deferred.succeed(parked, undefined)
+                yield* Deferred.await(releaseParked)
+              } else if (attempt === 2) {
+                expect(receipt._tag).toBe("Accepted")
+                yield* Deferred.succeed(accepted, undefined)
+                yield* Deferred.await(releaseAccepted)
+                // Simulate the process disappearing after Control committed.
+                return yield* Effect.interrupt
+              }
+              return receipt
+            })
+        })
+      })
+    ).pipe(Layer.provide(controlLayer(root)))
+    const inspect = () =>
+      Effect.runFork(
+        state(handle).pipe(Effect.provide(TriggerPlans.layer(root).pipe(Layer.provide(delayedReceipts))))
+      )
+    const first = inspect()
+    let second: ReturnType<typeof inspect> | undefined
+    try {
+      await Effect.runPromise(Deferred.await(parked))
+      await run(
+        root,
+        Effect.gen(function*() {
+          yield* (yield* Control.Control).approve(pending!.plan.approval)
+        })
+      )
+      const retries = await Effect.runPromise(Metric.value(DatabaseMetrics.writeRetries))
+      second = inspect()
+      // Proceed once the peer either accepted the run or contended on the
+      // database writer that serializes inspections across independent layers.
+      await expect.poll(() =>
+        Effect.runPromise(Effect.gen(function*() {
+          return (yield* Deferred.isDone(accepted)) ||
+            (yield* Metric.value(DatabaseMetrics.writeRetries)).count > retries.count
+        }))
+      ).toBe(true)
+      await Effect.runPromise(Deferred.succeed(releaseParked, undefined))
+      await Effect.runPromise(Fiber.join(first))
+      await Effect.runPromise(Deferred.await(accepted))
+      const cancellation = await Effect.runPromiseExit(
+        Effect.gen(function*() {
+          yield* (yield* Scheduler.Runner).cancel(handle)
+        }).pipe(Effect.provide(TriggerPlans.layer(root).pipe(Layer.provide(controlLayer(root)))))
+      )
+      expect(cancellation._tag).toBe("Failure")
+      expect(await TriggerPlans.inspect(root, handle)).toMatchObject({ status: "cancelling", runId: null })
+    } finally {
+      await Effect.runPromise(Deferred.succeed(releaseParked, undefined))
+      await Effect.runPromise(Deferred.succeed(releaseAccepted, undefined))
+      await Effect.runPromise(Fiber.await(first))
+      if (second !== undefined) await Effect.runPromise(Fiber.await(second))
+    }
+    expect(await run(root, state(handle))).toBe("cancelled")
+    expect(
+      await run(
+        root,
+        Effect.gen(function*() {
+          return yield* (yield* Control.Control).list({ _tag: "runs" })
+        })
+      )
+    ).toMatchObject({ _tag: "runs", items: [{ status: "cancelled" }] })
   })
 
   it("recovers a waiting scheduled occurrence after the scheduler scope closes", async () => {

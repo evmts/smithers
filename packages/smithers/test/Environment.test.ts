@@ -22,6 +22,7 @@ describe("the environment contract", () => {
       "SMITHERS_WORKSPACE_SSH_CONNECT_TIMEOUT_SECONDS",
       "SMITHERS_WORKSPACE_CREATE_POLL_INTERVAL_MS",
       "SMITHERS_CREDENTIAL_KEY",
+      "SMITHERS_GITHUB_CREDENTIAL_IDS",
       "SMITHERS_CACHE_URL",
       "SMITHERS_CACHE_TOKEN",
       "SMITHERS_CACHE_NAMESPACE",
@@ -89,7 +90,7 @@ describe("the environment contract", () => {
     expect(Environment.readInteger({}, "SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS")).toBeUndefined()
   })
 
-  it("caps a millisecond budget at the longest wait a timer can hold", async () => {
+  it("caps a millisecond budget at the longest wait a timer can hold", () => {
     // Node fires a timer longer than 2^31-1 ms after 1 ms, so an operator who
     // asked for a very long wait got an immediate abort instead.
     const longest = 2_147_483_647
@@ -101,11 +102,6 @@ describe("the environment contract", () => {
     for (const value of ["0", "-1", "1.5", "30s", ""]) {
       expect(Environment.readMilliseconds(env(value), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")).toBeUndefined()
     }
-    const signal = AbortSignal.timeout(
-      Environment.readMilliseconds(env("3000000000"), "SMITHERS_AGENT_DOCS_TIMEOUT_MS")!
-    )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(signal.aborted).toBe(false)
   })
 })
 

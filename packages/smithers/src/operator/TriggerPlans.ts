@@ -6,11 +6,13 @@
 
 import * as Control from "@smthrs/control/Control"
 import { PlanCard } from "@smthrs/control/ControlSchema"
-import { DurableWriter } from "@smthrs/database/DurableWriter"
+import { DurableWriter } from "@smthrs/database"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Scheduler from "@smthrs/triggers/Scheduler"
 import { TriggerError } from "@smthrs/triggers/TriggerError"
 import { Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
+import { join } from "node:path"
 import { databaseLayer } from "./Store.ts"
 
 const prefix = "trigger-plan:"
@@ -54,7 +56,7 @@ const translated = <A, E, R>(operation: string, effect: Effect.Effect<A, E, R>) 
 
 const makeStore = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
-  const writer = yield* DurableWriter
+  const writer = yield* DurableWriter.DurableWriter
   yield* translated(
     "Could not initialize durable trigger plans",
     writer.write(sql`
@@ -133,6 +135,21 @@ export const layer = (root: string) =>
     Effect.gen(function*() {
       const control = yield* Control.Control
       const { read, sql, write } = yield* makeStore
+      // Control uses the main database too, so its calls cannot run under
+      // that database's write lock. A separate writer serializes inspections
+      // across layers and processes; a crashed inspector releases it through
+      // the database connection. Cancellation still writes intent immediately.
+      const inspectionLock = DurableWriter.layer().pipe(Layer.provide(NodeDatabase.layer({
+        filename: join(root, ".flows", "trigger-inspections.db")
+      })))
+      const serializeInspection = <A, E>(body: Effect.Effect<A, E>) =>
+        translated(
+          "Could not serialize scheduled inspection",
+          Effect.gen(function*() {
+            const writer = yield* DurableWriter.DurableWriter
+            return yield* writer.write(body)
+          }).pipe(Effect.provide(inspectionLock))
+        )
       const cancelRun = (runId: string) =>
         translated(
           `Could not cancel scheduled run ${runId}`,
@@ -200,7 +217,7 @@ export const layer = (root: string) =>
             })
           ),
         inspect: (handle) =>
-          Effect.gen(function*() {
+          serializeInspection(Effect.gen(function*() {
             if (!handle.startsWith(prefix)) {
               return yield* findRun(handle).pipe(
                 Effect.map((run): Scheduler.RunState =>
@@ -291,7 +308,7 @@ export const layer = (root: string) =>
               ),
               Effect.catch((error) => rememberFailure(entry, error))
             )
-          }),
+          })),
         cancel: (handle) =>
           Effect.gen(function*() {
             if (!handle.startsWith(prefix)) return yield* cancelRun(handle)

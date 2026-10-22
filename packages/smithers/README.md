@@ -202,14 +202,15 @@ Codes 3, 130, and 143 report a run outcome rather than a failure of the command,
 
 rc.0 reads a closed set of variables, all listed by `Environment.names`. The ones an operator sets most often:
 
-| Variable                                 | Meaning                                                                               |
-| ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `SMITHERS_REMOTE`                        | Fallback for `--remote`.                                                              |
-| `SMITHERS_API_KEY`                       | Preferred credential channel; avoids argv exposure.                                   |
-| `SMITHERS_MCP_CONFIG`                    | Fallback for `--mcp-config`.                                                          |
-| `SMITHERS_CREDENTIAL_KEY`                | Base64-encoded 32-byte host key for encrypted credential add, rotate, and resolution. |
-| `SMITHERS_BACKEND`                       | SQLite only. Any other value exits 1 with `unsupported_database`.                     |
-| `SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS` | How long `flow start -d` waits for its child to report admission.                     |
+| Variable                                 | Meaning                                                                                             |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `SMITHERS_REMOTE`                        | Fallback for `--remote`.                                                                            |
+| `SMITHERS_API_KEY`                       | Preferred credential channel; avoids argv exposure.                                                 |
+| `SMITHERS_MCP_CONFIG`                    | Fallback for `--mcp-config`.                                                                        |
+| `SMITHERS_GITHUB_CREDENTIAL_IDS`         | Comma-separated stored credential IDs the host authorizes for GitHub diagnostics; empty by default. |
+| `SMITHERS_CREDENTIAL_KEY`                | Base64-encoded 32-byte host key for encrypted credential add, rotate, and resolution.               |
+| `SMITHERS_BACKEND`                       | SQLite only. Any other value exits 1 with `unsupported_database`.                                   |
+| `SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS` | How long `flow start -d` waits for its child to report admission.                                   |
 
 Provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `CEREBRAS_API_KEY`) are read by the seat resolver, not by the CLI itself. `smthrs doctor` reports which are present.
 

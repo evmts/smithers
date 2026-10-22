@@ -41,6 +41,7 @@ export const names: ReadonlyArray<Name> = [
   entry("WORKSPACE_SSH_CONNECT_TIMEOUT_SECONDS", "SSH connection timeout"),
   entry("WORKSPACE_CREATE_POLL_INTERVAL_MS", "Workspace provisioning polling interval"),
   entry("CREDENTIAL_KEY", "Base64 32-byte host encryption key for stored credentials"),
+  entry("GITHUB_CREDENTIAL_IDS", "Comma-separated stored credential IDs authorized for GitHub diagnostics"),
   entry("CACHE_URL", "Remote target-cache endpoint captured before workspace evaluation"),
   entry("CACHE_TOKEN", "Remote target-cache credential, removed from declaration environments"),
   entry("CACHE_NAMESPACE", "Target-cache trust domain for result publication"),

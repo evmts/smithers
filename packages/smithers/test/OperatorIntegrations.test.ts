@@ -177,8 +177,43 @@ describe("integration CLI", () => {
     expect(result.output).not.toContain("provider-fixture-secret")
   })
 
+  it("refuses unrelated stored credentials even at a host-authorized provider", async () => {
+    const directory = await root()
+    const upstream = await github()
+    vi.stubEnv("SMITHERS_CREDENTIAL_KEY", Buffer.alloc(32, 9).toString("base64"))
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", upstream.origin)
+    vi.stubEnv("SMITHERS_GITHUB_CREDENTIAL_IDS", " github-token, another-github-token ")
+    await withCredentials({ root: directory }, (service) =>
+      service.create({
+        id: "unrelated-token",
+        name: "Unrelated production service",
+        secret: Redacted.make("unrelated-fixture-secret")
+      }), true)
+    const entry = {
+      id: "borrowed",
+      provider: "github" as const,
+      credentialId: "unrelated-token",
+      apiBaseUrl: upstream.origin
+    }
+    await Fs.writeFile(
+      Path.join(directory, ".smithers/integrations.json"),
+      JSON.stringify({ version: 1, integrations: [entry] })
+    )
+    const result = await serve(directory, ["doctor", "borrowed"])
+    expect(result.code, result.output).toBe(1)
+    expect(result.output).toContain("unauthorized stored credential")
+    expect(upstream.requests).toEqual([])
+    expect(result.output).not.toContain("unrelated-fixture-secret")
+    expect(() => readIntegrations(directory, undefined, {})).toThrow("unauthorized stored credential")
+    await expect(probe(entry, "unrelated-fixture-secret")).rejects.toThrow("unauthorized stored credential")
+    expect(upstream.requests).toEqual([])
+  })
+
   it("resolves encrypted credential references through the real local store", async () => {
     const directory = await root()
+    const upstream = await github()
+    vi.stubEnv("SMITHERS_GITHUB_API_BASE_URL", upstream.origin)
+    vi.stubEnv("SMITHERS_GITHUB_CREDENTIAL_IDS", " other-token, stored-token ")
     vi.stubEnv("SMITHERS_CREDENTIAL_KEY", Buffer.alloc(32, 9).toString("base64"))
     await withCredentials({ root: directory }, (service) =>
       service.create({
@@ -190,7 +225,7 @@ describe("integration CLI", () => {
       Path.join(directory, ".smithers/integrations.json"),
       JSON.stringify({
         version: 1,
-        integrations: [{ id: "gh", provider: "github", credentialId: "stored-token" }]
+        integrations: [{ id: "gh", provider: "github", credentialId: "stored-token", apiBaseUrl: upstream.origin }]
       })
     )
     const result = await serve(directory, ["doctor", "gh", "--offline"])
@@ -199,6 +234,11 @@ describe("integration CLI", () => {
       { id: "gh", provider: "github", healthy: true, check: "credential-present" }
     ])
     expect(result.output).not.toContain("encrypted-fixture-secret")
+    expect(upstream.requests).toEqual([])
+    const online = await serve(directory, ["doctor", "gh"])
+    expect(online.code, online.output).toBe(0)
+    expect(upstream.requests).toEqual([{ path: "/rate_limit", authorization: "Bearer encrypted-fixture-secret" }])
+    expect(online.output).not.toContain("encrypted-fixture-secret")
   })
 
   it("reports online health without returning provider response bodies or request details", async () => {
