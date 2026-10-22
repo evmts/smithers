@@ -24,7 +24,7 @@
  * @since 0.1.0
  */
 
-import { FetchError, isChangeMessage, type Message, type Row, type ShapeStreamOptions } from "@electric-sql/client"
+import { FetchError, isChangeMessage, type Row, type ShapeStreamOptions } from "@electric-sql/client"
 import { Collection, type Persistence } from "@smthrs/effect-tanstack-db"
 import {
   electricCollectionOptions,
@@ -42,6 +42,7 @@ import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
+import { rowsIn } from "./internal/Batch.ts"
 import { RequestFailed, ShapeSource } from "./ShapeSource.ts"
 import * as SyncPolicy from "./SyncPolicy.ts"
 
@@ -336,12 +337,15 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     const decode = Schema.decodeUnknownSync(columnwise(options.schema))
     const shapeOptions: ShapeStreamOptions = {
       ...options.shape,
-      // Electric types its client as `typeof fetch`, to which Bun's globals add `preconnect`; Electric only calls it.
-      fetchClient: ((input: RequestInfo | URL, init?: RequestInit) =>
-        run(
-          request(input, init),
-          init?.signal ? AbortSignal.any([closing.signal, init.signal]) : closing.signal
-        )) as typeof fetch,
+      // Keep the host fetch's helpers (including Bun's preconnect) on the Effect-backed adapter.
+      fetchClient: Object.assign(
+        (input: RequestInfo | URL, init?: RequestInit) =>
+          run(
+            request(input, init),
+            init?.signal ? AbortSignal.any([closing.signal, init.signal]) : closing.signal
+          ),
+        fetch
+      ),
       // The sync policy retries; Electric's own backoff never waits, and gives a failure straight to `onError`.
       backoffOptions: { initialDelay: 0, maxDelay: 0, multiplier: 1, maxRetries: 0 },
       // An object restarts the shape where it stopped (ShapeStreamOptions.onError).
@@ -418,17 +422,6 @@ const syncFailed = (cause: Error): SyncFailed =>
 
 // A 2xx whose body isn't a whole batch: cut short, empty, or not Electric's.
 class Unreadable extends Data.TaggedError("Unreadable")<{ readonly status: number; readonly bytes: number }> {}
-
-// The rows a whole batch changes, or undefined for a body that isn't a JSON array of Electric's messages. A prefix of
-// a JSON array never parses, so a batch cut short at any byte is undefined.
-const rowsIn = (body: string): number | undefined => {
-  try {
-    const batch: unknown = JSON.parse(body)
-    return Array.isArray(batch) ? batch.filter((message) => isChangeMessage(message as Message)).length : undefined
-  } catch {
-    return undefined
-  }
-}
 
 // The schema with every field optional: an update carries only the columns that changed.
 const columnwise = (schema: RowSchema<unknown>): Schema.Codec<unknown> =>

@@ -2,6 +2,11 @@
 
 ## 0.2.0 (unreleased)
 
+### Fixed
+
+- Validate every shape batch member before accepting its offset. Malformed
+  change, control and event messages stop sync without skipping the batch.
+
 ### Added
 
 - `persist: { schemaVersion }` on `ElectricCollection.make`: the rows and

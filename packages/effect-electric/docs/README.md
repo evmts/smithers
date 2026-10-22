@@ -28,8 +28,9 @@ plus what syncing needs.
   again. Electric's own backoff is off. `reconnect` ends every wait at once and
   restarts a stopped shape. See [The sync policy](sync-policy.md).
 - **No skipped batch.** Every 2xx batch of the shape's log is read in full and
-  checked before Electric sees it. A batch cut short stops the shape before Electric takes its
-  offset, so `reconnect` asks for the same batch again.
+  checked before Electric sees it. Every member must be a valid change, control
+  or event message. An invalid member or a batch cut short stops the shape
+  before Electric takes its offset, so `reconnect` asks for the same batch again.
 - **Traced.** Each shape request records one span, `electric.shape.request`,
   with the shape's handle and offset and the batch's row count, and no row
   content.
