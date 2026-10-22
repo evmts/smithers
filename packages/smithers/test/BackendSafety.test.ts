@@ -1,13 +1,20 @@
+import { NodeWS } from "@effect/platform-node/NodeSocket"
+import { execFileSync, spawn } from "node:child_process"
+import { once } from "node:events"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import { mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import { tmpdir } from "node:os"
+import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { admin } from "../src/internal/backend/Admin.ts"
 import { Client, esc, type Values } from "../src/internal/backend/Client.ts"
 import * as ProductApi from "../src/internal/backend/ProductApi.ts"
+import { resources } from "../src/internal/backend/Resources.ts"
+import { runs } from "../src/internal/backend/Runs.ts"
+import { quote, remote } from "../src/internal/backend/SSH.ts"
+import { workspaces, workspaceSSH } from "../src/internal/backend/Workspaces.ts"
 import { stacks } from "../src/internal/backend/Stack.ts"
 
 // Fault injection is a provided Effect service at a real HTTP server boundary;
@@ -43,7 +50,7 @@ const serve = async (endpoint: Endpoint) => {
     SMITHERS_TOKEN: "test-session",
     SMITHERS_DISABLE_SYSTEM_KEYRING: "1"
   }
-  return { home, environment, origin, client: new Client({ environment }) }
+  return { home, environment, origin, server, client: new Client({ environment }) }
 }
 const json = (response: ServerResponse, value: unknown, status = 200) => {
   response.writeHead(status, { "content-type": "application/json" })
@@ -282,4 +289,235 @@ describe("product request destinations", () => {
       expect(await callback(client)).toEqual({})
     }
   )
+})
+
+
+const options = { repo: "owner/repo" }
+const fixture = async (
+  handle: (request: IncomingMessage, response: ServerResponse, body: Values) => void
+) => {
+  const requests: Array<{ method: string | undefined; path: string | undefined; body: Values }> = []
+  const f = await serve(async (request, response) => {
+    let text = ""
+    for await (const chunk of request) text += chunk
+    const body = text ? JSON.parse(text) as Values : {}
+    requests.push({ method: request.method, path: request.url, body })
+    response.setHeader("content-type", "application/json")
+    handle(request, response, body)
+  })
+  const controller = new AbortController()
+  const c = new Client({
+    environment: {
+      ...process.env,
+      ...f.environment,
+      XDG_STATE_HOME: f.home,
+      SMITHERS_AUTH_FILE: join(f.home, "auth.json"),
+      SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS: "1",
+      SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS: "1",
+      ANTHROPIC_API_KEY: "sk-ant-api03-safety-test-key"
+    },
+    signal: controller.signal
+  })
+  return { ...f, c, controller, requests }
+}
+
+// A real OpenSSH server, with ephemeral host and client keys. No replacement
+// executable or intercepted transport: the production SSH spawner runs ssh.
+const sshServer = async (home: string, forcedCommand?: string) => {
+  const key = join(home, "key")
+  execFileSync("/usr/bin/ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", key])
+  const config = join(home, "sshd_config")
+  const reservation = createServer()
+  await new Promise<void>((done) => reservation.listen(0, "127.0.0.1", done))
+  const address = reservation.address()
+  if (!address || typeof address === "string") throw new Error("No SSH address")
+  await new Promise<void>((done) => reservation.close(() => done()))
+  await writeFile(config, [
+    `HostKey ${key}`,
+    `AuthorizedKeysFile ${key}.pub`,
+    `Port ${address.port}`,
+    "ListenAddress 127.0.0.1",
+    `PidFile ${join(home, "sshd.pid")}`,
+    "StrictModes no",
+    "UsePAM no",
+    "PasswordAuthentication no",
+    "KbdInteractiveAuthentication no",
+    ...(forcedCommand ? [`ForceCommand ${forcedCommand}`] : [])
+  ].join("\n") + "\n")
+  const child = spawn("/usr/sbin/sshd", ["-D", "-e", "-f", config], { stdio: ["ignore", "ignore", "pipe"] })
+  cleanup.push(async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill()
+      await once(child, "close")
+    }
+  })
+  await new Promise<void>((done, failed) => {
+    let log = ""
+    child.stderr.on("data", (data) => {
+      log += data
+      if (log.includes("Server listening")) done()
+    })
+    child.once("error", failed)
+    child.once("exit", () => failed(new Error(log)))
+  })
+  const hostKey = (await readFile(`${key}.pub`, "utf8")).trim().split(" ").slice(0, 2).join(" ")
+  const endpoint = { command: `ssh -p ${address.port} -i ${quote(key)} ${userInfo().username}@127.0.0.1`, hostKeys: [hostKey] }
+  return { endpoint, receipt: { command: endpoint.command, host_keys: [{ known_hosts_line: hostKey }] } }
+}
+
+describe("backend safety regressions", () => {
+  it("adds an assignee without replacing a concurrent assignment", async () => {
+    let assignees = ["original"]
+    const { c, requests } = await fixture((req, res, body) => {
+      if (req.method === "GET") {
+        res.end(JSON.stringify({ assignees: assignees.map((login) => ({ login })) }))
+        assignees.push("concurrent")
+      } else {
+        // Another writer commits before this mutation reaches the server.
+        if (!assignees.includes("concurrent")) assignees.push("concurrent")
+        if (req.url?.endsWith("/assignees")) assignees.push(...body.assignees as string[])
+        else if (body.assignees) assignees = body.assignees as string[]
+        res.end("{}")
+      }
+    })
+    await resources["issue edit"]!(c, { number: 7 }, { ...options, assignee: "new", title: "changed" })
+    expect(assignees).toEqual(["original", "concurrent", "new"])
+    expect(requests).toEqual([
+      { method: "POST", path: "/api/repos/owner/repo/issues/7/assignees", body: { assignees: ["new"] } },
+      { method: "PATCH", path: "/api/repos/owner/repo/issues/7", body: { title: "changed" } }
+    ])
+  })
+
+  it.each(["dispatch", "run"])("refuses malformed workflow %s inputs before dispatch", async (action) => {
+    const { c, requests } = await fixture((_req, res) => res.end('{"workflows":[{"id":7,"name":"Build"}]}'))
+    for (const input of ["missing", "=value", "  =value"]) {
+      await expect(runs[`workflow ${action}`]!(c, { id: 7, workflow: "Build" }, { ...options, input: ["ok=yes", input] }))
+        .rejects.toMatchObject({ _tag: "/cli/UsageError" })
+    }
+    expect(requests).toEqual([])
+  })
+
+  it("preserves empty input values and embedded equals signs", async () => {
+    const { c, requests } = await fixture((_req, res) => res.end("{}"))
+    await runs["workflow dispatch"]!(c, { id: 7 }, { ...options, input: [" empty =", "value=a=b"] })
+    expect(requests[0]?.body).toEqual({ ref: "main", inputs: { empty: "", value: "a=b" } })
+  })
+
+  it("cancels an artifact body without publishing or retaining a partial file", async () => {
+    let storage: ServerResponse | undefined
+    const f = await fixture((req, res) => {
+      if (req.url === "/storage") {
+        storage = res
+        res.write("partial")
+      } else res.end(JSON.stringify({ name: "out", download_url: `${f.origin}/storage` }))
+    })
+    const output = join(f.home, "out")
+    await writeFile(output, "previous")
+    const download = resources["artifact download"]!(f.c, { runId: 7, name: "out" }, { ...options, output })
+      .then((value) => ({ value, error: undefined }), (error: unknown) => ({ value: undefined, error }))
+    try {
+      await expect.poll(async () => (await readdir(f.home)).some((name) => name.endsWith(".partial")), {
+        timeout: 10_000
+      }).toBe(true)
+      f.controller.abort()
+      storage?.end("tail")
+      const result = await download
+      expect(result.error).toBeInstanceOf(Error)
+      expect(result.value).toBeUndefined()
+      expect(await readFile(output, "utf8")).toBe("previous")
+      expect((await readdir(f.home)).some((name) => name.endsWith(".partial"))).toBe(false)
+    } finally {
+      storage?.end()
+    }
+  })
+
+  it("surfaces a malformed SSH response immediately instead of retrying it", async () => {
+    const { c, requests } = await fixture((_req, res) => res.end("invalid-json"))
+    await expect(workspaceSSH(c, "box", options)).rejects.toBeInstanceOf(SyntaxError)
+    expect(requests).toHaveLength(1)
+  })
+
+  it("refuses credential seeding before sending a host secret to SSH", async () => {
+    const f = await fixture((_req, res) => res.end(JSON.stringify(ssh.receipt)))
+    const capture = join(f.home, "received")
+    const ssh = await sshServer(f.home, `/bin/cat > ${quote(capture)}`)
+    const result = await workspaces["workspace exec"]!(f.c, { id: "box" }, {
+      ...options, command: "true", seedAgentAuth: "claude", detach: true
+    }).then(() => undefined, (error) => error)
+    expect(await readdir(f.home)).not.toContain("received")
+    expect(result).toMatchObject({ code: "credential_seeding_disabled" })
+    expect(f.requests).toEqual([])
+  })
+
+  it("refuses issue execution before creating a workspace or launching an unmanaged agent", async () => {
+    const f = await fixture((req, res) => res.end(JSON.stringify(
+      req.url?.endsWith("/ssh") ? ssh.receipt : req.url?.endsWith("/issues/7") ? { title: "Fix" } : { id: "box" }
+    )))
+    const capture = join(f.home, "commands")
+    const ssh = await sshServer(f.home, `/usr/bin/printf '%s\\n' "$SSH_ORIGINAL_COMMAND" >> ${quote(capture)}`)
+    const result = await workspaces["workspace issue"]!(f.c, { number: 7 }, options).then(() => undefined, (error) => error)
+    expect(await readdir(f.home)).not.toContain("commands")
+    expect(result).toMatchObject({ code: "durable_agent_required" })
+    expect(f.requests).toEqual([])
+  })
+
+  it("streams SSH output without retaining copies of either channel", async () => {
+    const { c, home } = await fixture((_req, res) => res.end("{}"))
+    const { endpoint } = await sshServer(home)
+    const bytes = 20 * 1024 * 1024
+    let stdoutBytes = 0, stderrBytes = 0
+    const streaming = new Client({
+      ...c.runtime,
+      stdout: {
+        isTTY: false,
+        columns: 80,
+        write: (text) => {
+          stdoutBytes += Buffer.byteLength(text)
+          return true
+        }
+      },
+      stderr: {
+        isTTY: false,
+        columns: 80,
+        write: (text) => {
+          stderrBytes += Buffer.byteLength(text)
+          return true
+        }
+      }
+    }, true)
+    const script = `/usr/bin/python3 -c ${quote(`import sys; sys.stdout.buffer.write((b'o' * 1023 + b'\\n') * ${bytes / 1024}); sys.stderr.buffer.write((b'e' * 1023 + b'\\n') * ${bytes / 1024})`)}`
+    const result = await remote(streaming, endpoint, script, 30_000, undefined, false, true)
+    expect(result.code).toBe(0)
+    expect(stdoutBytes).toBe(bytes)
+    expect(stderrBytes).toBe(bytes)
+    expect(result.stdout.length).toBe(0)
+    expect(result.stderr.length).toBe(0)
+  })
+
+  it("bounds captured SSH output per channel and retains small results", async () => {
+    const { c, home } = await fixture((_req, res) => res.end("{}"))
+    const { endpoint } = await sshServer(home)
+    const small = await remote(c, endpoint, "printf out; printf err >&2; exit 7")
+    expect(small).toEqual({ code: 7, stdout: Buffer.from("out"), stderr: Buffer.from("err") })
+    for (const channel of ["stdout", "stderr"]) {
+      const script = `/usr/bin/python3 -c ${quote(`import sys; sys.${channel}.buffer.write(b'x' * (17 * 1024 * 1024))`)}`
+      const error = await remote(c, endpoint, script).then(() => undefined, (error: unknown) => error)
+      expect(error).toMatchObject({ code: "tool_output_too_large" })
+    }
+  })
+
+  it("honors terminal cancellation while the WebSocket is connecting and destroys the session", async () => {
+    const f = await fixture((_req, res) => res.end('{"id":"terminal"}'))
+    const wss = new NodeWS.WebSocketServer({ noServer: true })
+    cleanup.push(async () => { await new Promise<void>((done) => wss.close(() => done())) })
+    f.server.on("upgrade", (req, socket, head) => {
+      f.controller.abort()
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        ws.send(JSON.stringify({ type: "status", status: "stopped" }))
+      })
+    })
+    const result = await workspaces["workspace shell"]!(f.c, { id: "box" }, options).then(() => undefined, (error) => error)
+    expect(f.requests.at(-1)?.path).toBe("/api/repos/owner/repo/workspace/sessions/terminal/destroy")
+    expect(result).toMatchObject({ code: "interrupted" })
+  })
 })

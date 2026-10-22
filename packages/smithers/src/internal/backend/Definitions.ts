@@ -1350,7 +1350,7 @@ export const definitions = {
         .optional(),
       "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
       "seedAgentAuth": z.string().describe(
-        "Agent auth to seed before running the command (claude seeds ANTHROPIC_API_KEY; subscription logins stay on the workspace)"
+        "Disabled: host credentials cannot be seeded into workspaces"
       ).optional(),
       "timeout": z.coerce.number().describe("Cancel after this many seconds (default: 0; server guard: 60 minutes)")
         .optional()
@@ -1365,7 +1365,7 @@ export const definitions = {
     })
   },
   "workspace issue": {
-    description: "Spin up a workspace for an issue, run Claude Code, then create a landing request",
+    description: "Disabled until workspace issue execution uses a durable agent flow",
     args: z.object({ "number": z.string().describe("Issue number to work on") }),
     options: z.object({
       "repo": z.string().describe("Repository (OWNER/REPO)").optional(),

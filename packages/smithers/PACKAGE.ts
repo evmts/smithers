@@ -32,7 +32,9 @@ const importRules = ImportRules({
         "test/BackendCommands.test.ts",
         "test/ProductApi.test.ts",
         "test/BackendStack.test.ts",
-        "test/BackendMutations.test.ts"
+        "test/BackendMutations.test.ts",
+        "test/BackendWorkspace*.test.ts",
+        "test/Environment.test.ts"
       ],
       callees: ["setTimeout", "*.sleep", "*.waitForTimeout"],
       because: "test.behavioral: wait on conditions or TestClock, never fixed sleeps. See AGENTS.md."
@@ -365,11 +367,11 @@ const securityReview = Smithers.SecurityReview({
     {
       id: "subscription-credential-export",
       title:
-        "Local Codex subscription credentials and Anthropic API keys leave the machine only to the named workspace or backend",
+        "Host provider credentials never enter a workspace, and subscriptions stay with their provider CLIs",
       threat:
         "A backend or SSH endpoint the operator did not intend receives their ChatGPT OAuth refresh tokens or Anthropic API key and spends their account. A Claude subscription token is never read, stored, or sent (#2777).",
       lookFor: [
-        "seed() in Workspaces.ts writing auth.json or the API-key claude-env.sh to a host chosen by the server's ssh_command without StrictHostKeyChecking beyond accept-new.",
+        "A seedAgentAuth handler, workspace issue path or SSH stdin payload exporting a host provider credential into a workspace instead of refusing or using the secrets egress proxy.",
         "providerLogin or auth connect posting refresh tokens to an origin taken from SMITHERS_API_ORIGIN or --hostname without confirmation.",
         "Any read of Claude's .credentials.json or keychain entry. A token read from ~/.codex/auth.json that is not passed to c.protect before output streams."
       ],

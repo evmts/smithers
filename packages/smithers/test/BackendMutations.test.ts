@@ -130,11 +130,12 @@ describe("resource mutations", () => {
     await resources[`issue ${action}`]!(c, { number: 7 }, { ...options, comment: "Reason" })
     expect(request.mock.calls[0]).toEqual(["POST", "/api/repos/owner/repo/issues/7/comments", { body: "Reason" }])
   })
-  it("does not duplicate an assignee with another letter case", async () => {
+  it("uses the server's additive assignee endpoint", async () => {
     const { c, request } = await fixture()
     request.mockResolvedValue({ assignees: [{ login: "Owner" }] })
     await resources["issue edit"]!(c, { number: 7 }, { ...options, assignee: "owner" })
-    expect(request).toHaveBeenLastCalledWith("PATCH", "/api/repos/owner/repo/issues/7", { assignees: ["Owner"] })
+    expect(request).toHaveBeenLastCalledWith("GET", "/api/repos/owner/repo/issues/7")
+    expect(request).toHaveBeenCalledWith("POST", "/api/repos/owner/repo/issues/7/assignees", { assignees: ["owner"] })
   })
   it("downloads an artifact without forwarding the login to storage", async () => {
     const { c, request, home } = await fixture()
@@ -208,7 +209,7 @@ describe("raw API and backend flows", () => {
     const { c, request } = await fixture()
     request.mockResolvedValueOnce({ workflows: [{ id: 7, name: "Build" }] }).mockResolvedValueOnce(null)
     expect(
-      await runs["workflow run"]!(c, { workflow: " build " }, { ...options, input: ["value=a=b", "bad", "=missing"] })
+      await runs["workflow run"]!(c, { workflow: " build " }, { ...options, input: ["value=a=b"] })
     ).toEqual({ status: "dispatched" })
     expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/workflows/7/dispatches", {
       ref: "main",

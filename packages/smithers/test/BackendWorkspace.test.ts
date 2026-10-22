@@ -1,10 +1,10 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { APIError, Client } from "../src/internal/backend/Client.ts"
 import { remote } from "../src/internal/backend/SSH.ts"
-import { claudeScript, workspaces, workspaceSSH } from "../src/internal/backend/Workspaces.ts"
+import { workspaces, workspaceSSH } from "../src/internal/backend/Workspaces.ts"
 const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
 const hostKey = { algorithm: "ssh-ed25519", public_key: key.split(" ")[1], known_hosts_line: key }
 const guest = { command: "ssh guest", hostKeys: [key] }
@@ -71,8 +71,6 @@ const fixture = async (environment: Record<string, string> = {}) => {
       SMITHERS_API_ORIGIN: "https://api.example.test",
       SMITHERS_TOKEN: "login-secret",
       SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
-      SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS: "1",
-      SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS: "5",
       ...environment
     },
     exit,
@@ -100,17 +98,11 @@ const fixture = async (environment: Record<string, string> = {}) => {
 }
 const options = { repo: "owner/repo" }
 describe("box remote execution", () => {
-  it("polls transient SSH errors and preserves requested user", async () => {
-    const { c, request } = await fixture({ SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS: "1000" })
-    request.mockRejectedValueOnce(new APIError(503, {}, "GET", "/ssh", new Headers())).mockResolvedValueOnce({
-      command: "ssh ready",
-      host_keys: [hostKey]
-    })
-    expect(await workspaceSSH(c, "box", { ...options, user: "root" })).toEqual({
-      command: "ssh ready",
-      hostKeys: [key]
-    })
-    expect(request.mock.calls[0]![1]).toEqual(expect.stringContaining("/ssh?user=root"))
+  it("surfaces transient SSH errors for durable callers to retry", async () => {
+    const { c, request } = await fixture()
+    request.mockRejectedValueOnce(new APIError(503, {}, "GET", "/ssh", new Headers()))
+    await expect(workspaceSSH(c, "box", { ...options, user: "root" })).rejects.toThrow("503")
+    expect(request).toHaveBeenCalledExactlyOnceWith("GET", "/api/repos/owner/repo/workspaces/box/ssh?user=root")
   })
   it("stops immediately for denied SSH access", async () => {
     const { c, request } = await fixture()
@@ -119,17 +111,17 @@ describe("box remote execution", () => {
     expect(request).toHaveBeenCalledTimes(1)
   })
   it("refuses a malformed advertised host key at once instead of polling", async () => {
-    const { c, request } = await fixture({ SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS: "60000" })
+    const { c, request } = await fixture()
     request.mockResolvedValue({ ssh_command: "ssh guest", host_keys: [{ known_hosts_line: "ssh-ed25519 not a key" }] })
     await expect(workspaceSSH(c, "box", options)).rejects.toThrow("Invalid workspace SSH host key")
     expect(request).toHaveBeenCalledTimes(1)
   })
-  it("times out missing SSH receipts", async () => {
+  it("refuses missing SSH receipts immediately", async () => {
     const { c, request } = await fixture()
     request.mockResolvedValue({})
     await expect(workspaceSSH(c, "box", options)).rejects.toThrow("SSH-ready")
   })
-  it("honors abort while polling", async () => {
+  it("refuses a missing SSH receipt on an aborted invocation", async () => {
     const { c, request, controller } = await fixture()
     request.mockResolvedValue({})
     controller.abort()
@@ -401,116 +393,6 @@ describe("box remote execution", () => {
       )
     }
   )
-  it("seeds Claude API credentials over stdin with private guest ownership", async () => {
-    const { c, request } = await fixture({ ANTHROPIC_API_KEY: "sk-ant-api03-key" })
-    const protect = vi.spyOn(c, "protect")
-    await workspaces["workspace exec"]!(c, { id: "box" }, {
-      ...options,
-      command: "true",
-      seedAgentAuth: "CLAUDE,claude"
-    })
-    expect(protect).toHaveBeenCalledWith("sk-ant-api03-key")
-    expect(protect.mock.invocationCallOrder[0]).toBeLessThan(request.mock.invocationCallOrder[0]!)
-    expect(remote).toHaveBeenCalledTimes(1)
-    const call = vi.mocked(remote).mock.calls[0]!
-    expect(call[2]).toBe("bash -s")
-    let stdin = ""
-    for await (const chunk of call[4]!) stdin += chunk
-    expect(stdin).toContain("chmod 600")
-    expect(stdin).toContain("chown -R developer:developer")
-    expect(JSON.stringify(call.slice(0, 4).slice(1))).not.toContain("subscription")
-  })
-  it.each([undefined, "custom-codex"])(
-    "refuses Codex credential seeding without reading or sending the local login (%s)",
-    async (codexDirectory) => {
-      const custom = codexDirectory === undefined ? undefined : await mkdtemp(join(tmpdir(), "codex-seed-"))
-      if (custom !== undefined) dirs.push(custom)
-      const { c, home, request } = await fixture({
-        ANTHROPIC_API_KEY: "sk-ant-api03-key",
-        ...(custom === undefined ? {} : { CODEX_HOME: custom })
-      })
-      const directory = custom ?? join(home, ".codex")
-      if (custom === undefined) await mkdir(directory)
-      await writeFile(
-        join(directory, "auth.json"),
-        JSON.stringify({
-          tokens: { access_token: "local-access-secret", refresh_token: "local-refresh-secret" }
-        })
-      )
-      const protect = vi.spyOn(c, "protect")
-      for (const seedAgentAuth of ["CODEX,codex", "claude,codex", "codex,claude"]) {
-        await expect(workspaces["workspace exec"]!(c, { id: "box" }, {
-          ...options,
-          command: "true",
-          seedAgentAuth
-        })).rejects.toMatchObject({
-          fault: "user",
-          code: "not_signed_in",
-          message: "Run `codex login --device-auth` on the workspace; Codex subscriptions are never sent to a workspace"
-        })
-      }
-      expect(protect).not.toHaveBeenCalledWith("local-access-secret")
-      expect(protect).not.toHaveBeenCalledWith("local-refresh-secret")
-      expect(remote).not.toHaveBeenCalled()
-      expect(request.mock.calls.some(([method, path]) => method === "POST" && path.endsWith("/command-runs"))).toBe(
-        false
-      )
-    }
-  )
-  it("never seeds a Claude subscription token (#2777)", async () => {
-    for (
-      const env of [{ ANTHROPIC_AUTH_TOKEN: "sk-ant-oat01-subscription" }, {
-        ANTHROPIC_API_KEY: "sk-ant-oat01-subscription"
-      }]
-    ) {
-      const { c, home } = await fixture(env)
-      await writeFile(
-        join(home, ".credentials.json"),
-        JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-login" } })
-      )
-      await expect(
-        workspaces["workspace exec"]!(c, { id: "box" }, { ...options, command: "true", seedAgentAuth: "claude" })
-      ).rejects.toThrow("ANTHROPIC_API_KEY")
-    }
-    expect(remote).not.toHaveBeenCalled()
-  })
-  it.each([
-    undefined,
-    "",
-    "sk-ant-oat01-subscription",
-    "sk-ant-api",
-    "sk-ant-api--",
-    "sk-ant-api03--",
-    "not-an-api-key"
-  ])(
-    "refuses Claude seeding with key %j before workspace lookup or creation",
-    async (key) => {
-      const { c, request } = await fixture(key === undefined ? {} : { ANTHROPIC_API_KEY: key })
-      const protect = vi.spyOn(c, "protect")
-      await expect(workspaces["workspace exec"]!(c, {}, { ...options, command: "true", seedAgentAuth: "claude" }))
-        .rejects.toMatchObject({
-          fault: "user",
-          code: "not_signed_in",
-          message: "ANTHROPIC_API_KEY is required; Claude subscriptions are never sent to a workspace"
-        })
-      expect(request).not.toHaveBeenCalled()
-      expect(remote).not.toHaveBeenCalled()
-      expect(protect).not.toHaveBeenCalled()
-    }
-  )
-  it("refuses unsupported or blank credential seeding before creating or looking up a workspace", async () => {
-    const { c, request } = await fixture({ ANTHROPIC_API_KEY: "sk-ant-api03-key" })
-    for (const seedAgentAuth of ["other", "claude,other", "other,claude", "", ",", " , "]) {
-      await expect(workspaces["workspace exec"]!(c, {}, { ...options, command: "true", seedAgentAuth })).rejects
-        .toThrow("claude API keys")
-    }
-    for (const seedAgentAuth of ["codex", "claude,codex"]) {
-      await expect(workspaces["workspace exec"]!(c, {}, { ...options, command: "true", seedAgentAuth })).rejects
-        .toMatchObject({ code: "not_signed_in", fault: "user" })
-    }
-    expect(remote).not.toHaveBeenCalled()
-    expect(request).not.toHaveBeenCalled()
-  })
   it.each(["stopped", "failed", "error"])("cleans up a terminal on %s", async (terminal) => {
     const { c, request, exit } = await fixture()
     state.terminal = terminal
@@ -522,7 +404,7 @@ describe("box remote execution", () => {
     } else await workspaces["workspace shell"]!(c, { id: "box" }, { ...options, cols: 100, rows: 40 })
     expect(state.url).toBe("wss://api.example.test/api/repos/owner/repo/workspace/sessions/terminal/terminal")
     expect(state.options).toMatchObject({ headers: { Authorization: "token login-secret" } })
-    expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/workspace/sessions/terminal/destroy")
+    expect(request).toHaveBeenLastCalledWith("POST", "/api/repos/owner/repo/workspace/sessions/terminal/destroy", undefined, { signal: expect.any(AbortSignal) })
     if (terminal === "failed") expect(exit).toHaveBeenCalledWith(1)
   })
   it("refuses a terminal size that is not a whole number from 0 to 65535 before opening a session", async () => {
@@ -541,72 +423,3 @@ describe("box remote execution", () => {
   })
 })
 
-describe("issue to landing", () => {
-  const prepare = async () => {
-    const f = await fixture({ ANTHROPIC_API_KEY: "sk-ant-api03-key" })
-    f.request.mockImplementation(async (method, path) =>
-      path.endsWith("/issues/7")
-        ? { title: "Fix $quoting", body: "Details", labels: [{ name: "bug" }] }
-        : path.endsWith("/ssh")
-        ? { ssh_command: "ssh guest", host_keys: [hostKey] }
-        : path.endsWith("/landings")
-        ? { number: 12 }
-        : method === "POST"
-        ? { id: "box" }
-        : {}
-    )
-    return f
-  }
-  it("runs Claude as developer and lands changes in parent-first order", async () => {
-    const { c, request } = await prepare()
-    vi.mocked(remote).mockResolvedValueOnce(success()).mockResolvedValueOnce(success()).mockResolvedValueOnce(
-      success("parent\nchild\n")
-    )
-    expect(await workspaces["workspace issue"]!(c, { number: 7 }, options)).toMatchObject({
-      landing_request: 12,
-      change_ids: ["parent", "child"]
-    })
-    const script = vi.mocked(remote).mock.calls[1]![2]!
-    expect(script).toContain("runuser -u developer")
-    expect(script).toContain("--no-session-persistence")
-    expect(script).toContain("--dangerously-skip-permissions")
-    expect(vi.mocked(remote).mock.calls[2]![2]).toContain("--reversed")
-    expect(request).toHaveBeenLastCalledWith(
-      "POST",
-      "/api/repos/owner/repo/landings",
-      expect.objectContaining({ target_bookmark: "main", change_ids: ["parent", "child"] })
-    )
-  })
-  it("does not create an empty landing", async () => {
-    const { c, request } = await prepare()
-    expect(await workspaces["workspace issue"]!(c, { number: 7 }, options)).toMatchObject({
-      status: "completed",
-      change_ids: []
-    })
-    expect(request.mock.calls.some(([, path]) => path.endsWith("/landings"))).toBe(false)
-  })
-  it("retains the box and reports diagnostics after a failed Claude run", async () => {
-    const { c, request, exit } = await prepare()
-    vi.mocked(remote).mockResolvedValueOnce(success()).mockResolvedValueOnce(success("", 7)).mockResolvedValueOnce(
-      success("missing node")
-    )
-    await expect(workspaces["workspace issue"]!(c, { number: 7 }, options)).rejects.toThrow(
-      "Workspace diagnostics:\nmissing node"
-    )
-    expect(exit).toHaveBeenCalledWith(7)
-    expect(request.mock.calls.some(([method]) => method === "DELETE")).toBe(false)
-  })
-  it("refuses an unreadable change receipt", async () => {
-    const { c } = await prepare()
-    vi.mocked(remote).mockResolvedValueOnce(success()).mockResolvedValueOnce(success()).mockResolvedValueOnce(
-      success("", 1)
-    )
-    await expect(workspaces["workspace issue"]!(c, { number: 7 }, options)).rejects.toThrow("read workspace changes")
-  })
-  it("encodes hostile prompt text as data and keeps subscription tokens out of the script", () => {
-    const prompt = "$(touch /tmp/should-not-exist)'\nFix it"
-    const script = claudeScript(prompt)
-    expect(script).not.toContain(prompt)
-    expect(script).toContain(Buffer.from(prompt).toString("base64"))
-  })
-})

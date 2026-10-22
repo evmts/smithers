@@ -3,7 +3,7 @@
  * @since 0.1.0
  */
 
-import { Refused } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.ts"
 import { list, object, positive, str } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 /**
@@ -14,6 +14,12 @@ export const runs: Record<string, Handler> = {}
 runs["workflow list"] = (c, _a, o) => c.request("GET", c.repoPath(o.repo) + "/workflows")
 for (const action of ["dispatch", "run"]) {
   runs[`workflow ${action}`] = async (c, a, o) => {
+    const inputs = Object.fromEntries(list(o.input).map(str).map((value) => {
+      const i = value.indexOf("=")
+      const key = value.slice(0, i).trim()
+      if (i < 0 || !key) throw new UsageError({ message: "--input expects KEY=VALUE" })
+      return [key, value.slice(i + 1)]
+    }))
     const base = c.repoPath(o.repo)
     let id = a.id
     if (action === "run") {
@@ -23,12 +29,6 @@ for (const action of ["dispatch", "run"]) {
       )?.id
       if (!id) throw new Refused({ fault: "user", code: "not_found", message: `Flow ${str(a.workflow)} not found` })
     }
-    const inputs = Object.fromEntries(
-      list(o.input).map(str).filter((value) => value.includes("=")).map((value) => {
-        const i = value.indexOf("=")
-        return [value.slice(0, i).trim(), value.slice(i + 1)]
-      }).filter(([key]) => key)
-    )
     const result = await c.request("POST", `${base}/workflows/${positive(id)}/dispatches`, {
       ref: o.ref || "main",
       ...(Object.keys(inputs).length ? { inputs } : {})

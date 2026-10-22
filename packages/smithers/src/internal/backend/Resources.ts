@@ -65,13 +65,9 @@ add("issue edit", async (c, a, o) => {
   const path = repo(c, o, `/issues/${positive(a.number)}`), body = pick(o, ["title", "body"])
   if (o.label) await c.request("POST", path + "/labels", { labels: [o.label] })
   if (o.assignee) {
-    const current = object(await c.request("GET", path))
-    const assignees = list(current.assignees).map((entry) => str(object(entry).login)).filter(Boolean)
-    if (!assignees.some((login) => login.toLowerCase() === str(o.assignee).toLowerCase())) {
-      assignees.push(str(o.assignee))
-    }
-    body.assignees = assignees
+    await c.request("POST", path + "/assignees", { assignees: [str(o.assignee)] })
   }
+  if (!Object.keys(body).length) return c.request("GET", path)
   return c.request("PATCH", path, body)
 })
 add(
@@ -304,7 +300,8 @@ add("artifact download", async (c, a, o) => {
     throw new UsageError({ message: "Artifact has no safe name" })
   }
   const path = resolve(str(o.output) || safeName)
-  const response = await fetch(str(record.download_url), { signal: AbortSignal.timeout(300_000) })
+  const signal = AbortSignal.any([AbortSignal.timeout(300_000), ...(c.runtime.signal ? [c.runtime.signal] : [])])
+  const response = await fetch(str(record.download_url), { signal })
   if (!response.ok) {
     throw new Refused({
       fault: "infra",
@@ -331,7 +328,8 @@ add("artifact download", async (c, a, o) => {
   // rename into place.
   const partial = `${path}.${process.pid}.${randomUUID()}.partial`
   try {
-    await writeFile(partial, bounded())
+    await writeFile(partial, bounded(), { signal })
+    signal.throwIfAborted()
     await rename(partial, path)
   } catch (error) {
     await rm(partial, { force: true })

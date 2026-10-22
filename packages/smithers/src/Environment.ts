@@ -36,8 +36,6 @@ export const names: ReadonlyArray<Name> = [
   entry("GITHUB_APP_POLL_INTERVAL_MS", "GitHub App installation polling interval"),
   entry("AGENT_DOCS_URL", "Documentation source for agent ask"),
   entry("AGENT_DOCS_TIMEOUT_MS", "Documentation fetch timeout"),
-  entry("WORKSPACE_SSH_POLL_TIMEOUT_MS", "Workspace SSH readiness timeout"),
-  entry("WORKSPACE_SSH_POLL_INTERVAL_MS", "Workspace SSH readiness polling interval"),
   entry("WORKSPACE_SSH_CONNECT_TIMEOUT_SECONDS", "SSH connection timeout"),
   entry("WORKSPACE_CREATE_POLL_INTERVAL_MS", "Workspace provisioning polling interval"),
   entry("CREDENTIAL_KEY", "Base64 32-byte host encryption key for stored credentials"),

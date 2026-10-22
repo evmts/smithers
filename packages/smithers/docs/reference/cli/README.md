@@ -150,7 +150,7 @@ transfer.
 | `repo create/list/view/clone/edit/archive/unarchive/delete` | Repository administration and cloning. |
 | `repo home [OWNER/REPO]` | List remote homepage blocks in server order with the saved login. |
 | `repo connect/disconnect/status/mirror-sync/push` | GitHub connection and lease-protected personal refs. |
-| `workspace create/list/view/delete/fork/snapshots/watch/ssh/shell/exec/cp/issue` | Boxes, terminal sessions, durable API commands, file copies and issue runs. |
+| `workspace create/list/view/delete/fork/snapshots/watch/ssh/shell/exec/cp` | Boxes, terminal sessions, durable API commands and file copies. |
 | `flow list/start --cloud`, `flow dispatch` | Repository flows; use `--repo OWNER/REPO` to select the repository. |
 | `runs list/show/rerun/cancel/logs/watch --cloud` | Backend runs. `watch` waits for the real terminal result. |
 | `change status/list/show/diff/files/conflicts`, `bookmark list/create/delete` | Local jj changes and bookmarks. |
@@ -171,8 +171,24 @@ Backend commands detect the repository from git or jj when
 `--repo` is omitted. Use `--json` for structured output and `--help` or `--schema`
 for each command's complete arguments.
 
+`issue edit --assignee` uses the additive assignee endpoint, preserving concurrent
+assignments. Flow inputs require `KEY=VALUE`; an empty value is valid, and a
+malformed input refuses the whole dispatch before any request.
+
 `secret set NAME --body-stdin` stores a secret for scoped egress bindings. Secret
 values cannot be exported to branch files; `--path` is unsupported.
+`workspace exec --seedAgentAuth` refuses with `credential_seeding_disabled`:
+host credentials must stay behind the secrets egress proxy. `workspace issue`
+refuses with `durable_agent_required` until a durable agent flow implements it.
+Both refusals happen before workspace lookup, creation or SSH execution. Their
+structured error codes expose the reason without recording credentials or prompts.
+
+Artifact downloads honor invocation cancellation through the body write and
+leave the destination unchanged on failure. SSH streams forward output without
+retaining it; captured SSH output is limited to 16 MiB per channel and fails with
+`tool_output_too_large` beyond that limit. SSH readiness is one request; a durable
+flow owns any retry. Terminal cancellation includes the connecting phase and
+destroys the session with a separate, bounded cleanup signal.
 
 `history watch ISSUE` reads the item, subscribes to its event stream, and reads
 again when an event arrives. A refused, failed or closed stream ends the command

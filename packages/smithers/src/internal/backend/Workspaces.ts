@@ -5,13 +5,11 @@
 
 import { NodeWS } from "@effect/platform-node/NodeSocket"
 import { randomUUID } from "node:crypto"
-import { Readable } from "node:stream"
 import { setTimeout as delay } from "node:timers/promises"
 import { Refused, UsageError } from "../../CliError.ts"
 import * as Environment from "../../Environment.ts"
 import * as Failure from "../Failure.ts"
 import {
-  APIError,
   type Client,
   esc,
   list,
@@ -23,9 +21,8 @@ import {
   type Values,
   withCause
 } from "./Client.ts"
-import { lines } from "./Local.ts"
 import type { Handler } from "./Resources.ts"
-import { type Endpoint, hostKeys, quote, remote } from "./SSH.ts"
+import { type Endpoint, hostKeys, remote } from "./SSH.ts"
 
 const base = (c: Client, o: Values) => c.repoPath(o.repo) + "/workspaces"
 const protocol = (message: string) => new Refused({ fault: "infra", code: "backend_protocol", message })
@@ -55,26 +52,15 @@ export const resolveID = async (c: Client, a: Values, o: Values) => {
   return id
 }
 const sshInfo = async (c: Client, path: string, user: unknown): Promise<Endpoint> => {
-  const deadline = Date.now() + (Environment.readInteger(c.env, "SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS") ?? 120_000)
-  do {
-    let info: Values | undefined
-    try {
-      info = object(
-        await c.request("GET", path + "/ssh" + query({ user: user && user !== "developer" ? user : undefined }))
-      )
-    } catch (error) {
-      if (error instanceof APIError && ![404, 409, 423, 425, 429, 502, 503, 504].includes(error.status)) throw error
-    }
-    // Host keys are validated outside the retry guard: a malformed advertised
-    // key is a refusal, never a transient state to poll through.
-    if (info && (info.ssh_command || info.command)) {
-      return { command: str(info.ssh_command || info.command), hostKeys: hostKeys(info.host_keys) }
-    }
-    await delay(Environment.readMilliseconds(c.env, "SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS") ?? 3000, undefined, {
-      signal: c.runtime.signal
-    })
-  } while (Date.now() < deadline)
-  throw new Refused({ fault: "infra", code: "workspace_not_ready", message: "Workspace did not become SSH-ready" })
+  // Readiness is one attempt. A caller needing retries must use the durable
+  // flow poller; this transport never hides a permanent request failure.
+  const info = object(
+    await c.request("GET", path + "/ssh" + query({ user: user && user !== "developer" ? user : undefined }))
+  )
+  if (info.ssh_command || info.command) {
+    return { command: str(info.ssh_command || info.command), hostKeys: hostKeys(info.host_keys) }
+  }
+  throw new Refused({ fault: "infra", code: "workspace_not_ready", message: "Workspace is not SSH-ready" })
 }
 /**
  * @private
@@ -176,43 +162,6 @@ workspaces["workspace ssh"] = async (c, a, o) => {
   c.runtime.exit?.(result.code)
   return { connected: result.code === 0, workspace_id: id }
 }
-const seedCredential = (c: Client, agents: Array<string>): string => {
-  const normalized = [...new Set(agents.map((value) => value.trim().toLowerCase()).filter(Boolean))]
-  if (normalized.includes("codex")) {
-    throw new Refused({
-      fault: "user",
-      code: "not_signed_in",
-      message: "Run `codex login --device-auth` on the workspace; Codex subscriptions are never sent to a workspace"
-    })
-  }
-  if (normalized.some((agent) => agent !== "claude")) {
-    throw new UsageError({ message: "seedAgentAuth accepts claude API keys only" })
-  }
-  if (normalized.length === 0) throw new UsageError({ message: "seedAgentAuth accepts claude API keys only" })
-  const key = c.env.ANTHROPIC_API_KEY ?? ""
-  if (!/^sk-ant-api[0-9a-z-]*-(?=[A-Za-z0-9._-]*[A-Za-z0-9])[A-Za-z0-9._-]+$/.test(key)) {
-    throw new Refused({
-      fault: "user",
-      code: "not_signed_in",
-      message: "ANTHROPIC_API_KEY is required; Claude subscriptions are never sent to a workspace"
-    })
-  }
-  c.protect(key)
-  return key
-}
-const seed = async (c: Client, ssh: Endpoint, key: string) => {
-  const path = "/home/developer/.smithers/claude-env.sh"
-  const data = `export ANTHROPIC_API_KEY=${quote(key)}\n`
-  const script = `set -e; umask 077; mkdir -p ${quote(path.slice(0, path.lastIndexOf("/")))}; printf %s ${
-    quote(Buffer.from(data).toString("base64"))
-  } | base64 -d > ${quote(path)}; chmod 600 ${quote(path)}; if [ "$(id -u)" = 0 ]; then chown -R developer:developer ${
-    quote(path.slice(0, path.lastIndexOf("/")))
-  }; fi`
-  const result = await remote(c, ssh, "bash -s", 120_000, Readable.from([script]))
-  if (result.code) {
-    throw new Refused({ fault: "dependency", code: "seed_failed", message: "Agent credential seeding failed" })
-  }
-}
 const interrupted = () =>
   new Refused({ fault: "user", code: "interrupted", message: "Command interrupted; execution ended" })
 workspaces["workspace exec"] = async (c, a, o) => {
@@ -235,12 +184,14 @@ workspaces["workspace exec"] = async (c, a, o) => {
   )
   const requestID = str(o["exec-id"]) || randomUUID()
   if (requestID.length > 128 || !requestID.trim()) throw new UsageError({ message: "Invalid exec id" })
-  const credential = o.seedAgentAuth === undefined ? undefined : seedCredential(c, str(o.seedAgentAuth).split(","))
-  const id = await resolveID(c, a, o), path = base(c, o) + `/${esc(id)}/command-runs`
-  if (credential !== undefined) {
-    const ssh = await sshInfo(c, base(c, o) + `/${esc(id)}`, "developer")
-    await seed(c, ssh, credential)
+  if (o.seedAgentAuth !== undefined) {
+    throw new Refused({
+      fault: "policy",
+      code: "credential_seeding_disabled",
+      message: "Credential seeding is disabled; workspace secrets require the secrets egress proxy"
+    })
   }
+  const id = await resolveID(c, a, o), path = base(c, o) + `/${esc(id)}/command-runs`
   let receipt: Values
   try {
     receipt = object(
@@ -369,16 +320,28 @@ workspaces["workspace shell"] = async (c, a, o) => {
     socket.send(
       JSON.stringify({ type: "resize", cols: process.stdout.columns || cols, rows: process.stdout.rows || rows })
     )
-  const abort = () => socket.close()
+  let abort = () => socket.close()
   try {
     await new Promise<void>((resolve, reject) => {
       socket.once("error", reject)
+      abort = () => {
+        reject(interrupted())
+        socket.close()
+      }
+      c.runtime.signal?.addEventListener("abort", abort, { once: true })
+      if (c.runtime.signal?.aborted) {
+        abort()
+        return
+      }
       socket.once("open", () => {
+        if (c.runtime.signal?.aborted) {
+          abort()
+          return
+        }
         if (process.stdin.isTTY) process.stdin.setRawMode(true)
         resize()
         process.stdin.on("data", input)
         process.stdout.on("resize", resize)
-        c.runtime.signal?.addEventListener("abort", abort, { once: true })
       })
       socket.on("message", (data, binary) => {
         if (!binary) {
@@ -404,102 +367,15 @@ workspaces["workspace shell"] = async (c, a, o) => {
     if (process.stdin.isTTY) process.stdin.setRawMode(!!raw)
     c.runtime.signal?.removeEventListener("abort", abort)
     socket.close()
-    await c.request("POST", `${path}/${esc(session.id)}/destroy`)
+    await c.request("POST", `${path}/${esc(session.id)}/destroy`, undefined, { signal: AbortSignal.timeout(30_000) })
   }
 }
-/**
- * Run Claude as the box's developer, including images whose SSH user is root.
- * @private
- * @since 1.0.0
- */
-export const claudeScript = (prompt: string) => {
-  const developer = [
-    "set -euo pipefail",
-    "export PATH=/home/developer/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH",
-    "export TERM=${TERM:-dumb} CI=${CI:-1} NPM_CONFIG_PREFIX=/home/developer/.local",
-    "command -v node >/dev/null && command -v npm >/dev/null || { echo 'Node.js and npm must be on PATH' >&2; exit 1; }",
-    "command -v claude >/dev/null || npm install -g @anthropic-ai/claude-code >/home/developer/.smithers/claude-install.log 2>&1",
-    ". /home/developer/.smithers/claude-env.sh",
-    "test -n \"${ANTHROPIC_API_KEY:-}\" || { echo 'ANTHROPIC_API_KEY required' >&2; exit 1; }",
-    "cd /home/developer/workspace",
-    "prompt=$(cat /home/developer/.smithers/issue-prompt.txt)",
-    "exec </dev/null claude -p --dangerously-skip-permissions --no-session-persistence --output-format json \"$prompt\""
-  ].join("\n")
-  return [
-    "set -euo pipefail",
-    "export PATH=/home/developer/.local/bin:$PATH",
-    "command -v jj >/dev/null || { echo 'jj is not installed in this workspace' >&2; exit 1; }",
-    "cd /home/developer/workspace; [ -d .jj ] || jj git init",
-    "umask 077; mkdir -p /home/developer/.smithers /home/developer/.local/bin",
-    `printf %s ${
-      quote(Buffer.from(prompt).toString("base64"))
-    } | base64 -d > /home/developer/.smithers/issue-prompt.txt`,
-    "if [ \"$(id -u)\" = 0 ]; then",
-    "chown -R developer:developer /home/developer/workspace /home/developer/.smithers /home/developer/.local",
-    `if command -v runuser >/dev/null; then exec runuser -u developer -- env -i HOME=/home/developer USER=developer LOGNAME=developer PATH=/home/developer/.local/bin:/usr/local/bin:/usr/bin:/bin TERM=dumb CI=1 bash -lc ${
-      quote(developer)
-    }; fi`,
-    `exec su - developer -c ${quote(developer)}`,
-    "fi",
-    `exec bash -lc ${quote(developer)}`
-  ].join("\n")
-}
-workspaces["workspace issue"] = async (c, a, o) => {
-  const number = positive(a.number),
-    repository = c.repoPath(o.repo),
-    issue = object(await c.request("GET", `${repository}/issues/${number}`))
-  const workspace = object(await c.request("POST", base(c, o), { name: `issue-${number}` })), id = str(workspace.id)
-  if (!id) throw protocol("Workspace response omitted id")
-  const ssh = await sshInfo(c, base(c, o) + `/${esc(id)}`, "")
-  try {
-    await seed(c, ssh, seedCredential(c, ["claude"]))
-  } catch (error) {
-    const existing = await remote(c, ssh, "test -s /home/developer/.smithers/claude-env.sh")
-    if (existing.code) throw error
-  }
-  const labels = list(issue.labels).map((label) => str(object(label).name)).filter(Boolean)
-  const prompt = `Fix issue #${number}: ${str(issue.title)}${
-    labels.length ? `\nLabels: ${labels.join(", ")}` : ""
-  }\n\n${str(issue.body)}\n\nWhen done, commit your changes with jj. Do not create a landing request.`
-  const result = await remote(c, ssh, claudeScript(prompt), 30 * 60_000, undefined, false, true)
-  if (result.code) {
-    c.runtime.exit?.(result.code)
-    const diagnostics = await remote(
-      c,
-      ssh,
-      "command -v node; command -v npm; command -v claude; tail -n 80 /home/developer/.smithers/claude-install.log 2>/dev/null || true"
-    )
-    throw new Refused({
-      fault: "dependency",
-      code: "agent_failed",
-      message: `Claude Code failed; workspace ${id} remains.\nWorkspace diagnostics:\n${
-        Failure.terminalSafeLines(diagnostics.stdout.toString())
-      }`
-    })
-  }
-  const target = str(o.target) || "main",
-    revset = `(::@ ~ ::present(bookmarks(exact:${JSON.stringify(target)}))) ~ empty()`
-  const changes = await remote(
-    c,
-    ssh,
-    `cd /home/developer/workspace && jj log --ignore-working-copy -r ${quote(revset)} --reversed --no-graph -T ${
-      quote("change_id ++ \"\\n\"")
-    }`
-  )
-  if (changes.code) {
-    throw new Refused({ fault: "dependency", code: "tool_failed", message: "Could not read workspace changes" })
-  }
-  const change_ids = lines(changes.stdout.toString())
-  if (!change_ids.length) return { workspace_id: id, issue: number, status: "completed", change_ids }
-  const landing = object(
-    await c.request("POST", repository + "/landings", {
-      title: `fix: ${str(issue.title)} (#${number})`,
-      body: `Closes #${number}\n\n${str(issue.body)}`,
-      target_bookmark: target,
-      change_ids
-    })
-  )
-  return { workspace_id: id, issue: number, status: "completed", change_ids, landing_request: landing.number }
+workspaces["workspace issue"] = async () => {
+  throw new Refused({
+    fault: "policy",
+    code: "durable_agent_required",
+    message: "Workspace issue execution requires a durable agent flow"
+  })
 }
 /**
  * @private

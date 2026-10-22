@@ -171,13 +171,24 @@ export const remote = async (
     signal: c.runtime.signal
   })
   const stdout: Array<Buffer> = [], stderr: Array<Buffer> = []
+  const maxBytes = 16 * 1024 * 1024
+  let stdoutBytes = 0, stderrBytes = 0
+  let outputError: Refused | undefined
+  const overflow = () => {
+    outputError ??= new Refused({
+      fault: "dependency", code: "tool_output_too_large", message: "SSH output exceeded 16 MiB per channel"
+    })
+    child.kill()
+  }
   child.stdout?.on("data", (chunk: Buffer) => {
-    stdout.push(chunk)
     if (stream) c.output(chunk, Buffer.alloc(0))
+    else if ((stdoutBytes += chunk.length) > maxBytes) overflow()
+    else stdout.push(chunk)
   })
   child.stderr?.on("data", (chunk: Buffer) => {
-    stderr.push(chunk)
     if (stream) c.output(Buffer.alloc(0), chunk)
+    else if ((stderrBytes += chunk.length) > maxBytes) overflow()
+    else stderr.push(chunk)
   })
   // `pipe` forwards no source error: a failed stdin source stops the guest
   // and is the result, rather than leaving it waiting for end of input.
@@ -200,6 +211,7 @@ export const remote = async (
     // Output is complete once both streams end, not when the exit arrives.
     const [code] = await Promise.all([
       child.exited.catch((error: unknown) => {
+        if (outputError !== undefined) throw outputError
         if (inputError !== undefined) throw inputError
         if (expired) throw new Refused({ fault: "user", code: "timed_out", message: "Workspace exec timed out" })
         throw error
@@ -207,6 +219,8 @@ export const remote = async (
       child.stdout && finished(child.stdout),
       child.stderr && finished(child.stderr)
     ])
+    if (outputError !== undefined) throw outputError
+    if (stream) c.flushOutput()
     return { code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) }
   } finally {
     clearTimeout(timer)
