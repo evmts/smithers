@@ -72,6 +72,9 @@ it("authors two source versions through engine copy-back, replans from disk, and
 
       // The plan the host can answer NOW, with no restart: the file's own graph,
       // and every node that names a declaration names the file the run wrote.
+      const listing = yield* control.list({ _tag: "flows" })
+      expect(listing._tag === "flows" ? listing.items.map((item) => item.flowId) : [], JSON.stringify(listing))
+        .toContain("authoring-demo")
       const first = yield* control.plan({ flowId: "authoring-demo", input: {} })
       expect(first.nodes.some((node) => node.id.endsWith(".read"))).toBe(true)
       expect(first.nodes.some((node) => node.id.endsWith(".validate"))).toBe(false)

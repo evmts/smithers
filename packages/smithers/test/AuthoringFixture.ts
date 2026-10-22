@@ -94,7 +94,7 @@ class AuthoringFailure extends Schema.TaggedError<AuthoringFailure>()(
   { message: Schema.String }
 ) {}
 
-export default Flow.make("authoring/Demo", {
+export default Flow.make("${authoredFlowId}", {
   description: "Reads the workspace and reports what it found.",
   capabilities: ["fs:read:**"],
   payload: {},
@@ -177,13 +177,14 @@ export const makeAuthoringFixture = (root: string) => {
   /**
    * The project registry this host discovers its flows with, as
    * `NativeControl.layerRegistry` builds one: `Registry` over the project's
-   * `flows/` directory, scanned through the kernel-guarded platform pinned to
-   * the project root. The directory is created above, so the scan finds an
+   * `.smithers/flows/` directory. Metadata discovery uses the trusted host
+   * filesystem, as 54e0ca8680c5 does; body loading stays guarded.
+   * The directory is created above, so the scan finds an
    * empty project rather than refusing a missing root.
    */
   const registry = Registry.layer({
     sources: [{ source: "project", root: join(root, ".smithers", "flows"), naming: "path" }]
-  }).pipe(Layer.provide([Discovery.layer.pipe(Layer.provide(host)), host]), Layer.orDie)
+  }).pipe(Layer.provide([Discovery.layer.pipe(Layer.provide(NodeServices.layer)), host]), Layer.orDie)
   /**
    * What `@smthrs/registry` `Executable` reads and writes with: the host's own
    * filesystem. Discovery walks absolute paths under the project root and the
