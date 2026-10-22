@@ -45,7 +45,7 @@ Settings ── Save ──▶ alert/channel { channel, destinations }      (the
 - **Email:** 1 to 10 addresses, one `@` and a dotted domain each, separated by commas or spaces. **Telegram:** one chat id: a person's or a group's number, a supergroup's `-100…`, or a public channel's `@username`. The fields check the same rules before Save (`type="email" multiple`, and a `pattern`); the route checks them again with `@smthrs/notifications`' `isEmailAddress` and `isTelegramChatId` (`400 invalid_destination`). Blanks and repeats are dropped.
 - **The link:** each message links to the deployment’s configured `ALERT_APP_URL`, independently of the origin the Admin saved from.
 - **The message:** short. The subject is the toast's words, `Model spend · 12,340 tokens · $0.02`; the text is the window (`15:00–15:15 UTC, 2026-10-20`), the three roles that spent most (`agent 12,000 · judge 340`) and the link. Telegram gets both as one plain-text message, link previews off.
-- **Saving:** the Save button's flow runs at once on the tab's engine; `Saving` shows beside the button until it lands, and `Not saved` if ChatApi refused it, until the next Save.
+- **Saving:** HTTP 408 and 429, network failures and server failures retry durably for up to an hour; other 4xx responses are final. The Save button's flow runs at once on the tab's engine; `Saving` shows beside the button until it lands, and `Not saved` if ChatApi refused it, until the next Save.
 
 ### Delivery
 

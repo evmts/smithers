@@ -12,7 +12,7 @@ import { AlertChannelName } from "./schema"
 // The step tries again while ChatApi can't be reached, for an hour; a refusal is final. Setting the same destinations
 // twice changes nothing. What the step does is steps.ts, which only an engine's host imports.
 
-/** ChatApi refused the setting (`status`, a 4xx, with its `code`): it can't land, so it isn't tried again. */
+/** ChatApi refused the setting (`status`, a 4xx other than 408 or 429, with its `code`): it can't land, so it isn't tried again. */
 export class ChannelRefused extends Schema.TaggedError<ChannelRefused>()("@smthrs/mvp/spend/ChannelRefused", {
   status: Schema.Number,
   code: Schema.optional(Schema.String),

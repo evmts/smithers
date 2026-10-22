@@ -13,9 +13,10 @@ export const sets = Metric.counter("smithers_web_alert_channel_sets", {
   incremental: true,
 })
 
-/** What ChatApi's refusal means to the flow: a 4xx is final, anything else is tried again. */
+/** What ChatApi's refusal means to the flow: a 4xx other than timeout or rate limiting is final; transient failures retry. */
 export const failureOf = (refused: ChannelNotTaken): ChannelFailure =>
-  refused.status !== undefined && refused.status >= 400 && refused.status < 500
+  refused.status !== undefined && refused.status >= 400 && refused.status < 500 &&
+    refused.status !== 408 && refused.status !== 429
     ? new ChannelRefused({ status: refused.status, ...(refused.code === undefined ? {} : { code: refused.code }) })
     : new ChannelUnsent()
 

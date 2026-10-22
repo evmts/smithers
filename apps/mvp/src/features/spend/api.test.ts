@@ -1,11 +1,12 @@
 // `AlertsClient` against every answer ChatApi's alert channel route gives (worker/AlertChannels.ts), through the host's
 // `fetch`: the browser's own capability, given here as a function answering the request it is handed. The step that
 // calls it (`alert/channel/request`) is driven over a client that answers as told.
+import { RetryPolicy } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { AlertsClient, ChannelNotTaken } from "./api"
-import { ChannelRefused, ChannelUnsent } from "./flows"
+import { CHANNEL_RETRY, ChannelRefused, ChannelUnsent } from "./flows"
 import { failureOf, requestChannel, sets } from "./steps"
 
 /** The client over a `fetch` that answers with `respond`, recording each request it was handed. */
@@ -88,7 +89,7 @@ describe("alert/channel/request", () => {
     )
   }
 
-  test("taken is saved; a 4xx is refused for good, with its code; anything else is tried again", async () => {
+  test("taken is saved; a permanent 4xx is refused with its code; server and network failures retry", async () => {
     expect(await step(Effect.void)).toEqual({ exit: Exit.succeed({ saved: true }), counts: [1, 0, 0] })
     const refused = await step(Effect.fail(new ChannelNotTaken({ status: 403, code: "person_only" })))
     expect(refused.exit).toEqual(Exit.fail(new ChannelRefused({ status: 403, code: "person_only" })))
@@ -97,6 +98,17 @@ describe("alert/channel/request", () => {
     expect(unsent.exit).toEqual(Exit.fail(new ChannelUnsent()))
     expect(unsent.counts).toEqual([0, 0, 1])
     expect((await step(Effect.fail(new ChannelNotTaken({})))).exit).toEqual(Exit.fail(new ChannelUnsent()))
+  })
+
+  test.each([408, 429])("HTTP %i stays unsent and receives a durable retry", async (status) => {
+    const result = await step(Effect.fail(new ChannelNotTaken({ status, code: "temporary" })))
+    const error = Exit.isFailure(result.exit) ? Cause.squash(result.exit.cause) : undefined
+    expect(RetryPolicy.decide(CHANNEL_RETRY, { attempt: 1, elapsedMs: 0, error })).toEqual({
+      _tag: "RetryAfter",
+      delayMs: 500,
+    })
+    expect(result.exit).toEqual(Exit.fail(new ChannelUnsent()))
+    expect(result.counts).toEqual([0, 0, 1])
   })
 
   test("a 4xx without a code is refused without one", () => {
