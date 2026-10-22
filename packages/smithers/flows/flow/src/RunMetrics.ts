@@ -32,7 +32,7 @@ import * as Option from "effect/Option"
 import * as Interpreter from "./Interpreter.ts"
 
 /**
- * What started a run: a person's button, slash command, view or composer; the
+ * What started a run: a person's button, slash command, view, composer or key; the
  * agent; an API call; an event such as a webhook; a schedule; sync, when a
  * row another device wrote asks this one to act; or another flow.
  *
@@ -44,6 +44,7 @@ export const doors = [
   "slash",
   "view",
   "composer",
+  "key",
   "agent",
   "api",
   "event",

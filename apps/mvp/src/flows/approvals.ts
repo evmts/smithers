@@ -35,19 +35,22 @@ const parsed = (value: { readonly text: string } | null): unknown => {
 }
 
 /**
- * The approvals the person denied among run `session`'s children, as `inspection` records them. A run it can't read
- * has no refusals: the person is asked, as they would be without this.
+ * The approvals the person denied among run `session`'s children, as `inspection` records them, leaving out the runs
+ * in `own`: a call's own ask is never an earlier refusal of itself, so when its parked run resumes it reads what the
+ * person answered, a note included, instead of a bare no. A run it can't read has no refusals: the person is asked, as
+ * they would be without this.
  */
 export const denied = (
   inspection: EngineStore.RunInspection.RunInspection["Service"],
   session: string,
+  own: ReadonlyArray<string> = [],
 ): Effect.Effect<Denied> =>
   inspection.inspect(session).pipe(
     Effect.map(({ children }) => {
       const flows = new Set<string>()
       let any = false
       for (const child of children) {
-        if (child.flowName !== "app/agent/ask") continue
+        if (child.flowName !== "app/agent/ask" || own.includes(child.runId)) continue
         const input = parsed(child.input) as { readonly kind?: unknown; readonly prompt?: unknown } | undefined
         const result = parsed(child.result) as { readonly approved?: unknown } | undefined
         if (input?.kind !== "approval" || result?.approved !== false) continue
@@ -62,12 +65,16 @@ export const denied = (
     Effect.orElseSucceed(() => NONE),
   )
 
-/** The refusals of the run the current call belongs to (`FlowRuntime.FlowInstance`); outside a run, none. */
+/**
+ * The refusals of the run the current call belongs to (`FlowRuntime.FlowInstance`), but for the call's `own` runs;
+ * outside a run, none.
+ */
 export const deniedHere = (
   inspection: EngineStore.RunInspection.RunInspection["Service"],
+  own: ReadonlyArray<string> = [],
 ): Effect.Effect<Denied> =>
   Effect.flatMap(Effect.serviceOption(FlowRuntime.FlowInstance), (instance) =>
-    Option.isNone(instance) ? Effect.succeed(NONE) : denied(inspection, instance.value.executionId))
+    Option.isNone(instance) ? Effect.succeed(NONE) : denied(inspection, instance.value.executionId, own))
 
 /** Whether a call of `flow` with `input` is the agent asking the person's approval itself (`app/agent/ask`). */
 export const asksApproval = (flow: string, input: unknown): boolean =>

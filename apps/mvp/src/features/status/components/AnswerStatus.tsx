@@ -19,7 +19,9 @@ export function AnswerStatus({ id, statuses: query }: { readonly id: string; rea
   if (status.state === "waiting") return <AgentStatusPill state="waiting" />
   const wait = status.wait
   if (wait === undefined || wait === null) return null
-  const answered = status.answer?.value
+  // A decision with a note shows as its decision.
+  const value = status.answer?.value
+  const answered = typeof value === "object" && value !== null ? value.approved : value
   if (status.state !== "needs_you" && answered === undefined) return null
   const shared = typeof status.version === "number" ? answerOf(texts, id, status.version) : undefined
   return (

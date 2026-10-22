@@ -241,6 +241,12 @@ describe("who a run's requests go as", () => {
     // The person's press.
     expect(await d.run(Answer, crypto.randomUUID(), answer, "button")).toEqual({ status: 200 })
     expect(d.seenFor(answer.path)).toEqual([{ path: answer.path, bearer: false, credentials: undefined }])
+    // The person's key on the host's action strip (decision 0017) is their press too: the same answer again is taken.
+    expect(await d.run(Answer, crypto.randomUUID(), answer, "key")).toEqual({ status: 200 })
+    expect(d.seenFor(answer.path)).toEqual([
+      { path: answer.path, bearer: false, credentials: undefined },
+      { path: answer.path, bearer: false, credentials: undefined },
+    ])
   })
 
   test("a person's press of a flow only they run goes in their session when its tab doesn't answer", async () => {

@@ -1,0 +1,14 @@
+import { Schema } from "effect"
+import { MAX_ANSWER_LENGTH } from "../features/status/contract"
+import { Run } from "../features/status/schema"
+
+/**
+ * Deployed runs v1, before an approval's answer could carry a note (decision 0021): an answer was words, an option, or
+ * Approve or Deny. Kept so the migrations fixture still checks a v1 device's rows against the schema they were written in.
+ */
+export const RunV1 = Schema.Struct({
+  ...Run.fields,
+  answer: Schema.NullOr(
+    Schema.Struct({ value: Schema.Union([Schema.String.check(Schema.isMaxLength(MAX_ANSWER_LENGTH)), Schema.Boolean]) }),
+  ),
+})

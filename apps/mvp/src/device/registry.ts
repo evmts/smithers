@@ -130,7 +130,8 @@ export const ViewsStore = Migrations.synced({ id: "views", version: 2, schema: V
 const synced = [
   MessagesStore,
   ViewsStore,
-  Migrations.synced({ id: "runs", version: 1, schema: Run }),
+  // Version 2: an approval's answer may carry a note (`Decision`).
+  Migrations.synced({ id: "runs", version: 2, schema: Run }),
   Migrations.synced({ id: "repo-repositories", version: 4, schema: Repository }),
   Migrations.synced({ id: "issue-items", version: 3, schema: Item }),
   Migrations.synced({ id: "issue-comments", version: 1, schema: Comment }),

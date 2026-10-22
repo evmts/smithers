@@ -5,7 +5,7 @@ import { Context, Effect, Layer, Metric, Scope, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { ChatStore } from "../chat/store"
 import { RUNS_SHAPE_ROUTE } from "./contract"
-import { deliveriesQuery, latestQuery, needsQuery, statusesQuery } from "./queries"
+import { deliveriesQuery, latestQuery, statusesQuery, waitsQuery } from "./queries"
 import { Local, Run } from "./schema"
 
 // Agent status on this tab (decision 0015, docs/features/agent-status.md#the-browser): the person's `runs`, synced by
@@ -14,7 +14,7 @@ import { Local, Run } from "./schema"
 // store lives:
 // - delivery: an answer recorded on any device, for a run still waiting, is dispatched to this device's engine as
 //   `run/deliver` (door `sync`), one execution per question; only the device that holds the run finds it waiting;
-// - the title: `(N) Smithers` while N questions need the person, through the host's `TabTitle`;
+// - the title: `(N) Smithers` while N waits are open (`waits`, `core/waits`), through the host's `TabTitle`;
 // - the record: each question the person is shown is a log line and a count, with no question text.
 
 /** Questions that came to need the person, by `surface` (`title`: the tab's title counts it): one per question, per tab. */
@@ -57,8 +57,8 @@ export class StatusStore extends Context.Service<
     readonly statuses: Success<typeof statusesQuery>
     /** The home conversation's latest answer. */
     readonly latest: Success<typeof latestQuery>
-    /** The questions that need the person, in every conversation: the title counts these. */
-    readonly needs: Success<typeof needsQuery>
+    /** `core/waits`: the open waits addressed to the person, in every conversation, oldest first (decision 0017); the title counts these. */
+    readonly waits: Success<typeof waitsQuery>
     /** A branch conversation's status, once chat has opened it; kept for as long as the store lives. */
     readonly opened: (conversationId: string) => ConversationStatus | undefined
     /** Where the background work an action starts runs. */
@@ -80,7 +80,7 @@ export class StatusStore extends Context.Service<
           schema: Run,
           getKey: (row) => row.id,
           syncMode: "eager",
-          persist: { schemaVersion: 1 },
+          persist: { schemaVersion: 2 },
           shape: {
             url: `${config.origin}${RUNS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -88,8 +88,8 @@ export class StatusStore extends Context.Service<
         })
         const local = yield* Collection.local<Local, string>({ id: "status-local", schema: Local, getKey: (row) => row.id })
         const statuses = yield* statusesQuery(messages, runs, local)
+        const waits = yield* waitsQuery(messages, runs)
         const latest = yield* latestQuery(statuses)
-        const needs = yield* needsQuery(messages, runs)
         const deliveries = yield* deliveriesQuery(runs)
 
         // A branch's status (decision 0013 §1): its own messages against the same runs, built as chat opens the
@@ -123,14 +123,16 @@ export class StatusStore extends Context.Service<
         // The title, and a record of each question that came to need the person.
         const base = title.read()
         const seen = new Set<string>()
-        yield* background(needs.rows, (rows) =>
+        yield* background(waits.rows, (rows) =>
           Effect.gen(function* () {
             yield* Effect.sync(() => title.write(agentStatusTitle(base, rows.length)))
-            for (const row of rows.filter((need) => !seen.has(`${need.id}:${need.version}`))) {
-              seen.add(`${row.id}:${row.version}`)
+            // Each wait once: the rows come again whenever any wait opens or closes.
+            const keyOf = (row: (typeof rows)[number]) => `${row.runId}:${row.version}`
+            for (const row of rows.filter((row) => !seen.has(keyOf(row)))) {
+              seen.add(keyOf(row))
               yield* Metric.update(Metric.withAttributes(shown, { surface: "title" }), 1)
               yield* Effect.logInfo("agent.status.shown").pipe(
-                Effect.annotateLogs({ runId: row.id, version: row.version!, surface: "title" }),
+                Effect.annotateLogs({ runId: row.runId, version: row.version, surface: "title" }),
               )
             }
           }))
@@ -140,7 +142,7 @@ export class StatusStore extends Context.Service<
           local,
           statuses,
           latest,
-          needs,
+          waits,
           opened: (conversationId) => branches.get(conversationId),
           scope,
         })

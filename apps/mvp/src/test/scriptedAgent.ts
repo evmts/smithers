@@ -4,12 +4,21 @@ import { Effect, Stream } from "effect"
 // The scripted agents the end-to-end tests run on the browser's engine under the dev server (src/flows/engine.worker.ts,
 // `?agent=<script>`), so a needs-you path and a sandbox tool's resume run the same every time: the model is the only
 // scripted seam. The needs-you scripts ask with `app/agent/ask` until their cell has printed what it heard, then
-// finish with what it heard in their words; `sandbox-once` calls the sandbox tools; `todo-draft` drafts a TODO.
+// finish with what it heard in their words; `queue` asks a question or an approval named for the person's message, so
+// several open at once tell apart; `sandbox-once` calls the sandbox tools; `todo-draft` drafts a TODO.
+
+/** What the agent's cell printed it heard: `app/agent/ask`'s answer. */
+interface Heard {
+  readonly answered: boolean
+  readonly answer?: string
+  readonly approved?: boolean
+  readonly note?: string
+}
 
 /** A script: what its agent asks, and how it finishes once it heard the answer. */
 interface Script {
   readonly ask: string
-  readonly done: (heard: { readonly answered: boolean; readonly answer?: string; readonly approved?: boolean }) => string
+  readonly done: (heard: Heard) => string
 }
 
 const scripts: Readonly<Record<string, Script>> = {
@@ -29,7 +38,7 @@ const cell = (source: string) => "```cell\n" + source + "\n```"
 const heardIn = (request: ModelRequest.ModelRequest) => {
   const text = request.messages.flatMap((message) => message.content.map((part) => ("text" in part ? part.text : "")))
   const printed = text.join("\n").match(/\{"answered":(?:true|false)[^}]*\}/)
-  return printed === null ? undefined : JSON.parse(printed[0]) as Parameters<Script["done"]>[0]
+  return printed === null ? undefined : JSON.parse(printed[0]) as Heard
 }
 
 /** Everything the model has been sent so far, as one text. */
@@ -118,11 +127,46 @@ const reasoningOrder = Model.make({
   },
 })
 
+/**
+ * `queue` (the needs-you plugin's queue): asked a message, the agent asks for approval when it says "approve", else
+ * which branch to deploy, naming the message's last word, so several open waits tell apart. It finishes with what it
+ * heard: `Deploying <branch>.`, `Approved: <note>` (`Approved.` without one) or `Kept it.`.
+ */
+const queue = Model.make({
+  stream: (request) => {
+    // The agent's task ends its system prompt: the message, after the conversation before it.
+    const task = request.system.at(-1)?.text ?? ""
+    const marker = "The person now asks: "
+    const at = task.lastIndexOf(marker)
+    const message = (at === -1 ? task : task.slice(at + marker.length)).trim()
+    const approval = /\bapprove\b/i.test(message)
+    const word = message.split(/\s+/).at(-1)?.replace(/[^\w-]/g, "") || "none"
+    const heard = heardIn(request)
+    if (heard === undefined) {
+      const need = approval
+        ? { kind: "approval", prompt: `Approve the deploy for ${word}?` }
+        : { kind: "question", prompt: `Deploy which branch for ${word}?`, options: ["main", "docs-v2", "release"] }
+      return turn(`const heard = await ctx.call("app/agent/ask", ${JSON.stringify(need)})\nconsole.log(JSON.stringify(heard))`)
+    }
+    const done = !heard.answered
+      ? "No answer, so nothing deployed."
+      : !approval
+      ? `Deploying ${heard.answer}.`
+      : heard.approved !== true
+      ? "Kept it."
+      : heard.note === undefined
+      ? "Approved."
+      : `Approved: ${heard.note}`
+    return turn(`ctx.done(${JSON.stringify(done)})`)
+  },
+})
+
 /** The scripted model named `name`, or `undefined` for a name no script has. */
 export const scriptedModel = (name: string): Model.Model | undefined => {
   if (name === "sandbox-once") return sandboxOnce
   if (name === "todo-draft") return todoDraft
   if (name === "reasoning-order") return reasoningOrder
+  if (name === "queue") return queue
   const script = scripts[name]
   if (script === undefined) return undefined
   return Model.make({

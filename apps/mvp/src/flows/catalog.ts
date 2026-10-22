@@ -119,7 +119,8 @@ export const source = Effect.gen(function* () {
         }) as Effect.Effect<unknown, unknown>
         // Once the person said no in this answer, they aren't asked again: the agent's own approval ask reads their
         // no, and so does a call of the flow they denied (src/flows/approvals.ts).
-        const refused = deniedHere(inspection)
+        // This call's own ask and confirm are its answer, never an earlier no: a resumed call reads them as recorded.
+        const refused = deniedHere(inspection, [childExecutionId(call.identity), confirmExecutionId(call.identity)])
         if (asksApproval(name, input)) {
           return Effect.flatMap(refused, (no) => (no.any ? Effect.succeed({ answered: true, approved: false }) : run))
         }

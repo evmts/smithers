@@ -8,7 +8,7 @@ chat/Answer (this device's engine)
   chat/Respond ─ cell: ctx.call("app/agent/ask", { kind, prompt, options })
                    app/agent/ask/request ─ report needs_you { execution, kind, prompt, options }   POST /api/runs/<id>
                    HumanTask (system/human-task) ─ parks, at most 10 minutes
-                   app/agent/ask/answer ─ report working ─▶ { answered, answer } or { answered, approved }
+                   app/agent/ask/answer ─ report working ─▶ { answered, answer } or { answered, approved, note? }
                                                         refused or timed out: { answered: false }
   chat/Settle ─ report done or failed
                                          │
@@ -43,10 +43,27 @@ Migration `0013_runs`: decision 0009's `runs`, with the columns this slice needs
 | `status`, `waiting` | the state, and why it waits: `turn`, or `input` and `approval` while it needs the person |
 | `wait` | the run's latest question: `{ execution, kind, prompt, options }`, kept after it closes so the card shows what was answered |
 | `version` | how many questions the run asked; an answer names the one it answers |
-| `answer`, `answered_at` | the accepted answer, `{ value }` |
+| `answer`, `answered_at` | the accepted answer, `{ value }`: words, `true` or `false`, or `{ approved, note }` |
 | `launched_by` | the asker's person id: never synced; the shape filters on it |
 
 CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; `needs_you` has a `wait`; `answer` and `answered_at` go together.
+
+## Answers
+
+A question takes words or one of its options. An approval takes `true` (Approve) or `false` (Deny), or `{ approved, note }`, the needs-you queue's Approve and Changes with the person's note (`Decision`, at most 8,000 characters). The route keeps words and notes trimmed; an empty note is a decision without one, and the agent hears `{ answered: true, approved }`.
+
+## core/waits
+
+`waitsQuery(home, runs)` (`src/features/status/queries.ts`, decision 0017): the open waits addressed to the person, from the synced `runs`, in every conversation. A row is open while `needs_you`, unanswered and holding a `wait`, unless its answer in the home conversation already settled. Today a wait is addressed to the run's launcher, the only person its row syncs to and the only one `run/answer` lets answer. `StatusStore.waits` is the live query; the plugin host reads its `rows`, and the tab's title counts it.
+
+| Field | |
+|---|---|
+| `runId`, `version`, `execution` | what `run/answer` takes: the run, the question and the `app/agent/ask` execution |
+| `kind`, `question`, `approval` | `question` or `approval`, and a flag for each, for a keybinding's `when` |
+| `prompt`, `options` | the question; `options` is empty for an approval |
+| `createdAt` | when the run started: the oldest wait comes first |
+
+`WAITS_ROW` (`src/features/status/contract.ts`) is the row as JSON Schema; the plugin loader checks a manifest's `$item.<field>` against it. Result rows also carry TanStack DB's virtual `$` fields. Because it reads `runs`, a wait shows for any run that asks, not only a chat answer; a branch run whose settled report never landed still shows until it does.
 
 ## The routes
 
@@ -66,7 +83,7 @@ CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; 
 
 | Flow | Door | Steps |
 |---|---|---|
-| `app/agent/ask { kind, prompt, options? }` | the agent's cell | `app/agent/ask/request` reports the question (retried for a minute; a refusal is final), then `HumanTask` (`ask` for a question, `confirm` for an approval, one attempt, `ASK_WITHIN_MS`), then `app/agent/ask/answer` reports working. A refused question tells the agent "not answered" (`{ answered: false }`), as does one not answered in time |
+| `app/agent/ask { kind, prompt, options? }` | the agent's cell | `app/agent/ask/request` reports the question (retried for a minute; a refusal is final), then `HumanTask` (`ask` for a question, `json` for an approval, one attempt, `ASK_WITHIN_MS`), then `app/agent/ask/answer` reports working. A refused question tells the agent "not answered" (`{ answered: false }`), as does one not answered in time; an approval's note, trimmed, rides as `note` when it isn't empty |
 | `run/answer { runId, version, execution, value }` | the card (`button`) | `run/answer/record` (retried for 10 minutes; `AnswerNotOpen` and `AnswerRefused` are final), then `run/deliver/answer` |
 | `run/deliver { execution, value }` | `sync` | `run/deliver/answer`: polls the run; a run this device never held is `not_here`, a finished one `closed`; otherwise `HumanTask.answer`, retried for two minutes while the run wakes and parks on its question again |
 
@@ -82,14 +99,14 @@ CHECKs hold the shape: `waiting` is set exactly while `waiting` or `needs_you`; 
 
 | Piece | What it is |
 |---|---|
-| `runs` | the person's `runs`, an Electric collection kept on the device (`persist: { schemaVersion: 1 }`) |
+| `runs` | the person's `runs`, an Electric collection kept on the device (`persist: { schemaVersion: 2 }`; version 2 holds an approval's note) |
 | `status-local` | this tab's rows about each run's latest question: `draft`, `sending`, `focus`; a row for an older `version` counts as none |
 | `statuses`, `latest` | each conversation's answers and latest state: its messages joined to `runs` and `status-local`, read through `Status.queries.of(conversationId)` |
-| `needs` | every open unanswered question in the person's runs, oldest first, including branches this tab has never opened; a settled home answer still wins |
+| `waits` | `core/waits`: every open wait in the person's runs, oldest first, then by run id, including branches this tab has never opened; a settled home answer still wins ([below](#corewaits)) |
 | `answer(id, value)`, `setDraft`, `focus` | the card's Answer (or the notifications panel's), its field, a toast's Answer |
-| followers | delivery (`run/deliver` per answered question), the title (`TabTitle`, the host's `document.title`), and `agent.status.shown` |
+| followers | delivery (`run/deliver` per answered question), the title (`TabTitle`, the host's `document.title`, counting `waits`), and `agent.status.shown` per wait |
 
-A branch's status queries are built as chat opens the conversation (`ChatStore.forEachOpened`), before a tab shows it, and `Status.queries.of` only looks them up. The title counts `needs` across every conversation. A second Answer while one sends does nothing; an older answer settling late leaves the next question's draft.
+A branch's status queries are built as chat opens the conversation (`ChatStore.forEachOpened`), before a tab shows it, and `Status.queries.of` only looks them up. The title counts `waits` across every conversation. A second Answer while one sends does nothing; an older answer settling late leaves the next question's draft.
 
 The views are `@smthrs/ui`'s `AgentStatusPill` and `NeedsYouCard` (`components/`): `AnswerStatus` under each answer, and `HeaderStatus` first in the header row: the latest answer's Working, Waiting or Failed. Needs you shows on the top bar's bell instead, the one way in to what waits on the person, which opens the notifications panel at it (Will, 2026-10-20: "a notification type ui ux in the top bar of the app in general to bring us here"). The question's toast is the feed's ([notifications.md](notifications.md)): its row for the run's launcher reads `needs_you` with the question, its Answer runs `focus`, and Hide is synced to the person's other devices. It sits in the shell's one stack under the header (`src/screens/app/Toasts.tsx`, `ToastStack`'s `inline` placement): the open composer docks over the column's foot, so a toast there would hide behind it. A toast fades in after 300 ms, so a question answered at once never flashes.
 
@@ -121,8 +138,9 @@ No record carries a question, an option or an answer (tests read the logs for th
 
 | Test | Proves |
 |---|---|
-| `src/features/status/flows.test.ts` | On the Node host with a scripted model and the real routes: the run reports working, needs you and done; an answer resumes it; an approval; an answer from another device delivered by `run/deliver`; a second answer is `not_open`; a question that can't be shown; a run killed while it needs you resumes and asks again; waiting reported once while the turn waits; a failed answer reports failed |
-| `src/features/status/status.test.ts` | The tab's layer on two Node devices whose engines lead: the question in `statuses`, `needs` and the title on both, this tab's draft and focus, an answer from the other device delivered through sync, an approval, waiting behind a question, a failure |
+| `src/features/status/flows.test.ts` | On the Node host with a scripted model and the real routes: the run reports working, needs you and done; an answer resumes it; an approval, with and without a note; an answer from another device delivered by `run/deliver`; a second answer is `not_open`; a question that can't be shown; a run killed while it needs you resumes and asks again; waiting reported once while the turn waits; a failed answer reports failed |
+| `src/features/status/queries.test.ts` | `core/waits` over a local `runs` collection: the order, every filter, rows following changes, each row exactly `WAITS_ROW` |
+| `src/features/status/status.test.ts` | The tab's layer on two Node devices whose engines lead: the question in `statuses`, `waits` and the title on both, this tab's draft and focus, an answer from the other device delivered through sync, an approval with a note, waiting behind a question, a failure |
 | `src/features/status/faults.test.ts` | Injected `RunsClient` faults: a question reported again, a delivery before the question parks, an approval refused, an answer sent again, refusals final |
 | `src/features/status/api.test.ts`, `reporter.test.ts` | Every answer `RunsClient` reads; what the reporter sends, skips and fails with |
 | `worker/Runs.test.ts` | Every route and status, the CHECK-backed transitions, the shape's filter and columns, records without the question or answer |

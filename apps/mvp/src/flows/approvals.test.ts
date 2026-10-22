@@ -44,6 +44,21 @@ describe("denied", () => {
     expect([...refused.flows]).toEqual(["flow/delete"])
   })
 
+  test("a call's own ask is never an earlier refusal of itself: it is left out, and the others still count", async () => {
+    const { inspection } = inspecting([
+      child("app/agent/ask", "a/call/0.0", { kind: "approval", prompt: "Go?" }, { answered: true, approved: false, note: "Keep the logs." }),
+      child("app/agent/ask", "a/call/0.1/confirm", { kind: "approval", prompt: "Delete this flow?" }, no),
+    ])
+    expect(await Effect.runPromise(denied(inspection, "a", ["a/call/0.0", "a/call/0.0/confirm"]))).toEqual({
+      any: true,
+      flows: new Set(["flow/delete"]),
+    })
+    expect(await Effect.runPromise(denied(inspection, "a", ["a/call/0.0", "a/call/0.1/confirm"]))).toEqual({
+      any: false,
+      flows: new Set(),
+    })
+  })
+
   test("a run with no no, or one it can't read, has refused nothing", async () => {
     const yes = inspecting([child("app/agent/ask", "a/call/0.0", { kind: "approval", prompt: "Go?" }, { answered: true, approved: true })])
     expect(await Effect.runPromise(denied(yes.inspection, "a"))).toEqual({ any: false, flows: new Set() })
@@ -61,6 +76,10 @@ describe("deniedHere", () => {
     )
     expect((await Effect.runPromise(inRun)).any).toBe(true)
     expect(asked).toEqual(["r"])
+    const own = deniedHere(inspection, ["r/call/0.0"]).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, { executionId: "r" } as unknown as FlowRuntime.FlowInstance["Service"]),
+    )
+    expect((await Effect.runPromise(own)).any).toBe(false)
   })
 })
 

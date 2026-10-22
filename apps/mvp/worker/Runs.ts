@@ -4,7 +4,13 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import { MAX_RUN_BODY_BYTES, RUNS_TABLE } from "../src/features/status/contract.ts"
-import { type Report, Report as ReportSchema, type RunAnswer, RunAnswer as RunAnswerSchema } from "../src/features/status/schema.ts"
+import {
+  Decision,
+  type Report,
+  Report as ReportSchema,
+  type RunAnswer,
+  RunAnswer as RunAnswerSchema,
+} from "../src/features/status/schema.ts"
 import { type Actor, boundTo, canAsk, refusesPersonOnly, Sessions } from "./Actor.ts"
 import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
@@ -173,15 +179,34 @@ const runOf = (runId: string) =>
     return row
   })
 
-/** Whether `value` answers a question of `kind`: words for a question, a yes or no for an approval. */
+/**
+ * Whether `value` answers a question of `kind`: words for a question; for an approval, a yes or no, or a decision with
+ * a note, which may be empty.
+ */
 const fits = (kind: string | null, value: RunAnswer["value"]) =>
-  kind === "approval" ? typeof value === "boolean" : typeof value === "string" && value.trim() !== ""
+  kind === "approval" ? typeof value !== "string" : typeof value === "string" && value.trim() !== ""
+
+/** The answer as it is kept: words and a note trimmed. */
+const kept = (value: RunAnswer["value"]): RunAnswer["value"] =>
+  typeof value === "string"
+    ? value.trim()
+    : typeof value === "boolean"
+    ? value
+    : { approved: value.approved, note: value.note.trim() }
+
+const isDecision = Schema.is(Decision)
+
+/** Whether the kept answer `stored` is `value`, kept. */
+const same = (stored: unknown, value: RunAnswer["value"]) =>
+  typeof value === "object"
+    ? isDecision(stored) && stored.approved === value.approved && stored.note === value.note
+    : stored === value
 
 /** Records the answer to the open question `version` names, for `launchedBy`: its transaction, or `undefined`. */
 const applyAnswer = (runId: string, launchedBy: string, answer: RunAnswer) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const value = typeof answer.value === "string" ? answer.value.trim() : answer.value
+    const value = kept(answer.value)
     const [row] = yield* sql<{ readonly txid: string }>`
       UPDATE runs SET answer = jsonb_build_object('value', ${JSON.stringify(value)}::jsonb), answered_at = now(),
         updated_at = now()
@@ -274,8 +299,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         // An answered question closes for every recipient in the answer's transaction.
         const txid = yield* withFold(applyAnswer(runId, actorId, decoded.value), runId, login)
         if (txid !== undefined) return ok(txid)
-        const value = typeof decoded.value.value === "string" ? decoded.value.value.trim() : decoded.value.value
-        if (row.version === decoded.value.version && row.answer?.value === value) {
+        if (row.version === decoded.value.version && same(row.answer?.value, kept(decoded.value.value))) {
           fields.existing = true
           return ok(null)
         }

@@ -6,17 +6,18 @@ import { RUNS_ROUTE } from "../features/status/contract"
 export const ENGINE_NAME = "smithers"
 
 /**
- * What starts a dispatch: a button, a slash command, a view, the composer, the agent's cell, or sync, when a row another
- * device wrote asks this device to act on a run it holds (an answer to deliver, decision 0015).
+ * What starts a dispatch: a button, a slash command, a view, the composer, the agent's cell, sync, when a row another
+ * device wrote asks this device to act on a run it holds (an answer to deliver, decision 0015), or a key the person
+ * pressed in host UI (the keymap and the action strip, decision 0017).
  */
-export const DOORS = ["button", "slash", "view", "composer", "agent", "sync"] as const
+export const DOORS = ["button", "slash", "view", "composer", "agent", "sync", "key"] as const
 
 /**
- * The person's own doors (decision 0017 slice 0): a press, a typed command, a question sent. A root run of a person's
- * flow started through one of them runs with the person's session; every other run gets a run credential
- * (docs/features/sign-in.md#run-credentials).
+ * The person's own doors (decision 0017 slice 0): a press, a typed command, a question sent, a key in host UI. A root
+ * run of a person's flow started through one of them runs with the person's session; every other run gets a run
+ * credential (docs/features/sign-in.md#run-credentials).
  */
-export const PERSON_DOORS: ReadonlyArray<(typeof DOORS)[number]> = ["button", "slash", "composer"]
+export const PERSON_DOORS: ReadonlyArray<(typeof DOORS)[number]> = ["button", "slash", "composer", "key"]
 
 /** How long a run credential lasts (worker/RunCredentials.ts); the engine mints a fresh one a minute before then. */
 export const CREDENTIAL_TTL_MS = 15 * 60 * 1000

@@ -51,32 +51,47 @@ export const statusesQuery = (
 export type Statuses = Effect.Success<ReturnType<typeof statusesQuery>>
 
 /**
- * The questions that need the person, oldest first, in every conversation: each run whose question is open and
- * unanswered, from the person's `runs` alone, so a question on a branch this tab never opened counts too. An answer in
- * the home conversation that already settled still wins over its run's row, as in `statusesQuery`; ChatApi fails a
- * run's row when it settles its answer itself (worker/flows/Expire.ts, worker/Answers.ts).
+ * `core/waits` (decision 0017): the open waits addressed to the viewer, in every conversation, oldest first, then by run
+ * id. A run's row is synced only to the person who launched it, the one `run/answer` lets answer it, so every open row
+ * here is theirs, a question on a branch this tab never opened included. An answer in the home conversation that already
+ * settled still wins over its run's row, as in `statusesQuery`; ChatApi fails a run's row when it settles its answer
+ * itself (worker/flows/Expire.ts, worker/Answers.ts). Each row is `WAITS_ROW` (./contract.ts).
  */
-export const needsQuery = (home: Collection.Collection<Message>, runs: Collection.Collection<Run>) =>
+export const waitsQuery = (home: Collection.Collection<Message>, runs: Collection.Collection<Run>) =>
   LiveQuery.make((q) =>
     q
       .from({ run: runs.tanstack })
       .leftJoin({ message: home.tanstack }, ({ run, message }) => Query.eq(run.id, message.id))
       .where(({ run, message }) =>
         Query.and(
-          Query.eq(run.status, "needs_you"),
-          Query.isNull(run.answeredAt),
-          Query.or(
-            Query.isUndefined(message?.id),
-            Query.not(Query.or(Query.eq(message?.status, "done"), Query.eq(message?.status, "failed"))),
+          Query.and(Query.eq(run.status, "needs_you"), Query.isNull(run.answeredAt)),
+          Query.and(
+            Query.not(Query.isNull(run.wait)),
+            Query.or(
+              Query.isUndefined(message?.id),
+              Query.not(Query.or(Query.eq(message?.status, "done"), Query.eq(message?.status, "failed"))),
+            ),
           ),
         )
       )
-      .select(({ run }) => ({ id: run.id, version: run.version, wait: run.wait, createdAt: run.createdAt }))
-      .orderBy(({ $selected }) => $selected.createdAt),
+      .orderBy(({ run }) => run.createdAt)
+      .orderBy(({ run }) => run.id)
+      // The `where` holds `wait` to a question.
+      .select(({ run }) => ({
+        runId: run.id,
+        version: run.version,
+        execution: run.wait!.execution,
+        kind: run.wait!.kind,
+        prompt: run.wait!.prompt,
+        options: run.wait!.options,
+        question: Query.caseWhen(Query.eq(run.wait!.kind, "question"), true, false),
+        approval: Query.caseWhen(Query.eq(run.wait!.kind, "approval"), true, false),
+        createdAt: run.createdAt,
+      })),
   )
 
-/** The questions that need the person. */
-export type Needs = Effect.Success<ReturnType<typeof needsQuery>>
+/** The open waits addressed to the viewer. */
+export type Waits = Effect.Success<ReturnType<typeof waitsQuery>>
 
 /** The latest answer's status in one conversation: what the header shows while it shows that conversation. */
 export const latestQuery = (statuses: Statuses) =>

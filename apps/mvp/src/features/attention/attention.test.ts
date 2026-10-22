@@ -67,7 +67,8 @@ const openDevice = async (
     query.tanstack.startSyncImmediate()
   }
   for (const query of [store.panelState, store.detail]) query.tanstack.startSyncImmediate()
-  // The conversation's statuses, which its view reads (src/features/chat/components/Conversation.tsx).
+  // The conversation's statuses, which its view reads (src/features/chat/components/Conversation.tsx), its question
+  // card's focus included.
   statuses.statuses.tanstack.startSyncImmediate()
   return {
     host,

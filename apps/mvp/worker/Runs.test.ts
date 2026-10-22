@@ -231,17 +231,54 @@ describe("POST /api/runs/<id>/answer: the person answers", () => {
     expect(h.count(Runs.requests, { route: "answer", status: "409" })).toBe(1)
   })
 
-  test("an approval takes true or false only, and a question takes words only", async () => {
+  test("an approval takes true or false, and a question takes words only", async () => {
     const approval = await needing("approval")
     expect(await json(await answer(approval.h, approval.runId, 1, "yes"))).toEqual([400, { code: "invalid" }])
     expect(await json(await answer(approval.h, approval.runId, 1, false))).toEqual([200, { txid: expect.any(Number) }])
     expect((await runRow(approval.runId))!.answer).toEqual({ value: false })
     expect(await json(await answer(approval.h, approval.runId, 1, false))).toEqual([200, { txid: null }])
     expect(await json(await answer(approval.h, approval.runId, 1, true))).toEqual([409, { code: "not_open" }])
+    expect(await json(await answer(approval.h, approval.runId, 1, { approved: false, note: "" }))).toEqual([
+      409,
+      { code: "not_open" },
+    ])
     const question = await needing()
     expect(await json(await answer(question.h, question.runId, 1, true))).toEqual([400, { code: "invalid" }])
     expect(await json(await answer(question.h, question.runId, 1, "   "))).toEqual([400, { code: "invalid" }])
     expect(await json(await post(question.h, `/api/runs/${question.runId}/answer`, { version: 0, value: "x" }))).toEqual([
+      400,
+      { code: "invalid" },
+    ])
+  })
+
+  test("an approval takes a decision with a note, trimmed; the same again is taken, another is 409 not_open", async () => {
+    const approval = await needing("approval")
+    const changes = { approved: false, note: "  Keep the logs. " }
+    expect(await json(await answer(approval.h, approval.runId, 1, changes))).toEqual([200, { txid: expect.any(Number) }])
+    expect((await runRow(approval.runId))!.answer).toEqual({ value: { approved: false, note: "Keep the logs." } })
+    expect(await json(await answer(approval.h, approval.runId, 1, { approved: false, note: "Keep the logs." }))).toEqual([
+      200,
+      { txid: null },
+    ])
+    for (const other of [{ approved: true, note: "Keep the logs." }, { approved: false, note: "Other." }, false]) {
+      expect(await json(await answer(approval.h, approval.runId, 1, other))).toEqual([409, { code: "not_open" }])
+    }
+    expect(JSON.stringify(approval.h.logs)).not.toContain("Keep the logs")
+
+    // An empty note is a decision without one; a note over the limit, or a missing field, isn't an answer.
+    const empty = await needing("approval")
+    expect(await json(await answer(empty.h, empty.runId, 1, { approved: true, note: "   " }))).toEqual([
+      200,
+      { txid: expect.any(Number) },
+    ])
+    expect((await runRow(empty.runId))!.answer).toEqual({ value: { approved: true, note: "" } })
+    const refused = await needing("approval")
+    for (const value of [{ approved: true, note: "x".repeat(8_001) }, { approved: true }, { note: "x" }]) {
+      expect(await json(await answer(refused.h, refused.runId, 1, value))).toEqual([400, { code: "invalid" }])
+    }
+    // A question takes no decision, with a note or without.
+    const question = await needing()
+    expect(await json(await answer(question.h, question.runId, 1, { approved: true, note: "main" }))).toEqual([
       400,
       { code: "invalid" },
     ])

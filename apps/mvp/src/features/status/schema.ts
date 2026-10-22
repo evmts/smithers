@@ -36,8 +36,18 @@ export const Wait = Schema.Struct({
 })
 export type Wait = typeof Wait.Type
 
-/** An answer: the words or option for a question, `true` (Approve) or `false` (Deny) for an approval. */
-export const AnswerValue = Schema.Union([Schema.String.check(Schema.isMaxLength(MAX_ANSWER_LENGTH)), Schema.Boolean])
+/** An approval's decision with the person's note: Approve (`approved: true`) or Changes, and what to do. */
+export const Decision = Schema.Struct({
+  approved: Schema.Boolean,
+  note: Schema.String.check(Schema.isMaxLength(MAX_ANSWER_LENGTH)),
+})
+export type Decision = typeof Decision.Type
+
+/**
+ * An answer: the words or option for a question; for an approval, `true` (Approve) or `false` (Deny), or a `Decision`
+ * with a note.
+ */
+export const AnswerValue = Schema.Union([Schema.String.check(Schema.isMaxLength(MAX_ANSWER_LENGTH)), Schema.Boolean, Decision])
 export type AnswerValue = typeof AnswerValue.Type
 
 /**

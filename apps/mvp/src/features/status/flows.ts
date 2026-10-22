@@ -4,7 +4,7 @@ import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { RunsClient } from "./api"
 import { ASK_TASK, ASK_WITHIN_MS, MAX_OPTION_LENGTH, MAX_OPTIONS, MAX_PROMPT_LENGTH } from "./contract"
 import { RunReporter } from "./reporter"
-import { AnswerValue, NeedKind } from "./schema"
+import { AnswerValue, Decision, NeedKind } from "./schema"
 
 // Needs you, as flows (decision 0015 §3 and §4, docs/features/agent-status.md#flows):
 //
@@ -31,17 +31,24 @@ const NeedFields = {
   ),
 }
 
-/** What `app/agent/ask` answers: whether the person answered in time, and their words or their decision. */
+/**
+ * What `app/agent/ask` answers: whether the person answered in time, and their words or their decision, with their
+ * note when they wrote one.
+ */
 export const AskOutcome = Schema.Struct({
   answered: Schema.Boolean,
   answer: Schema.optional(Schema.String),
   approved: Schema.optional(Schema.Boolean),
+  note: Schema.optional(Schema.String),
 })
 export type AskOutcome = typeof AskOutcome.Type
 
-/** The human task `app/agent/ask` parks on: an answer in words (`ask`), or yes or no (`confirm`), asked once. */
+/**
+ * The human task `app/agent/ask` parks on, asked once: an answer in words (`ask`), or for an approval a decision, alone
+ * or with a note (`json`: the runs route and `AnswerValue` hold its shape).
+ */
 export const HumanRequest = Schema.Struct({
-  kind: Schema.Literals(["ask", "confirm"]),
+  kind: Schema.Literals(["ask", "json"]),
   prompt: Schema.String,
   timeoutMs: Schema.Number,
   maxAttempts: Schema.Number,
@@ -113,17 +120,19 @@ export const AskAnswer = Action.make("app/agent/ask/answer", {
   tier: "sealed",
 })
 
-/** The human task's answer as the agent reads it: the words, or the decision; anything else is no answer. */
-export const answerOf = (value: unknown): AnswerValue | null =>
-  typeof value === "string" || typeof value === "boolean" ? value : null
+const isAnswer = Schema.is(AnswerValue)
+const isDecision = Schema.is(Decision)
+
+/** The human task's answer as the agent reads it: the words, or the decision with or without a note; else no answer. */
+export const answerOf = (value: unknown): AnswerValue | null => (isAnswer(value) ? value : null)
 
 /** `app/agent/ask`: the agent asks the person who asked it, and waits for the answer. */
 export const Ask = Flow.make("app/agent/ask", {
   description:
     "Ask the person a question, or for their approval, and wait for their answer. Use it only when you can't go on " +
     "without their decision. kind \"question\" takes their words or one of options; kind \"approval\" takes Approve " +
-    "or Deny. Answers { answered, answer } or { answered, approved }; answered is false when nobody answered within " +
-    "10 minutes.",
+    "or Deny. Answers { answered, answer } or { answered, approved, note? }, note when they wrote one; answered is " +
+    "false when nobody answered within 10 minutes.",
   modelInvocable: true,
   payload: NeedFields,
   success: AskOutcome,
@@ -219,7 +228,7 @@ const request = (need: { readonly kind: NeedKind; readonly prompt: string; reado
       ),
     )
     return {
-      kind: need.kind === "approval" ? "confirm" as const : "ask" as const,
+      kind: need.kind === "approval" ? "json" as const : "ask" as const,
       prompt: need.prompt,
       timeoutMs: ASK_WITHIN_MS,
       maxAttempts: 1,
@@ -233,7 +242,10 @@ const answer = (input: { readonly kind: NeedKind; readonly value: AnswerValue | 
     yield* (yield* RunReporter).report(instance.executionId, { status: "working" })
     const { kind, value } = input
     if (kind === "approval") {
-      return typeof value === "boolean" ? { answered: true, approved: value } : { answered: false }
+      if (typeof value === "boolean") return { answered: true, approved: value }
+      if (!isDecision(value)) return { answered: false }
+      const note = value.note.trim()
+      return note === "" ? { answered: true, approved: value.approved } : { answered: true, approved: value.approved, note }
     }
     return typeof value === "string" ? { answered: true, answer: value } : { answered: false }
   })

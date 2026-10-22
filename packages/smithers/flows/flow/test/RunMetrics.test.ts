@@ -48,6 +48,8 @@ const series = (snapshot: Snapshot, id: string) =>
 describe("RunMetrics labels", () => {
   it("keeps a door, an actor and a placement it lists, reads an absent one as unknown and any other as other", () => {
     expect(RunMetrics.doors.map(RunMetrics.door)).toEqual([...RunMetrics.doors])
+    // A person's key press on host UI, such as a plugin keybinding, is its own door, never `other`.
+    expect(RunMetrics.door("key")).toBe("key")
     expect(RunMetrics.actors.map(RunMetrics.actor)).toEqual([...RunMetrics.actors])
     expect(RunMetrics.placements.map(RunMetrics.placement)).toEqual([...RunMetrics.placements])
     expect([RunMetrics.door(undefined), RunMetrics.actor(undefined), RunMetrics.placement(undefined)]).toEqual([

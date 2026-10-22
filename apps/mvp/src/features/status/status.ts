@@ -6,7 +6,7 @@ import { StatusStore } from "./store"
 
 // Agent status as a frontend sees it (decision 0015): live queries to read and plain functions to act, with no Effect
 // in sight. The conversation a tab shows renders each answer's state and question from its own `statuses`; the header
-// reads that conversation's `latest`. The tab title follows the store's `needs`. The toast stack and the top bar's bell
+// reads that conversation's `latest`. The tab title follows the store's `waits`. The toast stack and the top bar's bell
 // read the feed (decision 0009, src/features/attention/).
 
 type Store = StatusStore["Service"]
@@ -28,7 +28,7 @@ export interface StatusQueries {
 
 /** What a person does, as plain functions. Each returns at once. */
 export interface StatusActions {
-  /** Answers run `id`'s open question: words or an option, or `true` (Approve) or `false` (Deny). */
+  /** Answers run `id`'s open question: words or an option, or `true` (Approve), `false` (Deny) or `{ approved, note }`. */
   readonly answer: (id: string, value: AnswerValue) => void
   readonly setDraft: (id: string, text: string) => void
   /** Brings run `id`'s question card into view and focuses it: a toast's Answer. */

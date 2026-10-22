@@ -135,6 +135,31 @@ describe("app/agent/ask", { timeout: ENGINE_WITHIN }, () => {
     expect(model.seen[1]).toContain(`{"answered":true,"approved":true}`)
   })
 
+  test("an approval's note reaches the agent, trimmed; an empty one is left out", async () => {
+    for (const [value, heard] of [
+      [{ approved: false, note: "  Keep the logs. " }, `{"answered":true,"approved":false,"note":"Keep the logs."}`],
+      [{ approved: true, note: "  " }, `{"answered":true,"approved":true}`],
+    ] as const) {
+      const model = asking(`{ kind: "approval", prompt: "Delete the stale preview?" }`, `ctx.done("Done.")`)
+      const agent = await openAgent(runtime, model.script)
+      const engine = await agent.engine()
+      engines.push(engine)
+      const answerId = await agent.ask("Clean up old previews")
+      const running = agent.start(engine, answerId)
+      await eventually(async () => (await statusOf(answerId)) === "needs_you", 60_000)
+      const open = (await runRow(answerId))!
+      await execute(engine, (flows) =>
+        flows.execute(AnswerRun, {
+          executionId: `answer-${answerId}`,
+          payload: { runId: answerId, version: 1, execution: open.wait!.execution, value },
+        }))
+      expect(await running.done).toEqual(Exit.succeed({ status: "done" }))
+      // The agent reads what it heard in the request after the ask, wherever the harness puts the cell's output in it.
+      expect(model.seen.find((text) => text.includes(`"answered"`))).toContain(heard)
+      expect((await runRow(answerId))!.answer).toEqual({ value: { approved: value.approved, note: value.note.trim() } })
+    }
+  })
+
   test("an answer recorded on another device reaches the run through run/deliver; a device without the run delivers nothing", async () => {
     const model = asking(`{ kind: "question", prompt: "Which branch?" }`, `ctx.done("Done.")`)
     const agent = await openAgent(runtime, model.script)
@@ -286,9 +311,12 @@ describe("chat/Answer's own reports", { timeout: ENGINE_WITHIN }, () => {
 })
 
 describe("answerOf", { timeout: ENGINE_WITHIN }, () => {
-  test("keeps words and decisions, and nothing else", () => {
+  test("keeps words, decisions and decisions with a note, and nothing else", () => {
     expect(answerOf("main")).toBe("main")
     expect(answerOf(false)).toBe(false)
-    for (const value of [null, 1, {}, []]) expect(answerOf(value)).toBeNull()
+    expect(answerOf({ approved: true, note: "Go." })).toEqual({ approved: true, note: "Go." })
+    for (const value of [null, 1, {}, [], { approved: true }, { approved: "yes", note: "" }, { approved: true, note: 1 }]) {
+      expect(answerOf(value)).toBeNull()
+    }
   })
 })

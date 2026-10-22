@@ -15,6 +15,7 @@ import {
   syncedCollection
 } from "../test/deviceFixture"
 import { RepositoryV3 } from "./repo-history"
+import { RunV1 } from "./runs-history"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
@@ -75,6 +76,8 @@ test("the c6940ac53e5a fixture uses that deployed build's recorded schemas and v
     if (store === undefined) throw new Error(`Missing fixture store ${id}`)
     const schema = id === "repo-repositories" && collection.version === 3
       ? RepositoryV3
+      : id === "runs" && collection.version === 1
+      ? RunV1
       : store._tag === "Local" ? store.versions[collection.version - store.first]! : store.schema
     expect(Migrations.fingerprint(schema), id).toBe(
       currentDeployed.schemaFingerprints[id as keyof typeof currentDeployed.schemaFingerprints]
@@ -112,7 +115,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       "issue-requested": legacy ? "migrated 1→2 migrated 2 kept 0" : "current 2→2 migrated 0 kept 0",
       preferences: "current 1→1 migrated 0 kept 0",
       "repo-repositories": legacy ? "resync 2→4 migrated 0 kept 0" : "resync 3→4 migrated 0 kept 0",
-      runs: "current 1→1 migrated 0 kept 0",
+      runs: "resync 1→2 migrated 0 kept 0",
       views: legacy ? "resync 1→2 migrated 0 kept 0" : "current 2→2 migrated 0 kept 0"
     })
     expect(report.epoch).toBe(deviceRegistry.epoch)

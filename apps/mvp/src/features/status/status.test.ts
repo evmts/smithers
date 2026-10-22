@@ -2,7 +2,7 @@
 // queries, with no React. Each device runs the browser's own layer (`appLayer`) on a Node device (src/test/chatApi.ts)
 // whose engine leads, against ChatApi's real handler over the compose Postgres and Electric. Only the model is
 // scripted. Proves decision 0015's first slice: the agent's question reaches the conversation's status, the header's
-// queries, the toasts and the title on every device, and an answer from any of them resumes the run.
+// queries, `core/waits`, the toasts and the title on every device, and an answer from any of them resumes the run.
 import { Effect, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as Conversations from "../../../worker/branch/Conversations.ts"
@@ -10,6 +10,7 @@ import { shaOf } from "../../../worker/test/branch.ts"
 import { Chat } from "../chat/chat"
 import { dispatches } from "../../flows/dispatch"
 import { nodeDevice, openFaultyTab, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { plain } from "../../test/deviceFixture"
 import { EngineFaults } from "../../test/faults"
 import { Status } from "./status"
 import { shown, StatusStore } from "./store"
@@ -52,14 +53,14 @@ const openDevice = async (
   const chat = await runtime.runPromise(Effect.service(Chat))
   const status = await runtime.runPromise(Effect.service(Status))
   const store = await runtime.runPromise(Effect.service(StatusStore))
-  for (const query of [store.statuses, store.needs, store.latest]) query.tanstack.startSyncImmediate()
+  for (const query of [store.statuses, store.waits, store.latest]) query.tanstack.startSyncImmediate()
   return {
     chat,
     status,
     store,
     titles,
     statusOf: (id: string) => store.statuses.tanstack.toArray.find((row) => row.id === id),
-    needs: () => store.needs.tanstack.toArray,
+    waits: () => store.waits.tanstack.toArray.map(plain),
     latest: () => store.latest.tanstack.toArray[0],
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>) => runtime.runSync(Metric.value(metric)).count,
     faults: () => runtime.runPromise(Effect.service(EngineFaults) as Effect.Effect<EngineFaults["Service"], never, never>),
@@ -96,7 +97,17 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
         draft: "",
         focus: 0,
       })
-      expect(device.needs()).toEqual([expect.objectContaining({ id: answerId, version: 1 })])
+      expect(device.waits()).toEqual([{
+        runId: answerId,
+        version: 1,
+        execution: expect.any(String),
+        kind: "question",
+        prompt: "Which branch should I deploy?",
+        options: ["main", "docs-v2"],
+        question: true,
+        approval: false,
+        createdAt: expect.any(String),
+      }])
     }
     await until(() => expect(a.titles.at(-1)).toBe("(1) Smithers"))
     expect(a.count(Metric.withAttributes(shown, { surface: "title" }))).toBe(1)
@@ -107,7 +118,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     a.status.actions.focus(answerId)
     expect(a.statusOf(answerId)).toMatchObject({ draft: "docs", focus: 2 })
     expect(b.statusOf(answerId)).toMatchObject({ draft: "", focus: 0 })
-    expect(b.needs()).toEqual([expect.objectContaining({ id: answerId })])
+    expect(b.waits()).toEqual([expect.objectContaining({ runId: answerId })])
 
     // The other device answers. Its engine doesn't hold the run; the device that does delivers it.
     b.status.actions.answer(answerId, "docs-v2")
@@ -118,7 +129,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     for (const device of [a, b]) {
       await until(() => expect(device.statusOf(answerId)?.state).toBe("done"))
       expect(device.statusOf(answerId)?.answer).toEqual({ value: "docs-v2" })
-      expect(device.needs()).toEqual([])
+      expect(device.waits()).toEqual([])
     }
     await until(() => expect(a.titles.at(-1)).toBe("Smithers"))
     expect(a.latest()).toMatchObject({ id: answerId, state: "done" })
@@ -151,7 +162,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
       expect(inBranch(device).latest()).toMatchObject({ id: answerId, state: "needs_you" })
       // Home has no such answer; the questions that need the person are every conversation's.
       expect(device.statusOf(answerId)).toBeUndefined()
-      await until(() => expect(device.needs()).toEqual([expect.objectContaining({ id: answerId, version: 1 })]))
+      await until(() => expect(device.waits()).toEqual([expect.objectContaining({ runId: answerId, version: 1 })]))
     }
     await until(() => expect(a.titles.at(-1)).toBe("(1) Smithers"))
     expect(a.count(Metric.withAttributes(shown, { surface: "title" }))).toBe(1)
@@ -164,7 +175,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     for (const device of [a, b]) {
       await until(() => expect(inBranch(device).statusOf(answerId)?.state).toBe("done"))
       expect(inBranch(device).statusOf(answerId)?.answer).toEqual({ value: "eu" })
-      expect(device.needs()).toEqual([])
+      expect(device.waits()).toEqual([])
     }
     await until(() => expect(a.titles.at(-1)).toBe("Smithers"))
     const answered = Metric.withAttributes(dispatches, { flow: "run/answer", door: "button", outcome: "done" })
@@ -176,7 +187,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     expect(a.status.queries.of(branch).statuses).toBe(a.status.queries.of(branch).statuses)
   })
 
-  test("an approval answered on the same device resumes the run; nothing acts on a question that isn't open", async () => {
+  test("an approval answered with a note on the same device resumes the run; nothing acts on a question that isn't open", async () => {
     const api = await openApi()
     const a = await openDevice(api, { titled: false })
     const answerId = ask(a, "Clean up old previews")
@@ -190,10 +201,16 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     expect(a.statusOf(answerId)).toMatchObject({ draft: "", focus: 0, wait: { kind: "approval", options: [] } })
     expect(a.store.local.tanstack.toArray).toEqual([])
 
-    a.status.actions.answer(answerId, true)
+    expect(a.waits()).toEqual([expect.objectContaining({ runId: answerId, kind: "approval", options: [], question: false, approval: true })])
+
+    // Approve, with a note.
+    a.status.actions.answer(answerId, { approved: true, note: "Only docs-v1." })
     const second = await Effect.runPromise(api.answerTo("Clean up old previews", 1))
     second.cell(`ctx.done("Deleted docs-v1.")`)
-    await until(() => expect(a.statusOf(answerId)).toMatchObject({ state: "done", answer: { value: true } }))
+    await until(() =>
+      expect(a.statusOf(answerId)).toMatchObject({ state: "done", answer: { value: { approved: true, note: "Only docs-v1." } } })
+    )
+    expect(a.waits()).toEqual([])
   })
 
   test("an older answer settling late leaves the next question's draft as it is", async () => {
@@ -229,7 +246,7 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     const second = ask(a, "Then bump the version")
     await until(() => expect(a.statusOf(second)?.state).toBe("waiting"))
     expect(a.latest()).toMatchObject({ id: second, state: "waiting" })
-    expect(a.needs().map((need) => need.id)).toEqual([first])
+    expect(a.waits().map((wait) => wait.runId)).toEqual([first])
 
     a.status.actions.answer(first, "main")
     ;(await Effect.runPromise(api.answerTo("First, deploy", 1))).cell(`ctx.done("Deployed main.")`)

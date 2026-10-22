@@ -1,5 +1,5 @@
 // Agent status's contract between the browser and ChatApi (decision 0015, docs/features/agent-status.md): routes,
-// limits, the needs-you wait and the records the feature makes. Nothing here imports a library, so every side can.
+// limits, the needs-you wait, the waits row and the records the feature makes. Nothing here imports a library, so every side can.
 
 /** `POST <route>/<runId>`: the run's own steps report its status. `POST <route>/<runId>/answer`: a person answers. */
 export const RUNS_ROUTE = "/api/runs"
@@ -31,6 +31,27 @@ export const ASK_WITHIN_MS = 10 * 60 * 1000
 
 /** The human task `app/agent/ask` parks on: its one wait point is `WaitFor/<ASK_TASK>#1`. */
 export const ASK_TASK = "agent-ask"
+
+/**
+ * One row of `core/waits` (`waitsQuery`, decision 0017), as JSON Schema: what the plugin loader checks a manifest's
+ * `$item.<field>` references against. `options` is empty for an approval; `question` and `approval` say which it is.
+ */
+export const WAITS_ROW = {
+  type: "object",
+  properties: {
+    runId: { type: "string" },
+    version: { type: "integer" },
+    execution: { type: "string" },
+    kind: { type: "string", enum: ["question", "approval"] },
+    prompt: { type: "string" },
+    options: { type: "array", items: { type: "string" } },
+    question: { type: "boolean" },
+    approval: { type: "boolean" },
+    createdAt: { type: "string" },
+  },
+  required: ["runId", "version", "execution", "kind", "prompt", "options", "question", "approval", "createdAt"],
+  additionalProperties: false,
+} as const
 
 /** 0009's rule: nothing shows before 300 ms, so a question answered at once never flashes. */
 export const SHOW_AFTER_MS = 300
