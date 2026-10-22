@@ -450,7 +450,7 @@ describe("AgentSession.deliverSignal", () => {
     }))
     expect(observed.delivery).toBe("refused")
     expect(observed.refusal.first).toBeInstanceOf(Unauthorized)
-    expect(observed.refusal.replay).toBeInstanceOf(NoMatchingWait)
+    expect(observed.refusal.replay).toBeInstanceOf(Unauthorized)
     expect(Option.isSome(observed.before)).toBe(true)
     expect(observed.after).toEqual(observed.before)
     expect(observed.pending).toEqual([])
@@ -1161,6 +1161,42 @@ describe("durable signal admission and engine observation", () => {
       })
       expect(yield* state.deferred(DurableDeferred.TokenParsed.fromString(waiting.token!)))
         .toEqual(Option.none())
+    }))
+  })
+
+  it("persists Unauthorized when background signal delivery refuses a human wait", async () => {
+    await run(Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const state = yield* DurableEngineState.DurableEngineState
+      const store = yield* RunStore.RunStore
+      const runId = yield* startControlRun
+      const owner = { hostId: runId, pid: 1, nonce: runId }
+      const wait = new DurableDeferred.TokenParsed({
+        flowName: Gated._tag,
+        executionId: runId,
+        deferredName: "WaitFor/approval"
+      })
+      yield* store.create(runId, "{}")
+      yield* store.claimAndOwn(
+        runId,
+        { status: "pending", owner: null, heartbeatAtMs: null },
+        owner,
+        yield* Clock.currentTimeMillis
+      )
+      yield* state.park(runId, { reason: "approval", token: wait.asToken }, owner)
+      const before = yield* state.waiting(runId)
+      yield* runtime.admitSignal("unauthorized-background", runId, { name: "approval", payload: true }, {
+        id: "mallory",
+        kind: "agent",
+        stampedAt: 0
+      })
+      yield* AgentSession.drainRecordedSignals
+      expect(yield* runtime.signalCommand("unauthorized-background")).toMatchObject({
+        state: "rejected",
+        rejection: "unauthorized"
+      })
+      expect(yield* state.waiting(runId)).toEqual(before)
+      expect(yield* state.deferred(wait)).toEqual(Option.none())
     }))
   })
 

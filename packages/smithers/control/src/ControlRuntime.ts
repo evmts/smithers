@@ -177,6 +177,8 @@ export interface SignalCommand {
   readonly signal: SignalPayload
   readonly token: string | null
   readonly state: "pending" | "delivered" | "rejected" | "terminal"
+  /** Persisted rejection outcome; absent on legacy no-match rejections. */
+  readonly rejection?: "unauthorized" | undefined
   /**
    * Who admitted the signal, stamped at admission. The executor checks it
    * against `authorizeApproval` before the signal may complete a human wait,
@@ -574,7 +576,8 @@ export interface Service {
   readonly bindSignal: (commandId: string, token: string) => Effect.Effect<string | null, PersistenceError>
   readonly settleSignal: (
     commandId: string,
-    state: "delivered" | "rejected" | "terminal"
+    state: "delivered" | "rejected" | "terminal",
+    rejection?: "unauthorized"
   ) => Effect.Effect<void, PersistenceError>
   readonly deliveredSignals: (
     runId: RunId
@@ -1387,11 +1390,11 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             signalCommands.set(commandId, { ...command, token: bound })
             return bound
           }),
-        settleSignal: (commandId, state) =>
+        settleSignal: (commandId, state, rejection) =>
           Effect.sync(() => {
             const command = signalCommands.get(commandId)
             if (command !== undefined && command.state === "pending") {
-              signalCommands.set(commandId, { ...command, state })
+              signalCommands.set(commandId, { ...command, state, rejection })
             }
           }),
         deliveredSignals: Effect.fn("ControlRuntime.deliveredSignals")((runId) =>

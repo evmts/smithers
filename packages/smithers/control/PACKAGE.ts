@@ -1,4 +1,4 @@
-import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
+import { BuildAndCheckTypeScriptPackage, ImportRules } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
@@ -10,6 +10,23 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
   cwd: "packages/smithers/control"
+})
+
+const importRules = ImportRules({
+  cwd: "packages/smithers/control",
+  rules: [
+    {
+      kind: "forbidHostModules",
+      files: ["src/**"],
+      because: "sdk.platform-neutral: control receives host services through Effect layers."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["src/**"],
+      callees: ["*.runPromise", "*.runPromiseExit", "*.runSync", "*.runSyncExit", "*.runFork", "*.runCallback"],
+      because: "effect.boundary-only: control returns Effects to its host."
+    }
+  ]
 })
 
 const postgresInventory = Smithers.Shell.Test({
@@ -206,6 +223,7 @@ const securityReview = Smithers.SecurityReview({
 export const Package = Smithers.Package({
   targets: {
     check,
+    importRules,
     circular,
     docs,
     docsFiles,

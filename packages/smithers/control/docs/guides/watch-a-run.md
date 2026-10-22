@@ -45,6 +45,14 @@ below it from a finite snapshot, and takes everything above it from the
 buffered tail. It is a handoff rather than a deduplicated overlap, so an
 arbitrarily long history cannot make an old entry reappear.
 
+A global watch rechecks durable tails after its initial snapshot and every
+second thereafter. This recovers a dropped final notice even when its partition
+never emits again, and discovers new partitions whose notices were lost.
+`SMITHERS_CONTROL_WATCH_INTERVAL` configures the interval as an Effect duration.
+Recovered entries increment `smithers.control.watch.recovered_entries`, emit a
+debug log, and carry a `Control.watch.recover` span. Reads remain paged; the
+watch's scope owns and stops the reconciliation stream.
+
 ## Resume at a cursor
 
 Store `event.cursor` after processing each event, then pass it back unchanged

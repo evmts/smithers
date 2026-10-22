@@ -12,7 +12,7 @@ import { Notification, NotificationQueue } from "@smthrs/notifications"
 import * as SteerPayload from "@smthrs/notifications/SteerPayload"
 import { Registry } from "@smthrs/registry"
 import { inputDocument } from "@smthrs/registry/Descriptor"
-import { Cause, Deferred, Effect, Exit, Layer, Option, Schema, Semaphore, Stream } from "effect"
+import { Cause, Config, Deferred, Effect, Exit, Layer, Metric, Option, Schema, Semaphore, Stream } from "effect"
 import * as Cancellation from "./Cancellation.ts"
 import {
   type ApprovalInput,
@@ -79,6 +79,7 @@ import * as Steering from "./Steering.ts"
 
 const sourceId = JournalEvent.SourceId.make("/control")
 
+const watchRecovered = Metric.counter("smithers.control.watch.recovered_entries")
 const snapshotPageSize = 1024
 const snapshotPartitionConcurrency = 8
 /** Partition ids a global watch reads per keyed inventory page. */
@@ -1482,6 +1483,10 @@ export const layer: Layer.Layer<
         : Stream.unwrap(
           Effect.gen(function*() {
             const subscription = yield* journal.changes
+            const reconcileInterval = yield* Config.Duration("SMITHERS_CONTROL_WATCH_INTERVAL").pipe(
+              Config.withDefault("1 second"),
+              Effect.orDie
+            )
             // Subscribe first, then pin each partition's cutoff. A row
             // committed at or before its cutoff is read from the finite
             // snapshot; one committed after it is read from the buffered tail.
@@ -1599,6 +1604,61 @@ export const layer: Layer.Layer<
                 ? Effect.succeed(Option.some(entry))
                 : Effect.map(gapCheck(partition, expected, entry.seq), () => Option.some(entry))
             }
+            // The sliding notices cannot reveal a lost last event in a quiet
+            // partition. Re-read durable tails while this subscription is open;
+            // notice delivery and catch-up share monotonic partition cursors.
+            const reconcile = Stream.unwrap(Effect.sync(() => {
+              const visited = new Set<string>()
+              return Stream.concat(Stream.fromIterable(cutoffs.keys()), journalPartitions).pipe(
+                Stream.filter((partition) => {
+                  if (visited.has(partition)) return false
+                  visited.add(partition)
+                  return true
+                }),
+                Stream.flatMap((partition) =>
+                  Stream.unwrap(Effect.gen(function*() {
+                    const { highWater, claimed } = yield* cutoffFor(partition)
+                    const history = claimed ? historyFor(partition, highWater) : Stream.empty
+                    if (!claimed) yield* Deferred.await(cutoffs.get(partition)!.delivered)
+                    const afterSequence = seenByPartition.get(partition) ?? highWater
+                    const latest = yield* snapshotHighWater(JournalEvent.RunId.make(partition))
+                    const recovered = snapshotForRunAt(partition, {
+                      ...filter,
+                      ...(afterSequence === undefined ? {} : { afterSequence })
+                    }, latest)
+                    const unseen = recovered.pipe(
+                      Stream.filterEffect((event) =>
+                        Effect.sync(() => {
+                          const seen = seenByPartition.get(partition)
+                          if (seen !== undefined && event.sequence <= seen) return false
+                          seenByPartition.set(partition, event.sequence)
+                          return true
+                        })
+                      )
+                    )
+                    // Claimed history belongs to this snapshot even if a later
+                    // notice advances the live cursor before its page is read.
+                    return Stream.concat(history, unseen).pipe(
+                      Stream.tap(
+                        Effect.fn("Control.watch.recover")((event: ControlEvent | { readonly snapshotComplete: Deferred.Deferred<void> }) =>
+                          Effect.gen(function*() {
+                            if ("snapshotComplete" in event) return
+                            yield* Metric.update(watchRecovered, 1)
+                            yield* Effect.logDebug("Recovered a watch journal entry")
+                          })
+                        )
+                      )
+                    )
+                  }))
+                )
+              )
+            }))
+            const tailEnded = Deferred.makeUnsafe<void>()
+            const checks = Stream.tick(reconcileInterval).pipe(
+              Stream.drop(1),
+              Stream.flatMap(() => reconcile),
+              Stream.interruptWhen(Deferred.await(tailEnded))
+            )
             const tail = Stream.fromSubscription(subscription).pipe(
               // Every committed entry names its partition. The first one from a
               // partition nobody pinned yet pins it here and is preceded by that
@@ -1616,11 +1676,12 @@ export const layer: Layer.Layer<
                     ? Stream.concat(history, Stream.succeed(eventFromEntry(tracked.value)))
                     : history
                 }))
-              )
+              ),
+              Stream.ensuring(Deferred.succeed(tailEnded, undefined))
             )
             // The walk bounds snapshot reads; the tail waits for its partition's
             // history to cross this merge before forwarding newer entries.
-            return Stream.merge(walk, tail).pipe(
+            return Stream.merge(walk, Stream.merge(tail, checks)).pipe(
               Stream.mapEffect((item) =>
                 "snapshotComplete" in item
                   ? Deferred.succeed(item.snapshotComplete, undefined).pipe(Effect.as(Option.none<ControlEvent>()))
@@ -1970,6 +2031,11 @@ export const layer: Layer.Layer<
               const command = yield* runtime.signalCommand(durableKey)
               if (command === undefined || command.state === "delivered" || command.state === "terminal") return receipt
               if (command.state === "rejected") {
+                if (command.rejection === "unauthorized") {
+                  return yield* new Unauthorized({
+                    message: `This caller has no authority to answer "${input.signal.name}" on run ${input.runId}`
+                  })
+                }
                 return yield* new NoMatchingWait({ runId: input.runId, waitName: input.signal.name })
               }
               const delivery = Option.isNone(executor) ?
@@ -1980,7 +2046,7 @@ export const layer: Layer.Layer<
                 return yield* new NoMatchingWait({ runId: input.runId, waitName: input.signal.name })
               }
               if (delivery === "refused") {
-                yield* runtime.settleSignal(durableKey, "rejected")
+                yield* runtime.settleSignal(durableKey, "rejected", "unauthorized")
                 return yield* new Unauthorized({
                   message: `This caller has no authority to answer "${input.signal.name}" on run ${input.runId}`
                 })
@@ -2126,8 +2192,9 @@ export const layer: Layer.Layer<
                   // later long-lived engine happened to sweep it: `gc` collected the
                   // run in `control.db` and skipped it in `engine.db` for fifteen
                   // seconds and six commands in the release validation.
-                  Effect.tap(() =>
+                  Effect.tap((receipt) =>
                     Effect.gen(function*() {
+                      if (receipt._tag === "Conflict") return
                       yield* executorSettleCancelledPark(input.runId)
                       // The engine can finish between the request and local interrupt,
                       // or while settling an unowned park. Its read overlay alone does

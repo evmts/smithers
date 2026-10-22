@@ -2029,11 +2029,12 @@ const makeRuntime = (
             payloadJson: string
             token: string | null
             state: "pending" | "delivered" | "rejected" | "terminal"
+            rejection: "unauthorized" | null
             principalJson: string | null
           }
         >`
           SELECT command_id AS "commandId", run_id AS "runId", payload_json AS "payloadJson", wait_token AS token, state,
-            principal_json AS "principalJson"
+            principal_json AS "principalJson", rejection
           FROM control_signal_commands WHERE command_id = ${commandId}`.pipe(query("read signal command"))
         const row = rows[0]
         if (row === undefined) return undefined
@@ -2042,6 +2043,7 @@ const makeRuntime = (
           runId: row.runId,
           token: row.token,
           state: row.state,
+          ...(row.rejection === null ? {} : { rejection: row.rejection }),
           signal: yield* decodeStoredJson("control_signal_commands.payload_json", SignalPayload, row.payloadJson),
           ...yield* signalPrincipal(row.principalJson)
         }
@@ -2114,9 +2116,11 @@ const makeRuntime = (
           return rows[0].token
         })).pipe(Effect.mapError(persistence("bind signal")))
       ),
-      settleSignal: Effect.fn("SqlControlRuntime.settleSignal")((commandId, state) =>
+      settleSignal: Effect.fn("SqlControlRuntime.settleSignal")((commandId, state, rejection) =>
         writer.write(
-          sql`UPDATE control_signal_commands SET state = ${state} WHERE command_id = ${commandId} AND state = 'pending'`
+          sql`UPDATE control_signal_commands SET state = ${state}, rejection = ${
+            rejection ?? null
+          } WHERE command_id = ${commandId} AND state = 'pending'`
         ).pipe(Effect.asVoid, Effect.mapError(persistence("settle signal")))
       ),
       deliveredSignals: Effect.fn("SqlControlRuntime.deliveredSignals")(function*(runId: RunId) {

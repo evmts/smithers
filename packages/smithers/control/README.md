@@ -179,3 +179,19 @@ identity tuples, including agents, with specific target kinds and approval
 scopes. Denial requires a delegated target kind and installs no grant. Callers
 without authority receive `Unauthorized` (`code: "unauthorized"`) before target
 reads or receipt replay. See [who may decide](docs/guides/approvals.md#who-may-decide).
+
+### Watch catch-up and rejected mutations
+
+Global watches recheck durable partition tails every second while subscribed,
+so a dropped final notice is recovered even when its partition goes quiet.
+`SMITHERS_CONTROL_WATCH_INTERVAL` configures that interval as an Effect duration.
+Catch-up uses the library catalog's `@smthrs/journal` entry, bounded journal pages,
+and the existing snapshot cursors. Recovered entries increment
+`smithers.control.watch.recovered_entries`, emit a debug log, and carry a
+`Control.watch.recover` span. Compaction before a read still requires resync.
+
+A cancellation returning `Conflict` performs no executor settlement or terminal
+reconciliation. Signal rejection outcomes persist with their command: replay of
+an authority refusal returns `Unauthorized`, while no-match and legacy rejected
+commands return `NoMatchingWait`. Migration 0008 adds the nullable rejection
+column without changing existing command states.

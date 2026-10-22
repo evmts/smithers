@@ -33,7 +33,10 @@ on the admitted command. Before the executor completes a human wait, it asks
 `ApprovalAuthority` whether that principal may approve the wait's `Node`
 target, with the wait name as `requestId`, the wait token as `digest`, and
 scope `once`. A refused principal fails `Unauthorized`, the command is
-rejected, and the wait stays open. A replay after restart is judged by the
+rejected, and the wait stays open. That rejection is stored as `unauthorized`,
+so retries return the same `Unauthorized` outcome without attempting delivery
+again. Migration 0008 adds this nullable rejection field; legacy rejected commands
+retain their `NoMatchingWait` outcome. Pending delivery after restart is judged by the
 principal recorded at admission; a command with no recorded principal cannot
 answer a human wait. Plain `WaitFor` events need no approval.
 

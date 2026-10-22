@@ -2955,7 +2955,11 @@ export const drainRecordedSignals: Effect.Effect<
       }
       const delivery = yield* deliverSignal(command)
       if (delivery !== "unknown") {
-        yield* runtime.settleSignal(command.commandId, delivery === "delivered" ? "delivered" : "rejected")
+        yield* runtime.settleSignal(
+          command.commandId,
+          delivery === "delivered" ? "delivered" : "rejected",
+          delivery === "refused" ? "unauthorized" : undefined
+        )
       }
     }).pipe(Effect.catchCause((cause) =>
       Effect.logWarning("Pending signal delivery failed", { commandId: command.commandId, cause: Cause.pretty(cause) })
