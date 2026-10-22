@@ -314,7 +314,17 @@ export const make = <R = never>(
         ? "Warn"
         : "Info"
       yield* Effect.logWithLevel(level)(name).pipe(
-        Effect.annotateLogs({ route: name, correlationId, upstream, status, statusClass, live, durationMs, bytes, outcome })
+        Effect.annotateLogs({
+          route: name,
+          correlationId,
+          upstream,
+          status,
+          statusClass,
+          live,
+          durationMs,
+          bytes,
+          outcome
+        })
       )
     })
 
@@ -327,19 +337,29 @@ export const make = <R = never>(
     const incoming = new URL(request.url, "http://localhost").searchParams
     const live = incoming.get("live") === "true"
     const answered = (status: number, upstream: string) =>
-      Effect.annotateCurrentSpan({ "http.response.status_code": status, "electric.shape.live": live, route: name, correlationId, upstream })
+      Effect.annotateCurrentSpan({
+        "http.response.status_code": status,
+        "electric.shape.live": live,
+        route: name,
+        correlationId,
+        upstream
+      })
     const ended = (status: number, upstream: string, outcome: Outcome = "complete") =>
-      Effect.andThen(answered(status, upstream), record({ status, live, startedAt, bytes: 0, outcome, correlationId, upstream }))
+      Effect.andThen(
+        answered(status, upstream),
+        record({ status, live, startedAt, bytes: 0, outcome, correlationId, upstream })
+      )
 
     if (request.method !== "GET") {
       yield* ended(405, "proxy")
       return HttpServerResponse.empty({ status: 405, headers: { allow: "GET", ...ownHeaders } })
     }
 
-    const decided = yield* Effect.result(Effect.isEffect(options.shape) ? options.shape : Effect.succeed(options.shape)).pipe(
-      Effect.catchDefect(() => Effect.succeed(undefined)),
-      Effect.onInterrupt(() => ended(499, "access", "aborted"))
-    )
+    const decided = yield* Effect.result(Effect.isEffect(options.shape) ? options.shape : Effect.succeed(options.shape))
+      .pipe(
+        Effect.catchDefect(() => Effect.succeed(undefined)),
+        Effect.onInterrupt(() => ended(499, "access", "aborted"))
+      )
     if (decided === undefined) {
       yield* ended(500, "access")
       return HttpServerResponse.empty({ status: 500, headers: ownHeaders })
@@ -349,7 +369,11 @@ export const make = <R = never>(
       yield* ended(status, decided.failure.upstream ?? "access")
       return HttpServerResponse.empty({
         status,
-        headers: { ...noStore, "x-request-id": correlationId, ...(retryAfter === undefined ? {} : { "retry-after": String(retryAfter) }) }
+        headers: {
+          ...noStore,
+          "x-request-id": correlationId,
+          ...(retryAfter === undefined ? {} : { "retry-after": String(retryAfter) })
+        }
       })
     }
     const shape = decided.success
