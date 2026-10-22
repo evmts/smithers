@@ -66,6 +66,7 @@ export const FLOWS_TELEMETRY = {
     "smithers_browser_runtime_requests",
     "smithers_browser_runtime_statements",
     // The durable engine (@smthrs/flows): each flow run and each step, and its warnings and counts.
+    "flows.runtime.phase",
     "FlowEngine.execute",
     "Action.execute",
     "action attempt interrupted: the engine store is unavailable",
@@ -119,6 +120,7 @@ export const FLOWS_TELEMETRY = {
     "outcome",
     "refusal",
     "durationMs",
+    "phase",
     "smithers.flow.name",
     "smithers.flow.door",
     "smithers.flow.outcome",

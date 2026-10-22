@@ -6,12 +6,12 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { EngineStore, OwnerIdentity, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
-import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import * as Jj from "@smthrs/jj/Jj"
 import { Workspace } from "@smthrs/kernel"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Migrations as RunMigrations, RunStore } from "@smthrs/run-store"
-import { Context, Effect, Exit, Layer, Metric, Option, Schema } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Metric, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -67,6 +67,40 @@ it("reports invalid JavaScript configuration before constructing injected servic
       expect(construct).toThrow(expect.objectContaining({ code: "invalid_runtime_configuration", field }))
     }
   }
+})
+
+it("records each runtime construction phase without payload or database details", async () => {
+  const phases: Array<string> = []
+  let registrationParent = ""
+  const logger = Logger.make((entry) => {
+    if (JSON.stringify(entry.message).includes("flows.runtime.phase")) {
+      const record = Logger.formatStructured.log(entry)
+      phases.push(String(record.annotations.phase))
+      expect(record.annotations.durationMs).toEqual(expect.any(Number))
+    }
+  })
+  const host = Layer.mergeAll(
+    NodeDatabase.layer({ filename: ":memory:" }),
+    NodeCrypto.layer,
+    Jj.layerNoop({}),
+    OwnerIdentity.layerWithoutPid.pipe(Layer.provide(NodeCrypto.layer))
+  )
+  const registration = Layer.effectDiscard(Effect.map(Effect.currentSpan, (span) => {
+    registrationParent = span.name
+  }))
+  const runtime = Runtime.layer(options, StepBoundary.layerUnsupported, WorkspaceSandbox.layerUnsupported, registration)
+    .pipe(Layer.provide(host))
+  await Effect.runPromise(
+    Effect.scoped(Layer.build(runtime)).pipe(
+      Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+      Effect.provideService(RunMetrics.LineLevel, "Info"),
+      Effect.withSpan("host")
+    )
+  )
+  expect(phases).toEqual(["migrations", "stores", "engine", "registry", "registration"])
+  // Registration can capture this context for the lifetime of the runtime.
+  // A short-lived construction span must not become its parent.
+  expect(registrationParent).toBe("host")
 })
 
 it("uses the caller's SQL instance for every migrated store without opening a second database", async () => {

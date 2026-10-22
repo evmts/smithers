@@ -30,16 +30,32 @@ import {
   type StepBoundary,
   type WorkspaceSandbox
 } from "@smthrs/engine-store"
-import { Action } from "@smthrs/flow"
+import { Action, RunMetrics } from "@smthrs/flow"
 import { RedactedLogger, SqlJournal } from "@smthrs/journal"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
+import * as Duration from "effect/Duration"
+import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { type RegistryArgs, registryLayer } from "./internal/RegistryArgs.ts"
 
 export { type RegistryArgs, registryLayer } from "./internal/RegistryArgs.ts"
 export { decodeField, type Options, RuntimeConfigurationError, validate } from "./internal/RuntimeOptions.ts"
 import { type Options, validate } from "./internal/RuntimeOptions.ts"
+
+/** Records a phase without changing its memoization or resource scope. */
+const observed = <A, E, R>(phase: string, layer: Layer.Layer<A, E, R>) =>
+  Layer.fromBuild((memoMap, scope) =>
+    Layer.buildWithMemoMap(layer, memoMap, scope).pipe(
+      Effect.timed,
+      Effect.tap(([elapsed]) =>
+        Effect.flatMap(RunMetrics.LineLevel, (level) => Effect.logWithLevel(level)("flows.runtime.phase")).pipe(
+          Effect.annotateLogs({ phase, durationMs: Math.round(Duration.toMillis(elapsed)) })
+        )
+      ),
+      Effect.map(([, context]) => context)
+    )
+  )
 
 /**
  * Provides the migrated durable stores over the injected SQL client, without
@@ -57,13 +73,19 @@ import { type Options, validate } from "./internal/RuntimeOptions.ts"
  * @category layers
  * @slop
  */
-export const storage = Layer.mergeAll(
-  SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
-  RunStore.layer,
-  AttemptStore.layer,
-  CacheStore.layer,
-  DurableEngineState.layer
-).pipe(Layer.provideMerge(Layer.provideMerge(Migrations.layer, DurableWriter.layer())), Layer.fresh)
+export const storage = observed(
+  "stores",
+  Layer.mergeAll(
+    SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
+    RunStore.layer,
+    AttemptStore.layer,
+    CacheStore.layer,
+    DurableEngineState.layer
+  )
+).pipe(
+  Layer.provideMerge(Layer.provideMerge(observed("migrations", Migrations.layer), DurableWriter.layer())),
+  Layer.fresh
+)
 
 /** Compose an isolated runtime from injected storage and execution services.
  * @category layers
@@ -114,21 +136,24 @@ export const layer = <
   }
   // A host that guards the ambient `Jj` for action bodies keeps the engine's
   // own snapshots on its privileged repository, as `layerHost` does.
-  const engine = (validated.privilegedJj === undefined
-    ? EngineStore.layer(engineOptions)
-    : EngineStore.layerWithPrivilegedJj(engineOptions, validated.privilegedJj)).pipe(
-      Layer.provideMerge(execution),
-      // Under the engine, not beside it: `@smthrs/engine`
-      // `FlowEngine/Dispatch` reads this reference off the context the engine
-      // captures for an action dispatch, and a sibling layer is not in it.
-      // Undeclared it stays absent, which is what every sealed key in this repo
-      // is derived without today.
-      Layer.provideMerge(
-        validated.cacheEnvironment === undefined
-          ? Layer.empty
-          : Action.layerCacheEnvironment(validated.cacheEnvironment)
-      )
+  const engine = observed(
+    "engine",
+    validated.privilegedJj === undefined
+      ? EngineStore.layer(engineOptions)
+      : EngineStore.layerWithPrivilegedJj(engineOptions, validated.privilegedJj)
+  ).pipe(
+    Layer.provideMerge(execution),
+    // Under the engine, not beside it: `@smthrs/engine`
+    // `FlowEngine/Dispatch` reads this reference off the context the engine
+    // captures for an action dispatch, and a sibling layer is not in it.
+    // Undeclared it stays absent, which is what every sealed key in this repo
+    // is derived without today.
+    Layer.provideMerge(
+      validated.cacheEnvironment === undefined
+        ? Layer.empty
+        : Action.layerCacheEnvironment(validated.cacheEnvironment)
     )
+  )
   // The registry is built BETWEEN the engine and the registration phase, so a
   // registration that reads a catalog off it — `@smthrs/registry`'s
   // `Executable.layer`, which turns every discovered descriptor into a
@@ -139,7 +164,11 @@ export const layer = <
   // context. An enclosing control plane can build the same layer values over
   // another database; sharing their memoized instances crosses that boundary.
   return Layer.effectContext(Layer.build(
-    registerFlows.pipe(Layer.provideMerge(registryLayer(registry)), Layer.provideMerge(engine), Layer.fresh)
+    observed("registration", registerFlows).pipe(
+      Layer.provideMerge(observed("registry", registryLayer(registry))),
+      Layer.provideMerge(engine),
+      Layer.fresh
+    )
   ))
 }
 
