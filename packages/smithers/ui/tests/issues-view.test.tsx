@@ -284,3 +284,42 @@ describe("IssuesView: triage", () => {
     expect(container!.querySelectorAll("a, button, [href], [role=link], [onclick]")).toHaveLength(0);
   });
 });
+
+
+describe("IssuesView regressions", () => {
+  test("unknown unfiltered lists hide counts until known, including local rows", async () => {
+    for (const issues of [[], ISSUES]) {
+      if (root) await act(async () => root!.unmount());
+      root = undefined;
+      container?.remove();
+      await render(<IssuesView repo="r" issues={issues} unknown />);
+      expect(container!.querySelector(".sui-issues-counts")).toBeNull();
+      expect(container!.querySelector("[data-slot=empty-state]")).toBeNull();
+      expect(rows()).toHaveLength(issues.length);
+      await act(async () => root!.render(<IssuesView repo="r" issues={issues} />));
+      expect(container!.querySelector(".sui-issues-counts")!.textContent).toBe(
+        issues.length === 0 ? "0 open · 0 closed" : "2 open · 1 closed",
+      );
+    }
+  });
+
+  test("same-label metadata links retain their elements and destinations after reorder and removal", async () => {
+    const links = [{ label: "Branch", href: "/first" }, { label: "Branch", href: "/second" }];
+    const issue: IssuesViewIssue = { number: 1, title: "Issue", state: "open", links };
+    const seen: string[] = [];
+    const view = (links: NonNullable<IssuesViewIssue["links"]>) => (
+      <IssuesView repo="r" issues={[{ ...issue, links }]} onNavigate={(_, href) => seen.push(href)} />
+    );
+    await render(view(links));
+    const anchors = () => [...container!.querySelectorAll<HTMLAnchorElement>(".sui-issues-meta-link")];
+    const [first, second] = anchors();
+    await act(async () => root!.render(view([links[1]!, links[0]!])));
+    expect(anchors()[0]).toBe(second!);
+    expect(anchors()[1]).toBe(first!);
+    await click(anchors()[0]!);
+    expect(seen).toEqual(["/second"]);
+    await act(async () => root!.render(view([links[0]!])));
+    expect(anchors()).toEqual([first!]);
+    expect(first!.getAttribute("href")).toBe("/first");
+  });
+});

@@ -228,7 +228,7 @@ export function IssuesView({
         )}
         {loading ? (
           <span className="sui-sr-only" role="status">Loading issues</span>
-        ) : filter === undefined ? (
+        ) : filter === undefined && !unknown ? (
           <span className="sui-issues-counts">
             {open} open · {issues.length - open} closed
           </span>
@@ -307,7 +307,7 @@ export function IssuesView({
                     {updated === undefined ? null : <RelativeTime ts={updated} className="sui-issues-time" />}
                     {issue.links?.map((item) => (
                       <ItemLink
-                        key={item.label}
+                        key={JSON.stringify([item.href, item.label])}
                         link={item}
                         className="sui-issues-meta-link"
                         onNavigate={onNavigate === undefined ? undefined : (target) => onNavigate(issue, target)}
