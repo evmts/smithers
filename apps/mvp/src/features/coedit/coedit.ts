@@ -25,9 +25,9 @@ export interface CoeditActions {
   readonly select: (textId: string, selection: Selection) => void
   /**
    * Shows file `path` of branch `branchId`'s working copy to edit together, or, for `undefined`, leaves the file shown:
-   * resolves with the file's text id.
+   * resolves with the file's text id. A route may cancel a pending open with `signal`.
    */
-  readonly showFile: (branchId: string, path: string | undefined) => Promise<string | undefined>
+  readonly showFile: (branchId: string, path: string | undefined, signal?: AbortSignal) => Promise<string | undefined>
   /** Leaves the room of the file shown, as when the live editor goes. */
   readonly hideFiles: () => Promise<void>
   /** Writes an open file to its branch's working copy. */
@@ -37,30 +37,30 @@ export interface CoeditActions {
 export class Coedit extends Context.Service<Coedit, { readonly queries: CoeditQueries; readonly actions: CoeditActions }>()(
   "@smthrs/mvp/coedit/Coedit",
 ) {
+  /** Binds frontend actions to the injected Effect services. */
+  static readonly make = Effect.gen(function* () {
+    const store = yield* CoeditStore
+    const context = yield* Effect.context<CoeditStore | ChatStore | TextWrites | FlowDispatch | StatusStore>()
+    const sync = Effect.runSyncWith(context)
+    const run = Effect.runPromiseWith(context)
+    yield* followAnswers
+    return Coedit.of({
+      queries: { texts: store.textsState.tanstack },
+      actions: {
+        type: (textId, value, edit) => sync(type(textId, value, edit)),
+        select: (textId, selection) => sync(select(textId, selection)),
+        showFile: (branchId, path, signal) => run(showFile(branchId, path), { signal }),
+        hideFiles: () => run(hideFiles),
+        save: (textId) => run(save(textId)),
+      },
+    })
+  })
+
   /**
    * Binds the store's query and actions for frontends, with the services this layer was built with, and follows the
    * runs that need this person, whose answer boxes it opens.
    */
-  static readonly layer = Layer.effect(
-    Coedit,
-    Effect.gen(function* () {
-      const store = yield* CoeditStore
-      const context = yield* Effect.context<CoeditStore | ChatStore | TextWrites | FlowDispatch | StatusStore>()
-      const sync = Effect.runSyncWith(context)
-      const run = Effect.runPromiseWith(context)
-      yield* followAnswers
-      return Coedit.of({
-        queries: { texts: store.textsState.tanstack },
-        actions: {
-          type: (textId, value, edit) => sync(type(textId, value, edit)),
-          select: (textId, selection) => sync(select(textId, selection)),
-          showFile: (branchId, path) => run(showFile(branchId, path)),
-          hideFiles: () => run(hideFiles),
-          save: (textId) => run(save(textId)),
-        },
-      })
-    }),
-  )
+  static readonly layer = Layer.effect(Coedit, Coedit.make)
 }
 
 /** The co-editing layer's value: what frontends get. */

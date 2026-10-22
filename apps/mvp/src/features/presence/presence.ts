@@ -17,34 +17,34 @@ export interface PresenceQueries {
 
 export interface PresenceActions {
   /** Joins branch `branchId`'s room: resolves once this tab is joining it. */
-  readonly join: (branchId: string) => Promise<void>
+  readonly join: (branchId: string, signal?: AbortSignal) => Promise<void>
   /** Says where this person is on the page. */
-  readonly at: (where: Where) => Promise<void>
+  readonly at: (where: Where, signal?: AbortSignal) => Promise<void>
   /** Leaves the room. */
-  readonly leave: () => Promise<void>
+  readonly leave: (signal?: AbortSignal) => Promise<void>
 }
 
 export class Presence extends Context.Service<
   Presence,
   { readonly queries: PresenceQueries; readonly actions: PresenceActions }
 >()("@smthrs/mvp/presence/Presence") {
+  /** Binds frontend actions to the injected Effect services. */
+  static readonly make = Effect.gen(function* () {
+    const store = yield* PresenceStore
+    const run = Effect.runPromiseWith(yield* Effect.context<PresenceStore>())
+    return Presence.of({
+      queries: { participants: store.participantsState.tanstack, room: store.roomState.tanstack },
+      actions: {
+        join: (branchId, signal) => run(join(branchId), { signal }),
+        at: (where, signal) => run(at(where), { signal }),
+        leave: (signal) => run(leave, { signal }),
+      },
+    })
+  })
+
   /** Binds the store's queries and actions for frontends, with the services this layer was built with. */
   static readonly layer = (config: PresenceConfig) =>
-    Layer.effect(
-      Presence,
-      Effect.gen(function* () {
-        const store = yield* PresenceStore
-        const run = Effect.runPromiseWith(yield* Effect.context<PresenceStore>())
-        return Presence.of({
-          queries: { participants: store.participantsState.tanstack, room: store.roomState.tanstack },
-          actions: {
-            join: (branchId) => run(join(branchId)),
-            at: (where) => run(at(where)),
-            leave: () => run(leave),
-          },
-        })
-      }),
-    ).pipe(Layer.provideMerge(PresenceStore.layer(config)))
+    Layer.effect(Presence, Presence.make).pipe(Layer.provideMerge(PresenceStore.layer(config)))
 }
 
 /** The presence layer's value: what frontends get. */

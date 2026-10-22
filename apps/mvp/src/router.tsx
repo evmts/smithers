@@ -1,3 +1,4 @@
+import { openBranchPage } from "./features/branch/navigation"
 import { createRootRouteWithContext, createRoute, createRouter, redirect } from "@tanstack/react-router"
 import type { BranchView } from "./features/branch/branch"
 import type { FlowsUiView } from "./features/flows-ui/flowsUi"
@@ -222,30 +223,14 @@ const treeRoute = createRoute({
     enter(load, () => context.repo.actions.warmRoute("tree", params, { L: search.L }), () =>
       Promise.all([
         context.repo.actions.openRoute("tree", params, { L: search.L }),
-        context.branch.actions.open(params.owner, params.repo, params.ref).then(async (branchId) => {
-          const { presence, coedit } = context.branch
-          if (branchId === undefined) {
-            await context.terminal.actions.show(null)
-            return presence.actions.leave()
-          }
-          await presence.actions.join(branchId)
-          // The file in the live editor under `?edit`, or none: its room is left with the editor.
-          const editing = search.terminal === undefined ? search.edit : undefined
-          await coedit.actions.showFile(branchId, editing)
-          if (search.terminal === undefined) {
-            await context.terminal.actions.show(null)
-            return presence.actions.at(editing === undefined ? { view: "code", path: params._splat ?? "" } : { view: "edit", path: editing })
-          }
-          const terminalId = await context.terminal.actions.show(
-            branchId,
-            search.terminal === "me" ? undefined : search.terminal,
-          )
-          return presence.actions.at({ view: "terminal", terminalId })
-        }),
+        openBranchPage(context.branch, context.terminal, load.abortController.signal, params, search),
       ])),
-  onLeave: ({ context }) => {
+  onLeave: ({ context, abortController }) => {
+    // A committed route can leave while one of its live actions is still answering.
+    abortController.abort()
     void context.branch.presence.actions.leave()
     void context.branch.coedit.actions.hideFiles()
+    void context.terminal.actions.show(null)
   },
 })
 

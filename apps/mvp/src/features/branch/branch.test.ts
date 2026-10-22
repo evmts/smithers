@@ -5,7 +5,7 @@
 // are also driven over an injected `fetch` for the answers ChatApi's route never gives a valid request: a body cut
 // short, a stalled answer, 400 and 413 (test.faults-by-injection).
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Effect, Layer, Logger, Metric } from "effect"
+import { Deferred, Effect, FiberHandle, Layer, Logger, Metric, Ref } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -23,6 +23,13 @@ import {
 import { Chat } from "../chat/chat"
 import { BranchClient, TrackRefused } from "./api"
 import { Branch } from "./branch"
+import { openBranchPage } from "./navigation"
+import { Terminal } from "../terminal/terminal"
+import { TerminalStore } from "../terminal/store"
+import { Coedit } from "../coedit/coedit"
+import { CoeditStore } from "../coedit/store"
+import { Presence } from "../presence/presence"
+import { PresenceStore } from "../presence/store"
 import { CONVERSATION_NAMESPACE } from "./contract"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
 import { opens, tracks } from "./metrics"
@@ -348,3 +355,115 @@ describe("the step", () => {
     expect(JSON.stringify([tracked.logs, stalled.logs])).not.toContain("sentinel")
   })
 })
+
+
+describe("leaving a branch navigation", () => {
+  test.each(["track", "join", "editor", "terminal"] as const)("a late %s answer cannot restore cleaned-up state", async (stage) => {
+    const tab = await open()
+    const real = await tab.runtime.runPromise(Effect.service(Branch))
+    const terminal = await tab.runtime.runPromise(Effect.service(Terminal))
+    const store = await tab.runtime.runPromise(Effect.service(PresenceStore))
+    real.presence.queries.room.startSyncImmediate()
+    terminal.queries.panel.startSyncImmediate()
+    const reached = await tab.runtime.runPromise(Deferred.make<void>())
+    const release = await tab.runtime.runPromise(Deferred.make<void>())
+    // Fault injection into the Effect service: a real action completes, but its answer arrives after cleanup.
+    const delay = <A>(answer: Promise<A>): Promise<A> => tab.runtime.runPromise(Effect.gen(function* () {
+      const value = yield* Effect.promise(() => answer)
+      yield* Deferred.succeed(reached, undefined)
+      yield* Deferred.await(release)
+      return value
+    }))
+    const faulty = Branch.of({
+      ...real,
+      actions: { ...real.actions, open: (...args) => stage === "track" ? delay(real.actions.open(...args)) : real.actions.open(...args) },
+      presence: { ...real.presence, actions: { ...real.presence.actions,
+        join: (id) => stage === "join" ? delay(real.presence.actions.join(id)) : real.presence.actions.join(id),
+      } },
+      coedit: { ...real.coedit, actions: { ...real.coedit.actions,
+        showFile: (...args) => stage === "editor" ? delay(real.coedit.actions.showFile(...args)) : real.coedit.actions.showFile(...args),
+      } },
+    })
+    const delayedTerminal = Terminal.of({ ...terminal, actions: { ...terminal.actions,
+      show: (...args) => stage === "terminal" ? delay(terminal.actions.show(...args)) : terminal.actions.show(...args),
+    } })
+    const controller = new AbortController()
+    const opening = openBranchPage(faulty, delayedTerminal, controller.signal,
+      { owner: "octo", repo: "hello", ref: "feature/one" }, { terminal: "me" })
+    try {
+      await tab.runtime.runPromise(Deferred.await(reached))
+      controller.abort()
+      await real.presence.actions.leave()
+      await real.coedit.actions.hideFiles()
+      await terminal.actions.show(null)
+    } finally {
+      await tab.runtime.runPromise(Deferred.succeed(release, undefined))
+    }
+    await opening
+    expect(real.presence.queries.room.toArray[0]).toMatchObject({ status: "idle", branchId: null })
+    expect(terminal.queries.panel.toArray[0]).toMatchObject({ phase: "idle", branchId: null })
+    expect(await tab.runtime.runPromise(Ref.get(store.where))).toBeNull()
+  }, WITHIN)
+})
+
+
+describe("cancelling in-flight branch actions", () => {
+  test.each(["terminal", "editor"] as const)("a pending %s action is interrupted before it can restore state", async (stage) => {
+    const tab = await open()
+    const branchId = (await tab.actions.open("octo", "hello", "feature/one"))!
+    const reached = await tab.runtime.runPromise(Deferred.make<void>())
+    const release = await tab.runtime.runPromise(Deferred.make<void>())
+    const wait = Effect.andThen(Deferred.succeed(reached, undefined), Deferred.await(release))
+    const terminalStore = await tab.runtime.runPromise(Effect.service(TerminalStore))
+    const coeditStore = await tab.runtime.runPromise(Effect.service(CoeditStore))
+    const terminal = await tab.runtime.runPromise(Terminal.make.pipe(Effect.provideService(TerminalStore, {
+      ...terminalStore,
+      terminals: (id) => Effect.andThen(wait, terminalStore.terminals(id)),
+    })))
+    const coedit = await tab.runtime.runPromise(Coedit.make.pipe(Effect.provideService(CoeditStore, {
+      ...coeditStore,
+      open: (of) => Effect.andThen(wait, coeditStore.open(of)),
+    })))
+    const controller = new AbortController()
+    const pending = stage === "terminal"
+      ? terminal.actions.show(branchId, undefined, controller.signal)
+      : coedit.actions.showFile(branchId, "README.md", controller.signal)
+    // Observe rejection immediately: aborting a real Effect rejects its Promise with interruption.
+    const settled = pending.then(() => "completed", () => "interrupted")
+    await tab.runtime.runPromise(Deferred.await(reached))
+    controller.abort()
+    await terminal.actions.show(null)
+    await coedit.actions.hideFiles()
+    await tab.runtime.runPromise(Deferred.succeed(release, undefined))
+    expect(await settled).toBe("interrupted")
+    expect(await tab.runtime.runPromise(terminalStore.panel.toArray)).toMatchObject([{ branchId: null, phase: "idle" }])
+    expect((await tab.runtime.runPromise(coeditStore.texts.toArray)).filter((row) => row.kind === "file" && row.shown)).toEqual([])
+  }, WITHIN)
+})
+
+
+test("cancelling a room join while the previous connection is closing cannot rejoin", async () => {
+  const tab = await open()
+  const branchId = (await tab.actions.open("octo", "hello", "feature/one"))!
+  const store = await tab.runtime.runPromise(Effect.service(PresenceStore))
+  const presence = await tab.runtime.runPromise(Effect.service(Presence))
+  const started = await tab.runtime.runPromise(Deferred.make<void>())
+  const closing = await tab.runtime.runPromise(Deferred.make<void>())
+  const release = await tab.runtime.runPromise(Deferred.make<void>())
+  // A real attached fiber whose finalizer waits, as a slow socket teardown does.
+  await tab.runtime.runPromise(FiberHandle.run(store.attached, Effect.gen(function* () {
+    yield* Effect.addFinalizer(() => Effect.andThen(Deferred.succeed(closing, undefined), Deferred.await(release)))
+    yield* Deferred.succeed(started, undefined)
+    yield* Effect.never
+  }).pipe(Effect.scoped)))
+  await tab.runtime.runPromise(Deferred.await(started))
+  const controller = new AbortController()
+  const settled = presence.actions.join(branchId, controller.signal).then(() => "completed", () => "interrupted")
+  await tab.runtime.runPromise(Deferred.await(closing))
+  controller.abort()
+  const leaving = presence.actions.leave()
+  await tab.runtime.runPromise(Deferred.succeed(release, undefined))
+  await leaving
+  expect(await settled).toBe("interrupted")
+  expect(await tab.runtime.runPromise(store.room.toArray)).toMatchObject([{ branchId: null, status: "idle" }])
+}, WITHIN)
