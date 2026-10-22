@@ -1,4 +1,4 @@
-import { makeSummaries, followSummaries, summaryQuery } from "../timeline/store"
+import { makeLane, makeSummaries, followSummaries, summaryQuery } from "../timeline/store"
 import { ElectricCollection, type ShapeSource } from "@smthrs/effect-electric"
 import { Collection, Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
@@ -254,6 +254,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   const pageSize = config.pageSize ?? PAGE_SIZE
 
   const summaries = yield* makeSummaries
+  // One lane for the home and the branch conversation: their summaries take turns on the engine together.
+  const summaryLane = yield* makeLane
   const composer = yield* Collection.local<Composer, string>({
     id: "chat-composer",
     schema: Composer,
@@ -445,7 +447,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       const branchConversation = yield* conversationQuery(branchMessages, unsent, asking, branchViews, conversationId)
       const branchLatest = yield* latestQuery(branchConversation, pageSize)
       // The rail summarizes what this conversation's window shows (src/features/timeline/store.ts).
-      yield* followSummaries(branchLatest, branchMessages, summaries, flows).pipe(Effect.forkIn(scope))
+      yield* followSummaries(branchLatest, branchMessages, summaries, flows, summaryLane).pipe(Effect.forkIn(scope))
       const opened: ConversationState = {
         conversationId,
         messages: branchMessages,
@@ -596,7 +598,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   }
 
   // The rail summarizes what the window shows, never every message the device holds (src/features/timeline/store.ts).
-  yield* followSummaries(latest, messages, summaries, flows).pipe(Effect.forkIn(scope))
+  yield* followSummaries(latest, messages, summaries, flows, summaryLane).pipe(Effect.forkIn(scope))
   const store = ChatStore.of({
     summaries: yield* summaryQuery(summaries),
     messages,

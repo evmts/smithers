@@ -2,7 +2,7 @@ import { FlowRegistry } from "../../flows/registry"
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Action } from "@smthrs/flow"
 import { Model, type ModelEvent } from "@smthrs/model"
-import { Context, Deferred, Effect, Exit, Fiber, Layer, Metric, Scope, Stream } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Metric, Scope, Semaphore, Stream } from "effect"
 import { expect, test, vi } from "vitest"
 import { build } from "../../../worker/test/flowHost"
 import { ClientEngine, FlowDispatch } from "../../flows/dispatch"
@@ -11,7 +11,7 @@ import { deviceRegistry } from "../../device/registry"
 import { deviceFrom, type Fixture, persistenceOn, prepare } from "../../test/deviceFixture"
 import { Summarize } from "./flow"
 import { registration, SummarySeat } from "./steps"
-import { followSummaries, makeSummaries, revisionOf, summaryQuery, summaryRemovals } from "./store"
+import { followSummaries, makeLane, makeSummaries, revisionOf, summaryQuery, summaryRemovals } from "./store"
 
 const row = (id: string, text: string): Message => ({
   id, text, role: "user", status: "done", questionId: null, failure: null, modelId: null, stopReason: null,
@@ -38,7 +38,7 @@ test("real durable summary results project once, refresh changed content and ski
     const summaries = await run(makeSummaries)
     const query = await run(summaryQuery(summaries))
     expect(query.tanstack).toBeDefined()
-    await run(Effect.forkIn(followSummaries(messages, messages, summaries, Context.get(context, FlowDispatch)), scope, { startImmediately: true }))
+    await run(Effect.forkIn(followSummaries(messages, messages, summaries, Context.get(context, FlowDispatch), await run(makeLane)), scope, { startImmediately: true }))
     await run(messages.insert(row("a", "Inspect retries")))
     await vi.waitFor(async () => expect((await run(summaries.get("a")))._tag).toBe("Some"), { timeout: 15_000 })
     expect(calls).toBe(1)
@@ -77,7 +77,7 @@ test.each(["failed", "unavailable", "changed", "deleted"] as const)("does not pu
         return { _tag: "Done", value: { summary: "Inspect both retry attempts" } }
       }),
     } as unknown as FlowDispatch["Service"]
-    await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch), scope, { startImmediately: true }))
+    await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch, await run(makeLane)), scope, { startImmediately: true }))
     await run(messages.insert(row("a", "Inspect retries")))
     await vi.waitFor(() => expect(processed).toBe(true))
     expect((await run(summaries.get("a")))._tag).toBe("None")
@@ -99,7 +99,7 @@ test("stops once the summary role answers it has no model: no later entry is dis
       }),
     } as unknown as FlowDispatch["Service"]
     await run(messages.insert([row("a", "Inspect retries"), row("b", "Inspect failures")]))
-    const followed = await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch), scope, { startImmediately: true }))
+    const followed = await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch, await run(makeLane)), scope, { startImmediately: true }))
     await run(Fiber.join(followed))
     await run(summaries.insert({ id: "a", revision: revisionOf(row("a", "Inspect retries")), summary: "Inspect both retry attempts" }))
     await run(messages.delete("a"))
@@ -125,7 +125,8 @@ test("summarizes the window's asks and answers, never a view the window shows am
       }),
     } as unknown as FlowDispatch["Service"]
     const shown = (id: string, role: string) => ({ type: "insert" as const, key: id, value: { id, role, status: "done", text: "A page" }, previousValue: undefined })
-    await run(followSummaries({ changes: () => Stream.make([shown("view", "view"), shown("ask", "user"), shown("answer", "assistant")]) }, messages, summaries, dispatch))
+    await run(messages.insert([row("ask", "A page"), { ...row("answer", "A page"), role: "assistant" }]))
+    await run(followSummaries({ changes: () => Stream.make([shown("view", "view"), shown("ask", "user"), shown("answer", "assistant")]) }, messages, summaries, dispatch, await run(makeLane)))
     expect(dispatched).toEqual(["ask", "answer"])
   } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
 })
@@ -144,7 +145,7 @@ test.each(["stall", "defect"] as const)("a dispatch %s cannot block later summar
         ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(fault === "stall" ? Effect.never : Effect.die("private defect")))
         : Effect.succeed({ _tag: "Done", value: { summary: "Inspect both retry attempts" } }),
     } as unknown as FlowDispatch["Service"]
-    await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch), scope, { startImmediately: true }))
+    await run(Effect.forkIn(followSummaries(messages, messages, summaries, dispatch, await run(makeLane)), scope, { startImmediately: true }))
     await run(messages.insert(row("a", "Inspect retries")))
     await run(Deferred.await(entered))
     await run(messages.insert(row("b", "Inspect failures")))
@@ -166,7 +167,7 @@ test("deleting a message outside the shown window removes its persisted summary"
     await run(messages.insert(row("a", "Inspect retries")))
     await run(Effect.flatMap(summaries.insert({ id: "a", revision: revisionOf(row("a", "Inspect retries")), summary: "Inspect both retry attempts" }), transaction => transaction.persisted))
     const dispatch = { dispatch: () => Effect.die("No shown entries should dispatch") } as unknown as FlowDispatch["Service"]
-    await run(Effect.forkIn(followSummaries(window, messages, summaries, dispatch), scope, { startImmediately: true }))
+    await run(Effect.forkIn(followSummaries(window, messages, summaries, dispatch, await run(makeLane)), scope, { startImmediately: true }))
     await run(window.insert(row("a", "Inspect retries")))
     await run(window.delete("a"))
     expect((await run(summaries.get("a")))._tag).toBe("Some")
@@ -180,4 +181,122 @@ test("deleting a message outside the shown window removes its persisted summary"
     return yield* summaries.get("a")
   })).pipe(Effect.provide(persistenceOn(path, deviceRegistry))))
   expect(restored._tag).toBe("None")
+})
+
+/** A window that shows `ids` as settled asks, each twice when `twice` (an update that kept its content). */
+const shownWindow = (ids: ReadonlyArray<string>, twice = false) => ({
+  changes: () => Stream.concat(Stream.make(ids.flatMap(id => {
+    const change = { type: "insert" as const, key: id, value: { id, role: "user", status: "done", text: `Inspect ${id}` }, previousValue: undefined }
+    return twice ? [change, { ...change, type: "update" as const }] : [change]
+  })), Stream.never),
+})
+
+test("a long window runs at most two summaries at once, each entry once", async () => {
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Persistence.memory)))
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: "long-window", schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    const ids = Array.from({ length: 40 }, (_, n) => `m${n}`)
+    await run(messages.insert(ids.map(id => row(id, `Inspect ${id}`))))
+    let running = 0
+    let most = 0
+    const dispatched: Array<string> = []
+    const dispatch = {
+      dispatch: (_name: string, payload: { readonly id: string }) => Effect.gen(function* () {
+        dispatched.push(payload.id)
+        most = Math.max(most, ++running)
+        yield* Effect.sleep("2 millis")
+        running--
+        return { _tag: "Done", value: { summary: "Inspect both retry attempts" } }
+      }),
+    } as unknown as FlowDispatch["Service"]
+    const lane = await run(makeLane)
+    await run(Effect.forkIn(followSummaries(shownWindow(ids, true), messages, summaries, dispatch, lane), scope, { startImmediately: true }))
+    await vi.waitFor(async () => expect((await run(summaries.get("m39")))._tag).toBe("Some"))
+    await vi.waitFor(() => expect(dispatched.length).toBe(40))
+    expect(new Set(dispatched).size).toBe(40)
+    expect(most).toBeLessThanOrEqual(2)
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+})
+
+test("a summary role with no model costs at most two requests for both conversations a page follows", async () => {
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Persistence.memory)))
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: "no-model", schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    const dispatched: Array<string> = []
+    const dispatch = {
+      dispatch: (_name: string, payload: { readonly id: string }) => Effect.gen(function* () {
+        dispatched.push(payload.id)
+        yield* Effect.sleep("2 millis")
+        return { _tag: "Failed", error: { _tag: "timeline/SummaryFailed", code: "unconfigured" } }
+      }),
+    } as unknown as FlowDispatch["Service"]
+    const lane = await run(makeLane)
+    const home = Array.from({ length: 50 }, (_, n) => `home${n}`)
+    const branch = Array.from({ length: 50 }, (_, n) => `branch${n}`)
+    await run(messages.insert([...home, ...branch].map(id => row(id, `Inspect ${id}`))))
+    await run(Effect.all([
+      followSummaries(shownWindow(home), messages, summaries, dispatch, lane),
+      followSummaries(shownWindow(branch), messages, summaries, dispatch, lane),
+    ], { concurrency: "unbounded" }))
+    await run(Effect.sleep("50 millis"))
+    expect(dispatched.length).toBeGreaterThanOrEqual(1)
+    expect(dispatched.length).toBeLessThanOrEqual(2)
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+})
+
+test("an entry that changes or leaves while it waits for its turn is never sent", async () => {
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Persistence.memory)))
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: "waiting", schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    const ids = ["a", "b", "c", "d"]
+    await run(messages.insert(ids.map(id => row(id, `Inspect ${id}`))))
+    const release = Effect.runSync(Deferred.make<void>())
+    const dispatched: Array<string> = []
+    const dispatch = {
+      dispatch: (_name: string, payload: { readonly id: string }) => Effect.gen(function* () {
+        dispatched.push(payload.id)
+        yield* Deferred.await(release)
+        return { _tag: "Done", value: { summary: "Inspect both retry attempts" } }
+      }),
+    } as unknown as FlowDispatch["Service"]
+    await run(Effect.forkIn(followSummaries(shownWindow(ids), messages, summaries, dispatch, await run(makeLane)), scope, { startImmediately: true }))
+    await vi.waitFor(() => expect(dispatched).toEqual(["a", "b"]))
+    await run(messages.delete("c"))
+    await run(messages.update("d", draft => { draft.text = "Inspect deploys" }))
+    await run(Deferred.succeed(release, undefined))
+    await vi.waitFor(async () => expect((await run(summaries.get("b")))._tag).toBe("Some"))
+    await run(Effect.sleep("20 millis"))
+    expect(dispatched).toEqual(["a", "b"])
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
+})
+
+test("an entry waiting for its turn when the role answers it has no model is never sent", async () => {
+  const scope = Effect.runSync(Scope.make())
+  try {
+    const context = await Effect.runPromise(Scope.provide(scope)(Layer.build(Persistence.memory)))
+    const run = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.runPromise(Scope.provide(scope)(Effect.provide(effect, context)) as Effect.Effect<A, E>)
+    const messages = await run(Collection.local<Message, Collection.Key>({ id: "waiting-stop", schema: Message, getKey: message => message.id }))
+    const summaries = await run(makeSummaries)
+    await run(messages.insert(["a", "b"].map(id => row(id, `Inspect ${id}`))))
+    const dispatched: Array<string> = []
+    const dispatch = {
+      dispatch: (_name: string, payload: { readonly id: string }) => Effect.sync(() => {
+        dispatched.push(payload.id)
+        return { _tag: "Failed", error: { _tag: "timeline/SummaryFailed", code: "unconfigured" } }
+      }),
+    } as unknown as FlowDispatch["Service"]
+    // One turn: "b" waits while "a" holds it, and takes it the moment "a" answers that there is no model.
+    const lane = { ...(await run(makeLane)), permits: Semaphore.makeUnsafe(1) }
+    await run(followSummaries(shownWindow(["a", "b"]), messages, summaries, dispatch, lane))
+    expect(dispatched).toEqual(["a"])
+  } finally { await Effect.runPromise(Scope.close(scope, Exit.void)) }
 })
