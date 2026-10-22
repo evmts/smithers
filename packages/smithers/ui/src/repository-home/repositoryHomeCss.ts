@@ -62,6 +62,7 @@ export const repositoryHomeCss = `
 .sui-rh-copy { flex:none; height:30px; padding:0 10px; border-radius:6px; border:0; background:${t.surface2}; color:${t.foreground}; font:650 12px ${t.fontSans}; cursor:pointer; }
 .sui-rh-copy:hover { background:${t.borderStrong}; }
 .sui-rh-copy[data-copied="true"] { color:${t.primary}; }
+.sui-rh-copy[data-copy-failed="true"] { color:${t.destructive}; }
 
 .sui-rh-lead { min-width:0; display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.05fr); gap:40px; align-items:center; }
 .sui-rh-code { margin:0; min-width:0; border-radius:12px; border:1px solid ${t.borderStrong}; background:${t.codeBg}; overflow:hidden; box-shadow:${t.shadow1}; }

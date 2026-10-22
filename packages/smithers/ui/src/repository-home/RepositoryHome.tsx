@@ -34,11 +34,14 @@ export type RepositoryHomeProps = Omit<ComponentProps<"section">, "children"> & 
   sections: ReadonlyArray<Home.Section>;
   /** Each markdown block's file, by its repository path; a path absent here shows as loading. */
   files?: Readonly<Record<string, RepositoryHomeFile>>;
-  /** Where a prompt, app or flow button goes: a real link. Without it, those blocks aren't drawn. */
-  askHref?: string;
+  /**
+   * Where a prompt, app or flow button goes: a real link. Supply a resolver to keep the selected flow in the URL
+   * for native navigation, including modified clicks and opening in another tab. Without it, those blocks aren't drawn.
+   */
+  askHref?: string | ((flow: string | undefined) => string);
   /**
    * A plain click on a prompt, app or flow button: the block's `flow`, if any. The click's default is prevented, so
-   * the host navigates to `askHref` itself. A modified click (⌘, Ctrl, Shift, Alt, middle) keeps the browser's own
+   * the host navigates to the resolved `askHref` itself. A modified click (⌘, Ctrl, Shift, Alt, middle) keeps the browser's own
    * behavior and doesn't call it. Without it, the buttons are plain links.
    */
   onAsk?: (flow: string | undefined) => void;
@@ -113,20 +116,24 @@ const External = ({ url, className, children }: { readonly url: string; readonly
   );
 };
 
-/** A copy button over `text`: "Copied" for a moment once it's on the clipboard. */
+/** A copy button over `text`: announces success or failure without exposing the host's diagnostic. */
 const Copy = ({ text, label, onCopy }: { readonly text: string; readonly label: string; readonly onCopy: RepositoryHomeProps["onCopy"] }) => {
   const { copied, copyFailed, copy } = useCopyFeedback({ value: text, onCopy });
+  const feedback = copyFailed ? "Copy failed" : copied ? "Copied" : "";
   return (
-    <button
-      type="button"
-      className="sui-rh-copy"
-      aria-label={label}
-      data-copied={copied ? "true" : "false"}
-      data-copy-failed={copyFailed ? "true" : undefined}
-      onClick={() => void copy()}
-    >
-      {copied ? "Copied" : "Copy"}
-    </button>
+    <>
+      <button
+        type="button"
+        className="sui-rh-copy"
+        aria-label={label}
+        data-copied={copied ? "true" : "false"}
+        data-copy-failed={copyFailed ? "true" : undefined}
+        onClick={() => void copy()}
+      >
+        {feedback || "Copy"}
+      </button>
+      <span className="sui-sr-only" role="status" aria-live="polite" aria-atomic="true">{feedback}</span>
+    </>
   );
 };
 
@@ -289,6 +296,9 @@ export function RepositoryHome({
     onAsk(flow);
   };
 
+  // The host owns the route format; resolve it for every link, not only an intercepted plain click.
+  const hrefForAsk = (flow: string | undefined): string | undefined => typeof askHref === "function" ? askHref(flow) : askHref;
+
   /** A link in the app or out of it: out, a new tab; in, `onNavigate` on a plain click. */
   const link = (raw: string, className: string, children: ReactNode, label?: string) => {
     const href = safeHref(raw);
@@ -306,7 +316,7 @@ export function RepositoryHome({
 
   const askLink = (flow: string | undefined, label: string, picture?: string) => (
     <Button asChild variant="outline">
-      <a href={askHref} data-picture={picture} onClick={ask(flow)}>
+      <a href={hrefForAsk(flow)} data-picture={picture} onClick={ask(flow)}>
         {label}
       </a>
     </Button>
@@ -410,7 +420,7 @@ export function RepositoryHome({
         return askHref === undefined ? null : shell(
           <div className="sui-rh-ask">
             {block.title === undefined ? null : <h3 className="sui-rh-ask-title">{block.title}</h3>}
-            <a className="sui-rh-ask-link" href={askHref} onClick={ask(block.flow)}>
+            <a className="sui-rh-ask-link" href={hrefForAsk(block.flow)} onClick={ask(block.flow)}>
               {block.placeholder ?? "Ask Smithers"}
               <span aria-hidden="true" className="sui-rh-ask-key">Ask</span>
             </a>
@@ -505,7 +515,7 @@ export function RepositoryHome({
         return shell(
           <div className="sui-rh-flows">
             {flows.map((flow) => (
-              <a key={flow.flow} className="sui-rh-flow" href={askHref} onClick={ask(flow.flow)} title={flow.title}>
+              <a key={flow.flow} className="sui-rh-flow" href={hrefForAsk(flow.flow)} onClick={ask(flow.flow)} title={flow.title}>
                 <code>{flow.name}</code>
                 <span className="sui-rh-flow-title">{flow.title}</span>
               </a>

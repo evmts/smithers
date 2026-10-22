@@ -20,7 +20,7 @@ const home = Home.read(homeJsonText)
     aria-label="maya/tinyhttp home"
     sections={Home.visible(home.sections, Home.widen(audience, home.contributors))}
     files={{ "README.md": { state: "text", text: readme } }}
-    askHref="/maya/tinyhttp?ask=1"
+    askHref={(flow) => `/maya/tinyhttp?ask=1${flow === undefined ? "" : `&flow=${encodeURIComponent(flow)}`}`}
     onAsk={(flow) => router.navigate({ to: "/maya/tinyhttp", search: { ask: 1, flow } })}
     offered={(flow) => catalog.has(flow)}
     live={{ stack: { entries, total: entries.length, href: "/maya/tinyhttp/stack" } }}
@@ -94,7 +94,7 @@ an `http` or `https` one opens in a new tab.
 | --- | --- |
 | `sections` | The sections to draw, in order: the ones the viewer may see. |
 | `files` | Each markdown block's file by its repository path: `{ state: "loading" }`, `{ state: "text", text }` or `{ state: "failed" }`. |
-| `askHref` | Where a prompt, app or flow button goes. Without it, those blocks aren't drawn. |
+| `askHref` | A URL or `(flow: string \| undefined) => string`. Use the resolver to put the selected flow in the host's route for native navigation and opening another tab. Without it, prompt, app and flow blocks aren't drawn. |
 | `onAsk` | Called on a plain click on a prompt, app or flow button, with its flow, or `undefined` for a prompt without one. The click's default is prevented, so your router navigates. Without it, the buttons are plain links. |
 | `offered` | Whether this page has an app or action block's flow. Without it, neither is drawn. |
 | `live` | The live blocks' rows. |
@@ -104,6 +104,9 @@ an `http` or `https` one opens in a new tab.
 | `running` | The action flows running now: their buttons are disabled and their keys do nothing. |
 
 Other props go to the outer `<section>` (`data-slot="repository-home"`).
+
+Copy buttons show and announce `Copy failed` when copying fails, without the
+host's diagnostic. A successful retry clears the failure and says `Copied`.
 
 ## Markdown files
 

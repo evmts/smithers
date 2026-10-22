@@ -1203,7 +1203,7 @@ type RepositoryHomeFile =
 type RepositoryHomeProps = Omit<ComponentProps<"section">, "children"> & {
   sections: ReadonlyArray<Home.Section>                  // from @smthrs/views: the ones the viewer may see
   files?: Readonly<Record<string, RepositoryHomeFile>>   // by path; absent shows as loading
-  askHref?: string                                       // a prompt, app or flow button's link; without it none draws
+  askHref?: string | ((flow: string | undefined) => string) // resolve each flow's native URL; without it none draws
   onAsk?: (flow: string | undefined) => void             // a plain click: default prevented, the host navigates
   offered?: (flow: string) => boolean                    // an app or action block draws only when true; default none
   live?: RepositoryHomeLive                              // the live blocks' rows; a live block without them doesn't draw
@@ -1244,7 +1244,9 @@ one row (`repository-home-apps`); `action` a primary button that calls
 `onRun(flow)`, its key in a `<kbd>` and `aria-keyshortcuts`, pressed by that
 key anywhere while the person isn't typing; and the live blocks the rows in
 `live`, `stack` and `runs` sharing one grid (`repository-home-panels`), a
-notice as the block's heading and one status line. With `onAsk` or
+notice as the block's heading and one status line. Copy buttons show and
+announce `Copy failed` on failure and `Copied` on success. Use an `askHref`
+resolver to preserve a selected flow in native navigation. With `onAsk` or
 `onNavigate`, a plain click prevents its default and calls it; a modified or
 non-primary click keeps the browser's behavior. `view` is not drawn yet. When
 nothing draws, it renders `null`. `repositoryHomeCss` is part of

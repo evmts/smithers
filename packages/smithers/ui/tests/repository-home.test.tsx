@@ -391,7 +391,7 @@ describe("RepositoryHome: hero", () => {
     await render(<RepositoryHome sections={one([hero])} onCopy={() => Promise.reject(new Error("denied"))} />);
     const failing = block("hero")!.querySelector<HTMLButtonElement>(".sui-rh-copy")!;
     await act(async () => failing.click());
-    expect([failing.textContent, failing.dataset.copyFailed]).toEqual(["Copy", "true"]);
+    expect([failing.textContent, failing.dataset.copyFailed]).toEqual(["Copy failed", "true"]);
   });
 
   test("an announcement whose URL isn't http or https is not drawn", async () => {
