@@ -1,6 +1,6 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, Scope } from "effect"
+import { Context, Effect, Layer, Scope, Semaphore } from "effect"
 import { VIEWS_SHAPE_ROUTE } from "./contract"
 import { SHOWING, Showing, View } from "./schema"
 
@@ -81,8 +81,10 @@ export class ViewsStore extends Context.Service<
         const shown = yield* shownQuery(views, showing)
         const opened = new Map<string, ElectricCollection.ElectricCollection<View>>()
         const shownBy = new Map<string, Shown<typeof shownQuery>>()
+        // Include query creation and cache publication in the same first-open critical section.
+        const opening = yield* Semaphore.make(1)
         const forConversation = (conversationId: string) =>
-          Effect.suspend(() => {
+          Semaphore.withPermits(opening, 1)(Effect.suspend(() => {
             const known = opened.get(conversationId)
             if (known !== undefined) return Effect.succeed(known)
             return ElectricCollection.make<View>({
@@ -108,7 +110,7 @@ export class ViewsStore extends Context.Service<
               ),
               Effect.orDie,
             )
-          })
+          }))
         return ViewsStore.of({
           views,
           showing,

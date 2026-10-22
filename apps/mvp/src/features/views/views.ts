@@ -28,11 +28,12 @@ export interface ViewsActions {
 export const show = (viewId: string, conversationId?: string) =>
   Effect.gen(function* () {
     const { showing, forConversation } = yield* ViewsStore
-    if (conversationId !== undefined) yield* forConversation(conversationId)
+    // Select in navigation order; opening the conversation may yield to a later navigation.
     yield* showing.update(SHOWING, (draft) => {
       draft.viewId = viewId
       draft.conversationId = conversationId ?? null
     })
+    if (conversationId !== undefined) yield* forConversation(conversationId)
   }).pipe(
     // A local collection refuses only a row its own schema rejects, which an id never is: a bug, not a state.
     Effect.orDie,

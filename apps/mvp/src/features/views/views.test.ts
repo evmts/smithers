@@ -37,10 +37,6 @@ type App = ManagedRuntime.ManagedRuntime<
   unknown
 >
 
-/**
- * The app as `actor` (a Member unless `null`), with its conversation and full-screen view started as React starts them,
- * and the session row set as sign-in's `load` sets it, so the composer offers `/web`.
- */
 /** The outside web these tests open: example.com's pages allow framing, refuses.example refuses it (worker/test/pages.ts). */
 const PAGES = {
   "https://example.com/": framable("Example"),
@@ -48,6 +44,10 @@ const PAGES = {
   "https://refuses.example/": refusing("Refuses"),
 }
 
+/**
+ * The app as `actor` (a Member unless `null`), with its conversation and full-screen view started as React starts them,
+ * and the session row set as sign-in's `load` sets it, so the composer offers `/web`.
+ */
 const open = async (options: TabOptions = {}, actor: Actor | null = member) => {
   const runtime: App = openTestApp(options, { actor, pages: PAGES })
   runtimes.push(runtime)

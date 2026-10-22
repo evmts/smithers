@@ -127,6 +127,8 @@ All live in ChatApi (`worker/Views.ts` and `worker/WebPreview.ts`, routed by `wo
 
 ## The browser
 
+Concurrent first opens share one conversation collection and its shown query. A full-screen navigation selects its view before waiting for conversation initialization, so an earlier open cannot overwrite a later selection. `src/features/views/concurrency.test.ts` covers both races and the app-opening helper’s documentation.
+
 | File | Holds |
 |---|---|
 | `src/features/views/store.ts` | `ViewsStore`: the `views` Electric collection, kept on the device, and the one view the full-screen route shows |
