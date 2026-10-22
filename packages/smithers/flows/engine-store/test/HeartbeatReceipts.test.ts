@@ -65,6 +65,7 @@ it.effect("a blocked receipt never blocks lease renewal, overlaps, or outlives c
       expect(calls).toBe(1)
       yield* driver.interrupt(FlowUnderTest, "receipt")
       yield* Deferred.await(receiptEnded)
+      yield* TestDatabase.until(store.get("receipt").pipe(Effect.map((row) => row.status === "cancelled")))
       expect((yield* store.get("receipt")).status).toBe("cancelled")
       yield* TestClock.adjust(Duration.seconds(5))
       expect(calls).toBe(1)
