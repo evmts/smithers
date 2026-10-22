@@ -3,6 +3,7 @@ import { Config, Effect, Layer, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
+import { repoId } from "../../src/features/repo/contract.ts"
 import { type Keys, SecretKeys } from "./Keys.ts"
 import * as Store from "./Store.ts"
 
@@ -25,6 +26,15 @@ export interface Guest {
   readonly branchId: string
   readonly generation: number
 }
+
+/**
+ * The guest a branch's box is at `generation`: its repository's row id, which is lowercase (`repoId`) as the secrets'
+ * rows are, so a branch of `octocat/Spoon-Knife` reaches the secrets an Admin stored for it.
+ */
+export const guestOf = (
+  branch: { readonly owner: string; readonly name: string; readonly branchId: string },
+  generation: number,
+): Guest => ({ repoId: repoId(branch.owner, branch.name), branchId: branch.branchId, generation })
 
 /** The scope a guest's placeholders are derived in: the repository, the branch and the generation. */
 export const scopeOf = (guest: Guest): string => JSON.stringify([guest.repoId, guest.branchId, guest.generation])

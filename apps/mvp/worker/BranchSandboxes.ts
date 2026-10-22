@@ -298,20 +298,13 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           )
         }).pipe(Effect.withSpan("sandbox.object.wake", { attributes: { "smithers.branch.id": branch.branchId } }))
 
-      /** The guest the box is: its repository's branch at the running generation, from this object's own state. */
-      const guestOf = (branch: SandboxBranch, generation: number): SandboxEgress.Guest => ({
-        repoId: `github/${branch.owner}/${branch.name}`,
-        branchId: branch.branchId,
-        generation,
-      })
-
       /**
        * With the egress on, every wake writes the generation's placeholders to /run/smithers/env and trusts the
        * container's CA (EGRESS_SETUP), and the object keeps them for the tools' commands. Values never enter the box.
        */
       const placeholders = (branch: SandboxBranch, generation: number) =>
         Effect.gen(function* () {
-          const environment = yield* SandboxEgress.environment(guestOf(branch, generation)).pipe(
+          const environment = yield* SandboxEgress.environment(SandboxEgress.guestOf(branch, generation)).pipe(
             Effect.provideService(SecretKeys, secretKeys),
             Effect.provide(database),
           )
@@ -478,7 +471,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         const branch = yield* branchOf
         const generation = yield* state.storage.get<number>("generation")
         if (branch === undefined || generation === undefined) return HttpServerResponse.empty({ status: 403 })
-        return yield* SandboxEgress.forward(guestOf(branch, generation)).pipe(
+        return yield* SandboxEgress.forward(SandboxEgress.guestOf(branch, generation)).pipe(
           Effect.provideService(SecretKeys, secretKeys),
           Effect.provide(Layer.merge(database, FetchHttpClient.layer)),
         )

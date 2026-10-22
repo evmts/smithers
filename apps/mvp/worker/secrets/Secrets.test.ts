@@ -316,6 +316,14 @@ describe("the sandbox egress", () => {
     expect(leaks(await dump(runtime, await scratchName()))).toEqual([])
   })
 
+  test("a box on a branch whose repository is named in capitals gets that repository's placeholders", async () => {
+    const h = await open({ actor: admin, upstream })
+    await h.fetch(path(), put({ value: VALUE, hosts: ["api.stripe.com"] }))
+    const box = SandboxEgress.guestOf({ owner: "Acme", name: "Widgets", branchId: guest.branchId }, guest.generation)
+    expect(box).toEqual(guest)
+    expect(await h.environment(box)).toMatch(/^STRIPE_KEY=smthrs-secret-[0-9a-f]{64}\n$/)
+  })
+
   test("another host, another method, an earlier generation's placeholder and a redirect get no value", async () => {
     const h = await open({ actor: admin, upstream })
     await h.fetch(path(), put({ value: VALUE, hosts: ["api.stripe.com"], methods: ["GET"] }))
