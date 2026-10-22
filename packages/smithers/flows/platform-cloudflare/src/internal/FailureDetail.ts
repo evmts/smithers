@@ -66,8 +66,8 @@ export const detail = (
   const errors = chain(Cause.squash(cause))
   const result: Record<string, string> = {}
   const sql = errors.findIndex((error) => error._tag === "SqlError")
-  // A `SqlError` always carries its reason, the next error in the chain.
-  if (sql !== -1) result["db.error"] = String(errors[sql + 1]!._tag)
+  // The reason may be beyond the bounded chain.
+  if (sql !== -1 && errors[sql + 1] !== undefined) result["db.error"] = String(errors[sql + 1]!._tag)
   const code = errors.map((error) => error.code).find((value): value is string =>
     typeof value === "string" && sqlState.test(value)
   )
