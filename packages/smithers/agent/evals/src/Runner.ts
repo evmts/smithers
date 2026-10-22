@@ -281,7 +281,7 @@ const runCase = (executor: CaseExecutorService, suiteCase: Case): Effect.Effect<
     }),
     Effect.map((execution): CaseResult => ({
       case: suiteCase.name,
-      execution: { ...execution, stepKey: flattenControlCharacters(execution.stepKey) },
+      execution,
       observations: []
     })),
     Effect.catchCause((cause) =>
@@ -313,7 +313,7 @@ const requestFor = (suiteCase: Case, execution: Execution, binding: Binding): Sc
   },
   input: {
     input: structuredClone(suiteCase.input),
-    output: execution.output,
+    output: structuredClone(execution.output),
     ...(groundTruthFor(suiteCase, binding)),
     ...(binding.context === undefined ? {} : { context: structuredClone(binding.context) }),
     latencyMs: execution.latencyMs
@@ -483,7 +483,7 @@ const buildJobs = (
         `${index}`
       ),
       observation: { targetStepKey: request.stepKey, scorerKey: scorerKeyOf(request.binding) },
-      score: Effect.suspend(() => request.binding.scorer.score(request.input)),
+      score: Effect.suspend(() => request.binding.scorer.score(structuredClone(request.input))),
       at: Date.parse(at)
     }))
     return { requests, jobs }
@@ -516,6 +516,15 @@ const scoreCorrelated = (
         )
       )
     )
+    if (!Array.isArray(batchResults)) {
+      return yield* Effect.fail(
+        new EvalError({
+          code: "scorer_protocol",
+          message: "Correlated scorer batch must return an array",
+          path: "runBatchCorrelated"
+        })
+      )
+    }
     if (batchResults.length !== jobs.length) {
       return yield* Effect.fail(
         new EvalError({
@@ -530,6 +539,15 @@ const scoreCorrelated = (
     const byIdentity = new Map<string, ScoreObservation>()
     let unknown: { readonly identity: string; readonly index: number } | undefined
     for (const [index, result] of batchResults.entries()) {
+      if (typeof result !== "object" || result === null || typeof result.identity !== "string") {
+        return yield* Effect.fail(
+          new EvalError({
+            code: "scorer_protocol",
+            message: "Correlated scorer result must contain a string identity",
+            path: `runBatchCorrelated[${index}]`
+          })
+        )
+      }
       const jobIndex = jobIndexByIdentity.get(result.identity)
       if (jobIndex !== undefined && byIdentity.has(result.identity)) {
         return yield* Effect.fail(
@@ -550,8 +568,9 @@ const scoreCorrelated = (
       return yield* Effect.fail(
         new EvalError({
           code: "scorer_protocol",
-          message:
-            `Correlated scorer batch returned unknown identity '${unknown.identity}' at result index ${unknown.index}; job ${missingJobIndex} identity '${missingIdentity}' is absent`,
+          message: `Correlated scorer batch returned unknown identity '${
+            flattenControlCharacters(unknown.identity)
+          }' at result index ${unknown.index}; job ${missingJobIndex} identity '${missingIdentity}' is absent`,
           path: `runBatchCorrelated[${unknown.index}]`
         })
       )
@@ -576,10 +595,11 @@ const scoreOrderOnly = (
         return yield* Effect.fail(
           new EvalError({
             code: "ambiguous_score_job",
-            message:
-              `Cannot attribute score jobs for cases '${first.case}' and '${second.case}': both use step key '${job.observation.targetStepKey}' and scorer ${
-                label(second.binding)
-              }. Give each case its own step key, or provide a batch runner that implements runBatchCorrelated`,
+            message: `Cannot attribute score jobs for cases '${first.case}' and '${second.case}': both use step key '${
+              flattenControlCharacters(job.observation.targetStepKey)
+            }' and scorer ${
+              label(second.binding)
+            }. Give each case its own step key, or provide a batch runner that implements runBatchCorrelated`,
             path: "runBatch"
           })
         )
@@ -629,10 +649,10 @@ const score = (
                 jobs[index]!.identity
               }' returned step '${result.targetStepKey}' and scorer '${result.scorerKey}' where job ${index} asked for scorer '${
                 scorerKeyOf(request.binding)
-              }' at step '${request.stepKey}'`
+              }' at step '${flattenControlCharacters(request.stepKey)}'`
               : `Scorer batch returned an observation for '${result.scorerKey}' at step '${result.targetStepKey}' where job ${index} asked for '${
                 scorerKeyOf(request.binding)
-              }' at step '${request.stepKey}'; results must stay aligned with their jobs`,
+              }' at step '${flattenControlCharacters(request.stepKey)}'; results must stay aligned with their jobs`,
             path: `${protocol}[${index}]`
           })
         )
@@ -657,7 +677,7 @@ const score = (
  * Cases run through the provided {@link CaseExecutor} at the suite's
  * concurrency and are returned in declaration order. Each executor receives
  * its own mutable case copy. Each scorer receives independent copies of the
- * original case input, expected value, and binding data. Every execution is then
+ * original case input, execution output, expected value, and binding data. Every execution is then
  * graded by the bindings whose `appliesTo` is the flow the execution reports as
  * its target, matched by reference identity, so a binding attached to another
  * flow contributes no observations.

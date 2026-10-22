@@ -244,6 +244,17 @@ export const compare = (
       })
     )
   }
+  for (const [index, record] of baseline.records.entries()) {
+    if (typeof record.score !== "number" || !Number.isFinite(record.score) || record.score < 0 || record.score > 1) {
+      return Effect.fail(
+        new EvalError({
+          code: "invalid_baseline",
+          message: "Baseline score must be a finite number in [0, 1]",
+          path: `baseline.records[${index}].score`
+        })
+      )
+    }
+  }
   const actual = run.observations.filter((observation): observation is Score => observation.kind === "score")
   const inconclusive = run.observations.filter((
     observation

@@ -425,3 +425,10 @@ describe("Regression", () => {
     ])
   })
 })
+
+it.each(["old", "new"])("rejects NaN structural baseline at %s key", async (stepKey) => {
+  const error = await failure(
+    Regression.compare({ ...baseline, records: [{ ...baseline.records[0]!, score: NaN }] }, run(stepKey, 0.2))
+  )
+  expect(error.code).toBe("invalid_baseline")
+})

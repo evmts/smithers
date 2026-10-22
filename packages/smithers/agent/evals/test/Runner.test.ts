@@ -168,7 +168,7 @@ describe("Runner", () => {
       .toBe(true)
   })
 
-  it("flattens control characters in a returned step key and a wrapped target failure", async () => {
+  it("preserves step key identity and flattens a wrapped target failure", async () => {
     const suite = await suiteOf("s", [], [{ name: "one", input: 1 }, { name: "two", input: 2 }])
     const executor = executorFor((suiteCase) =>
       suiteCase.name === "one"
@@ -182,7 +182,7 @@ describe("Runner", () => {
     )
     const result = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(executor)))
 
-    expect(result.cases[0]?.execution?.stepKey).toBe("step ::warning::forged from stepKey [2K 2K ")
+    expect(result.cases[0]?.execution?.stepKey).toBe("step\n::warning::forged from stepKey\u001b[2K\u009b2K\u202e")
     expect(result.cases[1]?.error?.message).toBe("Target failed for case 'two': boom ::error::forged from target ")
     // The original message stays on the cause for anyone debugging the target.
     expect((result.cases[1]?.error?.cause as EvalError).message).toBe("boom\n::error::forged from target\u007f")
@@ -1461,3 +1461,58 @@ describe("Runner", () => {
     ])
   })
 })
+
+it("preserves distinct execution keys for scoring", async () => {
+  const suite = await suiteOf("keys", [binding], [{ name: "a", input: 1 }, { name: "b", input: 1 }])
+  const executor = executorFor((c) =>
+    Effect.succeed({ output: c.input, stepKey: c.name === "a" ? "x\ny" : "x y", latencyMs: 0, target })
+  )
+  const result = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(executor)))
+  expect(result.observations.map((o) => o.stepKey)).toEqual(["x\ny", "x y"])
+})
+
+it("isolates scorer mutations from sibling inputs and retained output", async () => {
+  const mutator = Scorer.make({
+    id: "mutation",
+    version: "1",
+    name: "mutation",
+    score: ({ output }) =>
+      Effect.sync(() => {
+        ;(output as { nested: { value: number } }).nested.value = 9
+        return { score: 1 }
+      })
+  })
+  const reader = Scorer.make({
+    id: "reader",
+    version: "1",
+    name: "reader",
+    score: ({ output }) => Effect.sync(() => ({ score: (output as { nested: { value: number } }).nested.value }))
+  })
+  const suite = await suiteOf("isolation", [
+    Binding.make({ scorer: mutator, appliesTo: target }),
+    Binding.make({ scorer: reader, appliesTo: target })
+  ])
+  const result = await Effect.runPromise(
+    Runner.run(suite, runOptions).pipe(
+      Effect.provide(
+        executorFor(() => Effect.succeed({ output: { nested: { value: 1 } }, stepKey: "step", latencyMs: 0, target }))
+      )
+    )
+  )
+  expect(result.observations.map((o) => o.kind === "score" ? o.score : -1)).toEqual([1, 1])
+  expect(result.cases[0]?.execution?.output).toEqual({ nested: { value: 1 } })
+})
+
+it.each([null, [null], [{ identity: "unknown\n\u001b", observation: null }]])(
+  "rejects malformed correlated results safely: %j",
+  async (value) => {
+    const suite = await suiteOf("protocol", [binding])
+    const scorer: Runner.ScoreBatchRunner = {
+      runBatch: () => Effect.die("wrong path"),
+      runBatchCorrelated: () => Effect.succeed(value as never)
+    }
+    const error = await failureOf(Runner.run(suite, { ...runOptions, scorer }).pipe(Effect.provide(succeeding)))
+    expect(error.code).toBe("scorer_protocol")
+    expect(error.message).not.toMatch(/[\n\u001b]/u)
+  }
+)

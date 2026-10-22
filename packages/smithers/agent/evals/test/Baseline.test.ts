@@ -359,3 +359,32 @@ describe("Baseline", () => {
     )
   })
 })
+
+describe("untrusted baseline diagnostics", () => {
+  it.each(["score", "version"])("never coerces an invalid %s", async (field) => {
+    const hostile = {
+      toString() {
+        throw new Error("coercion")
+      }
+    }
+    const artifact = {
+      suite: "s",
+      version: field === "version" ? hostile : 1,
+      records: field === "score" ? [{ ...record, score: hostile }] : [record]
+    }
+    const error = await failure(Baseline.make(artifact as never))
+    expect(error.code).toBe("invalid_baseline")
+    const textArtifact = field === "version" ?
+      { ...artifact, version: "bad\n\u001b" }
+      : { ...artifact, records: [{ ...record, score: "bad\n\u001b" }] }
+    const textError = await failure(Baseline.load(JSON.stringify(textArtifact)))
+    expect(textError.message).not.toMatch(/[\n\u001b]/u)
+  })
+})
+
+it("diagnoses null scores without coercion", async () => {
+  const error = await failure(
+    Baseline.load(JSON.stringify({ version: 1, suite: "s", records: [{ ...record, score: null }] }))
+  )
+  expect(error.message).toBe("Baseline record field 'score' must be a finite number in [0, 1], got null")
+})

@@ -65,3 +65,5 @@ https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/d
 https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/api.md documents every export, the stable
 failure codes, the batch-runner protocol, the step-key rule that separates a
 regression from nondeterminism, and the declared size and concurrency limits.
+
+Execution step keys retain their exact identity for sampling and comparison; report rendering escapes them for display. Scorers receive independent snapshots of execution output. Invalid structural baseline scores and malformed correlated batches fail with typed errors, and diagnostics never coerce arbitrary baseline values.

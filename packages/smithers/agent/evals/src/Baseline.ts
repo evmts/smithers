@@ -12,7 +12,7 @@
 import * as Effect from "effect/Effect"
 import { EvalError } from "./EvalError.ts"
 import { CanonicalJson } from "./internal/CanonicalJson.ts"
-import { controlCharacter } from "./internal/controlCharacters.ts"
+import { controlCharacter, flattenControlCharacters } from "./internal/controlCharacters.ts"
 import { tupleKey } from "./internal/tupleKey.ts"
 import type { Observation, RunResult } from "./Runner.ts"
 
@@ -70,6 +70,16 @@ export const limits = {
   length: 16 * 1024 * 1024
 } as const
 
+// Never invoke caller-controlled coercion while constructing a diagnostic.
+const diagnosticValue = (value: unknown): string =>
+  typeof value === "number" ?
+    String(value)
+    : typeof value === "string" ?
+    flattenControlCharacters(value)
+    : value === null
+    ? "null"
+    : typeof value
+
 const fail = (message: string, path?: string): Effect.Effect<never, EvalError> =>
   Effect.fail(
     new EvalError({ code: "invalid_baseline", message, ...(path === undefined ? {} : { path }) })
@@ -108,7 +118,7 @@ const decodeRecord = (value: unknown, index: number): Effect.Effect<BaselineReco
     const score = rawScore
     if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) {
       return yield* fail(
-        `Baseline record field 'score' must be a finite number in [0, 1], got ${String(score)}`,
+        `Baseline record field 'score' must be a finite number in [0, 1], got ${diagnosticValue(score)}`,
         `${at}.score`
       )
     }
@@ -138,7 +148,7 @@ const validate = (value: unknown): Effect.Effect<Baseline, EvalError> =>
     const rawSuite = artifact.suite
     const rawRecords = artifact.records
     if (rawVersion !== version) {
-      return yield* fail(`Baseline version must be ${version}, got ${String(rawVersion)}`, "version")
+      return yield* fail(`Baseline version must be ${version}, got ${diagnosticValue(rawVersion)}`, "version")
     }
     if (rawSuite !== undefined && typeof rawSuite !== "string") {
       return yield* fail(`Baseline field 'suite' must be a string, got ${typeof rawSuite}`, "suite")
