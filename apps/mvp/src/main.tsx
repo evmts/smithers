@@ -14,6 +14,7 @@ import { CodeIntelProvider } from "./features/code-intel/components/CodeIntelCon
 import { CommandsProvider } from "./features/commands/components/CommandsContext"
 import { IssuesProvider } from "./features/issues/components/IssuesContext"
 import { PullsProvider } from "./features/pulls/components/PullsContext"
+import { FilesProvider } from "./features/files/components/FilesContext"
 import { SecretsProvider } from "./features/secrets/components/SecretsContext"
 import { RepoProvider } from "./features/repo/components/RepoContext"
 import { RunsProvider } from "./features/runs/components/RunsContext"
@@ -220,10 +221,10 @@ const host: Host = {
   },
   // Copy permalink writes here; the browser refuses without the page's focus or permission.
   clipboard: (text) => navigator.clipboard.writeText(text),
-  // `app/navigate` observes the router completing or failing before answering the asking tab.
+  // Navigation answers only after the router completes.
   navigate: (path) => router.navigate({ href: path }),
-  // A branch's page opened offline loads its route again once the browser is back online (src/features/branch/actions.ts).
   reopenRoute: () => void router.invalidate(),
+  pathname: () => router.state.location.pathname,
   // `app/web/open` (src/features/web/url.ts): `http:` pages on this machine open in a new tab only under the dev
   // server. A person's own `/web … tab` opens its tab here, inside their keypress, when the browser still allows it:
   // `window.open` takes the click's activation when it opens a tab, so an activation still there after it means the
@@ -293,6 +294,7 @@ const render: BootOptions["render"] = (
   codeIntel,
   pulls,
   plugins,
+  files,
   secrets,
   docs,
   domains,
@@ -304,6 +306,7 @@ const render: BootOptions["render"] = (
         <AuthProvider value={auth}>
           <ThemeProvider value={theme}>
             <RepoProvider value={repo}>
+              <FilesProvider value={files}>
               <CodeIntelProvider value={codeIntel}>
               <CommandsProvider value={commands}>
                 <ViewsProvider value={views}>
@@ -350,6 +353,7 @@ const render: BootOptions["render"] = (
                 </ViewsProvider>
               </CommandsProvider>
               </CodeIntelProvider>
+              </FilesProvider>
             </RepoProvider>
           </ThemeProvider>
         </AuthProvider>

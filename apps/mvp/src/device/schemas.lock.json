@@ -1,5 +1,5 @@
 {
-  "epoch": 67,
+  "epoch": 68,
   "stores": {
     "branch-conversations": {
       "kind": "local",
@@ -49,6 +49,12 @@
       "kind": "local",
       "versions": {
         "1": "2e3b027d15ac792d"
+      }
+    },
+    "file-tabs": {
+      "kind": "local",
+      "versions": {
+        "1": "1bf5ea72a24a5221"
       }
     },
     "homes": {

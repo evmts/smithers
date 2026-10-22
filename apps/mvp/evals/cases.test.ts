@@ -59,6 +59,15 @@ const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Pa
     good: navigated("/octocat/Spoon-Knife/blob/main/README.md?L=12"),
     bad: clonedThen("/octocat/Spoon-Knife/blob/main/README.md?L=12"),
   },
+  "files-show-lines": {
+    good: {
+      calls: [call("file/open", { path: "README.md", lines: "3-8" })],
+      navigated: ["/octocat/Spoon-Knife/blob/main/README.md?L=3-8"],
+      text: "README.md is open at lines 3 to 8.",
+    },
+    // Moving the tab to the file's page shows the lines but opens no tab beside the others.
+    bad: navigated("/octocat/Spoon-Knife/blob/main/README.md?L=3-8"),
+  },
   "navigate-repo": { good: navigated("/octocat/Spoon-Knife"), bad: clonedThen("/octocat/Spoon-Knife") },
   "navigate-github-url": {
     good: navigated("/octocat/Spoon-Knife/blob/main/README.md"),
@@ -196,6 +205,8 @@ describe("caseNamed and inputOf", () => {
     expect(inputOf(caseNamed("greeting"))).toEqual({ name: "greeting", ask: "hi", person: DEFAULT_PERSON, provider: "model",
       seed: null })
     expect(inputOf(caseNamed("provider-refuses")).provider).toBe("refuses")
+    expect(inputOf(caseNamed("files-show-lines")).at).toBe("/octocat/Spoon-Knife/tree/main")
+    expect("at" in inputOf(caseNamed("greeting"))).toBe(false)
     expect(inputOf(caseNamed("ask-approval-denied")).person).toEqual({ words: "No.", approve: false })
     expect(structuredClone(CASES.map(inputOf))).toEqual(CASES.map(inputOf))
   })

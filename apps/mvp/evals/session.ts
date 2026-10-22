@@ -225,7 +225,7 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
     const asking = await agentFor(kase.provider)
     failures.length = 0
     requests = { made: 0, failed: 0 }
-    const device = await openDevice(asking.fetch)
+    const device = await openDevice(asking.fetch, {}, undefined, kase.at === undefined ? {} : { at: kase.at })
     try {
       if (kase.seed !== null) await plant(asking, device, kase.seed)
       // What the seed painted or moved isn't the agent's.

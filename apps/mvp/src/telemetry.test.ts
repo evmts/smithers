@@ -328,6 +328,8 @@ describe("the contract", () => {
       // The agent names a tool call `execute_tool <flow name>`.
       "execute_tool app/theme/set": "`execute_tool ${call.flowName}`",
       "execute_tool app/navigate": "`execute_tool ${call.flowName}`",
+      "execute_tool file/open": "`execute_tool ${call.flowName}`",
+      "execute_tool file/close": "`execute_tool ${call.flowName}`",
       "execute_tool app/web/open": "`execute_tool ${call.flowName}`",
       "execute_tool app/jev/classify": "`execute_tool ${call.flowName}`",
       "execute_tool app/jev/evaluate": "`execute_tool ${call.flowName}`",

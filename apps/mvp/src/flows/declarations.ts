@@ -33,6 +33,7 @@ import {
 import { IssueCommitment, IssueComment, IssueCreate, IssueTriage, TriageEnable, TriagePause, TriageRunAgain } from "../features/issues/flows"
 import { Classify, Evaluate } from "../features/jev/flows"
 import { Cancel, Inspect, List, Resume, Retry, Steer } from "../features/runs/flows"
+import { CloseFile, OpenFile } from "../features/files/flows"
 import { Navigate } from "../features/navigation/flows"
 import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import { AnswerRun, Ask, Deliver } from "../features/status/flows"
@@ -57,6 +58,8 @@ export const declarations = {
   "auth/refresh": AuthRefresh,
   "app/theme/set": SetTheme,
   "app/navigate": Navigate,
+  "file/open": OpenFile,
+  "file/close": CloseFile,
   "app/web/open": OpenWebPage,
   "app/docs/search": SearchDocs,
   "chat/Answer": Answer,

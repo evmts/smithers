@@ -1,3 +1,4 @@
+import { Files } from "../files/files"
 // Render the real branch screen over the app's real Effect services and live collections, through the same providers
 // as the branch page's other render tests (src/screens/branch/offline-render.tsx). No React hooks or views are
 // replaced: the notice comes through Postgres/Electric, just as on a routed branch page.
@@ -47,7 +48,7 @@ test("a branch page renders its shared inline toast stack below the header", asy
     })
     await router.load()
     expect(router.state.matches.map((match) => match.routeId)).toContain(route.id)
-    const html = branchRenderer({ chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend })(router)
+    const html = branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend })(router)
     expect(html).toContain('class="branch-screen"')
     expect(html).toContain('data-placement="inline"')
     expect(html).toContain(`data-subject="${subject}"`)

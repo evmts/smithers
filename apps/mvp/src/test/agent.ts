@@ -1,3 +1,4 @@
+import { FileTabsTabs } from "../features/files/flows"
 import { FlowRegistry } from "../flows/registry"
 // The browser's agent on the Node host, for the tests (docs/features/agent.md#tests). ChatApi's real handler on the
 // test file's schema of the compose Postgres serves the model endpoint and the answer routes, with a scripted model as
@@ -151,8 +152,9 @@ export const openAgent = async (
       // Every request goes as the run that made it, as in the browser's engine worker.
       Layer.provide(RunCredentials.layer({ origin: ORIGIN, name: doors, flows: clientFlows }).pipe(Layer.provide(FlowRegistry.layer))),
       Layer.provide(tabPreferences),
-      // No tab listens on this engine's navigation, clipboard, issues, TODOs, chat or session channels: a navigation, a copy, an
-      // issue or TODO write, a message's Copy or Edit, or a session refresh here finds its tab gone.
+      // No tab listens on this engine's navigation, files, clipboard, issues, TODOs, chat or session channels: a
+      // navigation, a file tab, a copy, an issue or TODO write, a message's Copy or Edit, or a session refresh here finds
+      // its tab gone.
       Layer.provide(Tabs.layerChannel({ name: `agent-${crypto.randomUUID()}`, origin: ORIGIN })),
       Layer.provide(TabClipboard.layerChannel({ name: `agent-${crypto.randomUUID()}`, origin: ORIGIN })),
       Layer.provide(TabIssues.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
@@ -160,6 +162,7 @@ export const openAgent = async (
       Layer.provide(TabRuns.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChat.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabSession.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
+      Layer.provide(FileTabsTabs.layerChannel({ name: `agent-${crypto.randomUUID()}` })),
       Layer.provide(TabChannel.layer),
       // The run reads the acts on runs need, which the browser's engine provides (decision 0014 §3).
       Layer.provideMerge(EngineStore.RunInspection.layer),

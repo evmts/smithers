@@ -7,6 +7,7 @@ import { useBranch } from "../../features/branch/components/BranchContext"
 import { accessNow, writes } from "../../features/branch/view"
 import { Composer } from "../../features/chat/components/Composer"
 import { SharedFile } from "../../features/coedit/components/SharedFile"
+import { FileTabsBar } from "../../features/files/components/FileTabsBar"
 import { Conversation } from "../../features/chat/components/Conversation"
 import { NO_MESSAGES } from "../../features/chat/contract"
 import { selfAccessOf } from "../../features/presence/view"
@@ -46,7 +47,12 @@ export function BranchScreen() {
           ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} />
           : open && search.edit !== undefined && current?.conversationId != null
           ? <SharedFile conversationId={current.conversationId} path={search.edit} readOnly={!writes(access)} />
-          : <RepoPage editFiles={open && writes(access) && current?.mode === "open"} />}
+          : (
+            <>
+              <FileTabsBar />
+              <RepoPage editFiles={open && writes(access) && current?.mode === "open"} />
+            </>
+          )}
       </div>
       {denied ? (
         <div className="branch-screen-side">

@@ -5,6 +5,7 @@ import { Confirmed } from "../features/auth/schema"
 import { Asking, Message, Unsent } from "../features/chat/schema"
 import { Sending as TextSending, TextUpdate } from "../features/coedit/schema"
 import { Draft as FlowDraft, FlowRow } from "../features/flows-ui/schema"
+import { FileTabRow } from "../features/files/schema"
 import { CuratedRow, HomeRow } from "../features/home/rows"
 import {
   Comment,
@@ -74,6 +75,9 @@ export const PluginDraftsStore = Migrations.local({ id: "plugin-drafts", version
 
 /** This device's theme. */
 export const PreferencesStore = Migrations.local({ id: "preferences", versions: [Preference], getKey: (row) => row.id })
+
+/** This device's open files and the lines each last highlighted (src/features/files/store.ts). */
+export const FileTabsStore = Migrations.local({ id: "file-tabs", versions: [FileTabRow], getKey: (row) => row.key })
 
 /** Repository homes as last read: a cache RepoApi fills again. Version 1 (a flat list of blocks) was never declared. */
 export const HomesStore = Migrations.local({
@@ -201,6 +205,7 @@ export const deviceRegistry = Migrations.registry({
     AuthConfirmedStore,
     PreferencesStore,
     PluginDraftsStore,
+    FileTabsStore,
     HomesStore,
     CuratedHomesStore,
     AttentionPendingStore,

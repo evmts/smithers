@@ -89,6 +89,8 @@ describe("the parity law", () => {
     expect(agentFlows).toEqual([
       "app/theme/set",
       "app/navigate",
+      "file/open",
+      "file/close",
       "app/web/open",
       "app/docs/search",
       "chat/copy",
@@ -138,7 +140,7 @@ describe("names and placement", () => {
   test("each entry is registered under its own flow's tag, in a namespace only the app claims", () => {
     for (const name of names) {
       expect(registry[name].flow._tag).toBe(name)
-      expect(name).toMatch(/^(app|auth|chat|repo|ui|view|flow|run|branch|terminal|issue|triage|todo|watch|notification|alert|domain|sandbox|timeline)\//)
+      expect(name).toMatch(/^(app|auth|chat|repo|ui|view|flow|run|branch|terminal|issue|triage|todo|watch|notification|alert|domain|sandbox|timeline|file)\//)
     }
   })
 
@@ -171,6 +173,8 @@ describe("names and placement", () => {
       "auth/refresh",
       "app/theme/set",
       "app/navigate",
+      "file/open",
+      "file/close",
       "app/web/open",
       "app/docs/search",
       "chat/Answer",

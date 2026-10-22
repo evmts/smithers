@@ -1,3 +1,4 @@
+import { Files } from "../files/files"
 // The real router and terminal view on the browser layer, with Electric's injected slow transport. No dev server:
 // ChatApi, Postgres and Electric are the same dependencies as terminal.test.ts. Only the shape responses are held.
 import { ShapeSource } from "@smthrs/effect-electric"
@@ -108,7 +109,8 @@ test.each(["empty", "mine", "watching"] as const)(
     await router.navigate({ to: "/$owner/$repo/tree/$ref/$", params, search: { terminal: selected } })
     expect(router.state.matches.at(-1)?.search).toMatchObject({ terminal: selected })
     await vi.waitFor(() => expect(panel()).toMatchObject({ branchId, terminalId: null, phase: "loading" }))
-    const screen = () => renderTerminalScreen(router, context, views, theme)
+    const files = await runtime.runPromise(Effect.service(Files))
+    const screen = () => renderTerminalScreen(router, context, { ...views, files }, theme)
     expect(screen()).toContain("terminal-panel-screen")
     expect(screen()).not.toContain("Open terminal")
     expect(screen()).not.toContain("No terminals")

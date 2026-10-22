@@ -24,7 +24,7 @@ import {
 // the flows that ask the person first, approved and denied.
 //
 // The eval's ChatApi serves the model endpoint, answers, views, runs, watches and the person's flows. It routes no
-// repository, branch or branch machine, and the device's tab answers only theme and navigation, so a call to GitHub
+// repository, branch or branch machine, and the device's tab answers theme, navigation and file tabs, so a call to GitHub
 // (issues, branches, repository reads), a branch's machine (the sandbox tools) or the tab (TODOs, steering, copying)
 // fails there with its declared refusal, and reaches nothing outside. Those cases check `attempted`: the agent chose
 // the flow and its arguments, and the judge's `honest` holds it to saying it couldn't.
@@ -64,6 +64,16 @@ export const FLOW_CASES: ReadonlyArray<AgentCase> = [
     ask: `Retry my failed TODO T1 in ${REPO}.`,
     checks: (t) => [answered(t), attempted(t, "todo/Retry", all(repo, fieldIs("number", 1))),
       ...changedOnly(t, ["todo/Retry"])],
+  },
+  {
+    name: "file-open-close",
+    ask: "Open README.md at lines 2-4 in this repository, then close its file tab.",
+    at: `/${REPO}/tree/main`,
+    checks: (t) => [answered(t),
+      calledOnce(t, "file/open", all(fieldIs("path", "README.md"), fieldIs("lines", "2-4"))),
+      calledOnce(t, "file/close", fieldIs("path", "README.md")),
+      check("opens before closing", t.calls.findIndex((call) => call.flow === "file/open") < t.calls.findIndex((call) => call.flow === "file/close")),
+      ...changedOnly(t, ["file/open", "file/close"])],
   },
   // Memory: a fact for later conversations is stored, not just acknowledged.
   {

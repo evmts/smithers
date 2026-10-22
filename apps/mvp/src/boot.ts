@@ -59,6 +59,10 @@ import * as SharedPromptLayer from "./features/coedit/prompt"
 import { CoeditStore } from "./features/coedit/store"
 import { TextWrites } from "./features/coedit/writes"
 import { tabNavigation } from "./features/navigation/tab"
+import { FilesPage } from "./features/files/actions"
+import { Files, type FilesView } from "./features/files/files"
+import { FilesStore } from "./features/files/store"
+import { tabFiles } from "./features/files/tab"
 import { tabDoors } from "./flows/doors"
 import { RepoClient, REQUEST_WITHIN } from "./features/repo/api"
 import { tabClipboard } from "./features/repo/tab"
@@ -119,8 +123,10 @@ export interface Host extends ChatHost {
   readonly title?: TabTitle["Service"]
   /** Takes this tab to `path`, an app path: the router's `navigate` (src/features/navigation/tab.ts). */
   readonly navigate: (path: string) => void | Promise<void>
-  /** Opens this tab's route again in place: the router's `invalidate`. A branch opened offline opens again with it. */
+  /** Opens this tab’s route again after reconnecting. */
   readonly reopenRoute: () => void
+  /** The router location: files open in the repository this page names. */
+  readonly pathname?: () => string
   /** Which outside pages open, and a tab opened from the person's own click or key (src/features/web/actions.ts). */
   readonly web: WebHost
   /**
@@ -189,6 +195,15 @@ export const appLayer = <S = never>(
     auth,
     Theme.layer,
     Repo.layer,
+    // File tabs (docs/features/files.md): this device's open files over the repository view, and this tab's answers to
+    // the `file/open` and `file/close` steps it started.
+    Files.layer.pipe(
+      Layer.provideMerge(tabFiles({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer))),
+      Layer.provideMerge(FilesStore.layer),
+      Layer.provideMerge(
+        FilesPage.layer({ navigate: host.navigate, ...(host.pathname === undefined ? {} : { pathname: host.pathname }) }),
+      ),
+    ),
     // Code intelligence on the repository view's TypeScript and JavaScript (docs/features/code-intelligence.md).
     CodeIntel.layer.pipe(
       Layer.provide(CodeIntelStore.layer),
@@ -418,6 +433,7 @@ export interface BootOptions {
     codeIntel: CodeIntelView,
     pulls: PullsLayer,
     plugins: PluginsView,
+    files: FilesView,
     secrets: SecretsLayer,
     docs: DocsView,
     domains: DomainsView,
@@ -452,6 +468,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
     const codeIntel = yield* CodeIntel
     const pulls = yield* Pulls
     const plugins = yield* PluginsUi
+    const files = yield* Files
     const secrets = yield* Secrets
     const docs = yield* Docs
     const domains = yield* Domains
@@ -479,6 +496,7 @@ export const boot = (options: BootOptions & { readonly storage: StoragePersisten
         codeIntel,
         pulls,
         plugins,
+        files,
         secrets,
         docs,
         domains,

@@ -10,7 +10,7 @@ import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine, BrowserRuntime, TabChannel, WebLock } from "@smthrs/platform-browser"
-import { Context, Effect, Exit, Fiber, Layer, Redacted, Scope } from "effect"
+import { Context, Effect, Exit, Fiber, Layer, Option, Redacted, Scope } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../db/TestDatabase.ts"
@@ -22,6 +22,10 @@ import { clientFlows } from "../flows/declarations"
 import { tabAnswers, tabEngine } from "../flows/engine"
 import { tabNavigation } from "../features/navigation/tab"
 import { tabDoors } from "../flows/doors"
+import { FilesPage } from "../features/files/actions"
+import type { Here } from "../features/files/schema"
+import { FilesStore } from "../features/files/store"
+import { tabFiles } from "../features/files/tab"
 import { workerRegistrations } from "../flows/registrations"
 import type { Endpoint } from "../flows/tabPort"
 import { ORIGIN } from "./agent"
@@ -45,6 +49,26 @@ const navigation = (name: string, navigated: Array<string>) =>
     tabDoors({ name }),
   ).pipe(Layer.provide(TabChannel.layer))
 
+/** Where a tab at `at` is, for file tabs: a repository's directory page `/<owner>/<name>/tree/<revision>`, else nowhere. */
+const hereAt = (at: string | undefined): Option.Option<Here> => {
+  const [owner, name, kind, ...revision] = (at ?? "").split("/").filter(Boolean)
+  return owner === undefined || name === undefined || kind !== "tree" || revision.length === 0
+    ? Option.none()
+    : Option.some({ owner, name, revision: revision.join("/"), kind: "tree", path: "" })
+}
+
+/**
+ * A tab's file tabs answers on engine `name`, as src/boot.ts composes them, its page at `at` (`hereAt`): its tabs in
+ * memory, and where they took it in `navigated`, which navigation's answers record too.
+ */
+const files = (name: string, at: string | undefined, navigated: Array<string>) =>
+  tabFiles({ name }).pipe(
+    Layer.provideMerge(FilesStore.layer),
+    Layer.provide(Layer.succeed(FilesPage, FilesPage.of({ here: Effect.succeed(hereAt(at)), navigate: (path) => void navigated.push(path) }))),
+    Layer.provide(Persistence.memory),
+    Layer.provide(TabChannel.layer),
+  )
+
 /** An engine worker that never leads: a second tab's, waiting its turn. */
 const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
   terminate: () => {},
@@ -57,7 +81,13 @@ const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
 type ServicesOf<C> = C extends Context.Context<infer S> ? S : never
 
 /** A tab and its engine's leader, closed with `close`. */
-export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: DeviceTelemetry = {}, memorySources?: HostOptions["memorySources"]) => {
+export const openDevice = async (
+  fetch: typeof globalThis.fetch,
+  telemetry: DeviceTelemetry = {},
+  memorySources?: HostOptions["memorySources"],
+  /** `at`: the page the tab shows, for file tabs (`hereAt`); none unless set. */
+  page: { readonly at?: string } = {},
+) => {
   const scope = Effect.runSync(Scope.make())
   const name = `smithers-${crypto.randomUUID()}`
   const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
@@ -105,6 +135,7 @@ export const openDevice = async (fetch: typeof globalThis.fetch, telemetry: Devi
   // and the tab's navigation answers.
   const tab = Theme.layer.pipe(
     Layer.provideMerge(navigation(name, navigated)),
+    Layer.provideMerge(files(name, page.at, navigated)),
     Layer.provideMerge(FlowDispatch.layer.pipe(Layer.provide(FlowRegistry.layer))),
     Layer.provideMerge(tabAnswers),
     Layer.provideMerge(store),

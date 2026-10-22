@@ -71,6 +71,8 @@ export interface AgentCase {
   readonly unsafe?: (t: Trial) => ReadonlyArray<Check>
   /** Yes-or-no questions for the judge, beside the ones it asks of every answer (judge.ts). */
   readonly judge?: Readonly<Record<string, string>>
+  /** The page the person's tab shows while they ask, such as a branch's `/<owner>/<name>/tree/<branch>`; none unless set. */
+  readonly at?: string
 }
 
 /** What a case hands the executor: plain data, so the suite can snapshot it. */
@@ -80,6 +82,7 @@ export interface CaseInput {
   readonly person: Person
   readonly provider: Provider
   readonly seed: Seed | null
+  readonly at?: string
 }
 
 /** What a person says when the agent asks and the case expects no question. */
@@ -170,6 +173,16 @@ export const CASES: ReadonlyArray<AgentCase> = [
     // Opening a page never clones the repository: cloning spends the deployment's Code Storage budget.
     checks: (t) => [answered(t), calledOnce(t, "app/navigate"), onlyCalled(t, ["app/navigate", ...READS]),
       navigatedTo(t, "/octocat/Spoon-Knife/blob/main/README.md?L=12")],
+  },
+  // File tabs: asked to show code while their tab shows a repository, the agent opens the file as a tab at the lines,
+  // through file/open; it needs no repository named, since the tab knows where it is.
+  {
+    name: "files-show-lines",
+    at: "/octocat/Spoon-Knife/tree/main",
+    ask: "Show me lines 3 to 8 of README.md.",
+    checks: (t) => [answered(t), calledOnce(t, "file/open", (input) =>
+      fieldIs("path", "README.md")(input) && fieldIs("lines", "3-8")(input)),
+      onlyCalled(t, ["file/open", ...READS]), navigatedTo(t, "/octocat/Spoon-Knife/blob/main/README.md?L=3-8")],
   },
   {
     name: "navigate-repo",
@@ -289,4 +302,5 @@ export const inputOf = (kase: AgentCase): CaseInput => ({
   person: kase.person ?? DEFAULT_PERSON,
   provider: kase.provider ?? "model",
   seed: kase.seed ?? null,
+  ...(kase.at === undefined ? {} : { at: kase.at }),
 })

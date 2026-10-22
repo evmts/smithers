@@ -1,0 +1,13 @@
+import { Metric } from "effect"
+
+// File tabs' usage metric, exported over OTLP with the rest of the browser's telemetry (docs/observability.md#browser).
+// Labels carry the op, the door and the outcome, never a path.
+
+/**
+ * `file/open` and `file/close` steps that ended, by `op` (`open`, `close`), `door` (the dispatch's door; `agent` for
+ * the agent's call; `unknown` when the tab that dispatched it is gone) and `outcome` (contract.ts `OUTCOMES`).
+ */
+export const fileTabs = Metric.counter("smithers_web_file_tabs", {
+  description: "File tabs file/open and file/close opened and closed, by op, door and outcome",
+  incremental: true,
+})

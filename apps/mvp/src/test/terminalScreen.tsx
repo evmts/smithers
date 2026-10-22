@@ -1,3 +1,5 @@
+import { FilesProvider } from "../features/files/components/FilesContext"
+import type { FilesView } from "../features/files/files"
 // Render the real branch screen for router integration tests; React stays in the view adapter.
 import { Match, RouterContextProvider } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -24,6 +26,7 @@ export const renderTerminalScreen = (
   appRouter: typeof router,
   context: RouterContext,
   views: {
+    readonly files: FilesView
     readonly chat: ChatView
     readonly auth: AuthView
     readonly attention: AttentionView
@@ -45,7 +48,7 @@ export const renderTerminalScreen = (
                     <BranchProvider value={context.branch}>
                       <ThemeProvider value={theme}>
                         <TerminalProvider value={context.terminal}>
-                          <Match routeId="/$owner/$repo/tree/$ref/$" />
+                          <FilesProvider value={views.files}><Match routeId="/$owner/$repo/tree/$ref/$" /></FilesProvider>
                         </TerminalProvider>
                       </ThemeProvider>
                     </BranchProvider>

@@ -5,9 +5,10 @@ import { Effect, Stream } from "effect"
 // `?agent=<script>`), so a needs-you path and a sandbox tool's resume run the same every time: the model is the only
 // scripted seam. The needs-you scripts ask with `app/agent/ask` until their cell has printed what it heard, then
 // finish with what it heard in their words; `queue` asks a question or an approval named for the person's message, so
-// several open at once tell apart; `sandbox-once` and `sandbox-long` call the sandbox tools; `todo-draft` drafts a TODO.
+// several open at once tell apart; `sandbox-once` and `sandbox-long` call the sandbox tools; `todo-draft` drafts a TODO;
+// `show-code` opens a file at lines.
 
-/** What the agent's cell printed it heard: `app/agent/ask`'s answer. */
+/** What the agent’s cell printed it heard: `app/agent/ask`’s answer. */
 interface Heard {
   readonly answered: boolean
   readonly answer?: string
@@ -133,6 +134,21 @@ const todoDraft = Model.make({
 })
 
 /**
+ * `show-code` (e2e/files.spec.ts): asked `show-code <path> <lines>`, the agent opens the file of the repository the
+ * person's tab views as a tab, with those lines highlighted, through `file/open`, then answers.
+ */
+const showCode = Model.make({
+  stream: (request) => {
+    const text = [...request.system.map((part) => part.text), textOf(request)].join("\n")
+    const [, path = "README.md", lines = "1"] = [...text.matchAll(/show-code (\S+) ([0-9-]+)/g)].at(-1) ?? []
+    if (!textOf(request).includes(`"opened":true`)) {
+      return turn(`const o = await ctx.call("file/open", ${JSON.stringify({ path, lines })})\nconsole.log(JSON.stringify(o))`)
+    }
+    return turn(`ctx.done(${JSON.stringify(`Opened ${path} at lines ${lines}.`)})`)
+  },
+})
+
+/**
  * A deliberately slow reasoning service for the ordering regression. It emits private thinking for forty seconds
  * without visible answer progress. A follow-up can say it saw the earlier reply only when ChatApi included that
  * completed exchange in its turn. Everything except this slow model is the real browser/Worker/engine path.
@@ -196,6 +212,7 @@ export const scriptedModel = (name: string): Model.Model | undefined => {
   if (name === "sandbox-once") return sandboxOnce
   if (name === "sandbox-long") return sandboxLong
   if (name === "todo-draft") return todoDraft
+  if (name === "show-code") return showCode
   if (name === "reasoning-order") return reasoningOrder
   if (name === "queue") return queue
   const script = scripts[name]

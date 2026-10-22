@@ -1,3 +1,4 @@
+import { Files } from "../../features/files/files"
 import { branchRenderer, DeniedBranchHeader } from "./offline-render"
 // A fresh device with tracking held at the injected engine service, as a durable branch/track waiting offline.
 // The app, router, stores and components are real; releasing the fault runs the real flow against ChatApi.
@@ -99,7 +100,7 @@ const open = async (reopenRoute?: () => void) => {
     /** The browser's `offline` and `online` events, as chat's connectivity binding runs them. */
     offline: () => runtime.runPromise(wentOffline),
     online: () => runtime.runPromise(retry("online")),
-    render: branchRenderer({ chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend }),
+    render: branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend }),
   }
 }
 

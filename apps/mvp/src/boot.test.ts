@@ -26,6 +26,7 @@ import { Spend } from "./features/spend/spend"
 import { Attention } from "./features/attention/attention"
 import { Todos } from "./features/todos/todos"
 import { CodeIntel } from "./features/code-intel/codeIntel"
+import { Files } from "./features/files/files"
 import { Docs } from "./features/docs/docs"
 import { Domains } from "./features/domains/domains"
 import { Pulls } from "./features/pulls/pulls"
@@ -108,6 +109,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
       Effect.service(CodeIntel),
       Effect.service(Pulls),
       Effect.service(PluginsUi),
+      Effect.service(Files),
       Effect.service(Secrets),
       Effect.service(Docs),
       Effect.service(Domains),

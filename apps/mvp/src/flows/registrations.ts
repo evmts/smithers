@@ -12,6 +12,7 @@ import * as ChatSteps from "../features/chat/steps"
 import * as PersonalFlows from "../features/flows-ui/steps"
 import * as Issues from "../features/issues/steps"
 import * as Jev from "../features/jev/steps"
+import * as Files from "../features/files/flows"
 import * as Navigation from "../features/navigation/flows"
 import { RepoClient, REQUEST_WITHIN } from "../features/repo/api"
 import { TabClipboard } from "../features/repo/copy"
@@ -84,8 +85,9 @@ export const jev = (origin: string) => Jev.registration.pipe(Layer.provide(Jev.J
  * Every client flow, registered with its steps: sign-in's refresh, the theme's, navigation's, web pages', docs search's,
  * the agent's, the repository's, Jev's, agent status's, your own flows', the acts on runs, the issue writes, chat's Copy
  * and Edit, the feed's, spend alerts' channels, and custom domains' writes. Needs the host's `FlowRuntime`, `Crypto`,
- * `HttpClient` and `RunInspection`, the theme's `Preferences`, navigation's `Tabs`, the repository's `TabClipboard`,
- * the issues' `TabIssues`, the TODOs' `TabTodos`, chat's `TabChat` and sign-in's `TabSession`.
+ * `HttpClient` and `RunInspection`, the theme's `Preferences`, navigation's `Tabs`, file tabs' `FileTabsTabs`, the
+ * repository's `TabClipboard`, the issues' `TabIssues`, the TODOs' `TabTodos`, chat's `TabChat` and sign-in's
+ * `TabSession`.
  */
 export const registrations = (options: HostOptions) =>
   Layer.mergeAll(
@@ -93,6 +95,7 @@ export const registrations = (options: HostOptions) =>
     AuthSteps.registration,
     Theme.registration,
     Navigation.registration,
+    Files.registration,
     webPages(options.origin, options.localHttp ?? false),
     docsSearch(options.origin),
     AgentHost.layer(options),
@@ -130,7 +133,7 @@ export interface WorkerOptions extends HostOptions {
 /**
  * What the engine worker registers: every client flow, its requests sent as the run that made them
  * (src/flows/credentials.ts), with this device's preferences written by the tab that started the worker, reached
- * through the worker's own global `scope` (src/flows/tabPort.ts), and navigation, copies, issue writes and chat's Copy
+ * through the worker's own global `scope` (src/flows/tabPort.ts), and navigation, file tabs, copies, issue writes and chat's Copy
  * and Edit asking the tab that started each request over the engine's channels (src/flows/askingTab.ts). Needs
  * the host's `FlowRuntime`, `Crypto` and `HttpClient`, which `BrowserRuntime` provides.
  */
@@ -142,6 +145,7 @@ export const workerRegistrations = (scope: Endpoint, options: WorkerOptions) =>
     Layer.provide(Theme.workerPreferences),
     Layer.provide(TabPort.layer(scope)),
     Layer.provide(Navigation.Tabs.layerChannel({ name: options.name, origin: options.origin })),
+    Layer.provide(Files.FileTabsTabs.layerChannel({ name: options.name })),
     Layer.provide(TabClipboard.layerChannel({ name: options.name, origin: options.origin })),
     Layer.provide(Issues.TabIssues.layerChannel({ name: options.name })),
     Layer.provide(TodoSteps.TabTodos.layerChannel({ name: options.name })),

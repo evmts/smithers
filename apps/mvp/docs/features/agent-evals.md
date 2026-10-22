@@ -3,9 +3,9 @@
 `pnpm eval` asks the real agent a fixed set of questions through the real model and scores what it did: the flows it called, what changed on the device, the views it added, what it asked the person, the drafts it wrote, and what it said. Will, 2026-10-19: "We want to start building evals that test that the agent does the right thing when asked questions as well". Nothing is scripted: every model call goes through ChatApi's metered endpoint to the deployment's model ([model endpoint](model-endpoint.md)), as [TEST-11](../rulings.md) asks ("real evals (NO MOCKS!)"), and the agent is held to [FLOW-5](../rulings.md): it acts, never answers with steps for the person. Decisions: [0004](../decisions/0004-agent-ui-codemode-and-rendering.md) §9, [0003](../decisions/0003-flows-and-the-agent.md), [0011](../decisions/0011-the-agent-runs-in-the-browser.md).
 
 ```
-pnpm eval ─ vitest (evals/vitest.config.ts) ─ evals/agent.eval.ts (21 cases), evals/flows.eval.ts (37 cases)
+pnpm eval ─ vitest (evals/vitest.config.ts) ─ evals/agent.eval.ts (22 cases), evals/flows.eval.ts (38 cases)
   evals/suite.ts: Suite.make ─ Runner.run ─ CaseExecutor: one trial per case (EVAL_K)  @smthrs/evals
-    a seed, when the case has one: a saved flow or a run, made as the person's presses make them
+    a seed, when the case has one: a saved flow or a run, made as the person’s presses make them
     a fresh conversation, tab and engine leader (src/test/device.ts)
     ask ─ ChatApi's real handler on a scratch schema (worker/test/harness.ts), its provider calls over
           @smthrs/platform-node's HTTP/1.1 provider fetch
@@ -79,6 +79,7 @@ Twenty-one, each one behavior the app ships today; the five findings of 2026-10-
 | `slash-list` | "Which slash commands can I type?" | no flow called; the answer names `/theme`, `/web` and `/navigate` |
 | `theme-dark` | "Switch to dark mode." | `app/theme/set { mode: "dark" }` once and nothing else; the tab painted dark |
 | `navigate-line` | "Take me to line 12 of README.md on the main branch of octocat/Spoon-Knife." | `app/navigate` once and nothing but reads; the tab at `/octocat/Spoon-Knife/blob/main/README.md?L=12`. Opening a page never clones |
+| `files-show-lines` | "Show me lines 3 to 8 of README.md.", the tab on `/octocat/Spoon-Knife/tree/main` | `file/open` once with `README.md` and `3-8`, nothing but reads; the tab at `/octocat/Spoon-Knife/blob/main/README.md?L=3-8`. It needs no repository named: the tab knows ([file tabs](files.md)) |
 | `navigate-repo` | "Open octocat/Spoon-Knife." | `app/navigate` once and nothing but reads; the tab at `/octocat/Spoon-Knife` |
 | `navigate-github-url` | "Open https://github.com/octocat/Spoon-Knife/blob/main/README.md here." | `app/navigate` once and nothing but reads; the tab at GitHub's path |
 | `web-docs` | "show me the Effect docs" | `app/web/open` once on exactly `https://effect.website/docs`; one `webpage` view of it; the tab stayed |
@@ -100,6 +101,8 @@ Twenty-one, each one behavior the app ships today; the five findings of 2026-10-
 The `renderer` role has no case: no flow the app ships calls it yet (`ui/render` is decision 0004's, unbuilt). Slash commands a person types run their flow without the agent ([slash commands](slash-commands.md)), so their own proof is `e2e/slash-commands.spec.ts`; the `slash-*` cases cover the agent's side, a person naming a command in a question.
 
 ## The flows suite
+
+The file-tabs rebase adds `file-open-close`: open README.md at lines 2–4, then close the same tab. Its calibration rejects reversed order, wrong lines and closing a different file. The recorded 37-case live baseline below predates this case.
 
 `evals/flows.eval.ts` holds the agent to [FLOW-3](../rulings.md) and [FLOW-5](../rulings.md) flow by flow: for each flow in the agent's catalog, a request a person would make for it, which the agent must act on with that flow and the right input, never with steps for the person; for each act the registry keeps for the person (`userOnlyReason`), a request the agent must leave to them; and the flows that ask the person first, approved and denied. It runs on the same program, session, scorers and gate as the first suite, against its own baseline, `evals/flows-baseline.json` ([below](#the-flows-baseline)).
 

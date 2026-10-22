@@ -14,6 +14,7 @@ import { PULLS_TELEMETRY } from "./features/pulls/contract"
 import { TODOS_TELEMETRY } from "./features/todos/contract"
 import { JEV_TELEMETRY } from "./features/jev/contract"
 import { COMMANDS_TELEMETRY } from "./features/commands/contract"
+import { FILES_TELEMETRY } from "./features/files/contract"
 import { NAVIGATION_TELEMETRY } from "./features/navigation/contract"
 import { REPO_TELEMETRY } from "./features/repo/contract"
 import { THEME_TELEMETRY } from "./features/theme/contract"
@@ -131,6 +132,7 @@ const features: ReadonlyArray<Telemetry> = [
   { records: ["smithers_memory_operations", "memory.recall", "smithers_memory_recall_ms", "memory.remember", "smithers_memory_remembered", "memory.opening", "smithers_memory_recalled", "smithers_memory_inserted", "smithers_memory_filtered", "smithers_memory_ms"], fields: ["method", "outcome", "recalled", "inserted", "filtered", "skillsRecalled", "skillsInserted", "durationMs"] },
   THEME_TELEMETRY,
   NAVIGATION_TELEMETRY,
+  FILES_TELEMETRY,
   REPO_TELEMETRY,
   CODE_INTEL_TELEMETRY,
   WEB_TELEMETRY,

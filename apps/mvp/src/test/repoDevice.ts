@@ -17,6 +17,11 @@ import type { AuthStore } from "../features/auth/store"
 import { HomeClient } from "../features/home/api"
 import { Home } from "../features/home/home"
 import { HomeStore } from "../features/home/store"
+import { FilesPage } from "../features/files/actions"
+import { Files } from "../features/files/files"
+import * as FileFlows from "../features/files/flows"
+import { FilesStore } from "../features/files/store"
+import { tabFiles } from "../features/files/tab"
 import * as Navigation from "../features/navigation/flows"
 import { tabNavigation } from "../features/navigation/tab"
 import { RepoClient } from "../features/repo/api"
@@ -28,6 +33,7 @@ import * as RepoSteps from "../features/repo/steps"
 import { RepoStore } from "../features/repo/store"
 import { tabClipboard } from "../features/repo/tab"
 import { ClientEngine, FlowDispatch } from "../flows/dispatch"
+import type { TabRequests } from "../flows/requests"
 import { CodeIntel } from "../features/code-intel/codeIntel"
 import type { LanguageServers } from "../features/code-intel/session"
 import { CodeIntelStore } from "../features/code-intel/store"
@@ -62,7 +68,17 @@ export interface DeviceOptions {
 }
 
 /** The flows this device's engine runs, as the registry names them. */
-const flows = [RepoTree, RepoRead, RepoRefs, RepoAbout, RepoCloneRequest, RepoCopy, Navigation.Navigate]
+const flows = [
+  RepoTree,
+  RepoRead,
+  RepoRefs,
+  RepoAbout,
+  RepoCloneRequest,
+  RepoCopy,
+  Navigation.Navigate,
+  FileFlows.OpenFile,
+  FileFlows.CloseFile,
+]
 
 /**
  * A tab: the repository layer over `options`, recording its log lines, metrics, clipboard and navigations, with
@@ -81,17 +97,33 @@ export const openTab = async (options: DeviceOptions) => {
     ? ShapeSource.layerFaulty((switches) => switches.down())
     : Layer.empty
   // The engine: the Node host over the compose Postgres, running what the engine worker registers for these flows.
-  const registration = Layer.mergeAll(RepoSteps.registration, Navigation.registration).pipe(
+  const registration = Layer.mergeAll(RepoSteps.registration, Navigation.registration, FileFlows.registration).pipe(
     Layer.provide(TabClipboard.layerChannel({ name, origin: options.origin })),
+    Layer.provide(FileFlows.FileTabsTabs.layerChannel({ name })),
     Layer.provide(Navigation.Tabs.layerChannel({ name, origin: options.origin })),
     Layer.provide(TabChannel.layer),
     Layer.provide(client),
     Layer.provideMerge(Action.layerImplementations),
   )
   const engine = Layer.effectContext(Effect.map(build(registration, { maxConnections: 2 }), ({ context }) => context))
+  // The router's location, as `at` sets it; file tabs' navigations go to `navigated` too, and move it.
+  let pathname = "/"
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       Repo.layer,
+      Files.layer.pipe(
+        Layer.provideMerge(tabFiles({ name }).pipe(Layer.provide(TabChannel.layer))),
+        Layer.provideMerge(FilesStore.layer),
+        Layer.provideMerge(
+          FilesPage.layer({
+            pathname: () => pathname,
+            navigate: (path) => {
+              navigated.push(path)
+              pathname = path.split("?")[0]!
+            },
+          }),
+        ),
+      ),
       Home.layer.pipe(Layer.provide(HomeStore.layer)),
       options.languageServers === undefined
         ? Layer.empty
@@ -133,9 +165,11 @@ export const openTab = async (options: DeviceOptions) => {
         Logger.layer([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))]),
       ),
     // AuthStore is there only when `auth` gave it; a test reads it only then.
-    ) as Layer.Layer<Repo | Home | RepoStore | AuthStore, Collection.LoadFailed>,
+    ) as Layer.Layer<Repo | Home | RepoStore | AuthStore | Files | FilesStore | FlowDispatch | TabRequests, Collection.LoadFailed>,
   )
   const repo = await runtime.runPromise(Effect.service(Repo))
+  const files = await runtime.runPromise(Effect.service(Files))
+  files.queries.tabs.startSyncImmediate()
   const home = await runtime.runPromise(Effect.service(Home))
   const codeIntel = options.languageServers === undefined
     ? undefined
@@ -164,6 +198,11 @@ export const openTab = async (options: DeviceOptions) => {
   return {
     repo,
     home,
+    files,
+    /** Puts the router's location at `path`, as a navigation does before its route opens. */
+    at: (path: string) => void (pathname = path),
+    /** The open files, in the order they opened. */
+    tabs: () => files.queries.tabs.toArray,
     codeIntel,
     runtime,
     logs,

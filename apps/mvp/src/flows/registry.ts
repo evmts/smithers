@@ -17,6 +17,7 @@ import { Close } from "../features/agent/close"
 import { AuthRefresh } from "../features/auth/flows"
 import { ChatCopy, ChatEdit } from "../features/chat/flows"
 import { AnswerReference } from "../features/agent/reference"
+import { CloseFile, OpenFile } from "../features/files/flows"
 import { Navigate } from "../features/navigation/flows"
 import { RepoAbout, RepoCloneRequest, RepoCopy, RepoRead, RepoRefs, RepoTree } from "../features/repo/flows"
 import type { Role } from "../features/auth/contract"
@@ -126,6 +127,9 @@ export const registry = {
   },
   "app/theme/set": { flow: SetTheme, changes: "sets this device's theme", slash: { command: "theme", minimum: "anyone" } },
   "app/navigate": { flow: Navigate, changes: "moves the person's tab", slash: { command: "navigate", minimum: "anyone" } },
+  // File tabs (docs/features/files.md): the strip's clicks and keys dispatch these, and the agent calls them to show code.
+  "file/open": { flow: OpenFile, changes: "opens a file as a tab in the person's tab" },
+  "file/close": { flow: CloseFile, changes: "closes a file's tab in the person's tab" },
   // Adding a view writes the shared conversation, which only a Member or above may (decision 0007).
   // The tab pins the conversation it shows into the payload (src/features/web/actions.ts); a person never types it.
   "app/web/open": {

@@ -123,6 +123,10 @@ the tab (FlowDispatch, door slash) ─┐                 ┌─ the agent's cel
 - **What it answers.** `{ path, moved }`: the app path, and whether the tab moved. A tab that doesn't answer within 5 seconds (`NAVIGATE_WITHIN`) is gone, closed or reloaded: the step settles `moved: false` without error and moves no other tab. A router that throws leaves the tab where it was, also `moved: false`.
 - **Durability.** One local action, durable as the theme is: the step's result is journaled, and a step run again after a crash asks for the same path, a setter. A run resumed in another tab after the asking tab closed finds no tab and settles.
 
+## File tabs
+
+`file/open { path, lines? }` opens a file of the repository the asking tab shows as a tab, its lines highlighted, and `file/close { path }` closes one. Each asks the tab that asked over the engine's files channel (`<name>/files`), as `app/navigate` does; the strip's clicks and keys and the agent's cell run the same two. See [file tabs](files.md).
+
 ## The tab that asked
 
 A step that acts on the tab whose request started its run asks over one of the engine's channels through `src/flows/askingTab.ts`: `app/navigate` (`<name>/navigate`), `repo/copy` (`<name>/clipboard`), the issue writes (`<name>/issues`), chat's `chat/copy` and `chat/edit` (`<name>/chat-copy`, `<name>/chat-edit`, [chat](chat.md#message-controls)), and sign-in's `auth/refresh` (`<name>/auth-session`, [sign-in](sign-in.md#when-chatapi-cant-say)). Each feature declares only its input and answer schemas.

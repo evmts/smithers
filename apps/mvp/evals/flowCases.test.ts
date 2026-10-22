@@ -26,6 +26,10 @@ const failed = (flow: string, input: unknown) => ({ calls: [call(flow, input, "f
 /** For each case: what the agent should do, and something it might do instead. */
 const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Partial<Trial> }> = {
   "todo-retry": { good: failed("todo/Retry", { repo: REPO, number: 1 }), bad: steps },
+  "file-open-close": {
+    good: { calls: [call("file/open", { path: "README.md", lines: "2-4" }), call("file/close", { path: "README.md" })] },
+    bad: { calls: [call("file/open", { path: "README.md", lines: "2-4" })] },
+  },
   remember: {
     good: { calls: [call("app/memory/remember", { key: "language", text: "Answer in British English." })] },
     bad: { text: "Noted: British English from now on." },
@@ -216,4 +220,14 @@ describe("the catalog", () => {
     expect(inputOf(kase("issue-create")).seed).toBeNull()
     expect(structuredClone(FLOW_CASES.map(inputOf))).toEqual(FLOW_CASES.map(inputOf))
   })
+})
+
+
+test("file tabs are opened before closing the same file, at the requested lines", () => {
+  for (const calls of [
+    [call("file/close", { path: "README.md" }), call("file/open", { path: "README.md", lines: "2-4" })],
+    [call("file/open", { path: "README.md", lines: "3-5" }), call("file/close", { path: "README.md" })],
+    [call("file/open", { path: "README.md", lines: "2-4" }), call("file/close", { path: "other.ts" })],
+  ]) expect(passes("file-open-close", trial({ calls }))).toBe(false)
+  expect(inputOf(kase("file-open-close")).at).toBe(`/${REPO}/tree/main`)
 })

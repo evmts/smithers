@@ -2,8 +2,8 @@
 title: Agent navigates the repo view (feature 4)
 status: in-progress
 area: app
-owner: Opus file-tabs and line-highlighting builder running on mini; Codex tracker curates note
-updated: 2026-10-21 22:43 PDT
+owner: Codex file-tabs rebase
+updated: 2026-10-22
 links: [../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, navigate-flow.md, slash-commands.md, repo-clone-and-view.md, flows-and-agent.md, repository-declared-home.md]
 ---
 
@@ -79,6 +79,9 @@ Will: "the agent being able to smoothly navigate the github repo and answer ques
 - **07:44 on 2026-10-20: [navigate](navigate-flow.md) is done.** Asking "open octocat/Spoon-Knife" moves the asking tab to the repository, and `/navigate /octocat/Spoon-Knife/blob/main/README.md?L=3` opens the file with line 3 highlighted. The agent's door into the repository view exists; file tabs and synced highlights don't yet. Still unassigned.
 - 13:19:52 on 2026-10-20: the lead's list: "Agent navigates the repository view: not started".
 - 13:21:12: the lead: it "edits the routes the home-view agent is editing", so it waits for the [repository home](repository-declared-home.md) builder. Not in the 13:22 batch.
+
+- **2026-10-21: file tabs built** by the file-tabs builder ([file tabs](../features/files.md)). `file/open { path, lines? }` and `file/close { path }` are client flows the strip and the agent share; every file the code view shows gets a tab, kept per device (`file-tabs`, decision 0004 Q3), its lines in `?L=`; `@smthrs/ui` gained `FileTabs` (←, →, Home, End, Enter, Delete). Built in the app, not as a plugin: decision 0017's plugin host (`Manifest`, `Load`, `PluginHost`, `apps/mvp/plugins/`) doesn't exist yet. Eval case `files-show-lines`; e2e `e2e/files.spec.ts`.
+- Open: a file's page (`/blob/`) is not part of the branch workspace, so when the agent opens a file from the workspace's conversation, the conversation leaves the screen. The fix is the blob route rendering the workspace as the tree route does; the tree route's `onLeave` runs after the next route's `beforeLoad` (router-core `runRouteLifecycle`), so leaving the room there must check that the next route isn't the same branch's workspace.
 
 ## Next
 
