@@ -93,12 +93,16 @@ it.live("quiesces a retry admitted before suspension observation", () =>
         Effect.gen(function*() {
           attempts++
           if (attempts === 2) {
-            yield* Deferred.succeed(secondEntered, undefined)
-            yield* Deferred.await(releaseSecond).pipe(Effect.ensuring(Effect.gen(function*() {
-              yield* Deferred.succeed(cleanupEntered, undefined)
-              yield* Deferred.await(releaseCleanup)
-              yield* Deferred.succeed(secondStopped, undefined)
-            })))
+            // Announce only after cleanup is installed: the observer can
+            // interrupt this drive as soon as it sees the announcement.
+            yield* Deferred.succeed(secondEntered, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseSecond)),
+              Effect.ensuring(Effect.gen(function*() {
+                yield* Deferred.succeed(cleanupEntered, undefined)
+                yield* Deferred.await(releaseCleanup)
+                yield* Deferred.succeed(secondStopped, undefined)
+              }))
+            )
           }
           return yield* DurableDeferred.await(Answer)
         })
