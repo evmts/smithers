@@ -11,7 +11,7 @@
 
 import { Context, Effect, Layer } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
-import type * as HttpClient from "effect/http/HttpClient"
+import * as HttpClient from "effect/http/HttpClient"
 
 /**
  * Wraps a fetch so it never follows a redirect: a 3xx answer is refused, and
@@ -47,6 +47,11 @@ export const refusingRedirects = (
  * redirects ({@link refusingRedirects}). `base` defaults to the runtime's
  * injected FetchHttpClient.Fetch reference (the runtime's global fetch when absent).
  *
+ * The fetch is bound to every request the client makes. Effect's fetch client
+ * reads `FetchHttpClient.Fetch` from the fiber that sends each request, so a
+ * caller's own `Fetch`, such as the one a server handler provides to what it
+ * serves, would otherwise replace this one, and with it the redirect refusal.
+ *
  * @category transport
  * @since 1.0.0
  */
@@ -58,7 +63,13 @@ export const providerTransport = (
     // Only an injected Fetch: the reference's default caches the first global fetch it sees, so an absent one reads
     // the global when the layer builds, as an explicit `base` would.
     const fetch = base ?? Context.getOrUndefined(yield* Effect.context<never>(), FetchHttpClient.Fetch) ?? globalThis.fetch
-    return FetchHttpClient.layer.pipe(
-      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, refusingRedirects(fetch, onRefused)))
-    )
+    const guarded = refusingRedirects(fetch, onRefused)
+    return Layer.effect(
+      HttpClient.HttpClient,
+      Effect.map(
+        HttpClient.HttpClient,
+        (client) =>
+          HttpClient.transformResponse(client, (response) => Effect.provideService(response, FetchHttpClient.Fetch, guarded))
+      )
+    ).pipe(Layer.provide(FetchHttpClient.layer))
   }))
