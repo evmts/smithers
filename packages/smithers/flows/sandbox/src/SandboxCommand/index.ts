@@ -20,6 +20,10 @@
  *   without recording how it ended, is cancelled and the job fails
  *   `ExternalJobLost` once `restarts` (zero unless set) replacements are
  *   spent. The job's deadline cancels it too, failing `ExternalJobTimedOut`.
+ * - **Up to an hour.** Holding nothing while it runs, a job's command may
+ *   run for up to its own limit, an hour unless declared ({@link Run}),
+ *   where `SandboxTools.execute`'s stop at `SandboxTools.limits.maxTimeoutSeconds`.
+ *   The job's deadline always covers a command at its limit.
  *
  * The job's payload carries a `target`, the host's own description of the
  * box, which {@link operations} hands to `reach` for every operation. A host
@@ -31,7 +35,7 @@
  */
 
 import { ExternalJob } from "@smthrs/flow"
-import type * as Duration from "effect/Duration"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { Session } from "../Sandbox/Session.ts"
@@ -72,26 +76,62 @@ export const onSession = (session: Session, callsDirectory: string): Commands =>
 
 /**
  * The job's defaults: a probe a second after the command starts, doubling
- * to one every 20 seconds; and a deadline 20 minutes past the longest command
- * `SandboxTools` runs. The deadline counts from before the start, which may
- * have to wake the box first, so it leaves room for a slow wake and the last
- * probe before the command's own timeout ends it.
+ * to one every 20 seconds; commands of up to an hour; and a deadline 20
+ * minutes past the longest command (`slack`). The deadline counts from
+ * before the start, which may have to wake the box first, so the slack
+ * leaves room for a slow wake, the command's stop, the last probe and the
+ * collect.
  *
  * @category constants
  * @since 1.0.0-rc.17
  */
 export const defaults = {
   probe: { every: "1 second", max: "20 seconds" },
-  timeout: `${SandboxTools.limits.maxTimeoutSeconds + 1200} seconds`
+  maxTimeoutSeconds: 3600,
+  slack: "20 minutes"
 } as const
 
+/** How long past its timeout a command may take to stop: its runner's TERM, then KILL five seconds later. */
+const STOP_SECONDS = 5
+
 /**
- * Declares tag `tag`'s job: a `SandboxTools.Run` command on the box
- * `target` names. Its payload is `{ target, call }`, its handle the
- * command's `SandboxTools.Started` with the `target` it was started on, and
- * its success the command's `SandboxTools.RunResult`. It fails with the
- * tools' failures, `error` (how reaching the box can fail), and
- * `ExternalJob`'s own `ExternalJobLost` and `ExternalJobTimedOut`.
+ * A `SandboxTools.Run` as a job runs it: its `timeoutSeconds` from 1 to
+ * `maxTimeoutSeconds` (`defaults.maxTimeoutSeconds` unless given), where
+ * `SandboxTools.Run`'s stops at `SandboxTools.limits.maxTimeoutSeconds`.
+ * A call that names no timeout runs for `SandboxTools.limits.defaultTimeoutSeconds`.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.17
+ */
+export const Run = (maxTimeoutSeconds: number = defaults.maxTimeoutSeconds) =>
+  Schema.Struct({
+    ...SandboxTools.Run.fields,
+    timeoutSeconds: Schema.optional(
+      Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: maxTimeoutSeconds }))
+    )
+  })
+
+/**
+ * Declares tag `tag`'s job: a command on the box `target` names. Its
+ * payload is `{ target, call }`, `call` a {@link Run} of up to
+ * `maxTimeoutSeconds`; its handle the command's `SandboxTools.Started` with
+ * the `target` it was started on; and its success the command's
+ * `SandboxTools.RunResult`. It fails with the tools' failures, `error` (how
+ * reaching the box can fail), and `ExternalJob`'s own `ExternalJobLost` and
+ * `ExternalJobTimedOut`.
+ *
+ * - `maxTimeoutSeconds`: the longest command, in whole seconds, at least
+ *   `SandboxTools.limits.defaultTimeoutSeconds` (a call that names no
+ *   timeout runs that long); `defaults.maxTimeoutSeconds` unless set.
+ * - `timeout`: the job's deadline, `maxTimeoutSeconds` plus
+ *   `defaults.slack` unless set. One shorter than a command at its limit,
+ *   the five seconds its timeout gives it to stop and `probe.max` (the
+ *   probe that sees it end) would cut that command off, and is refused.
+ *   That floor leaves nothing for waking the box; the default's slack does.
+ * - `probe` and `restarts`: `defaults.probe` and zero unless set.
+ *
+ * Throws a `RangeError` for a `maxTimeoutSeconds` or `timeout` outside
+ * those bounds.
  *
  * Provide it with `job.toLayer(SandboxCommand.operations(reach))`, and list
  * `job.flows` on a host that resolves an execution's flow by its tag.
@@ -107,11 +147,26 @@ export const make = <
   readonly target: Target
   readonly error?: E
   readonly probe?: { readonly every: Duration.Input; readonly max: Duration.Input }
+  readonly maxTimeoutSeconds?: number
   readonly timeout?: Duration.Input
   readonly restarts?: number
-}) =>
-  ExternalJob.make(tag, {
-    payload: { target: options.target, call: SandboxTools.Run },
+}) => {
+  const maxTimeoutSeconds = options.maxTimeoutSeconds ?? defaults.maxTimeoutSeconds
+  if (!Number.isSafeInteger(maxTimeoutSeconds) || maxTimeoutSeconds < SandboxTools.limits.defaultTimeoutSeconds) {
+    throw new RangeError(
+      `SandboxCommand.make: maxTimeoutSeconds must be a whole number of seconds from ${SandboxTools.limits.defaultTimeoutSeconds}`
+    )
+  }
+  const probe = options.probe ?? defaults.probe
+  const timeout = options.timeout ?? Duration.millis(maxTimeoutSeconds * 1000 + Duration.toMillis(defaults.slack))
+  const covered = (maxTimeoutSeconds + STOP_SECONDS) * 1000 + Duration.toMillis(probe.max)
+  if (!(Duration.toMillis(timeout) >= covered)) {
+    throw new RangeError(
+      `SandboxCommand.make: timeout must be at least ${covered} ms, a command at its limit, its stop and the probe after it`
+    )
+  }
+  return ExternalJob.make(tag, {
+    payload: { target: options.target, call: Run(maxTimeoutSeconds) },
     handle: Schema.Struct({ target: options.target, ...SandboxTools.Started.fields }),
     success: SandboxTools.RunResult,
     error: Schema.Union([
@@ -120,10 +175,11 @@ export const make = <
       SandboxTools.ToolUnavailable,
       (options.error ?? Schema.Never) as E
     ]),
-    probe: options.probe ?? defaults.probe,
-    timeout: options.timeout ?? defaults.timeout,
+    probe,
+    timeout,
     restarts: options.restarts ?? 0
   })
+}
 
 /**
  * The job's operations over `reach`, which answers the {@link Commands} of

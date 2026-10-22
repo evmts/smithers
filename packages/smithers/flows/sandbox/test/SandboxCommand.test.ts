@@ -3,8 +3,9 @@ import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, ExternalJob, Fault, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, type Duration, Effect, Exit, Fiber, FileSystem, Layer, Schema, Stream, Tracer } from "effect"
+import { Cause, Clock, type Duration, Effect, Exit, Fiber, FileSystem, Layer, Schema, Stream, Tracer } from "effect"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import { TestClock } from "effect/testing"
 import { execFileSync, spawn } from "node:child_process"
 import {
   existsSync,
@@ -530,14 +531,18 @@ const reach = (target: typeof Target.Type) =>
     } satisfies SandboxCommand.Commands<ProviderError>
   })
 
-const jobOf = (timeout: string) => {
-  const Job = SandboxCommand.make(`test/command-${timeout.replace(" ", "-")}`, {
+/** The job over the boxes above, and a flow that runs it, both named `name`, with `options` beside the test's probe. */
+const jobOf = (
+  name: string,
+  options: { readonly maxTimeoutSeconds?: number; readonly timeout?: Duration.Input } = {}
+) => {
+  const Job = SandboxCommand.make(`test/command-${name}`, {
     target: Target,
     error: ProviderError,
     probe: { every: "100 millis", max: "200 millis" },
-    timeout: timeout as Duration.Input
+    ...options
   })
-  const Run = Flow.make(`test/run-command-${timeout.replace(" ", "-")}`, {
+  const Run = Flow.make(`test/run-command-${name}`, {
     payload: Job.payloadSchema,
     success: Job.successSchema,
     error: Job.errorSchema,
@@ -551,8 +556,69 @@ const jobOf = (timeout: string) => {
   return { Job, Run, layer }
 }
 
+/** The job declared `tag` over `box`, which stands in for the machine, and a flow that runs it. */
+const onBox = (
+  tag: string,
+  box: SandboxCommand.Commands,
+  options: {
+    readonly probe?: { readonly every: Duration.Input; readonly max: Duration.Input }
+    readonly maxTimeoutSeconds?: number
+    readonly timeout?: Duration.Input
+    readonly restarts?: number
+  } = {}
+) => {
+  const Job = SandboxCommand.make(tag, { target: Target, ...options })
+  const Run = Flow.make(`${tag}/run`, {
+    payload: Job.payloadSchema,
+    success: Job.successSchema,
+    error: Job.errorSchema,
+    body: Node.capture({ job: Job._tag }, (payload) => Job.call(payload))
+  })
+  const layer = Layer.mergeAll(
+    Job.toLayer(SandboxCommand.operations(() => Effect.succeed(box))),
+    Interpreter.layer(Run)
+  ).pipe(
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provideMerge(NodeCrypto.layer)
+  )
+  return { Job, Run, layer }
+}
+
+/** A few scheduler turns, so forked engine work runs up to its next sleep. */
+const turns = Effect.gen(function*() {
+  for (let turn = 0; turn < 20; turn++) yield* Effect.yieldNow
+})
+
+/** The clock running now, `ahead` milliseconds ahead of the wall clock: the job's deadline arithmetic moves with it. */
+const clockAhead = (real: Clock.Clock) => {
+  let ahead = 0
+  const now = () => real.currentTimeMillisUnsafe() + ahead
+  const clock: Clock.Clock = {
+    currentTimeMillisUnsafe: now,
+    currentTimeMillis: Effect.sync(now),
+    currentTimeNanosUnsafe: () => BigInt(now()) * 1_000_000n,
+    currentTimeNanos: Effect.sync(() => BigInt(now()) * 1_000_000n),
+    monotonicTimeNanosUnsafe: () => real.monotonicTimeNanosUnsafe(),
+    monotonicTimeNanos: real.monotonicTimeNanos,
+    sleep: (duration) => real.sleep(duration)
+  }
+  return { clock, skip: (millis: number) => void (ahead += millis) }
+}
+
+const ran: typeof SandboxTools.RunResult.Type = {
+  tool: "run",
+  exitCode: 0,
+  timedOut: false,
+  stdout: "done\n",
+  stderr: "",
+  stdoutBytes: 5,
+  stderrBytes: 0,
+  truncated: false
+}
+
 describe("SandboxCommand.make", () => {
-  const job = jobOf("30 seconds")
+  const job = jobOf("default")
 
   it.live("runs the command once to its result, parking between probes", () =>
     Effect.gen(function*() {
@@ -595,70 +661,64 @@ describe("SandboxCommand.make", () => {
   )
 
   it.live("a job past its deadline cancels the command and fails ExternalJobTimedOut", () => {
-    const short = jobOf("2 seconds")
+    // The deadline is a minute and a quarter; the clock the job reads skips past it once the command runs.
+    const short = jobOf("deadline", { maxTimeoutSeconds: 60, timeout: "75 seconds" })
     return Effect.gen(function*() {
+      const time = clockAhead(yield* Clock.clockWith(Effect.succeed))
       const box = machine()
       boxes.set("c", box)
-      const exit = yield* Effect.exit(short.Run.execute({
-        target: { machine: "c" },
-        call: { tool: "run", command: "sleep 30" }
-      }))
+      const running = yield* Effect.forkChild(Effect.exit(
+        short.Run.execute({
+          target: { machine: "c" },
+          call: { tool: "run", command: "sleep 300", timeoutSeconds: 60 }
+        }).pipe(Effect.provide(short.layer), Effect.provideService(Clock.Clock, time.clock))
+      ))
+      const pid = Number(
+        yield* until(() => {
+          const [fence] = existsSync(box.calls) ? readdirSync(box.calls) : []
+          const file = fence === undefined ? undefined : join(box.calls, fence, "pid")
+          return file !== undefined && existsSync(file) ? readFileSync(file, "utf8").split(" ")[0] : undefined
+        })
+      )
+      time.skip(76_000)
+      const exit = yield* Fiber.join(running)
       expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(ExternalJob.ExternalJobTimedOut)
-      const [fence] = readdirSync(box.calls)
-      const pid = Number(readFileSync(join(box.calls, fence!, "pid"), "utf8").split(" ")[0])
       yield* until(() => !alive(pid) ? true : undefined)
-    }).pipe(Effect.provide(short.layer))
+    })
   }, slow)
 
-  it.live(
-    "a start that never answers is abandoned at the deadline: the key is cancelled, and the job times out",
-    () =>
-      Effect.gen(function*() {
-        const cancelled: Array<string> = []
-        const Hanging = SandboxCommand.make("test/hanging", {
-          target: Target,
-          probe: { every: "100 millis", max: "100 millis" },
-          timeout: "1 second",
-          restarts: 1
-        })
-        const Run = Flow.make("test/run-hanging", {
-          payload: Hanging.payloadSchema,
-          success: Hanging.successSchema,
-          error: Hanging.errorSchema,
-          body: Node.capture({ job: Hanging._tag }, (payload) => Hanging.call(payload))
-        })
-        const box: SandboxCommand.Commands = {
-          start: () => Effect.never,
-          observe: () => Effect.die("never started"),
-          collect: () => Effect.die("never started"),
-          cancel: (key) => Effect.sync(() => void cancelled.push(key))
-        }
-        const exit = yield* Effect.exit(
-          Run.execute({ target: { machine: "hanging" }, call: { tool: "run", command: "true" } })
+  it.effect("a start that never answers is abandoned at the deadline: the key is cancelled, and the job times out", () =>
+    Effect.gen(function*() {
+      const cancelled: Array<string> = []
+      const hanging = onBox("test/hanging", {
+        start: () => Effect.never,
+        observe: () => Effect.die("never started"),
+        collect: () => Effect.die("never started"),
+        cancel: (key) => Effect.sync(() => void cancelled.push(key))
+      }, {
+        probe: { every: "100 millis", max: "100 millis" },
+        maxTimeoutSeconds: 60,
+        timeout: "70 seconds",
+        restarts: 1
+      })
+      const running = yield* Effect.forkChild(Effect.exit(
+        hanging.Run.execute({ target: { machine: "hanging" }, call: { tool: "run", command: "true" } }).pipe(
+          Effect.provide(hanging.layer)
         )
-          .pipe(
-            Effect.provide(
-              Layer.mergeAll(
-                Hanging.toLayer(SandboxCommand.operations(() => Effect.succeed(box))),
-                Interpreter.layer(Run)
-              )
-                .pipe(
-                  Layer.provideMerge(Action.layerImplementations),
-                  Layer.provideMerge(FlowEngine.layerMemory),
-                  Layer.provideMerge(NodeCrypto.layer)
-                )
-            )
-          )
-        expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(ExternalJob.ExternalJobTimedOut)
-        expect(cancelled).toEqual([expect.stringMatching(/#g1$/)])
-      }),
-    slow
-  )
+      ))
+      yield* turns
+      yield* TestClock.adjust("70 seconds")
+      yield* turns
+      const exit = yield* Fiber.join(running)
+      expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBeInstanceOf(ExternalJob.ExternalJobTimedOut)
+      expect(cancelled).toEqual([expect.stringMatching(/#g1$/)])
+    }))
 
   it("declares its defaults, and the tools' failures beside how reaching the box fails", () => {
     expect(SandboxCommand.defaults).toEqual({
       probe: { every: "1 second", max: "20 seconds" },
-      timeout: `${SandboxTools.limits.maxTimeoutSeconds + 1200} seconds`
+      maxTimeoutSeconds: 3600,
+      slack: "20 minutes"
     })
     class Unreachable extends Schema.TaggedError<Unreachable>()("test/Unreachable", {}) {}
     const Declared = SandboxCommand.make("test/declared", { target: Target, error: Unreachable })
@@ -675,6 +735,114 @@ describe("SandboxCommand.make", () => {
     const Plain = SandboxCommand.make("test/plain", { target: Target })
     expect(Schema.is(Plain.errorSchema)(new Unreachable())).toBe(false)
     expect(Schema.is(Plain.errorSchema)(new SandboxTools.ToolUnavailable({ code: "unavailable" }))).toBe(true)
+  })
+
+  it("takes a command up to its limit, an hour unless declared, and refuses one past it", () => {
+    const payload = (timeoutSeconds: number) => ({
+      target: { machine: "a" },
+      call: { tool: "run" as const, command: "pnpm install", timeoutSeconds }
+    })
+    const Hour = SandboxCommand.make("test/limit-hour", { target: Target })
+    expect([1, 1200, 3600].map((seconds) => Schema.is(Hour.payloadSchema)(payload(seconds)))).toEqual([
+      true,
+      true,
+      true
+    ])
+    expect([0, 3601, 1.5].map((seconds) => Schema.is(Hour.payloadSchema)(payload(seconds)))).toEqual([
+      false,
+      false,
+      false
+    ])
+    const Quarter = SandboxCommand.make("test/limit-quarter", { target: Target, maxTimeoutSeconds: 900 })
+    expect(Schema.is(Quarter.payloadSchema)(payload(900))).toBe(true)
+    expect(Schema.is(Quarter.payloadSchema)(payload(901))).toBe(false)
+    // The schema the job's payload carries, for a caller's own input.
+    expect(Schema.is(SandboxCommand.Run())(payload(3600).call)).toBe(true)
+    expect(Schema.is(SandboxCommand.Run(900))(payload(901).call)).toBe(false)
+    expect(Schema.is(SandboxCommand.Run(900))({ tool: "run", command: "true" })).toBe(true)
+  })
+
+  it("keeps SandboxTools' own commands, which hold an exec session and a step, at 600 seconds", () => {
+    const run = (timeoutSeconds: number) => ({ tool: "run" as const, command: "pnpm install", timeoutSeconds })
+    expect(SandboxTools.limits.maxTimeoutSeconds).toBe(600)
+    expect(Schema.is(SandboxTools.Run)(run(600))).toBe(true)
+    expect(Schema.is(SandboxTools.Run)(run(601))).toBe(false)
+    expect(Schema.is(SandboxTools.Call)(run(1200))).toBe(false)
+  })
+
+  it.effect("refuses a command past its limit before anything starts", () =>
+    Effect.gen(function*() {
+      const started: Array<string> = []
+      const quarter = onBox("test/limit-refused", {
+        start: (_call, key) => Effect.sync(() => (started.push(key), { pid: 7, startedAt: 1 })),
+        observe: () => Effect.succeed({ state: "finished", exitCode: 0, timedOut: false }),
+        collect: () => Effect.succeed(ran),
+        cancel: () => Effect.void
+      }, { maxTimeoutSeconds: 900 })
+      const exit = yield* Effect.exit(
+        quarter.Run.execute({ target: { machine: "q" }, call: { tool: "run", command: "true", timeoutSeconds: 901 } })
+          .pipe(Effect.provide(quarter.layer))
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(started).toEqual([])
+    }))
+
+  it.effect(
+    "an hour's command runs to its result: the deadline covers a command at its limit and the probe that sees it end",
+    () =>
+      Effect.gen(function*() {
+        const calls: Array<string> = []
+        let endsAt = Number.POSITIVE_INFINITY
+        const hour = onBox("test/hour", {
+          start: (call, key) =>
+            Effect.map(Clock.currentTimeMillis, (now) => {
+              calls.push(`start ${call.timeoutSeconds}`)
+              // The command runs to its timeout, and its runner records how it ended 5 seconds later.
+              endsAt = now + (call.timeoutSeconds! + 5) * 1000
+              return { pid: 7, startedAt: Math.floor(now / 1000) }
+            }),
+          observe: () =>
+            Effect.map(Clock.currentTimeMillis, (now) =>
+              now < endsAt
+                ? { state: "running" as const, pid: 7 }
+                : { state: "finished" as const, exitCode: 124, timedOut: true }),
+          collect: () => Effect.sync(() => (calls.push("collect"), { ...ran, exitCode: 124, timedOut: true })),
+          cancel: (key) => Effect.sync(() => void calls.push(`cancel ${key}`))
+        })
+        const running = yield* Effect.forkChild(Effect.exit(
+          hour.Run.execute({
+            target: { machine: "h" },
+            call: { tool: "run", command: "sleep 4000", timeoutSeconds: 3600 }
+          })
+            .pipe(Effect.provide(hour.layer))
+        ))
+        // Past the old 30-minute deadline, and on to the command's own end and the probe after it.
+        for (let second = 0; second < 3700; second += 10) {
+          yield* turns
+          yield* TestClock.adjust("10 seconds")
+        }
+        yield* turns
+        const exit = yield* Fiber.join(running)
+        expect(exit).toEqual(Exit.succeed({ ...ran, exitCode: 124, timedOut: true }))
+        expect(calls).toEqual(["start 3600", "collect"])
+      })
+  )
+
+  it("refuses a deadline that would cut off a command at its limit, and a limit a command naming no timeout passes", () => {
+    const declare = (options: Omit<Parameters<typeof SandboxCommand.make>[1], "target">) => () =>
+      SandboxCommand.make("test/guarded", { target: Target, ...options })
+    // A command at its limit, the 5 seconds its timeout gives it to stop, then the probe that sees it end.
+    expect(declare({ maxTimeoutSeconds: 600, timeout: "624 seconds" })).toThrow(RangeError)
+    expect(declare({ maxTimeoutSeconds: 600, timeout: "625 seconds" })).not.toThrow()
+    expect(declare({ maxTimeoutSeconds: 600, probe: { every: "1 second", max: "1 minute" }, timeout: "664 seconds" }))
+      .toThrow(RangeError)
+    // The default limit with a deadline set for SandboxTools' 600 seconds.
+    expect(declare({ timeout: "1800 seconds" })).toThrow(RangeError)
+    expect(declare({})).not.toThrow()
+    // A call that names no timeout runs SandboxTools' default, 60 seconds.
+    expect(declare({ maxTimeoutSeconds: 59 })).toThrow(RangeError)
+    expect(declare({ maxTimeoutSeconds: 60 })).not.toThrow()
+    expect(declare({ maxTimeoutSeconds: 90.5 })).toThrow(RangeError)
   })
 
   it("classes the tools' failures for the engine: only a session that couldn't answer is retried", () => {

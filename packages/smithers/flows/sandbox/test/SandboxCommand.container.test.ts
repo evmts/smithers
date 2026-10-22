@@ -3,13 +3,18 @@
  * `timeout`, a reaping init as PID 1, and an ordinary user. Each operation is a fresh `exec`, and closing a session kills its
  * exec, as a host that stops drops it. Runs with Docker or Podman; skips only when neither answers.
  */
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Stream } from "effect"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Effect, Layer, Schema, Stream } from "effect"
 import { execFileSync, spawn, spawnSync } from "node:child_process"
 import type { Readable } from "node:stream"
 import { afterAll, beforeAll } from "vitest"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type * as Sandbox from "../src/Sandbox/index.ts"
+import * as SandboxCommand from "../src/SandboxCommand/index.ts"
 import * as SandboxTools from "../src/SandboxTools/index.ts"
 
 const cli = ["docker", "podman"].find((name) => spawnSync(name, ["info"], { stdio: "ignore" }).status === 0)
@@ -17,6 +22,11 @@ const image = "docker.io/library/debian:trixie-slim"
 const name = `smthrs-command-${process.pid}`
 const calls = "/home/u/calls"
 const USER = "1000:1000"
+/**
+ * How long the opt-in long command runs, in seconds: unset or 0 skips it. Set it past 900 (Cloudflare's alarm limit) to
+ * prove a command outlives any one host's drive: `SANDBOX_LONG_COMMAND_SECONDS=960`.
+ */
+const LONG_SECONDS = Number(process.env.SANDBOX_LONG_COMMAND_SECONDS ?? "0")
 /**
  * PID 1: an init that reaps every orphan reparented to it, as the branch's box's tini does. Debian's slim image has Perl
  * and no init, and an engine's `--init` binary isn't always installed.
@@ -165,5 +175,50 @@ describe.skipIf(cli === undefined)("SandboxTools' command scripts in a real cont
         expect(yield* op((s) => SandboxTools.observe(s, { key, callsDirectory: calls }))).toEqual({ state: "lost" })
       }),
     120_000
+  )
+
+  // The job over the container's command operations, each a fresh exec, run by the in-memory flow engine: the run parks
+  // between probes and no exec waits on the command.
+  const Long = SandboxCommand.make("test/long-command", { target: Schema.Struct({}) })
+  const LongRun = Flow.make("test/run-long-command", {
+    payload: Long.payloadSchema,
+    success: Long.successSchema,
+    error: Long.errorSchema,
+    body: Node.capture({ job: Long._tag }, (payload) => Long.call(payload))
+  })
+  const longLayer = Layer.mergeAll(
+    Long.toLayer(SandboxCommand.operations(() =>
+      Effect.succeed<SandboxCommand.Commands>({
+        start: (call, key) => op((s) => SandboxCommand.onSession(s, calls).start(call, key)),
+        observe: (key) => op((s) => SandboxCommand.onSession(s, calls).observe(key)),
+        collect: (key) => op((s) => SandboxCommand.onSession(s, calls).collect(key)),
+        cancel: (key) => op((s) => SandboxCommand.onSession(s, calls).cancel(key))
+      })
+    )),
+    Interpreter.layer(LongRun)
+  ).pipe(
+    Layer.provideMerge(Action.layerImplementations),
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provideMerge(NodeCrypto.layer)
+  )
+
+  it.live.runIf(LONG_SECONDS > 0)(
+    `a job runs a ${LONG_SECONDS}-second command past SandboxTools' 600 s to its result (SANDBOX_LONG_COMMAND_SECONDS)`,
+    () =>
+      Effect.gen(function*() {
+        const began = Date.now()
+        const result = yield* LongRun.execute({
+          target: {},
+          call: {
+            tool: "run",
+            command: `echo ran >> long.log; sleep ${LONG_SECONDS}; echo done-${LONG_SECONDS}`,
+            timeoutSeconds: LONG_SECONDS + 240
+          }
+        })
+        expect(result).toMatchObject({ exitCode: 0, timedOut: false, stdout: `done-${LONG_SECONDS}\n`, stderr: "" })
+        expect(Date.now() - began).toBeGreaterThanOrEqual(LONG_SECONDS * 1000)
+        expect(inside("cat /workspace/long.log")).toBe("ran\n")
+      }).pipe(Effect.provide(longLayer)),
+    (LONG_SECONDS + 600) * 1000
   )
 })
