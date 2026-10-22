@@ -446,6 +446,11 @@ anything past `Number.MAX_SAFE_INTEGER`; `usd` is a positive finite amount, so
 may take from its first start, read from the frontmatter's top-level `deadline`.
 Every field survives durable JSON unchanged.
 
+`BudgetCeiling`, `UsdCeiling`, `BudgetOnExceeded`, `SandboxProvider` and
+`SandboxSelection` are [`@smthrs/core`](/docs/reference/api/core/)'s `Markdown` schemas,
+re-exported, and `FlowBudget` is core's `Markdown.Budget` plus `deadline`, so a
+descriptor and the flow lowered from it read one definition.
+
 `budgetUnbounded` is the budget of a flow that declares no ceiling. It is
 a named frozen value rather than a `{}` written at each host, for the same
 reason `@smthrs/agent`'s `Budget.layerUnbounded` is a named layer: giving up
@@ -676,6 +681,16 @@ Projects a descriptor into the one authoring value
 registry-to-core adapter boundary: metadata crosses it once and is not
 independently reinterpreted downstream. `Executable` uses it to lower a loaded
 markdown body into its annotations.
+
+Every limit the author declared crosses it: `modelInvocable`, the budget's
+ceilings, the sandbox selection, and the run deadline, which the descriptor
+folds into `budget` and core takes as the flow's own `deadline`. The lowered
+flow therefore carries `Flow.ModelInvocable`, enforces the deadline, and
+exposes `budget` and `sandbox`:
+
+```ts
+const flow = CoreMarkdown.lowerMarkdown(MarkdownFlow.toCoreFrontmatter(descriptor), prompt)
+```
 
 ## ModuleFlow
 

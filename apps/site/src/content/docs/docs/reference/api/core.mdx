@@ -55,6 +55,8 @@ interface Flow<
   readonly model: Seat | readonly [Seat, ...Seat[]] | undefined
   readonly flows: ReadonlyArray<Reference> | undefined
   readonly prompt: string | undefined
+  readonly budget: Markdown.Budget | undefined
+  readonly sandbox: Markdown.SandboxSelection | undefined
   readonly annotations: Context.Context<never>
   readonly flow: DurableFlow.Flow<string, Payload<I>, O, Err, Requires>
   readonly action: Action.Declared<string, Payload<I>, O, Err, Requires> | undefined
@@ -68,6 +70,12 @@ to an `Interpreter`, or to a registry that checks that package's type id.
 `undefined` exactly when the signature declared a `body`. `annotations` is the
 bag both carry, with the declared `capabilities` and `effects` already lowered
 into it.
+
+`budget` and `sandbox` are the limits `Markdown.lowerMarkdown` copied from the
+frontmatter. A declared `modelInvocable` and `deadline` live on the native flow,
+the one model: read `Context.get(signature.annotations, Flow.ModelInvocable)`
+and `signature.flow.deadline` with `@smthrs/flow`'s `Flow`. `within`,
+`annotate` and `withFlows` keep all four.
 
 A signature that declared no effect envelope dispatches as `irreversible`.
 Its generated action remains keyless and uses invocation identity.
@@ -519,6 +527,27 @@ host supplies the implementation for, and the collaborators it names stay
 declarations. The `smart` seat is the explicit fallback when the frontmatter
 declares no `model`.
 
+The declared limits are part of the lowered flow. `modelInvocable` and
+`deadline` go to `@smthrs/flow`'s `Flow.make`, so the native flow carries
+`Flow.ModelInvocable` and enforces the deadline; `budget` and `sandbox` are
+copied onto the signature. A `sandbox` selection places the flow in a sandbox.
+
+```ts
+const flow = Markdown.lowerMarkdown({
+  name: "review",
+  modelInvocable: false,
+  budget: { tokens: 120000, usd: 2.5, onExceeded: "park" },
+  deadline: "30 minutes",
+  sandbox: { provider: "container", network: "none" }
+}, "Review the pull request.")
+```
+
+An invalid limit throws a `RangeError` that names the flow and the field, the
+way `Flow.make` refuses invalid static configuration: a budget value outside
+its schema, a budget with no ceiling, a sandbox selection outside its schema,
+a sandbox selection beside a placement other than `sandbox`, or a deadline that
+is not a positive finite duration.
+
 ### Markdown.MarkdownFrontmatter
 
 ```ts
@@ -536,6 +565,10 @@ interface MarkdownFrontmatter {
     readonly tier?: "sealed" | "compensable" | "irreversible" | undefined
   } | undefined
   readonly placement?: "sandbox" | "remote" | "client" | "local" | undefined
+  readonly modelInvocable?: boolean | undefined
+  readonly budget?: Budget | undefined
+  readonly deadline?: Duration.Input | undefined
+  readonly sandbox?: SandboxSelection | undefined
 }
 ```
 
@@ -543,6 +576,44 @@ interface MarkdownFrontmatter {
 derives it from the frontmatter or from the document's path before lowering. An
 omitted `effects.reads` or `effects.writes` becomes empty, an omitted `mode`
 becomes `hermetic`, and an omitted `onConflict` becomes `serialize`.
+
+### Markdown.Budget and Markdown.SandboxSelection
+
+```ts
+const BudgetCeiling: Schema.Int // positive safe integer
+const UsdCeiling: Schema.Finite // positive
+const BudgetOnExceeded: Schema.Literals<["fail", "warn", "skip-remaining", "park"]>
+const Budget: Schema.Struct<{
+  tokens: Schema.optional<typeof BudgetCeiling>
+  milliseconds: Schema.optional<typeof BudgetCeiling>
+  usd: Schema.optional<typeof UsdCeiling>
+  onExceeded: Schema.optional<typeof BudgetOnExceeded>
+}>
+const SandboxProvider: Schema.Literals<[
+  "aws",
+  "cloudflare",
+  "command",
+  "container",
+  "daytona",
+  "directory",
+  "just-bash",
+  "kubernetes",
+  "microsandbox",
+  "vercel"
+]>
+const SandboxSelection: Schema.Struct<{
+  provider: typeof SandboxProvider
+  network: Schema.optionalKey<"none" | "open" | { allow: ReadonlyArray<string> }>
+  cpus: Schema.optionalKey<Schema.Finite> // positive, may be fractional
+  memoryMib: Schema.optionalKey<typeof BudgetCeiling>
+  timeoutSecs: Schema.optionalKey<typeof BudgetCeiling>
+}>
+```
+
+The schemas of a flow's declared limits. An absent ceiling is not a zero: it is
+the absence of that ceiling. `@smthrs/registry`'s `Descriptor` re-exports these
+values, and its `FlowBudget` extends `Budget` with the run deadline, so a
+descriptor and the flow lowered from it read one definition.
 
 ### Markdown.MarkdownError
 
