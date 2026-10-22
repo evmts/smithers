@@ -301,7 +301,9 @@ describe("unified control dispatch", () => {
   ])("uses the Smithers MCP registration help with prefixes: %j", async (...args) => {
     const result = await invoke(args)
     expect(result.codes).toEqual([])
-    expect(result.stdout).toContain("Register with Claude Code or Codex")
+    // 03233c3f34ad routes integration overview help to Incur.
+    expect(result.stdout).toContain("Register as MCP server")
+    expect(result.stdout).toMatch(/doctor\s+Validate MCP server startup/)
     expect(ports.invoke).not.toHaveBeenCalled()
   })
 
