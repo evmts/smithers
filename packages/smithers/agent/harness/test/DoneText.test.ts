@@ -173,6 +173,37 @@ describe("DoneText.project", () => {
     expect(project("```cell\nconst s = \"ctx.done(")).toBeUndefined()
   })
 
+  it.each([
+    "if (ready)",
+    "if (check(nested(value)))",
+    "while (ready)",
+    "for (; ready;)",
+    "for (const value of values)",
+    "for await (const value of values)",
+    "if /* condition */ (ready)",
+    "with (scope)"
+  ])("skips regex answer decoys after the control header %s", (header) => {
+    // This is a valid regex: its parentheses are a capturing group, not a call.
+    const source = `${header} /ctx.done("decoy")/.test(value)`
+    expect(project(cell(source))).toBeUndefined()
+    expect(project(cell(`ctx.done("earlier"); ${source}`))).toBe("earlier")
+    expect(project(cell(`${source}; ctx.done("real")`))).toBe("real")
+    // A streaming regex must not leak its apparent answer before its slash arrives.
+    expect(project("```cell\n" + header + " /ctx.done(\"decoy\")")).toBeUndefined()
+  })
+
+  it("keeps division after a method named like a control keyword", () => {
+    expect(project(cell("obj.if(value) / ctx.done(\"answer\") / count"))).toBe("answer")
+    expect(project(cell("if (ctx.done(\"answer\")) /ctx.done(\"decoy\")/.test(value)"))).toBe("answer")
+  })
+
+  it.each(["obj. if", "obj . /* method */ if", "obj.\nif"])(
+    "keeps division after the spaced property %s",
+    (method) => {
+      expect(project(cell(`${method}(value) / ctx.done("answer") / count`))).toBe("answer")
+    }
+  )
+
   it("continues a string across a CR LF line continuation", () => {
     expect(project(cell("const s = \"a\\\r\nctx.done(\\\"no\\\")\"\nctx.done(\"yes\")"))).toBe("yes")
     expect(project(cell("const s = \"a\\\r\nctx.done(\\\"no\\\")\""))).toBeUndefined()

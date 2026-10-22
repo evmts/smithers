@@ -552,9 +552,12 @@ export const decodeCodex = (state: CodexState, chunk: string): Result.Result<Dec
           const call = calls.get(id)
           calls.delete(id)
           const output = partsText(payload["output"])
+          const codeMode = call === undefined || call.name === "exec" || call.name === "wait"
           // A script that finished repeats its completed items. One that failed has no item: keep its report with
-          // the request that started it, so a failed edit is never silently missing.
-          if (!scriptFailed(output)) break
+          // the request that started it, so a failed edit is never silently missing. Other custom tools have no
+          // code-mode envelope; preserve their output without treating the missing prefix as a failure.
+          if (codeMode && !scriptFailed(output)) break
+          const path = failedPatchPath(output)
           found.push({
             role: "assistant",
             part: {
@@ -562,12 +565,14 @@ export const decodeCodex = (state: CodexState, chunk: string): Result.Result<Dec
               call_id: id,
               command: call?.input ?? "",
               reads: [],
-              status: "error",
+              status: codeMode || path !== undefined ||
+                  /^(?:apply_patch verification failed:|Invalid patch(?: text)?:)/.test(output)
+                ? "error"
+                : "ok",
               output,
               duration_ms: 0
             }
           })
-          const path = failedPatchPath(output)
           if (path !== undefined) {
             // The report names the file and no change: the diff is empty because nothing was observed to change.
             found.push({

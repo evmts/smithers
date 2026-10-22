@@ -167,6 +167,11 @@ because the report names a file and no change; the patch the agent asked for
 stays in the failed `tool`'s command. An edit is what the agent reported, never
 an observed write.
 
+Custom tools other than code-mode `exec` and `wait` keep their output as a
+successful `tool` without a `Script` prefix. A direct failed-patch report still
+records a failed `tool`, plus an `edit` when the expected-lines report names
+the file that did not change.
+
 ## Mapping: Claude Code
 
 | Source                                                                                                                                                                                                        | Entry                                                                                 |

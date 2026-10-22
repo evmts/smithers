@@ -52,6 +52,9 @@ const expressionKeywords: ReadonlySet<string> = new Set([
   "yield"
 ])
 
+/** A closing control header starts a statement, which may be a regex literal. */
+const controlKeywords: ReadonlySet<string> = new Set(["if", "while", "for", "with"])
+
 const lineTerminators: ReadonlySet<string> = new Set(["\n", "\r", "\u2028", "\u2029"])
 
 const isWhitespace = (char: string): boolean => /\s/.test(char)
@@ -103,6 +106,8 @@ const lastDoneArgument = (program: string): number | undefined => {
   let depth = 0
   let inTemplate = false
   let regexAllowed = true
+  const parentheses: Array<boolean> = []
+  let previousWord = ""
   let index = 0
   while (index < program.length) {
     const char = program[index]!
@@ -136,6 +141,9 @@ const lastDoneArgument = (program: string): number | undefined => {
       index = end + 2
       continue
     }
+    const afterControl = controlKeywords.has(previousWord)
+    const afterProperty = previousWord === "."
+    previousWord = ""
     if (char === "/") {
       index = regexAllowed ? skipRegex(program, index) : index + 1
       regexAllowed = !regexAllowed
@@ -164,12 +172,14 @@ const lastDoneArgument = (program: string): number | undefined => {
       const end = word.lastIndex
       const name = program.slice(index, end)
       doneCall.lastIndex = index
-      if (name === "ctx" && program[index - 1] !== "." && doneCall.test(program)) {
+      if (name === "ctx" && !afterProperty && doneCall.test(program)) {
         last = doneCall.lastIndex
         index = last
+        parentheses.push(false)
         regexAllowed = true
         continue
       }
+      previousWord = afterProperty ? "" : name === "await" && afterControl ? "for" : name
       regexAllowed = expressionKeywords.has(name)
       index = end
       continue
@@ -183,7 +193,9 @@ const lastDoneArgument = (program: string): number | undefined => {
     }
     if (char === "{") depth++
     else if (char === "}") depth--
-    regexAllowed = char !== ")" && char !== "]"
+    if (char === ".") previousWord = "."
+    if (char === "(") parentheses.push(afterControl)
+    regexAllowed = char === ")" ? parentheses.pop() === true : char !== "]"
     index++
   }
   return last

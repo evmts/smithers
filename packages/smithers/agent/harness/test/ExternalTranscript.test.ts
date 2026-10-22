@@ -1249,6 +1249,29 @@ describe("ExternalTranscript", () => {
     })
 
     it.each([
+      ["apply_patch", "Success. Updated the following files:\nM /repo/a.ts"],
+      ["custom", "result ready"],
+      ["custom", "Script failed is example text, not a code-mode envelope"],
+      ["custom", ""]
+    ])("records successful %s custom output without a code-mode prefix", (name, report) => {
+      const held = replay([jsonl(session(), call("call-custom", "request", name))])
+      const decoded = Result.getOrThrow(ExternalTranscript.decodeCodex(
+        JSON.parse(JSON.stringify(held.state)),
+        jsonl(output("call-custom", [{ type: "input_text", text: report }]))
+      ))
+      expect(decoded.entries.map((entry) => entry.part)).toEqual([{
+        type: "tool",
+        call_id: "call-custom",
+        command: "request",
+        reads: [],
+        status: "ok",
+        output: report,
+        duration_ms: 0
+      }])
+      expect(decoded.state).not.toHaveProperty("calls")
+    })
+
+    it.each([
       ["threw", "Script failed\nWall time 0.2 seconds\nOutput:\n\nError: boom"],
       ["was aborted", "aborted by user after 5.1s"],
       ["never started", "failed to spawn code-mode host"]
@@ -1269,6 +1292,47 @@ describe("ExternalTranscript", () => {
           output: report,
           duration_ms: 0
         }
+      }])
+    })
+
+    it("keeps direct patch failures and code-mode wait failures visible", () => {
+      const patch = "apply_patch verification failed: Failed to find expected lines in /repo/a.ts:\nold"
+      const entries = decodeRows(
+        call("patch", "patch request", "apply_patch"),
+        output("patch", patch),
+        call("wait", "wait request", "wait"),
+        output("wait", "Script failed\nOutput:\nboom")
+      )
+      expect(entries.map((entry) => entry.part)).toMatchObject([
+        { type: "tool", call_id: "patch", command: "patch request", status: "error", output: patch },
+        { type: "edit", call_id: "patch", files: [{ path: "/repo/a.ts" }], outcome: "failed" },
+        { type: "tool", call_id: "wait", command: "wait request", status: "error" }
+      ])
+    })
+
+    it("keeps a wrapped failed-patch report consistent with its failed edit", () => {
+      const report = "Error: apply_patch verification failed: Failed to find expected lines in /repo/a.ts:\nold"
+      const entries = decodeRows(call("patch", "patch request", "apply_patch"), output("patch", report))
+      expect(entries.map((entry) => entry.part)).toMatchObject([
+        { type: "tool", status: "error", output: report },
+        { type: "edit", outcome: "failed", files: [{ path: "/repo/a.ts" }] }
+      ])
+    })
+
+    it.each([
+      "apply_patch verification failed: Failed to read file to update /repo/missing.ts: No such file or directory (os error 2)",
+      "Invalid patch: The last line of the patch must be '*** End Patch'",
+      "Invalid patch text: missing header"
+    ])("keeps a direct patch failure without an expected-lines path: %s", (report) => {
+      const entries = decodeRows(call("patch", "patch request", "apply_patch"), output("patch", report))
+      expect(entries.map((entry) => entry.part)).toEqual([{
+        type: "tool",
+        call_id: "patch",
+        command: "patch request",
+        reads: [],
+        status: "error",
+        output: report,
+        duration_ms: 0
       }])
     })
 

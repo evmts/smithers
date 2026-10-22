@@ -290,8 +290,9 @@ export class ContextWindow extends Schema.Class<ContextWindow>("flows/harness/Co
 }
 
 /**
- * A segment before its digest and token count are computed. Supplying
- * `declaredDigest` or `tokens` skips the corresponding computation.
+ * A segment before its digest and token count are computed. The digest is
+ * always computed from kind, zone and content; `declaredDigest` is additional identity input.
+ * Supplying `tokens` skips token estimation.
  *
  * @category models
  * @since 0.1.0
@@ -634,7 +635,7 @@ export const compact: {
   ): Result.Result<ContextWindow, ContextWindowError>
 } = dual(2, (self: ContextWindow, summary: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>) => {
   const segments = compactable(self.segments)
-  const prefixLength = segments.length > 1 ? segments.length - 1 : segments.length
+  const prefixLength = Math.max(0, segments.length - 1)
   return compactPrefix(self, prefixLength, summary)
 })
 

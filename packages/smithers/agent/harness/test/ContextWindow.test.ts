@@ -2,6 +2,7 @@ import * as Digest from "@smthrs/core/Digest"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Request from "@smthrs/model/ModelRequest"
 import * as Result from "effect/Result"
+import { readFileSync } from "node:fs"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as Tokens from "../src/Tokens.ts"
@@ -383,6 +384,24 @@ describe("ContextWindow", () => {
       expect(estimated.tokens.estimated).toBe(true)
       // The declared count is not part of segment identity.
       expect(declared.digest).toBe(estimated.digest)
+    })
+
+    it("documents declaredDigest as additional identity input, with content always hashed", () => {
+      const source = readFileSync(new URL("../src/ContextWindow.ts", import.meta.url), "utf8")
+      const comment = source.slice(0, source.indexOf("export interface SegmentInput")).split("/**").at(-1)!
+      expect(comment).toContain("always computed")
+      expect(comment).toContain("additional identity input")
+      const segment = (body: string) =>
+        ContextWindow.makeSegment({
+          kind: "transcript",
+          zone: "tail",
+          content: [Request.Message.user(body)],
+          declaredDigest: "upstream",
+          tokens: { value: 7, estimated: false }
+        })
+      expect(segment("first").digest).not.toBe("upstream")
+      expect(segment("first").digest).not.toBe(segment("second").digest)
+      expect(segment("first").tokens).toEqual({ value: 7, estimated: false })
     })
 
     it("folds a declared digest into segment identity", () => {
@@ -836,11 +855,12 @@ describe("ContextWindow", () => {
       expect(texts(ContextWindow.render(compacted))).toEqual(["summary", "second"])
     })
 
-    it("replaces the only compactable segment when just one exists", () => {
-      const compacted = Result.getOrThrow(ContextWindow.compact(single(), Request.Message.user("summary")))
-      expect(compacted.segments.map((segment) => segment.kind)).toEqual(["system", "summary"])
-      expect(texts(ContextWindow.render(compacted))).toEqual(["summary"])
-      expect(compacted.replaced).toBeDefined()
+    it("retains the latest transcript when it is the only compactable segment", () => {
+      const value = single()
+      const compacted = Result.getOrThrow(ContextWindow.compact(value, Request.Message.user("summary")))
+      expect(texts(ContextWindow.render(compacted))).toEqual(["only"])
+      expect(compacted).toBe(value)
+      expect(compacted.replaced).toBeUndefined()
     })
 
     it("returns the identical window when there is nothing compactable", () => {

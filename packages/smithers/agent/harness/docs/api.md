@@ -1367,6 +1367,11 @@ exactly when a segment is squashed. `compactPrefix` is `compactMarked` with
 every segment squashed. `render` projects the window into the `ModelRequest` of
 [`@smthrs/model`](/api/model).
 
+`SegmentInput.declaredDigest` adds upstream identity to the digest; kind, zone
+and content are always hashed. Supplying `tokens` skips token estimation.
+`compact` keeps the most recent compactable segment whole and
+returns the same window when it is the only one.
+
 `appendTurn` and `compact` are dual, so each one takes the window first or
 returns a function of it, and a `ContextWindow` is `Pipeable`. The direct and
 the piped forms are the same call:
@@ -1499,6 +1504,9 @@ that stands for the whole body, and a readable body is `text`. A
 `tool` whose command is the script its `custom_tool_call` requested, followed
 by a failed `edit` when the report names the file an `apply_patch` could not
 change. The request waits in `state.calls` until its output arrives.
+Other custom tools retain their output as a successful `tool`, unless the
+output explicitly reports a failed patch. The code-mode prefix is required
+only for `exec` and `wait`, whose successful output repeats completed items.
 
 ### Claude Code
 
