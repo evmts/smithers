@@ -43,7 +43,7 @@ that parks it again.
 
 ## alarm
 
-`ExecutionObject.alarm(storage, { flows, runtime, router })`:
+`ExecutionObject.alarm(storage, { flows, runtime, router, driveBudgetMs })`:
 
 1. **Counts the attempt and arms the watchdog.** The count of alarms without
    progress goes up by one, and the alarm is armed one backoff away
@@ -57,7 +57,9 @@ that parks it again.
    The engine claims the run, or takes it over from a dead incarnation, replays
    what the journal recorded and drives the rest. It does not poll a parked run
    in the isolate: the drive stops at the first park, and a run parked on a
-   timer that has not come due is left as it is, without a replay.
+   timer that has not come due is left as it is, without a replay. It also
+   stops starting steps once it spends its budget; see
+   [The drive budget](#the-drive-budget).
 4. **Routes.** It reads from the store which executions the drive left for
    other objects and hands each to `router`. See [Routing](#routing).
 5. **Arms the next wake.** The outcome decides it:
@@ -67,6 +69,7 @@ that parks it again.
 | `Idle`      | No intent is stored.                                                                                                                        | kept    | deleted                                     |
 | `Settled`   | The run completed, failed or was cancelled. A flow's own failure is a settlement, not a retry. The object records when.                     | cleared | armed at `forgetAtMs`                       |
 | `Parked`    | The run waits. `wakeAtMs` is `EngineStore.nextWake`: its earliest pending timer, or `null` for an event wait.                               | cleared | armed at `wakeAtMs`, or deleted when `null` |
+| `Yielded`   | The drive spent its budget and released the run at a step boundary, with work still due.                                                    | cleared | armed at now                                |
 | `Retrying`  | Building the runtime, driving the run or routing failed.                                                                                    | kept    | armed one backoff away                      |
 | `Forgotten` | The run settled and its retention window has passed. The object deleted its intent, its count and its settlement, and its storage is empty. | deleted | deleted                                     |
 
@@ -86,6 +89,38 @@ A drive that leaves work due now (`EngineStore.drive` reports `Unfinished`:
 the runtime refused the execution, or the store became unavailable during the
 drive) is `Retrying` with `Undriven` rather than `Parked`, so an object that
 cannot make progress backs off instead of waking itself in a loop.
+
+## The drive budget
+
+Cloudflare ends an alarm invocation after 15 minutes of wall time, and a run
+with enough work, such as an agent's model and tool calls, never parks by
+itself. Killed mid-drive, the next alarm would take the run from the dead
+incarnation and run its unfinished step again. So the alarm drives with
+`EngineStore.drive`'s `budgetMs`, `driveBudgetMs`:
+
+```
+alarm: drive ─ step ─ step ─ step ─┬─ budget spent: the next step is held
+                                   ├─ the running step finishes and records its result
+                                   └─ release the run ─► Yielded, alarm at now
+next alarm: drive ─ replay ─ step ─ ...
+```
+
+- **Steps that start within the budget run to the end**, however long they
+  take; a step whose turn comes after it waits for the next alarm, with no
+  attempt written. The run is left unowned, so the next alarm claims it as
+  any due run and runs every step exactly once.
+- **The budget bounds when steps start, not how long one runs.** Set it below
+  900 seconds less the longest step a drive may start, building the runtime
+  and routing. `defaultDriveBudgetMs` is 600 seconds.
+- **`driveBudget` is the setting**, `EXECUTION_DRIVE_BUDGET_SECONDS`: whole
+  seconds from 1 to 899, 600 when unset, read once by the Durable Object class
+  and passed to every alarm. Any other value fails with a `ConfigError`.
+- **Each drive is timed.** `driveDuration`
+  (`smithers_cloudflare_execution_drive_duration`) records how long it ran by
+  `outcome` (`settled`, `parked`, `yielded`, `unfinished`, `failed`), in
+  buckets up to 900 seconds, and the alarm's span and log line carry it as
+  `smithers.execution.drive_ms`. A drive near the top bucket is a step longer
+  than the slack the budget leaves.
 
 ## Retention
 

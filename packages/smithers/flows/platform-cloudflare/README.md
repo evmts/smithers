@@ -115,11 +115,13 @@ start ──► store intent, alarm at now+5 s ──► caller's write ──�
                                                                    │
 alarm ◄────────────────────────────────────────────────────────────┘
   │ count the attempt, arm the alarm one backoff away (the watchdog)
-  │ build the runtime in this alarm, drive the flow once (EngineStore.drive)
+  │ build the runtime in this alarm, drive the flow once (EngineStore.drive),
+  │   starting no new step after the drive budget (600 s)
   │ route: start each new child or next round on its own object,
   │        wake each parent or child the drive made due (router)
   ├─ settled ──► record when, alarm at the end of the retention window, clear the count
   ├─ parked  ──► alarm at the engine's next wake, read it again, clear the count
+  ├─ yielded ──► the budget ran out at a step boundary: alarm at now, clear the count
   └─ failed  ──► keep the count, alarm one backoff away
 
 final alarm, one day after the settlement (settledRetentionMs)

@@ -108,6 +108,9 @@ export const live = <E, R>(
       const appDatabase = Database.layer(hyperdrive.connectionString)
       // `chat/Expire` settles answers their devices left streaming (docs/features/agent.md#settling).
       const app = { database: appDatabase, expiry: yield* Expire.expiry.pipe(Effect.orDie) }
+      // How long one alarm's drive keeps starting steps, under Cloudflare's 15-minute alarm limit
+      // (docs/features/remote-flows.md#how-an-execution-runs).
+      const driveBudgetMs = yield* ExecutionHost.driveBudget.pipe(Effect.orDie)
       // `repo/Clone` runs here when this deployment has a Code Storage organization (docs/features/repo.md#the-clone).
       // Its Index reads the file list into the same immutable cache RepoApi reads from.
       const repoClone = yield* RepoConfig.cloneServices(appDatabase, EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)).pipe(
@@ -140,6 +143,7 @@ export const live = <E, R>(
             hostId: state.id.toString(),
             database,
             flows,
+            driveBudgetMs,
             router: {
               start: (intent) => executions.getByName(intent.executionId).start(intent),
               wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake()),

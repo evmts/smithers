@@ -5,8 +5,8 @@
  * id. It stores what to run (the {@link Intent}) and owns one thing the
  * engine cannot: an alarm that wakes it. {@link start} records the intent and
  * arms the alarm; {@link alarm} builds the durable runtime, drives the
- * execution until it settles or parks, hands every execution the drive left
- * for another object to that object through the caller's {@link Router}, and
+ * execution until it settles, parks or spends its {@link driveBudget}, hands
+ * every execution the drive left for another object to that object through the caller's {@link Router}, and
  * arms the next wake; {@link wake} moves the alarm to now. Leases, attempts,
  * timers, retries and results stay in the engine's Postgres store; the
  * object's storage holds the intent, a failure count and, once the execution
@@ -26,6 +26,8 @@ import { type DurableEngineState, EngineStore } from "@smthrs/engine-store"
 import { type Flow, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
+import * as Config from "effect/Config"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as Layer from "effect/Layer"
@@ -113,6 +115,9 @@ export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
  *   `DurableClock`, and the alarm is armed for it; `null` means it waits on
  *   an event, and the alarm is deleted until whoever delivers the event arms
  *   it.
+ * - `Yielded`: the drive spent its budget ({@link driveBudget}) and released
+ *   the execution at a step boundary with work still due. The alarm is armed
+ *   for now, so the next alarm goes on at once in a fresh invocation.
  * - `Retrying`: building the runtime or driving the execution failed; the
  *   alarm is armed at `retryAtMs`. `attempt` counts consecutive alarms that
  *   made no progress, those that died included, and `failure` is the tag of
@@ -132,6 +137,7 @@ export type Outcome =
   | { readonly _tag: "Idle" }
   | { readonly _tag: "Settled"; readonly forgetAtMs: number }
   | { readonly _tag: "Parked"; readonly wakeAtMs: number | null }
+  | { readonly _tag: "Yielded" }
   | {
     readonly _tag: "Retrying"
     readonly attempt: number
@@ -229,6 +235,42 @@ export const settledRetentionMs = 86_400_000
 export const startGraceMs = 5_000
 
 /**
+ * How long one alarm's drive keeps starting steps, in milliseconds, unless
+ * {@link alarm} is given another budget: ten minutes.
+ *
+ * Cloudflare ends an alarm invocation after fifteen minutes of wall time, and
+ * a run with enough work never parks by itself. Past the budget the drive
+ * starts no new step, lets the running ones finish and record their results,
+ * and yields (`EngineStore.drive`'s `budgetMs`); the next alarm goes on at
+ * once. The five minutes left are for the step running when the budget runs
+ * out, building the runtime and routing.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultDriveBudgetMs = 600_000
+
+/**
+ * `EXECUTION_DRIVE_BUDGET_SECONDS`: the drive budget {@link alarm} takes as
+ * `driveBudgetMs`, in milliseconds. Whole seconds from 1 to 899, under
+ * Cloudflare's 900-second alarm limit; {@link defaultDriveBudgetMs} when
+ * unset. Any other value fails with a `ConfigError`.
+ *
+ * The Durable Object class reads it once, where it reads its other settings,
+ * and passes it to every alarm.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const driveBudget: Config.Config<number> = Config.schema(
+  Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 899 })),
+  "EXECUTION_DRIVE_BUDGET_SECONDS"
+).pipe(
+  Config.withDefault(defaultDriveBudgetMs / 1000),
+  Config.map((seconds) => seconds * 1000)
+)
+
+/**
  * The backoff between consecutive alarms that make no progress, whether they
  * failed or died: one second, doubling, at most five minutes, and never
  * giving up.
@@ -252,7 +294,7 @@ export const starts = Metric.counter("smithers_cloudflare_execution_starts", {
 
 /**
  * {@link alarm} invocations, by `outcome`: `idle`, `settled`, `parked`,
- * `retrying` or `forgotten`.
+ * `yielded`, `retrying` or `forgotten`.
  *
  * @category metrics
  * @since 1.0.0
@@ -260,6 +302,22 @@ export const starts = Metric.counter("smithers_cloudflare_execution_starts", {
 export const alarms = Metric.counter("smithers_cloudflare_execution_alarms", {
   description: "Durable Object execution alarms, by outcome",
   incremental: true
+})
+
+/**
+ * How long {@link alarm}'s drive (`EngineStore.drive`) ran, in milliseconds,
+ * by `outcome`: `settled`, `parked`, `yielded`, `unfinished` (work due that the
+ * drive did not do) or `failed`. The buckets run to Cloudflare's 900-second
+ * alarm limit, so a drive nearing it shows in the top ones. An alarm that
+ * drives nothing (no intent, a settled execution, an unknown flow, a runtime
+ * that cannot be built) records nothing.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const driveDuration = Metric.timer("smithers_cloudflare_execution_drive_duration", {
+  description: "How long a Durable Object alarm drove its execution, by outcome",
+  boundaries: [1_000, 5_000, 15_000, 30_000, 60_000, 120_000, 300_000, 450_000, 600_000, 720_000, 840_000, 900_000]
 })
 
 /**
@@ -449,7 +507,8 @@ class UnknownFlow extends Schema.TaggedError<UnknownFlow>()("@smthrs/platform-cl
 class Undriven extends Schema.TaggedError<Undriven>()("@smthrs/platform-cloudflare/Undriven", {}) {}
 
 /**
- * Drives the execution once (`EngineStore.drive`) and reads what that left it as.
+ * Drives the execution once (`EngineStore.drive`) within `budgetMs` and
+ * answers what that left it as.
  *
  * Only an execution the store does not hold yet is admitted with the intent's
  * payload, so only then is the payload decoded. A held run resumes from the
@@ -457,7 +516,7 @@ class Undriven extends Schema.TaggedError<Undriven>()("@smthrs/platform-cloudfla
  * schema no longer decodes as `payload_changed`: decoding the intent first
  * would fail every alarm of that run, forever.
  */
-const drive = (flow: Flow.Any, value: Intent) =>
+const drive = (flow: Flow.Any, value: Intent, budgetMs: number) =>
   Effect.gen(function*() {
     const held = yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
       Effect.as(true),
@@ -468,17 +527,27 @@ const drive = (flow: Flow.Any, value: Intent) =>
     const payload = held ? {} : yield* (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(
       value.payload
     ) as Effect.Effect<object, Schema.SchemaError>)
-    const drove = EngineStore.drive(flow, { executionId: value.executionId, payload })
+    const drove = EngineStore.drive(flow, { executionId: value.executionId, payload, budgetMs })
     // Admission labels the run with the origin its starter recorded.
-    const driven = yield* (value.origin === undefined ? drove : RunMetrics.withOrigin(drove, value.origin))
-    switch (driven._tag) {
-      case "Settled":
-        return { _tag: "Settled" } as const
-      case "Parked":
-        return { _tag: "Parked", wakeAtMs: driven.wakeAtMs ?? null } as const
-      case "Unfinished":
-        return yield* new Undriven()
-    }
+    return yield* (value.origin === undefined ? drove : RunMetrics.withOrigin(drove, value.origin))
+  })
+
+/**
+ * Drives the execution within `budgetMs`, records how long the drive took by
+ * its outcome ({@link driveDuration}) and in `timing`, and reads what it left
+ * the execution as: `Unfinished` is a failure, so the alarm backs off.
+ */
+const timedDrive = (flow: Flow.Any, value: Intent, budgetMs: number, timing: { driveMs?: number }) =>
+  Effect.gen(function*() {
+    const startedMs = yield* Clock.currentTimeMillis
+    const exit = yield* Effect.exit(drive(flow, value, budgetMs))
+    const driveMs = (yield* Clock.currentTimeMillis) - startedMs
+    timing.driveMs = driveMs
+    const outcome = Exit.isSuccess(exit) ? exit.value._tag.toLowerCase() : "failed"
+    yield* Metric.update(Metric.withAttributes(driveDuration, { outcome }), Duration.millis(driveMs))
+    const driven = yield* exit
+    if (driven._tag === "Unfinished") return yield* new Undriven()
+    return driven
   })
 
 /**
@@ -541,7 +610,10 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  *    close when the alarm ends.
  * 3. Drives the execution once with `EngineStore.drive`, which claims the
  *    run (or takes it from an earlier, dead incarnation of this object),
- *    replays what is recorded and drives the rest until it settles or parks.
+ *    replays what is recorded and drives the rest until it settles or parks,
+ *    or until it spends `driveBudgetMs` ({@link driveBudget}) and yields at a
+ *    step boundary. How long the drive took is recorded by its outcome
+ *    ({@link driveDuration}) and logged as `smithers.execution.drive_ms`.
  * 4. Routes: reads from the store which executions the drive left for other
  *    objects, and hands each to `router`. A child the drive admitted and the
  *    round a `.to()` handoff admitted are started on their own objects; a
@@ -551,9 +623,10 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  *    drive and before routing routes the same executions on its next attempt,
  *    and starting or waking an object twice changes nothing.
  * 5. On progress, records when the execution settled and arms the alarm for
- *    the end of its retention window if it settled, or arms it for when the
+ *    the end of its retention window if it settled, arms it for when the
  *    engine must next drive it if it parked, reading the store again after
- *    arming so a wake that landed meanwhile is kept; then clears the count.
+ *    arming so a wake that landed meanwhile is kept, or arms it for now if
+ *    the drive yielded; then clears the count.
  *
  * An object that recorded its execution's settlement never drives it again.
  * Its alarm, whether the final one or one a duplicate `start` or a `wake`
@@ -573,7 +646,9 @@ const backoff = (attempt: number): number => Option.getOrThrow(RetryPolicy.nextD
  * start as a child or hand off to.
  *
  * `settledRetentionMs` is how long a settled object keeps its intent; it
- * defaults to {@link settledRetentionMs}.
+ * defaults to {@link settledRetentionMs}. `driveBudgetMs` is how long the
+ * drive keeps starting steps; it defaults to {@link defaultDriveBudgetMs},
+ * and the class passes {@link driveBudget}.
  *
  * @category operations
  * @since 1.0.0
@@ -585,21 +660,25 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     readonly runtime: (intent: Intent) => Layer.Layer<Services, E, R>
     readonly router: Router<RE, RR>
     readonly settledRetentionMs?: number | undefined
+    readonly driveBudgetMs?: number | undefined
   }
 ): Effect.Effect<Outcome, never, R | RS | RR> =>
   Effect.gen(function*() {
     const raw = yield* storage.get<string>(intentKey)
     const ids = yield* idsOf(raw)
     yield* Effect.annotateCurrentSpan(ids)
-    const outcome = yield* settleOrDrive(storage, raw, options)
+    const timing: { driveMs?: number } = {}
+    const outcome = yield* settleOrDrive(storage, raw, options, timing)
     const tag = outcome._tag.toLowerCase()
     const failure = outcome._tag === "Retrying"
       ? { "error.type": outcome.failure, "smithers.execution.attempt": outcome.attempt, ...outcome.detail }
       : {}
-    yield* Effect.annotateCurrentSpan({ "smithers.execution.alarm": tag, ...failure })
+    // How long the drive ran, when the alarm drove: what shows a drive nearing the 900-second limit.
+    const drove = timing.driveMs === undefined ? {} : { "smithers.execution.drive_ms": timing.driveMs }
+    yield* Effect.annotateCurrentSpan({ "smithers.execution.alarm": tag, ...failure, ...drove })
     yield* Metric.update(Metric.withAttributes(alarms, { outcome: tag }), 1)
     yield* (outcome._tag === "Retrying" ? Effect.logWarning : Effect.logInfo)("cloudflare.execution.alarm").pipe(
-      Effect.annotateLogs({ outcome: tag, ...ids, ...failure })
+      Effect.annotateLogs({ outcome: tag, ...ids, ...failure, ...drove })
     )
     return outcome
   }).pipe(Effect.withSpan("cloudflare.execution.alarm"))
@@ -613,7 +692,9 @@ const settleOrDrive = <E, R, RS, RE, RR>(
     readonly runtime: (intent: Intent) => Layer.Layer<Services, E, R>
     readonly router: Router<RE, RR>
     readonly settledRetentionMs?: number | undefined
-  }
+    readonly driveBudgetMs?: number | undefined
+  },
+  timing: { driveMs?: number }
 ): Effect.Effect<Outcome, never, R | RS | RR> =>
   Effect.gen(function*() {
     if (raw === undefined) {
@@ -642,7 +723,7 @@ const settleOrDrive = <E, R, RS, RE, RR>(
       const flow = options.flows.find((candidate) => candidate._tag === value.flow)
       if (flow === undefined) return yield* new UnknownFlow({ flow: value.flow })
       return yield* Effect.gen(function*() {
-        const driven = yield* drive(flow, value)
+        const driven = yield* timedDrive(flow, value, options.driveBudgetMs ?? defaultDriveBudgetMs, timing)
         yield* route(value.executionId, options.router)
         if (driven._tag === "Settled") {
           const now = yield* Clock.currentTimeMillis
@@ -650,7 +731,12 @@ const settleOrDrive = <E, R, RS, RE, RR>(
           yield* storage.setAlarm(now + retain)
           return { _tag: "Settled", forgetAtMs: now + retain } as const
         }
-        return { _tag: "Parked", wakeAtMs: yield* arm(storage, value.executionId, driven.wakeAtMs) } as const
+        // A yielded run has work due now: the next alarm goes on at once.
+        if (driven._tag === "Yielded") {
+          yield* storage.setAlarm(yield* Clock.currentTimeMillis)
+          return { _tag: "Yielded" } as const
+        }
+        return { _tag: "Parked", wakeAtMs: yield* arm(storage, value.executionId, driven.wakeAtMs ?? null) } as const
       }).pipe(Effect.provide(options.runtime(value)))
     }))
     if (Exit.isSuccess(outcome)) {

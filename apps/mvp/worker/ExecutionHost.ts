@@ -179,6 +179,13 @@ export const intent = ExecutionObject.intent
 export const settledRetentionMs = ExecutionObject.settledRetentionMs
 
 /**
+ * `EXECUTION_DRIVE_BUDGET_SECONDS` (600 unless set), in milliseconds: how long one alarm's drive keeps starting steps
+ * before it yields and the alarm goes on at once, under Cloudflare's 15-minute alarm limit
+ * (`ExecutionObject.driveBudget`).
+ */
+export const driveBudget = ExecutionObject.driveBudget
+
+/**
  * Records `intent` on one execution's Durable Object `storage` and wakes it at once (`ExecutionObject.start`): the
  * same intent again changes nothing, and another under the same execution id fails with `IntentConflict`.
  */
@@ -205,9 +212,9 @@ export const readDatabase = (url: string, schema: string): Layer.Layer<SqlClient
  *   no-op, and a different one fails with `IntentConflict`.
  * - `wake` moves the alarm to now when the object holds an intent (`ExecutionObject.wake`); another object's alarm
  *   calls it through its router when this execution became due.
- * - `alarm` builds the engine for that one execution, as `hostId`, over `database`, drives it until it settles or
- *   parks, hands the executions it left for other objects to `router`, then arms the next wake
- *   (`ExecutionObject.alarm`). It never fails: a failure re-arms the alarm with backoff.
+ * - `alarm` builds the engine for that one execution, as `hostId`, over `database`, drives it until it settles, parks
+ *   or spends `driveBudgetMs` ({@link driveBudget}), hands the executions it left for other objects to `router`, then
+ *   arms the next wake (`ExecutionObject.alarm`). It never fails: a failure re-arms the alarm with backoff.
  *
  * `database` is a layer, so each alarm opens its own connection and closes it when the alarm ends. `router` reaches
  * other objects of the same class by execution id.
@@ -219,6 +226,7 @@ export const make = <RS, RD, ROut, E, R, RE, RR>(
     readonly database: Layer.Layer<SqlClient.SqlClient, never, RD>
     readonly flows: Flows<ROut, E, R>
     readonly router: ExecutionObject.Router<RE, RR>
+    readonly driveBudgetMs?: number | undefined
   },
 ) => {
   const { flows, registration } = options.flows
@@ -233,6 +241,7 @@ export const make = <RS, RD, ROut, E, R, RE, RR>(
             Layer.provide(options.database),
           ),
         router: options.router,
+        driveBudgetMs: options.driveBudgetMs,
       }),
   }
 }

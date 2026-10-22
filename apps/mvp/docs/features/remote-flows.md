@@ -42,6 +42,7 @@ alarm ◀───────────────────────�
   │ build the engine for this execution over Postgres (schema smithers_flows), drive it once
   ├─ settled ──▶ record when, alarm one day later
   ├─ parked  ──▶ alarm at the engine's next wake, such as a durable sleep's end
+  ├─ yielded ──▶ alarm at now: the drive spent its budget (10 min) at a step boundary
   └─ failed  ──▶ alarm one backoff away (1 s, doubling, at most 5 min, never giving up)
 final alarm, one day after the settlement
   └─ forgotten ─▶ delete the intent, the count and the settlement; arm nothing
@@ -52,6 +53,7 @@ final alarm, one day after the settlement
 - **The object holds only the intent, a failure count and when the run settled.** Leases, attempts, timers, retries and results stay in the engine's Postgres tables, in the schema `smithers_flows` beside the app's tables. Each alarm opens its own connection and closes it when the alarm ends.
 - **A settled object forgets its execution a day later.** Its final alarm deletes everything the object stored and arms nothing, so storage doesn't grow with every answer, role check and clone. Until then a repeated start, such as a question's resend, costs one alarm and no drive. After it a repeated start runs no step: the engine answers it from the settled run, and the object forgets it again a day later. The run's history stays in `smithers_flows` ([retention](../../../../packages/smithers/flows/platform-cloudflare/docs/concepts/execution-lifecycle.md#retention)).
 - **A reset object resumes the run.** If the object dies mid-step (an evicted isolate, a reset, a deploy), the watchdog alarm wakes a new incarnation one backoff later. It takes the run over at once, replays what the engine recorded and runs the interrupted step again. A step runs at least once, so a step with an outside effect must be idempotent.
+- **A drive stops starting steps after `EXECUTION_DRIVE_BUDGET_SECONDS` (600).** Cloudflare kills an alarm at 15 minutes of wall time, and a run with enough work never parks by itself. Past the budget the drive starts no new step, lets the running ones finish and record their results, releases the run and re-arms the alarm for now, so the next alarm goes on with no step run twice. The budget is whole seconds from 1 to 899, read once by `worker/Executions.ts`; set it below 900 less the longest step. Each alarm logs `smithers.execution.drive_ms`, and `smithers_cloudflare_execution_drive_duration` records it by outcome ([the drive budget](../../../../packages/smithers/flows/platform-cloudflare/docs/concepts/execution-lifecycle.md#the-drive-budget)).
 - **The engine migrates its own schema** on the first alarm that builds it. `pnpm db:migrate` doesn't apply the engine's migrations yet.
 
 The package behind it is [`@smthrs/platform-cloudflare`](../../../../packages/smithers/flows/platform-cloudflare/README.md); its [execution lifecycle](../../../../packages/smithers/flows/platform-cloudflare/docs/concepts/execution-lifecycle.md) states each guarantee.
@@ -69,7 +71,7 @@ The package behind it is [`@smthrs/platform-cloudflare`](../../../../packages/sm
 | `worker/github/{Write,Apply,Reconcile,Triage}.ts` | the git loop's flows and triage ([issues.md](issues.md)). The host injects Postgres, GitHub's `HttpClient`, the tokens and triage's judge (`worker/github/Host.ts`); `ExecutionHost.withGitHub` adds them when `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` are set. |
 | `worker/ExecutionHost.ts` | The object's `start` and `alarm` handlers over its storage, the flows it may run (`remote(app)`, over the app's tables and the answer expiry, and `remoteWithSignIn(app, services)` when sign-in is configured), the engine's schema and `intent`, which builds a start request. |
 | `worker/Flows.ts` | `FlowStarter`, where a route that admits a remote flow starts it, and its failures `StartConflict` and `StartUnavailable`. |
-| `worker/Executions.ts` | The Alchemy Durable Object `FlowExecution`, which hands its storage, id and Hyperdrive connection to `ExecutionHost`, reads `ANSWER_EXPIRY`, and adds sign-in's services when they are configured. |
+| `worker/Executions.ts` | The Alchemy Durable Object `FlowExecution`, which hands its storage, id and Hyperdrive connection to `ExecutionHost`, reads `ANSWER_EXPIRY` and `EXECUTION_DRIVE_BUDGET_SECONDS`, and adds sign-in's services when they are configured. |
 | `worker/Placement.ts` | `FLOW_EXECUTION_LOCATION` and `placed`, the namespace every caller creates execution objects through, at that location hint when it is set. |
 | `worker/ChatApi.ts` | Hosts `FlowExecution`, binds its namespace, starts `auth/RecheckRole` for sign-in, and gives sign-in's routes (`worker/SignIn.ts`, which starts `auth/RevokeGitHubToken`), `POST /api/questions` (`worker/Chat.ts`, which starts `chat/Expire`) and RepoApi (`worker/RepoApi.ts`, which starts `repo/Clone`) their `FlowStarter` (`worker/Flows.ts`). |
 
