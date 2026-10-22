@@ -121,9 +121,9 @@ describe("Optimizer", () => {
     expect(refs).toContainEqual({ _tag: "Ref", from: evaluates[0]!.id, path: ["feedback"] })
     expect(refs).toContainEqual({ _tag: "Ref", from: generates[0]!.id, path: [] })
     expect(literalInput(generates[1]!).previous).toEqual({
-      candidate: { _tag: "PlannedInput", path: [] },
-      score: { _tag: "PlannedInput", path: ["score"] },
-      feedback: { _tag: "PlannedInput", path: ["feedback"] },
+      candidate: { _tag: "PlannedInput", input: 0, path: [] },
+      score: { _tag: "PlannedInput", input: 2, path: ["score"] },
+      feedback: { _tag: "PlannedInput", input: 1, path: ["feedback"] },
       iteration: 1
     })
   })
