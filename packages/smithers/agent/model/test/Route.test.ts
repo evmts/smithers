@@ -1588,6 +1588,47 @@ describe("Route.stream refresh", () => {
     ])
   })
 
+  it("passes only the refused attempt's signed headers to request-specific recovery", async () => {
+    let token = "refused"
+    const auth: Auth.Auth = {
+      sign: (headers) => Effect.sync(() => ({ ...headers, Authorization: `Bearer ${token}` })),
+      refresh: Effect.die("the legacy refresh must not supersede request-specific recovery"),
+      refreshRejected: (headers) =>
+        Effect.sync(() => {
+          expect(headers.Authorization).toBe("Bearer refused")
+          token = "rotated"
+        })
+    }
+    const { executor, seen } = countingExecutor((attempt) =>
+      attempt === 1 ? Effect.fail(refusal()) : Effect.succeed(sseResponse(["[DONE]"]))
+    )
+    expect(await collect(withAuth(auth), executor)).toEqual([])
+    expect(seen.map((request) => request.headers.authorization)).toEqual(["Bearer refused", "Bearer rotated"])
+  })
+
+  it.each([false, true])("handles a signing failure before request-specific recovery (legacy %s)", async (legacy) => {
+    let failed = true
+    const auth: Auth.Auth = {
+      sign: (headers) => Effect.suspend(() => failed ? Effect.fail(refusal()) : Effect.succeed(headers)),
+      ...(legacy
+        ? {
+          refresh: Effect.sync(() => {
+            failed = false
+          })
+        }
+        : {}),
+      refreshRejected: () => Effect.die("no signed request was rejected")
+    }
+    const { executor, seen } = countingExecutor(() => Effect.succeed(sseResponse(["[DONE]"])))
+    if (legacy) {
+      expect(await collect(withAuth(auth), executor)).toEqual([])
+      expect(seen).toHaveLength(1)
+    } else {
+      expect(await drainError(withAuth(auth), executor)).toMatchObject({ code: "authentication" })
+      expect(seen).toHaveLength(0)
+    }
+  })
+
   it("scrubs stream failures with the refreshed signed credential", async () => {
     const { auth, count } = refreshingAuth()
     const { executor } = countingExecutor((attempt) =>

@@ -72,6 +72,15 @@ export type Redacted<A = string> = EffectRedacted.Redacted<A>
 export interface Auth {
   readonly sign: (headers: Record<string, string>) => Effect.Effect<Record<string, string>, ModelError>
   readonly refresh?: Effect.Effect<void, ModelError> | undefined
+  /**
+   * Refreshes the credential rejected by this particular attempt. Routes prefer
+   * this to `refresh` when present, so concurrent signs cannot change which
+   * credential a delayed authentication failure invalidates. Headers remain
+   * private to the auth boundary and must never be recorded.
+   */
+  readonly refreshRejected?:
+    | ((headers: Readonly<Record<string, string>>) => Effect.Effect<void, ModelError>)
+    | undefined
   /** Header names `sign` fills with credentials, including unconventional names. */
   readonly credentialHeaders?: ReadonlyArray<string> | undefined
 }

@@ -46,6 +46,7 @@ import {
 } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { codexEnvironment } from "../Agents.ts"
 import * as Environment from "../Environment.ts"
 import { packageVersion } from "../Version.ts"
@@ -236,8 +237,6 @@ export const make = (options: MakeOptions): Store => {
   const { file } = options
   const gate = Semaphore.makeUnsafe(1)
   const lockFile = `${file}.refresh.lock`
-  // The token the last request was signed with: what a 401 was answered to.
-  let signed: string | undefined
 
   const read: Effect.Effect<Tokens, ModelError> = Effect.suspend(() => {
     let text: string | undefined
@@ -290,6 +289,30 @@ export const make = (options: MakeOptions): Store => {
   }
 
   /**
+   * Serialize a stale owner's final check and unlink with an OS-backed lock.
+   * The empty guard database is never unlinked: every reclaimer locks the same
+   * inode, and SQLite releases its transaction even if a reclaimer crashes.
+   * It stores no credentials or application data.
+   */
+  const reclaim = (observed: string, now: number): boolean => {
+    let guard: DatabaseSync | undefined
+    try {
+      guard = new DatabaseSync(`${file}.refresh.guard.sqlite`)
+      guard.exec("BEGIN EXCLUSIVE")
+      if (readFileSync(lockFile, "utf8") !== observed) return true
+      if (now - statSync(lockFile).mtimeMs < staleLockMillis || lockOwnerAlive(observed)) return false
+      rmSync(lockFile, { force: true })
+      return true
+    } catch (error) {
+      // A busy or unavailable guard cannot authorize removal. A vanished lock
+      // can be acquired normally on the next iteration.
+      return errorCode(error) === "ENOENT"
+    } finally {
+      guard?.close()
+    }
+  }
+
+  /**
    * Takes the cross-process lock, waiting a bounded time for a live owner. A
    * directory that refuses the lock file yields no lock: the owner's refresh
    * then reports what is wrong with the directory.
@@ -324,12 +347,7 @@ export const make = (options: MakeOptions): Store => {
       try {
         const observed = readFileSync(lockFile, "utf8")
         if (now - statSync(lockFile).mtimeMs >= staleLockMillis && !lockOwnerAlive(observed)) {
-          // Read the owner again just before removal, so an old observation
-          // never deletes the lock that replaced it.
-          if (readFileSync(lockFile, "utf8") === observed) {
-            rmSync(lockFile, { force: true })
-            continue
-          }
+          if (reclaim(observed, now)) continue
         }
       } catch (error) {
         if (errorCode(error) === "ENOENT") continue
@@ -378,6 +396,12 @@ export const make = (options: MakeOptions): Store => {
           : after
       }))))
 
+  const rejected = (access: string): Effect.Effect<void, ModelError> =>
+    resolution("rejected", (measured) =>
+      Effect.gen(function*() {
+        yield* renew(access, measured)
+      })).pipe(Effect.withSpan("Auth.refresh"))
+
   return {
     auth: {
       sign: Effect.fn("Auth.sign")((headers) =>
@@ -386,7 +410,6 @@ export const make = (options: MakeOptions): Store => {
             const found = yield* reading(measured)
             const now = yield* Clock.currentTimeMillis
             const tokens = isFresh(found.access, now) ? found : yield* renew(found.access, measured)
-            signed = tokens.access
             return {
               ...headers,
               Authorization: `Bearer ${tokens.access}`,
@@ -394,11 +417,7 @@ export const make = (options: MakeOptions): Store => {
             }
           }))
       ),
-      refresh: resolution("rejected", (measured) =>
-        Effect.gen(function*() {
-          const stale = signed ?? (yield* reading(measured)).access
-          yield* renew(stale, measured)
-        })).pipe(Effect.withSpan("Auth.refresh")),
+      refreshRejected: (headers) => rejected(headers.Authorization!.slice("Bearer ".length)),
       credentialHeaders: ["Authorization", "chatgpt-account-id"]
     }
   }

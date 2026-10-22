@@ -358,9 +358,11 @@ Behavior the composition guarantees:
   step reads that snapshot, so mutating the request object while a call is in
   flight changes nothing about what is sent.
 - **One auth refresh.** An `authentication` failure is terminal on both retry
-  ladders. When `Auth.refresh` is present, `Route.stream` runs it and retries
-  the signed request exactly once, so an access token that expired mid-flight
-  costs one recovery.
+  ladders. `Route.stream` prefers `Auth.refreshRejected(headers)`, passing the
+  signed headers of the refused attempt, or falls back to `Auth.refresh`.
+  Recovery re-signs and retries exactly once. Request-specific recovery can
+  reuse a credential rotated while an older request was in flight; its
+  headers stay out of diagnostics.
 - **Typed stream failures.** A response stream that dies after the headers,
   and an oversized SSE event, both surface as `transport`. A frame the
   protocol's event schema cannot decode surfaces as `invalid_provider_output`
@@ -420,7 +422,7 @@ values.
 
 | Export                    | Kind        | Behavior                                                                                                                                                                                                                                                                                                                      |
 | ------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Auth`                    | interface   | `sign(headers)` returns the headers with the credential applied, failing with `ModelError`. Optional `refresh`: an effect `Route.stream` runs after an `authentication` failure before retrying once. `sign` may hold rotating state, but every dependency is captured at construction; the type has no requirements channel. |
+| `Auth`                    | interface   | `sign(headers)` returns the headers with the credential applied, failing with `ModelError`. Optional `refreshRejected(headers)` receives the refused attempt’s signed headers; optional `refresh` is the fallback effect. The route runs one recovery after an `authentication` failure, then re-signs and retries once. `sign` may hold rotating state, but every dependency is captured at construction; the type has no requirements channel. |
 | `Redacted<A>`             | type        | Effect's `Redacted`: a value whose string and JSON representations conceal its contents.                                                                                                                                                                                                                                      |
 | `apiKeyHeader(name, key)` | constructor | Adds a redacted API key as an exact HTTP header.                                                                                                                                                                                                                                                                              |
 | `bearer(key)`             | constructor | Adds a redacted API key as `Authorization: Bearer <key>`.                                                                                                                                                                                                                                                                     |

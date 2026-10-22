@@ -49,8 +49,11 @@ package gives each its own interface:
   step's key material, so its validation rejects anything that could carry a
   secret.
 - `Auth` owns the credential. It signs a copy of the headers as the request
-  leaves, and its optional `refresh` is the one sanctioned recovery from an
-  `authentication` failure.
+  leaves. For an `authentication` failure, a route prefers the optional
+  `refreshRejected(headers)`, passing the headers that signed that attempt.
+  This lets rotating auth skip refresh when a delayed rejection concerns an
+  older credential. `refresh` remains the fallback for existing auths. The
+  route re-signs and retries once; neither hook records credential values.
 - `Framing` owns how response bytes become frames. Server-sent events and
   newline-delimited JSON are framings, not protocols: the same protocol
   decoder can sit behind either.

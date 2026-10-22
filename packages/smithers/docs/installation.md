@@ -92,14 +92,22 @@ downgrade to a 0.x `latest`.
   id, and the model's reasoning returns with the next call. Smithers reads the
   login and never writes it: when the token is near its expiry or the backend
   answers 401, Smithers asks the Codex CLI to refresh its own login and reads
-  the file again. Set `SMITHERS_OPENAI_AUTH=chatgpt` to select Codex
+  the file again. A delayed 401 is matched to the credential that signed that
+  request, so a newer credential is reused. Stale refresh-lock reclamation
+  uses a short SQLite transaction on `auth.json.refresh.guard.sqlite`. This
+  empty, credential-free guard file stays beside the login; keep it in place
+  while Smithers processes may be running. Set `SMITHERS_OPENAI_AUTH=chatgpt` to select Codex
   automatically or to run existing `openai:` seats on the login.
   A host with no ChatGPT login refuses the seat and names
   `codex login --device-auth`.
   For Claude, install Claude Code and run `claude auth login`; with no
   `ANTHROPIC_API_KEY` set, the `opus`, `sonnet` and `fable` seats (and their
   `claude-code:` forms) run on your own Claude Code, which signs its own
-  requests.
+  requests. A cached Claude session accepts only the unchanged history and
+  its actual preceding answer. Concurrent requests with the same cache key
+  run in order; identical retries reuse the recorded answer. Cancelling a
+  one-turn request interrupts Claude Code and closes it within the configured
+  interrupt deadline even if it stops responding.
   With no `AI_GATEWAY_API_KEY` the completion judge runs on the subscription
   too: Claude Haiku on your Claude Code when it is signed in, otherwise GPT-6
   Luna on the Codex login when `SMITHERS_OPENAI_AUTH=chatgpt` is set.

@@ -40,9 +40,9 @@ import type * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Model from "@smthrs/model/Model"
 import { ModelError, type ModelErrorCode } from "@smthrs/model/ModelError"
-import type { ModelEvent, Usage } from "@smthrs/model/ModelEvent"
+import { ModelEvent, type Usage } from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Effect, Schema, Stream } from "effect"
+import { Context, Effect, Schema, Semaphore, Stream } from "effect"
 import { tmpdir } from "node:os"
 import { codexEnvironment } from "../Agents.ts"
 import * as Failure from "./Failure.ts"
@@ -60,7 +60,7 @@ export interface Query extends AsyncIterable<Sdk.SDKMessage> {
 }
 
 /**
- * Starts a Claude Code session: `Sdk.query`, or a test's fake.
+ * Starts a Claude Code session through the host transport.
  *
  * @since 1.0.0
  * @private
@@ -69,6 +69,16 @@ export type Start = (input: {
   readonly prompt: string | AsyncIterable<Sdk.SDKUserMessage>
   readonly options: Sdk.Options
 }) => Query
+
+/**
+ * The SDK transport, injectable as an Effect service for transport faults.
+ *
+ * @since 1.0.0
+ * @private
+ */
+export const QueryTransport = Context.Reference<Start>("/cli/ClaudeCode/QueryTransport", {
+  defaultValue: () => ({ options, prompt }) => Sdk.query({ prompt, options })
+})
 
 /**
  * @since 1.0.0
@@ -135,7 +145,7 @@ interface Session {
   readonly messages: AsyncIterator<Sdk.SDKMessage>
   /** The model, system prompt and parameters the session was started with. */
   readonly identity: string
-  /** The last request's messages, canonical, and the whole request. */
+  /** The last request and its actual assistant reply, canonical, and the whole request. */
   seen: ReadonlyArray<string>
   last: string
   answer: ReadonlyArray<ModelEvent>
@@ -180,9 +190,8 @@ const extension = (
   messages: ReadonlyArray<string>,
   request: ModelRequest.ModelRequest
 ): ReadonlyArray<ModelRequest.Message> | undefined => {
-  if (messages.length < seen.length + 2 || seen.some((message, index) => message !== messages[index])) return undefined
-  if (request.messages[seen.length]!.role !== "assistant") return undefined
-  const added = request.messages.slice(seen.length + 1)
+  if (messages.length < seen.length + 1 || seen.some((message, index) => message !== messages[index])) return undefined
+  const added = request.messages.slice(seen.length)
   return added.some((message) => message.role === "assistant") ? undefined : added
 }
 
@@ -281,7 +290,6 @@ const userTurn = (text: string): Sdk.SDKUserMessage => ({
  * @private
  */
 export const make = (options: Options): Model.Model & { readonly close: () => void } => {
-  const start: Start = options.start ?? (({ options, prompt }) => Sdk.query({ prompt, options }))
   const idleMillis = options.idleMillis ?? 60 * 60_000
   const interruptMillis = options.interruptMillis ?? 5_000
   // Interrupt the running turn, then close: closing alone can leave a turn
@@ -298,6 +306,24 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
     })
   }
   const sessions = new Map<string, Session>()
+  const turns = new Map<string, { readonly gate: Semaphore.Semaphore; users: number }>()
+  const serialized = <A, E>(key: string, turn: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        let entry = turns.get(key)
+        if (entry === undefined) {
+          entry = { gate: Semaphore.makeUnsafe(1), users: 0 }
+          turns.set(key, entry)
+        }
+        entry.users++
+        return entry
+      }),
+      (entry) => entry.gate.withPermits(1)(turn),
+      (entry) =>
+        Effect.sync(() => {
+          if (--entry.users === 0) turns.delete(key)
+        })
+    )
 
   const locked = (request: ModelRequest.ModelRequest): Sdk.Options => ({
     model: options.model,
@@ -322,7 +348,7 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
     ...(request.params.reasoningEffort === undefined ? {} : { effort: effort[request.params.reasoningEffort] })
   })
 
-  const open = (key: string, identity: string, request: ModelRequest.ModelRequest): Session => {
+  const open = (key: string, identity: string, request: ModelRequest.ModelRequest, start: Start): Session => {
     // The streaming input: each user turn is queued until Claude Code reads it.
     const turns: Array<Sdk.SDKUserMessage> = [userTurn(flatten(request.messages))]
     let wake = () => {}
@@ -354,6 +380,7 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
         timer.unref?.()
       },
       close: () => {
+        if (closed) return
         clearTimeout(timer)
         if (sessions.get(key) === session) sessions.delete(key)
         closed = true
@@ -368,7 +395,8 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
   const conversation = async (
     request: ModelRequest.ModelRequest,
     key: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    start: Start
   ): Promise<ReadonlyArray<ModelEvent>> => {
     const encoded = encode(request)
     const identity = CanonicalJson.stringify({
@@ -382,13 +410,18 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
     if (live !== undefined && live.last === last) return live.answer
     const added = live === undefined || live.identity !== identity ? undefined : extension(live.seen, messages, request)
     if (added === undefined) live?.close()
-    const session = added === undefined ? open(key, identity, request) : live!
+    const session = added === undefined ? open(key, identity, request, start) : live!
     signal.addEventListener("abort", session.close, { once: true })
     session.rest(false)
     try {
       if (added !== undefined) session.send(added.map(textOf).join("\n\n"))
       const answer = await read(session.messages, session)
-      session.seen = messages
+      session.seen = [
+        ...messages,
+        CanonicalJson.stringify(
+          JSON.parse(JSON.stringify(Schema.encodeSync(ModelRequest.Message)(ModelEvent.settledMessage(answer).message)))
+        )
+      ]
       session.last = last
       session.answer = answer
       session.rest(true)
@@ -401,28 +434,43 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
     }
   }
 
-  const oneShot = async (request: ModelRequest.ModelRequest, signal: AbortSignal) => {
+  const oneShot = async (request: ModelRequest.ModelRequest, signal: AbortSignal, start: Start) => {
     const query = start({ prompt: flatten(request.messages), options: { ...locked(request), maxTurns: 1 } })
-    const abort = () => void query.interrupt().catch(() => {})
+    let aborted = false
+    const abort = () => {
+      aborted = true
+      stop(query)
+    }
     signal.addEventListener("abort", abort, { once: true })
     try {
       return await read(query[Symbol.asyncIterator](), { spentUsd: 0 })
     } finally {
       signal.removeEventListener("abort", abort)
-      query.close()
+      if (!aborted) query.close()
     }
   }
 
-  const answer = (request: ModelRequest.ModelRequest, signal: AbortSignal) => {
+  const answer = (
+    request: ModelRequest.ModelRequest,
+    start: Start
+  ): Effect.Effect<ReadonlyArray<ModelEvent>, ModelError> => {
     if ((request.serverTools?.length ?? 0) > 0 || request.tools.length > 0) {
-      throw new ModelError({
-        code: "invalid_request",
-        message: "A claude-code seat offers no declared or provider-run tools"
-      })
+      return Effect.fail(
+        new ModelError({
+          code: "invalid_request",
+          message: "A claude-code seat offers no declared or provider-run tools"
+        })
+      )
     }
-    return request.cacheKey === undefined
-      ? oneShot(request, signal)
-      : conversation(request, request.cacheKey, signal)
+    const key = request.cacheKey
+    const turn = Effect.tryPromise({
+      try: (signal) => key === undefined ? oneShot(request, signal, start) : conversation(request, key, signal, start),
+      catch: (error) =>
+        error instanceof ModelError
+          ? error
+          : new ModelError({ code: "transport", message: `Claude Code failed: ${Failure.operatorSentence(error)}` })
+    })
+    return key === undefined ? turn : serialized(key, turn)
   }
 
   return Object.assign(
@@ -434,16 +482,7 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
             // Claude Code is this seat's transport: the process's start-up ends at its first turn.
             Effect.andThen(
               Telemetry.startUp.firstRequest,
-              Effect.tryPromise({
-                try: (signal) => answer(request, signal),
-                catch: (error) =>
-                  error instanceof ModelError
-                    ? error
-                    : new ModelError({
-                      code: "transport",
-                      message: `Claude Code failed: ${Failure.operatorSentence(error)}`
-                    })
-              })
+              Effect.flatMap(QueryTransport, (start) => answer(request, options.start ?? start))
             ),
             Stream.fromIterable
           )

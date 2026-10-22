@@ -24,7 +24,9 @@ consecutive `transport` failures, the next attempt invokes the transport's
 `fixed(http)`, which returns the same client. Replacing a connection pool
 requires `RequestExecutor.makeWith(transport)` with a host-supplied rebuilding
 transport. An `authentication` failure is never retried, except once when
-the route's `Auth` declares a `refresh`.
+the route's `Auth` declares `refreshRejected` or `refresh`. The former receives
+the refused attempt's signed headers and takes precedence; keep those headers
+out of diagnostics.
 
 So the error in your hands has already had its transient chances. Your
 decision is what to do next.
@@ -77,7 +79,7 @@ The thirteen codes and their retryability are tabulated in the
   interrupted the request, so nothing about its settlement is known.
   Re-issue with the model told to be shorter.
 - `authentication`: the credential was rejected. Rotating it outside the
-  route is the only repair; on a route whose `Auth` has a `refresh`, the one
+  route is the only repair; on a route whose `Auth` has `refreshRejected` or `refresh`, the one
   automatic retry already happened.
 - `invalid_request`: the request is malformed for this provider. When the
   package refused to send it, `error.path` names the offending member, such

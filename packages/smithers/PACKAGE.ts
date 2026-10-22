@@ -61,6 +61,12 @@ const importRules = ImportRules({
       files: ["test/{Open,CommandVerbs,CommandProjections}.test.ts"],
       callees: ["setTimeout", "*.setTimeout", "sleep", "*.sleep", "*.waitForTimeout"],
       because: "test.behavioral: wait on a condition or use TestClock. See apps/mvp/docs/rules.md."
+    },
+    {
+      kind: "forbidCalls",
+      files: ["test/ClaudeCode.test.ts", "test/CodexLogin*.test.ts", "test/fixtures/codex-login-lock-race-child.ts"],
+      callees: ["setTimeout", "setInterval", "globalThis.setTimeout", "globalThis.setInterval"],
+      because: "test.behavioral: provider regressions wait on a condition or TestClock, never a fixed wall-clock delay."
     }
   ]
 })

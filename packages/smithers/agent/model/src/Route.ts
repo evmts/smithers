@@ -302,8 +302,10 @@ const stream = <Body, Frame, Event, State>(
           timing.prepared(prepared.body.byteLength)
           const affinityHeader = route.protocol.affinityHeader
           let traced = false
+          let rejectedHeaders: Record<string, string> | undefined
           const attempt = Effect.gen(function*() {
             const signed = yield* route.auth.sign({ ...prepared.publicHeaders })
+            rejectedHeaders = { ...signed }
             timing.signed()
             const slot = affinityHeader === undefined ? undefined : affinitySlot(prepared, snapshot, signed)
             const token = slot === undefined ? undefined : affinity.get(slot)
@@ -338,12 +340,18 @@ const stream = <Body, Frame, Event, State>(
           // recovery, while a credential the refresh cannot repair still fails
           // typed on the second attempt.
           const refresh = route.auth.refresh
-          const { response, sanitize } = yield* (refresh === undefined
+          const refreshRejected = route.auth.refreshRejected
+          const { response, sanitize } = yield* (refresh === undefined && refreshRejected === undefined
             ? attempt
             : attempt.pipe(
               Effect.catchIf(
                 (error): error is ModelError => error instanceof ModelError && error.code === "authentication",
-                () => Effect.andThen(refresh, attempt)
+                (error) => {
+                  const recovery = rejectedHeaders === undefined || refreshRejected === undefined
+                    ? refresh
+                    : refreshRejected(rejectedHeaders)
+                  return recovery === undefined ? Effect.fail(error) : Effect.andThen(recovery, attempt)
+                }
               )
             )).pipe(
               // This span ends when the response starts, so it carries the

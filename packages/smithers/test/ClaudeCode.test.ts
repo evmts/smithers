@@ -46,17 +46,18 @@ interface Started {
   readonly turns: Array<string>
   interrupts: number
   closed: boolean
+  pendingReads: number
 }
 
 /**
  * A scripted Claude Code: `answer` sees each user turn and says what Claude does.
  * `hangInterrupt` models a Claude Code that never acknowledges an interrupt.
  */
-const scripted = (answer: (turn: string) => Reply, hangInterrupt = false) => {
+const scripted = (answer: (turn: string) => Reply | Promise<Reply>, hangInterrupt = false) => {
   const started: Array<Started> = []
   const start: ClaudeCode.Start = ({ options, prompt }) => {
     const messages = queue<Sdk.SDKMessage>()
-    const record: Started = { options, turns: [], interrupts: 0, closed: false }
+    const record: Started = { options, turns: [], interrupts: 0, closed: false, pendingReads: 0 }
     started.push(record)
     const emit = (message: object) => messages.push(message as Sdk.SDKMessage)
     const turns: AsyncIterable<string> = typeof prompt === "string"
@@ -69,7 +70,7 @@ const scripted = (answer: (turn: string) => Reply, hangInterrupt = false) => {
     void (async () => {
       for await (const turn of turns) {
         record.turns.push(turn)
-        const reply = answer(turn)
+        const reply = await answer(turn)
         if ("hang" in reply) return
         const id = `msg_${started.length}_${record.turns.length}`
         const said = "text" in reply ? reply.text : "reported" in reply ? reply.reported : "API Error"
@@ -94,7 +95,19 @@ const scripted = (answer: (turn: string) => Reply, hangInterrupt = false) => {
       }
     })()
     return {
-      [Symbol.asyncIterator]: messages.iterator,
+      [Symbol.asyncIterator]: () => {
+        const iterator = messages.iterator()
+        return {
+          next: async () => {
+            record.pendingReads++
+            try {
+              return await iterator.next()
+            } finally {
+              record.pendingReads--
+            }
+          }
+        }
+      },
       interrupt: () => {
         record.interrupts++
         return hangInterrupt ? new Promise(() => {}) : Promise.resolve()
@@ -107,16 +120,21 @@ const scripted = (answer: (turn: string) => Reply, hangInterrupt = false) => {
   return { start, started }
 }
 
-const model = (start: ClaudeCode.Start, hijackable?: boolean, interruptMillis?: number) =>
-  ClaudeCode.make({
+const model = (start: ClaudeCode.Start, hijackable?: boolean, interruptMillis?: number) => {
+  const seat = ClaudeCode.make({
     hijackable,
     interruptMillis,
     model: "claude-opus-5-5",
     executable: "/opt/bin/claude",
     environment: { HOME: "/home/op" },
-    cwd: "/work",
-    start
+    cwd: "/work"
   })
+  return {
+    ...seat,
+    stream: (input: ModelRequest.ModelRequest) =>
+      seat.stream(input).pipe(Stream.provideService(ClaudeCode.QueryTransport, start))
+  }
+}
 
 const user = (text: string) => ModelRequest.Message.user(text)
 
@@ -277,6 +295,84 @@ describe("ClaudeCode.make", () => {
     expect(claude.started[1]!.turns).toEqual([prompt])
   })
 
+  it("replays the full history when the preceding assistant answer was edited", async () => {
+    const claude = scripted(() => ({ text: "original answer" }))
+    const seat = model(claude.start)
+    try {
+      const first = request([user("task")])
+      const answer = settled(await run(seat, first))
+      const edited = { ...answer, content: [{ type: "text" as const, text: "edited answer" }] }
+      await run(seat, request([...first.messages, edited, user("continue")]))
+      expect(claude.started).toHaveLength(2)
+      expect(claude.started[1]!.turns).toEqual([
+        "<user>\ntask\n</user>\n\n<assistant>\nedited answer\n</assistant>\n\n<user>\ncontinue\n</user>"
+      ])
+    } finally {
+      seat.close()
+    }
+  })
+
+  it.each([false, true])("serializes overlapping retries on a %s warm session", async (warm) => {
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let reads = 0
+    const claude = scripted(async (turn) => {
+      if (turn !== "seed") {
+        reads++
+        entered.resolve()
+        await release.promise
+      }
+      return { text: `answer to ${turn}` }
+    })
+    const seat = model(claude.start)
+    let input = request([user("task")])
+    if (warm) {
+      const seed = request([user("seed")])
+      input = request([...seed.messages, settled(await run(seat, seed)), user("task")])
+    }
+    try {
+      await Effect.runPromise(Effect.gen(function*() {
+        const first = yield* Effect.forkChild(Stream.runCollect(seat.stream(input)), { startImmediately: true })
+        yield* Effect.promise(() => entered.promise)
+        const retry = yield* Effect.forkChild(Stream.runCollect(seat.stream(input)), { startImmediately: true })
+        yield* Effect.yieldNow
+        try {
+          expect(claude.started).toHaveLength(1)
+          expect(reads).toBe(1)
+          expect(claude.started[0]!.pendingReads).toBe(1)
+        } finally {
+          release.resolve()
+        }
+        const [one, two] = yield* Effect.all([Fiber.join(first), Fiber.join(retry)])
+        expect(Array.from(two)).toEqual(Array.from(one))
+        expect(claude.started[0]!.closed).toBe(false)
+        expect(claude.started[0]!.turns).toEqual(warm ? ["seed", "task"] : ["task"])
+      }))
+    } finally {
+      release.resolve()
+      seat.close()
+    }
+  })
+
+  it("closes a cancelled one-shot even when neither reading nor interrupting responds", async () => {
+    const entered = Promise.withResolvers<void>()
+    const claude = scripted(() => {
+      entered.resolve()
+      return { hang: true }
+    }, true)
+    const seat = model(claude.start, undefined, 0)
+    await Effect.runPromise(Effect.gen(function*() {
+      const fiber = yield* Effect.forkChild(
+        Stream.runCollect(seat.stream(request([user("summary")], { cacheKey: undefined }))),
+        { startImmediately: true }
+      )
+      yield* Effect.promise(() => entered.promise)
+      yield* Fiber.interrupt(fiber)
+    }))
+    await expect.poll(() => claude.started[0]!.closed).toBe(true)
+    expect(claude.started[0]!.interrupts).toBe(1)
+  })
+
   it("starts a fresh session when the system prompt or parameters change", async () => {
     const claude = scripted(() => ({ text: reply }))
     const seat = model(claude.start)
@@ -363,11 +459,11 @@ describe("ClaudeCode.make", () => {
     await Effect.runPromise(
       Effect.gen(function*() {
         const fiber = yield* Effect.forkChild(Stream.runCollect(seat.stream(request([user("task")]))))
-        yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 10)))
+        yield* Effect.promise(() => expect.poll(() => claude.started[0]?.turns.length).toBe(1))
         yield* Fiber.interrupt(fiber)
       })
     )
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await expect.poll(() => claude.started[0]?.closed).toBe(true)
 
     expect(claude.started[0]).toMatchObject({ interrupts: 1, closed: true })
     // The retry cannot trust the interrupted session, so it starts another.
@@ -386,7 +482,7 @@ describe("ClaudeCode.make", () => {
     expect(claude.started.map((session) => session.closed)).toEqual([false, false])
 
     seat.close()
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await expect.poll(() => claude.started.every((session) => session.closed)).toBe(true)
 
     expect(claude.started.map((session) => [session.interrupts, session.closed])).toEqual([[1, true], [1, true]])
     // A request after close starts a fresh session.
@@ -400,10 +496,8 @@ describe("ClaudeCode.make", () => {
     await run(seat, request([user("a")]))
 
     seat.close()
-    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(claude.started[0]).toMatchObject({ interrupts: 1, closed: false })
-    await new Promise((resolve) => setTimeout(resolve, 40))
-    expect(claude.started[0]!.closed).toBe(true)
+    await expect.poll(() => claude.started[0]!.closed).toBe(true)
   })
 
   it("answers a request with no conversation from a one-turn session", async () => {
@@ -480,8 +574,7 @@ describe.runIf(process.env.SMITHERS_CLAUDE_CODE_SMOKE === "1")("ClaudeCode again
       user("The cell returned 'done'."),
       user("Change of plan from me: run one more cell that returns the string 'steered'.")
     ])
-    // Let the idle session close before the worker exits.
-    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    seat.close()
     const texts = [one, two, three].map((message) => JSON.stringify(message.content))
     process.stderr.write(`${JSON.stringify({ sessionId, texts })}\n`)
     expect(texts[0]).toContain("```cell")
