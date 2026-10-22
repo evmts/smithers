@@ -563,8 +563,12 @@ describe("original plan observations", () => {
             )
           }
           const writes: Array<JournalEvent.Input> = []
+          // The refused write is where the entry recordNode emits is observed,
+          // so this journal does not know what it holds: one that does skips
+          // re-emitting a plan it already holds byte for byte.
           const journal: Journal.Service = {
             ...real,
+            recorded: undefined,
             emitDurable: (entry) => {
               writes.push(entry)
               return Effect.fail(new Journal.JournalError({ code: "read_failed", message: "write refused" }))

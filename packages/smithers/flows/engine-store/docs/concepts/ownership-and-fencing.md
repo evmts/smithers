@@ -61,6 +61,12 @@ The consequence is that a zombie process is harmless. It can hold a live fiber
 and a live database handle, and every write it attempts against a reclaimed run
 is refused by the row it is writing to.
 
+A dispatch fences the run before it runs a step or writes anything a step
+changes. A dispatch that a recorded attempt answers on its own does neither, so
+it sends no heartbeat (see [Attempts and replay](./attempts-and-replay.md)). A
+zombie therefore still replays what its run recorded, and is stopped at its
+first step that runs.
+
 ## The lease, and the evidence to break it
 
 An owner heartbeats while it drives. `isAlive` on `EngineStore.Options` decides

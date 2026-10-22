@@ -114,7 +114,7 @@ handoffs; explicit cancellation still cascades to linked children.
 | `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                               |
 | `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions). |
 | `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" } \| { _tag: "Yielded" }` | What one `drive` left an execution as.                                                                         |
-| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number }`                                                                       | What `drive` drives, with an optional budget. See [Drive budget](#drive-budget).                               |
+| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number; holdMs?: number }`                                                      | What `drive` drives, with an optional budget and hold. See [Drive budget](#drive-budget).                      |
 | `Driver`                | `Context.Service<{ drive }>`                                                                                                        | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`.                                          |
 | `drive`                 | `(flow: Flow.Any, options: DriveOptions) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>`                             | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                          |
 
@@ -294,6 +294,16 @@ Set the budget at the invocation's limit less the longest step it may start.
 Each yield counts on `EngineStoreMetrics.driveYields` and logs
 `engine-store: drive yielded its budget at a step boundary` with the budget and
 the elapsed time.
+
+A run its own flow parks on a wake due within `holdMs` (`defaultHoldMs`, five
+seconds, unless set), such as a durable sleep of a second or a clock that came
+due as the park committed, is driven again by the same drive once the wake is
+due, while the budget lasts: its host would otherwise build its runtime, claim
+the run and replay it in a new invocation to do the same. A wake past the hold
+or the budget's end is handed back as `Parked`; `holdMs: 0` hands every park
+back. Each such drive counts on `EngineStoreMetrics.heldDrives`. A drive that
+still leaves work due logs `engine-store.drive.unfinished` with the run's
+status and whether a claim or an owner holds it, never its state.
 
 Full model: [Ownership and fencing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/ownership-and-fencing.md) and
 [Attempts and replay](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/attempts-and-replay.md).
@@ -1523,6 +1533,8 @@ remain host-owned.
 | `materializationConflicts`                                              | counter                                                                                                                       |
 | `storageUnavailable`                                                    | counter                                                                                                                       |
 | `driveYields`                                                           | counter                                                                                                                       |
+| `heldDrives`                                                            | counter                                                                                                                       |
+| `replaySeeds`                                                           | counter                                                                                                                       |
 | `boundarySettlements`, `boundarySettlement`                             | counter and views keyed by `Clean`, `Deviation`, `Violation`, `Refused`                                                       |
 | `stepCacheDecisions`, `stepCacheDecision`                               | counter and views keyed by `VerifiedHit`, `Miss`, `UnverifiableEvidence`, `Unmeasurable`, `StaleReadSet`, `ReplayFailed`      |
 | `claims`, `claim`                                                       | counter and views keyed by `Activated`, `Terminal`, `HeartbeatFresh`, `StealRefusedOwnerAlive`, `ClaimLost`, `ActivationLost` |

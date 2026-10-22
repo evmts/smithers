@@ -68,6 +68,29 @@ it, reads it with observes that wait for its exit, and collects it, in a few
 statements (whether the job already has an execution). The run never parks,
 so it never replays.
 
+## A resumed run's replay
+
+The run that called a command which outlives its drive's budget parks, and the
+job's settlement wakes it. Its object builds a runtime, claims the run and
+drives its body from the top, so each of the 20 steps it ran is dispatched
+again. Measured with the last row's case (a 10 s budget), 25 ms round trips
+on a Latitude host, 2026-10-22, from the caller's alarm to the step's answer:
+
+| The woken run's alarm to the answer | Before | After  |
+| ----------------------------------- | ------ | ------ |
+| Statements                          | 1086   | 310    |
+| Time                                | 25.1 s | 7.3 s  |
+| Statements for each replayed step   | 31     | 0      |
+| The call's overhead                 | 40.7 s | 20.9 s |
+
+Before, each replayed step read its surviving attempts and then its row (4
+statements each), heartbeat the run's fence (6), and re-recorded its node
+and attempt records in a write transaction whose inserts collided with the
+rows they restated (17). Now the round reads the run's attempt rows and journal
+entries once, in one read transaction (`@smthrs/engine-store`'s replay seed),
+and a replayed step reads, fences and writes nothing. What is left is the
+object's runtime build and claim, that one read, and the call step itself.
+
 ## Limits
 
 - The box is in memory, so the numbers leave out what a container costs: an
@@ -79,5 +102,6 @@ so it never replays.
   slower: production's took 3 to 9 s before a hosted engine recovered its own
   flow's wakes alone.
 - A command that outlives its drive's budget still costs a resumed run's
-  replay, which grows with its journal: about 50 statements for each step
-  replayed.
+  wake: the runtime build, the claim and one read of the run's attempts and
+  journal. The read returns more rows for a longer run, but its round trips do
+  not grow.

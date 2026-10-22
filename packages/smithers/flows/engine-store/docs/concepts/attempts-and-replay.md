@@ -101,6 +101,35 @@ attempt rows rather than from a counter held in memory:
 service: storage that cannot range-scan `flows_attempts` omits it, and the
 engine falls back to per-attempt point reads against `AttemptStore`.
 
+## A resumed run replays from one read
+
+A run that parks and is woken drives its body again from the top, and each
+step it already ran is dispatched again. The round reads what it replays from
+once, on its first record or dispatch: every attempt row of the run
+(`AttemptStore.listRun`) and, into the journal's memory, the run's committed
+entries (`Journal.recall`), in one read transaction. From then on:
+
+- A step's attempt number and retry origin come from those rows, not from a
+  probe per step. A step with no row had none when the round began, so a fresh
+  step costs no read either.
+- A step's recorded row answers its dispatch. The row is taken once: the step's
+  later reads go to the store, which its dispatch is about to write.
+- A dispatch that a recorded success, failure, or suspension answers on its
+  own sends no fence heartbeat. It runs nothing, and the only writes it makes
+  are records the journal lacks, which go through the fenced channel. A success
+  whose outputs must be put back in the workspace, an attempt left running, a
+  cache-eligible step, and every fresh step still heartbeat first.
+- The node and attempt records a replay re-emits are not written when the
+  journal already holds them with the same content (`Journal.recorded`); a
+  record a crash lost is still written, fenced, and a record with other content
+  still surfaces as a conflict.
+
+So a replayed step costs no statement, and a resume costs the same however
+long the run's history is. The round's rows stay true for the round because it
+holds the run's fence: only its own dispatches write the run's attempts.
+`flows_engine_replay_seeds` counts the rounds that read their seed. A store
+without `listRun` or `recall` replays the way it did, one read per step.
+
 ## The cache converges with the journal
 
 A crash can land between `attempts.finish` and `cache.put`. The restarted

@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
+import * as AttemptProbe from "./internal/AttemptProbe.ts"
 import * as EngineStateSchema from "./internal/EngineStateSchema.ts"
 import { compareText } from "./internal/Ordering.ts"
 import type { OnParentExit } from "./RunState.ts"
@@ -1861,21 +1862,11 @@ const attemptSurvivors = (db: Database): NonNullable<Service["attemptSurvivors"]
       ORDER BY attempt
     `.pipe(
       Effect.orDie,
-      Effect.map((rows) => {
-        const first = rows[0]
-        if (first === undefined) return Option.none()
-        let latest = Number(first.attempt)
-        for (let index = 1; index < rows.length; index++) {
-          const next = Number(rows[index]!.attempt)
-          if (next !== latest + 1) break
-          latest = next
-        }
-        return Option.some({
-          earliestAttempt: Number(first.attempt),
-          earliestStartedAtMs: Number(first.startedAtMs),
-          latest
-        })
-      })
+      Effect.map((rows) =>
+        AttemptProbe.survivorsOf(
+          rows.map((row) => ({ attempt: Number(row.attempt), startedAtMs: Number(row.startedAtMs) }))
+        )
+      )
     )
   )
 

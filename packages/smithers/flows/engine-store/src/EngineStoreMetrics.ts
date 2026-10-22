@@ -284,6 +284,19 @@ export const heldDrives = Metric.counter("flows_engine_held_drives", {
 })
 
 /**
+ * Counter over rounds that read their replay seed: the run's attempt rows and
+ * journal entries, read at once before a resumed run replays them, so a
+ * recorded step answers without a read of its own.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const replaySeeds = Metric.counter("flows_engine_replay_seeds", {
+  description: "Rounds that read their run's attempt rows and journal entries at once to replay from",
+  incremental: true
+})
+
+/**
  * Counter over step-boundary settlements at the dispatch seam, dimensioned by
  * `outcome`: `clean` evidence, an `expected`-mode `deviation`, or a hard
  * `violation` (undeclared write, missing declared output, surviving declared

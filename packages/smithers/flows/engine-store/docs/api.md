@@ -1527,6 +1527,7 @@ remain host-owned.
 | `storageUnavailable`                                                    | counter                                                                                                                       |
 | `driveYields`                                                           | counter                                                                                                                       |
 | `heldDrives`                                                            | counter                                                                                                                       |
+| `replaySeeds`                                                           | counter                                                                                                                       |
 | `boundarySettlements`, `boundarySettlement`                             | counter and views keyed by `Clean`, `Deviation`, `Violation`, `Refused`                                                       |
 | `stepCacheDecisions`, `stepCacheDecision`                               | counter and views keyed by `VerifiedHit`, `Miss`, `UnverifiableEvidence`, `Unmeasurable`, `StaleReadSet`, `ReplayFailed`      |
 | `claims`, `claim`                                                       | counter and views keyed by `Activated`, `Terminal`, `HeartbeatFresh`, `StealRefusedOwnerAlive`, `ClaimLost`, `ActivationLost` |

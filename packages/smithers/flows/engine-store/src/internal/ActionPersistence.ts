@@ -332,6 +332,13 @@ export interface Dependencies {
    */
   readonly replayOnly?: ReplayOnly.Service | undefined
   /**
+   * The attempt row the dispatch's round already read for `id`
+   * (`internal/ReplaySeed`): `Option.none()` when the round began with no
+   * such row, `undefined` when the dispatch must read the store. Absent, every
+   * dispatch reads the store.
+   */
+  readonly recorded?: ((id: AttemptStore.AttemptId) => Option.Option<AttemptStore.Attempt> | undefined) | undefined
+  /**
    * Wraps admitting and running an attempt no record answered: a fresh one,
    * or an orphaned one this dispatch adopts. A hosted drive's budget holds
    * the step back here once it is spent (`internal/DriveBudget`); a replay
@@ -934,25 +941,49 @@ const emitLifecycle = (dispatch: Dispatch, record: JournalEvent.Input) =>
     Effect.catch((error) => error.code === "fence_lost" ? Effect.interrupt : Effect.fail(error))
   )
 
+/** How a dispatch writes one lifecycle record: at once, or only when the journal lacks it. */
+type Emit = (dispatch: Dispatch, record: JournalEvent.Input) => Effect.Effect<unknown, Journal.JournalError>
+
+/**
+ * Re-emits a record a replay converges the journal with (issue #109), unless
+ * the journal already holds it with this content: an ordinary replay re-emits
+ * only records its first run wrote, and each used to cost a write transaction
+ * whose insert collided with the row it restated. A record the journal lacks,
+ * or holds with other content, takes `emit` as before, so a crash's missing
+ * record is still written, fenced, and a conflict still surfaces.
+ */
+const unlessRecorded = <E, R>(dispatch: Dispatch, record: JournalEvent.Input, emit: Effect.Effect<unknown, E, R>) =>
+  Effect.flatMap(
+    dispatch.journal.recorded?.(record) ?? Effect.succeed(false),
+    (held) => held ? Effect.void : Effect.asVoid(emit)
+  )
+
+/** `emitLifecycle` for a replay: nothing when the journal holds the record. */
+const reemitLifecycle: Emit = (dispatch, record) => unlessRecorded(dispatch, record, emitLifecycle(dispatch, record))
+
+/** `emitConverging` for a replay: nothing when the journal holds the record. */
+const reemitConverging = (dispatch: Dispatch, record: JournalEvent.Input) =>
+  unlessRecorded(dispatch, record, emitConverging(dispatch, record))
+
 /** Journals the step's settled fact, when its declaration annotates one. */
-const emitStepSettled = (dispatch: Dispatch, outcome: unknown) =>
+const emitStepSettled = (dispatch: Dispatch, outcome: unknown, emit: Emit = emitLifecycle) =>
   Effect.flatMap(
     dispatch.stepFacts.settled(outcome),
-    (record) => record === undefined ? Effect.void : Effect.asVoid(emitLifecycle(dispatch, record))
+    (record) => record === undefined ? Effect.void : Effect.asVoid(emit(dispatch, record))
   )
 
 /** Journals the call's invoked fact, when its declaration annotates one. */
-const emitCallInvoked = (dispatch: Dispatch) =>
+const emitCallInvoked = (dispatch: Dispatch, emit: Emit = emitLifecycle) =>
   Effect.flatMap(
     dispatch.callFacts.invoked,
-    (record) => record === undefined ? Effect.void : Effect.asVoid(emitLifecycle(dispatch, record))
+    (record) => record === undefined ? Effect.void : Effect.asVoid(emit(dispatch, record))
   )
 
 /** Journals the call's settled fact, when its declaration annotates one. */
-const emitCallSettled = (dispatch: Dispatch, outcome: unknown) =>
+const emitCallSettled = (dispatch: Dispatch, outcome: unknown, emit: Emit = emitLifecycle) =>
   Effect.flatMap(
     dispatch.callFacts.settled(outcome),
-    (record) => record === undefined ? Effect.void : Effect.asVoid(emitLifecycle(dispatch, record))
+    (record) => record === undefined ? Effect.void : Effect.asVoid(emit(dispatch, record))
   )
 
 /**
@@ -1749,9 +1780,24 @@ const declarationMetaOf = (deps: Dependencies, input: ActionInput) => ({
 } satisfies AttemptMeta)
 
 /**
- * Opens one dispatch: annotates its span, reads its stores, derives the
- * digests that address it, fences the run, and refuses an unkeyed
- * irreversible retry before anything is read or decided.
+ * Fences the run: heartbeats it under the dispatch's owner, and interrupts
+ * the dispatch when the owner lost it.
+ */
+const fence = (deps: Dependencies, runs: RunStore.Service) =>
+  Effect.gen(function*() {
+    const heartbeat = yield* runs.heartbeat(deps.runId, deps.owner, yield* nowMillis)
+    if (heartbeat._tag !== "Updated") {
+      return yield* Effect.interrupt
+    }
+  })
+
+/**
+ * Opens one dispatch: annotates its span, reads its stores, and derives the
+ * digests that address it. A cache-eligible dispatch, which holds its cache
+ * address's durable lease before it reads anything, fences the run first,
+ * and an unkeyed irreversible retry is fenced and refused before anything is
+ * read or decided. Every other dispatch is fenced once `answer` knows it does
+ * more than replay a recorded attempt.
  */
 const openDispatch = (executor: Executor, input: ActionInput, replay: ReplayReport) =>
   Effect.gen(function*() {
@@ -1767,12 +1813,15 @@ const openDispatch = (executor: Executor, input: ActionInput, replay: ReplayRepo
     const runs = yield* RunStore.RunStore
     const policy = declaredCachePolicy(input.action)
     const { keyDigest, stepKeyDigest } = yield* digestsOf(deps, input, policy, replay)
-    const fencedAtMs = yield* nowMillis
-    const heartbeat = yield* runs.heartbeat(deps.runId, deps.owner, fencedAtMs)
-    if (heartbeat._tag !== "Updated") {
-      return yield* Effect.interrupt
+    // A source glob is cacheable only after the scheduler pins and replaces
+    // it with exact measured inputs. Direct actions retain the pattern, so
+    // their key cannot prove which expansion it names and must stay local.
+    const cacheDeclaration = CacheAdmission.declaration(input)
+    const unkeyedRetry = input.tier === "irreversible" && input.attempt > 1 && deps.idempotencyKey === undefined
+    if (unkeyedRetry || cacheDeclaration._tag === "Eligible") {
+      yield* fence(deps, runs)
     }
-    if (input.tier === "irreversible" && input.attempt > 1 && deps.idempotencyKey === undefined) {
+    if (unkeyedRetry) {
       return yield* refuseUnkeyedRetry(input)
     }
     const dispatch: Dispatch = {
@@ -1789,10 +1838,7 @@ const openDispatch = (executor: Executor, input: ActionInput, replay: ReplayRepo
       attemptId: { runId: deps.runId, stepKeyDigest, attempt: input.attempt },
       callFacts: CallFacts.make(input.action, deps.runId),
       stepFacts: StepFacts.make(input.action, deps.runId),
-      // A source glob is cacheable only after the scheduler pins and replaces
-      // it with exact measured inputs. Direct actions retain the pattern, so
-      // their key cannot prove which expansion it names and must stay local.
-      cacheDeclaration: CacheAdmission.declaration(input),
+      cacheDeclaration,
       declarationMeta: declarationMetaOf(deps, input)
     }
     return dispatch
@@ -1808,7 +1854,12 @@ const answer = (dispatch: Dispatch) =>
     const { cacheDeclaration, deps, input } = dispatch
     // A run's admitted attempt is replay authority. Shared cache rows
     // are replaceable and cannot overwrite its result or failure.
-    const existing = yield* dispatch.attempts.get(dispatch.attemptId)
+    const existing = yield* recordedAttempt(dispatch)
+    // A cache-eligible dispatch was fenced when it opened. Any other is
+    // fenced here unless a recorded attempt answers it alone.
+    if (cacheDeclaration._tag !== "Eligible" && !(Option.isSome(existing) && answersAlone(existing.value))) {
+      yield* fence(deps, dispatch.runs)
+    }
     if (cacheDeclaration._tag === "Eligible") {
       const hit = yield* serveFromCache(dispatch, cacheDeclaration.metadata, existing)
       if (Option.isSome(hit)) {
@@ -1893,6 +1944,26 @@ const answer = (dispatch: Dispatch) =>
     })
     return yield* deps.step === undefined ? attempt : deps.step(attempt)
   })
+
+/** The dispatch's attempt row: as its round read it (`Dependencies.recorded`), or from the store. */
+const recordedAttempt = (dispatch: Dispatch) => {
+  const seeded = dispatch.deps.recorded?.(dispatch.attemptId)
+  return seeded === undefined ? dispatch.attempts.get(dispatch.attemptId) : Effect.succeed(seeded)
+}
+
+/**
+ * Whether a recorded attempt answers its dispatch without the dispatch
+ * running or writing anything the fence guards, so the dispatch needs no
+ * heartbeat: a success with no recorded outputs to put back in the
+ * workspace, a failure, or a suspension. Each replays the row and converges
+ * the journal with it, and a convergence record the journal lacks is written
+ * through the fenced channel, which a lost owner cannot pass. A run that lost
+ * its fence replays what it recorded and is stopped at its first step that
+ * does more.
+ */
+const answersAlone = (row: AttemptStore.Attempt): boolean =>
+  row.state === "failed" || row.state === "suspended" ||
+  (row.state === "succeeded" && decodeMeta(row.meta)?.boundary === undefined)
 
 /**
  * AN ORPHANED ATTEMPT ASKS THE CACHE FIRST (issue #3898). A `running`
@@ -2332,11 +2403,11 @@ const storedRefusal = (dispatch: Dispatch, meta: AttemptMeta | undefined) => {
  */
 const replaySucceeded = (dispatch: Dispatch, row: AttemptStore.Attempt) =>
   Effect.gen(function*() {
-    yield* emitCallInvoked(dispatch)
+    yield* emitCallInvoked(dispatch, reemitLifecycle)
     const meta = decodeMeta(row.meta)
     const refused = storedRefusal(dispatch, meta)
     if (refused !== undefined) {
-      yield* emitConverging(
+      yield* reemitConverging(
         dispatch,
         JournalRecords.cacheProvenance(cacheSource(dispatch, "replay_failed"), {
           keyDigest: dispatch.keyDigest,
@@ -2527,13 +2598,14 @@ const convergeCache = (
  * #109): a crash between `attempts.finish` and the terminal
  * emits left `attemptStarted` without `attemptFinished`
  * forever. The per-attempt producer identity collapses the
- * re-emission into a `Duplicate` on ordinary replays.
+ * re-emission into a `Duplicate`, and on ordinary replays a journal that
+ * holds the record is not asked to write it at all.
  */
 const convergeJournal = (dispatch: Dispatch, row: AttemptStore.Attempt, meta: AttemptMeta | undefined) =>
   Effect.gen(function*() {
     const { attemptId } = dispatch
     if (meta?.boundary?.deviation !== undefined) {
-      yield* emitConverging(
+      yield* reemitConverging(
         dispatch,
         JournalRecords.expectedSetDeviation(attemptSource(dispatch, "deviation"), {
           ...attemptId,
@@ -2543,27 +2615,27 @@ const convergeJournal = (dispatch: Dispatch, row: AttemptStore.Attempt, meta: At
     }
     // Replays publish the saved first observation, never a newly
     // computed timestamp or the current history generation.
-    yield* emitStepSettled(dispatch, row.outcome)
-    yield* emitConverging(
+    yield* emitStepSettled(dispatch, row.outcome, reemitLifecycle)
+    yield* reemitConverging(
       dispatch,
       JournalRecords.attemptFinished(attemptSource(dispatch, "finished"), { ...attemptId, state: "succeeded" })
     )
     // Upgrade an older durable controller record without rerunning
     // its handler; current records collapse to the original receipt.
-    yield* emitCallSettled(dispatch, row.outcome)
+    yield* emitCallSettled(dispatch, row.outcome, reemitLifecycle)
   })
 
 /** Replays a durably failed attempt by converging its journal records and rethrowing its persisted cause. */
 const replayFailed = (dispatch: Dispatch, row: AttemptStore.Attempt) =>
   Effect.gen(function*() {
     const { attemptId } = dispatch
-    yield* emitCallInvoked(dispatch)
+    yield* emitCallInvoked(dispatch, reemitLifecycle)
     // Converge the journal before rethrowing (issue #109): the
     // violation kind survives in the row meta because the
     // persisted cause alone cannot distinguish a boundary
     // violation from an ordinary execution failure.
     if (decodeMeta(row.meta)?.hardViolation === true) {
-      yield* emitConverging(
+      yield* reemitConverging(
         dispatch,
         JournalRecords.hardViolation(attemptSource(dispatch, "hard-violation"), {
           ...attemptId,
@@ -2571,7 +2643,7 @@ const replayFailed = (dispatch: Dispatch, row: AttemptStore.Attempt) =>
         })
       )
     }
-    yield* emitConverging(
+    yield* reemitConverging(
       dispatch,
       JournalRecords.attemptFinished(attemptSource(dispatch, "finished"), { ...attemptId, state: "failed" })
     )

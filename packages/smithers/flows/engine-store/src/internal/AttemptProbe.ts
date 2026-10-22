@@ -60,11 +60,7 @@ export const probeAttempts = (
 ): Effect.Effect<Option.Option<DurableEngineState.AttemptSurvivors>> =>
   Effect.gen(function*() {
     if (survivors !== undefined) {
-      const found = yield* survivors(runId, stepKeyDigest)
-      if (Option.isNone(found)) return Option.none()
-      return found.value.earliestAttempt > prunedPrefixScanLimit
-        ? Option.none()
-        : found
+      return tolerated(yield* survivors(runId, stepKeyDigest))
     }
     let earliest = Option.none<AttemptStore.Attempt>()
     let attempt = 1
@@ -88,3 +84,39 @@ export const probeAttempts = (
       latest
     })
   })
+
+/**
+ * The survivors of one action key's attempt rows, given in attempt order: the
+ * earliest row's number and start time, and the highest attempt contiguous
+ * from it. What `DurableEngineState.attemptSurvivors` reads in one range read,
+ * and what a round's replay seed (`ReplaySeed`) answers from the rows it read
+ * at once.
+ *
+ * @since 1.0.0
+ * @category combinators
+ */
+export const survivorsOf = (
+  rows: ReadonlyArray<{ readonly attempt: number; readonly startedAtMs: number }>
+): Option.Option<DurableEngineState.AttemptSurvivors> => {
+  const first = rows[0]
+  if (first === undefined) return Option.none()
+  let latest = first.attempt
+  for (let index = 1; index < rows.length; index++) {
+    const next = rows[index]!.attempt
+    if (next !== latest + 1) break
+    latest = next
+  }
+  return Option.some({ earliestAttempt: first.attempt, earliestStartedAtMs: first.startedAtMs, latest })
+}
+
+/**
+ * Applies the pruned-prefix tolerance (`prunedPrefixScanLimit`) to survivors
+ * a range read found, so they agree with the point-probe walk (issue #96).
+ *
+ * @since 1.0.0
+ * @category combinators
+ */
+export const tolerated = (
+  found: Option.Option<DurableEngineState.AttemptSurvivors>
+): Option.Option<DurableEngineState.AttemptSurvivors> =>
+  Option.isSome(found) && found.value.earliestAttempt > prunedPrefixScanLimit ? Option.none() : found

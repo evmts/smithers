@@ -43,6 +43,7 @@ import * as DeferredPersistence from "./internal/DeferredPersistence.ts"
 import * as DriveBudget from "./internal/DriveBudget.ts"
 import * as EngineJj from "./internal/EngineJj.ts"
 import * as NodeJournal from "./internal/NodeJournal.ts"
+import * as ReplaySeed from "./internal/ReplaySeed.ts"
 import * as RunDriver from "./internal/RunDriver.ts"
 import * as OwnerIdentity from "./OwnerIdentity.ts"
 import * as ReplayOnly from "./ReplayOnly.ts"
@@ -574,7 +575,10 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     budgets: new Map<string, DriveBudget.DriveBudget>(),
     // The instances action dispatches run their bodies under. A dispatch
     // whose parent is one is called by a running step and is part of it.
-    dispatchInstances: new WeakSet<Instance>()
+    dispatchInstances: new WeakSet<Instance>(),
+    // Each round's replay seed, read on its first ask and shared with the
+    // instances its dispatches run under (`internal/ReplaySeed`).
+    seeds: new WeakMap<Instance, Effect.Effect<ReplaySeed.Seed>>()
   }
 })
 
@@ -756,6 +760,10 @@ const actionExecute = Effect.fn("FlowEngine.actionExecute")(
     )
     store.ageVerdicts.set(instance, cacheAgeVerdict)
     store.dispatchInstances.add(instance)
+    // A step's own dispatches belong to its round, and answer from its seed.
+    const seeding = seedOf(store, parent)
+    store.seeds.set(instance, seeding)
+    const seed = yield* seeding
     const flowEngine = yield* Deferred.await(store.engine)
     instance.interrupted = parent.interrupted
     // DECIDED (2026-08-11, pending review): the waiting classification is
@@ -783,7 +791,7 @@ const actionExecute = Effect.fn("FlowEngine.actionExecute")(
     const snapshot = input.snapshot === undefined
       ? undefined
       : Effect.provideContext(input.snapshot, yield* Effect.context<FlowRuntime.FlowInstance | Crypto.Crypto>())
-    const result = yield* persistAction(store, input, parent, cacheAgeVerdict, snapshot, logContext).pipe(
+    const result = yield* persistAction(store, input, parent, cacheAgeVerdict, seed, snapshot, logContext).pipe(
       Flow.intoResult,
       Effect.provideService(FlowRuntime.FlowInstance, instance),
       Effect.provideService(
@@ -830,6 +838,7 @@ const persistAction = (
   input: FlowEngine.ActionExecuteOptions,
   parent: Instance,
   cacheAgeVerdict: ReturnType<typeof CacheAgeVerdicts.make>,
+  seed: ReplaySeed.Seed,
   snapshot: ActionPersistence.ActionInput["snapshot"],
   logContext: Readonly<Record<string, unknown>>
 ) =>
@@ -845,6 +854,7 @@ const persistAction = (
       : input.key,
     admission: store.admission,
     cacheAgeVerdict,
+    recorded: (id) => seed.take(id.stepKeyDigest, id.attempt),
     replayOnly: store.replayOnly,
     // A step a budgeted drive starts; an action a running step calls is part
     // of that step and never waits on the budget.
@@ -915,9 +925,11 @@ const recordNode = (store: Store, input: FlowRuntime.NodeRecord) => {
     ) {
       return Effect.void
     }
-    return Effect.flatMap(
-      planProvenance(store, parent, record),
-      (provenance) => emitNode(store, parent, record, provenance)
+    // The walk's first record reads the round's seed, so the journal knows
+    // the run's entries before the records a resumed walk re-emits arrive.
+    return seedOf(store, parent).pipe(
+      Effect.andThen(planProvenance(store, parent, record)),
+      Effect.flatMap((provenance) => emitNode(store, parent, record, provenance))
     )
   })
 }
@@ -938,11 +950,20 @@ const emitNode = (store: Store, parent: Instance, record: FlowRuntime.NodeRecord
   // them, and a drive writes a handful of transactions, not one per record.
   // A plan's pages commit at once: `findRecordedPlan` reads them back, and
   // a conflicting plan is rebuilt below.
+  //
+  // A resumed walk writes the records its first walk wrote. One the journal
+  // already holds is not written again: `emitDeferred` drops it, and a plan
+  // the journal holds byte for byte is not re-emitted. It narrates nothing
+  // new, so it needs no fenced write; the walk's next step that runs is
+  // fenced as ever.
   const deferred = record._tag === "NodeScheduled" || record._tag === "NodeSettled"
     ? store.journal.emitDeferred
     : undefined
   const write = deferred === undefined
-    ? Effect.asVoid(store.journal.emitDurable(entry, store.owner))
+    ? Effect.flatMap(
+      store.journal.recorded?.(entry) ?? Effect.succeed(false),
+      (held) => held ? Effect.void : Effect.asVoid(store.journal.emitDurable(entry, store.owner))
+    )
     : deferred(entry, store.owner)
   return write.pipe(
     Effect.tap(() =>
@@ -1005,26 +1026,72 @@ const actionReplayKey = Effect.fnUntraced(function*(
 const hasAttempts = (store: Store, instance: Instance, key: string) =>
   Effect.gen(function*() {
     const digest = yield* Schema.decodeUnknownEffect(Sha256)(key).pipe(Effect.orDie)
-    const found = yield* AttemptProbe.probeAttempts(
-      store.attemptStore,
-      store.attemptSurvivors,
-      instance.executionId,
-      digest
-    )
-    return Option.isSome(found)
+    return Option.isSome(yield* probe(store, instance, digest))
   })
 
 /** The surviving attempts of the dispatching run under `key`. */
 const survivingAttempts = (store: Store, key: string) =>
   Effect.gen(function*() {
     const parent = yield* FlowRuntime.FlowInstance
-    return yield* AttemptProbe.probeAttempts(
+    return yield* probe(store, parent, yield* Schema.decodeUnknownEffect(Sha256)(key).pipe(Effect.orDie))
+  })
+
+/**
+ * The surviving attempts of `instance`'s run under `stepKeyDigest`: from the
+ * round's replay seed while it holds the key, else from the store.
+ */
+const probe = (store: Store, instance: Instance, stepKeyDigest: string) =>
+  Effect.flatMap(seedOf(store, instance), (seed) => {
+    const seeded = seed.survivors(stepKeyDigest)
+    return seeded !== undefined ? Effect.succeed(seeded) : AttemptProbe.probeAttempts(
       store.attemptStore,
       store.attemptSurvivors,
-      parent.executionId,
-      yield* Schema.decodeUnknownEffect(Sha256)(key).pipe(Effect.orDie)
+      instance.executionId,
+      stepKeyDigest
     )
   })
+
+/**
+ * The replay seed of `instance`'s round, read on the round's first ask: the
+ * first record its walk journals or the first step it dispatches.
+ */
+const seedOf = (store: Store, instance: Instance): Effect.Effect<ReplaySeed.Seed> => {
+  let seed = store.seeds.get(instance)
+  if (seed === undefined) {
+    seed = ReplaySeed.once(readSeed(store, instance.executionId))
+    store.seeds.set(instance, seed)
+  }
+  return seed
+}
+
+/**
+ * Reads a round's seed: the run's attempt rows and, into the journal, its
+ * entries, in one read transaction. A store that cannot read them at once
+ * gives a seed that sends every question to the store, as does a read that
+ * fails, which is logged: the steps then read what they need themselves.
+ */
+const readSeed = (store: Store, runId: string): Effect.Effect<ReplaySeed.Seed> =>
+  store.engineState.readTransaction(
+    Effect.all([
+      store.attemptStore.listRun?.(runId) ?? Effect.succeed(undefined),
+      store.journal.recall?.(runId as JournalEvent.RunId) ?? Effect.void
+    ])
+  ).pipe(
+    Effect.map(([rows]) => ReplaySeed.make(rows)),
+    Effect.tap((seed) =>
+      Effect.andThen(
+        Effect.annotateCurrentSpan({ runId, attempts: seed.size }),
+        Metric.update(EngineStoreMetrics.replaySeeds, 1)
+      )
+    ),
+    Effect.catch((error) =>
+      Effect.logWarning("replay seed unavailable; the run's steps read the store").pipe(
+        Effect.annotateLogs({ runId, error: error._tag, code: error.code }),
+        Effect.as(ReplaySeed.make(undefined))
+      )
+    ),
+    Effect.withSpan("EngineStore.replaySeed")
+  )
 
 /**
  * The engine operations this store answers: the run driver's, deferred
@@ -1121,12 +1188,7 @@ const adapter = (store: Store): FlowEngine.Encoded => ({
 const actionSnapshot = Effect.fnUntraced(function*(store: Store, key: string) {
   const parent = yield* FlowRuntime.FlowInstance
   const stepKeyDigest = yield* Schema.decodeUnknownEffect(Sha256)(key).pipe(Effect.orDie)
-  const survivors = yield* AttemptProbe.probeAttempts(
-    store.attemptStore,
-    store.attemptSurvivors,
-    parent.executionId,
-    stepKeyDigest
-  )
+  const survivors = yield* probe(store, parent, stepKeyDigest)
   if (Option.isNone(survivors)) {
     return Option.none()
   }
