@@ -9,7 +9,7 @@ links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secre
 
 ## A command no longer holds a host: `sandbox/Command` — 2026-10-22 04:15 PDT
 
-**State:** built and tested; not deployed yet. A TODO's `pnpm install` failed twice in production on 2026-10-22 with
+**State:** works in production (evidence below, 08:29 PDT). A TODO's `pnpm install` failed twice in production on 2026-10-22 with
 `ToolLost`: the alarm driving the run hit Cloudflare's 15-minute limit while the command held one of its steps, and the
 next alarm found the command's fence with no exit. A `run` (the TODO agent's tool, and `sandbox/Call` for a person or the
 branch agent) is now its own `sandbox/Command` job (`worker/flows/SandboxCommand.ts`), `@smthrs/sandbox`'s new
@@ -23,6 +23,10 @@ The long-command e2e found every first provision of a person's user hung under `
 stderr that the uid is outside UID_MIN..UID_MAX, and there a piped stream nobody reads holds the exec's exit. Commands
 the object runs for their exit alone now pipe no output, each exec of a command operation answers within 2 minutes or
 the job asks again, and the e2e passes on the mini farm with the 570 s command.
+In production, a TODO's detached command (`sandbox-command:c2d28282`, launched 08:18:30 PDT, timeout 600 s) ran as a
+job: the TODO stayed parked, each observe drive took 5 to 24 s, the result was collected once, and the run resumed at
+08:29:27 with no `ToolLost`, steal or internal error. A TODO drive that reached its 600 s budget (617,657 ms with the
+step in flight) yielded and continued on the next alarm.
 
 ## Works in production on the new image — 2026-10-22 01:20 PDT
 
