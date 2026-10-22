@@ -375,7 +375,7 @@ shown in its place. See [Check a web page before framing it](https://github.com/
 | `Preview`                                      | schema and type: `{ title?, description?, icon? }`                                                                                          |
 | `FRAMINGS`, `Framing`                          | `allowed`, `refused`, `unknown`                                                                                                             |
 | `REASONS`, `Reason`                            | `x_frame_options`, `frame_ancestors`, `insecure`, `content`, `status`, `invalid_url`, `private_host`, `redirects`, `timeout`, `unreachable` |
-| `framing(headers, { page, ancestors })`        | `{ framing: "allowed" }` or `{ framing: "refused", reason }` from a response's headers, as a browser decides                                |
+| `framing(headers, { page, ancestors })`        | `{ framing: "allowed" }` or `{ framing: "refused", reason }` from headers; malformed page or ancestor URLs yield `{ framing: "unknown", reason: "invalid_url" }`                                |
 | `content(headers)`                             | whether a sandboxed frame shows the response: not an attachment, a PDF or an octet stream                                                   |
 | `preview(html, pageUrl)`                       | the `Preview` read from a page's head                                                                                                       |
 | `HeaderRecord`                                 | response headers by name, in any case                                                                                                       |

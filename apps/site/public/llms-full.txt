@@ -21780,19 +21780,21 @@ request and submitting a review are not idempotent: mark the body with
 `findPullByHead` or `findReviewByWrite`. A merge is fenced by the head SHA the
 person saw; a lost merge is read back with `getPull`. Closing is idempotent.
 
-| Export                                                       | Signature                                                                                                                | Notes                                                                                                                                                                                  |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getPull`                                                    | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `GET /repos/{owner}/{repo}/pulls/{number}`, with merge state and size.                                                                                                                 |
-| `listPulls`                                                  | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`  | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself.                                                                                   |
-| `findPullByHead`                                             | `(owner, repo, { head, writeId? }) => Effect<Option<PullRequest>, IntegrationError, GitHubClient>`                       | The earliest-opened pull request from `head`, carrying `writeId`'s marker when given. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.    |
-| `createPull`                                                 | `(owner, repo, { head, base, title, body, draft? }) => Effect<PullRequest, IntegrationError, GitHubClient>`              | `POST /repos/{owner}/{repo}/pulls`. 422 for no commits, a duplicate or a refused draft. A lost answer fails `outcomeUnknown`.                                                          |
-| `closePull`                                                  | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `PATCH` with `state: closed`; a lost answer fails `retryable`.                                                                                                                         |
-| `mergePull`                                                  | `(owner, repo, number, { sha, method, commitTitle?, commitMessage? }) => Effect<Merged, IntegrationError, GitHubClient>` | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` at exactly `sha`. 409 when the head moved, 405 when not mergeable, 422 for a disallowed method. A lost answer fails `outcomeUnknown`. |
-| `listCommits`, `listReviews`                                 | `(owner, repo, number, options?: { maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`         | Oldest first; at most 3 pages unless `maxPages` says otherwise.                                                                                                                        |
-| `createReview`                                               | `(owner, repo, number, { commitId, event, body }) => Effect<Review, IntegrationError, GitHubClient>`                     | `POST .../reviews` against head `commitId`. `event` is `COMMENT`, `APPROVE` or `REQUEST_CHANGES`; `COMMENT` needs a body. A lost answer fails `outcomeUnknown`.                        |
-| `findReviewByWrite`                                          | `(owner, repo, number, { writeId }) => Effect<Option<Review>, IntegrationError, GitHubClient>`                           | The review whose body carries the marker. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.                                                |
-| `PullRequest`, `PullEnd`, `PullBase`, `PullCommit`, `Review` | schemas                                                                                                                  | GitHub's JSON narrowed to the fields Smithers reads. A listing's missing merge and size fields decode as `false`, `null` or `0`.                                                       |
-| `MergeMethod`, `ReviewEvent`, `Merged`                       | types                                                                                                                    | `squash`, `merge`, `rebase`; the review events; `{ sha, merged }`.                                                                                                                     |
+| Export                                                       | Signature                                                                                                                | Notes                                                                                                                                                                                              |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getPull`                                                    | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `GET /repos/{owner}/{repo}/pulls/{number}`, with merge state and size.                                                                                                                             |
+| `listPulls`                                                  | `(owner, repo, options?: { state?, head?, maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`  | Most recently updated first; `state` defaults to `all`; `head` is a branch of the repository itself.                                                                                               |
+| `findPullByHead`                                             | `(owner, repo, { head, writeId? }) => Effect<Option<PullRequest>, IntegrationError, GitHubClient>`                       | The earliest-opened pull request from `head`, carrying `writeId`'s marker when given. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.                |
+| `createPull`                                                 | `(owner, repo, { head, base, title, body, draft? }) => Effect<PullRequest, IntegrationError, GitHubClient>`              | `POST /repos/{owner}/{repo}/pulls`. 422 for no commits, a duplicate or a refused draft. A lost answer fails `outcomeUnknown`.                                                                      |
+| `closePull`                                                  | `(owner, repo, number) => Effect<PullRequest, IntegrationError, GitHubClient>`                                           | `PATCH` with `state: closed`; a lost answer fails `retryable`.                                                                                                                                     |
+| `setBase`                                                    | `(owner, repo, number, base) => Effect<PullRequest, IntegrationError, GitHubClient>`                                     | `PATCH` with `base`: a stacked pull request moves onto the default branch once the one below merged. Idempotent; a lost answer fails `retryable`; 422 for a missing base or a closed pull request. |
+| `markReady`                                                  | `(owner, repo, nodeId) => Effect<void, IntegrationError, GitHubClient>`                                                  | GraphQL `markPullRequestReadyForReview` on the pull request's `node_id` (REST can't take a pull request out of draft). A lost answer fails `retryable`; a GraphQL error fails `status: 422`.       |
+| `mergePull`                                                  | `(owner, repo, number, { sha, method, commitTitle?, commitMessage? }) => Effect<Merged, IntegrationError, GitHubClient>` | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` at exactly `sha`. 409 when the head moved, 405 when not mergeable, 422 for a disallowed method. A lost answer fails `outcomeUnknown`.             |
+| `listCommits`, `listReviews`                                 | `(owner, repo, number, options?: { maxPages? }) => Effect<{ items, truncated }, IntegrationError, GitHubClient>`         | Oldest first; at most 3 pages unless `maxPages` says otherwise.                                                                                                                                    |
+| `createReview`                                               | `(owner, repo, number, { commitId, event, body }) => Effect<Review, IntegrationError, GitHubClient>`                     | `POST .../reviews` against head `commitId`. `event` is `COMMENT`, `APPROVE` or `REQUEST_CHANGES`; `COMMENT` needs a body. A lost answer fails `outcomeUnknown`.                                    |
+| `findReviewByWrite`                                          | `(owner, repo, number, { writeId }) => Effect<Option<Review>, IntegrationError, GitHubClient>`                           | The review whose body carries the marker. A listing that runs out of pages without a match fails `poll-failed` with `incomplete: true`.                                                            |
+| `PullRequest`, `PullEnd`, `PullBase`, `PullCommit`, `Review` | schemas                                                                                                                  | GitHub's JSON narrowed to the fields Smithers reads. A listing's missing merge and size fields decode as `false`, `null` or `0`.                                                                   |
+| `MergeMethod`, `ReviewEvent`, `Merged`                       | types                                                                                                                    | `squash`, `merge`, `rebase`; the review events; `{ sha, merged }`.                                                                                                                                 |
 
 ### GitHub.Refs
 
@@ -21811,6 +21813,7 @@ Branch refs. Nothing here moves an existing ref, so nothing can force one.
 | Export                                                   | Signature                                                                                                                             | Notes                                                                                                                                                                                                                                                                                                                                                                                  |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `createOnBranch`                                         | `(owner, repo, { branch, expectedHeadOid, headline, body?, additions, deletions }) => Effect<string, IntegrationError, GitHubClient>` | GraphQL `createCommitOnBranch` (`POST /graphql`), fenced by `expectedHeadOid`; answers the new SHA. Each addition is a whole file, base64; 1 to 1,000 changes. A moved branch fails `status: 409, stale: true`, any other GraphQL error `status: 422`, neither retryable. A lost answer fails `outcomeUnknown`; a step that may run again writes through `GitHub.Once.commitOnBranch`. |
+| `mergeInto`                                              | `(owner, repo, { base, head, commitMessage? }) => Effect<MergedInto, IntegrationError, GitHubClient>`                                 | `POST /repos/{owner}/{repo}/merges`: merges branch or SHA `head` into branch `base`, never a rebase, so nothing is forced. Answers `{ kind: "merged", sha }`, or `{ kind: "upToDate" }` when `base` already holds `head` (204), so a lost answer fails `retryable`. 409 for a conflict, 404 for a missing branch or head, neither retryable.                                           |
 | `getCommit`                                              | `(owner, repo, sha) => Effect<GitCommit, IntegrationError, GitHubClient>`                                                             | `GET /repos/{owner}/{repo}/git/commits/{sha}`: tree, parents and message.                                                                                                                                                                                                                                                                                                              |
 | `compare`                                                | `(owner, repo, base, head) => Effect<Comparison, IntegrationError, GitHubClient>`                                                     | `GET /repos/{owner}/{repo}/compare/{base}...{head}` with two SHAs, so the answer never changes. `truncated` when GitHub listed `MAX_COMPARE_FILES` (300) files.                                                                                                                                                                                                                        |
 | `FileAddition`, `GitCommit`, `ChangedFile`, `Comparison` | types and schemas                                                                                                                     | A changed file's `patch` is absent for a binary or very large file.                                                                                                                                                                                                                                                                                                                    |
@@ -21846,12 +21849,12 @@ App's installation token needs `statuses: write`. Repeating a status changes
 nothing anyone reads, so a lost answer fails `retryable`, never
 `outcomeUnknown`.
 
-| Export | Signature | Notes |
-| --- | --- | --- |
-| `create` | `(owner, repo, sha, { state, context, description?, targetUrl? }) => Effect<Status, IntegrationError, GitHubClient>` | `POST /repos/{owner}/{repo}/statuses/{sha}`. `sha` is 40 or 64 lowercase hex digits; a longer description is cut to `MAX_DESCRIPTION`; `targetUrl` is an absolute `https:` URL. 403 or 404 for a token without the permission or a repository it can't see, 422 for a commit GitHub doesn't have: passed through, unretried. |
-| `STATES`, `State` | `["pending", "success", "failure", "error"]` | |
-| `CONTEXT_PATTERN`, `MAX_DESCRIPTION` | regex, `140` | 1 to 255 printable characters, without leading or trailing space. |
-| `Status`, `Input` | schema, type | GitHub's answer narrowed to `id`, `state`, `context`, `description`, `target_url` and `created_at`. |
+| Export                               | Signature                                                                                                            | Notes                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create`                             | `(owner, repo, sha, { state, context, description?, targetUrl? }) => Effect<Status, IntegrationError, GitHubClient>` | `POST /repos/{owner}/{repo}/statuses/{sha}`. `sha` is 40 or 64 lowercase hex digits; a longer description is cut to `MAX_DESCRIPTION`; `targetUrl` is an absolute `https:` URL. 403 or 404 for a token without the permission or a repository it can't see, 422 for a commit GitHub doesn't have: passed through, unretried. |
+| `STATES`, `State`                    | `["pending", "success", "failure", "error"]`                                                                         |                                                                                                                                                                                                                                                                                                                              |
+| `CONTEXT_PATTERN`, `MAX_DESCRIPTION` | regex, `140`                                                                                                         | 1 to 255 printable characters, without leading or trailing space.                                                                                                                                                                                                                                                            |
+| `Status`, `Input`                    | schema, type                                                                                                         | GitHub's answer narrowed to `id`, `state`, `context`, `description`, `target_url` and `created_at`.                                                                                                                                                                                                                          |
 
 ### GitHub.Sync
 
@@ -29996,9 +29999,8 @@ returned. The deferred body that core runs when the graph builds reads that
 snapshot and never the caller's option object again. `run` snapshots its
 options when it is called, before the `Effect` is returned, so an edit
 between the call and the execution does not reach the effect. The decorator
-factories `WithRetry.make`, `WithCache.make`, and `WithApproval.make`
-snapshot when `make` is called, not when the decorator is applied, and
-`WithRetry.retryEffect` snapshots when it is called. `Pattern.slot` returns a
+factory `WithApproval.make` snapshots when `make` is called, not when the
+decorator is applied. `Pattern.slot` returns a
 frozen copy of its declaration, which is what `Pattern.bind` reads.
 
 ### What is copied
@@ -30006,7 +30008,7 @@ frozen copy of its declaration, which is what `Pattern.bind` reads.
 Copies are shallow and field by field. A pattern copies every array it
 interprets and the interpreted fields of every record in it: an id, a name, a
 priority, a risk, a flow, a callback. Nested bounds are copied the same way:
-`WithRetry` `backoff`, `Trellis` `envelope`, `DelegationChain` `budget`. A
+`Trellis` `envelope` and `DelegationChain` `budget`. A
 record of flows or callbacks (`Panel` `panelists`, `CheckSuite` `checks`,
 `Supervisor` `workers`, `DelegationChain` `execute`, and the members handed
 to `Bounded` and `Quarantine`) is copied as its own entries, so a
@@ -30030,6 +30032,8 @@ Every other result is a fresh plain object the caller may keep or edit.
 
 ## Errors
 
+Use `Node.catch` to recover and `Effect.ensuring` in the action's handler to clean up.
+
 The package raises three tagged errors. `PatternError` is the shared one:
 every module except `Trellis` and `DelegationChain` reports its refusals and
 exhaustions through it. Those two own their own errors because every
@@ -30051,7 +30055,6 @@ optional `cause` with the reported error or errors.
 | `envelope_conflict`   | A supplied flow declares authority its template excludes                                                            |
 | `recursion_bound`     | `Recursion.recurse` hit its declared depth                                                                          |
 | `exhausted`           | A runtime pattern reached its declared iteration or round limit, or `MapReduce` was configured to fail on no shards |
-| `finalizer_failed`    | A `TryCatchFinally` finalizer failed after the protected body settled                                               |
 | `compensation_failed` | One or more `Saga` compensations failed while unwinding                                                             |
 | `quarantined`         | `Quarantine.settle` was called on a result holding quarantined members                                              |
 
@@ -30095,12 +30098,12 @@ fails with one. See
 [Delegation patterns](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/delegation.md#delegationchain) for how the
 chain climbs its tier ladder and what a repair looks like.
 
-| Code             | Path     | Cause                                                                                                     | Raised when                                                                                                                                  |
-| ---------------- | -------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid_bounds` | `root`   | none                                                                                                      | `maxDepth`, `maxDeriskRounds`, or `maxAttempts` is not a positive safe integer, `concurrency` is set and is not one, or `tierOrder` is empty |
-| `missing_tier`   | `root`   | none                                                                                                      | `tierOrder` names a tier that `execute` has no flow or callback for                                                                          |
-| `derisk_failed`  | `root`   | none                                                                                                      | A `PatternError` was raised inside the derisk loop; the message is that error's                                                              |
-| `leaf_failed`    | the leaf | The per-tier attempts, `{ tier, error }` or `{ tier, rejected }`, or the `PatternError` the ladder raised | No tier settled the leaf within `maxAttempts` attempts each                                                                                  |
+| Code             | Path     | Cause                                                                                                     | Raised when                                                                                                                  |
+| ---------------- | -------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_bounds` | `root`   | none                                                                                                      | `maxDepth` or `maxDeriskRounds` is not a positive safe integer, `concurrency` is set and is not one, or `tierOrder` is empty |
+| `missing_tier`   | `root`   | none                                                                                                      | `tierOrder` names a tier that `execute` has no flow or callback for                                                          |
+| `derisk_failed`  | `root`   | none                                                                                                      | A `PatternError` was raised inside the derisk loop; the message is that error's                                              |
+| `leaf_failed`    | the leaf | The per-tier attempts, `{ tier, error }` or `{ tier, rejected }`, or the `PatternError` the ladder raised | No tier settled the leaf                                                                                                     |
 
 ## `Pattern`
 
@@ -30122,31 +30125,11 @@ list left to right, which puts the last decorator outermost.
 supplied flow: the capabilities, reads, writes, mode, and tier that the
 re-declaration removes.
 
-The three `With*` modules are this combinator with a policy attached.
+`WithApproval` uses this combinator to attach an approval policy.
 
-## `WithRetry`
-
-`WithRetry.withRetry(flow, { attempts, backoff?, nonRetryable? })` wraps a flow
-in a retry, and `WithRetry.make(options)` is the same thing as a decorator you
-can pass to `Pattern.decorateAll`. The wrapper declares one call of the wrapped
-flow per attempt the budget allows. Every attempt but the last is a
-`Node.catch` whose failure arm runs the next attempt, so a success settles
-without running the rest and the last attempt's failure is the wrapper's. A
-declared `backoff` is a durable `Sleep.action` wait between attempts, so a host
-that executes a backoff retry provides `Sleep.layer`. The policy is also
-declaration identity, so two plans that differ only in an attempt budget are
-different declarations. A budget whose nested attempts would pass the plan
-depth limit is refused `invalid_decorator`. `WithRetry.retryEffect(effect,
-options)` performs the same policy on a hand-written Effect.
-
-`attempts` is the total attempt count and must be a positive safe integer.
-`backoff` is `{ initialMs, factor, maxMs }`, and the delay before attempt
-`n + 1` is `min(initialMs * factor^(n - 1), maxMs)`. There is no jitter,
-because a plan built twice has to describe the same waits. `nonRetryable` lists
-error `_tag` values that end the sequence the first time one appears, whatever
-the budget says. Fiber interruption is never retried, so a cancelled run stays
-cancelled. The option names mirror `@smthrs/flow` `RetryPolicy`, so a pattern
-policy and an engine policy translate one to one. See
+A retry is not a decorator. Declare it as the `retryPolicy` of the action that
+can fail: the engine records every attempt and the wait before the next one,
+so a crash resumes the ladder where it stopped. See
 [Retries](/docs/concepts/retries/).
 
 ## `WithApproval`
@@ -30159,65 +30142,6 @@ decode, and it fails on the typed schema-error channel before the gated flow
 starts, rather than arriving as a boolean the gated flow is trusted to honor.
 An empty `reason` is refused with `invalid_decorator`. `WithApproval.make`
 is the decorator form.
-
-## `WithCache`
-
-`WithCache.withCache(flow, { ttlMs?, scope?, version? })` wraps a flow with a
-cache declaration. `WithCache.make(options)` is the decorator form, usable with
-`Pattern.decorate` and `Pattern.decorateAll`.
-
-The input must explicitly declare effects with `mode: "hermetic"` and a
-`"sealed"` or omitted tier. A pure body without an effects declaration is
-rejected. Every option is optional:
-
-| Field     | Contract                                                                                                  |
-| --------- | --------------------------------------------------------------------------------------------------------- |
-| `ttlMs`   | Positive safe integer in milliseconds, measured from when the result was recorded. Omit for no age bound. |
-| `scope`   | `"run"`, `"flow"`, or `"shared"`. Omit to retain the composition's reach.                                 |
-| `version` | Nonblank string naming the body revision. Omit for no extra revision in the key.                          |
-
-Invalid effects, TTL, scope, or version throw `PatternError` with code
-`invalid_decorator` synchronously when the decorator is applied.
-`make` snapshots its options at construction and validates them on application.
-
-All declared fields enter the wrapper's name and captured key material.
-`version` changes declaration identity only. `ttlMs` and `scope` also travel
-in `WithCache.CachePolicyAnnotation`, under `@smthrs/flow/Action/CachePolicy`.
-That key is [`@smthrs/plan`](/docs/reference/api/plan/#cachepolicy)'s
-`CachePolicy.CachePolicyAnnotation`, the same object `@smthrs/flow` publishes
-and the engine reads at dispatch, so `Scope` and `Policy` here are that one
-model. `WithCache.policyOf(annotations)` reads that bag. Decorator composition
-preserves annotations, with an outer decorator's values overriding inner ones.
-
-The flow-level bag requires a host to lower it. The [`@smthrs/registry`](/docs/reference/api/registry/)
-bridge lowers a module's default-exported core flow policy onto a dispatched
-action. An ordinary nested core flow call does not propagate that bag onto its
-call node. The durable engine reads the action-level policy set by
-`CacheEnvironment.withCache(action, policy)` from [`@smthrs/flow`](/docs/reference/api/flow/).
-See [`@smthrs/step-cache`](/docs/reference/api/step-cache/) for enforcement. `WithCache` itself
-allocates no cache and performs no expiry checks.
-
-```ts
-import { Flow } from "@smthrs/flow"
-import { WithCache } from "@smthrs/patterns"
-import * as Node from "@smthrs/plan/Node"
-import * as Schema from "effect/Schema"
-
-const echo = Flow.make("echo", {
-  payload: { input: Schema.String },
-  success: Schema.String,
-  effects: {
-    reads: [],
-    writes: [],
-    mode: "hermetic",
-    onConflict: "serialize"
-  },
-  body: ({ input }) => Node.succeed(input)
-})
-
-// The registry bridge lowers this default export's policy onto an action.
-export default WithCache.withCache(echo, { ttlMs: 60_000, version: "v1" })
-```
 
 ## `Bounded`
 
@@ -30353,27 +30277,6 @@ or `ok: false`.
 
 Rungs are alternative strategies, not model-seat fallback. Provider and seat
 fallback belong to model routing, before a flow is selected.
-
-## `TryCatchFinally`
-
-`TryCatchFinally.make({ try, catch?, catchSchema?, finally? })` declares the
-protected call, the recovery arm `catchSchema` selects, and a finalizer call on
-the settled arm and on the arm no handler claimed. The unhandled arm ends in
-`Node.fail`, so the plan states that the finalizer cleans up and hands the
-failure back rather than absorbing it. A finalizer that fails on that arm is
-caught there, so the body failure the arm re-raises is still the one the
-boundary reports; the failed finalizer call remains a step of its own. Both
-arms are wrapped in `Node.capture`, so the boundary keys the same way on every
-build.
-
-`TryCatchFinally.run(input, options)` takes `catchErrors`, a predicate rather
-than a schema, because the runtime form already holds the decoded typed error. The finalizer
-runs after success, after recovery, after an unclaimed failure, and after
-interruption. A finalizer that fails on its own becomes `finalizer_failed`; a
-body failure outranks it, so cleanup trouble never hides the reason the body
-failed. When both fail, the `finalizer_failed` error rides behind the body
-failure on the same cause rather than being dropped, so a lock left held is
-still on the record.
 
 ## `Saga`
 
@@ -30522,7 +30425,7 @@ obeys `Node.maximumArmDepth`: `Loop.ralph` accepts at most 512 iterations,
 or 256 with a stall breaker. Constructors using these bounds
 refuse oversized options at declaration with an `invalid_decorator`
 `PatternError` naming the option and limit. This includes `Loop.make`,
-`Optimizer.make`, and `WithRetry.make`; see the boundary assertions in
+and `Optimizer.make`; see the boundary assertions in
 `Loop.test.ts` and `Optimizer.test.ts`. Other topology, including deeper
 member flows or an enclosing unrolled pattern, spends the same depth budget:
 even a declaration within its constructor's limit can fail at `Graph.build`
@@ -30532,7 +30435,7 @@ with a `graph_too_deep` `GraphBuildError` naming the node.
 
 The root exports each module as a namespace, and every module is also
 importable as `@smthrs/patterns/<Module>`. The `internal/*` and nested
-`*/index` subpaths are private. The [module index](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/modules.md) lists all 29
+`*/index` subpaths are private. The [module index](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/modules.md) lists all 27
 modules with their specifiers.
 
 [`@smthrs/flow`](/docs/reference/api/flow/) supplies `Flow` and `Graph`, and
@@ -31884,7 +31787,7 @@ The annotation key a declared placement is carried under, identified by `"@smthr
 
 [src/CachePolicy.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/CachePolicy.ts)
 
-The one cache-policy model. [`@smthrs/flow`](/docs/reference/api/flow/) publishes it as `CacheEnvironment.CachePolicy` and [`@smthrs/engine-store`](/docs/reference/api/engine-store/) reads it off a dispatched action; [`@smthrs/patterns`](/docs/reference/api/patterns/) declares it over a flow as `WithCache.Policy`. It was two declarations in those two packages, joined by nothing but a re-typed identifier string, so a field added on one side was invisible to the other.
+[`@smthrs/flow`](/docs/reference/api/flow/) publishes this model as `CacheEnvironment.CachePolicy`. Declare it on an action with `Action.withCache` or `CachePolicy.annotate`. [`@smthrs/engine-store`](/docs/reference/api/engine-store/) reads it off the dispatched action, including in nested flow calls.
 
 The annotation key reads `"@smthrs/flow/Action/CachePolicy"`. The engine reads stored and dispatched actions by that identifier, so retagging it would make every policy already written invisible at dispatch. The identifier is treated as a wire value rather than as a location.
 
@@ -31915,7 +31818,7 @@ const CachePolicyAnnotation: Context.Key<CachePolicy, CachePolicy>
 const cachePolicyOf: (annotations: Context.Context<never>) => CachePolicy | undefined
 ```
 
-The key a declared policy is carried under, identified by `"@smthrs/flow/Action/CachePolicy"`, and the reader for it. One key: `@smthrs/flow`'s `CacheEnvironment.CachePolicyAnnotation` and `@smthrs/patterns`' `WithCache.CachePolicyAnnotation` are both this object.
+The key a declared policy is carried under, identified by `"@smthrs/flow/Action/CachePolicy"`, and the reader for it. `@smthrs/flow`'s `Action.CachePolicyAnnotation` and `CacheEnvironment.CachePolicyAnnotation` both reference this object.
 
 ### CachePolicy.annotate
 
@@ -45472,7 +45375,7 @@ shown in its place. See [Check a web page before framing it](https://github.com/
 | `Preview`                                      | schema and type: `{ title?, description?, icon? }`                                                                                          |
 | `FRAMINGS`, `Framing`                          | `allowed`, `refused`, `unknown`                                                                                                             |
 | `REASONS`, `Reason`                            | `x_frame_options`, `frame_ancestors`, `insecure`, `content`, `status`, `invalid_url`, `private_host`, `redirects`, `timeout`, `unreachable` |
-| `framing(headers, { page, ancestors })`        | `{ framing: "allowed" }` or `{ framing: "refused", reason }` from a response's headers, as a browser decides                                |
+| `framing(headers, { page, ancestors })`        | `{ framing: "allowed" }` or `{ framing: "refused", reason }` from headers; malformed page or ancestor URLs yield `{ framing: "unknown", reason: "invalid_url" }`                                |
 | `content(headers)`                             | whether a sandboxed frame shows the response: not an attachment, a PDF or an octet stream                                                   |
 | `preview(html, pageUrl)`                       | the `Preview` read from a page's head                                                                                                       |
 | `HeaderRecord`                                 | response headers by name, in any case                                                                                                       |
