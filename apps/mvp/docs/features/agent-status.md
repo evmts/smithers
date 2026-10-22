@@ -136,6 +136,11 @@ No record carries a question, an option or an answer (tests read the logs for th
 
 ## Tests
 
+The killed-run case fences the old engine's database before stopping it. Calls
+through that engine, including shutdown's final journal flush, fail with a
+connection error instead of waiting forever. The next engine recovers only
+committed records; the crashed incarnation cannot flush pending records into it.
+
 | Test | Proves |
 |---|---|
 | `src/features/status/flows.test.ts` | On the Node host with a scripted model and the real routes: the run reports working, needs you and done; an answer resumes it; an approval, with and without a note; an answer from another device delivered by `run/deliver`; a second answer is `not_open`; a question that can't be shown; a run killed while it needs you resumes and asks again; waiting reported once while the turn waits; a failed answer reports failed |

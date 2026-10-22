@@ -10,6 +10,7 @@ import { NodeHost } from "@smthrs/platform-node"
 import { Context, Effect, type Exit, Layer, Redacted, type Schema, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import type { Connection } from "effect/sql/SqlConnection"
+import type { SqlError } from "effect/sql/SqlError"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 
 /** Where a Node-host runtime keeps its engine: a fresh schema of the compose Postgres, dropped with the runtime. */
@@ -41,7 +42,7 @@ export interface HostOptions {
    */
   readonly maxConnections?: number
   /** A test fault service before every engine SQL operation; available unless set. */
-  readonly databaseGate?: Effect.Effect<void>
+  readonly databaseGate?: Effect.Effect<void, SqlError>
   /** Names this engine pool's physical connections so a hard-crash test can terminate every one. */
   readonly connectionName?: string
 }
@@ -55,7 +56,7 @@ const admin = Layer.unwrap(
 )
 
 /** Block both new reservations and previously reserved connections when a host is cut off. */
-const gatedDriver = (gate: Effect.Effect<void>): PostgresDatabase.Driver => ({
+const gatedDriver = (gate: Effect.Effect<void, SqlError>): PostgresDatabase.Driver => ({
   ...Pg,
   PgClient: {
     ...Pg.PgClient,

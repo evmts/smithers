@@ -12,6 +12,7 @@ import { EngineStore, RunStore } from "@smthrs/flows"
 import { Context, type Duration, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
+import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import type { Actor } from "../../worker/Actor.ts"
 import { build } from "../../worker/test/flowHost.ts"
 import { harness } from "../../worker/test/harness.ts"
@@ -121,7 +122,15 @@ export const openAgent = async (
     // A killed tab cannot reconnect its old engine. singleIncarnationLiveness
     // assumes that host promise; merely terminating a Pg backend lets two live
     // Node engines steal ownership back and forth while their pools reconnect.
-    const databaseGate = Effect.suspend(() => disconnected ? Effect.interruptible(Effect.never) : Effect.void)
+    // A dead connection refuses even shutdown's final journal flush. Parking
+    // forever here deadlocks that finalizer; it does not simulate a killed tab.
+    const databaseGate = Effect.suspend(() => disconnected
+      ? Effect.fail(new SqlError({ reason: new ConnectionError({
+        cause: "test engine crashed",
+        message: "The test engine's database connection ended",
+        operation: "execute",
+      }) }))
+      : Effect.void)
     const doors = `agent-${crypto.randomUUID()}`
     const registration = Layer.merge(
       registrations({
