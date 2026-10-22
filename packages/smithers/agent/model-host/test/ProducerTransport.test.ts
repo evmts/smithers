@@ -314,9 +314,10 @@ describe("a journal callback that is never answered", () => {
       undefined,
       {
         record: () => {},
-        begin: () => (outcome) => {
-          lines.push({ ...outcome })
-        }
+        begin: () =>
+          Effect.succeed((outcome) => {
+            lines.push({ ...outcome })
+          })
       },
       deadline
     )

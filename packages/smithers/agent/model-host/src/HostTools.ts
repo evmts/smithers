@@ -179,6 +179,30 @@ const refusalCode = (response: Response, body: unknown): string =>
     ? body.code
     : `status_${response.status}`
 
+/** Reads and cancels a bounded JSON response, counting actual UTF-8 bytes. */
+const readCallbackJson = async (response: Response): Promise<unknown | undefined> => {
+  if (response.body === null) return undefined
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false })
+  let raw = "", bytes = 0
+  try {
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      bytes += chunk.value.byteLength
+      if (bytes > 4 * 1024 * 1024) return undefined
+      raw += decoder.decode(chunk.value, { stream: true })
+    }
+    raw += decoder.decode()
+    return JSON.parse(raw) as unknown
+  } catch {
+    return undefined
+  } finally {
+    await reader.cancel().catch(() => undefined)
+    reader.releaseLock()
+  }
+}
+
 /** Posts one producer callback with the grant's capability; a callback that does not answer states `unreachable`. */
 const callback = <A>(
   callbackBaseUrl: string,
@@ -192,11 +216,16 @@ const callback = <A>(
     try: async (signal) => {
       const response = await fetchImpl(new URL(path, callbackBaseUrl), {
         method: "POST",
+        redirect: "manual",
         signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${grant.token}` },
         body: JSON.stringify({ turnId: grant.turnId, generation: grant.generation, ...body })
       })
-      const parsed: unknown = await response.json().catch(() => undefined)
+      if (response.status >= 300 && response.status < 400 || response.redirected) {
+        await response.body?.cancel()
+        return { code: "call_refused" }
+      }
+      const parsed = await readCallbackJson(response)
       return response.ok ? answer(response, parsed) : { code: refusalCode(response, parsed) }
     },
     catch: () => ({ code: "unreachable" })
@@ -274,28 +303,11 @@ export const apiCaller =
             ? { status: 204, body: null }
             : { code: "invalid_answer" }
         }
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false })
-        let raw = "", bytes = 0
-        try {
-          for (;;) {
-            const chunk = await reader.read()
-            if (chunk.done) break
-            bytes += chunk.value.byteLength
-            if (bytes > 4 * 1024 * 1024) return { code: "invalid_answer" }
-            raw += decoder.decode(chunk.value, { stream: true })
-          }
-          raw += decoder.decode()
-          // Normalize escapes before redacting: a reflected bearer never enters
-          // a model message, a card, or the durable transcript.
-          const body: unknown = JSON.parse(JSON.stringify(JSON.parse(raw)).split(token).join("[redacted]"))
-          return { status: response.status, body }
-        } catch {
-          return { code: "invalid_answer" }
-        } finally {
-          await reader.cancel().catch(() => undefined)
-          reader.releaseLock()
-        }
+        const parsed = await readCallbackJson(response)
+        if (parsed === undefined) return { code: "invalid_answer" }
+        // Normalize escapes before removing a reflected capability.
+        const body: unknown = JSON.parse(JSON.stringify(parsed).split(token).join("[redacted]"))
+        return { status: response.status, body }
       },
       catch: () => ({ code: "unreachable" })
     }).pipe(Effect.catch((refused) => Effect.succeed(refused)))
@@ -552,12 +564,11 @@ const formCommand = (row: CatalogDescriptor, command: UiInstruction.FormInstruct
     } catch {
       return { refusal: `Invalid arguments for ${command}; use its declared payload.` }
     }
-    const filled = Object.keys(ui).filter((field) => field !== "command")
     return {
       cards: [],
-      value: `The "${row.summary}" form is open on the author's screen${
-        filled.length === 0 ? "" : `, with ${filled.join(" and ")} filled in`
-      }. Nothing is created until they press Submit: tell them the form is on their screen, and never ask them to type arguments.`,
+      value: `Requested the "${row.summary}" form on the author's screen with the supplied draft. ` +
+        "Their browser runs it; this host cannot see their screen or confirm it opened or populated the form. " +
+        "Nothing is created until they press Submit; never ask them to type arguments.",
       ui
     }
   })

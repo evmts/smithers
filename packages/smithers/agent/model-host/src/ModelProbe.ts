@@ -177,9 +177,7 @@ export const createModelProbe = (options: ModelProbeOptions): ModelProbe => {
       // A credential store that cannot be read is a dependency failure; its
       // error may quote a secret, so it is dropped like a defect.
       const read = yield* Effect.exit(
-        Effect.tryPromise(async () => {
-          await options.credentials?.refresh()
-        }).pipe(
+        Effect.suspend(() => options.credentials?.refresh() ?? Effect.void).pipe(
           Effect.flatMap(() =>
             Effect.try(() =>
               planOnLocal(ConfiguredModel.bindingOf(model), options.env, planOptions, options.credentials)

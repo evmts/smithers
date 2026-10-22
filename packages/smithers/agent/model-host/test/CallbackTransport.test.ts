@@ -80,9 +80,10 @@ const delta = (text: string): NativeAgent.AgentTurnFrame => ({ runId: "run", typ
 
 const recorderInto = (lines: Array<Record<string, unknown>>) => ({
   record: () => {},
-  begin: () => (outcome: Record<string, unknown> = {}) => {
-    lines.push(outcome)
-  }
+  begin: () =>
+    Effect.succeed((outcome: Record<string, unknown> = {}) => {
+      lines.push(outcome)
+    })
 })
 
 /**
@@ -172,7 +173,7 @@ describe("a journal callback's attempt", () => {
     const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) as { transport?: unknown } : {}
     expect(failure.transport).toEqual(refused)
     // The retry is an attempt of its own, and each is read exactly once.
-    expect(lines).toEqual([{ status: 0, ...refused }, { status: 0, ...refused }])
+    expect(lines).toEqual([{ status: 0, failed: true, ...refused }, { status: 0, failed: true, ...refused }])
     expect(observer.state.reads).toEqual([1, 1])
   })
 

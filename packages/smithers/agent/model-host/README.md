@@ -57,9 +57,9 @@ A caller who goes away interrupts the body read and the model call however the h
 
 - `runModelTurn` streams one model call into turn frames and cuts the credential out of text, reasoning and tool calls, including echoes split across chunks (`StreamingCredentialCutter`).
 - `DurableChatProducer` and `runDurableChatTurn` commit frames to the journal callback and verify each receipt against the expected cursor.
-- `createHostDiagnostics` writes bounded, marker-tagged records to the `write` sink the host passes, and is inert without one; the package never writes to a console or stream itself. Fields that are not counts, flags or short tokens are dropped and counted.
+- `createHostDiagnostics` writes bounded, marker-tagged records to the `write` sink the host passes, and is inert without one; the package never writes to a console or stream itself. Only named measurements and approved protocol string values pass; other fields are dropped and counted. Event and phase labels use closed vocabularies. `yield* diagnostics.begin(event, fields)` starts an observation in the caller’s Effect runtime and returns its completion callback. Fast failures remain visible after the detail limit.
 - `toModel` builds the `Model` a configured-model plan names, over a transport that never follows a provider redirect (`onRedirect` is told the refused status), and the `route` it streams through. `route.prepare` gives a request's url, public headers and body exactly as the model sends them, before the key signs it. `HostModel.layer` and `HostModel.layerConfig` provide `{ modelId, model, route }` as the `HostModel` service. `HostModel.make(record)` builds the same service at run time from a configured-model record read elsewhere, such as a database row, reading its key through `Config`; a record the host cannot use, its key missing included, fails with `HostModelUnusable` and the planner's code.
-- `createModelProbe` tests a configured model and dials only its planned origin. Its `test` returns an Effect that never fails; the host runs it.
+- `createModelProbe` tests a configured model and dials only its planned origin. Its `test` returns an Effect that never fails; the host runs it. `ModelCredentials.refresh` returns `Effect<void, unknown>`; refresh failures become a content-free `unreachable` result, and cancellation interrupts the refresh.
 
 ## Failures
 

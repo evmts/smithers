@@ -1,5 +1,5 @@
 import type { ConfiguredModel } from "@smthrs/rpc"
-import { Effect, Redacted } from "effect"
+import { Deferred, Effect, Fiber, Redacted } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import type { ModelCredentials } from "../src/LocalModel.ts"
 import { createModelProbe, type ModelProbeOptions } from "../src/ModelProbe.ts"
@@ -185,7 +185,7 @@ describe("stored credentials", () => {
       managed: true
     }]
     const credentials: ModelCredentials = {
-      refresh: vi.fn(async () => {}),
+      refresh: vi.fn(() => Effect.void),
       list: () => rows,
       read: () => Redacted.make(KEY)
     }
@@ -209,14 +209,12 @@ describe("stored credentials", () => {
     }]
     const stores: ReadonlyArray<ModelCredentials> = [
       {
-        refresh: async () => {
-          throw new Error(`keychain locked ${KEY}`)
-        },
+        refresh: () => Effect.fail(new Error(`keychain locked ${KEY}`)),
         list: () => rows,
         read: () => Redacted.make(KEY)
       },
       {
-        refresh: async () => {},
+        refresh: () => Effect.void,
         list: () => rows,
         read: () => {
           throw new Error(`keychain locked ${KEY}`)
@@ -270,4 +268,52 @@ test("ChatGPT Test uses subscription auth without inventing an output cap; expli
     failure: { code: "invalid", field: "protocol" }
   })
   expect(fetch).toHaveBeenCalledTimes(1)
+})
+
+// Inject a credential dependency with a typed failure and cooperative cancellation.
+test("credential refresh maps typed failure without leaking it", async () => {
+  const rows = [{ name: "LAB", origins: [ORIGIN], present: true, managed: true }]
+  const result = await Effect.runPromise(
+    createModelProbe({
+      env: {},
+      egress: true,
+      credentials: {
+        refresh: () => Effect.fail(new Error("private-keychain-error")),
+        list: () => rows,
+        read: () => Redacted.make(KEY)
+      },
+      fetch: sse(chunk({ content: "ok" }), chunk({}, "stop"), "data: [DONE]\n\n")
+    }).test(generator)
+  )
+  expect(result).toMatchObject({ ok: false, failure: { code: "unreachable" } })
+  expect(JSON.stringify(result)).not.toContain("private-keychain-error")
+})
+
+test("credential refresh is cancelled with its caller", async () => {
+  const rows = [{ name: "LAB", origins: [ORIGIN], present: true, managed: true }]
+  await Effect.runPromise(Effect.gen(function*() {
+    const started = yield* Deferred.make<void>()
+    const cancelled = yield* Deferred.make<void>()
+    const host = createModelProbe({
+      env: {},
+      egress: true,
+      credentials: {
+        refresh: () =>
+          Effect.andThen(Deferred.succeed(started, undefined), Effect.never).pipe(
+            Effect.ensuring(Deferred.succeed(cancelled, undefined))
+          ),
+        list: () => rows,
+        read: () => Redacted.make(KEY)
+      }
+    })
+    const fiber = yield* Effect.forkChild(host.test(generator))
+    // Race the start against completion so the old Promise contract fails without a timeout.
+    const began = yield* Effect.raceFirst(
+      Effect.as(Deferred.await(started), true),
+      Effect.as(Fiber.await(fiber), false)
+    )
+    expect(began).toBe(true)
+    yield* Fiber.interrupt(fiber)
+    expect(yield* Deferred.isDone(cancelled)).toBe(true)
+  }))
 })

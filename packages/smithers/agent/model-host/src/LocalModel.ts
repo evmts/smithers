@@ -14,7 +14,7 @@
 
 import { Evaluator, ModelError } from "@smthrs/model"
 import { AgentRoles, ConfiguredModel } from "@smthrs/rpc"
-import { Redacted } from "effect"
+import { type Effect, Redacted } from "effect"
 
 /**
  * Model values stay behind this host-only interface. Listing and planning
@@ -24,7 +24,7 @@ import { Redacted } from "effect"
  * @since 1.0.0-rc.0
  */
 export interface ModelCredentials {
-  readonly refresh: () => Promise<void>
+  readonly refresh: () => Effect.Effect<void, unknown>
   readonly list: () => ReadonlyArray<ConfiguredModel.ModelCredentialListing>
   readonly read: (name: string) => Redacted.Redacted<string> | undefined
 }

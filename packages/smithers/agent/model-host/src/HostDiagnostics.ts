@@ -24,7 +24,7 @@ import { Clock, Duration, Effect, Scope } from "effect"
 export const HOST_DIAGNOSTIC_MARKER = "smithers.chat-host-diagnostic/v1"
 
 /**
- * A diagnostic field value: counts, flags and short identifiers only.
+ * A diagnostic field value: approved counts, flags and protocol vocabulary only.
  *
  * @category models
  * @since 1.0.0-rc.0
@@ -50,19 +50,22 @@ export interface HostDiagnosticFields {
  */
 export interface HostDiagnostics {
   /**
-   * Records one instant of a turn's progress. A field that is not a finite
-   * number, a boolean or a short token, or that uses a key the record itself
-   * owns (`diagnostic`, `turnId`, `event`, `phase`, `atMillis`,
-   * `droppedFields`), is left out and counted in `droppedFields`.
+   * Records one instant of progress. Only named finite measurements, flags
+   * and approved protocol strings pass. Other fields, including reserved
+   * envelope keys, are omitted and counted in `droppedFields`. Unknown event
+   * and phase labels become `diagnostics` and `refused`, respectively.
    */
   readonly record: (event: string, phase: string, fields?: HostDiagnosticFields) => void
   /**
-   * Marks an operation started and returns its completion. Until that is
-   * called the operation is reported as pending at a fixed interval, so a
+   * Starts an observation in the caller's Effect runtime and returns its
+   * completion callback. Until completion it reports pending at a fixed interval, so a
    * request that never returns is visible before it is abandoned. Calls to
    * the completion after the first are ignored.
    */
-  readonly begin: (event: string, fields?: HostDiagnosticFields) => (outcome?: HostDiagnosticFields) => void
+  readonly begin: (
+    event: string,
+    fields?: HostDiagnosticFields
+  ) => Effect.Effect<(outcome?: HostDiagnosticFields) => void>
 }
 
 /**
@@ -94,14 +97,130 @@ export interface HostDiagnosticOptions {
   readonly limit?: number
 }
 
-// A field value is a count, a flag, or a short token. Spaces, slashes and
-// anything longer are refused, so prompt text, a header, a destination or a
-// credential cannot reach a log through this path by mistake.
+// Labels and string values are protocol vocabulary, never arbitrary tokens.
+// Character filtering cannot distinguish a credential from an identifier.
 const SAFE_TOKEN = /^[A-Za-z0-9_.:-]{1,64}$/
-
-// The keys every record owns. A field with one of these names is refused, so
-// no caller can forge the marker or move a record to another turn or event.
-const RESERVED_KEYS = new Set(["diagnostic", "turnId", "event", "phase", "atMillis", "droppedFields"])
+const EVENTS = new Set(["model_stream", "chat_callback", "host_runtime", "host_tools", "diagnostics"])
+const PHASES = new Set(["begin", "pending", "end", "first_event", "refused", "start", "offered", "prompt", "capped"])
+const MEASUREMENTS = new Set([
+  "failed",
+  "events",
+  "characters",
+  "settled",
+  "status",
+  "timedOut",
+  "batch",
+  "pendingMillis",
+  "elapsedMillis",
+  "commands",
+  "api",
+  "source",
+  "docs",
+  "account",
+  "replaced",
+  "instructionBytes",
+  "instructionLines",
+  "appended",
+  "appendedBytes",
+  "context",
+  "contextVersion",
+  "capabilities",
+  "limitations",
+  "messages",
+  "reusedSocket",
+  "connectBegan",
+  "connectEnded",
+  "connectFailed",
+  "lookupBegan",
+  "lookupEnded"
+])
+const STRING_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
+  kind: new Set([
+    "text",
+    "text-delta",
+    "thinking-delta",
+    "text-start",
+    "text-end",
+    "thinking-start",
+    "thinking-end",
+    "tool-call-start",
+    "tool-call-delta",
+    "tool-call-end",
+    "usage",
+    "settle"
+  ]),
+  step: new Set(["provider_started", "commit"]),
+  stage: new Set(["resolve", "stream"]),
+  transport: new Set(["none", "created", "sent", "responded", "received"]),
+  platform: new Set(["aix", "darwin", "freebsd", "linux", "openbsd", "sunos", "win32", "android"]),
+  arch: new Set([
+    "arm",
+    "arm64",
+    "ia32",
+    "loong64",
+    "mips",
+    "mipsel",
+    "ppc",
+    "ppc64",
+    "riscv64",
+    "s390",
+    "s390x",
+    "x64"
+  ]),
+  failure: new Set(["Interrupted", "Defect", "ModelFailure", "ModelError", "ResolveFailed", "StreamTooLarge"]),
+  providerCode: new Set([
+    "invalid_request",
+    "context_overflow",
+    "no_route",
+    "authentication",
+    "rate_limited",
+    "quota_exceeded",
+    "out_of_credit",
+    "content_policy",
+    "provider_internal",
+    "transport",
+    "call_timeout",
+    "invalid_provider_output",
+    "unknown"
+  ]),
+  connectCode: new Set([
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "ETIMEDOUT",
+    "ENETUNREACH",
+    "EHOSTUNREACH",
+    "UND_ERR_CONNECT_TIMEOUT"
+  ]),
+  lookupCode: new Set(["ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "EAI_NODATA", "ETIMEDOUT"]),
+  errorName: new Set([
+    "Error",
+    "TypeError",
+    "AbortError",
+    "ConnectTimeoutError",
+    "HeadersTimeoutError",
+    "BodyTimeoutError",
+    "SocketError",
+    "RequestAbortedError"
+  ]),
+  errorCode: new Set([
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "ETIMEDOUT",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_BODY_TIMEOUT",
+    "UND_ERR_SOCKET",
+    "ABORT_ERR"
+  ])
+}
+const safeString = (key: string, value: string): boolean =>
+  Object.hasOwn(STRING_VALUES, key) && STRING_VALUES[key]!.has(value) ||
+  key === "node" && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value) ||
+  key === "instructionSha" && /^[a-f0-9]{12}$/.test(value)
 
 /** Keeps the fields a record may carry and counts the ones it refused. */
 const safeFields = (fields: HostDiagnosticFields): {
@@ -111,17 +230,17 @@ const safeFields = (fields: HostDiagnosticFields): {
   const kept: Record<string, HostDiagnosticValue> = {}
   let dropped = 0
   for (const [key, value] of Object.entries(fields)) {
-    const safe = typeof value === "boolean" ||
-      (typeof value === "number" && Number.isFinite(value)) ||
-      (typeof value === "string" && SAFE_TOKEN.test(value))
-    if (safe && SAFE_TOKEN.test(key) && !RESERVED_KEYS.has(key)) kept[key] = value
+    const safe = MEASUREMENTS.has(key) && (typeof value === "boolean" ||
+          (typeof value === "number" && Number.isFinite(value))) ||
+      (typeof value === "string" && safeString(key, value))
+    if (safe) kept[key] = value
     else dropped += 1
   }
   return { kept, dropped }
 }
 
 /** The recorder a host that supplied no sink gets: nothing to write, so nothing to time. */
-const inert: HostDiagnostics = { record: () => {}, begin: () => () => {} }
+const inert: HostDiagnostics = { record: () => {}, begin: () => Effect.succeed(() => {}) }
 
 /**
  * Creates a bounded recorder. Nothing it writes names a host, header,
@@ -162,8 +281,8 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
       JSON.stringify({
         diagnostic: HOST_DIAGNOSTIC_MARKER,
         ...turn,
-        event,
-        phase,
+        event: EVENTS.has(event) ? event : "diagnostics",
+        phase: PHASES.has(phase) ? phase : "refused",
         atMillis: Math.round(clock() - started),
         ...kept,
         ...(dropped === 0 ? {} : { droppedFields: dropped })
@@ -172,33 +291,39 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
   }
   return {
     record: (event, phase, fields = {}) => emit(event, phase, fields),
-    begin: (event, fields = {}) => {
-      const openedAt = clock()
-      const count = (counts.get(event) ?? 0) + 1
-      counts.set(event, count)
-      // A turn commits a batch per model frame. Recording every one of them in
-      // full would bury the records that matter, so past the first few only a
-      // pending, slow or failed operation is reported.
-      const detailed = count <= detailLimit
-      if (detailed) emit(event, "begin", fields)
-      const fiber = Effect.runSync(Effect.forkIn(
-        Effect.forever(Effect.andThen(
-          runtime.clock.sleep(Duration.millis(pendingMillis)),
-          Effect.sync(() => emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) }))
-        )),
-        runtime.scope
-      ))
-      let settled = false
-      return (outcome = {}) => {
-        // A completion reached twice, say from a finalizer and a handler,
-        // still ends the operation once.
-        if (settled) return
-        settled = true
-        fiber.interruptUnsafe()
-        const elapsed = Math.round(clock() - openedAt)
-        if (detailed || elapsed >= slowMillis) emit(event, "end", { ...fields, ...outcome, elapsedMillis: elapsed })
-      }
-    }
+    begin: (event, fields = {}) =>
+      Effect.gen(function*() {
+        const openedAt = clock()
+        event = EVENTS.has(event) ? event : "diagnostics"
+        const count = (counts.get(event) ?? 0) + 1
+        counts.set(event, count)
+        // A turn commits a batch per model frame. Recording every one of them in
+        // full would bury the records that matter, so past the first few only a
+        // pending, slow or failed operation is reported.
+        const detailed = count <= detailLimit
+        if (detailed) emit(event, "begin", fields)
+        const fiber = yield* Effect.forkIn(
+          Effect.forever(Effect.andThen(
+            runtime.clock.sleep(Duration.millis(pendingMillis)),
+            Effect.sync(() => emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) }))
+          )),
+          runtime.scope
+        )
+        let settled = false
+        return (outcome: HostDiagnosticFields = {}) => {
+          // A completion reached twice, say from a finalizer and a handler,
+          // still ends the operation once.
+          if (settled) return
+          settled = true
+          fiber.interruptUnsafe()
+          const elapsed = Math.round(clock() - openedAt)
+          if (
+            detailed || elapsed >= slowMillis || outcome.timedOut === true ||
+            typeof outcome.status === "number" && (outcome.status === 0 || outcome.status >= 300) ||
+            outcome.failed === true
+          ) emit(event, "end", { ...fields, ...outcome, elapsedMillis: elapsed })
+        }
+      })
   }
 }
 

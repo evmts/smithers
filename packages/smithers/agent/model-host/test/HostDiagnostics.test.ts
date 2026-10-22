@@ -27,12 +27,8 @@ const waitFor = async (
   find: () => ReadonlyArray<Record<string, unknown>>,
   count = 1
 ): Promise<ReadonlyArray<Record<string, unknown>>> => {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    const found = find()
-    if (found.length >= count) return found
-    await new Promise((resolve) => setTimeout(resolve, 10))
-  }
-  throw new Error("the recorder wrote no such record")
+  await vi.waitFor(() => expect(find().length).toBeGreaterThanOrEqual(count))
+  return find()
 }
 
 describe("createHostDiagnostics", () => {
@@ -71,7 +67,7 @@ describe("createHostDiagnostics", () => {
     const diagnostics = createHostDiagnostics({ write: sink.write, clock: () => now, pendingMillis: 1_000 })
     vi.useFakeTimers()
     try {
-      const settle = diagnostics.begin("chat_callback", { step: "commit", batch: 1 })
+      const settle = Effect.runSync(diagnostics.begin("chat_callback", { step: "commit", batch: 1 }))
       now = 1_000
       await vi.advanceTimersByTimeAsync(1_000)
       now = 2_000
@@ -101,11 +97,11 @@ describe("createHostDiagnostics", () => {
       detailLimit: 1,
       slowMillis: 100
     })
-    diagnostics.begin("chat_callback", { batch: 1 })()
-    const quiet = diagnostics.begin("chat_callback", { batch: 2 })
+    Effect.runSync(diagnostics.begin("chat_callback", { batch: 1 }))()
+    const quiet = Effect.runSync(diagnostics.begin("chat_callback", { batch: 2 }))
     now = 10
     quiet()
-    const slow = diagnostics.begin("chat_callback", { batch: 3 })
+    const slow = Effect.runSync(diagnostics.begin("chat_callback", { batch: 3 }))
     now = 500
     slow()
     expect(sink.lines.map((line) => [line.phase, line.batch])).toEqual([
@@ -136,7 +132,7 @@ describe("createHostDiagnostics", () => {
     try {
       const diagnostics = createHostDiagnostics({ turnId: "turn", clock, pendingMillis: 1 })
       diagnostics.record("model_stream", "first_event", { kind: "text-delta" })
-      const settle = diagnostics.begin("chat_callback", { step: "commit" })
+      const settle = Effect.runSync(diagnostics.begin("chat_callback", { step: "commit" }))
       expect(vi.getTimerCount()).toBe(0)
       vi.advanceTimersByTime(10)
       settle({ status: 200 })

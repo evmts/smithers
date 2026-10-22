@@ -361,7 +361,6 @@ export const runModelTurn = <E>(
     if (event.type === "text-delta" || event.type === "thinking-delta") characters += event.text.length
     return visit(event)
   }
-  const endStream = diagnostics.begin("model_stream")
   // Writing a frame from inside this consumer stopped reading the provider's
   // response, and a commit the host issued in that state never answered:
   // production turn 2d851bdd attempted its first commit 1 ms after its first
@@ -382,22 +381,27 @@ export const runModelTurn = <E>(
   // attempt in seconds instead of accumulating a whole turn's response behind
   // it. The capacity and that deadline are one repair: neither holds alone.
   const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), { capacity: "unbounded" })
-  return Stream.runForEach(buffered, observe).pipe(
-    Effect.flatMap((): Effect.Effect<HeldToolCalls | undefined, ModelError.ModelError | E> => {
-      if (settled === undefined) {
-        return Effect.fail(
-          new ModelError.ModelError({
-            code: "invalid_provider_output",
-            message: "model stream ended without settlement"
-          })
+  return Effect.flatMap(diagnostics.begin("model_stream"), (endStream) =>
+    Stream.runForEach(buffered, observe).pipe(
+      Effect.flatMap((): Effect.Effect<HeldToolCalls | undefined, ModelError.ModelError | E> => {
+        if (settled === undefined) {
+          return Effect.fail(
+            new ModelError.ModelError({
+              code: "invalid_provider_output",
+              message: "model stream ended without settlement"
+            })
+          )
+        }
+        const total = addUsage(host?.usage, usage)
+        if (host !== undefined && settled.stopReason === "tool-calls" && held.length > 0) {
+          return Effect.succeed({ calls: held, usage: total })
+        }
+        return Effect.as(emit(doneFrame(turn.runId, settled, total)), undefined)
+      }),
+      Effect.onExit((exit) =>
+        Effect.sync(() =>
+          endStream({ events: consumed, characters, settled: settled !== undefined, failed: exit._tag === "Failure" })
         )
-      }
-      const total = addUsage(host?.usage, usage)
-      if (host !== undefined && settled.stopReason === "tool-calls" && held.length > 0) {
-        return Effect.succeed({ calls: held, usage: total })
-      }
-      return Effect.as(emit(doneFrame(turn.runId, settled, total)), undefined)
-    }),
-    Effect.ensuring(Effect.sync(() => endStream({ events: consumed, characters, settled: settled !== undefined })))
-  )
+      )
+    ))
 }

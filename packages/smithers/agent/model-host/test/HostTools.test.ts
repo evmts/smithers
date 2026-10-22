@@ -2193,8 +2193,10 @@ const FLOW_NEW_COMMAND_LINE =
 const screenRequest = (command: string): string =>
   `Requested /${command} on the author's screen. Their browser runs it; this host cannot see their screen, so never state what it shows or found.`
 
-const formOpen = (filled: string): string =>
-  `The "Create a new flow" form is open on the author's screen${filled}. Nothing is created until they press Submit: tell them the form is on their screen, and never ask them to type arguments.`
+const formRequest = (): string =>
+  `Requested the "Create a new flow" form on the author's screen with the supplied draft. ` +
+  "Their browser runs it; this host cannot see their screen or confirm it opened or populated the form. " +
+  "Nothing is created until they press Submit; never ask them to type arguments."
 
 /**
  * The screen-only flows (mvp.md Appendix B.1) a Cloud account conversation
@@ -2405,26 +2407,18 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
 
   test("flow.new asks the author's screen for the form with what the person said, and creates nothing", async () => {
     const said = "label new issues by area"
-    const cases: ReadonlyArray<readonly [string | undefined, Record<string, string>, string]> = [
-      [JSON.stringify({ description: said }), { description: said }, ", with description filled in"],
-      [said, { description: said }, ", with description filled in"],
-      [
-        JSON.stringify({ description: `  ${said} `, repo: null }),
-        { description: said },
-        ", with description filled in"
-      ],
-      [
-        JSON.stringify({ description: said, repo: "acme/app" }),
-        { description: said, repo: "acme/app" },
-        ", with description and repo filled in"
-      ],
-      [JSON.stringify({ repo: "acme/app" }), { repo: "acme/app" }, ", with repo filled in"],
-      [undefined, {}, ""],
-      ["  ", {}, ""],
-      ["{}", {}, ""],
-      [JSON.stringify({ description: "  " }), {}, ""]
+    const cases: ReadonlyArray<readonly [string | undefined, Record<string, string>]> = [
+      [JSON.stringify({ description: said }), { description: said }],
+      [said, { description: said }],
+      [JSON.stringify({ description: `  ${said} `, repo: null }), { description: said }],
+      [JSON.stringify({ description: said, repo: "acme/app" }), { description: said, repo: "acme/app" }],
+      [JSON.stringify({ repo: "acme/app" }), { repo: "acme/app" }],
+      [undefined, {}],
+      ["  ", {}],
+      ["{}", {}],
+      [JSON.stringify({ description: "  " }), {}]
     ]
-    for (const [args, draft, filled] of cases) {
+    for (const [args, draft] of cases) {
       const journal = producer((path) => file(path, JOURNEY))
       const provider = model([execute("flow.new", args)])
       await runWithDocs(account, provider, journal, PAGES)
@@ -2444,7 +2438,7 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
         verdict: "run",
         ui: { command: "flow.new", ...draft }
       })
-      expect(toolOutputs(provider)).toEqual([formOpen(filled)])
+      expect(toolOutputs(provider)).toEqual([formRequest()])
       // No API, no source: the request is the whole act.
       expect([journal.calls, journal.reads, journal.lists]).toEqual([[], [], []])
     }
@@ -2689,4 +2683,16 @@ test("Cloud form command prompt accounting", async () => {
     }) + "\n"
   )
   expect(toolNames(provider.requests[0])).toEqual(["commands"])
+})
+
+// The committed UI instruction has no browser completion receipt.
+test("form results acknowledge a request until browser completion exists", async () => {
+  const journal = producer((path) => file(path, JOURNEY))
+  const provider = model([execute("flow.new", JSON.stringify({ description: "label issues" }))])
+  await runWithDocs(account, provider, journal, PAGES)
+  const output = toolOutputs(provider)[0]!
+  expect(output).toContain("Requested")
+  expect(output).toContain("cannot see")
+  expect(output).not.toContain("form is open")
+  expect(output).not.toContain("filled in")
 })

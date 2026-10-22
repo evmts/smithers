@@ -195,16 +195,16 @@ export class DurableChatProducer {
     const url = new URL("/internal/chat/provider-started", this.callbackBaseUrl)
     url.searchParams.set("turnId", this.grant.turnId)
     url.searchParams.set("generation", String(this.grant.generation))
-    return Effect.suspend(() => {
+    return Effect.gen({ self: this }, function*() {
       // A callback this guest attempted is not the same fact as a connection a
       // worker observed: one says the host reached its own request, the other
       // only that something opened a tunnel.
-      const settle = this.diagnostics.begin("chat_callback", { step: "provider_started" })
+      const settle = yield* this.diagnostics.begin("chat_callback", { step: "provider_started" })
       const probe = this.transport.begin()
       const phase = phaseOnce(probe)
       let status = 0
       let timedOut = false
-      return bounded(
+      return yield* bounded(
         (deadlineSignal) =>
           Effect.tryPromise({
             try: (signal) =>
@@ -245,8 +245,15 @@ export class DurableChatProducer {
         // own log tells a bound that fired from a status the journal answered,
         // and reads the phase that bound fired in from the dispatcher's own
         // records rather than inferring it.
-        Effect.ensuring(
-          Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}), ...phase() }))
+        Effect.onExit((exit) =>
+          Effect.sync(() =>
+            settle({
+              status,
+              ...(exit._tag === "Failure" ? { failed: true } : {}),
+              ...(timedOut ? { timedOut: true } : {}),
+              ...phase()
+            })
+          )
         )
       )
     })
@@ -337,8 +344,8 @@ export class DurableChatProducer {
       expected,
       frames: [frame]
     })
-    const invoke = Effect.suspend(() => {
-      const settle = this.diagnostics.begin("chat_callback", { step: "commit", batch: expected.batch + 1 })
+    const invoke = Effect.gen({ self: this }, function*() {
+      const settle = yield* this.diagnostics.begin("chat_callback", { step: "commit", batch: expected.batch + 1 })
       const probe = this.transport.begin()
       const phase = phaseOnce(probe)
       let status = 0
@@ -347,7 +354,7 @@ export class DurableChatProducer {
       // that sends headers and then stops wedges a turn exactly as a journal
       // that never answers does, and the bound's signal closes that socket
       // rather than ending the turn around a half-read response.
-      return bounded(
+      return yield* bounded(
         (deadlineSignal) =>
           Effect.tryPromise({
             try: (signal) =>
@@ -375,8 +382,15 @@ export class DurableChatProducer {
         },
         phase
       ).pipe(
-        Effect.ensuring(
-          Effect.sync(() => settle({ status, ...(timedOut ? { timedOut: true } : {}), ...phase() }))
+        Effect.onExit((exit) =>
+          Effect.sync(() =>
+            settle({
+              status,
+              ...(exit._tag === "Failure" ? { failed: true } : {}),
+              ...(timedOut ? { timedOut: true } : {}),
+              ...phase()
+            })
+          )
         )
       )
     })
@@ -412,7 +426,17 @@ export class DurableChatProducer {
             this.cursor = reply.cursor
           },
           catch: () => new ReceiptMismatch({ message: "chat producer receipt did not extend the committed cursor" })
-        })
+        }).pipe(
+          Effect.tapError(() =>
+            Effect.sync(() =>
+              this.diagnostics.record("chat_callback", "refused", {
+                step: "commit",
+                batch: expected.batch + 1,
+                failed: true
+              })
+            )
+          )
+        )
       )
     )
   }

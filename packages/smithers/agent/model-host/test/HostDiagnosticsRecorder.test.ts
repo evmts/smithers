@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
 import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
 import { createHostDiagnostics } from "./diagnostics.ts"
@@ -40,7 +41,7 @@ describe("createHostDiagnostics record envelope", () => {
   test("an operation's completion records its end once", () => {
     const sink = collector()
     const diagnostics = createHostDiagnostics({ write: sink.write, clock: () => 0 })
-    const settle = diagnostics.begin("chat_callback")
+    const settle = Effect.runSync(diagnostics.begin("chat_callback"))
     settle()
     settle({ status: "late" })
     expect(sink.lines.map((line) => line.phase)).toEqual(["begin", "end"])

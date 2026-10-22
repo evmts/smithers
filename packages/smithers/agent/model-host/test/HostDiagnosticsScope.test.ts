@@ -19,7 +19,7 @@ describe("host diagnostics lifetime", () => {
           write: (line) => lines.push(JSON.parse(line)),
           pendingMillis: 100
         })
-        diagnostics.begin("callback")
+        yield* diagnostics.begin("chat_callback")
         yield* TestClock.adjust(100)
         expect(lines.filter((line) => line.phase === "pending")).toEqual([
           expect.objectContaining({ pendingMillis: 100 })

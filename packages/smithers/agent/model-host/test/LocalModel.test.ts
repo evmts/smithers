@@ -1,6 +1,6 @@
 import { Evaluator, ModelError } from "@smthrs/model"
 import type { ConfiguredModel } from "@smthrs/rpc"
-import { Redacted } from "effect"
+import { Effect, Redacted } from "effect"
 import { describe, expect, test } from "vitest"
 import {
   localModelCatalog,
@@ -22,7 +22,7 @@ const stored = (value: string | undefined): ModelCredentials => {
     managed: true
   }]
   return {
-    refresh: async () => {},
+    refresh: () => Effect.void,
     list: () => rows,
     read: (name) => name === "LAB" && value !== undefined ? Redacted.make(value) : undefined
   }
