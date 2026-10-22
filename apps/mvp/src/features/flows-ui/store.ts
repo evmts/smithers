@@ -3,6 +3,7 @@ import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract"
+import * as Following from "./following"
 import { roundExecutionId } from "./round"
 import { Draft, FlowRow } from "./schema"
 
@@ -35,7 +36,7 @@ export type Form = typeof Form.Type
 /** How often the shown draft's round is read again while the engine works or the drafts change. */
 export const FOLLOW_EVERY = Duration.millis(200)
 
-/** A run's status on this device's engine, or `absent` when the engine doesn't hold it (another device, or none) or can't be read. */
+/** A run's status on this device's engine, or `absent` when the engine doesn't hold it (another device, or none). */
 export const RoundStatus = Schema.Literals(["pending", "running", "suspended", "completed", "failed", "cancelled", "absent"])
 export type RoundStatus = typeof RoundStatus.Type
 
@@ -143,10 +144,11 @@ export class FlowsUiStore extends Context.Service<
     /** Reads the shown draft's round from this device's engine again. */
     readonly readRound: Effect.Effect<void>
     /**
-     * The first round from `round` on that this device's engine holds no run of, for `draftId`: what Draft again
-     * starts, so it never joins a run an earlier attempt left. An engine that can't be read holds none.
+     * What Draft again does after the draft's round `round`: start the first later round this device's engine holds
+     * no run of, skipping rounds whose runs here failed or stopped; nothing when a later round started here is still
+     * going or done but not delivered yet (`Pending`); or say the engine can't be read (`Unreadable`).
      */
-    readonly nextRound: (draftId: string, round: number) => Effect.Effect<number>
+    readonly nextRound: (draftId: string, round: number) => Effect.Effect<Following.NextRound>
   }
 >()("@smthrs/mvp/flows/FlowsUiStore") {
   /**
@@ -215,28 +217,28 @@ export class FlowsUiStore extends Context.Service<
           initialData: [{ id: ROUND, runId: null, status: "absent" }],
         })
 
-        /** How this engine holds `runId`: its status, or `absent` when it doesn't hold it or can't be read. */
+        /** How this engine holds `runId`: its status, `absent` when it doesn't hold it, or none when it can't be read. */
         const statusOf = (runId: string) =>
           engine.inspect(runId, { limit: 1 }).pipe(
-            Effect.map((inspection): RoundStatus => inspection.run.status),
-            Effect.orElseSucceed((): RoundStatus => "absent"),
+            Effect.map((inspection): Option.Option<RoundStatus> => Option.some(inspection.run.status)),
+            Effect.catch((failure) => Effect.succeed(Following.refusedRead(failure))),
           )
 
-        const readRound = Effect.gen(function* () {
-          const showing = Option.getOrThrow(yield* shown.get(SHOWN))
-          const draft = showing.draftId === null ? Option.none() : yield* drafts.get(showing.draftId)
-          const runId = Option.match(draft, { onNone: () => null, onSome: (row) => roundExecutionId(row.id, row.round) })
-          const status = runId === null ? "absent" : yield* statusOf(runId)
-          yield* round.update(ROUND, (row) => {
-            row.runId = runId
-            row.status = status
-          })
-        }).pipe(Effect.asVoid, Effect.orDie)
+        const readRound = Following.readRound({
+          shownRunId: Effect.gen(function* () {
+            const showing = Option.getOrThrow(yield* shown.get(SHOWN))
+            const draft = showing.draftId === null ? Option.none() : yield* drafts.get(showing.draftId)
+            return Option.match(draft, { onNone: () => null, onSome: (row) => roundExecutionId(row.id, row.round) })
+          }),
+          statusOf,
+          write: (runId, status) =>
+            Effect.asVoid(round.update(ROUND, (row) => {
+              row.runId = runId
+              row.status = status
+            })).pipe(Effect.orDie),
+        })
 
-        /** The first round from `round` on that this engine holds no run of. */
-        const nextRound = (draftId: string, from: number): Effect.Effect<number> =>
-          Effect.flatMap(statusOf(roundExecutionId(draftId, from)), (status) =>
-            status === "absent" ? Effect.succeed(from) : nextRound(draftId, from + 1))
+        const nextRound = (draftId: string, after: number) => Following.nextRound(statusOf, draftId, after)
 
         // Every batch of the engine's events for the shown draft, and every change of the drafts, reads the round again.
         yield* Stream.merge(

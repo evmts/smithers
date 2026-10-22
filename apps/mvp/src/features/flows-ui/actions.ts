@@ -123,25 +123,29 @@ export const answer = Effect.gen(function* () {
 })
 
 /**
- * Draft again: the shown draft's next round, from its request and what it drafted so far, at the first round from its
- * own that this device's engine holds no run of. Its card follows the new round once the engine has it.
+ * Draft again: the shown draft's next round, from its request and what it drafted so far, at the first round after its
+ * own that this device's engine holds no run of; a round already started here is left to run. Its card follows the
+ * new round once the device has its row.
  */
 export const draftAgain = Effect.gen(function* () {
   const shown = yield* shownDraft
   if (Option.isNone(shown)) return
   const { draft } = shown.value
   const store = yield* FlowsUiStore
-  const round = yield* store.nextRound(draft.id, draft.round)
+  const next = yield* store.nextRound(draft.id, draft.round)
+  // A round started here already, its row on the way: a second press starts nothing.
+  if (next._tag === "Pending") return
+  if (next._tag === "Unreadable") return yield* setShown({ refusal: "again_unavailable" })
   const flows = yield* FlowDispatch
   const admitted = yield* started((admitted) =>
     // `flow/new` names every draft it writes.
     flows.dispatch("flow/new", { name: draft.name!, request: draft.request }, {
       door: "button",
-      executionId: roundExecutionId(draft.id, round),
+      executionId: roundExecutionId(draft.id, next.round),
       admitted,
     })
   )
-  yield* admitted ? store.readRound : setShown({ refusal: "again_unavailable" })
+  if (!admitted) yield* setShown({ refusal: "again_unavailable" })
 })
 
 /** Delete: the draft `draftId`, its round stopped here; the list of flows opens once it is gone. */

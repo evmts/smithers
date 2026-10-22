@@ -30,9 +30,21 @@ export const warmList = Effect.flatMap(RunsStore, (store) => store.warmList)
 
 /** The list's route loader: shows the list, reusing a warm unless the engine has changed. */
 export const openList = Effect.gen(function* () {
-  yield* setView({ listOpen: true })
+  // The run page is left: an act still answering for it no longer moves or marks this tab.
+  yield* setView({ listOpen: true, actToken: null })
   yield* warmList
 })
+
+/**
+ * The run route's `onLeave` for `runId`: once the tab no longer shows that run, an act still answering for it (a late
+ * Retry) neither navigates nor marks the view, and the engine's events stop reading it. When another run's page opened
+ * first (Retry opening its new run), that page stays.
+ */
+export const closeRun = (runId: string) =>
+  Effect.gen(function* () {
+    const view = Option.getOrThrow(yield* (yield* RunsStore).view.get(VIEW))
+    if (view.runId === runId) yield* setView({ runId: null, acting: null, actToken: null, refusal: null })
+  })
 
 /** A run's route loader: shows `runId` with nothing selected, reads it, and follows it when it runs on Cloudflare. */
 export const openRun = (runId: string) =>

@@ -118,7 +118,7 @@ interface DraftRow {
 }
 
 /** The draft `id`, as the routes read it, or `undefined`. */
-const draftOf = (id: string) =>
+const draftOf = (id: string, lock: "lock" | "read" = "read") =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{
@@ -135,7 +135,7 @@ const draftOf = (id: string) =>
     }>`
       SELECT actor_id AS "actorId", status, round, request, name, files, checks, questions, flow_id AS "flowId",
         deleted_at IS NOT NULL AS deleted
-      FROM flow_drafts WHERE id = ${id}`
+      FROM flow_drafts WHERE id = ${id} ${lock === "lock" ? sql`FOR UPDATE` : sql``}`
     // The driver hands jsonb columns over parsed.
     return row === undefined ? undefined : {
       ...row,
@@ -239,23 +239,24 @@ export const saveRefusal = (draft: DraftRow, save: SaveRequest): string | undefi
 const nameTaken = (error: unknown) =>
   SqlError.isSqlError(error) && error.reason._tag === "UniqueViolation" && error.reason.constraint === "flows_owner_name"
 
-/** The flow a draft edits was deleted meanwhile: what rolls a save's transaction back. */
-const GONE = "gone" as const
-
 /**
  * Saves a ready draft as a flow, or the next revision of the flow it edits; marks the draft saved. One transaction,
- * which claims the draft first: a second save of the same draft waits for the first and then finds it saved
- * (`Claimed`), so a double Save makes one revision. A flow deleted meanwhile (`Gone`) rolls the claim back.
+ * which locks the draft first and checks the locked row again: a second save of the same draft waits for the first and
+ * then finds it saved (`Existing`), so a double Save makes one revision, and a round written meanwhile is what gets
+ * checked, so a save never marks a newer round saved with an older round's file (`Refused`). A flow deleted meanwhile
+ * is `Gone`, before anything is written.
  */
-const save = (actorId: string, request: SaveRequest, draft: DraftRow) =>
+const save = (actorId: string, request: SaveRequest) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
-      const [claimed] = yield* sql<{ readonly id: string }>`
-        UPDATE flow_drafts SET status = 'saved', updated_at = now()
-        WHERE id = ${request.draftId} AND status = 'ready' AND deleted_at IS NULL
-        RETURNING id`
-      if (claimed === undefined) return { _tag: "Claimed" as const }
+      // The route found the row, and a draft row is never removed: deletion only marks it.
+      const draft = (yield* draftOf(request.draftId, "lock"))!
+      if (draft.deleted) return { _tag: "Refused" as const, status: 404, code: "not_found" }
+      if (draft.status === "saved") return { _tag: "Existing" as const, draft }
+      // The request passed the route's own check, so what can refuse it now is the row that changed: a 409.
+      const refused = saveRefusal(draft, request)
+      if (refused !== undefined) return { _tag: "Refused" as const, status: 409, code: refused }
       let flowId: string
       let revision: number
       const placement = placementOf(request.source)
@@ -271,7 +272,7 @@ const save = (actorId: string, request: SaveRequest, draft: DraftRow) =>
             placement = ${placement}, updated_at = now()
           WHERE id = ${draft.flowId} AND owner_id = ${actorId} AND deleted_at IS NULL
           RETURNING revision`
-        if (row === undefined) return yield* Effect.fail(GONE)
+        if (row === undefined) return { _tag: "Gone" as const }
         flowId = draft.flowId
         revision = row.revision
       }
@@ -279,10 +280,10 @@ const save = (actorId: string, request: SaveRequest, draft: DraftRow) =>
         INSERT INTO flow_revisions (flow_id, revision, digest, source, created_by)
         VALUES (${flowId}, ${revision}, ${request.digest}, ${request.source}, ${actorId})`
       const [written] = yield* sql<{ readonly txid: string }>`
-        UPDATE flow_drafts SET flow_id = ${flowId}, updated_at = now() WHERE id = ${request.draftId}
+        UPDATE flow_drafts SET status = 'saved', flow_id = ${flowId}, updated_at = now() WHERE id = ${request.draftId}
         RETURNING pg_current_xact_id()::xid::text AS txid`
       return { _tag: "Saved" as const, flowId, name: request.name, revision, txid: Number(written!.txid) }
-    })).pipe(Effect.catchIf((error) => error === GONE, () => Effect.succeed({ _tag: "Gone" as const })))
+    }))
   })
 
 /** The flow and revision a saved draft became: what a repeated save answers. */
@@ -526,7 +527,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           fields.code = refused
           return refusal(refused === "too_large" ? 413 : 409, refused)
         }
-        const saved = yield* save(actor.subject.id, { ...saving, draftId: saving.draftId.toLowerCase() }, draft).pipe(
+        const saved = yield* save(actor.subject.id, { ...saving, draftId: saving.draftId.toLowerCase() }).pipe(
           Effect.catchIf(nameTaken, () => Effect.succeed({ _tag: "Taken" as const })),
         )
         if (saved._tag === "Taken") {
@@ -537,15 +538,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           fields.code = "gone"
           return refusal(409, "gone")
         }
-        if (saved._tag === "Claimed") {
-          // Another save of this draft got there first, or it stopped being ready meanwhile.
-          const now = yield* draftOf(saving.draftId.toLowerCase())
-          if (now!.status !== "saved") {
-            fields.code = "not_ready"
-            return refusal(409, "not_ready")
-          }
+        if (saved._tag === "Refused") {
+          // The draft changed between the first read and the lock: what it is now is refused.
+          fields.code = saved.code
+          return refusal(saved.status, saved.code)
+        }
+        if (saved._tag === "Existing") {
+          // Another save of this draft got there first.
           fields.existing = true
-          return ok({ ...(yield* savedOf(now!)), txid: null })
+          return ok({ ...(yield* savedOf(saved.draft)), txid: null })
         }
         fields.flowId = saved.flowId
         fields.revision = saved.revision

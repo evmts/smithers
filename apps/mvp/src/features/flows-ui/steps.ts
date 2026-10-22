@@ -318,10 +318,11 @@ export const remove = ({ flowId }: { readonly flowId: string }) =>
 export const removeDraft = ({ draftId }: { readonly draftId: string }) =>
   Effect.gen(function* () {
     const client = yield* FlowsClient
-    // Refused (gone, or not the person's): nothing this person can delete.
+    // Gone, or not the person's: nothing to delete. Any other refusal (signed out, say) fails the step.
     const draft = yield* client.draft(draftId).pipe(
       Effect.map(Option.some),
-      Effect.catchTag("@smthrs/mvp/flows/FlowsRefused", () => Effect.succeed(Option.none())),
+      Effect.catchTag("@smthrs/mvp/flows/FlowsRefused", (refused) =>
+        refused.status === 404 || refused.status === 403 ? Effect.succeed(Option.none()) : Effect.fail(refused)),
     )
     if (Option.isNone(draft)) return { deleted: false }
     // An id this engine doesn't hold is ignored; a stop the store couldn't record leaves a round whose write is refused.

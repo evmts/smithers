@@ -22,7 +22,9 @@ import { FlowAnswer, FlowDelete, FlowDraftDelete, FlowList, FlowNew, FlowRead, F
 import { DRAFT_ID_NAMESPACE } from "./contract"
 import { roundExecutionId, roundOf } from "./round"
 import { renderSource, SOURCE_PATH } from "./source"
-import { writeOutcome } from "./steps"
+import { FlowsClient } from "./api"
+import { FlowsRefused } from "./reference"
+import { removeDraft, writeOutcome } from "./steps"
 
 const runtime = testFile("flows_ui")
 
@@ -523,6 +525,33 @@ describe("flow/draft/delete", () => {
       payload: { draftId: crypto.randomUUID() },
     }))).toEqual(Exit.succeed({ deleted: false }))
   }, SLOW)
+})
+
+describe("removeDraft", () => {
+  /** `flow/draft/delete/remove` over a ChatApi that refuses reading the draft with `status`. */
+  const removing = (status: number) => {
+    const deleted: Array<string> = []
+    const client = Layer.succeed(FlowsClient)(FlowsClient.of({
+      draft: () => Effect.fail(new FlowsRefused({ status, code: "refused" })),
+      deleteDraft: (draftId: string) => Effect.sync(() => (deleted.push(draftId), true)),
+    } as unknown as FlowsClient["Service"]))
+    const exit = Effect.runPromise(Effect.exit(
+      removeDraft({ draftId: "d" }).pipe(Effect.provide(client)) as Effect.Effect<{ deleted: boolean }, unknown>,
+    ))
+    return { exit, deleted }
+  }
+
+  test("a draft gone or not the person's deletes nothing; any other refusal, such as signed out, fails the step", async () => {
+    for (const status of [403, 404]) {
+      const r = removing(status)
+      expect([status, await r.exit]).toEqual([status, Exit.succeed({ deleted: false })])
+      expect(r.deleted).toEqual([])
+    }
+    const signedOut = removing(401)
+    expect(await signedOut.exit).toMatchObject({ _tag: "Failure" })
+    expect(JSON.stringify(await signedOut.exit)).toContain('"status":401')
+    expect(signedOut.deleted).toEqual([])
+  })
 })
 
 describe("flow/list and flow/delete", () => {

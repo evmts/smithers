@@ -3,6 +3,7 @@ import type { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Effect, Layer } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import {
+  closeRun,
   inspectStep,
   more,
   openList,
@@ -49,6 +50,8 @@ export interface RunsActions {
   readonly warmList: () => Promise<void>
   readonly openList: () => Promise<void>
   readonly openRun: (runId: string) => Promise<void>
+  /** The run route's `onLeave` for `runId`. */
+  readonly closeRun: (runId: string) => void
   readonly scrub: (at: number | null) => void
   readonly inspectStep: (stepId: string) => void
   readonly showInspector: (open: boolean) => void
@@ -89,6 +92,7 @@ export class Runs extends Context.Service<Runs, { readonly queries: RunsQueries;
           warmList: () => promise(warmList),
           openList: () => promise(openList),
           openRun: (runId) => promise(openRun(runId)),
+          closeRun: (runId) => fork(closeRun(runId)),
           scrub: (at) => fork(scrub(at)),
           inspectStep: (stepId) => fork(inspectStep(stepId)),
           showInspector: (open) => fork(showInspector(open)),

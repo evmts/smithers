@@ -182,6 +182,7 @@ const runRoute = createRoute({
   path: "/app/runs/$runId",
   component: RunScreen,
   beforeLoad: (load) => enter(load, local, () => load.context.runs.actions.openRun(load.params.runId)),
+  onLeave: ({ context, params }) => context.runs.actions.closeRun(params.runId),
 })
 
 /**

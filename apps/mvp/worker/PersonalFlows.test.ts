@@ -295,41 +295,76 @@ describe("POST /api/flows/save", () => {
     expect(count!.n).toBe(1)
   })
 
-  test("a save that finds the draft no longer ready when it claims it is not_ready, and writes nothing", async () => {
-    const h = await open()
-    const draftId = crypto.randomUUID()
-    expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
-    // A newer round holds the draft's row, uncommitted, while the save reads it ready and then waits on its claim.
+  /**
+   * Saves `draftId` while a newer round, `newer`, holds the draft's row uncommitted: the save reads the old round, then
+   * waits on its lock until the newer round commits. Answers the save's status and body.
+   */
+  const saveAgainstNewerRound = async (h: Harness, draftId: string, newer: DraftWrite, deleted = false) => {
     let release!: () => void
     const released = new Promise<void>((resolve) => (release = resolve))
     let held!: () => void
     const holding = new Promise<void>((resolve) => (held = resolve))
-    const newer = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    const writing = runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql.withTransaction(Effect.gen(function* () {
-        yield* sql`UPDATE flow_drafts SET status = 'drafting', round = 1 WHERE id = ${draftId}`
+        yield* sql`
+          UPDATE flow_drafts SET status = ${newer.status}, round = ${newer.round},
+            files = ${JSON.stringify(newer.files)}::jsonb, checks = ${JSON.stringify(newer.checks)}::jsonb,
+            deleted_at = ${deleted ? new Date() : null}
+          WHERE id = ${draftId}`
         held()
         yield* Effect.promise(() => released)
       }))))
     await holding
-    const saving_ = send(h, "POST", "/api/flows/save", saving(draftId, "notes")).then(json)
+    const answer = send(h, "POST", "/api/flows/save", saving(draftId, "notes")).then(json)
     try {
-      // The save's claim waits on the newer round's row lock.
+      // The save's transaction waits on the newer round's row lock.
       await eventually(async () => {
         const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
           sql<{ readonly n: number }>`
             SELECT count(*)::int AS n FROM pg_stat_activity
-            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%UPDATE flow_drafts SET status = ''saved''%'`))
+            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FOR UPDATE%'`))
         return row!.n > 0
       }, 10_000)
     } finally {
       release()
-      await newer
+      await writing
     }
-    expect(await saving_).toEqual([409, { code: "not_ready" }])
-    expect(await draftRow(draftId)).toMatchObject({ status: "drafting", round: 1, flowId: null })
+    return answer
+  }
+
+  const noFlows = async () => {
     const [count] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
       sql<{ readonly n: number }>`SELECT count(*)::int AS n FROM flows`))
     expect(count!.n).toBe(0)
+  }
+
+  test("a save that finds the draft drafting a newer round once it holds it is not_ready, and writes nothing", async () => {
+    const h = await open()
+    const draftId = crypto.randomUUID()
+    expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
+    expect(await saveAgainstNewerRound(h, draftId, round("notes", { round: 1, status: "drafting", files: [], checks: [] })))
+      .toEqual([409, { code: "not_ready" }])
+    expect(await draftRow(draftId)).toMatchObject({ status: "drafting", round: 1, flowId: null })
+    await noFlows()
+  })
+
+  test("a save that finds the draft deleted once it holds it is not_found", async () => {
+    const h = await open()
+    const draftId = crypto.randomUUID()
+    expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
+    expect(await saveAgainstNewerRound(h, draftId, round("notes"), true)).toEqual([404, { code: "not_found" }])
+    await noFlows()
+  })
+
+  test("a save that finds a newer ready round with another file once it holds it is not_draft: the newer round stays ready", async () => {
+    const h = await open()
+    const draftId = crypto.randomUUID()
+    expect((await writeRound(h, draftId, round("notes"))).status).toBe(200)
+    const other = { path: SOURCE_PATH, text: skill("notes", "Summarize merged pull requests, newest first.") }
+    expect(await saveAgainstNewerRound(h, draftId, round("notes", { round: 1, files: [other] })))
+      .toEqual([409, { code: "not_draft" }])
+    expect(await draftRow(draftId)).toMatchObject({ status: "ready", round: 1, flowId: null })
+    await noFlows()
   })
 
   test("a draft that edits a flow saves its next revision under the same id", async () => {

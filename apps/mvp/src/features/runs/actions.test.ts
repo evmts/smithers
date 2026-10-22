@@ -93,6 +93,33 @@ test("a late retry stays on the run opened afterward", async () => {
   expect(t.navigated).toEqual([])
 })
 
+test("a late retry stays put once the person left the run page, for the list or another page", async () => {
+  // The list: opening it releases the act.
+  const listed = await setup()
+  const toList = listed.runtime.runPromise(actions.retry("pinned"))
+  await listed.runtime.runPromise(Deferred.await(listed.started))
+  await listed.runtime.runPromise(actions.openList)
+  await listed.runtime.runPromise(Deferred.succeed(listed.pending, { _tag: "Done", value: { runId: "retried" } }))
+  await toList
+  expect(listed.navigated).toEqual([])
+  // Another page: the run route's onLeave closes the run.
+  const left = await setup()
+  const elsewhere = left.runtime.runPromise(actions.retry("pinned"))
+  await left.runtime.runPromise(Deferred.await(left.started))
+  await left.runtime.runPromise(actions.closeRun("a"))
+  expect(await left.view()).toMatchObject({ runId: null, acting: null, actToken: null })
+  await left.runtime.runPromise(Deferred.succeed(left.pending, { _tag: "Done", value: { runId: "retried" } }))
+  await elsewhere
+  expect(left.navigated).toEqual([])
+})
+
+test("leaving a run whose page another run's already replaced keeps that page", async () => {
+  const t = await setup()
+  await t.runtime.runPromise(actions.openRun("b"))
+  await t.runtime.runPromise(actions.closeRun("a"))
+  expect((await t.view()).runId).toBe("b")
+})
+
 test("retry probes the engine past older retries missing from the bounded list", async () => {
   const t = await setup({ dispatch: Effect.succeed({ _tag: "Done", value: { runId: "retry:a:3/run" } }), exists: (id) => id === "retry:a:3/run" || id === "retry:a:3" ? Effect.fail(new BrowserEngine.RequestRefused({ request: "Inspect", error: "@smthrs/engine-store/RunNotFound" })) : Effect.succeed(inspection(id)) })
   await t.runtime.runPromise(actions.retry("current"))
