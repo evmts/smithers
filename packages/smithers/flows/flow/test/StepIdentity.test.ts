@@ -43,6 +43,17 @@ const randomName = (rand: () => number): string => {
 }
 
 describe("StepIdentity.allocationScope", () => {
+  it("reports malformed string idempotency as a typed SchemaError", () => {
+    const error = runSync(
+      StepIdentity.allocationScope({
+        kind: "action",
+        name: "a",
+        idempotency: "\ud800"
+      }).pipe(Effect.flip)
+    )
+    expect(Schema.isSchemaError(error)).toBe(true)
+  })
+
   it("fails with a typed SchemaError on uncanonical object idempotency", () => {
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic

@@ -88,6 +88,23 @@ describe("Action.CacheEnvironment", () => {
 })
 
 describe("Action.idempotencyKey", () => {
+  effect("preserves explicit parent identity across attempts, including an empty scope", () =>
+    Effect.gen(function*() {
+      const derive = (parentScope: string, attempt: number, includeAttempt = true) =>
+        Action.idempotencyKey("offer", {
+          parentScope,
+          includeAttempt
+        }).pipe(
+          Effect.provideService(Action.CurrentAttempt, attempt),
+          Effect.provideService(FlowRuntime.FlowInstance, makeInstance(Host, "attempt-parent-regression"))
+        )
+      for (const parentScope of ["queue:parent", ""]) {
+        expect(yield* derive(parentScope, 1)).toBe(yield* derive(parentScope, 2))
+        expect(yield* derive(parentScope, 1)).toBe(yield* derive(parentScope, 1, false))
+        expect(yield* derive(parentScope, 1, false)).toBe(yield* derive(parentScope, 2, false))
+      }
+    }))
+
   const withInstance = <A, E>(effect: Effect.Effect<A, E, FlowRuntime.FlowInstance | Crypto.Crypto>) =>
     Effect.provideService(effect, FlowRuntime.FlowInstance, makeInstance(Host, "internal-keys"))
 

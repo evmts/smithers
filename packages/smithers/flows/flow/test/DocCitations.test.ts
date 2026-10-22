@@ -18,6 +18,17 @@ const sourceFiles = (dir: string): ReadonlyArray<string> =>
   })
 
 describe("doc citations in comments", () => {
+  it("documents allocationScope's actual typed failure contract", () => {
+    const source = readFileSync(join(packageRoot, "src/Action/StepIdentity.ts"), "utf8")
+    const documentation = source.slice(
+      source.indexOf(" * Derives the ordinal allocation scope"),
+      source.indexOf("export const allocationScope")
+    )
+    expect(documentation).not.toContain("first overload")
+    expect(documentation).not.toContain("are total")
+    expect(documentation).toContain("SchemaError")
+  })
+
   it("resolve to pages that exist in the package", () => {
     const stranded: Array<string> = []
     for (const file of [...sourceFiles(join(packageRoot, "src")), ...sourceFiles(join(packageRoot, "test"))]) {

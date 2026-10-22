@@ -16,6 +16,8 @@ import * as StepIdentity from "./StepIdentity.ts"
  * Computes a run-local invocation key for an internal durable operation.
  *
  * The caller name separates durable declarations that share a parent scope.
+ * An explicit parent scope takes precedence over `includeAttempt`; changing
+ * that precedence would change persisted keys and their ordinal allocation.
  *
  * @category idempotency
  * @since 0.1.0
@@ -48,8 +50,7 @@ export const idempotencyKey: (
       : options?.includeAttempt
       ? `attempt:${attempt}`
       : undefined
-    // String (or absent) idempotency input keeps the derivation total
-    // (issue #151): schema decoding preserves typed identity failures while
+    // Invalid identity material is a defect at this internal-operation boundary;
     // injected cryptography keeps key construction platform-independent.
     const scope = yield* StepIdentity.allocationScope({
       kind: "internal",

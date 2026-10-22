@@ -140,3 +140,20 @@ has to be re-keyed.
   scope, and the three declarations a shareable result needs.
 - [Suspension and replay](./suspension-and-replay.md): what a replay actually
   does with these keys.
+
+### Internal attempts and external writes
+
+`Action.idempotencyKey(name, { parentScope, includeAttempt: true })` uses the
+explicit parent scope, which takes precedence over the attempt, including when
+the scope is an empty string. Without an explicit parent, `includeAttempt`
+scopes the key by the current attempt. Both the key preimage and ordinal
+allocation preserve existing persisted identities. `StepIdentity.allocationScope` declares a typed
+`SchemaError` channel for all forms: object canonicalization and string hashing
+can reject invalid input.
+
+`Action.once` serializes same-key writes within one module instance. A lookup
+may adopt an existing object without waiting for an active writer to answer. Separate
+processes require provider-enforced atomic idempotency or host fencing; marker
+lookup alone does not make a distributed create atomic. Waiting fibers and
+failed calls release their coordination entries. Write names may contain
+payload paths, so spans and logs record only the outcome, never the name or key.

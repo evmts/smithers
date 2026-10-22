@@ -26,6 +26,7 @@ import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as Semaphore from "effect/Semaphore"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
 import { CurrentInvocationKey } from "./Context.ts"
 
@@ -42,6 +43,10 @@ import { CurrentInvocationKey } from "./Context.ts"
  *   budget, or an object it cannot read.
  *
  * Both make one request each; the step's retry policy is the only retry.
+ * Concurrent calls for one key are serialized within this module instance.
+ * Across processes, `perform` must enforce the key atomically at the provider,
+ * or the host must fence writers. A marker alone cannot prevent two remote
+ * writers from both observing an absent object and creating it.
  *
  * @category models
  * @since 1.0.0
@@ -101,6 +106,29 @@ export const effects = Metric.counter("flows_effects", {
 
 const PREIMAGE = "smithers/effect/v1"
 
+// Retain an entry until both its holder and every waiter have released it.
+// Results stay at the provider: a later call always verifies the marker again.
+const writes = new Map<string, { readonly semaphore: Semaphore.Semaphore; users: number }>()
+
+const withWrite = <A, E, R>(key: string, body: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      let entry = writes.get(key)
+      if (entry === undefined) {
+        entry = { semaphore: Semaphore.makeUnsafe(1), users: 0 }
+        writes.set(key, entry)
+      }
+      entry.users++
+      return entry
+    }),
+    (entry) => entry.semaphore.withPermit(body),
+    (entry) =>
+      Effect.sync(() => {
+        entry.users--
+        if (entry.users === 0) writes.delete(key)
+      })
+  )
+
 /**
  * The key of write `name` in the dispatch running now: 64 lowercase hex of
  * SHA-256 over the version, the execution id, the dispatch's
@@ -152,13 +180,13 @@ export interface OnceOptions {
   readonly key?: string | undefined
 }
 
-const record = (name: string, outcome: EffectOutcome) =>
+const record = (outcome: EffectOutcome) =>
   Effect.andThen(
     Metric.update(Metric.withAttributes(effects, { outcome }), 1),
     Effect.annotateCurrentSpan({ "smithers.effect.outcome": outcome })
   ).pipe(
     Effect.andThen(
-      Effect.logDebug("Action.once").pipe(Effect.annotateLogs({ effect: name, outcome }))
+      Effect.logDebug("Action.once").pipe(Effect.annotateLogs({ outcome }))
     )
   )
 
@@ -213,21 +241,35 @@ export const once = <A, E, R>(
 ): Effect.Effect<A, E, R> =>
   Effect.gen(function*() {
     const key = options?.key ?? (yield* effectKey(name))
-    const earlier = yield* effect.find(key)
-    if (Option.isSome(earlier)) {
-      yield* record(name, "adopted")
-      return earlier.value
+    // Adoption is read-only and must not wait for a dead incarnation's writer.
+    // A miss still enters the gate and checks again before creating anything.
+    if (writes.has(key)) {
+      const earlier = yield* effect.find(key)
+      if (Option.isSome(earlier)) {
+        yield* record("adopted")
+        return earlier.value
+      }
     }
-    const made = yield* Effect.result(effect.perform(key))
-    if (made._tag === "Success") {
-      yield* record(name, "performed")
-      return made.success
-    }
-    const landed = yield* Effect.result(effect.find(key))
-    if (landed._tag === "Success" && Option.isSome(landed.success)) {
-      yield* record(name, "adopted_after_failure")
-      return landed.success.value
-    }
-    yield* record(name, "failed")
-    return yield* Effect.fail(made.failure)
-  }).pipe(Effect.withSpan("Action.once", { attributes: { "smithers.effect.name": name } }))
+    return yield* withWrite(
+      key,
+      Effect.gen(function*() {
+        const earlier = yield* effect.find(key)
+        if (Option.isSome(earlier)) {
+          yield* record("adopted")
+          return earlier.value
+        }
+        const made = yield* Effect.result(effect.perform(key))
+        if (made._tag === "Success") {
+          yield* record("performed")
+          return made.success
+        }
+        const landed = yield* Effect.result(effect.find(key))
+        if (landed._tag === "Success" && Option.isSome(landed.success)) {
+          yield* record("adopted_after_failure")
+          return landed.success.value
+        }
+        yield* record("failed")
+        return yield* Effect.fail(made.failure)
+      })
+    )
+  }).pipe(Effect.withSpan("Action.once"))

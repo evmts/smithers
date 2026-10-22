@@ -9,7 +9,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Effect, Exit, Layer, Metric, Option, Schema, Tracer } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Logger, Metric, Option, References, Schema, Tracer } from "effect"
 import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
 
@@ -166,6 +166,147 @@ describe("Action.effectKey", () => {
 })
 
 describe("Action.once", () => {
+  it.effect("adopts a committed write while its original writer never answers", () =>
+    Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const objects = new Map<string, string>()
+      const adapter = Action.keyed({
+        find: (key: string) => Effect.sync(() => Option.fromUndefinedOr(objects.get(key))),
+        perform: (key: string) =>
+          Effect.gen(function*() {
+            objects.set(key, "committed")
+            yield* Deferred.succeed(entered, undefined)
+            return yield* Effect.never
+          })
+      })
+      const writer = yield* Effect.forkChild(Action.once("private", adapter, { key: "dead-writer" }))
+      yield* Deferred.await(entered)
+      expect(yield* Action.once("private", adapter, { key: "dead-writer" })).toBe("committed")
+      expect(objects.size).toBe(1)
+      yield* Fiber.interrupt(writer)
+    }))
+
+  it.effect("queues an absent marker behind its writer and rechecks after release", () =>
+    Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const looked = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      let made: string | undefined
+      let finds = 0
+      let performs = 0
+      const adapter = Action.keyed({
+        find: () =>
+          Effect.gen(function*() {
+            finds++
+            if (finds === 2) yield* Deferred.succeed(looked, undefined)
+            return Option.fromUndefinedOr(made)
+          }),
+        perform: () =>
+          Effect.gen(function*() {
+            performs++
+            yield* Deferred.succeed(entered, undefined)
+            yield* Deferred.await(release)
+            made = "one"
+            return made
+          })
+      })
+      const first = yield* Effect.forkChild(Action.once("queued", adapter, { key: "queued-marker" }))
+      yield* Deferred.await(entered)
+      const second = yield* Effect.forkChild(Action.once("queued", adapter, { key: "queued-marker" }))
+      yield* Deferred.await(looked)
+      // Let the second fiber enter the permit queue before releasing the writer.
+      yield* Effect.yieldNow
+      yield* Deferred.succeed(release, undefined)
+      expect(yield* Fiber.join(first)).toBe("one")
+      expect(yield* Fiber.join(second)).toBe("one")
+      expect(performs).toBe(1)
+      expect(finds).toBe(3)
+    }))
+
+  it.effect("serializes concurrent marker-based writes for the same key", () =>
+    Effect.gen(function*() {
+      const objects: Array<{ key: string; id: number }> = []
+      const adapter = Action.keyed({
+        find: (key: string) =>
+          Effect.sync(() => Option.fromUndefinedOr(objects.find((o) => o.key === key))).pipe(
+            Effect.tap(() => Effect.yieldNow)
+          ),
+        perform: (key: string) =>
+          Effect.sync(() => {
+            const object = { key, id: objects.length }
+            objects.push(object)
+            return object
+          })
+      })
+      const results = yield* Effect.all([
+        Action.once("marker", adapter, { key: "concurrent-marker" }),
+        Action.once("marker", adapter, { key: "concurrent-marker" })
+      ], { concurrency: "unbounded" })
+      expect(objects).toHaveLength(1)
+      expect(results[0]).toEqual(results[1])
+    }))
+
+  it.effect("allows unrelated keys to progress while a writer is blocked", () =>
+    Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const blocked = Action.keyed({
+        find: () => Effect.succeed(Option.none<string>()),
+        perform: () =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as("first")
+          )
+      })
+      const first = yield* Effect.forkChild(Action.once("first", blocked, { key: "blocked-key" }))
+      yield* Deferred.await(entered)
+      expect(yield* Action.once("other", write(provider(), "other"), { key: "other-key" })).toBe("other")
+      yield* Deferred.succeed(release, undefined)
+      expect(yield* Fiber.join(first)).toBe("first")
+    }))
+
+  it.effect("releases the key when its writer is interrupted", () =>
+    Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const first = yield* Effect.forkChild(Action.once(
+        "cancelled",
+        Action.keyed({
+          find: () => Effect.succeed(Option.none<string>()),
+          perform: () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+        }),
+        { key: "cancelled-key" }
+      ))
+      yield* Deferred.await(entered)
+      yield* Fiber.interrupt(first)
+      expect(yield* Action.once("recovered", write(provider(), "made"), { key: "cancelled-key" })).toBe("made")
+    }))
+
+  it.effect("keeps payload-derived names out of spans and logs", () =>
+    Effect.gen(function*() {
+      const name = "comment/private/customer.txt"
+      const spans: Array<Tracer.NativeSpan> = []
+      const logs: Array<unknown> = []
+      yield* Action.once(name, write(provider(), "made"), { key: "private-key" }).pipe(
+        Effect.provideService(
+          Tracer.Tracer,
+          Tracer.make({
+            span(options) {
+              const span = new Tracer.NativeSpan(options)
+              spans.push(span)
+              return span
+            }
+          })
+        ),
+        Effect.provide(Logger.layer([Logger.make((entry) => {
+          logs.push(Logger.formatStructured.log(entry))
+        })])),
+        Effect.provideService(References.MinimumLogLevel, "Debug")
+      )
+      expect(spans).toHaveLength(1)
+      expect(logs).toHaveLength(1)
+      expect(JSON.stringify({ spans: spans.map((s) => [...s.attributes]), logs })).not.toContain(name)
+    }))
+
   /** Runs `once` inside one dispatch of `Writer`, against `p`. */
   const run = (p: Provider, text = "made") =>
     Effect.gen(function*() {
@@ -201,7 +342,7 @@ describe("Action.once", () => {
     })
 
   effect(
-    "writes when nothing was made, and labels the span with the name and outcome, never the key",
+    "writes when nothing was made, and labels the span with only the outcome",
     () =>
       Effect.gen(function*() {
         const p = provider()
@@ -211,7 +352,6 @@ describe("Action.once", () => {
         expect(counts).toEqual({ performed: 1, adopted: 0, adopted_after_failure: 0, failed: 0 })
         expect(once).toHaveLength(1)
         expect(Object.fromEntries(once[0]!.attributes)).toEqual({
-          "smithers.effect.name": "w",
           "smithers.effect.outcome": "performed"
         })
         const [key] = [...p.made.keys()]

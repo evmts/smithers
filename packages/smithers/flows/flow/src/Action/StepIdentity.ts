@@ -174,8 +174,9 @@ export interface AllocationIdentity {
  * The object form is caller-owned material, so it can carry values canonical
  * serialization rejects (`Date`, `undefined`, class instances, `Redacted`);
  * the failure surfaces as the typed `SchemaError` (issue #151), never
- * as a thrown defect. The string and absent forms
- * are total — the first overload keeps their error channel `never`.
+ * as a thrown defect. String hashing can also fail validation, for example
+ * on malformed UTF-16. All forms share the declared `SchemaError` channel;
+ * there is no separate never-error overload.
  *
  * @since 0.1.0
  * @category derivations
