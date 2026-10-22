@@ -32,9 +32,12 @@ export const openBranchPage = async (
       await presence.actions.at(editing === undefined ? { view: "code", path: params._splat ?? "" } : { view: "edit", path: editing }, signal)
       return
     }
-    const terminalId = await terminal.actions.show(branchId, search.terminal === "me" ? undefined : search.terminal, signal)
-    if (signal.aborted) return
-    await presence.actions.at({ view: "terminal", terminalId }, signal)
+    terminal.actions.showInBackground(
+      branchId,
+      search.terminal === "me" ? undefined : search.terminal,
+      (terminalId) => signal.aborted ? Promise.resolve() : presence.actions.at({ view: "terminal", terminalId }, signal),
+      signal,
+    )
   } catch (error) {
     if (!signal.aborted) throw error
   }

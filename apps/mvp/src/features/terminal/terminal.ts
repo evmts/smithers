@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, FiberHandle, Layer, Scope } from "effect"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { AuthStore } from "../auth/store"
 import { attach, detach, input, open, resize, show, type Sink } from "./actions"
@@ -22,6 +22,8 @@ export interface TerminalActions {
    * terminal it shows, if any. A route may cancel a pending show with `signal`.
    */
   readonly show: (branchId: string | null, watching?: string, signal?: AbortSignal) => Promise<string | null>
+  /** Selects the panel without waiting for rows; a later show, route abort or store close cancels it. */
+  readonly showInBackground: (branchId: string, watching: string | undefined, shown: (terminalId: string | null) => Promise<void>, signal?: AbortSignal) => void
   /** Open terminal. */
   readonly open: () => void
   /** Attaches the frame's output to terminal `terminalId`; the function it returns detaches it. */
@@ -40,10 +42,22 @@ export class Terminal extends Context.Service<
     const context = yield* Effect.context<TerminalStore | AuthStore | FlowDispatch>()
     const run = Effect.runSyncWith(context)
     const runAsync = Effect.runPromiseWith(context)
+    const showing = yield* FiberHandle.make<void, never>().pipe(Scope.provide(store.scope))
+    const runShowing = yield* FiberHandle.runtime(showing)<TerminalStore | AuthStore | FlowDispatch>()
     return Terminal.of({
       queries: { panel: store.panelState.tanstack, tabs: store.tabsState.tanstack },
       actions: {
-        show: (branchId, watching, signal) => runAsync(show(branchId, watching), { signal }),
+        show: (branchId, watching, signal) => runAsync(Effect.andThen(FiberHandle.clear(showing), show(branchId, watching)), { signal }),
+        showInBackground: (branchId, watching, shown, signal) => {
+          if (signal?.aborted) return
+          runShowing(
+            show(branchId, watching).pipe(
+              Effect.flatMap((terminalId) => Effect.tryPromise(() => shown(terminalId))),
+              Effect.catchCause(() => Effect.logError("terminal.show.failed")),
+            ),
+            { signal },
+          )
+        },
         open: () => void runAsync(open),
         attach: (terminalId, sink) => {
           run(attach(terminalId, sink))

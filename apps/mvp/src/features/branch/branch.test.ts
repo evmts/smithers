@@ -385,7 +385,11 @@ describe("leaving a branch navigation", () => {
       } },
     })
     const delayedTerminal = Terminal.of({ ...terminal, actions: { ...terminal.actions,
-      show: (...args) => stage === "terminal" ? delay(terminal.actions.show(...args)) : terminal.actions.show(...args),
+      showInBackground: (id, watching, shown, signal) => terminal.actions.showInBackground(
+        id, watching,
+        (terminalId) => stage === "terminal" ? delay(Promise.resolve(terminalId)).then(shown) : shown(terminalId),
+        signal,
+      ),
     } })
     const controller = new AbortController()
     const opening = openBranchPage(faulty, delayedTerminal, controller.signal,
@@ -466,4 +470,56 @@ test("cancelling a room join while the previous connection is closing cannot rej
   await leaving
   expect(await settled).toBe("interrupted")
   expect(await tab.runtime.runPromise(store.room.toArray)).toMatchObject([{ branchId: null, status: "idle" }])
+}, WITHIN)
+
+
+test("a branch page handles missing branches, editor locations, aborts and action failures", async () => {
+  const tab = await open()
+  const branch = await tab.runtime.runPromise(Effect.service(Branch))
+  const terminal = await tab.runtime.runPromise(Effect.service(Terminal))
+  const presence = await tab.runtime.runPromise(Effect.service(PresenceStore))
+  terminal.queries.panel.startSyncImmediate()
+  const params = { owner: "octo", repo: "hello", ref: "feature/one" }
+  const absent = { owner: "", repo: "", ref: "" }
+  await openBranchPage(branch, terminal, AbortSignal.abort(), params, {})
+  expect(tab.current()).toMatchObject(none)
+
+  await openBranchPage(branch, terminal, new AbortController().signal, absent, {})
+  expect(terminal.queries.panel.toArray[0]).toMatchObject({ branchId: null, phase: "idle" })
+  expect(await tab.runtime.runPromise(Ref.get(presence.where))).toBeNull()
+
+  // The real terminal clears its panel, but the route is cancelled before its answer arrives.
+  const abortAfterShow = (controller: AbortController) => Terminal.of({
+    ...terminal,
+    actions: { ...terminal.actions, show: async (...args) => {
+      const answer = await terminal.actions.show(...args)
+      controller.abort()
+      return answer
+    } },
+  })
+  for (const of of [absent, params]) {
+    const controller = new AbortController()
+    await openBranchPage(branch, abortAfterShow(controller), controller.signal, of, {})
+    expect(controller.signal.aborted).toBe(true)
+    expect(await tab.runtime.runPromise(Ref.get(presence.where))).toBeNull()
+  }
+
+  await openBranchPage(branch, terminal, new AbortController().signal, params, {})
+  expect(await tab.runtime.runPromise(Ref.get(presence.where))).toEqual({ view: "code", path: "" })
+  await openBranchPage(branch, terminal, new AbortController().signal, params, { edit: "README.md" })
+  expect(await tab.runtime.runPromise(Ref.get(presence.where))).toEqual({ view: "edit", path: "README.md" })
+
+  const failure = new Error("branch action failed")
+  const failing = Branch.of({ ...branch, actions: { ...branch.actions,
+    open: () => tab.runtime.runPromise(Effect.fail(failure)),
+  } })
+  await expect(openBranchPage(failing, terminal, new AbortController().signal, params, {})).rejects.toBe(failure)
+  const controller = new AbortController()
+  const cancelled = Branch.of({ ...branch, actions: { ...branch.actions,
+    open: () => tab.runtime.runPromise(Effect.andThen(Effect.sync(() => controller.abort()), Effect.fail(failure))),
+  } })
+  await expect(openBranchPage(cancelled, terminal, controller.signal, params, {})).resolves.toBeUndefined()
+  await branch.presence.actions.leave()
+  await branch.coedit.actions.hideFiles()
+  await terminal.actions.show(null)
 }, WITHIN)

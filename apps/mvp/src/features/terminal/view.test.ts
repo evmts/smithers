@@ -28,6 +28,14 @@ describe("panelViewOf", () => {
     expect(panelViewOf(panel({ branchId: null }), [], true)).toBeUndefined()
   })
 
+  test("unknown rows keep the screen with neither Open terminal nor No terminals, even with previous tabs", () => {
+    for (const canOpen of [true, false]) {
+      expect(panelViewOf(panel({ phase: "loading" }), [tab()], canOpen)).toEqual({
+        badge: undefined, open: undefined, screen: { kind: "empty", text: undefined },
+      })
+    }
+  })
+
   // The branch terminal's recordings showed a small button over a blank page, then seconds of nothing while the
   // machine woke (Will, 2026-10-20): the screen is always there, with Open terminal in its middle.
   test("an editor without a terminal gets Open terminal in the screen; disabled with a spinner while the machine wakes", () => {

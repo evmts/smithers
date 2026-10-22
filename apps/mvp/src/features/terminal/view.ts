@@ -41,6 +41,7 @@ export const panelViewOf = (
   canOpen: boolean,
 ): PanelView | undefined => {
   if (panel === undefined || panel.branchId === null) return undefined
+  if (panel.phase === "loading") return { badge: undefined, open: undefined, screen: { kind: "empty", text: undefined } }
   const badge = BADGES[panel.phase]
   const offered = canOpen && (panel.phase === "opening" || !tabs.some((tab) => tab.mine))
   const open = !offered ? undefined : panel.phase === "opening" ? "opening" : "button"

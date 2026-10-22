@@ -1,5 +1,5 @@
 import { TerminalSocket } from "@smthrs/platform-browser"
-import { Clock, Effect, FiberHandle, Metric, Option, Ref, Stream } from "effect"
+import { Cause, Clock, Effect, FiberHandle, Metric, Option, Ref, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, terminalSocketRoute } from "./contract"
@@ -83,9 +83,24 @@ export const show = (branchId: string | null, watching?: string) =>
       yield* setPanel({ branchId: null, terminalId: null, phase: "idle", access: null })
       return null
     }
+    yield* mirrorTabs([])
+    yield* setPanel({ branchId, terminalId: null, phase: "loading", access: null })
     const terminals = yield* store.terminals(branchId)
-    // The branch's rows first, so the panel never offers Open terminal for one that is open.
-    yield* terminals.preload.pipe(Effect.timeoutOption("10 seconds"), Effect.ignore)
+    // Rows load behind the screen, so navigation never waits or offers a duplicate terminal while they are unknown.
+    const startedAt = yield* Clock.currentTimeMillis
+    const loaded = yield* terminals.preload.pipe(
+      Effect.onExit((exit) => Effect.gen(function* () {
+        const fields = {
+          preloadMs: (yield* Clock.currentTimeMillis) - startedAt,
+          rowCount: (yield* terminals.toArray).length,
+          outcome: exit._tag === "Success" ? "ready" : Cause.hasInterrupts(exit.cause) ? "cancelled" : "failed",
+        }
+        yield* Effect.annotateCurrentSpan(fields)
+        yield* Effect.logInfo("terminal.show").pipe(Effect.annotateLogs(fields))
+      })),
+      Effect.option,
+    )
+    if (Option.isNone(loaded)) return null
     const rows = yield* terminals.toArray
     yield* mirrorTabs(rows)
     const pick = (rows: ReadonlyArray<TerminalRow>) =>
@@ -95,9 +110,8 @@ export const show = (branchId: string | null, watching?: string) =>
         yield* setPanel({ branchId, terminalId: shown.id, phase: shown.status === "open" ? "connecting" : phaseOf(shown), access: null })
         if (shown.status === "opening") yield* Effect.forkIn(awaitOpen(branchId, shown.id, undefined), store.scope)
       })
-    // The tabs follow the rows. A panel that found nothing to show, because the branch had no live terminal or its rows
-    // came after the preload's deadline (a reload on a loaded machine), shows the first that turns up, so the Terminal
-    // view is never left blank beside a live terminal.
+    // Tabs follow the live rows. A branch with no live terminal selects the first that turns up after its initial
+    // sync, so the screen follows terminals opened later too.
     yield* FiberHandle.run(
       store.follower,
       terminals.changes().pipe(Stream.runForEach(() =>
@@ -116,7 +130,7 @@ export const show = (branchId: string | null, watching?: string) =>
     if (shown === undefined) yield* setPanel({ branchId, terminalId: null, phase: "idle", access: null })
     else yield* showRow(shown)
     return shown?.id ?? null
-  }).pipe(Effect.annotateLogs({ feature: "terminal" }))
+  }).pipe(Effect.withSpan("terminal.show"), Effect.annotateLogs({ feature: "terminal" }))
 
 /** The panel's phase for a row that isn't open. */
 const phaseOf = (row: TerminalRow): Panel["phase"] =>

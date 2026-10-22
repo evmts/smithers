@@ -496,6 +496,8 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 | `terminal.open`, `terminal.connect` | log, span | ChatApi | `terminalId`, `branchId`, `access`, `outcome`, `code`, `status`, `durationMs`, `errorCode` |
 | `smithers_terminal_requests` | counter | ChatApi | `route` (`open`, `connect`), `outcome` |
 | `terminal.shape` | log, span | ChatApi | `status`, `live`, `durationMs`, `bytes`, `outcome` |
+| `terminal.show` | log, span | browser | `preloadMs`, `rowCount`, `outcome` (`ready`, `failed`, `cancelled`); no identifiers or content |
+| `terminal.show.failed` | log | browser | background selection or presence completion failed; no error contents |
 | `smithers_terminal_shape_requests` | counter | ChatApi | `status`, `live` |
 | `terminal.open.wake`, `terminal.open` | log | the `FlowExecution` Durable Object | `branchId`, `generation`, `terminalId`, `outcome`, `recorded`, `errorCode` |
 | `sandbox.wake`, `terminal.session`, `terminal.open` | span | the `FlowExecution` Durable Object | `smithers.branch.id`, `smithers.terminal.id` |

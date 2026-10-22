@@ -31,7 +31,7 @@ export const Refused = Schema.Struct({ code: Schema.String })
 
 /**
  * This tab's terminal on the branch its page shows. One row:
- * - `idle`: no terminal yet; `opening` while `terminal/open` runs and the machine wakes;
+ * - `loading`: terminal rows are unknown; `idle`: no terminal yet; `opening` while the machine wakes;
  * - `connecting`, `open` (with `access`), `offline` (reconnecting) while attached;
  * - `ended` with why, `failed` with why, or `no_access`.
  */
@@ -40,7 +40,7 @@ export const Panel = Schema.Struct({
   id: Schema.Literal(PANEL),
   branchId: Schema.NullOr(Schema.String),
   terminalId: Schema.NullOr(Schema.String),
-  phase: Schema.Literals(["idle", "opening", "connecting", "open", "offline", "ended", "failed", "no_access"]),
+  phase: Schema.Literals(["loading", "idle", "opening", "connecting", "open", "offline", "ended", "failed", "no_access"]),
   access: Schema.NullOr(Schema.Literals(["write", "read"])),
 })
 export type Panel = typeof Panel.Type

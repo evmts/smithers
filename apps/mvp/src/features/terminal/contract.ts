@@ -62,6 +62,8 @@ export const OPEN_DEADLINE_SECONDS = 180
  */
 export const TERMINAL_TELEMETRY = {
   records: [
+    "terminal.show",
+    "terminal.show.failed",
     "terminal.open",
     "terminal.open.post",
     "terminal.open.press",
@@ -72,5 +74,5 @@ export const TERMINAL_TELEMETRY = {
     "terminal_bytes",
     "terminal_ended",
   ],
-  fields: ["outcome", "status", "terminalId", "branchId", "durationMs", "code", "direction", "reason"],
+  fields: ["outcome", "status", "terminalId", "branchId", "durationMs", "preloadMs", "rowCount", "code", "direction", "reason"],
 } as const

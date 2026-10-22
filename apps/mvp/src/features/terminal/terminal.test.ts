@@ -526,6 +526,22 @@ describe("the panel", () => {
     expect(tab.tabs()).toEqual([])
   }, WITHIN)
 
+  test("ended rows leave the empty panel alone; someone else's opening terminal is selected and followed until open", async () => {
+    const tab = await open()
+    const branchId = await tab.track("feature/one")
+    await tab.actions.show(branchId)
+    const closed = crypto.randomUUID()
+    await tab.insert({ id: closed, branchId, ownerId: other, status: "ended" })
+    await until(async () => expect(await tab.synced(branchId, closed)).toBe("ended"))
+    expect(tab.panel()).toMatchObject({ terminalId: null, phase: "idle" })
+    expect(tab.tabs()).toEqual([])
+    const theirs = crypto.randomUUID()
+    await tab.insert({ id: theirs, branchId, ownerId: other, status: "opening" })
+    await until(() => expect(tab.panel()).toMatchObject({ terminalId: theirs, phase: "opening" }))
+    await tab.settle(theirs, "open")
+    await until(() => expect(tab.panel()).toMatchObject({ terminalId: theirs, phase: "connecting" }))
+  }, WITHIN)
+
   // The branch terminal's reload on a loaded machine (2026-10-20): the branch's rows came after the preload's deadline,
   // so the panel showed nothing, and the Terminal view stayed blank beside the person's live terminal.
   test("a panel that found no terminal shows the first that turns up: the person's own, waiting while it opens", async () => {
