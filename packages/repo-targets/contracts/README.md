@@ -17,6 +17,14 @@ job id `browser` is pinned by the release roster test; it does not claim E2E
 execution. Every selected browser/E2E/faults suite name must map to its real
 Playwright or serial fault runner.
 
+`platform-browser:browserTest` is a required root of both package selections.
+The inventory verifies its `Shell.Test` command, declared browser config,
+browser test glob and Playwright Chromium harness. The focused regression is
+`node --test --test-name-pattern='durable browser suite' packages/repo-targets/contracts/ci-inventory.test.mjs`.
+The `ui:browserProbes` and `terminal-frame:browserProbes` roots likewise verify
+their Bun browser command, working directory, probe inputs and Chromium launch.
+Run all three focused regressions with `--test-name-pattern='Chromium runner'`.
+
 Linux on Node 26.4.0 is the required release-candidate package platform.
 macOS and Windows package rows are advisory, so the generated root README
 explicitly makes no support guarantee for them. The required web UI scope is
@@ -60,6 +68,8 @@ independent helper, fixture, config and declared seed changes must each fail
 instead of returning the previous pass. Scheduled campaigns run directly and
 never consult build-result caches. This establishes the current safe policy;
 it does not claim complete cacheability for all workspace rules.
+The `codingHostSize` NodeTest explicitly stays uncached so the current host
+bundle is measured on every CI execution; its planner regression pins that policy.
 
 Workflow drift uses `pnpm exec smthrs lint '//:ci'`. Regeneration uses
 `node packages/repo-targets/contracts/generate-ci.mjs`, which calls `GithubCiGen.render` in its declared

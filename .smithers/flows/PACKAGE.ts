@@ -422,7 +422,9 @@ const codingHostSize = Smithers.NodeTest({
   srcs: codingSources,
   deps: codingDependencies,
   cwd,
-  cache: true
+  // The NodeTest runner has no complete executable/input cache contract.
+  // Measure the current bundle instead of reusing an earlier size receipt.
+  cache: false
 })
 const codingBundle = Smithers.Shell.Test({
   bin: Smithers.Runtime.bin,

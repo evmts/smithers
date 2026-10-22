@@ -18,6 +18,74 @@ import * as PackageExec from "@smthrs/build-cli/PackageExec"
 let opened
 const packageIndex = () => opened ??= openPackageIndex({ workspace: root })
 
+const durableBrowser = "//packages/smithers/flows/platform-browser:browserTest"
+const browserProbes = new Map([
+  ["//packages/smithers/ui:browserProbes", "generated-view.browser.test.ts"],
+  ["//packages/smithers/ui/terminal-frame:browserProbes", "terminal-frame.browser.test.ts"]
+])
+
+const assertE2eRunner = (row) => {
+  const { label } = row
+  const name = label.split(":").at(-1)
+  if (/^browser|^e2e|faults$/i.test(name)) {
+    assert.ok(name === "faults" || label === "//apps/tui:e2eTests" || label === durableBrowser || browserProbes.has(label),
+      `${label}: classify and verify this suite's E2E runner`)
+  }
+  if (label === durableBrowser) {
+    assert.equal(row.rule, "Shell.Test")
+    assert.deepEqual(row.runner, ["/bin/sh", "-c",
+      "cd packages/smithers/flows/platform-browser && npx vitest run --config vitest.browser.config.ts"])
+    assert.ok(row.inputs.some((input) => input.path === "vitest.browser.config.ts"), "the browser config must be a declared input")
+    const config = readFileSync(join(root, "packages/smithers/flows/platform-browser/vitest.browser.config.ts"), "utf8")
+    assert.match(config, /include: \["test\/browser\/\*\*\/\*\.test\.ts"\]/)
+    const harness = readFileSync(join(root, "packages/smithers/flows/platform-browser/test/browser/Harness.ts"), "utf8")
+    assert.match(harness, /import \{[^}]*\bchromium\b[^}]*\} from "playwright"/)
+    assert.match(harness, /chromium\.launchPersistentContext\(/)
+  }
+  if (browserProbes.has(label)) {
+    const cwd = label.slice(2).split(":")[0]
+    assert.equal(row.rule, "NodeTest")
+    assert.equal(row.cwd, cwd)
+    assert.deepEqual(row.runner, ["bun", "test", "browser"])
+    assert.ok(row.inputs.some((input) => input.pattern === `//${cwd}/browser/**/*.ts`), "the browser probes must be declared inputs")
+    const probe = readFileSync(join(root, cwd, "browser", browserProbes.get(label)), "utf8")
+    assert.match(probe, /import \{[^}]*\bchromium\b[^}]*\} from "playwright"/)
+    assert.match(probe, /chromium\.launch\(/)
+  }
+}
+
+test("the durable browser suite has a classified real Chromium runner", async () => {
+  const index = await packageIndex()
+  const label = durableBrowser
+  const declaration = index.targets().find((target) => target.label === label)
+  assert.ok(declaration, "the browser durability suite must remain declared")
+  const metadata = Target.metadata(declaration.target)
+  assertE2eRunner({ label, rule: metadata.target,
+    runner: runnerFor(metadata, index.workspace, "test"), inputs: metadata.attrs.data })
+  assert.throws(() => assertE2eRunner({ label: "//packages/unknown:browserTest" }), /classify and verify/)
+})
+
+for (const label of browserProbes.keys()) {
+  test(`${label} has a classified real Chromium runner`, async () => {
+    const index = await packageIndex()
+    const declaration = index.targets().find((target) => target.label === label)
+    assert.ok(declaration, "the browser probe suite must remain declared")
+    const metadata = Target.metadata(declaration.target)
+    assertE2eRunner({ label, rule: metadata.target, cwd: metadata.attrs.cwd,
+      runner: runnerFor(metadata, index.workspace, "test"), inputs: metadata.attrs.srcs })
+  })
+}
+
+test("the CI host-size suite always plans a fresh bundle", async () => {
+  const index = await packageIndex()
+  const label = "//.smithers/flows:codingHostSize"
+  const plan = await PackageExec.plan({
+    index, verb: "test", patterns: [label], cacheDirectory: index.workspace.cache.directory
+  })
+  assert.deepEqual(plan.roots, [label])
+  assert.equal(plan.nodes.get(label).cacheable, false, "the host bundle must be measured by a fresh execution")
+})
+
 test("CI command discovery retains diagnostic options and refuses unknown selection syntax", () => {
   for (const options of ["--jobs 2 --verbose", "--verbose --jobs 2"]) {
     assert.deepEqual(targetInvocation(`pnpm exec smthrs ci '//packages/...' ${options}`), {
@@ -175,6 +243,8 @@ test("required CI resolves package, app, script and evaluation suites to real ru
     ["//.smithers/flows:campaignVerifiers", "scripts"], ["//.smithers/flows:signalCampaign", "scripts"],
     ["//.smithers/flows:checkRunner", "scripts"],
     ["//packages/repo-targets:webBundleContract", "browser"],
+    [durableBrowser, "test"], [durableBrowser, "packages"],
+    ...[...browserProbes.keys()].flatMap((label) => [[label, "test"], [label, "packages"]]),
     ["//packages/smithers/gateway:test", "test"], ["//packages/smithers/flows/jj:test", "packages"]
   ]) assert.ok(selected(label, job).length, `${label} must be a required root of ${job}`)
   const inventoryRunner = selected("//packages/repo-targets:ciInventory", "test")[0].runner
@@ -196,11 +266,7 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   for (const row of inventory.rows) {
     if (jobs[row.job].steps.some((step) => step.with?.["node-version-file"] === ".node-version"))
       assert.ok(row.runtimes.includes(`Node ${nodeRelease}`), row.job + " must report the pinned Node release")
-    const name = row.label.split(":").at(-1)
-    if (/^browser|^e2e|faults$/i.test(name)) {
-      assert.ok(name === "faults" || row.label === "//apps/tui:e2eTests",
-        `${row.label}: classify and verify this suite's E2E runner`)
-    }
+    assertE2eRunner(row)
     if (/unitTests$/.test(row.label)) {
       // Each unit step must name and execute a unit runner, never claim
       // browser coverage.

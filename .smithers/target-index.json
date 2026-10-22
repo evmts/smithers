@@ -2537,7 +2537,7 @@
     "kinds": [
       "test"
     ],
-    "cacheable": true,
+    "cacheable": false,
     "inputs": [
       {
         "kind": "file",
@@ -8815,10 +8815,6 @@
       {
         "kind": "file",
         "path": "packages/smithers/ui/docs/api.md"
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/ui/docs/api.md.orig"
       },
       {
         "kind": "file",
