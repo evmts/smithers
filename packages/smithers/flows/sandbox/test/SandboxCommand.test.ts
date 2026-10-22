@@ -5,7 +5,7 @@ import { Action, ExternalJob, Fault, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, type Duration, Effect, Exit, Fiber, FileSystem, Layer, Schema, Stream, Tracer } from "effect"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { spawn } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import {
   existsSync,
   mkdirSync,
@@ -93,6 +93,25 @@ const finished = (box: ReturnType<typeof machine>, key: string) =>
   })
 
 const slow = { timeout: 60_000 }
+
+/** Where the host's own `name` is. */
+const real = (name: string) => execFileSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).trim()
+
+/** A directory of stand-ins for commands the scripts call, which {@link withPath} puts first on their PATH. */
+const shims = (scripts: Record<string, string>) => {
+  const bin = mkdtempSync(join(root, "bin-"))
+  for (const [name, body] of Object.entries(scripts)) {
+    writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  }
+  return bin
+}
+
+/** `session`, whose commands, and the runners they start, find `bin`'s stand-ins first. */
+const withPath = (session: Sandbox.Session, bin: string): Sandbox.Session => ({
+  ...session,
+  spawn: (command, options) =>
+    session.spawn(command, { ...options, env: { ...options.env, PATH: `${bin}:${process.env.PATH}` } })
+})
 
 describe("SandboxTools.start, observe, collect and cancel", () => {
   it.live(
@@ -351,6 +370,52 @@ describe("SandboxTools.start, observe, collect and cancel", () => {
     slow
   )
 
+  it.live(
+    "a start waiting on a runner that never wrote its pid gives up in seconds, where sleep takes no fraction too",
+    () =>
+      Effect.gen(function*() {
+        const box = machine()
+        // Busybox without FEATURE_FLOAT_SLEEP: `sleep 0.01` fails, so each wait is a whole second.
+        const bin = shims({ sleep: `case "$1" in *.*) exit 1 ;; esac\nexec ${real("sleep")} "$@"` })
+        const key = "half-started-whole-seconds"
+        mkdirSync(join(box.calls, `command-${key}`), { recursive: true })
+        const began = Date.now()
+        const started = yield* box.inSession((session) =>
+          SandboxTools.start(withPath(session, bin), { tool: "run", command: "true" }, {
+            key,
+            callsDirectory: box.calls
+          })
+        )
+        expect(started).toEqual({ pid: 0, startedAt: 0 })
+        expect(Date.now() - began).toBeLessThan(15_000)
+      }),
+    slow
+  )
+
+  it.live(
+    "a command that ends itself with a signal's code didn't time out, however long its runner's clock says",
+    () =>
+      Effect.gen(function*() {
+        const box = machine()
+        const key = keyOf()
+        const ended = join(root, `ended-${keys}`)
+        // Once the command ran, the runner's clock reads 1,000 seconds later: past its timeout.
+        const date = real("date")
+        const bin = shims({
+          date: `if [ -e '${ended}' ]; then echo $(($(${date} +%s) + 1000)); else exec ${date} "$@"; fi`
+        })
+        yield* box.inSession((session) =>
+          SandboxTools.start(withPath(session, bin), {
+            tool: "run",
+            command: `touch '${ended}'; exit 130`,
+            timeoutSeconds: 600
+          }, { key, callsDirectory: box.calls })
+        )
+        expect(yield* finished(box, key)).toMatchObject({ state: "finished", exitCode: 130, timedOut: false })
+      }),
+    slow
+  )
+
   it.live("refuses a cwd outside the workdir and a calls directory that isn't absolute, before anything runs", () =>
     Effect.gen(function*() {
       const box = machine()
@@ -593,7 +658,7 @@ describe("SandboxCommand.make", () => {
   it("declares its defaults, and the tools' failures beside how reaching the box fails", () => {
     expect(SandboxCommand.defaults).toEqual({
       probe: { every: "1 second", max: "20 seconds" },
-      timeout: `${SandboxTools.limits.maxTimeoutSeconds + 300} seconds`
+      timeout: `${SandboxTools.limits.maxTimeoutSeconds + 1200} seconds`
     })
     class Unreachable extends Schema.TaggedError<Unreachable>()("test/Unreachable", {}) {}
     const Declared = SandboxCommand.make("test/declared", { target: Target, error: Unreachable })

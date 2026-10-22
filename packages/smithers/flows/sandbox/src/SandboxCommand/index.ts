@@ -72,16 +72,17 @@ export const onSession = (session: Session, callsDirectory: string): Commands =>
 
 /**
  * The job's defaults: a probe a second after the command starts, doubling
- * to one every 20 seconds; and a deadline five minutes past the longest
- * command `SandboxTools` runs, so the command's own timeout always ends it
- * first.
+ * to one every 20 seconds; and a deadline 20 minutes past the longest command
+ * `SandboxTools` runs. The deadline counts from before the start, which may
+ * have to wake the box first, so it leaves room for a slow wake and the last
+ * probe before the command's own timeout ends it.
  *
  * @category constants
  * @since 1.0.0-rc.17
  */
 export const defaults = {
   probe: { every: "1 second", max: "20 seconds" },
-  timeout: `${SandboxTools.limits.maxTimeoutSeconds + 300} seconds`
+  timeout: `${SandboxTools.limits.maxTimeoutSeconds + 1200} seconds`
 } as const
 
 /**

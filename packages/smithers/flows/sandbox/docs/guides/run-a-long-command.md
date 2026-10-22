@@ -92,9 +92,10 @@ The run parks between probes on a durable timer: a probe a second after the
 start, doubling to one every 20 seconds (`SandboxCommand.defaults.probe`).
 A `lost` command is cancelled and the job fails `ExternalJobLost` once
 `restarts` replacements are spent; the default is zero, so a command runs at
-most once. The job's deadline is five minutes past the longest command
-(`SandboxCommand.defaults.timeout`); past it the job cancels the command and
-fails `ExternalJobTimedOut`.
+most once. The job's deadline is 20 minutes past the longest command
+(`SandboxCommand.defaults.timeout`), counted from before a start that may have
+to wake the box; past it the job cancels the command and fails
+`ExternalJobTimedOut`.
 
 A box without `setsid` starts the runner in a process group of its own where
 its shell has job control, else in the exec session's group: a host that

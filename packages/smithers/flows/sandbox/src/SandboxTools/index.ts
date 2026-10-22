@@ -550,11 +550,11 @@ else
     (sleep "$t"; kill -TERM "$c"; sleep 5; kill -KILL "$c") </dev/null >/dev/null 2>&1 &
     watchdog=$!
   fi
-  printf '%s %s\\n' "$c" "$(ident "$c")" >"$d/child"
+  printf '%s %s\\n' "$c" "$(ident "$c")" >"$d/child.tmp" && mv -f -- "$d/child.tmp" "$d/child"
   wait "$c"
   code=$?
   [ -z "$watchdog" ] || kill "$watchdog" 2>/dev/null
-  if [ $(($(date +%s) - start)) -ge "$t" ] && [ "$code" -gt 123 ]; then timed=1; fi
+  case $code in 124|137|143) [ $(($(date +%s) - start)) -ge "$t" ] && timed=1 ;; esac
 fi
 printf '%s %s\\n' "$code" "$timed" >"$d/exit.tmp" && mv -f -- "$d/exit.tmp" "$d/exit" || exit 125`
 
@@ -868,7 +868,7 @@ export type Observed = typeof Observed.Type
  * Starts the runner `$1` with the rest of its arguments in a session of its
  * own (`setsid`), or else a process group of its own where the shell has job
  * control, the first time its fence `$2` is made, then answers its pid and
- * start once it recorded them, waiting at most about five seconds.
+ * start once it recorded them, waiting at most five seconds by the clock.
  */
 const START = `d=$2
 umask 002
@@ -880,9 +880,8 @@ if mkdir -- "$d" 2>/dev/null; then
     (set -m 2>/dev/null; sh -c "$1" sandbox-command "$2" "$3" "$4" "$5" </dev/null >/dev/null 2>&1 &)
   fi
 fi
-i=0
-while [ ! -f "$d/pid" ] && [ ! -e "$d/cancelled" ] && [ "$i" -lt 500 ]; do
-  i=$((i + 1))
+end=$(($(date +%s) + 5))
+while [ ! -f "$d/pid" ] && [ ! -e "$d/cancelled" ] && [ "$(date +%s)" -lt "$end" ]; do
   sleep 0.01 2>/dev/null || sleep 1
 done
 pid=0; at=0
