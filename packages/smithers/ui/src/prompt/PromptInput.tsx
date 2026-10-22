@@ -230,6 +230,8 @@ export function PromptInput({
   useInjectUiCss();
   const idPrefix = useId();
   const idCounter = useRef(0);
+  const submittingRef = useRef(false);
+  const mountedRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const objectUrlsRef = useRef<Map<string, string>>(new Map());
   const [innerValue, setInnerValue] = useState(defaultValue ?? "");
@@ -276,29 +278,13 @@ export function PromptInput({
    */
   const leasedIdsRef = useRef<Map<string, number>>(new Map());
 
-  /** Revoke everything (unmount) or, with `keepLeased`, all but pending leases. */
-  const cleanupObjectUrls = useCallback((keepLeased = false) => {
+  /** Revoke owned URLs except those borrowed by a pending handler. */
+  const cleanupObjectUrls = useCallback(() => {
     const revocable = canCreateObjectUrl();
     for (const [id, objectUrl] of [...objectUrlsRef.current]) {
-      if (keepLeased && leasedIdsRef.current.has(id)) continue;
+      if (leasedIdsRef.current.has(id)) continue;
       if (revocable) URL.revokeObjectURL(objectUrl);
       objectUrlsRef.current.delete(id);
-    }
-  }, []);
-
-  /**
-   * Revoke only the URLs this component minted for the given attachments.
-   * Submitting waits for an async `onSubmit`, and files added while it was in
-   * flight are not part of what was submitted: revoking everything would kill
-   * previews the user is still looking at.
-   */
-  const revokeObjectUrlsFor = useCallback((items: readonly PromptInputAttachmentItem[]) => {
-    const revocable = canCreateObjectUrl();
-    for (const item of items) {
-      const objectUrl = objectUrlsRef.current.get(item.id);
-      if (objectUrl === undefined) continue;
-      if (revocable) URL.revokeObjectURL(objectUrl);
-      objectUrlsRef.current.delete(item.id);
     }
   }, []);
 
@@ -396,7 +382,7 @@ export function PromptInput({
   }, []);
 
   const clearAttachments = useCallback(() => {
-    cleanupObjectUrls(true);
+    cleanupObjectUrls();
     attachmentsRef.current = [];
     setAttachmentsRef.current([]);
   }, [cleanupObjectUrls]);
@@ -407,7 +393,9 @@ export function PromptInput({
   }, [disabled]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       cleanupObjectUrls();
     };
   }, [cleanupObjectUrls]);
@@ -433,8 +421,9 @@ export function PromptInput({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (disabled || busy) return;
+    if (disabled || busy || submittingRef.current) return;
     if (value.trim().length === 0 && attachments.length === 0) return;
+    submittingRef.current = true;
     const submitted = attachments;
     const submittedIds = new Set(submitted.map((item) => item.id));
     const submittedValueRevision = valueRevisionRef.current;
@@ -454,6 +443,7 @@ export function PromptInput({
      * the handler ran is revoked now, once no other submission holds it.
      */
     const releaseLeases = (): void => {
+      submittingRef.current = false;
       for (const id of submittedIds) {
         const holders = (leased.get(id) ?? 1) - 1;
         if (holders > 0) {
@@ -461,7 +451,7 @@ export function PromptInput({
           continue;
         }
         leased.delete(id);
-        if (attachmentsRef.current.some((item) => item.id === id)) continue;
+        if (mountedRef.current && attachmentsRef.current.some((item) => item.id === id)) continue;
         const objectUrl = objectUrlsRef.current.get(id);
         if (objectUrl === undefined) continue;
         if (canCreateObjectUrl()) URL.revokeObjectURL(objectUrl);
@@ -481,12 +471,12 @@ export function PromptInput({
 
     /** Accept only the submitted draft, preserving edits made while pending. */
     const accept = (): void => {
+      if (!mountedRef.current) return;
       if (valueProp === undefined && valueRevisionRef.current === submittedValueRevision) {
         valueRevisionRef.current += 1;
         setInnerValue("");
       }
       if (attachmentsProp === undefined) {
-        revokeObjectUrlsFor(submitted);
         const next = attachmentsRef.current.filter((item) => !submittedIds.has(item.id));
         attachmentsRef.current = next;
         setInnerAttachments(next);
@@ -902,6 +892,14 @@ export function PromptInputActionMenuContent({ className, children, onKeyDown, .
         tabIndex={-1}
         data-slot="prompt-input-action-menu-item"
         className="sui-prompt-action-menu-item"
+        onKeyDown={(event) => {
+          if (event.defaultPrevented || event.target !== event.currentTarget) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          const button = event.currentTarget.querySelector<HTMLButtonElement>("button:not(:disabled)");
+          if (!button) return;
+          event.preventDefault();
+          button.click();
+        }}
         onClick={(event) => {
           if (!event.defaultPrevented) menu.setOpen(false);
         }}

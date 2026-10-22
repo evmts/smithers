@@ -5,10 +5,13 @@
 // document-level drop registry all reach it without passing the hidden file
 // input, so anything the input enforces has to be enforced there too.
 import { afterEach, describe, expect, test } from "bun:test";
+import { File as NativeFile, resolveObjectURL } from "node:buffer";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   PromptInput,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
   type PromptInputError,
   type PromptInputMessage,
   PromptInputTextarea,
@@ -38,7 +41,7 @@ async function render(element: ReactElement): Promise<void> {
   await act(async () => mounted.render(element));
 }
 
-const makeFile = (name: string, type: string) => new File(["x"], name, { type });
+const makeFile = (name: string, type: string) => new NativeFile(["x"], name, { type }) as unknown as File;
 
 function pressEnter(el: HTMLTextAreaElement): void {
   el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
@@ -57,35 +60,29 @@ function textarea(): HTMLTextAreaElement {
   return el;
 }
 
-/** Stub URL.createObjectURL / revokeObjectURL and report what was minted. */
-async function withObjectUrls<T>(body: (log: { created: string[]; revoked: string[] }) => Promise<T>): Promise<T> {
+/** Record real object URLs and observe their actual registry lifetime. */
+async function withObjectUrls<T>(body: (log: { created: string[]; revoked: () => string[] }) => Promise<T>): Promise<T> {
   const created: string[] = [];
-  const revoked: string[] = [];
   const originalCreate = URL.createObjectURL;
-  const originalRevoke = URL.revokeObjectURL;
   Object.defineProperty(URL, "createObjectURL", {
     configurable: true,
-    value: () => {
-      const url = `blob:lifetime-${created.length}`;
+    value: (file: File) => {
+      const url = originalCreate(file);
       created.push(url);
       return url;
     },
   });
-  Object.defineProperty(URL, "revokeObjectURL", {
-    configurable: true,
-    value: (url: string) => revoked.push(url),
-  });
   try {
-    return await body({ created, revoked });
+    return await body({ created, revoked: () => created.filter((url) => resolveObjectURL(url) === undefined) });
   } finally {
+    for (const url of created) URL.revokeObjectURL(url);
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: originalCreate });
-    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: originalRevoke });
   }
 }
 
 describe("an async onSubmit borrows attachments for its whole lifetime", () => {
   test("the object URL is still live inside the handler and revoked only after it resolves", async () => {
-    await withObjectUrls(async ({ revoked }) => {
+    await withObjectUrls(async ({ created, revoked }) => {
       let hook!: ReturnType<typeof usePromptInputAttachments>;
       let release!: () => void;
       const seenInsideHandler: Array<string | undefined> = [];
@@ -105,7 +102,7 @@ describe("an async onSubmit borrows attachments for its whole lifetime", () => {
             // After the first await: this is exactly where a real consumer
             // uploads the blob. The URL must not have been revoked yet.
             seenInsideHandler.push(message.attachments[0]?.url);
-            revokedAtResume.push([...revoked]);
+            revokedAtResume.push([...revoked()]);
           }}
         >
           <Harness />
@@ -114,16 +111,16 @@ describe("an async onSubmit borrows attachments for its whole lifetime", () => {
 
       await act(async () => hook.add([makeFile("shot.png", "image/png")]));
       await act(async () => pressEnter(textarea()));
-      expect(revoked).toEqual([]);
+      expect(revoked()).toEqual([]);
 
       await act(async () => {
         release();
         await Promise.resolve();
       });
 
-      expect(seenInsideHandler).toEqual(["blob:lifetime-0"]);
+      expect(seenInsideHandler).toEqual([created[0]!]);
       expect(revokedAtResume).toEqual([[]]);
-      expect(revoked).toEqual(["blob:lifetime-0"]);
+      expect(revoked()).toEqual([created[0]!]);
       expect(textarea().value).toBe("");
       expect(hook.attachments).toEqual([]);
     });
@@ -156,7 +153,7 @@ describe("an async onSubmit borrows attachments for its whole lifetime", () => {
   });
 
   test("a synchronously throwing onSubmit keeps the draft and attachments and reports submit-failed", async () => {
-    await withObjectUrls(async ({ revoked }) => {
+    await withObjectUrls(async ({ created, revoked }) => {
       const cause = new Error("host threw");
       const errors: PromptInputError[] = [];
       let hook!: ReturnType<typeof usePromptInputAttachments>;
@@ -184,7 +181,7 @@ describe("an async onSubmit borrows attachments for its whole lifetime", () => {
 
       expect(textarea().value).toBe("keep me");
       expect(hook.attachments.map((item) => item.name)).toEqual(["shot.png"]);
-      expect(revoked).toEqual([]);
+      expect(revoked()).toEqual([]);
       expect(errors).toEqual([
         { code: "submit-failed", message: "The prompt could not be submitted.", cause },
       ]);
@@ -192,7 +189,7 @@ describe("an async onSubmit borrows attachments for its whole lifetime", () => {
   });
 
   test.each(["unsent second draft", "submitted draft"])("pending acceptance preserves edited text (%s) and later attachments", async (laterText) => {
-    await withObjectUrls(async ({ revoked }) => {
+    await withObjectUrls(async ({ created, revoked }) => {
       let hook!: ReturnType<typeof usePromptInputAttachments>;
       let release!: () => void;
       const submitted: PromptInputMessage[] = [];
@@ -237,19 +234,19 @@ describe("an async onSubmit borrows attachments for its whole lifetime", () => {
       });
 
       // Only the submitted attachment's URL is released.
-      expect(revoked).toEqual(["blob:lifetime-0"]);
+      expect(revoked()).toEqual([created[0]!]);
       expect({ text: textarea().value, attachments: hook.attachments }).toEqual({
         text: laterText,
         attachments: [laterAttachment],
       });
-      expect(laterAttachment.url).toBe("blob:lifetime-1");
+      expect(laterAttachment.url).toBe(created[1]!);
       await act(async () => hook.remove(laterAttachment.id));
       expect(hook.attachments).toEqual([]);
-      expect(revoked).toEqual(["blob:lifetime-0", "blob:lifetime-1"]);
+      expect(revoked()).toEqual([created[0]!, created[1]!]);
 
       await act(async () => root!.unmount());
       root = undefined;
-      expect(revoked).toEqual(["blob:lifetime-0", "blob:lifetime-1"]);
+      expect(revoked()).toEqual([created[0]!, created[1]!]);
     });
   });
 });
@@ -288,14 +285,14 @@ describe("removing an attachment while a submission is pending", () => {
   }
 
   test.each(["resolve", "reject"] as const)("removal defers the revoke until the handler %ss", async (outcome) => {
-    await withObjectUrls(async ({ revoked }) => {
+    await withObjectUrls(async ({ created, revoked }) => {
       const settle: { current?: (outcome: "resolve" | "reject") => void } = {};
-      const hook = await pendingSubmission(revoked, settle, [makeFile("a.png", "image/png"), makeFile("b.png", "image/png")]);
+      const hook = await pendingSubmission(revoked(), settle, [makeFile("a.png", "image/png"), makeFile("b.png", "image/png")]);
 
       const [first] = hook().attachments;
       await act(async () => hook().remove(first!.id));
       expect(hook().attachments.map((item) => item.name)).toEqual(["b.png"]);
-      expect(revoked).toEqual([]);
+      expect(revoked()).toEqual([]);
 
       await act(async () => {
         settle.current!(outcome);
@@ -304,46 +301,46 @@ describe("removing an attachment while a submission is pending", () => {
       });
       // Resolve accepts the whole submission; reject keeps the surviving draft
       // attachment alive and revokes only the one the user removed.
-      expect(revoked).toEqual(outcome === "resolve" ? ["blob:lifetime-0", "blob:lifetime-1"] : ["blob:lifetime-0"]);
+      expect(revoked()).toEqual(outcome === "resolve" ? [created[0]!, created[1]!] : [created[0]!]);
     });
   });
 
   test("clearing the draft defers the revoke until the handler settles", async () => {
-    await withObjectUrls(async ({ revoked }) => {
+    await withObjectUrls(async ({ created, revoked }) => {
       const settle: { current?: (outcome: "resolve" | "reject") => void } = {};
-      const hook = await pendingSubmission(revoked, settle, [makeFile("a.png", "image/png")]);
+      const hook = await pendingSubmission(revoked(), settle, [makeFile("a.png", "image/png")]);
 
       await act(async () => hook().clear());
       expect(hook().attachments).toEqual([]);
-      expect(revoked).toEqual([]);
+      expect(revoked()).toEqual([]);
 
       await act(async () => {
         settle.current!("resolve");
         await Promise.resolve();
         await Promise.resolve();
       });
-      expect(revoked).toEqual(["blob:lifetime-0"]);
+      expect(revoked()).toEqual([created[0]!]);
     });
   });
 
-  test("unmounting revokes even a leased URL", async () => {
-    await withObjectUrls(async ({ revoked }) => {
+  test.each(["resolve", "reject"] as const)("unmounting retains a leased URL until %s", async (outcome) => {
+    await withObjectUrls(async ({ created, revoked }) => {
       const settle: { current?: (outcome: "resolve" | "reject") => void } = {};
-      await pendingSubmission(revoked, settle, [makeFile("a.png", "image/png")]);
+      await pendingSubmission(revoked(), settle, [makeFile("a.png", "image/png")]);
       const mounted = root!;
       root = undefined;
       await act(async () => mounted.unmount());
-      expect(revoked).toEqual(["blob:lifetime-0"]);
+      expect(revoked()).toEqual([]);
       await act(async () => {
-        settle.current!("resolve");
+        settle.current!(outcome);
         await Promise.resolve();
       });
-      expect(revoked).toEqual(["blob:lifetime-0"]);
+      expect(revoked()).toEqual([created[0]!]);
     });
   });
 
   test("with no submission pending, removal revokes immediately", async () => {
-    await withObjectUrls(async ({ revoked }) => {
+    await withObjectUrls(async ({ created, revoked }) => {
       let hook!: Hook;
       function Harness() {
         hook = usePromptInputAttachments();
@@ -356,7 +353,7 @@ describe("removing an attachment while a submission is pending", () => {
       );
       await act(async () => hook.add([makeFile("a.png", "image/png")]));
       await act(async () => hook.remove(hook.attachments[0]!.id));
-      expect(revoked).toEqual(["blob:lifetime-0"]);
+      expect(revoked()).toEqual([created[0]!]);
     });
   });
 });
@@ -471,4 +468,69 @@ describe("disabled and multiple bind every intake path, not just the picker", ()
 
     expect(hook.attachments).toEqual([]);
   });
+});
+
+
+test("pending submission ignores repeated Enter and direct form submissions without revoking its URL", async () => {
+  await withObjectUrls(async ({ created, revoked }) => {
+    let hook!: ReturnType<typeof usePromptInputAttachments>;
+    let release!: () => void;
+    let calls = 0;
+    function Harness() {
+      hook = usePromptInputAttachments();
+      return <PromptInputTextarea />;
+    }
+    await render(<PromptInput defaultValue="draft" onSubmit={() => {
+      calls += 1;
+      if (calls === 1) return new Promise<void>((resolve) => { release = resolve; });
+    }}><Harness /></PromptInput>);
+    await act(async () => hook.add([makeFile("a.png", "image/png")]));
+    await act(async () => {
+      pressEnter(textarea());
+      pressEnter(textarea());
+      container!.querySelector("form")!.requestSubmit();
+    });
+    // A synchronous later acceptance must never invalidate the pending borrow.
+    expect(revoked()).toEqual([]);
+    expect(calls).toBe(1);
+    await act(async () => { release(); });
+    expect(revoked()).toEqual([created[0]!]);
+    await act(async () => typeText("next"));
+    await act(async () => pressEnter(textarea()));
+    expect(calls).toBe(2);
+  });
+});
+
+test.each(["Enter", " "])("action wrapper activates an ordinary button with %s", async (key) => {
+  let calls = 0;
+  await render(<PromptInputActionMenu defaultOpen>
+    <PromptInputActionMenuContent><button type="button" onClick={() => { calls += 1; }}>Action</button></PromptInputActionMenuContent>
+  </PromptInputActionMenu>);
+  const item = container!.querySelector<HTMLElement>('[role="menuitem"]')!;
+  expect(document.activeElement).toBe(item);
+  await act(async () => item.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })));
+  expect(calls).toBe(1);
+  expect(container!.querySelector('[role="menu"]')).toBeNull();
+});
+
+
+test.each(["resolve", "reject"] as const)("pending submission blocks duplicates and unlocks after %s", async (outcome) => {
+  let calls = 0;
+  let settle!: () => void;
+  await render(<PromptInput value="draft" onError={() => {}} onSubmit={() => {
+    calls += 1;
+    return new Promise<void>((resolve, reject) => {
+      settle = () => outcome === "resolve" ? resolve() : reject(new Error("rejected"));
+    });
+  }}><PromptInputTextarea /></PromptInput>);
+  await act(async () => {
+    pressEnter(textarea());
+    pressEnter(textarea());
+    container!.querySelector("form")!.requestSubmit();
+  });
+  expect(calls).toBe(1);
+  await act(async () => { settle(); });
+  await act(async () => pressEnter(textarea()));
+  expect(calls).toBe(2);
+  await act(async () => { settle(); });
 });

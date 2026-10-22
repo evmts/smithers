@@ -153,3 +153,7 @@ These entrypoints do not import the DOM component barrel. Forms retain one
 schema-derived model; each client owns its controls and persistence. File-flow
 arrays use JSON to preserve spaces and structured values. Positional command
 lists retain their space-separated grammar.
+
+`PromptInput` ignores submission attempts while its handler is pending. Owned
+attachment URLs remain readable until that handler settles, even after removal
+or unmount. Action menu wrappers forward Enter and Space to their button child.
