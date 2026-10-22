@@ -138,4 +138,10 @@ test("sandbox lifecycle: the agent and the terminal share the branch's machine, 
       await expect(terminalRows(page)).toContainText("log-ran", { timeout: 10_000 })
     }).toPass({ timeout: MACHINE })
   })
+  // The fixture branch's machine keeps its checkout across sleeps: leave it as the forge has it, so the commit and files
+  // made here don't change what other specs read there (branch-workspace's `git log`).
+  await step("Leave the branch's checkout as the forge has it", async () => {
+    await keys(page, "git reset -q --hard origin/test-branch && git clean -qfd && echo clean-$((3+3))")
+    await expect(terminalRows(page)).toContainText("clean-6", { timeout: 30_000 })
+  })
 })

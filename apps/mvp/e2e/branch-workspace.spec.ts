@@ -149,7 +149,8 @@ test("branch terminal: Open terminal runs git log on the branch's machine in a f
   const screen = (await page.locator(".terminal-panel-screen").boundingBox())!
   const frame = (await page.locator(".terminal-panel-frame").boundingBox())!
   expect(frame.height, "the terminal fills its screen").toBeGreaterThan(screen.height - 8)
-  await type(page, "git log --oneline -3")
+  // The forge's branch, not HEAD: another spec's commits in this machine's checkout (the lifecycle's) sit above it.
+  await type(page, "git log --oneline -3 origin/test-branch")
   await expect(terminalRows(page)).toContainText("Create test.md", { timeout: 30_000 })
   await type(page, `export KEPT=${word}; echo set-$KEPT`)
   // The shell ran it before the reload: keys still in flight when a page unloads are lost, as in any web terminal.
