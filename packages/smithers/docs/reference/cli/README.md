@@ -76,6 +76,8 @@ in their schemas but the executable also accepts `--root` as an alias;
 flow and operator commands use `--root`. Flow control, ordinary run management, and approvals select a host from
 `SMITHERS_REMOTE` or `--remote` and authenticate with the saved login or `SMITHERS_TOKEN`.
 The saved `smithers auth login` session is shared with repository commands; `SMITHERS_TOKEN` is the non-interactive override.
+Flow listings preserve distinct discovery warnings from every control-plane page;
+JSON includes `warnings` only when discovery reported any.
 History, memory, triggers, credentials,
 integrations, evaluations, and local maintenance reject remote access.
 
@@ -194,6 +196,9 @@ smthrs tui --environment dev
 
 The tool's native login stays in the execution machine's home. CLI commands and the
 TUI run the installed Smithers runtime there, using the same agents and sessions.
+Local TUI launches honor the caller's AbortSignal before starting and while the
+child runs. Cancellation stops the child and returns status 130 after it exits;
+an already aborted signal rejects with its reason without launching.
 The machine needs the commands you invoke installed on its PATH. SSH uses your SSH
 configuration and requires a known host key. Profiles select existing compute;
 Cloud allocation and admission limits still apply.

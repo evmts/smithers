@@ -176,8 +176,7 @@ export const plan = (flow: string, entries: ReadonlyArray<string>, data: Option.
 export const listFlows = Effect.gen(function*() {
   const control = yield* ControlService.Control
   const catalog = yield* FlowCatalog.read(control)
-  const { items, apps } = FlowCatalog.listing(catalog.items, yield* Project.ProjectRoot)
-  return { _tag: "flows" as const, items, ...(apps === undefined ? {} : { apps }) }
+  return FlowCatalog.listing(catalog.items, yield* Project.ProjectRoot, catalog.warnings)
 })
 /**
  * Read projected output for a run or one node.

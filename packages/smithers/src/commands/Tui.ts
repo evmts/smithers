@@ -251,7 +251,9 @@ const rebuild = async (packageRoot: URL): Promise<void> => {
 const forwarded = ["SIGTERM", "SIGHUP"] as const
 
 /**
- * Runs the TUI to completion and resolves with its exit status.
+ * Runs the TUI to completion and resolves with its exit status. Locally, an already
+ * aborted caller signal refuses launch; cancellation while running stops the
+ * child and returns 130 once it exits.
  *
  * @category constructors
  * @since 1.0.0
@@ -283,15 +285,18 @@ export const run = async (
       for (const event of forwarded) process.removeListener(event, cancel)
     }
   }
+  signal?.throwIfAborted()
   const chosen = launch(environment, packageRoot, machine)
   if (chosen instanceof CliError.UnsupportedError) throw chosen
   if (chosen.runtime === "node" && checkout(packageRoot, machine)) await rebuild(packageRoot)
+  signal?.throwIfAborted()
   const target = chosen.runtime === "binary" ? chosen.command : chosen.args.at(-1)!
   if (!machine.exists(target)) {
     throw new CliError.UnsupportedError({ message: `The TUI is missing from this installation: ${target}` })
   }
   return new Promise((resolve, reject) => {
     const child = spawn(chosen.command, [...chosen.args, ...argv(options)], { stdio: "inherit", env: environment })
+    let interrupted = false
     // The TUI owns Ctrl+C; the parent must outlive it to report its status.
     const ignore = () => {}
     const forward = (signal: NodeJS.Signals) => {
@@ -301,9 +306,14 @@ export const run = async (
         // The child has already exited.
       }
     }
+    const cancel = () => {
+      interrupted = true
+      forward("SIGTERM")
+    }
     process.on("SIGINT", ignore)
     for (const signal of forwarded) process.on(signal, forward)
     const settle = () => {
+      signal?.removeEventListener("abort", cancel)
       process.removeListener("SIGINT", ignore)
       for (const signal of forwarded) process.removeListener(signal, forward)
     }
@@ -320,9 +330,11 @@ export const run = async (
           : cause
       )
     })
-    child.once("exit", (code, signal) => {
+    child.once("exit", (code, exitSignal) => {
       settle()
-      resolve(code ?? (signal === null ? 1 : 128 + (constants.signals[signal] ?? 0)))
+      resolve(interrupted ? 130 : code ?? (exitSignal === null ? 1 : 128 + (constants.signals[exitSignal] ?? 0)))
     })
+    signal?.addEventListener("abort", cancel, { once: true })
+    if (signal?.aborted) cancel()
   })
 }

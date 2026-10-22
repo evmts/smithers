@@ -35,6 +35,7 @@ import * as Agents from "../src/Agents.ts"
 import { makeCli } from "../src/Cli.ts"
 import * as CliError from "../src/CliError.ts"
 import { cli } from "../src/Command.ts"
+import * as RunControl from "../src/commands/RunControl.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 import * as Output from "../src/Output.ts"
 import * as Project from "../src/Project.ts"
@@ -552,6 +553,35 @@ describe("smthrs mcp add", () => {
 })
 
 describe("the paged flow catalog's refusals", () => {
+  it("keeps distinct discovery warnings from every page in the flow listing", async () => {
+    const first = {
+      code: "missing_description",
+      path: ".smithers/flows/a/flow.mdx",
+      message: "No description"
+    } as const
+    const second = { ...first, path: ".smithers/flows/b/flow.mdx" }
+    let page = 0
+    const listed = await run(
+      RunControl.listFlows,
+      flowListingControl(() => {
+        page += 1
+        return {
+          _tag: "flows",
+          items: page === 1 ? [{ flowId: demoFlow.flowId, description: demoFlow.description }] : [],
+          warnings: page === 1 ? [first] : [first, second],
+          ...(page === 1 ? { nextCursor: "next" } : {})
+        }
+      }),
+      project()
+    )
+    expect(page).toBe(2)
+    expect(listed).toEqual({
+      _tag: "flows",
+      items: [{ flowId: demoFlow.flowId, description: demoFlow.description }],
+      warnings: [first, second]
+    })
+  })
+
   const flowPage = (
     items: ReadonlyArray<{ readonly flowId: string; readonly description: string }>,
     nextCursor?: string
