@@ -1,5 +1,14 @@
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
@@ -13,8 +22,10 @@ const list = (args: Array<string>): Array<string> => {
     "-e",
     `import { createVitest, parseCLI } from "vitest/node";
 const { filter, options } = parseCLI(["vitest", ...JSON.parse(process.argv[1])]);
+const { registerRootCleanup } = await import("../repo-targets/test-utils/vitest-root-temp.mjs");
 const ctx = await createVitest("test", { ...options, run: true, coverage: { enabled: false } });
 try {
+  registerRootCleanup(ctx);
   const files = await ctx.globTestSpecifications(filter);
   const selected = ctx.config.shard ? await new ctx.config.sequence.sequencer(ctx).shard(files) : files;
   console.log(JSON.stringify(selected.map((file) => file.moduleId)));
@@ -59,6 +70,7 @@ it.skipIf(process.platform === "win32")(
       )
       const shell = declaredShell()
         .replace("cd packages/smithers && ", "")
+        .replace("&& trap", "&& printf '%s' \"$work\" > \"$SMITHERS_LANES_SCRATCH_RECEIPT\" && trap")
         .replaceAll("vitest.config.ts", "vitest.config.mjs")
         .replace(/pnpm exec vitest run ([^;"&}]+)/g, (command, args: string) => {
           if (args.includes("--merge-reports=")) return command
@@ -83,7 +95,22 @@ it(${JSON.stringify(phase)}, async () => {
           )
           return `pnpm exec vitest run --config vitest.config.mjs --reporter=blob --outputFile=$blobs/${phase}.json ${phase}.test.mjs `
         })
-      execFileSync("sh", ["-c", shell], { cwd: root, encoding: "utf8", timeout: 25_000 })
+      const scratch = join(root, "tmp")
+      mkdirSync(scratch)
+      execFileSync("sh", ["-c", shell], {
+        cwd: root,
+        env: {
+          ...process.env,
+          TMPDIR: scratch,
+          TMP: scratch,
+          TEMP: scratch,
+          SMITHERS_LANES_SCRATCH_RECEIPT: join(root, "owned-work")
+        },
+        encoding: "utf8",
+        timeout: 25_000
+      })
+      expect(readdirSync(scratch)).toEqual([])
+      expect(existsSync(readFileSync(join(root, "owned-work"), "utf8"))).toBe(false)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

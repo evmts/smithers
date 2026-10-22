@@ -193,7 +193,9 @@ const test = Smithers.Shell.Test({
   // one assigned long group. Each invocation records its own blob; the merge
   // retains every failure and checks the original coverage thresholds.
   shell: [
-    "cd packages/smithers && blobs=$(mktemp -d) && {",
+    "cd packages/smithers && work=$(mktemp -d /tmp/smt.XXXXXXXX) && trap 'rm -rf \"$work\"' 0 && " +
+    "blobs=\"$work/blobs\" && mkdir -p \"$blobs\" \"$work/tmp\" && " +
+    "export TMPDIR=\"$work/tmp\" TEMP=\"$work/tmp\" TMP=\"$work/tmp\" NODE_COMPILE_CACHE=\"$work/cache\" && {",
     "printf '%s\\n'",
     `"${lane} --outputFile=$blobs/one-fixed.json ${laneOne.join(" ")}"`,
     `"${lane} --outputFile=$blobs/two-fixed.json ${laneTwo.join(" ")}"`,
@@ -203,9 +205,9 @@ const test = Smithers.Shell.Test({
     ),
     "| xargs -P 4 -I '{}' sh -c '{}';",
     "if test -f $blobs/one-fixed.json && test -f $blobs/two-fixed.json && test -f $blobs/three-fixed.json && test -f $blobs/one.json && test -f $blobs/two.json && test -f $blobs/three.json && test -f $blobs/four.json;",
-    `then ${vitest} --merge-reports=$blobs --reporter=github-actions --reporter=dot;`,
+    `then ${vitest} --merge-reports=$blobs --coverage.reportsDirectory=$work/merged --reporter=github-actions --reporter=dot;`,
     "else echo \"a lane of the suite ended without its report\" >&2; false; fi; };",
-    "status=$?; rm -rf \"$blobs\"; exit $status"
+    "status=$?; exit $status"
   ].join(" "),
   data: [
     lib,
