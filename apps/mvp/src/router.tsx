@@ -19,7 +19,7 @@ import type { SecretsLayer } from "./features/secrets/secrets"
 import type { TerminalView } from "./features/terminal/terminal"
 import type { ViewsView } from "./features/views/views"
 import { AppScreen } from "./screens/app/AppScreen"
-import { BranchScreen } from "./screens/branch/BranchScreen"
+import { BlobScreen, BranchScreen } from "./screens/branch/BranchScreen"
 import { BranchPendingScreen } from "./screens/branch/BranchPendingScreen"
 import { CodeScreen } from "./screens/flows/CodeScreen"
 import { DraftScreen } from "./screens/flows/DraftScreen"
@@ -261,29 +261,48 @@ const treeRoute = createRoute({
         openBranchPage(context.branch, context.terminal, load.abortController.signal, params, search),
       ])),
   onLeave: ({ context, abortController }) => {
-    // A committed route can leave while one of its live actions is still answering.
     abortController.abort()
-    void context.branch.presence.actions.leave()
-    void context.branch.coedit.actions.hideFiles()
-    void context.terminal.actions.show(null)
+    leaveWorkspace(context)
   },
 })
 
 /**
- * `/$owner/$repo/blob/$ref/$`: a file at a branch or commit, `?L=<n>` or `?L=<a>-<b>` marking lines; the home is
- * opened for its tabs.
+ * `/$owner/$repo/blob/$ref/$`: a file at a branch or commit, `?L=<n>` or `?L=<a>-<b>` marking lines, in the branch's
+ * workspace as the tree route opens it, so the conversation stays beside a file the agent opened (`file/open`,
+ * docs/features/files.md); the home is opened for its tabs.
  */
 const blobRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/$owner/$repo/blob/$ref/$",
-  component: RepoScreen,
+  component: BlobScreen,
+  pendingComponent: BranchPendingScreen,
   validateSearch: lineSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
-    enter(load, () => context.repo.actions.warmRoute("blob", params, search), () => {
-      context.repo.actions.openRoute("blob", params, search)
-      context.home.actions.open(params.owner, params.repo)
-    }),
+    enter(load, () => context.repo.actions.warmRoute("blob", params, search), () =>
+      Promise.all([
+        context.repo.actions.openRoute("blob", params, search),
+        context.home.actions.open(params.owner, params.repo),
+        openBranchPage(context.branch, context.terminal, load.abortController.signal, params, {}),
+      ])),
+  onLeave: ({ context, abortController }) => {
+    abortController.abort()
+    leaveWorkspace(context)
+  },
 })
+
+/**
+ * Leaving a branch's directory or file page leaves its room and its live editor, unless the router now shows a
+ * directory or file page: that page's `beforeLoad` already joined its own branch's room, or left the room for a ref
+ * that isn't a branch, and showed or hid its editor. A route's `onLeave` runs after the next route opened (router-core
+ * `runRouteLifecycle`), so leaving here would undo what the next page just joined.
+ */
+const leaveWorkspace = (context: RouterContext) => {
+  const next = router.state.matches.at(-1)?.routeId
+  if (next === treeRoute.id || next === blobRoute.id) return
+  void context.branch.presence.actions.leave()
+  void context.branch.coedit.actions.hideFiles()
+  void context.terminal.actions.show(null)
+}
 
 /**
  * `/$owner/$repo/raw/$ref/$`: GitHub's raw path. Once the ref resolves, the page loads RepoApi's raw route of the file

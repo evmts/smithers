@@ -20,7 +20,7 @@ The files open in a repository show as tabs above its code, and the agent opens 
 - **Keyboard:** Tab reaches the strip at the file on screen; ← and → (Home, End) move between tabs; Enter or Space opens one; Delete or Backspace closes it and focuses the tab taking its place. A ⌘, Ctrl or middle click opens the file in a new browser tab.
 - **Per device.** The tabs are kept on the device, so every browser tab of the device shows the same strip and a reload keeps it; they never sync to another device or person (decision 0004 Q3: "open tabs and scroll position stay per device"). The highlighted lines are in the URL (`?L=`), so a shared link shows them.
 
-The strip shows on a file's page and on a branch's directory pages, in its workspace too.
+The strip shows on a file's page and on a branch's directory pages. A file's page is part of its branch's workspace, as a directory's is, so when the agent opens a file from the conversation, the conversation stays beside it.
 
 ## The flows
 
@@ -56,7 +56,7 @@ the route opens the file ─▶ RepoStore view row ─▶ FilesStore's follower 
 | `files.ts` | `Files`: the query and actions for frontends |
 | `components/` | `FileTabsBar` (over `@smthrs/ui`'s `FileTabs`) and its context |
 
-**Why not a plugin yet.** Decision 0017 makes every feature a plugin on the public plugin interface, but the interface isn't built: `@smthrs/plugin` has no `Manifest`, `Load` or `PluginHost`, and `apps/mvp/plugins/` doesn't exist (checked 2026-10-21). So file tabs are built in the app, in one folder whose only entries into the core are the registry's two lines, its layer in `src/boot.ts`, its provider in `src/main.tsx` and the strip in the two repository screens: what a `plugin.json` would declare as two flows and one slot contribution once the host lands.
+**Core integration.** The plugin host’s first slice is present on this base, with views, shell slots, commands and keybindings. File tabs retain their existing repository-screen integration during this rebase: the host does not yet expose a repository file-strip slot or persisted-store registration. Both plugin and files services remain wired through boot. The library catalog entries used are `@smthrs/ui` for the strip, `@smthrs/flow` for file actions, and `@smthrs/effect-tanstack-db` for persisted tabs.
 
 ## Observability
 
@@ -66,5 +66,5 @@ Each step logs `files.tab` (Warn for `no_repository`), records a span of the sam
 
 - `src/features/files/files.test.ts`: the strip and links; a tab on RepoApi's real handler and Electric (`src/test/repoDevice.ts`) keeping a tab for every file its view shows; `file/open` and `file/close` through the tab's dispatch, as the strip and as the agent, with closing on and off screen, a tab on no repository and refused payloads; a step whose tab is gone.
 - `packages/smithers/ui/tests/file-tabs.test.tsx`: the strip's roles, clicks and keys.
-- `e2e/files.spec.ts`: the agent opens a file at a line range in the branch workspace, the tab and highlight show; the person switches and closes tabs by keyboard.
+- `e2e/files.spec.ts`: the agent opens a file at a line range from the branch workspace's conversation, the tab and highlight show and the conversation stays; the person switches and closes tabs by keyboard (both need Code Storage); moving between a branch's directory, a file and its terminal keeps the workspace (no clone needed).
 - `evals/cases.ts` `files-show-lines`: asked to show code, the agent calls `file/open` with the lines.

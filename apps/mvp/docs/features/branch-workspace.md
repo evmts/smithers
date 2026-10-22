@@ -16,7 +16,7 @@ even after device storage is evicted. Conversation, sharing, presence, editing
 and terminal actions wait for verified access and the existing route loader.
 Previous branch data never supplies the pending view's identity or controls.
 
-`/$owner/$repo/tree/$ref` opens the repository at `$ref` and, when `$ref` is a branch GitHub has, its workspace:
+`/$owner/$repo/tree/$ref` (and a file at it, `/$owner/$repo/blob/$ref/<path>`) opens the repository at `$ref` and, when `$ref` is a branch GitHub has, its workspace:
 
 ```
 ┌ octocat / Spoon-Knife                                     Issues  Stack  [Clone] ┐

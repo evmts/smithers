@@ -1,11 +1,15 @@
 ---
 title: Agent navigates the repo view (feature 4)
-status: in-progress
+status: blocked
 area: app
 owner: Codex file-tabs rebase
 updated: 2026-10-22
 links: [../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0006-repo-clone-and-view.md, ../decisions/0011-the-agent-runs-in-the-browser.md, durable-browser-engine.md, navigate-flow.md, slash-commands.md, repo-clone-and-view.md, flows-and-agent.md, repository-declared-home.md]
 ---
+
+## Rebase — 2026-10-22
+
+Rebased onto `998199dc6263`. Boot retains sign-in, authority, plugins, attention and offline recovery alongside file tabs. Blob and tree routes share `openBranchPage` with cancellation; leaving retains the next workspace and clears terminals when leaving it. Decision 0021’s generator on Latitude adds the file-tabs store at epoch 64 without editing deployed history. The flow catalog now covers opening then closing a file; test renderers supply the real Files service. The full app suite found two pre-existing blockers, both reproduced on clean `998199dc6263`: telemetry drops `flow.run.created`/`flow.run.claimed`, and the killed-run status recovery test times out at 90 seconds. Validation receipts are in the requested `rb22-file-tabs-REPORT.md`; no push or deployment is authorized for this rebase.
 
 ## Tracker reconciliation — 2026-10-21 22:43 PDT
 
@@ -81,7 +85,9 @@ Will: "the agent being able to smoothly navigate the github repo and answer ques
 - 13:21:12: the lead: it "edits the routes the home-view agent is editing", so it waits for the [repository home](repository-declared-home.md) builder. Not in the 13:22 batch.
 
 - **2026-10-21: file tabs built** by the file-tabs builder ([file tabs](../features/files.md)). `file/open { path, lines? }` and `file/close { path }` are client flows the strip and the agent share; every file the code view shows gets a tab, kept per device (`file-tabs`, decision 0004 Q3), its lines in `?L=`; `@smthrs/ui` gained `FileTabs` (←, →, Home, End, Enter, Delete). Built in the app, not as a plugin: decision 0017's plugin host (`Manifest`, `Load`, `PluginHost`, `apps/mvp/plugins/`) doesn't exist yet. Eval case `files-show-lines`; e2e `e2e/files.spec.ts`.
-- Open: a file's page (`/blob/`) is not part of the branch workspace, so when the agent opens a file from the workspace's conversation, the conversation leaves the screen. The fix is the blob route rendering the workspace as the tree route does; the tree route's `onLeave` runs after the next route's `beforeLoad` (router-core `runRouteLifecycle`), so leaving the room there must check that the next route isn't the same branch's workspace.
+- A file's page (`/blob/`) now opens in its branch's workspace, as a directory's does (`BlobScreen`), so the conversation stays beside a file the agent opened; leaving a branch's directory or file page leaves its room only when the next page isn't the same branch's workspace (`leaveWorkspace` in src/router.tsx: router-core runs `onLeave` after the next route's `beforeLoad`).
+
+- Follow-up (pre-existing, found in review 2026-10-21): the tree and blob routes open the workspace of `params.ref`, the URL's first segment, so a branch whose name holds a `/` (`feature/x`) opens `feature`'s workspace. The fix resolves the ref (as `resolveRef` does for files) before `branch.actions.open`.
 
 ## Next
 

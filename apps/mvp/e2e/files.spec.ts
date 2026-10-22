@@ -9,7 +9,7 @@ import { requires, scriptedAgent } from "./target"
 // the flow the same way every time; the eval case `files-show-lines` holds the real model to it. The fixture is the
 // public `octocat/Spoon-Knife`, cloned once. Opening a branch's page tracks it and asking needs a Member or above.
 
-requires("member", "ownConversation", "codeStorage")
+requires("member", "ownConversation")
 
 const REPO = "/octocat/Spoon-Knife"
 
@@ -26,6 +26,14 @@ const openReady = (page: Page) =>
     await expect(picker).toBeVisible({ timeout: 120_000 })
   })
 
+/** Types `text` into the composer and sends it, opening the composer first when it is closed. */
+const send = async (page: Page, text: string) => {
+  const composer = page.getByRole("textbox", { name: "Message Smithers" })
+  if (!(await composer.isVisible())) await page.getByRole("button", { name: /Chat/ }).click()
+  await composer.fill(text)
+  await composer.press("Enter")
+}
+
 const strip = (page: Page) => page.getByRole("tablist", { name: "Open files" })
 
 /** The code view's line `line`, highlighted or not: the code renders in an open shadow root, which locators pierce. */
@@ -36,7 +44,7 @@ test(
   "agent shows code: asked to show lines of a file, the agent opens it as a tab with the lines highlighted",
   { annotation: { type: "summary", description: "The agent opens index.html at lines 3 to 5 as a tab beside README.md, the lines highlighted." } },
   async ({ page }) => {
-    requires("scriptedAgent")
+    requires("codeStorage", "scriptedAgent")
     await openReady(page)
     await step("Open README.md", async () => {
       await page.goto(`${REPO}/blob/main/README.md`)
@@ -49,9 +57,7 @@ test(
       await expect(strip(page).getByRole("tab", { name: "README.md" })).toHaveAttribute("aria-selected", "false")
     })
     await step("Ask Smithers to show index.html at lines 3 to 5", async () => {
-      const composer = page.getByRole("textbox", { name: "Message Smithers" })
-      await composer.fill("show-code index.html 3-5")
-      await composer.press("Enter")
+      await send(page, "show-code index.html 3-5")
     })
     await step("The file opens as a tab, lines 3 to 5 highlighted", async () => {
       await expect(page).toHaveURL(/\/octocat\/Spoon-Knife\/blob\/main\/index\.html\?L=3-5$/, { timeout: 60_000 })
@@ -60,6 +66,11 @@ test(
       for (const n of [3, 4, 5]) await expect(line(page, n, true)).toBeVisible({ timeout: 30_000 })
       for (const n of [2, 6]) await expect(line(page, n, false)).toBeVisible()
     })
+    await step("The conversation stays beside the file, with the agent's answer", async () => {
+      const conversation = page.getByRole("region", { name: "Conversation", exact: true })
+      await expect(conversation.getByText("show-code index.html 3-5")).toBeVisible()
+      await expect(conversation.getByText("Opened index.html at lines 3-5.")).toBeVisible({ timeout: 60_000 })
+    })
   },
 )
 
@@ -67,6 +78,7 @@ test(
   "keyboard: arrows move between file tabs, Enter opens one, Delete closes the one on screen",
   { annotation: { type: "summary", description: "Arrows and Enter switch file tabs; Delete closes the file on screen and the tab beside it shows, at its lines." } },
   async ({ page }) => {
+    requires("codeStorage")
     await openReady(page)
     await step("Open two files, the second at lines 2 to 4", async () => {
       await page.goto(`${REPO}/blob/main/README.md`)
@@ -95,6 +107,40 @@ test(
     await step("A reload keeps the tab", async () => {
       await page.reload()
       await expect(strip(page).getByRole("tab")).toHaveText(["index.html"], { timeout: 30_000 })
+    })
+  },
+)
+
+test(
+  "workspace: a file's page is its branch's workspace, the conversation beside it, as a directory's is",
+  { annotation: { type: "summary", description: "Moving between a branch's directory, its file and its terminal keeps the branch's workspace and conversation." } },
+  async ({ page }) => {
+    const conversation = page.getByRole("region", { name: "Conversation", exact: true })
+    const branch = page.getByRole("navigation", { name: "Branch" })
+    /** Moves this tab through the router, as a link does: `/navigate`, the person's door to `app/navigate`. */
+    const go = (path: string) => send(page, `/navigate ${path}`)
+    await step("Open a directory of test-branch: its workspace", async () => {
+      await page.goto(`${REPO}/tree/test-branch`)
+      await expect(branch).toContainText("test-branch", { timeout: 30_000 })
+      await expect(conversation).toBeVisible()
+    })
+    await step("Go to a file of it: the same workspace, Code the file", async () => {
+      await go(`${REPO}/blob/test-branch/README.md`)
+      await expect(page).toHaveURL(/\/blob\/test-branch\/README\.md$/, { timeout: 30_000 })
+      await expect(branch).toContainText("test-branch")
+      await expect(conversation).toBeVisible()
+      await expect(branch.getByRole("link", { name: "Code" })).toHaveAttribute("href", `${REPO}/blob/test-branch/README.md`)
+      await expect(branch.getByRole("link", { name: "Terminal" })).toHaveAttribute("href", `${REPO}/tree/test-branch?terminal=me`)
+    })
+    await step("Terminal from the file: still the workspace", async () => {
+      await branch.getByRole("link", { name: "Terminal" }).click()
+      await expect(page).toHaveURL(/\/tree\/test-branch\?terminal=me$/)
+      await expect(conversation).toBeVisible()
+    })
+    await step("Leave for the home conversation: the workspace goes", async () => {
+      await go("/app")
+      await expect(page).toHaveURL(/\/app$/, { timeout: 30_000 })
+      await expect(branch).toHaveCount(0)
     })
   },
 )

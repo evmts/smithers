@@ -8,6 +8,7 @@ import { accessNow, writes } from "../../features/branch/view"
 import { Composer } from "../../features/chat/components/Composer"
 import { SharedFile } from "../../features/coedit/components/SharedFile"
 import { FileTabsBar } from "../../features/files/components/FileTabsBar"
+import { HomeTabs } from "../../features/home/components/HomeTabs"
 import { Conversation } from "../../features/chat/components/Conversation"
 import { NO_MESSAGES } from "../../features/chat/contract"
 import { selfAccessOf } from "../../features/presence/view"
@@ -17,7 +18,7 @@ import { TerminalPanel } from "../../features/terminal/components/TerminalPanel"
 import { Toasts } from "../app/Toasts"
 import "./branch-screen.css"
 
-// /$owner/$repo/tree/$ref/$: the repository at a branch, and the branch's workspace once the app tracks it and this
+// /$owner/$repo/tree/$ref/$ and, as `BlobScreen`, /$owner/$repo/blob/$ref/$: the repository at a branch, and the branch's workspace once the app tracks it and this
 // person may open it (decision 0013 §5). The workspace is two columns: the branch's view, Code or Terminal, beside its
 // conversation, with the composer at the conversation's foot: on a branch its owner shared, the branch's prompt, typed
 // together by those who may edit it and shown read-only to those who may only view it; else the person's own draft
@@ -26,7 +27,7 @@ import "./branch-screen.css"
 // with them, or stops being, says No access where the conversation would be; the code stays as GitHub shows it. The
 // route's loader opens the location, the branch, its room and its terminal; this screen only renders what the device
 // has.
-export function BranchScreen() {
+export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean } = {}) {
   const { queries, presence } = useBranch()
   const { data: current } = useLiveQuery(queries.current)
   const { data: room } = useLiveQuery(presence.queries.room)
@@ -43,6 +44,7 @@ export function BranchScreen() {
       {open ? <BranchHeader access={access} /> : current?.status === "offline" ? <BranchHeader access={undefined} pending /> : null}
       <div className="branch-screen-notices"><Toasts surface={open ? "conversation" : "page"} /></div>
       <div className="branch-screen-view">
+        {homeTabs ? <HomeTabs active="code" /> : null}
         {open && search.terminal !== undefined
           ? <TerminalPanel canOpen={writes(access) && current?.mode === "open"} />
           : open && search.edit !== undefined && current?.conversationId != null
@@ -77,4 +79,10 @@ export function BranchScreen() {
       ) : null}
     </main>
   )
+}
+
+// /$owner/$repo/blob/$ref/$: a file at a branch or commit, in the branch's workspace as its directories are, with the
+// repository's Home and Code tabs when it declares a home.
+export function BlobScreen() {
+  return <BranchScreen homeTabs />
 }

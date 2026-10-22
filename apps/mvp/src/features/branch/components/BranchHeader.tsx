@@ -1,5 +1,5 @@
 import { Badge } from "@smthrs/ui"
-import { Link, useParams, useSearch } from "@tanstack/react-router"
+import { Link, useParams, useRouterState, useSearch } from "@tanstack/react-router"
 import { useLiveQuery } from "@tanstack/react-db"
 import { PresenceAvatars } from "../../presence/components/PresenceAvatars"
 import { ShareButton } from "../../sharing/components/ShareButton"
@@ -16,9 +16,13 @@ export function BranchHeader({ access, pending = false }: { readonly access: Acc
   const { data: current } = useLiveQuery(queries.current)
   const params = useParams({ strict: false })
   const search = useSearch({ strict: false }) as { readonly terminal?: string }
+  const file = useRouterState({ select: (state) => state.matches.at(-1)?.routeId === "/$owner/$repo/blob/$ref/$" })
   if (!pending && (current === undefined || current.status !== "ready" || access === "none")) return null
-  const to = "/$owner/$repo/tree/$ref/$"
+  const tree = "/$owner/$repo/tree/$ref/$"
   const routeParams = { owner: params.owner ?? "", repo: params.repo ?? "", ref: params.ref ?? "", _splat: params._splat ?? "" }
+  // On a file’s page, Code is the file and Terminal opens at its directory.
+  const code = file ? "/$owner/$repo/blob/$ref/$" : tree
+  const terminalParams = file ? { ...routeParams, _splat: routeParams._splat.split("/").slice(0, -1).join("/") } : routeParams
   const status = statusOf(pending ? undefined : access)
   return (
     <nav className="branch-header" aria-label="Branch">
@@ -29,10 +33,10 @@ export function BranchHeader({ access, pending = false }: { readonly access: Acc
       </span>
       <span className="branch-header-views">
         {/* Exact, so the router marks only the view that shows: Code's empty search is part of any terminal's. */}
-        <Link to={to} params={routeParams} search={{}} activeOptions={{ exact: true }} aria-current={search.terminal === undefined ? "page" : undefined}>
+        <Link to={code} params={routeParams} search={{}} activeOptions={{ exact: true }} aria-current={search.terminal === undefined ? "page" : undefined}>
           Code
         </Link>
-        <Link to={to} params={routeParams} search={{ terminal: "me" }} activeOptions={{ exact: true }} aria-current={search.terminal !== undefined ? "page" : undefined}>
+        <Link to={tree} params={terminalParams} search={{ terminal: "me" }} activeOptions={{ exact: true }} aria-current={search.terminal !== undefined ? "page" : undefined}>
           Terminal
         </Link>
       </span>
