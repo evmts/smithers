@@ -32,6 +32,38 @@ describe("the code-intelligence wire model", () => {
   const diagnostic = { ...range, severity: "error" as const, message: "boom", source: "ts", code: "2551" }
   const digest = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
 
+  test.each([
+    "/etc/passwd",
+    "../secret",
+    "src/../../x",
+    "./src/a",
+    "src//a",
+    "src\\a",
+    "a\u0000b",
+    "a\nb",
+    "a\u007fb",
+    "src/",
+    "a".repeat(4097)
+  ])(
+    "definition locations reject unsafe repository path %j",
+    (path) => {
+      const location = { path, ...range }
+      expect(LspLocationSchema.safeParse(location).success).toBe(false)
+      expect(LspDefinitionResponseSchema.safeParse({ locations: [location], total: 1, omitted: 0, digest }).success)
+        .toBe(false)
+    }
+  )
+
+  test.each([{ items: null, total: 0 }, { items: [], total: null }, { items: [diagnostic], total: null }])(
+    "diagnostics reject mismatched items/total nullability: %j",
+    (publication) => {
+      expect(
+        LspDiagnosticsResponseSchema.safeParse({ path: "src/index.ts", version: null, digest, ...publication }).success
+      )
+        .toBe(false)
+    }
+  )
+
   test("a position request is 1-based and carries nothing the routes did not ask for", () => {
     expect(LspPositionRequestSchema.parse(position)).toEqual(position)
     expect(LspPositionRequestSchema.safeParse({ ...position, line: 0 }).success).toBe(false)

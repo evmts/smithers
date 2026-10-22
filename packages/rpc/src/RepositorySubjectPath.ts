@@ -187,7 +187,8 @@ export interface RefLocation {
  * Matching is case-sensitive and whole-segment: `Main` is not `main`, and
  * `mainline/x` does not match the ref `main`.
  *
- * Each segment is decoded exactly ONCE here — the grammar refused every
+ * This entry validates the location with {@link repositoryLocation}, including
+ * for direct callers. Each segment is decoded exactly ONCE here — the grammar refused every
  * escape that a decode could turn into a separator or another escape, so one
  * decode cannot widen the location. A malformed escape the grammar let
  * through (a lone `%` is not one) makes the whole location undefined rather
@@ -211,8 +212,10 @@ export const resolveRefLocation = (
   location: string,
   refs: Iterable<string>
 ): RefLocation | undefined => {
+  const segments = location.split("/")
+  if (repositoryLocation(segments) === undefined) return undefined
   const decoded: Array<string> = []
-  for (const segment of location.split("/")) {
+  for (const segment of segments) {
     let value: string
     try {
       value = decodeURIComponent(segment)

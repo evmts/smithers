@@ -4,6 +4,8 @@
 
 Shared product contracts for the local host, browser, and server. Import them from the root, where each module is a namespace: `import { LocalApp, TargetGraph } from "@smthrs/rpc"`. The root reaches no `node:` or `bun:` built-in. Two modules stay off it: `FormInstructions.generated.ts`, whose `FORM_INSTRUCTION_FIELDS` is part of `UiInstruction`, and the test double `@smthrs/rpc/testing/LiveDocRelay`. The `@smthrs/rpc/<Module>` subpaths still resolve because existing TUI, package and site files import them; new code uses the root.
 
+`FileRead` card IDs retain their readable repository-path@revision form, escaping `%` and repository `-` / path `@` delimiters so names cannot collide. `decodeFilePage` rejects malformed base64 with `FilePageRejected` (`invalid_encoding`); valid binary content stays opaque. `LocalLsp` validates definition paths with the request's repository-relative path rule, and diagnostic responses require `items` and `total` to be null together. `Refusal` accepts only positive finite explicit retry seconds, rounded up, and attributes a missing response to the client unless an origin is stated. Direct `RepositorySubjectPath.resolveRefLocation` calls validate the location grammar before decoding.
+
 `BrowserFetch` is the one implementation module: the browser tool's guarded fetch-and-extract handler, shared by the product Worker and the local host. It is the only module that performs network I/O, with the DNS resolver injected by each host.
 
 The model host owns enrollment (`POST /api/model/credential`) and safe receipts

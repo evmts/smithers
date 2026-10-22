@@ -11,6 +11,17 @@ const wire = {
 }
 
 describe("decodeFilePage refusals", () => {
+  it.each(["%", "a", "a===", "a!bc", "λ"])("wraps malformed base64 %s as invalid_encoding", (content) => {
+    let thrown: unknown
+    try {
+      decodeFilePage({ ...wire, encoding: "base64", content })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(FilePageRejected)
+    expect(thrown).toMatchObject({ _tag: "FilePageRejected", code: "invalid_encoding" })
+  })
+
   it.each([
     ["a response that is not an object", null, "invalid_response"],
     ["a branch name where the commit sha belongs", { ...wire, commit_sha: "main" }, "invalid_response"],

@@ -387,6 +387,39 @@ describe("refusal persistence units", () => {
 })
 
 describe("classifying a refusal", () => {
+  test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "explicit retry seconds %s cannot become an invalid retry delay",
+    (retryAfterSeconds) => {
+      const input = { body: { fault: "wait" }, status: 503, message: "Wait", retryAfterSeconds }
+      const refusal = refusalOf(input)
+      expect(refusal.retryAfter).toBeNull()
+      expect(statedRetryDelayMs(refusal)).toBeNull()
+      expect(mayAutoRetry(refusal)).toBe(false)
+      expect(refusalOf({ ...input, body: { retry_after: 3 } }).retryAfter).toBe(3)
+    }
+  )
+
+  test("explicit fractional retry seconds are rounded up like body retry seconds", () => {
+    const refusal = refusalOf({ body: { retry_after: 9 }, status: 503, message: "Wait", retryAfterSeconds: 1.25 })
+    expect(refusal.retryAfter).toBe(2)
+    expect(statedRetryDelayMs(refusal)).toBe(2000)
+  })
+
+  test.each([null, {}, { code: "future_failure" }, { origin: "unknown" }])(
+    "an unattributed refusal without a response is from the client: %j",
+    (body) => {
+      expect(refusalOf({ body, status: null, message: "Connection ended" })).toMatchObject({
+        origin: "client",
+        status: null,
+        fault: "infra"
+      })
+    }
+  )
+
+  test.each(REFUSAL_ORIGINS)("a stated %s origin survives a null status", (origin) => {
+    expect(refusalOf({ body: { origin }, status: null, message: "Connection ended" }).origin).toBe(origin)
+  })
+
   test("plue's own body is taken at its word", () => {
     const refusal = refusalOf({
       body: { code: "no_capacity", fault: "infra", message: "no sandbox slots are free", retry_after: 30 },

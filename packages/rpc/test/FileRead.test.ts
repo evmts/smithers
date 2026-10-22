@@ -10,6 +10,35 @@ import {
 } from "../src/FileRead.ts"
 
 describe("the file flow every host binds", () => {
+  test("distinct repository, path and revision tuples have distinct stable card IDs", () => {
+    const reads = [
+      { repo: "acme/app", path: "a@v1" },
+      { repo: "acme/app", path: "a", ref: "v1" },
+      { repo: "acme/app", path: "a@b", ref: "c" },
+      { repo: "acme/app", path: "a", ref: "b@c" },
+      { repo: "acme/app", path: "a" },
+      { repo: "acme/app", path: "a", ref: "" },
+      { repo: "acme/app-a", path: "b" },
+      { repo: "acme/app", path: "a-b" },
+      { repo: "acme/app%2Da", path: "b" },
+      { repo: "acme/app", path: "a%40v1" },
+      { repo: "acme/app", path: "a%25" },
+      { repo: "acme/app", path: "a%" }
+    ]
+    const ids = reads.map((read) => fileReadCard({ ...read, content: "", binary: false }, 0, 0).card.id)
+    // Escape only identity delimiters: ordinary host IDs stay stable; ambiguous names need escapes.
+    expect(ids.slice(0, 4)).toEqual([
+      "file-acme/app-a%40v1",
+      "file-acme/app-a@v1",
+      "file-acme/app-a%40b@c",
+      "file-acme/app-a@b@c"
+    ])
+    expect(new Set(ids).size).toBe(reads.length)
+    for (const [index, read] of reads.entries()) {
+      expect(fileReadCard({ ...read, content: "edited", binary: false, line: 2 }, 1, 1).card.id).toBe(ids[index])
+    }
+  })
+
   test("is named and described once", () => {
     expect(FILES_READ_COMMAND).toEqual({
       name: "file",

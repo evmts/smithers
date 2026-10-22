@@ -210,7 +210,7 @@ export type LspDiagnostic = z.infer<typeof LspDiagnosticSchema>
  * @since 1.0.0
  * @category schemas
  */
-export const LspLocationSchema = z.object({ path: z.string().min(1), ...lspRangeShape })
+export const LspLocationSchema = z.object({ path: lspRepoPath, ...lspRangeShape })
 /**
  * The decoded value accepted by {@link LspLocationSchema}.
  *
@@ -293,6 +293,9 @@ export const LspDiagnosticsResponseSchema = z.object({
   items: z.array(LspDiagnosticSchema).max(LSP_DIAGNOSTICS_CAP).nullable(),
   total: lspCount.nullable(),
   digest: lspDigest
+}).refine(({ items, total }) => (items === null) === (total === null), {
+  message: "Diagnostic items and total must both be null or both be present.",
+  path: ["total"]
 })
 /**
  * The decoded value accepted by {@link LspDiagnosticsResponseSchema}.

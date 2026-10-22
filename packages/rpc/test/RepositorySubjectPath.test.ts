@@ -170,6 +170,28 @@ describe("repositoryLocation", () => {
 describe("resolveRefLocation", () => {
   const refs = ["main", "release/1.2", "release/1.2/hotfix", "Main"]
 
+  it.each(["%00", "%01", "%09", "%0a", "%1F", "%7f", "%25", "%252f", "%", "\u0000", "\n", "\u007f"])(
+    "direct resolution refuses unsafe control or percent segment %j in refs and paths",
+    (segment) => {
+      expect(repositoryLocation(["main", segment])).toBeUndefined()
+      expect(resolveRefLocation(`main/${segment}`, refs)).toBeUndefined()
+      expect(resolveRefLocation(`${segment}/src`, [decodeURIComponent(segment === "%" ? "%25" : segment)]))
+        .toBeUndefined()
+    }
+  )
+
+  it("direct resolution observes the location grammar's bounds and first-segment colon rule", () => {
+    expect(resolveRefLocation(`main/${"a".repeat(1024)}`, refs)).toBeUndefined()
+    expect(
+      resolveRefLocation(
+        ["main", ...Array.from({ length: REPOSITORY_LOCATION_MAX_SEGMENTS }, () => "a")].join("/"),
+        refs
+      )
+    )
+      .toBeUndefined()
+    expect(resolveRefLocation("ref:bad/src", ["ref:bad"])).toBeUndefined()
+  })
+
   it("divides at the longest ref the authoritative list holds", () => {
     expect(resolveRefLocation("main/src/index.ts", refs)).toEqual({ ref: "main", path: "src/index.ts" })
     expect(resolveRefLocation("release/1.2/src/index.ts", refs)).toEqual({ ref: "release/1.2", path: "src/index.ts" })

@@ -222,7 +222,7 @@ export interface RefusalInput {
   readonly status: number | null
   /** The refusing party's words; the caller has already applied its own fallback. */
   readonly message: string
-  /** `Retry-After`, when a response carried one. The body's `retry_after` and the registry stand in when it did not. */
+  /** Positive finite `Retry-After` seconds, rounded up; absent or invalid values fall back to the body's `retry_after`. */
   readonly retryAfterSeconds?: number | null
 }
 
@@ -235,7 +235,8 @@ export interface RefusalInput {
  * preserves `code` and `retry_after` exactly); and anything else that still
  * reached us as a response was refused by the Worker without a code — an older
  * deployment, or a route this change has not reached — so it stays the Worker's
- * with its fault read off the status.
+ * with its fault read off the status. Without a response or an explicit origin,
+ * the refusal belongs to the client.
  *
  * @since 1.0.0
  * @category constants
@@ -267,10 +268,12 @@ export const refusalOf = (input: RefusalInput): Refusal => {
     ...(textOf(record.limit_kind) === null ? {} : { limit_kind: textOf(record.limit_kind) }),
     ...(textOf(record.upgrade_plan_key) === null ? {} : { upgrade_plan_key: textOf(record.upgrade_plan_key) }),
     /* The header wins, then the body plue now always writes. What this response said, and nothing inferred. */
-    retryAfter: input.retryAfterSeconds ?? secondsOf(record.retry_after) ?? null,
+    retryAfter: secondsOf(input.retryAfterSeconds) ?? secondsOf(record.retry_after) ?? null,
     status: input.status,
     origin: claimed !== null && ORIGINS.has(claimed)
       ? claimed as RefusalOrigin
+      : input.status === null
+      ? "client"
       : isNativeFailureCode(code)
       ? "local"
       : isWorkerFailureCode(code) || code === null

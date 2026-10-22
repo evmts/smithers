@@ -189,7 +189,8 @@ export interface FileRead {
 
 /**
  * The File card a read shows, cut at the card cap, and the model's copy of it. A binary file is stated, never
- * printed, and carries no line anchor.
+ * printed, and carries no line anchor. IDs retain their readable form, escaping percent signs and delimiter
+ * characters in the repository and path so distinct files and revisions cannot collide.
  * @since 1.0.0
  * @category constructors
  */
@@ -217,7 +218,9 @@ export const fileReadCard = (
   }
   return {
     card: {
-      id: `file-${read.repo}-${read.path}${read.ref === undefined ? "" : `@${read.ref}`}`,
+      id: `file-${read.repo.replace(/%/g, "%25").replace(/-/g, "%2D")}-${
+        read.path.replace(/%/g, "%25").replace(/@/g, "%40")
+      }${read.ref === undefined ? "" : `@${read.ref}`}`,
       kind: "file",
       title: `File · ${read.repo} · ${read.path}`,
       status: "active",
@@ -257,7 +260,7 @@ export class FilePageRejected extends Error {
   }
 }
 
-/** Decode an immutable contents response without truncating its text.
+/** Decode an immutable contents response without truncating its text; malformed encodings throw FilePageRejected.
  * @since 0.1.0
  * @category parsers
  */
@@ -277,7 +280,12 @@ export const decodeFilePage = (value: unknown): FilePage => {
   let binary = false
   if (!tooLarge) {
     if (wire.encoding === "base64") {
-      const bytes = Uint8Array.from(atob(wire.content), (char) => char.charCodeAt(0))
+      let bytes: Uint8Array
+      try {
+        bytes = Uint8Array.from(atob(wire.content), (char) => char.charCodeAt(0))
+      } catch {
+        throw new FilePageRejected("invalid_encoding", "Invalid file encoding")
+      }
       binary = bytes.includes(0)
       try {
         content = binary ? null : new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes)
