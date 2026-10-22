@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -26,6 +26,14 @@ describe("npm CLI in a real jj checkout", () => {
       expect(status.files).toContainEqual({ status: "A", path: "hello.txt" })
       expect(invoke(["change", "diff"]).diff).toContain("hello world")
       expect(invoke(["change", "show", "@"]).change_id).toBe(status.working_copy.change_id)
+      const ambiguous = spawnSync(process.execPath, [cli, "change", "show", "root() | @", "--json"], {
+        cwd: directory,
+        env,
+        encoding: "utf8",
+        timeout: 30000
+      })
+      expect(ambiguous.status).not.toBe(0)
+      expect(ambiguous.stdout + ambiguous.stderr).toContain("Expected exactly one revision")
       expect(invoke(["change", "list", "--limit", "1"])[0].description).toBe("CLI change")
       expect(invoke(["change", "files", "@"]).files).toEqual(["hello.txt"])
       expect(invoke(["change", "conflicts", "@"]).conflicts).toEqual([])

@@ -18,7 +18,6 @@ import * as Layer from "effect/Layer"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Stream from "effect/Stream"
-import { once } from "node:events"
 import { hostname } from "node:os"
 import { PassThrough } from "node:stream"
 import { Refused } from "../../CliError.ts"
@@ -97,22 +96,24 @@ export const run = (
   }
 ): Promise<Result> => {
   const maxBytes = options.maxBytes ?? 16 * 1024 * 1024
-  const collect = (stream: Stream.Stream<Uint8Array, unknown>) =>
-    Stream.runFold(stream, () => ({ chunks: [] as Array<Uint8Array>, bytes: 0 }), (state, chunk) => {
-      state.bytes += chunk.byteLength
-      if (state.bytes <= maxBytes) state.chunks.push(chunk)
-      return state
-    }).pipe(Effect.flatMap(({ bytes, chunks }) =>
-      bytes > maxBytes
-        ? Effect.fail(
+  const collect = (stream: Stream.Stream<Uint8Array, unknown>) => {
+    const chunks: Array<Uint8Array> = []
+    let bytes = 0
+    return Stream.runForEach(stream, (chunk) => {
+      bytes += chunk.byteLength
+      if (bytes > maxBytes) {
+        return Effect.fail(
           new Refused({
             fault: "dependency",
             code: "tool_output_too_large",
             message: `${command} output exceeded ${maxBytes} bytes`
           })
         )
-        : Effect.succeed(Buffer.concat(chunks).toString("utf8"))
-    ))
+      }
+      chunks.push(chunk)
+      return Effect.void
+    }).pipe(Effect.map(() => Buffer.concat(chunks).toString("utf8")))
+  }
   const program = Effect.gen(function*() {
     const handle = yield* (yield* ChildProcessSpawner).spawn(ChildProcess.make(command, [...args], {
       env: environment(options.env),
@@ -155,14 +156,32 @@ export interface Child {
   readonly kill: () => void
 }
 
-// Waits while the reader is behind, so a slow consumer bounds the buffer.
+// Waits while the reader is behind, releasing every listener on any outcome.
 const relay = (source: Stream.Stream<Uint8Array, unknown>, sink: PassThrough) =>
   Stream.runForEach(source, (chunk) =>
-    Effect.promise(() =>
-      sink.write(chunk) || sink.destroyed
-        ? Promise.resolve()
-        : Promise.race([once(sink, "drain"), once(sink, "close")]).then(() => undefined)
-    )).pipe(Effect.ensuring(Effect.sync(() => sink.end())))
+    Effect.callback<void, unknown>((resume) => {
+      if (sink.destroyed || sink.write(chunk)) {
+        resume(Effect.void)
+        return
+      }
+      const cleanup = () => {
+        sink.off("drain", drained)
+        sink.off("close", drained)
+        sink.off("error", failed)
+      }
+      const drained = () => {
+        cleanup()
+        resume(Effect.void)
+      }
+      const failed = (error: Error) => {
+        cleanup()
+        resume(Effect.fail(error))
+      }
+      sink.once("drain", drained)
+      sink.once("close", drained)
+      sink.once("error", failed)
+      return Effect.sync(cleanup)
+    })).pipe(Effect.ensuring(Effect.sync(() => sink.end())))
 
 /**
  * Starts a command whose streams the caller drives.
@@ -214,6 +233,7 @@ export const spawn = (
     Effect.runFork(Fiber.interrupt(fiber))
   }
   options.signal?.addEventListener("abort", abort, { once: true })
+  if (options.signal?.aborted) abort()
   const exited = Effect.runPromiseExit(Fiber.join(fiber)).then((exit) => {
     options.signal?.removeEventListener("abort", abort)
     stdout?.end()

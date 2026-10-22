@@ -15,15 +15,29 @@ export const lines = (text: string): Array<string> => text.split("\n").filter((l
  * @private
  * @since 1.0.0
  */
-export const revision = async (c: Client, rev: string) => {
-  const [change_id, commit_id, ...description] = (await c.exec("jj", [
-    "log",
-    "-r",
-    rev,
-    "--no-graph",
-    "-T",
-    "change_id ++ \"\\t\" ++ commit_id ++ \"\\t\" ++ description.first_line() ++ \"\\n\""
-  ])).split("\t")
+export const revision = async (c: Client, rev: string) =>
+  parseRevision(
+    await c.exec("jj", [
+      "log",
+      "-r",
+      rev,
+      "--no-graph",
+      "-T",
+      "change_id ++ \"\\t\" ++ commit_id ++ \"\\t\" ++ description.first_line() ++ \"\\n\""
+    ]),
+    rev
+  )
+/**
+ * Decode the records emitted by the revision query.
+ * @private
+ * @since 1.0.0
+ */
+export const parseRevision = (text: string, rev: string) => {
+  const records = lines(text)
+  if (records.length > 1) {
+    throw new Refused({ fault: "user", code: "ambiguous_revision", message: `Expected exactly one revision: ${rev}` })
+  }
+  const [change_id, commit_id, ...description] = (records[0] ?? "").split("\t")
   if (!change_id) throw new Refused({ fault: "user", code: "not_found", message: `Unable to resolve revision ${rev}` })
   return { change_id, commit_id, description: description.join("\t") }
 }
