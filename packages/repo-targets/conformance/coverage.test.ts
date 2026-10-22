@@ -66,6 +66,21 @@ describe("coverage conformance", () => {
     })
   }
 
+  for (const { name, source } of configs) {
+    if (!source.includes("tmpdir()") || !source.includes("reportsDirectory:")) continue
+    it(`${name} reclaims its default scratch coverage report`, () => {
+      assert.ok(source.includes("coverage-teardown.mjs") || source.includes("CoverageTeardown.ts"))
+      assert.ok(source.includes("test-process-environment.mjs"))
+      const coverage = source.indexOf(
+        source.includes("coverage-teardown.mjs") ? "coverage-teardown.mjs" : "CoverageTeardown.ts"
+      )
+      assert.ok(
+        coverage < source.indexOf("test-process-environment.mjs"),
+        "capture the original temp root before replacing TMPDIR"
+      )
+    })
+  }
+
   // No package currently lacks an enabled coverage gate. Keep this explicit
   // set and its inverted assertion so any future temporary deferral remains
   // narrow, reviewable, and self-expiring when the package enables its gate.
@@ -201,10 +216,10 @@ describe("coverage conformance", () => {
       // explicitly filtered developer run opts out through the helper whose
       // full-suite behavior is exercised below. Pin the parser and wiring,
       // so an unrelated dynamic expression cannot disable the gate.
-      assert.ok(source.includes('import { parseCLI } from "vitest/node"'))
-      assert.ok(source.includes('import { coversWholeSuite } from "./test/CoverageGate.ts"'))
+      assert.ok(source.includes("import { parseCLI } from \"vitest/node\""))
+      assert.ok(source.includes("import { coversWholeSuite } from \"./test/CoverageGate.ts\""))
       assert.ok(coverage!.includes(
-        'enabled: coversWholeSuite(parseCLI(["vitest", ...process.argv.slice(2)], { allowUnknownOptions: true })),\n'
+        "enabled: coversWholeSuite(parseCLI([\"vitest\", ...process.argv.slice(2)], { allowUnknownOptions: true })),\n"
       ))
     } else if (name === "smithers") {
       // `vitest related <files>` fast checks run a subset, where whole-package
@@ -296,11 +311,16 @@ describe("coverage conformance", () => {
     }
     const source = configs.find((config) => config.name === "smithers/flows/flow")!.source
     assertCoverageDenominator("smithers/flows/flow", source)
-    for (const changed of [
-      source.replace("enabled: coversWholeSuite(", "enabled: false && coversWholeSuite("),
-      source.replace('parseCLI(["vitest", ...process.argv.slice(2)]', 'parseCLI(["vitest", "test/Only.test.ts"]'),
-      source.replace('from "./test/CoverageGate.ts"', 'from "./test/AnotherGate.ts"')
-    ]) assert.throws(() => assertCoverageDenominator("smithers/flows/flow", changed))
+    for (
+      const changed of [
+        source.replace("enabled: coversWholeSuite(", "enabled: false && coversWholeSuite("),
+        source.replace(
+          "parseCLI([\"vitest\", ...process.argv.slice(2)]",
+          "parseCLI([\"vitest\", \"test/Only.test.ts\"]"
+        ),
+        source.replace("from \"./test/CoverageGate.ts\"", "from \"./test/AnotherGate.ts\"")
+      ]
+    ) assert.throws(() => assertCoverageDenominator("smithers/flows/flow", changed))
   })
 
   it("requires the exact HostContract handoff to retain its full destination gate", () => {

@@ -1,9 +1,11 @@
+import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
+    globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
     environment: "node",
     // The retained-heap assertion in ServerSoak compares heapUsed across a
     // forced collection; without --expose-gc the measurement floats with

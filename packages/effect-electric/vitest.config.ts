@@ -1,9 +1,14 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
+    globalSetup: [
+      fileURLToPath(new URL("../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
+      fileURLToPath(new URL("../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
+    ],
     environment: "node",
     // A finite budget that survives coverage-instrumented load, so a genuine hang still fails the run.
     testTimeout: 30_000,

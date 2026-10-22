@@ -1,5 +1,6 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "vitest/config"
 
 // Unit tests in Node: the browser's framework-free chat layer (src/), ChatApi's handlers (worker/) and the database
@@ -7,6 +8,10 @@ import { defineConfig } from "vitest/config"
 // Playwright covers real browsers. The coverage gate measures logic: every src/**/*.ts but tests and their hosts.
 export default defineConfig({
   test: {
+    globalSetup: [
+      fileURLToPath(new URL("../../packages/repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
+      fileURLToPath(new URL("../../packages/repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
+    ],
     include: [
       "PACKAGE.test.ts",
       "tests/**/*.test.ts",
@@ -22,7 +27,7 @@ export default defineConfig({
       // The dev server's HTTPS and HTTP/2 front (dev/https.ts).
       "dev/**/*.test.ts",
       // Dashboards as code (ops/grafana/README.md) against the telemetry contract.
-      "ops/**/*.test.ts",
+      "ops/**/*.test.ts"
     ],
     environment: "node",
     // A finite budget that survives coverage-instrumented load, so a genuine hang still fails the run.
@@ -154,7 +159,7 @@ export default defineConfig({
         "e2e/spend.ts",
         "e2e/deployment/session.ts",
         // The dev server over HTTPS and HTTP/2, as production serves the app (docs/infrastructure.md#https-and-http2).
-        "dev/https.ts",
+        "dev/https.ts"
       ],
       // src/flows/engine.worker.ts is a program boundary, like src/main.tsx: src/flows/engine.test.ts proves what it
       // registers, and a browser proves the rest.
@@ -165,9 +170,9 @@ export default defineConfig({
         "src/test/**",
         "worker/**/*.test.ts",
         "src/flows/engine.worker.ts",
-        "src/features/code-intel/language.worker.ts",
+        "src/features/code-intel/language.worker.ts"
       ],
-      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 },
-    },
-  },
+      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }
+    }
+  }
 })

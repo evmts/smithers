@@ -1,3 +1,4 @@
+import { tempDirectory } from "./TempDirectory.ts"
 /**
  * The catch-up read behind a workspace follower's run catalog.
  *
@@ -16,8 +17,6 @@ import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
-import { mkdtemp } from "node:fs/promises"
-import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as RunCatalogOps from "../src/internal/RunCatalogOps.ts"
 import * as TestStores from "../src/test/TestStores.ts"
@@ -32,7 +31,7 @@ const onFile = (filename: string) => <A, E>(body: Effect.Effect<A, E, Services |
   withCrypto(Effect.scoped(body).pipe(Effect.provide(TestStores.layerAt(filename))))
 
 const temporaryFile = Effect.gen(function*() {
-  const directory = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "run-catalog-")))
+  const directory = yield* tempDirectory("run-catalog-")
   return join(directory, "engine.db")
 })
 
@@ -145,7 +144,7 @@ describe("run catalog catch-up", () => {
   it.effect("keeps the newest runs across the hot-backup restore path", () =>
     Effect.gen(function*() {
       const source = yield* temporaryFile
-      const backup = join(yield* Effect.promise(() => mkdtemp(join(tmpdir(), "run-catalog-backup-"))), "engine.db")
+      const backup = join(yield* tempDirectory("run-catalog-backup-"), "engine.db")
 
       // The read orders by the run table's physical row order, which is the
       // order the workspace gained its runs. `VACUUM INTO` is the backup this

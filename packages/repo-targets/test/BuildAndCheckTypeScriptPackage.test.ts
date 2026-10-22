@@ -225,10 +225,10 @@ describe("BuildAndCheckTypeScriptPackage test data", () => {
     const standard = BuildAndCheckTypeScriptPackage({ packageManager, cwd: options.cwd })
     const withData = BuildAndCheckTypeScriptPackage(options)
     expect(Target.metadata(withData.test).inputs).toEqual([
-      ...Target.metadata(standard.test).inputs.slice(0, 5),
+      ...Target.metadata(standard.test).inputs.slice(0, 8),
       Input.glob("test/fixtures/*.mjs"),
       Input.glob("test/fixtures/*.cjs"),
-      ...Target.metadata(standard.test).inputs.slice(5)
+      ...Target.metadata(standard.test).inputs.slice(8)
     ])
     expect(plannedArgv(withData.test)).toEqual(plannedArgv(standard.test))
     for (const name of ["lib", "check", "lint", "fmt", "docs", "circular", "docsFiles"] as const) {
@@ -417,7 +417,8 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       Input.glob("spec/**/*.ts"),
       Input.file("tsconfig.json"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
-      Input.file("//packages/repo-targets/test-utils/effect-property.d.mts")
+      Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
+      Input.file("//packages/repo-targets/test-utils/vitest-root-temp.d.mts")
     ])
     expect(attrsOf<Dprint.Attrs>(relocated.fmt).sources).toEqual([
       Input.glob("src/**/*.ts"),
@@ -446,12 +447,16 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       Input.glob("test/**/*.ts"),
       Input.file("tsconfig.json"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
-      Input.file("//packages/repo-targets/test-utils/effect-property.d.mts")
+      Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
+      Input.file("//packages/repo-targets/test-utils/vitest-root-temp.d.mts")
     ])
     expect(attrsOf<Vitest.Attrs>(relocated.test).sources).toEqual([
       moved,
       Input.glob("test/**/*.ts"),
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
+      Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
+      Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
+      Input.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"),
       Input.file("//packages/repo-targets/test-utils/effect-property.d.mts")
     ])
     expect(attrsOf<EsLint.Attrs>(relocated.lint).sources).toEqual([moved])
@@ -503,6 +508,9 @@ it("runs a package-owned test matrix with the same source and dependency boundar
   expect(attrs.srcs).toContainEqual(Input.glob("docs/**/*.md"))
   expect(attrs.srcs).toContainEqual(Input.file("vitest.config.ts"))
   expect(attrs.srcs).toContainEqual(Input.glob("test/**/*.ts"))
+  expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"))
+  expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"))
+  expect(attrs.srcs).toContainEqual(Input.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"))
 })
 
 it("uses default matrix limits without a package manager or Vitest config", () => {

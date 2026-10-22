@@ -1,12 +1,15 @@
-import { tempDirectory } from "./tempDirectory"
-import { Journal as FlowJournal } from "@smthrs/flows"
-import { FLOW_DRAFTS_TABLE, FLOWS_TABLE } from "../features/flows-ui/contract"
-import { ImmutableCache } from "@smthrs/artifacts"
-import { Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
-import { ShapeSource } from "@smthrs/effect-electric"
-import { HostModel } from "@smthrs/model-host"
 import * as Pg from "@effect/sql-pg"
+import { ImmutableCache } from "@smthrs/artifacts"
 import { PostgresDatabase } from "@smthrs/database"
+import { ShapeSource } from "@smthrs/effect-electric"
+import { Outbox } from "@smthrs/effect-tanstack-db"
+import { FlowRuntime } from "@smthrs/flow"
+import { Journal as FlowJournal } from "@smthrs/flows"
+import { Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
+import { HostModel } from "@smthrs/model-host"
+import { BrowserEngine, BrowserRuntime, StoragePersistence, TabChannel, WebLock } from "@smthrs/platform-browser"
+import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
+import { startOfflineExecutor } from "@tanstack/offline-transactions"
 import {
   Cause,
   ConfigProvider,
@@ -24,24 +27,24 @@ import {
   Schedule,
   Scope,
   Stream,
-  Tracer,
+  Tracer
 } from "effect"
-import { FlowRuntime } from "@smthrs/flow"
 import { FetchHttpClient, type HttpClient, HttpEffect, HttpServerRequest } from "effect/http"
 import * as Socket from "effect/socket/Socket"
 import { SqlClient } from "effect/sql"
+import { rmSync } from "node:fs"
+import { join } from "node:path"
+import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../../worker/Actor.ts"
-import * as RunCredentials from "../../worker/RunCredentials.ts"
-import { credentialsFor } from "../../worker/test/harness.ts"
-import * as Chat from "../../worker/Chat.ts"
-import * as Flows from "../../worker/Flows.ts"
-import * as RepoApi from "../../worker/RepoApi.ts"
 import * as BranchApi from "../../worker/branch/BranchApi.ts"
 import { Forge } from "../../worker/branch/Forge.ts"
-import { TerminalSockets } from "../../worker/branch/Sandboxes.ts"
 import { Directory } from "../../worker/branch/People.ts"
 import { Rooms } from "../../worker/branch/Rooms.ts"
+import { TerminalSockets } from "../../worker/branch/Sandboxes.ts"
+import * as Chat from "../../worker/Chat.ts"
+import * as Flows from "../../worker/Flows.ts"
+import * as Pause from "../../worker/flows/Pause.ts"
 import * as GitHubApi from "../../worker/github/Api.ts"
 import { repositoryOf } from "../../worker/github/Config.ts"
 import {
@@ -49,8 +52,15 @@ import {
   appKey,
   SCRIPTED_API,
   type ScriptedGitHub,
-  scriptedGitHub,
+  scriptedGitHub
 } from "../../worker/github/test/scriptedGitHub.ts"
+import * as HomeApi from "../../worker/home/Api.ts"
+import type { CuratedFile } from "../../worker/home/Curated.ts"
+import * as RemoteRuns from "../../worker/RemoteRuns.ts"
+import * as RepoApi from "../../worker/RepoApi.ts"
+import * as RunCredentials from "../../worker/RunCredentials.ts"
+import * as StackApi from "../../worker/stack/Api.ts"
+import * as Stack from "../../worker/stack/Stack.ts"
 import {
   codeStorageGit,
   type GitHost,
@@ -58,47 +68,43 @@ import {
   rooms,
   type Sockets,
   terminalSockets,
-  type TestRooms,
+  type TestRooms
 } from "../../worker/test/branch.ts"
-import { outsideWeb, type Page } from "../../worker/test/pages.ts"
-import { Outbox } from "@smthrs/effect-tanstack-db"
-import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
-import { BrowserEngine, BrowserRuntime, StoragePersistence, TabChannel, WebLock } from "@smthrs/platform-browser"
-import { startOfflineExecutor } from "@tanstack/offline-transactions"
-import { rmSync } from "node:fs"
-import { join } from "node:path"
-import { DatabaseSync, type SQLInputValue } from "node:sqlite"
-import { type AppOptions, appLayer, type Host, realServices } from "../boot"
-import { bindSessionConnectivity } from "../features/auth/auth"
-import { faultyServices } from "./faults"
-import { MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
-import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
-import { RUNS_TABLE } from "../features/status/contract"
-import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
-import { NOTIFICATIONS_TABLE } from "../features/attention/contract"
-import { COMMENTS_TABLE, ITEMS_TABLE, SYNC_TABLE, TRIAGE_SETTINGS_TABLE, WRITES_TABLE } from "../features/issues/contract"
-import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE } from "../features/pulls/contract"
-import type { IssuesClient } from "../features/issues/api"
-import type { PullsClient } from "../features/pulls/api"
-import type { StackClient } from "../features/todos/api"
-import type { TextsClient } from "../features/coedit/api"
-import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
-import * as StackApi from "../../worker/stack/Api.ts"
-import * as Stack from "../../worker/stack/Stack.ts"
-import * as RemoteRuns from "../../worker/RemoteRuns.ts"
-import * as Pause from "../../worker/flows/Pause.ts"
 import { build as buildEngine } from "../../worker/test/flowHost.ts"
-import { todoExecutionId } from "../features/pulls/contract"
-import * as HomeApi from "../../worker/home/Api.ts"
-import type { CuratedFile } from "../../worker/home/Curated.ts"
-import { VIEWS_TABLE } from "../features/views/contract"
-import { TERMINALS_TABLE } from "../features/terminal/contract"
+import { credentialsFor } from "../../worker/test/harness.ts"
+import { outsideWeb, type Page } from "../../worker/test/pages.ts"
+import { appLayer, type AppOptions, type Host, realServices } from "../boot"
+import { NOTIFICATIONS_TABLE } from "../features/attention/contract"
+import { bindSessionConnectivity } from "../features/auth/auth"
 import { SHARES_TABLE } from "../features/branch/contract"
+import { MESSAGES_TABLE, QUESTIONS_ROUTE, TELEMETRY_ROUTE } from "../features/chat/contract"
+import type { TextsClient } from "../features/coedit/api"
 import { TEXT_UPDATES_TABLE } from "../features/coedit/contract"
+import { FLOW_DRAFTS_TABLE, FLOWS_TABLE } from "../features/flows-ui/contract"
+import type { IssuesClient } from "../features/issues/api"
+import {
+  COMMENTS_TABLE,
+  ITEMS_TABLE,
+  SYNC_TABLE,
+  TRIAGE_SETTINGS_TABLE,
+  WRITES_TABLE
+} from "../features/issues/contract"
+import type { PullsClient } from "../features/pulls/api"
+import { PULL_COMMITS_TABLE, PULLS_TABLE, REVIEWS_TABLE } from "../features/pulls/contract"
+import { todoExecutionId } from "../features/pulls/contract"
+import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE } from "../features/repo/contract"
+import { ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, SPEND_ALERTS_TABLE } from "../features/spend/contract"
+import { RUNS_TABLE } from "../features/status/contract"
+import { TERMINALS_TABLE } from "../features/terminal/contract"
 import type { ThemeMode } from "../features/theme/contract"
+import type { StackClient } from "../features/todos/api"
+import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../features/todos/contract"
+import { VIEWS_TABLE } from "../features/views/contract"
 import { clientFlows } from "../flows/declarations"
 import { workerRegistrations } from "../flows/registrations"
 import type { Endpoint } from "../flows/tabPort"
+import { faultyServices } from "./faults"
+import { tempDirectory } from "./tempDirectory"
 
 // ChatApi's real handler (worker/Chat.ts, and RepoApi for repositories, as worker/ChatApi.ts routes them), as the
 // browser reaches it, over the compose Postgres and Electric (`pnpm db:up`). Only the model is scripted: a test writes
@@ -198,7 +204,7 @@ const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   TODO_REQUESTS_TABLE,
   PULLS_TABLE,
   PULL_COMMITS_TABLE,
-  REVIEWS_TABLE,
+  REVIEWS_TABLE
 ])
 
 /** A Postgres schema for one device's engine store, and where the device keeps the engine's leaders. */
@@ -213,7 +219,9 @@ export interface EngineStore {
 const codeStorageKey = async () => {
   const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])
   const der = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.privateKey))
-  return `-----BEGIN PRIVATE KEY-----\n${btoa(String.fromCharCode(...der)).replace(/(.{64})/g, "$1\n")}\n-----END PRIVATE KEY-----\n`
+  return `-----BEGIN PRIVATE KEY-----\n${
+    btoa(String.fromCharCode(...der)).replace(/(.{64})/g, "$1\n")
+  }\n-----END PRIVATE KEY-----\n`
 }
 
 /** Content-free evidence for an answer that did not settle in a test. */
@@ -248,7 +256,9 @@ export class TestChatApi extends Context.Service<
     /** Asks as another device would, through ChatApi. */
     readonly askElsewhere: (text: string) => Effect.Effect<{ readonly questionId: string; readonly answerId: string }>
     /** The rows in Postgres, in order. */
-    readonly rows: Effect.Effect<ReadonlyArray<{ readonly id: string; readonly text: string; readonly position: number }>>
+    readonly rows: Effect.Effect<
+      ReadonlyArray<{ readonly id: string; readonly text: string; readonly position: number }>
+    >
     /** Every OTLP request the browser sent: its path and JSON body. */
     readonly telemetry: Array<{ readonly path: string; readonly body: string }>
     /** Every span ChatApi recorded. */
@@ -304,7 +314,10 @@ export class TestChatApi extends Context.Service<
       readonly settled: (runId: string) => Effect.Effect<void>
       readonly revision: (runId: string) => Effect.Effect<number>
       readonly prepareProgress: (runId: string) => Effect.Effect<number>
-      readonly start: (runId: string, payload: { readonly label: string; readonly pauseMs: number; readonly hold?: boolean }) => Effect.Effect<void>
+      readonly start: (
+        runId: string,
+        payload: { readonly label: string; readonly pauseMs: number; readonly hold?: boolean }
+      ) => Effect.Effect<void>
     }
   }
 >()("@smthrs/mvp/test/TestChatApi") {
@@ -312,7 +325,7 @@ export class TestChatApi extends Context.Service<
   static readonly layerWith = (options: ChatApiOptions) =>
     Layer.effect(
       TestChatApi,
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const sql = yield* SqlClient.SqlClient
         const { name: schema, database } = yield* TestDatabase.Scratch
         const actor = options.actor === undefined ? member : options.actor
@@ -326,7 +339,7 @@ export class TestChatApi extends Context.Service<
             Effect.map(HttpServerRequest.HttpServerRequest, (request) => {
               const named = request.headers[PERSON_HEADER]
               return Option.some(named !== undefined && Object.hasOwn(people, named) ? people[named]! : actor)
-            }),
+            })
           ).pipe(Layer.provideMerge(credentials))
 
         // Device engine stores: dropped when this ChatApi closes, after their leaders stop and every connection a
@@ -341,12 +354,12 @@ export class TestChatApi extends Context.Service<
                 stores,
                 (store) =>
                   sql`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = ${store}`.pipe(
-                    Effect.andThen(sql`DROP SCHEMA IF EXISTS ${sql(store)} CASCADE`),
+                    Effect.andThen(sql`DROP SCHEMA IF EXISTS ${sql(store)} CASCADE`)
                   ),
-                { discard: true },
-              ),
+                { discard: true }
+              )
             ),
-            Effect.orDie,
+            Effect.orDie
           )
         )
 
@@ -361,10 +374,10 @@ export class TestChatApi extends Context.Service<
           stream: (request) =>
             Stream.unwrap(
               Effect.map(Queue.unbounded<ModelEvent.ModelEvent, Model.ModelFailure | Cause.Done>(), (events) => {
-              requests.push({ question: questionOf(request), events })
+                requests.push({ question: questionOf(request), events })
                 return Stream.fromQueue(events)
-              }),
-            ),
+              })
+            )
         })
 
         const spans: Array<Tracer.NativeSpan> = []
@@ -373,14 +386,14 @@ export class TestChatApi extends Context.Service<
             const span = new Tracer.NativeSpan(options)
             spans.push(span)
             return span
-          },
+          }
         })
         const config = ConfigProvider.fromUnknown({
           ELECTRIC_URL: yield* TestDatabase.electricUrl,
           ALERT_APP_URL: "http://chat.test/app",
           ...(options.forge === "code-storage"
             ? { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: yield* Effect.promise(codeStorageKey) }
-            : {}),
+            : {})
         })
         const chat = yield* Chat.make(database).pipe(
           Effect.provide(
@@ -390,11 +403,11 @@ export class TestChatApi extends Context.Service<
                 modelId: "test-model",
                 model,
                 // Answering doesn't seal its model calls as durable steps yet, so nothing prepares a request.
-                route: { prepare: () => Effect.die(new Error("the scripted model has no route")) },
-              }),
-            ),
+                route: { prepare: () => Effect.die(new Error("the scripted model has no route")) }
+              })
+            )
           ),
-          Effect.provideService(ConfigProvider.ConfigProvider, config),
+          Effect.provideService(ConfigProvider.ConfigProvider, config)
         )
 
         // Repositories, as ChatApi routes them to RepoApi (worker/ChatApi.ts): this deployment has no Code Storage
@@ -402,7 +415,7 @@ export class TestChatApi extends Context.Service<
         const repos = yield* RepoApi.make(database, { codeStorage: Option.none() }).pipe(
           // Its read token comes from `config`; with no `GITHUB_TOKEN` and no App it is none, and nothing is fetched.
           Effect.provide(FetchHttpClient.layer),
-          Effect.provideService(ConfigProvider.ConfigProvider, config),
+          Effect.provideService(ConfigProvider.ConfigProvider, config)
         )
         const repoCache = yield* Layer.build(ImmutableCache.layerMemory())
         // Pages' answers, kept for as long as this ChatApi lives (worker/WebPreview.ts).
@@ -421,9 +434,9 @@ export class TestChatApi extends Context.Service<
             privateKey: yield* Effect.promise(harnessAppKey),
             webhookSecret: Option.none(),
             repository,
-            apiBaseUrl: SCRIPTED_API,
+            apiBaseUrl: SCRIPTED_API
           }),
-          http: scripted.http,
+          http: scripted.http
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
         // The stack's routes, as ChatApi routes them (worker/ChatApi.ts): no host runs a TODO, so every TODO stays Queued.
         const stack = yield* StackApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
@@ -431,12 +444,15 @@ export class TestChatApi extends Context.Service<
         const home = HomeApi.make(options.homes)
         const starts: Array<Started> = []
         const recording = Flows.FlowStarter.of({
-          start: (flow, { executionId, payload }) => Effect.sync(() => void starts.push({ flow: flow._tag, executionId, payload })),
+          start: (flow, { executionId, payload }) =>
+            Effect.sync(() => void starts.push({ flow: flow._tag, executionId, payload }))
         })
 
         // The branch workspace, as ChatApi routes it (worker/ChatApi.ts): branches read from the scripted GitHub, each
         // `terminal/Open` recorded and never run, and a test `TerminalSockets` for the branches' machines.
-        const branchApi = yield* BranchApi.make(database).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
+        const branchApi = yield* BranchApi.make(database).pipe(
+          Effect.provideService(ConfigProvider.ConfigProvider, config)
+        )
         const branchGitHub = gitHost()
         const branchForge = codeStorageGit(branchGitHub)
         const sockets = terminalSockets()
@@ -445,7 +461,7 @@ export class TestChatApi extends Context.Service<
           database,
           [options.actor ?? member, ...Object.values(options.people ?? {})].flatMap((actor) =>
             actor === null ? [] : [{ id: actor.subject.id, login: actor.login ?? actor.subject.id }]
-          ),
+          )
         )
         const branchStarts: Array<Started> = []
         let refusing = 0
@@ -458,7 +474,7 @@ export class TestChatApi extends Context.Service<
               }
               branchStarts.push({ flow: flow._tag, executionId, payload })
               return Effect.void
-            }),
+            })
         })
 
         // Electric, as ChatApi calls it: the table in this schema. The forge's reads go to the scripted GitHub, and a page
@@ -474,7 +490,7 @@ export class TestChatApi extends Context.Service<
           if (table !== null && SCHEMA_TABLES.has(table)) upstream.searchParams.set("table", `${schema}.${table}`)
           return globalThis.fetch(upstream, {
             ...init,
-            signal: init?.signal ? AbortSignal.any([init.signal, closing.signal]) : closing.signal,
+            signal: init?.signal ? AbortSignal.any([init.signal, closing.signal]) : closing.signal
           })
         }
 
@@ -484,26 +500,34 @@ export class TestChatApi extends Context.Service<
         const remoteSchema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
         stores.push(remoteSchema)
         const layerScope = yield* Effect.scope
-        const remoteGates = new Map<string, { label: string; ready: Deferred.Deferred<void>; release: Deferred.Deferred<void> }>()
+        const remoteGates = new Map<
+          string,
+          { label: string; ready: Deferred.Deferred<void>; release: Deferred.Deferred<void> }
+        >()
         const remoteFibers = new Map<string, Fiber.Fiber<void>>()
         const remoteEngine = yield* Effect.cached(
-          buildEngine(Pause.registration((label) => Effect.gen(function* () {
-            const gate = [...remoteGates.values()].find((gate) => gate.label === label)
-            if (gate !== undefined) {
-              yield* Deferred.succeed(gate.ready, undefined)
-              yield* Deferred.await(gate.release)
-            }
-            return label
-          })), { schema: remoteSchema }).pipe(
+          buildEngine(
+            Pause.registration((label) =>
+              Effect.gen(function*() {
+                const gate = [...remoteGates.values()].find((gate) => gate.label === label)
+                if (gate !== undefined) {
+                  yield* Deferred.succeed(gate.ready, undefined)
+                  yield* Deferred.await(gate.release)
+                }
+                return label
+              })
+            ),
+            { schema: remoteSchema }
+          ).pipe(
             Scope.provide(layerScope),
-            Effect.orDie,
-          ),
+            Effect.orDie
+          )
         )
         const remoteWriter = PostgresDatabase.layer({
           url: server,
           driver: Pg,
           schema: remoteSchema,
-          postgres: { maxConnections: 1, applicationName: remoteSchema },
+          postgres: { maxConnections: 1, applicationName: remoteSchema }
         })
         const remoteRuns = yield* RemoteRuns.make(database, {
           database: PostgresDatabase.layer({
@@ -511,11 +535,11 @@ export class TestChatApi extends Context.Service<
             driver: Pg,
             schema: remoteSchema,
             readOnly: true,
-            postgres: { maxConnections: 2, applicationName: remoteSchema },
+            postgres: { maxConnections: 2, applicationName: remoteSchema }
           }),
           writer: remoteWriter,
           schema: remoteSchema,
-          flows: [Pause.Pause],
+          flows: [Pause.Pause]
         }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config))
 
         // ChatApi acknowledges an ask only once its answer's expiry started, so the chat routes' host takes every start,
@@ -530,7 +554,7 @@ export class TestChatApi extends Context.Service<
               Effect.provideService(TerminalSockets, sockets.service),
               Effect.provideService(Rooms, branchRooms.service),
               Effect.provide(directory),
-              Effect.provide(options.forge === "code-storage" ? Forge.layerConfig : Forge.gitHub),
+              Effect.provide(options.forge === "code-storage" ? Forge.layerConfig : Forge.gitHub)
             )
           }
           if (GitHubApi.handles(path)) return github.fetch.pipe(Effect.provideService(Flows.FlowStarter, recording))
@@ -542,20 +566,23 @@ export class TestChatApi extends Context.Service<
             : chat.fetch.pipe(
               Effect.provideService(Flows.FlowStarter, expiries),
               Effect.provideService(ImmutableCache.ImmutableCache, webCache),
-              Effect.provide(credentials),
+              Effect.provide(credentials)
             )
         })
 
         const application = routed.pipe(
           // No remote host runs here: every other remote start (a clone) is refused as unavailable.
-          Effect.provideService(Flows.FlowStarter, Flows.FlowStarter.of({
-            start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "no_remote_host" })),
-          })),
+          Effect.provideService(
+            Flows.FlowStarter,
+            Flows.FlowStarter.of({
+              start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "no_remote_host" }))
+            })
+          ),
           Effect.provide(sessions),
           Effect.provide(FetchHttpClient.layer),
           Effect.provideService(FetchHttpClient.Fetch, electric),
           Effect.provideService(Tracer.Tracer, tracer),
-          Effect.provideService(ConfigProvider.ConfigProvider, config),
+          Effect.provideService(ConfigProvider.ConfigProvider, config)
         )
         // Close admission and drain handlers before dropping their schemas. Abort also closes streamed bodies.
         const active = new Set<Promise<void>>()
@@ -569,14 +596,18 @@ export class TestChatApi extends Context.Service<
           if (closing.signal.aborted) return Promise.resolve(new Response(null, { status: 503 }))
           const scoped = new Request(request, { signal: AbortSignal.any([request.signal, closing.signal]) })
           let finished!: () => void
-          const done = new Promise<void>((resolve) => { finished = resolve })
+          const done = new Promise<void>((resolve) => {
+            finished = resolve
+          })
           active.add(done)
-          return HttpEffect.toWebHandler(Effect.gen(function* () {
+          return HttpEffect.toWebHandler(Effect.gen(function*() {
             // Register first so this receipt follows every request resource, including an unread response body.
-            yield* Effect.addFinalizer(() => Effect.sync(() => {
-              active.delete(done)
-              finished()
-            }))
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                active.delete(done)
+                finished()
+              })
+            )
             return yield* application
           }))(scoped)
         }
@@ -589,8 +620,8 @@ export class TestChatApi extends Context.Service<
             new Request(`${origin}${QUESTIONS_ROUTE}`, {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify(body),
-            }),
+              body: JSON.stringify(body)
+            })
           )
         const statuses: Array<number> = []
         // Every other request and its status, for a test that fails waiting: `GET /api/answers/<id> 200`.
@@ -618,8 +649,8 @@ export class TestChatApi extends Context.Service<
               Effect.die(
                 new Error(
                   `The model was never asked this question; ${requests.length} model requests. ` +
-                    `Requests: ${seen.filter((line) => !line.startsWith("GET /api/shapes/")).join(", ")}`,
-                ),
+                    `Requests: ${seen.filter((line) => !line.startsWith("GET /api/shapes/")).join(", ")}`
+                )
               )
             ),
             Effect.map(({ events }): Reply => {
@@ -652,10 +683,10 @@ export class TestChatApi extends Context.Service<
                 fail: () =>
                   void Queue.failCauseUnsafe(
                     events,
-                    Cause.fail(new ModelError.ModelError({ code: "content_policy", message: "scripted failure" })),
-                  ),
+                    Cause.fail(new ModelError.ModelError({ code: "content_policy", message: "scripted failure" }))
+                  )
               }
-            }),
+            })
           )
 
         const service = TestChatApi.of({
@@ -663,26 +694,27 @@ export class TestChatApi extends Context.Service<
           fetch,
           answerTo,
           modelRequests: (question) => requests.filter((request) => request.question.includes(question)).length,
-          answerDiagnostics: (answerId) => Effect.gen(function* () {
-            const [answer] = yield* sql<{ readonly status: string; readonly failure: string | null }>`
+          answerDiagnostics: (answerId) =>
+            Effect.gen(function*() {
+              const [answer] = yield* sql<{ readonly status: string; readonly failure: string | null }>`
               SELECT status, failure FROM messages WHERE id = ${answerId}`
-            const [report] = yield* sql<{ readonly status: string; readonly waiting: string | null }>`
+              const [report] = yield* sql<{ readonly status: string; readonly waiting: string | null }>`
               SELECT status, waiting FROM runs WHERE id = ${answerId}`
-            const engines: Array<AnswerDiagnostics["engines"][number]> = []
-            for (const store of stores) {
-              const [run] = yield* sql<{ readonly status: string }>`
+              const engines: Array<AnswerDiagnostics["engines"][number]> = []
+              for (const store of stores) {
+                const [run] = yield* sql<{ readonly status: string }>`
                 SELECT status FROM ${sql(`${store}.flows_runs`)} WHERE run_id = ${answerId}`
-              if (run === undefined) continue
-              const attempts = yield* sql<{ readonly state: string; readonly count: number }>`
+                if (run === undefined) continue
+                const attempts = yield* sql<{ readonly state: string; readonly count: number }>`
                 SELECT state, count(*)::int AS count FROM ${sql(`${store}.flows_attempts`)}
                 WHERE run_id = ${answerId} GROUP BY state ORDER BY state`
-              const records = yield* sql<{ readonly type: string; readonly count: number }>`
+                const records = yield* sql<{ readonly type: string; readonly count: number }>`
                 SELECT event_type AS type, count(*)::int AS count FROM ${sql(`${store}.flows_journal_events`)}
                 WHERE run_id = ${answerId} GROUP BY event_type ORDER BY event_type`
-              engines.push({ status: run.status, attempts, records })
-            }
-            return { answer: answer ?? null, report: report ?? null, engines }
-          }).pipe(Effect.orDie),
+                engines.push({ status: run.status, attempts, records })
+              }
+              return { answer: answer ?? null, report: report ?? null, engines }
+            }).pipe(Effect.orDie),
           questionStatuses: () => [...statuses],
           askElsewhere: (text) =>
             Effect.promise(async () => {
@@ -694,7 +726,7 @@ export class TestChatApi extends Context.Service<
           rows: sql<{ id: string; text: string; position: bigint }>`
             select id, text, position from ${sql(`${schema}.${MESSAGES_TABLE}`)} order by position`.pipe(
             Effect.map((rows) => rows.map((row) => ({ ...row, position: Number(row.position) }))),
-            Effect.orDie,
+            Effect.orDie
           ),
           telemetry,
           spans,
@@ -710,7 +742,7 @@ export class TestChatApi extends Context.Service<
           github: {
             starts,
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),
-            scripted,
+            scripted
           },
           branches: {
             github: branchGitHub,
@@ -720,75 +752,92 @@ export class TestChatApi extends Context.Service<
             refuseStarts: (count) => {
               refusing = count
             },
-            run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie),
+            run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie)
           },
           remote: {
             ready: (runId) => Deferred.await(remoteGates.get(runId)!.ready),
             release: (runId) => Deferred.succeed(remoteGates.get(runId)!.release, undefined).pipe(Effect.asVoid),
             settled: (runId) => Fiber.join(remoteFibers.get(runId)!),
-            revision: (runId) => Effect.gen(function* () {
-              yield* remoteEngine
-              return yield* sql<{ revision: string }>`
+            revision: (runId) =>
+              Effect.gen(function*() {
+                yield* remoteEngine
+                return yield* sql<{ revision: string }>`
                 SELECT revision FROM ${sql(remoteSchema)}.flows_run_changes WHERE run_id = ${runId}`.pipe(
-                Effect.map((rows) => Number(rows[0]!.revision)), Effect.orDie,
-              )
-            }),
-            prepareProgress: (runId) => Effect.gen(function* () {
-              yield* remoteEngine
-              const engineSql = yield* SqlClient.SqlClient
-              // Run the write with the engine's search_path: its triggers resolve their own tables there.
-              // Let the tab consume this eligibility change before requiring a new journal-driven revision.
-              yield* engineSql`UPDATE flows_runs SET progress_at_ms = 1 WHERE run_id = ${runId}`
-              return yield* engineSql<{ revision: string }>`SELECT revision FROM flows_run_changes WHERE run_id = ${runId}`.pipe(
-                Effect.map((rows) => Number(rows[0]!.revision)),
-              )
-            }).pipe(Effect.provide(remoteWriter), Effect.orDie),
-            progress: (runId) => Effect.gen(function* () {
-              const { context } = yield* remoteEngine
-              const journal = Context.get(context, FlowJournal.Journal.Journal)
-              yield* journal.emitLossy(new FlowJournal.JournalEvent.Input({
-                runId: FlowJournal.JournalEvent.RunId.make(runId), sourceId: FlowJournal.JournalEvent.SourceId.make("agent/trail"),
-                eventType: "agent.turn", payload: {},
-              }))
-              yield* journal.flush
-              return yield* sql<{ progress_at_ms: number }>`SELECT progress_at_ms
+                  Effect.map((rows) => Number(rows[0]!.revision)),
+                  Effect.orDie
+                )
+              }),
+            prepareProgress: (runId) =>
+              Effect.gen(function*() {
+                yield* remoteEngine
+                const engineSql = yield* SqlClient.SqlClient
+                // Run the write with the engine's search_path: its triggers resolve their own tables there.
+                // Let the tab consume this eligibility change before requiring a new journal-driven revision.
+                yield* engineSql`UPDATE flows_runs SET progress_at_ms = 1 WHERE run_id = ${runId}`
+                return yield* engineSql<
+                  { revision: string }
+                >`SELECT revision FROM flows_run_changes WHERE run_id = ${runId}`.pipe(
+                  Effect.map((rows) => Number(rows[0]!.revision))
+                )
+              }).pipe(Effect.provide(remoteWriter), Effect.orDie),
+            progress: (runId) =>
+              Effect.gen(function*() {
+                const { context } = yield* remoteEngine
+                const journal = Context.get(context, FlowJournal.Journal.Journal)
+                yield* journal.emitLossy(
+                  new FlowJournal.JournalEvent.Input({
+                    runId: FlowJournal.JournalEvent.RunId.make(runId),
+                    sourceId: FlowJournal.JournalEvent.SourceId.make("agent/trail"),
+                    eventType: "agent.turn",
+                    payload: {}
+                  })
+                )
+                yield* journal.flush
+                return yield* sql<{ progress_at_ms: number }>`SELECT progress_at_ms
                 FROM ${sql(remoteSchema)}.flows_runs WHERE run_id = ${runId}`.pipe(
-                Effect.map((rows) => Number(rows[0]!.progress_at_ms)),
-              )
-            }).pipe(Effect.orDie),
+                  Effect.map((rows) => Number(rows[0]!.progress_at_ms))
+                )
+              }).pipe(Effect.orDie),
             todoRun: (title) =>
-              Effect.gen(function* () {
+              Effect.gen(function*() {
                 yield* remoteEngine
                 const applied = yield* Stack.apply({
                   opId: crypto.randomUUID(),
                   repoId: `github/${TEST_REPOSITORY}`,
                   actor: { id: (actor ?? member).subject.id, login: (actor ?? member).login ?? "maya" },
                   via: "person",
-                  op: { kind: "commit", title, prompt: title, acceptance: [] },
+                  op: { kind: "commit", title, prompt: title, acceptance: [] }
                 }, { runs: true }).pipe(Effect.provide(database), Effect.orDie)
                 return applied.kind === "applied" ? todoExecutionId(applied.receipt.starts[0]!.attemptId) : ""
               }),
             start: (runId, payload) =>
-              Effect.gen(function* () {
+              Effect.gen(function*() {
                 const { context } = yield* remoteEngine
                 const flows = Context.get(context, FlowRuntime.FlowRuntime)
                 if (payload.hold) {
-                  const gate = { label: `${payload.label}:after`, ready: yield* Deferred.make<void>(), release: yield* Deferred.make<void>() }
+                  const gate = {
+                    label: `${payload.label}:after`,
+                    ready: yield* Deferred.make<void>(),
+                    release: yield* Deferred.make<void>()
+                  }
                   remoteGates.set(runId, gate)
                   yield* Scope.addFinalizer(layerScope, Deferred.succeed(gate.release, undefined))
                 }
                 const fiber = yield* Effect.forkIn(
-                  Effect.ignore(flows.execute(Pause.Pause, {
-                    executionId: runId, payload: { label: payload.label, pauseMs: payload.pauseMs },
-                  }).pipe(Effect.provide(context))),
-                  layerScope,
+                  Effect.ignore(
+                    flows.execute(Pause.Pause, {
+                      executionId: runId,
+                      payload: { label: payload.label, pauseMs: payload.pauseMs }
+                    }).pipe(Effect.provide(context))
+                  ),
+                  layerScope
                 )
                 remoteFibers.set(runId, fiber)
-              }),
-          },
+              })
+          }
         })
         return service
-      }),
+      })
     )
 
   /** ChatApi on a scratch schema, every request signed in as a Member. */
@@ -805,7 +854,7 @@ export const asPerson = (api: TestChatApi["Service"], name: string): TestChatApi
     const request = new Request(input, init)
     request.headers.set(PERSON_HEADER, name)
     return api.fetch(request)
-  },
+  }
 })
 
 // Each tab counts into its own registry, so one test's metrics never leak into another's.
@@ -880,7 +929,7 @@ export const failingWorker = (): BrowserEngine.WorkerLike & Endpoint =>
     addEventListener: (type: string, listener: (event: ErrorEvent) => void) =>
       void (type === "error" && queueMicrotask(() => listener({} as ErrorEvent))),
     removeEventListener: () => {},
-    terminate: () => {},
+    terminate: () => {}
   }) as never
 
 /** An engine worker that never leads: what a tab dispatches waits until its scope closes. */
@@ -888,7 +937,7 @@ export const idleWorker = (): BrowserEngine.WorkerLike & Endpoint => ({
   terminate: () => {},
   addEventListener: () => {},
   removeEventListener: () => {},
-  postMessage: () => {},
+  postMessage: () => {}
 })
 
 /**
@@ -905,23 +954,23 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
   const engine = BrowserRuntime.layer(
     // The flows' own schemas render their runs' values for the run page (decision 0014 §3), as the worker's do.
     { name, flows: clientFlows },
-    workerRegistrations(channel.port1, { origin: api.origin, name, partsEvery: "20 millis" }).pipe(Layer.provide(http)),
+    workerRegistrations(channel.port1, { origin: api.origin, name, partsEvery: "20 millis" }).pipe(Layer.provide(http))
   ).pipe(
     Layer.provide(
       PostgresDatabase.layer({
         url: store.url,
         driver: Pg,
         schema: store.schema,
-        postgres: { applicationName: store.schema },
-      }),
-    ),
+        postgres: { applicationName: store.schema }
+      })
+    )
   )
   const leader = Effect.runFork(
     BrowserRuntime.serve({ name, flows: clientFlows }, engine).pipe(
       Effect.provide(Layer.mergeAll(WebLock.layer, TabChannel.layer)),
       // The engine's own log lines stay out of the test's output.
-      Effect.provideService(Logger.CurrentLoggers, new Set()),
-    ),
+      Effect.provideService(Logger.CurrentLoggers, new Set())
+    )
   )
   store.keep(leader)
   return {
@@ -936,7 +985,7 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
       Effect.runFork(Fiber.interrupt(leader))
       channel.port1.close()
       channel.port2.close()
-    },
+    }
   } as BrowserEngine.WorkerLike & Endpoint
 }
 
@@ -956,7 +1005,7 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     set: async (key: string, value: string) => void entries.set(key, value),
     delete: async (key: string) => void entries.delete(key),
     keys: async () => [...entries.keys()],
-    clear: async () => entries.clear(),
+    clear: async () => entries.clear()
   }
   const device = `mvp-device-${crypto.randomUUID()}`
   const locks = navigator.locks
@@ -970,21 +1019,27 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     // its own Web Locks and BroadcastChannel.
     persistence: {
       open: () => sqliteFile(path, turn),
-      make: (database, coordinator) => createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
-      coordinator: () => new BrowserCollectionCoordinator({ dbName: device }),
+      make: (database, coordinator) =>
+        createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
+      coordinator: () => new BrowserCollectionCoordinator({ dbName: device })
     },
     outbox: {
       start: startOfflineExecutor,
       storage,
       get online() {
         return Outbox.Online.always()
-      },
+      }
     },
     // One browser's Web Locks: this device's lock names, apart from every other device's in this process.
     lock: WebLock.make({ request: (name, options, callback) => locks.request(`${device}/${name}`, options, callback) }),
     isOnline: () => true,
     storage: StoragePersistence.make({ persist: () => Promise.resolve(true) }),
-    theme: { paint: (mode) => void painted.push(mode), mirror: () => {}, system: () => "light", painted: () => painted.at(-1) },
+    theme: {
+      paint: (mode) => void painted.push(mode),
+      mirror: () => {},
+      system: () => "light",
+      painted: () => painted.at(-1)
+    },
     clipboard: async (text) => void copied.push(text),
     navigate: (path) => void navigated.push(path),
     // No router runs here: a test that opens a branch offline gives its own (`TabOptions.reopenRoute`).
@@ -1003,11 +1058,11 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     stored: (collection) => storedRows(path, collection),
     painted,
     copied,
-    navigated,
+    navigated
   }
   const busyTab = (busy: Busy): NodeDevice => ({
     ...made,
-    persistence: { ...made.persistence, coordinator: () => new LateCoordinator(device, busy) },
+    persistence: { ...made.persistence, coordinator: () => new LateCoordinator(device, busy) }
   })
   const made: NodeDevice = { ...host, busyTab }
   return made
@@ -1024,7 +1079,9 @@ const storedRows = (path: string, collection: string): number => {
       .prepare("select name from sqlite_master where type = 'table' and name = 'collection_registry'")
       .get()
     if (registered === undefined) return 0
-    const row = database.prepare("select table_name from collection_registry where collection_id = ?").get(collection) as
+    const row = database.prepare("select table_name from collection_registry where collection_id = ?").get(
+      collection
+    ) as
       | { table_name: string }
       | undefined
     if (row === undefined) return 0
@@ -1053,7 +1110,7 @@ const deviceTurn = () => {
       const resumed = waiting
       waiting = []
       for (const resume of resumed) resume()
-    },
+    }
   }
 }
 
@@ -1079,7 +1136,7 @@ const sqliteFile = (path: string, turn: ReturnType<typeof deviceTurn>) => {
     close: () => {
       database.close()
       turn.give(tab)
-    },
+    }
   }
 }
 
@@ -1118,13 +1175,23 @@ export type StartFaults = (switches: ShapeSource.Switches) => Effect.Effect<void
 
 const app = (
   api: TestChatApi["Service"],
-  { answers, host, reopenRoute, replace: _replace, webSocket: _webSocket, sessionLifecycle: _sessionLifecycle, shapeFailures: _shapeFailures, ...options }: TabOptions,
+  {
+    answers,
+    host,
+    reopenRoute,
+    replace: _replace,
+    webSocket: _webSocket,
+    sessionLifecycle: _sessionLifecycle,
+    shapeFailures: _shapeFailures,
+    ...options
+  }: TabOptions
 ): AppOptions => ({
   ...options,
   origin: api.origin,
   fetch: api.fetch,
   reload: api.reload,
-  host: host ?? nodeDevice({ ...(answers === false ? {} : { agent: api }), ...(reopenRoute === undefined ? {} : { reopenRoute }) }),
+  host: host ??
+    nodeDevice({ ...(answers === false ? {} : { agent: api }), ...(reopenRoute === undefined ? {} : { reopenRoute }) })
 })
 
 /** The browser app on `api` (`appLayer`, as main.tsx's `start` builds it), with the real services. */
@@ -1155,7 +1222,7 @@ const withChatApi = <A, E>(tab: (api: TestChatApi["Service"]) => Layer.Layer<A, 
   Layer.unwrap(Effect.map(TestChatApi, tab)).pipe(
     Layer.provideMerge(TestChatApi.layerWith(chatApi)),
     Layer.provideMerge(TestDatabase.layer("test_chat")),
-    Layer.provideMerge(ownMetrics()),
+    Layer.provideMerge(ownMetrics())
   )
 
 /**

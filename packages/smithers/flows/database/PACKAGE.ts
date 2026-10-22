@@ -51,6 +51,9 @@ const test = Smithers.Shell.Test({
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
+    Smithers.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.d.mts")
   ],
   timeout: "20m",

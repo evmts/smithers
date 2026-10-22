@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { defineConfig } from "vitest/config"
@@ -19,7 +20,7 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     // Reclaims the scratch report below once the thresholds have been checked.
-    globalSetup: ["./test/CoverageTeardown.ts"],
+    globalSetup: ["./test/CoverageTeardown.ts", fileURLToPath(new URL("../../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
     coverage: {
       // A whole-suite run — `vitest run`, which is what the `test` target
       // invokes — computes and ENFORCES these thresholds, so a red gate fails

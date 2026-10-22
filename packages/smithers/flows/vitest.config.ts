@@ -1,9 +1,11 @@
+import { fileURLToPath } from "node:url"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
+    globalSetup: [fileURLToPath(new URL("../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)), fileURLToPath(new URL("../../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))],
     include: ["test/**/*.test.ts"],
     exclude: [...configDefaults.exclude],
     environment: "node",

@@ -231,7 +231,8 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
       testSources,
       tsconfig,
       Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
-      Input.file("//packages/repo-targets/test-utils/effect-property.d.mts")
+      Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
+      Input.file("//packages/repo-targets/test-utils/vitest-root-temp.d.mts")
     ],
     deps: [lib, ...deps],
     tsconfig: testTsconfig,
@@ -248,6 +249,9 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
         sources,
         testSources,
         Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
+        Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
+        Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
+        Input.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"),
         Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
         ...(options.testData ?? []).map((pattern) => Input.glob(pattern))
       ],
@@ -266,6 +270,9 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
         Input.file("package.json"),
         ...(vitestConfig === null ? [] : [vitestConfig]),
         Input.file("//packages/repo-targets/test-utils/effect-property.mjs"),
+        Input.file("//packages/repo-targets/test-utils/coverage-teardown.mjs"),
+        Input.file("//packages/repo-targets/test-utils/test-process-environment.mjs"),
+        Input.file("//packages/repo-targets/test-utils/vitest-root-temp.mjs"),
         Input.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
         ...(options.testData ?? []).map((pattern) => Input.glob(pattern))
       ],

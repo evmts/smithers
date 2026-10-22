@@ -1,9 +1,14 @@
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
   test: {
+    globalSetup: [
+      fileURLToPath(new URL("../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
+      fileURLToPath(new URL("../repo-targets/test-utils/test-process-environment.mjs", import.meta.url))
+    ],
     // The fault tier lives under `test/faults` and runs from
     // `vitest.faults.config.ts` instead, serially and without coverage: its
     // cases kill process groups and bind ports, which no unit suite sharing
@@ -24,16 +29,14 @@ export default defineConfig({
     // Process-boundary files start the CLI from source hundreds of times, and
     // each start type-strips and compiles the whole module graph. Node's
     // compile cache, keyed by source content, lets every start after the
-    // first reuse that work. Spawned children inherit it from this
-    // environment; nothing a command prints depends on it.
+    // first reuse that work. Global setup supplies a run-owned cache directory.
     //
     // Incur appends "Skills are out of date" to every result when the skills
     // this machine installed (recorded under $XDG_DATA_HOME/incur) predate the
     // command surface. An empty data home keeps the suite's expected output
     // independent of what the developer last ran `smthrs skills add` against.
     env: {
-      NODE_COMPILE_CACHE: join(tmpdir(), "smithers-cli-test-compile-cache"),
-      XDG_DATA_HOME: join(tmpdir(), "smithers-cli-test-data-home")
+      XDG_DATA_HOME: join(import.meta.dirname, ".cache", "test-data")
     },
     coverage: {
       // Related-file fast gates exercise only the changed behavior; applying
