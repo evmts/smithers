@@ -179,4 +179,4 @@ export const format = (event: Event): string => event.arg === undefined ? event.
  * @since 0.1.0
  */
 export const lookup = (declared: Declared, name: string): Option.Option<Interaction> =>
-  Object.hasOwn(declared, name) ? Option.some(declared[name]!) : Option.none()
+  name !== "constructor" && name !== "__proto__" && Object.hasOwn(declared, name) ? Option.some(declared[name]!) : Option.none()

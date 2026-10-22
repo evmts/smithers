@@ -250,7 +250,8 @@ const frameAncestors = (headers: HeaderRecord): Array<Array<string>> => {
  *   every ancestor is the page's origin, and conflicting values refuse.
  *
  * A report-only policy, and a policy in a `<meta>` element, never refuse
- * framing, so neither is read.
+ * framing, so neither is read. Invalid page or ancestor URLs return
+ * `unknown` with reason `invalid_url`.
  *
  * @category framing
  * @since 0.1.0
@@ -261,9 +262,15 @@ export const framing = (
 ): { readonly framing: "allowed" } | {
   readonly framing: "refused"
   readonly reason: "x_frame_options" | "frame_ancestors" | "insecure"
-} => {
-  const page = new URL(frame.page)
-  const ancestors = frame.ancestors.map((ancestor) => new URL(ancestor))
+} | { readonly framing: "unknown"; readonly reason: "invalid_url" } => {
+  const page = URL.parse(frame.page)
+  const ancestors: Array<URL> = []
+  if (page === null) return { framing: "unknown", reason: "invalid_url" }
+  for (const value of frame.ancestors) {
+    const ancestor = URL.parse(value)
+    if (ancestor === null) return { framing: "unknown", reason: "invalid_url" }
+    ancestors.push(ancestor)
+  }
   if (
     page.protocol === "http:" && !onThisMachine(page) && ancestors.some((ancestor) => ancestor.protocol === "https:")
   ) {
@@ -598,7 +605,7 @@ export const check = (url: string, options: Options): Effect.Effect<Checked, nev
       : ""
     const shown = { ...(html ? preview(head, page.href) : {}), status: response.status }
     const framed = framing(response.headers, { page: page.href, ancestors: options.ancestors })
-    if (framed.framing === "refused") return { ...shown, ...framed }
+    if (framed.framing !== "allowed") return { ...shown, ...framed }
     if (!content(response.headers)) return { ...shown, framing: "refused", reason: "content" } as const
     if (response.status >= 400) return { ...shown, framing: "unknown", reason: "status" } as const
     return { ...shown, framing: "allowed" } as const

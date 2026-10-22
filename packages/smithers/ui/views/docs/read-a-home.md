@@ -119,7 +119,7 @@ else showTheTree(home.reason)
 | ----------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Sections                | 8 (`maximumSections`)                                                                                      |
 | Blocks                  | 32 in all (`maximumBlocks`)                                                                                |
-| A list in a block       | 12 cards or releases (`maximumEntries`), 6 stats (`maximumStats`), 3 hero actions (`maximumActions`)       |
+| A list in a block       | 12 cards, releases or links (`maximumEntries`), 6 stats (`maximumStats`), 3 hero actions (`maximumActions`)       |
 | A short line            | a tagline, a card's text, a release's summary, an install command: 280 characters, one line                |
 | A code block            | 4,096 characters, no NUL; `<` allowed, since source code holds it                                          |
 | A title or a link label | 1 to 120 characters, one line (`maximumTitleLength`)                                                       |
@@ -134,3 +134,5 @@ A person commits it, or `@smthrs/targets` projects a one-section home from
 `.smithers/FACTORY.ts` (`Smithers.Factory.Home` and the `Smithers.Home`
 constructors). The writer uses this module's schemas, so the format has one
 copy.
+
+Flow names are limited to 120 characters. Calendar dates include years 0000–0099, with Gregorian leap-year validation.

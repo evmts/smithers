@@ -78,7 +78,7 @@ export const maximumSections = 8
 
 /**
  * Maximum number of entries in one list a block carries: a `cards` block's
- * cards, a `releases` block's releases.
+ * cards, a `releases` block's releases, a `links` block's links.
  *
  * @category constants
  * @since 0.1.0
@@ -181,12 +181,16 @@ export const RepositoryPath = Schema.NonEmptyString.check(
 )
 
 /**
- * A flow's name as a home names it: a slash command or a repository flow.
+ * A flow's name as a home names it: a slash command or a repository flow,
+ * at most {@link maximumTitleLength} characters.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const FlowName = Schema.NonEmptyString.check(Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/))
+export const FlowName = Schema.NonEmptyString.check(
+  Schema.isMaxLength(maximumTitleLength),
+  Schema.isPattern(/^[a-z0-9_-]+(?:[./][a-z0-9_-]+)*$/)
+)
 
 /**
  * A short line of prose: non-empty, one line, at most
@@ -242,7 +246,8 @@ export const IsoDate = Schema.String.check(
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
     if (match === null) return "must be a date, YYYY-MM-DD"
     const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
-    const date = new Date(Date.UTC(year, month - 1, day))
+    const date = new Date(0)
+    date.setUTCFullYear(year, month - 1, day)
     return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
       ? true
       : "must be a date that exists"
@@ -327,7 +332,7 @@ export const TextBlock = Schema.Struct({
 export const LinksBlock = Schema.Struct({
   type: Schema.Literal("links"),
   title: Schema.optional(Title),
-  links: Schema.NonEmptyArray(Link)
+  links: Schema.NonEmptyArray(Link).check(Schema.isMaxLength(maximumEntries))
 })
 
 /**

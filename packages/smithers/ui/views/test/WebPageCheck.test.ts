@@ -118,6 +118,15 @@ const check = (url: string, options: Partial<WebPage.Options> = {}) =>
   Effect.runPromise(WebPage.check(url, { ...local, ...options }).pipe(Effect.provide(FetchHttpClient.layer)))
 
 describe("WebPage.check: framing and previews", () => {
+  it("returns unknown for a malformed ancestor after reading a real response", async () => {
+    expect(await check(`${origin}/allows`, { ancestors: ["not a URL"] })).toMatchObject({
+      framing: "unknown",
+      reason: "invalid_url",
+      status: 200,
+      title: "Frames welcome"
+    })
+  })
+
   it("a page that allows framing is allowed, with its title, description and icon", async () => {
     expect(await check(`${origin}/allows`)).toEqual({
       framing: "allowed",
