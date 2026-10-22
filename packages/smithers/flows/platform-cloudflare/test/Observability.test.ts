@@ -157,19 +157,24 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
         const ids = { "smithers.execution.id": executionId, "smithers.flow": Answer._tag }
         for (const line of t.lines("cloudflare.execution.start")) expect(line.annotations).toMatchObject(ids)
         expect(t.lines("cloudflare.execution.request")[0]?.annotations).toMatchObject({
-          ...ids, requestedAtMs: expect.any(Number)
+          ...ids,
+          requestedAtMs: expect.any(Number)
         })
         expect(t.lines("cloudflare.execution.alarm")[0]?.annotations).toMatchObject({
-          retryAtMs: expect.any(Number), delayMs: 1000
+          retryAtMs: expect.any(Number),
+          delayMs: 1000
         })
         expect(t.lines("flow.run.created")[0]?.annotations).toMatchObject({
-          ...ids, createdAtMs: expect.any(Number)
+          ...ids,
+          createdAtMs: expect.any(Number)
         })
         expect(t.lines("flow.run.claimed")[0]?.annotations).toMatchObject({
-          "smithers.execution.id": executionId, claimedAtMs: expect.any(Number)
+          "smithers.execution.id": executionId,
+          claimedAtMs: expect.any(Number)
         })
         expect(t.lines("cloudflare.execution.ready")[0]?.annotations).toMatchObject({
-          ...ids, readyAtMs: expect.any(Number)
+          ...ids,
+          readyAtMs: expect.any(Number)
         })
         expect(t.lines("cloudflare.execution.alarm").map((line) => line.annotations)).toEqual([
           expect.objectContaining({
@@ -209,6 +214,31 @@ describe.skipIf(!Postgres.direct.available)(`ExecutionObject telemetry over ${Po
         expect(json(t.snapshot().map((metric) => metric.attributes))).not.toContain(sentinel)
       }))
     )
+  })
+
+  it.live("a failed cancellation records its cause without exporting storage content", () => {
+    const t = telemetry()
+    const memory = MemoryStorage.make()
+    const host = ExecutionObject.make({
+      ...memory.storage,
+      put: (key, value) =>
+        key === ExecutionObject.cancelledKey
+          ? Effect.die(new Leaky({ detail: sentinel })) :
+          memory.storage.put(key, value)
+    }, { flows: [], runtime: () => Layer.empty as never, router: Objects.unrouted })
+    return t.observed(Effect.exit(host.cancel())).pipe(Effect.map((exit) => {
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(t.lines("cloudflare.execution.cancel")[0]?.annotations).toMatchObject({
+        outcome: "failed",
+        "error.type": "Leaky"
+      })
+      for (const span of t.spans) {
+        if (span.status._tag === "Ended" && Exit.isFailure(span.status.exit)) {
+          expect(json(span.status.exit.cause)).not.toContain(sentinel)
+        }
+      }
+      expect(json(t.logs)).not.toContain(sentinel)
+    }))
   })
 
   it.live("routing counts what it started and woke, and a wake logs inside its span", () => {

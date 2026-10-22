@@ -9,7 +9,7 @@ The object keeps three things in its own storage: the intent (which flow, which
 execution, which payload), a count of alarms that made no progress and, once
 the execution settles, when it did. Everything else about the run (its journal,
 owner, lease, attempts, timers and result) lives in the engine's Postgres
-store. A settled object forgets all three after a retention window; see
+store. A settled object forgets all three after a retention window; a cancellation tombstone remains; see
 [Retention](#retention).
 
 ## start
@@ -32,6 +32,14 @@ The same intent again stores nothing, runs `effect` again and moves the alarm to
 now, so a retried request is safe. Another payload for the same execution fails
 with `IntentConflict` before anything is stored or run. Both hold while the
 object holds the intent, which a settled object does for its retention window.
+
+## Cancellation
+
+Compose handlers with `ExecutionObject.make(storage, options)` once per object incarnation. Its `cancel()` durably stores a cancellation tombstone, arms the alarm immediately and interrupts an active execution through `FlowRuntime.interrupt`. A parked execution finishes cancellation on its next alarm. The engine settles the run as cancelled, releases ownership and interrupts its actions. Cancellation acknowledgment records intent; settlement is observed from the engine.
+
+Admission and cancellation share a short gate: the driver persists admission without starting actions before exposing its active cancellation callback. A cancellation before admission creates no engine row. The tombstone survives intent retention, so a late replay cannot resurrect the run. An optional `canStart(intent)` domain guard runs only before first admission, never while resuming a run with outstanding durable work.
+
+`test/Cancellation.test.ts` proves cancellation before delivery, a dropped domain guard, retention, reincarnation, parked runs and interruption of an unresolved action against real Postgres.
 
 ## wake
 
@@ -71,7 +79,7 @@ that parks it again.
 | `Parked`    | The run waits. `wakeAtMs` is `EngineStore.nextWake`: its earliest pending timer, or `null` for an event wait.                               | cleared | armed at `wakeAtMs`, or deleted when `null` |
 | `Yielded`   | The drive spent its budget and released the run at a step boundary, with work still due.                                                    | cleared | armed at now                                |
 | `Retrying`  | Building the runtime, driving the run or routing failed.                                                                                    | kept    | armed one backoff away                      |
-| `Forgotten` | The run settled and its retention window has passed. The object deleted its intent, its count and its settlement, and its storage is empty. | deleted | deleted                                     |
+| `Forgotten` | The run settled and its retention window has passed. The object deleted its intent, its count and its settlement, and retains only any cancellation tombstone. | deleted | deleted                                     |
 
 `alarm` never fails. A failure becomes `Retrying` with the failure's tag, so
 Cloudflare's own alarm retries, which stop after six, never decide whether an

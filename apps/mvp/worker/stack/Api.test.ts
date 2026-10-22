@@ -57,7 +57,7 @@ const sql = <A extends object>(statement: string) =>
 describe("POST /api/repos/<owner>/<name>/stack", () => {
   test("a commit is taken 202 with its transaction and number; the same op again answers 200 with no transaction", async () => {
     const h = await stackHarness(runtime, { actor: member })
-    const body = commitBody({ title: "  Retry webhook delivery  ", acceptance: ["three tries"] })
+    const body = commitBody({ title: "  Retry webhook delivery  ", acceptance: ["three tries"], issue: 7 })
 
     const [status, taken] = await json(await post(h, body))
     expect([status, taken]).toEqual([202, { txid: expect.any(Number), opId: body.opId, outcome: "committed", number: 1 }])
@@ -66,6 +66,7 @@ describe("POST /api/repos/<owner>/<name>/stack", () => {
       { id: body.opId, repoId: "github/octo/hello", title: "Retry webhook delivery", login: "maya", state: "queued" },
     ])
     expect(await sql(`SELECT acceptance FROM todo_requests`)).toEqual([{ acceptance: ["three tries"] }])
+    expect(await sql(`SELECT issue_number AS issue FROM todos`)).toEqual([{ issue: 7 }])
     expect(h.line("stack.request").map((line) => line.annotations.outcome)).toEqual(["committed", "repeated"])
     expect(h.count(Api.requests, { op: "commit", outcome: "committed" })).toBe(1)
   })
@@ -217,6 +218,23 @@ describe("the run host's seam", () => {
     expect(await json(await post(h, body))).toEqual([200, { txid: null, opId: body.opId, outcome: "committed", number: 1 }])
     expect(host.started).toHaveLength(1)
     expect(await sql(`SELECT count(*)::int AS n FROM todo_attempts`)).toEqual([{ n: 1 }])
+  })
+
+  test("drop cancels the old run even when admission of its successor fails", async () => {
+    const host = runs()
+    const h = await stackHarness(runtime, { actor: member, runs: host })
+    await post(h, commitBody())
+    await post(h, commitBody())
+    const stopped: Array<Stack.AttemptStop> = []
+    const failed = await stackHarness(runtime, { actor: member, runs: {
+      ...host,
+      layer: Layer.succeed(Stack.TodoRuns, Stack.TodoRuns.of({
+        start: () => Effect.fail(new Stack.RunsUnavailable({ errorCode: "admission_down" })),
+        stop: (attempt) => Effect.sync(() => { stopped.push(attempt) }),
+      })),
+    } })
+    expect((await post(failed, { opId: uuid(), op: "drop", number: 1 })).status).toBe(503)
+    expect(stopped).toHaveLength(1)
   })
 
   test("a drop whose stop is refused answers 503", async () => {

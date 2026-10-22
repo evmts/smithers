@@ -345,6 +345,7 @@ describe("BrowserRuntime.serve", () => {
         yield* Engines.close(leader)
 
         const failingDriver = Layer.succeed(EngineStore.Driver)({
+          admit: () => Effect.die("admission not used by this fault service"),
           drive: () => Effect.die("drive failed")
         })
         const second = yield* Engines.leader(
@@ -389,6 +390,7 @@ describe("BrowserRuntime.serve", () => {
           )
       })
       const recording = Layer.succeed(EngineStore.Driver)({
+          admit: () => Effect.die("admission not used by this fault service"),
         drive: (_flow, { executionId }) =>
           Effect.sync(() => driven.push(executionId)).pipe(Effect.as({ _tag: "Parked", wakeAtMs: undefined } as const))
       })

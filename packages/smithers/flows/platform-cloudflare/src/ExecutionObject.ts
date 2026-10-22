@@ -11,7 +11,7 @@
  * timers, retries and results stay in the engine's Postgres store; the
  * object's storage holds the intent, a failure count and, once the execution
  * settles, when it did. A settled object keeps its intent for
- * {@link settledRetentionMs}, then forgets it and empties its storage.
+ * {@link settledRetentionMs}, then forgets it. A cancellation tombstone is retained permanently.
  *
  * The functions take the object's storage as a structural slice, so the
  * same code runs under any Effect-native Durable Object (an Alchemy
@@ -23,10 +23,11 @@
 
 import { canonicalize } from "@smthrs/canonical"
 import { type DurableEngineState, EngineStore } from "@smthrs/engine-store"
-import { type Flow, RetryPolicy, RunMetrics } from "@smthrs/flow"
+import { type Flow, FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
 import * as Config from "effect/Config"
+import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -34,6 +35,7 @@ import type * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as Semaphore from "effect/Semaphore"
 import * as FailureDetail from "./internal/FailureDetail.ts"
 import * as Routing from "./internal/Routing.ts"
 
@@ -129,8 +131,7 @@ export class IntentConflict extends Schema.TaggedError<IntentConflict>()(
  *   and for a lost or refused connection the driver's text for it.
  * - `Forgotten`: the execution settled and its retention window has passed;
  *   the object deleted its intent, its count and its settlement, and the
- *   alarm is deleted. The object is empty, as one that never held an
- *   execution.
+ *   alarm is deleted. Any cancellation tombstone remains to reject delayed admission.
  *
  * @category models
  * @since 1.0.0
@@ -160,7 +161,11 @@ export type Outcome =
  * @category models
  * @since 1.0.0
  */
-export type Services = EngineStore.Driver | RunStore.RunStore | DurableEngineState.DurableEngineState
+export type Services =
+  | EngineStore.Driver
+  | RunStore.RunStore
+  | DurableEngineState.DurableEngineState
+  | FlowRuntime.FlowRuntime
 
 /**
  * How one Durable Object reaches another, both named by execution id. The
@@ -512,6 +517,21 @@ class UnknownFlow extends Schema.TaggedError<UnknownFlow>()("@smthrs/platform-cl
  */
 class Undriven extends Schema.TaggedError<Undriven>()("@smthrs/platform-cloudflare/Undriven", {}) {}
 
+/** The short admission/cancellation critical section of one object incarnation. */
+class AdmissionControl extends Context.Service<AdmissionControl, {
+  readonly gate: Semaphore.Semaphore
+  readonly activate: (cancel: Effect.Effect<void, FlowRuntime.CancelRequestFailed>) => void
+  readonly allowed: (value: Intent) => Effect.Effect<boolean>
+}>()("@smthrs/platform-cloudflare/AdmissionControl") {}
+
+/**
+ * Permanent cancellation tombstone. It survives intent retention so a delayed
+ * replay of a cancelled start can never resurrect the execution.
+ * @category constants
+ * @since 1.0.0
+ */
+export const cancelledKey = "smithers/cancelled"
+
 /**
  * Drives the execution once (`EngineStore.drive`) within `budgetMs` and
  * answers what that left it as.
@@ -522,20 +542,45 @@ class Undriven extends Schema.TaggedError<Undriven>()("@smthrs/platform-cloudfla
  * schema no longer decodes as `payload_changed`: decoding the intent first
  * would fail every alarm of that run, forever.
  */
-const drive = (flow: Flow.Any, value: Intent, budgetMs: number) =>
+const drive = <RS>(storage: Storage<RS>, flow: Flow.Any, value: Intent, budgetMs: number) =>
   Effect.gen(function*() {
-    const held = yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
-      Effect.as(true),
-      Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
-    )
-    // A flow's schemas carry the services they need with the flow's
-    // registration, so the erased requirements are satisfied there.
-    const payload = held ? {} : yield* (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(
-      value.payload
-    ) as Effect.Effect<object, Schema.SchemaError>)
-    const drove = EngineStore.drive(flow, { executionId: value.executionId, payload, budgetMs })
-    // Admission labels the run with the origin its starter recorded.
-    return yield* (value.origin === undefined ? drove : RunMetrics.withOrigin(drove, value.origin))
+    const control = yield* Effect.serviceOption(AdmissionControl)
+    const prepare = Effect.gen(function*() {
+      const held = yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
+        Effect.as(true),
+        Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
+      )
+      let cancelled = (yield* storage.get<number>(cancelledKey)) !== undefined
+      if (!held && !cancelled && Option.isSome(control) && !(yield* control.value.allowed(value))) {
+        yield* storage.put(cancelledKey, yield* Clock.currentTimeMillis)
+        yield* Metric.update(cancellations, 1)
+        yield* Effect.logInfo("cloudflare.execution.cancel").pipe(Effect.annotateLogs({
+          "smithers.execution.id": value.executionId,
+          "smithers.flow": value.flow,
+          outcome: "admission_refused"
+        }))
+        cancelled = true
+      }
+      if (cancelled && !held) return false
+      if (!held) {
+        const payload = yield* (Schema.decodeUnknownEffect(Schema.toCodecJson(flow.payloadSchema))(
+          value.payload
+        ) as Effect.Effect<object, Schema.SchemaError>)
+        const admission = (yield* EngineStore.Driver).admit(flow, { executionId: value.executionId, payload })
+        yield* value.origin === undefined ? admission : RunMetrics.withOrigin(admission, value.origin)
+      }
+      const context = yield* Effect.context<Services>()
+      const cancel = (yield* FlowRuntime.FlowRuntime).interrupt(flow, value.executionId).pipe(Effect.provide(context))
+      if (Option.isSome(control)) control.value.activate(cancel)
+      if (cancelled) yield* cancel
+      return true
+    })
+    // Persist admission before exposing cancellation to an active runtime. No
+    // action runs in this critical section, and cancellation can never miss a
+    // run between the tombstone check and row creation.
+    const admitted = yield* Option.isSome(control) ? control.value.gate.withPermit(prepare) : prepare
+    if (!admitted) return { _tag: "Settled" } as const
+    return yield* EngineStore.drive(flow, { executionId: value.executionId, payload: {}, budgetMs })
   })
 
 /**
@@ -543,10 +588,10 @@ const drive = (flow: Flow.Any, value: Intent, budgetMs: number) =>
  * its outcome ({@link driveDuration}) and in `timing`, and reads what it left
  * the execution as: `Unfinished` is a failure, so the alarm backs off.
  */
-const timedDrive = (flow: Flow.Any, value: Intent, budgetMs: number, timing: { driveMs?: number }) =>
+const timedDrive = <RS>(storage: Storage<RS>, flow: Flow.Any, value: Intent, budgetMs: number, timing: { driveMs?: number }) =>
   Effect.gen(function*() {
     const startedMs = yield* Clock.currentTimeMillis
-    const exit = yield* Effect.exit(drive(flow, value, budgetMs))
+    const exit = yield* Effect.exit(drive(storage, flow, value, budgetMs))
     const driveMs = (yield* Clock.currentTimeMillis) - startedMs
     timing.driveMs = driveMs
     const outcome = Exit.isSuccess(exit) ? exit.value._tag.toLowerCase() : "failed"
@@ -677,7 +722,13 @@ export const alarm = <E, R, RS, RE = never, RR = never>(
     const outcome = yield* settleOrDrive(storage, raw, options, timing)
     const tag = outcome._tag.toLowerCase()
     const failure = outcome._tag === "Retrying"
-      ? { "error.type": outcome.failure, "smithers.execution.attempt": outcome.attempt, retryAtMs: outcome.retryAtMs, delayMs: backoff(outcome.attempt), ...outcome.detail }
+      ? {
+        "error.type": outcome.failure,
+        "smithers.execution.attempt": outcome.attempt,
+        retryAtMs: outcome.retryAtMs,
+        delayMs: backoff(outcome.attempt),
+        ...outcome.detail
+      }
       : {}
     // How long the drive ran, when the alarm drove: what shows a drive nearing the 900-second limit.
     const drove = timing.driveMs === undefined ? {} : { "smithers.execution.drive_ms": timing.driveMs }
@@ -730,11 +781,17 @@ const settleOrDrive = <E, R, RS, RE, RR>(
       if (flow === undefined) return yield* new UnknownFlow({ flow: value.flow })
       return yield* Effect.gen(function*() {
         yield* Effect.logInfo("cloudflare.execution.ready").pipe(Effect.annotateLogs({
-          "smithers.execution.id": value.executionId, "smithers.flow": value.flow,
+          "smithers.execution.id": value.executionId,
+          "smithers.flow": value.flow,
           readyAtMs: yield* Clock.currentTimeMillis
         }))
-        const driven = yield* timedDrive(flow, value, options.driveBudgetMs ?? defaultDriveBudgetMs, timing)
-        yield* route(value.executionId, options.router)
+        const driven = yield* timedDrive(storage, flow, value, options.driveBudgetMs ?? defaultDriveBudgetMs, timing)
+        // A cancelled intent may have no engine row at all.
+        const exists = yield* (yield* RunStore.RunStore).get(value.executionId).pipe(
+          Effect.as(true),
+          Effect.catchIf((error) => error.code === "not_found_row", () => Effect.succeed(false))
+        )
+        if (exists) yield* route(value.executionId, options.router)
         if (driven._tag === "Settled") {
           const now = yield* Clock.currentTimeMillis
           yield* storage.put(settledKey, now)
@@ -763,3 +820,81 @@ const settleOrDrive = <E, R, RS, RE, RR>(
       detail: FailureDetail.detail(outcome.cause, failedStatement)
     } as const
   })
+
+/**
+ * Compose one object's handlers, including durable cancellation. Keep one
+ * instance for the lifetime of the object incarnation. Cancellation records a
+ * tombstone before interrupting the active engine, or wakes an idle object to
+ * finish the engine's cancellation on its next alarm. No action is started by
+ * the cancellation handler and no application retry loop is needed.
+ * `driveBudgetMs` bounds each drive; `afterAlarm` runs after every outcome,
+ * once the active cancellation handler has been cleared.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = <E, R, RS, RE = never, RR = never, RA = never>(storage: Storage<RS>, options: {
+  readonly flows: ReadonlyArray<Flow.Any>
+  readonly runtime: (intent: Intent) => Layer.Layer<Services, E, R>
+  readonly router: Router<RE, RR>
+  readonly settledRetentionMs?: number | undefined
+  readonly driveBudgetMs?: number | undefined
+  readonly afterAlarm?: Effect.Effect<void, never, RA> | undefined
+  /** Recheck domain admission before a delayed start reaches the engine. Failure retries the alarm. */
+  readonly canStart?: ((intent: Intent) => Effect.Effect<boolean, never, R>) | undefined
+}) => {
+  const gate = Semaphore.makeUnsafe(1)
+  let active: Effect.Effect<void, FlowRuntime.CancelRequestFailed> | undefined
+  return {
+    start: (value: Intent) => gate.withPermit(start(storage, value, Effect.void)),
+    wake: () => wake(storage),
+    cancel: () =>
+      gate.withPermit(Effect.gen(function*() {
+        yield* storage.put(cancelledKey, yield* Clock.currentTimeMillis)
+        yield* storage.setAlarm(yield* Clock.currentTimeMillis)
+        if (active !== undefined) yield* active
+        const ids = yield* idsOf(yield* storage.get<string>(intentKey))
+        yield* Metric.update(cancellations, 1)
+        yield* Effect.annotateCurrentSpan(ids)
+        yield* Effect.logInfo("cloudflare.execution.cancel").pipe(Effect.annotateLogs({ ...ids, outcome: "accepted" }))
+      })).pipe(
+        Effect.exit,
+        Effect.tap((exit) =>
+          Exit.isFailure(exit)
+            ? Effect.logWarning("cloudflare.execution.cancel").pipe(Effect.annotateLogs({
+              outcome: "failed",
+              "error.type": RetryPolicy.failureType(exit.cause)
+            }))
+            : Effect.void
+        ),
+        // Storage and engine failures may contain content. The span exports
+        // only the sanitized outcome; the caller still receives the failure.
+        Effect.withSpan("cloudflare.execution.cancel"),
+        Effect.flatMap((exit) => exit)
+      ),
+    alarm: () =>
+      Effect.flatMap(Effect.context<R>(), (context) =>
+        alarm(storage, options).pipe(
+          Effect.provideService(AdmissionControl, {
+            gate,
+            activate: (cancel) => {
+              active = cancel
+            },
+            allowed: (value) =>
+              options.canStart === undefined ?
+                Effect.succeed(true) :
+                options.canStart(value).pipe(Effect.provide(context))
+          }),
+          Effect.ensuring(Effect.sync(() => {
+            active = undefined
+          }))
+        )).pipe(Effect.tap(() => options.afterAlarm ?? Effect.void))
+  }
+}
+
+/**
+ * Durable cancellation requests accepted by an execution object.
+ * @category metrics
+ * @since 1.0.0
+ */
+export const cancellations = Metric.counter("smithers_cloudflare_execution_cancellations", { incremental: true })

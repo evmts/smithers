@@ -116,7 +116,11 @@ describe("ExecutionHost over the compose Postgres", () => {
         // Longer than any first drive, migrations included, takes under a loaded suite: a timer that comes due during
         // the drive leaves work due now, and the alarm answers Retrying instead of Parked.
         const payload = { label: "x", pauseMs: 5_000 }
-        yield* host.start(yield* ExecutionHost.intent(Pause.Pause, { executionId, payload }))
+        const intent = yield* ExecutionHost.intent(Pause.Pause, { executionId, payload })
+        // An intent recorded by the standalone writer survives adoption by the composed handlers.
+        yield* ExecutionHost.recordStart(object.storage, intent)
+        expect(marks).toEqual([])
+        yield* host.start(intent)
         expect(object.alarm()).toBeGreaterThanOrEqual(before)
         expect(object.alarm()).toBeLessThanOrEqual(Date.now())
 
@@ -184,8 +188,11 @@ describe("ExecutionHost over the compose Postgres", () => {
         )
         const records = lines.filter((line) => String(line.message).startsWith("cloudflare.execution."))
         expect(records.map((line) => [line.message, line.annotations.outcome])).toEqual([
+          ["cloudflare.execution.request", undefined],
           ["cloudflare.execution.start", "accepted"],
+          ["cloudflare.execution.request", undefined],
           ["cloudflare.execution.start", "duplicate"],
+          ["cloudflare.execution.ready", undefined],
           ["cloudflare.execution.alarm", "settled"],
         ])
         expect(JSON.stringify(records)).not.toContain(sentinel)

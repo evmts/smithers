@@ -571,3 +571,18 @@ describe("the seam's errors", () => {
       .toEqual([false, false, true, true, true])
   })
 })
+
+
+test("drop retains published successor admissions after its old run is cancelled", async () => {
+  const first = await applyOn(commit(), true)
+  await applyOn(commit(), true)
+  if (first.kind !== "applied") throw new Error("not applied")
+  const attempt = first.receipt.starts[0]!
+  const published = await runtime.runPromise(Stack.report(attempt, { kind: "published", headSha: "a".repeat(40), prNumber: 1, draft: false }, { runs: true }))
+  const dropping = drop(1)
+  const receipt = await applyOn(dropping, true)
+  expect(receipt.kind !== "conflict" && receipt.receipt.starts).toEqual(published.starts)
+  const replay = await applyOn(dropping, true)
+  expect(replay.kind !== "conflict" && replay.receipt.starts).toEqual(published.starts)
+  expect(await sql("SELECT id FROM todo_attempts")).toHaveLength(2)
+})

@@ -130,6 +130,11 @@ export interface DriveOptions {
  * @category hosting
  */
 export class Driver extends Context.Service<Driver, {
+  /** Persist an admission without starting any action; the host must subsequently drive it. */
+  readonly admit: (
+    flow: Flow.Any,
+    options: { readonly executionId: string; readonly payload: object }
+  ) => Effect.Effect<void, FlowRuntime.FlowCycleDetected>
   readonly drive: (
     flow: Flow.Any,
     options: DriveOptions
@@ -1134,6 +1139,7 @@ const withinBudget = <A, E>(
 /** The store's host-facing driver: one drive of one execution, and what it left. */
 const hostDriver = (store: Store) =>
   Driver.of({
+    admit: (flow, input) => store.driver.admit(flow, input).pipe(CapabilitySet.attenuateGroups(store.host.groups)),
     // Compared under the host ceiling, as every call of the typed service is.
     drive: Effect.fn("EngineStore.drive")(function*(flow, input) {
       yield* Effect.annotateCurrentSpan({ executionId: input.executionId, flow: flow._tag })

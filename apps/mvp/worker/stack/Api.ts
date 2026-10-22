@@ -196,8 +196,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           // A repeated op starts and stops the same runs again, which changes nothing, so a start an earlier answer
           // never made gets made now.
           if (Option.isSome(runs)) {
-            const handed = yield* Effect.forEach(receipt.starts, (start) => runs.value.start(start), { discard: true }).pipe(
-              Effect.andThen(receipt.stopped === undefined ? Effect.void : runs.value.stop(receipt.stopped)),
+            const handed = yield* (receipt.stopped === undefined ? Effect.void : runs.value.stop(receipt.stopped)).pipe(
+              Effect.andThen(Effect.forEach(receipt.starts, (start) => runs.value.start(start), { discard: true })),
               Effect.result,
             )
             if (handed._tag === "Failure") {

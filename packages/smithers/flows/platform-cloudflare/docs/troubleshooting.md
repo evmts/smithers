@@ -7,7 +7,7 @@ description: "Every Retrying failure an alarm reports, the other states an execu
 
 The `cloudflare.execution.alarm` line and span carry the failure's tag as
 `error.type`, and the attempt count as `smithers.execution.attempt`. The alarm
-backs off from one second, doubling, to five minutes, and never gives up.
+backs off from one second, doubling, to five seconds, and never gives up.
 
 A failure that reached the database adds the SQL error's kind as `db.error`
 (`ConnectionError`, `SqlSyntaxError`, ...) and its SQLSTATE code as

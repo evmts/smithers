@@ -185,11 +185,17 @@ export const apply = (change: Change, options: { readonly runs: boolean }) =>
       const stopped = stop === undefined
         ? undefined
         : { attemptId: rows.find((row) => row.id === stop.todoId)!.attemptId!, todoId: stop.todoId }
+      // The drop and publication serialize on the same stack row. If publish
+      // committed first, its successor admissions transfer to this durable
+      // receipt before cancellation removes the publishing run's retry owner.
+      const inherited = stopped === undefined ? [] : yield* publishedStarts({
+        ...stopped, repoId: change.repoId, ordinal: rows.find((row) => row.id === stopped.todoId)!.attempt,
+      })
       const receipt: Receipt = {
         // A commit or a drop answers one of the stack's outcomes; only a run's report finishes a TODO or goes stale.
         outcome: (result.kind === "refused" ? result.code : result.kind) as StackOutcome,
         ...(result.kind === "refused" ? {} : { number: result.number }),
-        starts,
+        starts: [...starts, ...inherited],
         ...(stopped === undefined ? {} : { stopped }),
       }
       if (change.op.kind === "commit" && result.kind === "committed") {

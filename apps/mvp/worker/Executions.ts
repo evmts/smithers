@@ -15,6 +15,7 @@ import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
 import * as Expire from "./flows/Expire.ts"
 import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as Todo from "./flows/Todo.ts"
+import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as SandboxKeep from "./flows/SandboxKeep.ts"
 import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
 import * as GitHubHost from "./github/Host.ts"
@@ -37,6 +38,7 @@ export interface FlowExecutionShape {
     intent: ExecutionObject.Intent,
   ) => Effect.Effect<void, ExecutionObject.IntentConflict, RuntimeContext>
   readonly wake: () => Effect.Effect<boolean, never, RuntimeContext>
+  readonly cancel: () => Effect.Effect<void, import("@smthrs/flow").FlowRuntime.CancelRequestFailed, RuntimeContext>
   readonly alarm: () => Effect.Effect<void, never, RuntimeContext>
 }
 
@@ -157,6 +159,7 @@ const object = <E, R>(
             database,
             flows,
             driveBudgetMs,
+            canStart: (intent) => TodoRuns.canStart(intent).pipe(Effect.provide(appDatabase), Effect.orDie),
             router: {
               start: (intent) => executions.getByName(intent.executionId).start(intent),
               wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake()),
@@ -253,6 +256,7 @@ const object = <E, R>(
         return {
           start: (intent: ExecutionObject.Intent) => host.start(intent).pipe(Effect.provide(logs)),
           wake: () => host.wake().pipe(Effect.provide(logs)),
+          cancel: () => host.cancel().pipe(Effect.provide(logs)),
           alarm: () => host.alarm().pipe(Effect.asVoid, Effect.provide(logs)),
         }
       })

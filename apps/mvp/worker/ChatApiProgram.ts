@@ -13,7 +13,6 @@ import * as Electric from "../infra/Electric.ts"
 import * as SecretsInfra from "../infra/Secrets.ts"
 import * as SignInSecret from "../infra/SignIn.ts"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
-import { todoExecutionId } from "../src/features/pulls/contract.ts"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract.ts"
 import * as BranchApi from "./branch/BranchApi.ts"
 import { Forge } from "./branch/Forge.ts"
@@ -40,6 +39,7 @@ import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
 import * as StackApi from "./stack/Api.ts"
 import * as Stack from "./stack/Stack.ts"
+import * as TodoRuns from "./stack/TodoRuns.ts"
 import * as Todo from "./flows/Todo.ts"
 import * as Throttle from "./Throttle.ts"
 
@@ -139,23 +139,6 @@ export const program = (options: ProgramOptions = {}) =>
     })
     const githubApp = yield* GitHubConfig.configured
     const runTodos = yield* Todo.enabled
-    /**
-     * The `todo` runs the stack's writer starts (decision 0016 Track B): each attempt's run on its own Durable Object,
-     * `todo:<attempt id>`, the same start again a no-op. Stop has nothing to send: a dropped TODO's run finds it at its
-     * next report to the writer, or at its next read of its pull request, and closes what it opened.
-     */
-    const todoRuns = (starter: Flows.FlowStarter["Service"]) =>
-      Stack.TodoRuns.of({
-        start: (attempt) =>
-          starter.start(Todo.Todo, { executionId: todoExecutionId(attempt.attemptId), payload: attempt }).pipe(
-            Effect.catch((error) =>
-              error._tag === "@smthrs/mvp/flows/StartConflict"
-                ? Effect.void
-                : Effect.fail(new Stack.RunsUnavailable({ errorCode: error.errorCode }))
-            ),
-          ),
-        stop: () => Effect.void,
-      })
     // A repository's home (docs/features/home.md): who the asker is on it, and Smithers' curated home for it.
     const home = HomeApi.make()
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
@@ -246,8 +229,11 @@ export const program = (options: ProgramOptions = {}) =>
         // `TODO_RUNS` on, this host runs TODOs: each attempt the writer starts runs `todo` on its own Durable Object
         // (decision 0016).
         if (StackApi.handles(path)) {
+          const requestRuntime = yield* RuntimeContext
           return yield* (Option.isSome(githubApp) && runTodos
-            ? stack.fetch.pipe(Effect.provideService(Stack.TodoRuns, todoRuns(starter)))
+            ? stack.fetch.pipe(Effect.provideService(Stack.TodoRuns, TodoRuns.make(starter, (executionId) => executions.getByName(executionId).cancel().pipe(
+              Effect.provideService(RuntimeContext, requestRuntime),
+            ))))
             : stack.fetch).pipe(Effect.provide(signedIn))
         }
         if (RemoteRuns.handles(path)) return yield* remoteRuns.fetch.pipe(Effect.provide(signedIn))

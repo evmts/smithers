@@ -21,6 +21,7 @@ import * as TerminalOpen from "./flows/TerminalOpen.ts"
 import type { Machines } from "./branch/Machines.ts"
 import type { Sandboxes } from "./branch/Sandboxes.ts"
 import * as Todo from "./flows/Todo.ts"
+import * as TodoDrop from "./flows/TodoDrop.ts"
 import type { Implement } from "./flows/TodoAgent.ts"
 import * as GitHubHost from "./github/Host.ts"
 import type * as Triage from "./github/Triage.ts"
@@ -114,11 +115,11 @@ export const withTodos = <ROut, E, R, SE, SR, DE, DR, ME, MR, IE, IR>(
   machines: Layer.Layer<Machines, ME, MR>,
   implement: Layer.Layer<Layer.Success<typeof Implement.layer>, IE, IR>,
 ) => ({
-  flows: [...flows.flows, Todo.Todo, Checks.ChecksRun],
+  flows: [...flows.flows, Todo.Todo, TodoDrop.Drop, Checks.ChecksRun],
   registration: Layer.mergeAll(
     flows.registration,
     Layer.unwrap(Effect.map(services, (built) =>
-      Layer.mergeAll(Todo.registration(built, implement), Checks.registration(built))
+      Layer.mergeAll(Todo.registration(built, implement), TodoDrop.registration(built), Checks.registration(built))
         .pipe(Layer.provide(machines))
     )),
   ),
@@ -235,21 +236,19 @@ export const make = <RS, RD, ROut, E, R, RE, RR, RA = never>(
     readonly router: ExecutionObject.Router<RE, RR>
     readonly afterAlarm?: Effect.Effect<void, never, RA>
     readonly driveBudgetMs?: number | undefined
+    readonly canStart?: ((intent: ExecutionObject.Intent) => Effect.Effect<boolean, never, RD>) | undefined
   },
 ) => {
   const { flows, registration } = options.flows
-  return {
-    start: (intent: ExecutionObject.Intent) => recordStart(storage, intent),
-    wake: () => ExecutionObject.wake(storage),
-    alarm: () =>
-      ExecutionObject.alarm(storage, {
-        flows,
-        runtime: (intent) =>
-          CloudflareRuntime.layer({ hostId: options.hostId, executionId: intent.executionId }, registration).pipe(
-            Layer.provide(options.database),
-          ),
-        router: options.router,
-        driveBudgetMs: options.driveBudgetMs,
-      }).pipe(Effect.tap(() => options.afterAlarm ?? Effect.void)),
-  }
+  return ExecutionObject.make(storage, {
+    flows,
+    runtime: (intent) =>
+      CloudflareRuntime.layer({ hostId: options.hostId, executionId: intent.executionId }, registration).pipe(
+        Layer.provide(options.database),
+      ),
+    router: options.router,
+    canStart: options.canStart,
+    driveBudgetMs: options.driveBudgetMs,
+    afterAlarm: options.afterAlarm,
+  })
 }

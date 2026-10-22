@@ -30,3 +30,7 @@ with the execution id and request time. The host records receipt, runtime-ready,
 retry cause and delay; the engine records creation and claim with that same id.
 This separates an outbox/RPC delay from runtime setup, alarm backoff and claim
 latency without putting TODO text in telemetry.
+
+2026-10-22 drop enforcement: the production adapter now requests the execution object’s durable cancellation before successor admission. A tombstone prevents delayed starts; a live attempt check fences first admission. The engine owns interruption and host release. The drop receipt inherits any published successors, and the independent `todo/Drop` flow closes its recorded PR after cancellation.
+
+Reproduced delay mechanisms: duplicate failed caller writes postponed alarms, and host failure backoff grew to five minutes. Duplicate starts now arm immediately and host backoff is capped at five seconds. The historical production incident’s exact cause remains unproven without its Worker records; these tests establish the mechanisms, not retrospective attribution.

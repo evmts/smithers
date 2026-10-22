@@ -17,6 +17,7 @@ import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { testFile } from "../test/harness.ts"
 import * as Checks from "./Checks.ts"
 import * as Todo from "./Todo.ts"
+import * as TodoDrop from "./TodoDrop.ts"
 import * as TodoAgent from "./TodoAgent.ts"
 
 const runtime = testFile("todo_host")
@@ -44,7 +45,7 @@ test("withTodos registers the todo run and a head's checks, and the object runs 
     machines,
     TodoAgent.registration(seat, services.database, Agent.layerSandbox),
   )
-  expect(flows.flows.slice(-2)).toEqual([Todo.Todo, Checks.ChecksRun])
+  expect(flows.flows.slice(-3)).toEqual([Todo.Todo, TodoDrop.Drop, Checks.ChecksRun])
   expect(flows.flows.some((flow) => flow._tag === "issue/Prototype")).toBe(false)
   const values = new Map<string, unknown>()
   const storage: ExecutionHost.Storage = {

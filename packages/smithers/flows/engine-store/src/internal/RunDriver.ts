@@ -211,6 +211,10 @@ export interface Dependencies {
  * @category models
  */
 export interface Service {
+  readonly admit: (
+    flow: Flow.Any,
+    options: { readonly executionId: string; readonly payload: object }
+  ) => Effect.Effect<void, FlowCycleDetected>
   readonly register: FlowEngine.Encoded["register"]
   /**
    * The encoded `execute`, widened for direct driver callers: an absent
@@ -1122,7 +1126,8 @@ const claimAndActivate: (driver: Driver, row: RunStore.RunRow) => Effect.Effect<
   }
   yield* recordClaim("Activated")
   yield* Effect.logInfo("flow.run.claimed").pipe(Effect.annotateLogs({
-    "smithers.execution.id": row.runId, claimedAtMs: claim.claimedAtMs
+    "smithers.execution.id": row.runId,
+    claimedAtMs: claim.claimedAtMs
   }))
   // The run is this driver's now, so whatever it was told about the
   // previous owner is spent.
@@ -3439,7 +3444,8 @@ const ensureRun = (driver: Driver, flow: Flow.Any, options: Admission): Effect.E
     }
     if (!(yield* admit(driver, flow, options, payload, origin))) return
     yield* Effect.logInfo("flow.run.created").pipe(Effect.annotateLogs({
-      "smithers.execution.id": options.executionId, "smithers.flow": flow._tag,
+      "smithers.execution.id": options.executionId,
+      "smithers.flow": flow._tag,
       createdAtMs: yield* Clock.currentTimeMillis
     }))
     yield* RunMetrics.recordStarted({
@@ -3748,17 +3754,18 @@ type ExecuteOptions<Discard extends boolean> = Admission & {
   readonly follow?: boolean | undefined
 }
 
+/** Admission must never create work the current host has no implementation for. */
+const requireRegistration = (driver: Driver, flow: Flow.Any) =>
+  driver.registrations.has(flow._tag)
+    ? Effect.void
+    : Effect.die(
+      new FlowEngine.FlowNotRegistered({ flowName: flow._tag, message: `Flow ${flow._tag} is not registered` })
+    )
+
 const execute = Effect.fn("FlowEngine.execute")(
   function*<const Discard extends boolean>(driver: Driver, flow: Flow.Any, options: ExecuteOptions<Discard>) {
     yield* Effect.annotateCurrentSpan({ executionId: options.executionId, flow: flow._tag })
-    if (!driver.registrations.has(flow._tag)) {
-      return yield* Effect.die(
-        new FlowEngine.FlowNotRegistered({
-          flowName: flow._tag,
-          message: `Flow ${flow._tag} is not registered`
-        })
-      )
-    }
+    yield* requireRegistration(driver, flow)
     // Cycle rejection happens atomically inside `ensureRun`'s call to
     // `DurableEngineState.recordRunParent`: the storage transaction that
     // inserts the edge also walks the parent chain and rolls back on a
@@ -4106,6 +4113,7 @@ const active = (driver: Driver) => Effect.fn("FlowEngine.active")(() => driver.c
 
 /** The encoded engine operations a driver answers, each bound to it. */
 const service = (driver: Driver): Service => ({
+  admit: (flow, options) => requireRegistration(driver, flow).pipe(Effect.andThen(ensureRun(driver, flow, options))),
   register: (flow, handler) => register(driver, flow, handler),
   execute: (flow, options) => execute(driver, flow, options),
   poll: (flow, executionId) => poll(driver, flow, executionId),
