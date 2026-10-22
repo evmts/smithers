@@ -11,6 +11,7 @@ import { NodeWS } from "@effect/platform-node/NodeSocket"
 import { Effect, Layer, Logger, Metric, Scheduler } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
+import { TestClock } from "effect/testing"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import * as Conversations from "../../../worker/branch/Conversations.ts"
@@ -20,13 +21,15 @@ import { dispatches } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
 import { OpenRefused, TerminalClient } from "./api"
-import { DEFAULT_COLS, DEFAULT_ROWS, openExecutionId } from "./contract"
+import { DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, openExecutionId } from "./contract"
 import { TerminalOpenRefused, TerminalOpenUnavailable } from "./flows"
 import { bytes, ended, openMs, opens, reconnects } from "./metrics"
 import { requestOpen } from "./steps"
-import { socketUrl } from "./actions"
+import { show, socketUrl } from "./actions"
+import { PANEL } from "./schema"
 import { TerminalStore } from "./store"
 import { Terminal } from "./terminal"
+import { panelViewOf } from "./view"
 
 const closers: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -145,14 +148,24 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
           ORDER BY created_at`
       ),
     /** Puts terminal `id` of `ownerId` on `branchId` in Postgres as `status`, as an open and `terminal/Open` leave it. */
-    insert: (row: { readonly id: string; readonly branchId: string; readonly ownerId: string; readonly status: string }) =>
-      sql((sql) =>
+    insert: async (
+      row: { readonly id: string; readonly branchId: string; readonly ownerId: string; readonly status: string; readonly createdAt?: string },
+      options: { readonly receive?: boolean } = {},
+    ) => {
+      await sql((sql) =>
         sql`
-          INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, status, generation, ended_reason, failure)
+          INSERT INTO terminal_sessions (id, branch_id, owner_id, owner_login, status, generation, ended_reason, failure, created_at)
           VALUES (${row.id}, ${row.branchId}, ${row.ownerId}, ${row.ownerId}, ${row.status},
             ${row.status === "open" ? 1 : null}, ${row.status === "ended" ? "closed" : null},
-            ${row.status === "failed" ? "unavailable" : null})`
-      ),
+            ${row.status === "failed" ? "unavailable" : null}, COALESCE(${row.createdAt ?? null}::timestamptz, now()))`
+      )
+      if (options.receive === false) return
+      // Socket tests start from a delivered row; the real open flow's delivery timing is tested separately.
+      await runtime.runPromise(Effect.flatMap(store.terminals(row.branchId), (terminals) =>
+        Effect.andThen(terminals.preload, terminals.awaitRow((terminal) => terminal.id === row.id, "40 seconds")),
+      ).pipe(Effect.provideService(FetchHttpClient.Fetch, api.fetch), Effect.timeout("40 seconds")))
+      await runtime.runPromise(Effect.yieldNow)
+    },
     /** Settles terminal `id` as `terminal/Open` or its machine does: open, failed to open, or ended. */
     settle: (id: string, status: "open" | "failed" | "ended") =>
       sql((sql) =>
@@ -475,16 +488,64 @@ describe("Open terminal settles", () => {
 })
 
 describe("the panel", () => {
+  test.each([OPEN_DEADLINE_SECONDS * 1000, (OPEN_DEADLINE_SECONDS + 1) * 1000])(
+    "page load fails an opening row aged %i ms immediately and offers Open terminal",
+    async (age) => {
+      const tab = await open()
+      const branchId = await tab.track("feature/one")
+      const mine = crypto.randomUUID()
+      const createdAt = "2026-10-21T12:00:00.000Z"
+      await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt })
+      await tab.runtime.runPromise(Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(createdAt) + age)
+        expect(yield* show(branchId)).toBe(mine)
+        yield* TestClock.adjust(0)
+        const panel = yield* tab.store.panel.get(PANEL)
+        expect(panel).toMatchObject({ _tag: "Some", value: { terminalId: mine, phase: "failed" } })
+        const tabs = yield* tab.store.tabs.toArray
+        expect(tabs).toMatchObject([{ id: mine, mine: true, status: "opening" }])
+        expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
+          badge: undefined, open: "button", screen: { kind: "open" },
+        })
+      }).pipe(Effect.provide(TestClock.layer())))
+      expect(await tab.synced(branchId, mine)).toBe("opening")
+    }, WITHIN,
+  )
+
+  test.each([0, 90_000])("page load keeps an opening row aged %i ms opening until its original deadline", async (age) => {
+    const tab = await open()
+    const branchId = await tab.track("feature/one")
+    const mine = crypto.randomUUID()
+    const createdAt = "2026-10-21T12:00:00.000Z"
+    await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt })
+    await tab.runtime.runPromise(Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(createdAt) + age)
+      expect(yield* show(branchId)).toBe(mine)
+      yield* TestClock.adjust(OPEN_DEADLINE_SECONDS * 1000 - age - 1)
+      const panel = yield* tab.store.panel.get(PANEL)
+      expect(panel).toMatchObject({ _tag: "Some", value: { terminalId: mine, phase: "opening" } })
+      const tabs = yield* tab.store.tabs.toArray
+      expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
+        badge: undefined, open: "opening", screen: { kind: "open" },
+      })
+      yield* TestClock.adjust(1)
+      expect(yield* tab.store.panel.get(PANEL)).toMatchObject({ _tag: "Some", value: { phase: "failed" } })
+    }).pipe(Effect.provide(TestClock.layer())))
+  }, WITHIN)
+
   test("shows the person's own live terminal, or the one they watch, by its row; else the branch's first live one, else Open terminal", async () => {
     const tab = await open()
     const branchId = await tab.track("feature/one")
     const [ended, failed, theirs] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
     await tab.insert({ id: ended, branchId, ownerId: member.subject.id, status: "ended" })
     await tab.insert({ id: failed, branchId, ownerId: other, status: "failed" })
-    await tab.insert({ id: theirs, branchId, ownerId: other, status: "open" })
+    await tab.insert({ id: theirs, branchId, ownerId: other, status: "opening" })
 
-    // The person's own ended terminal isn't theirs to show: the branch's live one is, and it is the one tab.
+    // The person's own ended terminal isn't theirs to show: wait for the branch's live one, even if it isn't theirs.
     expect(await tab.actions.show(branchId)).toBe(theirs)
+    expect(tab.panel()).toMatchObject({ branchId, terminalId: theirs, phase: "opening" })
+    await tab.settle(theirs, "open")
+    await until(() => expect(tab.panel()?.phase).toBe("connecting"))
     expect(tab.panel()).toMatchObject({ branchId, terminalId: theirs, phase: "connecting" })
     expect(tab.tabs()).toEqual([{ id: theirs, ownerLogin: other, mine: false, status: "open" }])
     await tab.actions.show(branchId, ended)
@@ -523,6 +584,9 @@ describe("the panel", () => {
     const branchId = await tab.track("feature/one")
     expect(await tab.actions.show(branchId)).toBeNull()
     expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
+    expect(tab.tabs()).toEqual([])
+    await tab.insert({ id: crypto.randomUUID(), branchId, ownerId: member.subject.id, status: "ended" })
+    expect(tab.panel()).toMatchObject({ terminalId: null, phase: "idle" })
     expect(tab.tabs()).toEqual([])
   }, WITHIN)
 
@@ -570,6 +634,7 @@ describe("the panel", () => {
     const theirs = crypto.randomUUID()
     await tab.insert({ id: theirs, branchId, ownerId: other, status: "open" })
     await until(async () => expect(await tab.synced(branchId, theirs)).toBe("open"))
+    await until(() => expect(tab.tabs()).toEqual([{ id: theirs, ownerLogin: other, mine: false, status: "open" }]))
     expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
   }, WITHIN)
 
@@ -591,7 +656,8 @@ describe("the panel", () => {
   test("signed out, no terminal is the person's", async () => {
     const tab = await open({}, { actor: null })
     const branchId = await tab.track("feature/one")
-    await tab.insert({ id: crypto.randomUUID(), branchId, ownerId: member.subject.id, status: "open" })
+    // A signed-out shape intentionally delivers no terminal rows.
+    await tab.insert({ id: crypto.randomUUID(), branchId, ownerId: member.subject.id, status: "open" }, { receive: false })
 
     await tab.actions.show(branchId)
 

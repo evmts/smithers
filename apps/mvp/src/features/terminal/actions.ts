@@ -23,8 +23,8 @@ const setPanel = (fields: Partial<Omit<Panel, "id">>) =>
 
 const panelNow = Effect.flatMap(TerminalStore, ({ panel }) => Effect.map(panel.get(PANEL), Option.getOrThrow))
 
-/** How long the machine gets to wake and start the shell before the panel says it failed. */
-const OPEN_WITHIN = `${OPEN_DEADLINE_SECONDS} seconds`
+/** Milliseconds from row creation until the panel says opening failed. */
+const OPEN_WITHIN = OPEN_DEADLINE_SECONDS * 1000
 
 /** The signed-in person's GitHub login, if any: whose terminals are theirs. */
 const loginNow = Effect.gen(function* () {
@@ -142,12 +142,13 @@ const awaitOpen = (branchId: string, terminalId: string, startedAt: number | und
     const terminals = yield* (yield* TerminalStore).terminals(branchId)
     const settled = (row: TerminalRow | undefined) => row !== undefined && row.status !== "opening"
     const now = Option.getOrUndefined(yield* terminals.get(terminalId))
+    const remaining = now === undefined ? OPEN_WITHIN : Math.max(0, Date.parse(now.createdAt) + OPEN_WITHIN - (yield* Clock.currentTimeMillis))
     const row = settled(now)
       ? now!
       : (yield* terminals.awaitMatch(
         (change) => change.value.id === terminalId && change.value.status !== "opening",
-        OPEN_WITHIN,
-      ).pipe(Effect.option, Effect.flatMap(() => terminals.get(terminalId)), Effect.map(Option.getOrUndefined)))
+        remaining,
+      ).pipe(Effect.timeoutOption(remaining), Effect.ignore, Effect.andThen(terminals.get(terminalId)), Effect.map(Option.getOrUndefined)))
     const panel = yield* panelNow
     if (panel.terminalId !== terminalId) return
     if (row === undefined || row.status === "opening") return yield* setPanel({ phase: "failed" })

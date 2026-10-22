@@ -301,6 +301,7 @@ Work already done in the box can't be recalled, and the UI never claims it was u
 | The machine sleeps | screens captured; sessions end `slept`; close 1000 | last screen, `Ended`, `Open terminal` |
 | Out of memory, or killed without SIGTERM | the next attach finds a new generation; the session ends `lost`, with no screen | `Ended`, `Open terminal` |
 | The container won't start, or no capacity | `terminal/Open` fails with a typed reason | a toast with Retry (0009) |
+| An opening run never finishes (2026-10-21) | the panel waits only until the row's creation plus `OPEN_DEADLINE_SECONDS`, using Effect Clock | Open terminal again, even if the person's tab still says `opening`; the next press replaces the stale row |
 | A share revoked, or GitHub demotes the person | eviction (§2); shapes 403; rows dropped | `No access` |
 | A question queued for an archived conversation | archive is personal, so it is sent and answered as usual | nothing |
 | GitHub down during a share | the step retries under its policy, then fails closed: no grant on an unknown permission | a toast with Retry |

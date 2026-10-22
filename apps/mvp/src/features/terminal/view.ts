@@ -13,7 +13,7 @@ export const OPEN_TERMINAL = "Open terminal"
 /**
  * The Terminal view:
  * - `tabs`: the branch's live terminals by owner; `badge`: `Offline`, `Ended` or `No access`;
- * - `open`: Open terminal, for someone who may edit and has no terminal of their own; `opening` while the machine wakes,
+ * - `open`: Open terminal, for an editor without their own terminal or after failure; `opening` while the machine wakes,
  *   when the button is disabled and a spinner shows, because the wait is the machine's, not the app's;
  * - `screen`: the terminal attached (`frame`, read-only for a viewer); else Open terminal in the screen's middle
  *   (`open`); else nothing to attach to (`empty`), which says `NO_TERMINALS` when the branch has none and no badge
@@ -43,7 +43,7 @@ export const panelViewOf = (
   if (panel === undefined || panel.branchId === null) return undefined
   if (panel.phase === "loading") return { badge: undefined, open: undefined, screen: { kind: "empty", text: undefined } }
   const badge = BADGES[panel.phase]
-  const offered = canOpen && (panel.phase === "opening" || !tabs.some((tab) => tab.mine))
+  const offered = canOpen && (panel.phase === "opening" || panel.phase === "failed" || !tabs.some((tab) => tab.mine))
   const open = !offered ? undefined : panel.phase === "opening" ? "opening" : "button"
   const attached = panel.terminalId !== null &&
     (panel.phase === "connecting" || panel.phase === "open" || panel.phase === "offline")

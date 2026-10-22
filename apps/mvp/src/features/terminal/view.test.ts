@@ -76,6 +76,13 @@ describe("panelViewOf", () => {
     expect(panelViewOf(panel({ phase: "open", terminalId: "t-1", access: "write" }), [tab()], true)!.open).toBe("button")
   })
 
+  test("a failed panel offers Open terminal even while the person's tab is still opening", () => {
+    const failed = panel({ phase: "failed", terminalId: "t-1" })
+    const tabs = [tab({ mine: true, status: "opening" })]
+    expect(panelViewOf(failed, tabs, true)).toEqual({ badge: undefined, open: "button", screen: { kind: "open" } })
+    expect(panelViewOf(failed, tabs, false)).toEqual({ badge: undefined, open: undefined, screen: { kind: "empty", text: undefined } })
+  })
+
   test("someone who can't open a terminal sees No terminals on a branch with none, and only the badge otherwise", () => {
     expect(panelViewOf(panel(), [], false)).toEqual({
       badge: undefined,
