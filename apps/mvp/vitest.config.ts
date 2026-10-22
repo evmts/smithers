@@ -3,12 +3,13 @@ import { join } from "node:path"
 import { defineConfig } from "vitest/config"
 
 // Unit tests in Node: the browser's framework-free chat layer (src/), ChatApi's handlers (worker/) and the database
-// (db/), against the compose Postgres and Electric (`pnpm db:up`). React views (`*.tsx`) are end-to-end tested, so the
-// coverage gate measures the logic files: every `src/**/*.ts` but the tests and their hosts.
+// (db/), against the compose Postgres and Electric (`pnpm db:up`). View regressions in tests/ use a DOM environment;
+// Playwright covers real browsers. The coverage gate measures logic: every src/**/*.ts but tests and their hosts.
 export default defineConfig({
   test: {
     include: [
       "PACKAGE.test.ts",
+      "tests/**/*.test.ts",
       "src/**/*.test.ts",
       "worker/**/*.test.ts",
       "db/**/*.test.ts",

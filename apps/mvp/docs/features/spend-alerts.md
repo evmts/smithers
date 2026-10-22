@@ -46,6 +46,7 @@ Settings ── Save ──▶ alert/channel { channel, destinations }      (the
 - **The link:** each message links to the deployment’s configured `ALERT_APP_URL`, independently of the origin the Admin saved from.
 - **The message:** short. The subject is the toast's words, `Model spend · 12,340 tokens · $0.02`; the text is the window (`15:00–15:15 UTC, 2026-10-20`), the three roles that spent most (`agent 12,000 · judge 340`) and the link. Telegram gets both as one plain-text message, link previews off.
 - **Saving:** HTTP 408 and 429, network failures and server failures retry durably for up to an hour; other 4xx responses are final. The Save button's flow runs at once on the tab's engine; `Saving` shows beside the button until it lands, and `Not saved` if ChatApi refused it, until the next Save.
+- **Editing:** a synced channel update preserves the field's unsaved destinations and focus; untouched fields follow the synced setting.
 
 ### Delivery
 
@@ -135,4 +136,5 @@ Blocking a network and pausing asking without a deploy are not built ([todo.md](
 | `worker/flows/SpendAlert.test.ts` "delivers outside the app" and "the delivery step" | on the Node host: once the window ends, one email and one Telegram message with their bodies and receipts; nothing for a window with nothing to carry; off, missing, a step run again, a refusal with its reason, `unconfigured`, an invalid stored destination, a provider that is down (a faulty `Channels`, injected) then up, and Postgres failing; no record names an address, a chat or a token |
 | `worker/AlertChannels.test.ts` | an Admin sets, replaces and clears each channel; every refusal (signed out, Member, an agent for an Admin, invalid input, too large, another method, Postgres failing); the shapes to Admins only; the providers from the environment, and the dev key |
 | `src/features/spend/spend.test.ts` "an Admin's alert channels" | Save on a tab's engine sets both channels and they sync back; a refused save shows Not saved; a Member's is refused and syncs nothing; a delivery's receipt syncs, the latest 10 first; the message's and a receipt's words |
+| `tests/AlertSettings.test.ts` | a synced email or Telegram update preserves the unsaved field, its element and focus; Save submits the draft; untouched fields follow sync |
 | `e2e/alert-channels.spec.ts` | in a real browser against `alchemy dev`: Settings, both channels saved, a question that spends, and both receipts `Sent` with the local providers holding the email and the Telegram message; clearing Telegram turns it off (dev server started with `MODEL_SPEND_ALERTS=true`, a short window and the providers' URLs; skipped otherwise and against a deployment) |

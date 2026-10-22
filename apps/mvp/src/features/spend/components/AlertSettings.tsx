@@ -8,7 +8,7 @@ import { useSpend } from "./SpendContext"
 
 // Where spend alerts go outside the app (docs/features/spend-alerts.md#channels): an Admin's email addresses and
 // Telegram chat, each saved on its own, and the latest receipts. A field left empty turns its channel off. The fields
-// show the synced setting; a save that hasn't landed says so beside its button.
+// show the synced setting until edited; a save that hasn't landed says so beside its button.
 export function AlertSettings() {
   const { queries, actions } = useSpend()
   const { data: channels } = useLiveQuery(queries.channels)
@@ -21,7 +21,7 @@ export function AlertSettings() {
       <h2>{ALERTS_HEADING}</h2>
       {(["email", "telegram"] as const).map((name) => (
         <ChannelForm
-          key={`${name}:${channel(name)?.updatedAt ?? "off"}`}
+          key={name}
           name={name}
           row={channel(name)}
           save={save(name)}
@@ -64,7 +64,13 @@ function ChannelForm(props: {
           {...(props.name === "email"
             ? { type: "email", multiple: true, autoComplete: "email" }
             : { type: "text", pattern: TELEGRAM_CHAT_PATTERN, inputMode: "text" as const })}
-          defaultValue={props.row?.destinations.join(", ") ?? ""}
+          ref={(input) => {
+            if (input === null) return
+            const synced = props.row?.destinations.join(",") ?? ""
+            // Refresh untouched fields in place, retaining any unsaved edit and its focus.
+            if (input.value === input.defaultValue) input.value = synced
+            input.defaultValue = synced
+          }}
         />
       </Field>
       <Button type="submit" disabled={props.save?.state === "saving"}>{SAVE}</Button>
