@@ -29,7 +29,7 @@ export const chatShortcuts = Effect.fnUntraced(function* (target: EventTarget) {
     }),
     () =>
       Effect.sync(() => {
-        target.removeEventListener("keydown", onToggle, true)
+        target.removeEventListener("keydown", onToggle, { capture: true })
         target.removeEventListener("keydown", onEscape)
       }),
   )
