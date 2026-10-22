@@ -95,15 +95,17 @@ export const connectionArguments = (options: ConnectionOptions): Array<string> =
 // The control plane an MCP session reaches, and the credential it presents,
 // are host configuration. Honouring them as tool arguments would let any
 // connected client aim the host's SMITHERS_TOKEN at a server it chose.
-// Refuse the override rather than silently substituting the host destination,
+// Project roots and MCP server configuration also carry filesystem and process
+// authority owned by the host. Refuse overrides rather than substituting a destination,
 // so a caller is never told it queried a plane it did not.
 const hostConnection = (options: ConnectionOptions): ConnectionOptions => {
   if (Presentation.current()?.transport !== "mcp") return options
-  for (const flag of ["remote"] as const) {
+  for (const flag of ["remote", "root", "mcpConfig"] as const) {
     if (options[flag] !== undefined) {
       throw new CliError.UsageError({
-        message:
-          `--${flag} is not accepted over MCP; the host selects the control plane with SMITHERS_REMOTE and SMITHERS_TOKEN`
+        message: `--${
+          flag === "mcpConfig" ? "mcp-config" : flag
+        } is not accepted over MCP; the host selects the project and connection configuration`
       })
     }
   }
@@ -230,15 +232,6 @@ export const invoke = async (
   runtime: Runtime = {}
 ): Promise<unknown> => {
   const { output: progressOutput, policy } = display(options, runtime)
-  let config = configuration(options, runtime)
-  if (config.remote === undefined && runtime.executionRoot === undefined) {
-    // The same extraction the legacy executable uses, so a flat alias binds
-    // to the same worktree whichever entry it arrived through.
-    const runId = ExecutionTarget.executionRunId(args)
-    if (runId !== undefined) {
-      config = { ...config, ...await HistoryWorkspace.prepare(Project.root(config.root, process.cwd()), runId) }
-    }
-  }
   const values: Array<unknown> = []
   const outputConsole: Console.Console = Object.assign(Object.create(console), {
     error: (...items: ReadonlyArray<unknown>) => {
@@ -264,25 +257,41 @@ export const invoke = async (
     ...connectionArguments({ ...options, quiet: false }),
     ...args
   ]
-  const run: Effect.Effect<void, unknown, Ui.Ui> = Command.runWith(legacyCli, { version: packageVersion })(
-    commandArguments
-  ).pipe(
-    // The flat verb these arguments name is what decides whether this host
-    // composes an executor, and so whether it needs a completion judge. A
-    // canonical verb that starts a run reaches it through exactly this call
-    // (`flow start` is `up`, `approvals approve` is `approve`), so the verb
-    // catalog stays the one authority on the question.
-    Effect.provide(NodeControl.layer({
-      ...config,
-      startsRuns: Verb.startsRuns(Argv.words(args)),
-      plansFlows: Argv.words(args)[0] === "plan"
-    })),
-    Effect.provide(NodeServices.layer),
-    Effect.provideService(Console.Console, outputConsole),
-    Effect.provideService(CommandStatus.CommandStatus, (code) => runtime.exit?.(code))
-  )
-  const result = await Effect.runPromiseExit(provideServices(run, options, runtime), { signal: runtime.signal })
-  if (Exit.isFailure(result)) throw failureOf(result.cause, runtime.signal)
+  const run = Effect.gen(function*() {
+    let config = configuration(options, runtime)
+    if (config.remote === undefined && runtime.executionRoot === undefined) {
+      // The same extraction the legacy executable uses, so a flat alias binds
+      // to the same worktree whichever entry it arrived through.
+      const runId = ExecutionTarget.executionRunId(args)
+      if (runId !== undefined) {
+        config = {
+          ...config,
+          ...yield* Effect.tryPromise({
+            try: () => HistoryWorkspace.prepare(Project.root(config.root, process.cwd()), runId),
+            catch: (cause) => cause
+          })
+        }
+      }
+    }
+    return yield* Command.runWith(legacyCli, { version: packageVersion })(
+      commandArguments
+    ).pipe(
+      // The flat verb these arguments name is what decides whether this host
+      // composes an executor, and so whether it needs a completion judge. A
+      // canonical verb that starts a run reaches it through exactly this call
+      // (`flow start` is `up`, `approvals approve` is `approve`), so the verb
+      // catalog stays the one authority on the question.
+      Effect.provide(NodeControl.layer({
+        ...config,
+        startsRuns: Verb.startsRuns(Argv.words(args)),
+        plansFlows: Argv.words(args)[0] === "plan"
+      })),
+      Effect.provide(NodeServices.layer),
+      Effect.provideService(Console.Console, outputConsole),
+      Effect.provideService(CommandStatus.CommandStatus, (code) => runtime.exit?.(code))
+    )
+  })
+  await settle(provideServices(run, options, runtime), runtime)
   return values.length === 1 ? values[0] : values
 }
 
@@ -491,10 +500,6 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
   const operatorToken = bind.credential === undefined || bind.credential === ""
     ? randomBytes(32).toString("hex")
     : undefined
-  // Publish only after the bind policy above has accepted this host.
-  if (bind.operatorTokenFile !== undefined) {
-    await writeOperatorTokenFile(bind.operatorTokenFile, operatorToken ?? bind.credential!)
-  }
   const servedBind = { ...bind, operatorToken }
   const control = NodeControl.layer({
     ...config,
@@ -504,12 +509,23 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
   })
   const root = Project.root(config.root, process.cwd())
   const host = Layer.merge(control, layerTriggerScheduler(root).pipe(Layer.provide(control)))
-  if (!options.quiet) process.stderr.write(`${Serve.banner(servedBind)}\n`)
-  if (operatorToken !== undefined && bind.operatorTokenFile === undefined) {
-    process.stderr.write(`  approval token  ${operatorToken}\n`)
-  }
-  const result = await Effect.runPromiseExit(
+  const { output, policy } = display(options, runtime)
+  const ready = Effect.gen(function*() {
+    if (bind.operatorTokenFile !== undefined) {
+      yield* Effect.promise(() => writeOperatorTokenFile(bind.operatorTokenFile!, operatorToken ?? bind.credential!))
+    }
+    if (policy.progress !== "silent") {
+      yield* Effect.sync(() => {
+        output.write(`${Serve.banner(servedBind)}\n`)
+        if (operatorToken !== undefined && bind.operatorTokenFile === undefined) {
+          output.write(`  approval token  ${operatorToken}\n`)
+        }
+      })
+    }
+  })
+  await settle(
     Serve.host(servedBind, root).pipe(
+      Effect.provideService(Serve.Ready, ready),
       Effect.provide(host),
       // The gateway's Run.Fork and Run.Verify, over this project's stores.
       Effect.provide(GatewayHistory.layer(root)),
@@ -517,7 +533,6 @@ export const host = async (bind: Serve.Bind, options: ConnectionOptions, runtime
       Effect.provide(Telemetry.layer(runtime.environment ?? process.env)),
       Effect.provideService(Logger.LogToStderr, true)
     ),
-    { signal: runtime.signal }
+    runtime
   )
-  if (Exit.isFailure(result)) throw failureOf(result.cause, runtime.signal)
 }

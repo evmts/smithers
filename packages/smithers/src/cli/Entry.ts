@@ -36,6 +36,7 @@ export const main = async (host: Host): Promise<void> => {
   const controller = new AbortController()
   let interrupted: number | undefined
   let status = 0
+  let mcp = false
   const exit = (code: number) => {
     if (code !== 0) status = code
     host.setExitCode(interrupted ?? status)
@@ -57,7 +58,7 @@ export const main = async (host: Host): Promise<void> => {
     }
     const args = parsed.rest.slice(offset)
     if (
-      args[0] === "tui" &&
+      !mcp && args[0] === "tui" &&
       !args.some((arg) => arg === "-p" || arg === "--print" || arg.startsWith("--print=") || /^-p.+/.test(arg))
     ) return
     interrupt("SIGINT", onSigint)
@@ -66,7 +67,6 @@ export const main = async (host: Host): Promise<void> => {
   host.on("SIGINT", onSigint)
   host.on("SIGTERM", onSigterm)
   try {
-    let mcp = false
     const presentation = Audience.fromArguments(host.argv, {
       env: host.env,
       stdout: host.stdout.isTTY,

@@ -41,6 +41,8 @@ export interface Globals {
 
 /** Parser output adds transport metadata without narrowing the existing Globals input contract. */
 interface ParsedGlobals extends Globals {
+  /** Original positions of root options, excluding opaque values and literal tails. */
+  readonly rootIndices: ReadonlyArray<number>
   /** Equivalent options with opaque values protected from Incur built-in extraction. */
   readonly incurArgv: ReadonlyArray<string>
   /** Actual stdio transport selection, excluding opaque option values and literal tails. */
@@ -131,6 +133,7 @@ export const parse = (args: ReadonlyArray<string> | Globals, cli?: object): Pars
     verbose: undefined,
     mcp: undefined
   }
+  const rootIndices: Array<number> = []
   const incurArgv: Array<string> = []
   let scope = cli === undefined ? undefined : Cli.toCommands.get(cli as never)
   const arities = new Map<string, boolean>([...localValues].map((flag) => [flag, true]))
@@ -196,6 +199,7 @@ export const parse = (args: ReadonlyArray<string> | Globals, cli?: object): Pars
         keep(index, argument)
         continue
       }
+      if (flag === "--root") rootIndices.push(index)
       const value = inline ?? args[++index]!
       values[name] ??= value
       // Incur's format extractor accepts only the spaced spelling and consumes
@@ -262,6 +266,7 @@ export const parse = (args: ReadonlyArray<string> | Globals, cli?: object): Pars
     incurArgv: flags.mcp ? ["--mcp", ...incurArgv] : incurArgv,
     mcp: flags.mcp ?? false,
     restIndices,
+    rootIndices,
     options,
     ...values,
     json: flags.json ?? false,

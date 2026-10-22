@@ -138,6 +138,15 @@ export interface GatewayHostService {
 export class GatewayHost extends Context.Service<GatewayHost, GatewayHostService>()("/cli/Serve/GatewayHost") {}
 
 /**
+ * Publishes host readiness after every gateway layer, including its socket, opens.
+ * @category references
+ * @since 1.0.0
+ */
+export const Ready = Context.Reference<Effect.Effect<void>>("/cli/Serve/Ready", {
+  defaultValue: () => Effect.void
+})
+
+/**
  * The refusal for a bind that is not allowed, or `undefined` when it is.
  *
  * @category getters

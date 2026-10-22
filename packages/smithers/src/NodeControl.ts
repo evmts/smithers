@@ -673,7 +673,11 @@ export const layer = (applicationConfig: Application.Config, modules?: ModuleReg
         Effect.map(Control.Control, (controlService) =>
           Serve.GatewayHost.of({
             launch: (health, options, gatewayRoot) =>
-              Layer.launch(layerGateway(health, options, gatewayRoot, engine)).pipe(
+              Layer.launch(
+                Layer.effectDiscard(Effect.flatten(Serve.Ready)).pipe(
+                  Layer.provideMerge(layerGateway(health, options, gatewayRoot, engine))
+                )
+              ).pipe(
                 Effect.provideService(Control.Control, controlService),
                 Effect.provide(NodeServices.layer),
                 Effect.orDie

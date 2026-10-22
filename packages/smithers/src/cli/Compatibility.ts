@@ -47,7 +47,11 @@ export const legacyArguments = (input: ReadonlyArray<string> | Argv.Globals): Ar
   if (command === "bug" && rest.length === 0) return [...args]
   if (command !== undefined && legacy.has(command)) return [...args]
   if (command === "run") {
-    if (rest.some((arg) => arg === "--resume" || arg.startsWith("--resume=")) || rest[0]?.trimStart().startsWith("{")) {
+    if (
+      rest.slice(0, rest.indexOf("--") < 0 ? rest.length : rest.indexOf("--")).some((arg) =>
+        arg === "--resume" || arg.startsWith("--resume=")
+      ) || rest[0]?.trimStart().startsWith("{")
+    ) {
       return [...args]
     }
   }
@@ -102,7 +106,7 @@ export const agentArguments = (input: ReadonlyArray<string> | Argv.Globals): Arr
     output: ["runs", "output"],
     down: ["runs", "cancel-all"]
   }
-  if (command === undefined || aliases[command] === undefined) return undefined
+  if (command === undefined || !Object.hasOwn(aliases, command)) return undefined
   // A missing positional still uses the legacy parser's typed, file-free usage error.
   if (
     command !== "ls" && command !== "ps" && command !== "down" &&
@@ -120,5 +124,5 @@ export const agentArguments = (input: ReadonlyArray<string> | Argv.Globals): Arr
     "--message"
   ])
   if (parsed.rest.some((arg) => arg.startsWith("--") && !allowed.has(arg.split("=")[0]!))) return undefined
-  return [...aliases[command], ...args.slice(0, index), ...args.slice(index + 1)]
+  return [...aliases[command]!, ...args.slice(0, index), ...args.slice(index + 1)]
 }

@@ -64,6 +64,10 @@ smthrs --mcp
 command rather than a subcommand. The flag is read from the raw argument vector
 before the command tree parses anything.
 
+The host owns the project directory, remote destination, and MCP server
+configuration. Tool calls reject `root`, `remote`, and `mcpConfig` overrides.
+SIGINT cancels MCP mode even when launched as `smthrs tui --mcp`.
+
 ## Canonical tools and independent approval
 
 The executable uses the unified command tree through Incur's MCP discovery

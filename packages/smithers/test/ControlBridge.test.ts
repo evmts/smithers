@@ -14,6 +14,7 @@ import { createRunsCli } from "../src/cli/ControlCommands.ts"
 import * as Presentation from "../src/cli/Presentation.ts"
 import * as RunProgress from "../src/cli/RunProgress.ts"
 import * as CommandStatus from "../src/internal/CommandStatus.ts"
+import * as Serve from "../src/Serve.ts"
 import * as Ui from "../src/Ui.ts"
 
 const ports = vi.hoisted(() => ({
@@ -126,6 +127,7 @@ beforeEach(async () => {
   ports.serve.mockImplementation(() =>
     Effect.gen(function*() {
       expect(yield* Control.Control).toBe(service)
+      yield* Effect.flatten(Serve.Ready)
       lifecycle.push("serve")
     })
   )
@@ -287,7 +289,7 @@ describe("control bridge configuration and routing", () => {
     ) {
       await Presentation.scope(context, host, async () => {
         expect(Presentation.current()?.transport).toBe("mcp")
-        await Bridge.invoke(["ls"], local, host)
+        await Bridge.invoke(["ls"], { quiet: false }, host)
         expect(ports.control).toHaveBeenLastCalledWith(expect.objectContaining({
           principal: { id: "mcp", kind: "agent" },
           approvalAuthority
@@ -317,7 +319,7 @@ describe("control bridge configuration and routing", () => {
       }
       expect(ports.control).not.toHaveBeenCalled()
       expect(receivedArguments).toEqual([])
-      await Bridge.invoke(["ls"], local, host)
+      await Bridge.invoke(["ls"], { quiet: false }, host)
       expect(ports.control).toHaveBeenLastCalledWith(expect.objectContaining({
         remote: "https://host.invalid",
         credential: "host-bearer",
@@ -332,7 +334,7 @@ describe("control bridge configuration and routing", () => {
     await Promise.all([
       Presentation.scope({ agent: true, formatExplicit: true, globals: {} }, runtime, async () => {
         await Promise.resolve()
-        expect(Bridge.configuration(local, runtime).principal).toEqual({ id: "mcp", kind: "agent" })
+        expect(Bridge.configuration({ quiet: false }, runtime).principal).toEqual({ id: "mcp", kind: "agent" })
       }),
       Presentation.scope({ globals: { audience: "human" } }, runtime, async () => {
         await Promise.resolve()
@@ -953,9 +955,8 @@ describe("control bridge transport scope", () => {
     const failure = { _tag: "host-failure" }
     ports.serve.mockReturnValue(Effect.fail(failure))
     await expect(Bridge.host(bind, { ...local, quiet: true }, runtime)).rejects.toBe(failure)
-    // Quiet drops the banner but never the token an operator needs to approve.
-    const { operatorToken } = ports.serve.mock.calls[0]![0] as { readonly operatorToken: string }
-    expect(stderr.mock.calls.map(([text]) => String(text))).toEqual([`  approval token  ${operatorToken}\n`])
+    // Quiet suppresses every progress line, including generated credentials.
+    expect(stderr).not.toHaveBeenCalled()
     expect(lifecycle).toEqual(["control:open", "scheduler:open", "scheduler:close", "control:close"])
   })
 

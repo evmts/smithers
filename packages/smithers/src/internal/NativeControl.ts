@@ -2409,7 +2409,9 @@ export const make = (
                 }
               }
               return Layer.launch(
-                layerGateway(health, verifiedOptions, root, engine, Layer.succeed(Journal.Journal, journalService))
+                Layer.effectDiscard(Effect.flatten(Serve.Ready)).pipe(Layer.provideMerge(
+                  layerGateway(health, verifiedOptions, root, engine, Layer.succeed(Journal.Journal, journalService))
+                ))
               )
             })
               .pipe(

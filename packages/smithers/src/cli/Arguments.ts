@@ -71,15 +71,11 @@ export const normalizeArguments = (args: ReadonlyArray<string>): Array<string> =
   }
   const depth = generator || command === "show" || command === "cache" ? 2 : 1
   const commandPath = bare ? ["target", command] : args.slice(index, index + depth)
-  const options = [...args.slice(0, index), ...args.slice(index + (bare ? 1 : depth))]
-  let positional = false
-  return [
-    ...commandPath,
-    ...options.map((argument) => {
-      if (argument === "--") positional = true
-      if (positional) return argument
-      if (argument === "--root") return "--workspace"
-      return argument.startsWith("--root=") ? `--workspace=${argument.slice(7)}` : argument
-    })
-  ]
+  const roots = new Set(parsed.rootIndices)
+  const normalized = args.map((argument, position) => {
+    if (!roots.has(position)) return argument
+    return argument === "--root" ? "--workspace" : `--workspace=${argument.slice(7)}`
+  })
+  const options = [...normalized.slice(0, index), ...normalized.slice(index + (bare ? 1 : depth))]
+  return [...commandPath, ...options]
 }

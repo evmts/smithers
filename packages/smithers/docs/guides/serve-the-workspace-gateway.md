@@ -47,14 +47,16 @@ smthrs --remote http://127.0.0.1:3000 ps
 
 Loopback reads need no credential. Approval decisions require the session token,
 which authenticates a local operator, not a named person. By default serve prints
-the session token to stderr. To keep it out of logs, use:
+the session token to stderr after startup succeeds. `--quiet` suppresses both
+the banner and token. To receive the credential in quiet mode, use:
 
 ```bash
 smthrs serve --operator-token-file /private/path/operator.token
 ```
 
 The parent directory must exist. Serve creates or atomically replaces the file
-with mode `0600` and never prints its value with this flag. A server-side relay
+with mode `0600` only after the gateway is listening, and never prints its
+value with this flag. Failed startup does not publish a credential. A server-side relay
 reads it; never expose it to the browser. With `SMITHERS_TOKEN` configured, the
 file contains that configured gateway credential instead, retaining its existing
 approval policy.
