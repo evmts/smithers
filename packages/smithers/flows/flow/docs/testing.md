@@ -155,3 +155,7 @@ child execution id digest. Each one is read by a process that did not write it.
   topology test reads.
 - [The runtime port](./concepts/the-runtime-port.md): what the in-memory engine
   is standing in for.
+
+Durable queue regressions cover rejected offer diagnostics without payload values,
+nonzero W3C trace parents, and invalid concurrency as a defect when the worker
+effect runs, before opening the queue.

@@ -269,7 +269,7 @@ export const process: <
         spanId: span.spanId,
         sampled: span.sampled
       } as any, { id: key }).pipe(
-        Effect.tapCause(Effect.logWarning),
+        Effect.tapCause(() => Effect.logWarning("Queue offer failed")),
         Effect.catchTag("SchemaError", Effect.die),
         Effect.retry(options?.retrySchedule ?? defaultRetrySchedule),
         Effect.orDie,
@@ -293,8 +293,8 @@ const deferredNameExcerpt = (name: string): string =>
     ? name
     : `${name.slice(0, maxDeferredNameExcerptChars)} [${name.length - maxDeferredNameExcerptChars} characters dropped]`
 
-const traceIdPattern = /^[0-9a-f]{32}$/
-const spanIdPattern = /^[0-9a-f]{16}$/
+const traceIdPattern = /^(?!0{32}$)[0-9a-f]{32}$/
+const spanIdPattern = /^(?!0{16}$)[0-9a-f]{16}$/
 
 /**
  * The offering span as the worker span's parent, when the stored ids have the
@@ -561,7 +561,7 @@ const makeWorkerEffect = Effect.fnUntraced(function*<
  * `concurrency` defaults to one and must be a positive safe integer. It is
  * checked before the persisted queue is opened.
  *
- * @throws A `RangeError` when `concurrency` is not a positive safe integer.
+ * Invalid concurrency dies with a `RangeError` when the effect runs.
  * @category worker
  * @since 0.1.0
  */
@@ -600,15 +600,18 @@ export const makeWorker: <
   options?: {
     readonly concurrency?: number | undefined
   }
-) => {
-  const concurrency = options?.concurrency ?? 1
-  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
-    throw new RangeError(
-      `DurableQueue.makeWorker: concurrency must be a positive safe integer, and was ${concurrency}.`
-    )
-  }
-  return makeWorkerEffect(self, f, concurrency) as any
-}
+) =>
+  Effect.suspend(() => {
+    const concurrency = options?.concurrency ?? 1
+    if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+      return Effect.die(
+        new RangeError(
+          `DurableQueue.makeWorker: concurrency must be a positive safe integer, and was ${concurrency}.`
+        )
+      )
+    }
+    return makeWorkerEffect(self, f, concurrency) as any
+  })
 
 /**
  * Create a layer that runs workers for the durable queue.

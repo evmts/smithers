@@ -1,6 +1,6 @@
 // Deep reviewed and polished by a human on 2026-08-10.
 
-import { describe, expect, it } from "@effect/vitest"
+import { describe, expect } from "@effect/vitest"
 import { Action, DurableDeferred, DurableQueue, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Cause, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Schema, Tracer } from "effect"
 import type * as Crypto from "effect/Crypto"
@@ -131,16 +131,27 @@ describe("DurableQueue", () => {
     }).pipe(Effect.provide(layer))
   })
 
-  it("refuses invalid concurrency before opening the persisted queue", () => {
-    const declare = (concurrency: number) => () =>
-      DurableQueue.makeWorker(Queue, () => Effect.succeed(0), { concurrency })
-
-    for (const invalid of [-1, 0, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(declare(invalid)).toThrow(RangeError)
-      expect(declare(invalid)).toThrow(/concurrency/)
-      expect(declare(invalid)).toThrow(String(invalid))
-    }
-    expect(declare(Number.MAX_SAFE_INTEGER)).not.toThrow()
+  effect("refuses invalid concurrency inside the worker effect before opening the queue", () => {
+    let opened = 0
+    return Effect.gen(function*() {
+      for (const concurrency of [-1, 0, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+        const worker = DurableQueue.makeWorker(Queue, () => Effect.succeed(0), { concurrency })
+        const exit = yield* Effect.exit(worker)
+        expect(Exit.isFailure(exit) && exit.cause.reasons).toEqual([
+          expect.objectContaining({ _tag: "Die", defect: expect.any(RangeError) })
+        ])
+      }
+      expect(opened).toBe(0)
+    }).pipe(
+      Effect.provide(layerMemory),
+      Effect.provideService(PersistedQueue.PersistedQueueFactory, {
+        make: () =>
+          Effect.sync(() => {
+            opened++
+            throw new Error("must not open queue")
+          })
+      })
+    )
   })
 
   effect("logs a malformed item token at error and continues the worker loop", () => {
@@ -335,6 +346,8 @@ describe("DurableQueue", () => {
       for (
         const [id, traceId, spanId] of [
           ["forged", "attacker-chosen-trace", "attacker-span"],
+          ["zero-trace", "0".repeat(32), "b".repeat(16)],
+          ["zero-span", "a".repeat(32), "0".repeat(16)],
           ["linked", "a".repeat(32), "b".repeat(16)]
         ] as const
       ) {
@@ -350,15 +363,17 @@ describe("DurableQueue", () => {
           sampled: true
         }, { id })
       }
-      for (let turn = 0; turn < 100 && handled.length < 2; turn++) yield* Effect.yieldNow
+      for (let turn = 0; turn < 100 && handled.length < 4; turn++) yield* Effect.yieldNow
 
-      expect(handled).toEqual(["forged", "linked"])
+      expect(handled).toEqual(["forged", "zero-trace", "zero-span", "linked"])
       const workerSpans = spans.filter((span) => span.name === `DurableQueue/${WorkerQueue.name}/worker`)
-      expect(workerSpans).toHaveLength(2)
+      expect(workerSpans).toHaveLength(4)
       const parents = workerSpans.map((span) => Option.getOrUndefined(span.parent))
       expect(parents[0]).toBeUndefined()
-      expect(parents[1]?.traceId).toBe("a".repeat(32))
-      expect(parents[1]?.spanId).toBe("b".repeat(16))
+      expect(parents[1]).toBeUndefined()
+      expect(parents[2]).toBeUndefined()
+      expect(parents[3]?.traceId).toBe("a".repeat(32))
+      expect(parents[3]?.spanId).toBe("b".repeat(16))
     }).pipe(
       Effect.provide(layerMemory),
       Effect.provide(PersistedQueueLayer),
@@ -491,9 +506,13 @@ describe("DurableQueue", () => {
 
   effect("an offer SchemaError dies immediately without retrying", () => {
     let offers = 0
+    const logs: Array<string> = []
+    const capture = Logger.make((entry) => logs.push(Logger.formatJson.log(entry)))
     return Effect.gen(function*() {
-      const schemaExit = yield* Effect.exit(Schema.decodeUnknownEffect(Schema.String)(1))
-      if (!Exit.isFailure(schemaExit)) throw new Error("expected invalid string")
+      const schemaExit = yield* Effect.exit(
+        Schema.decodeUnknownEffect(Schema.Number)("rejected-private-payload", { reportInput: true })
+      )
+      if (!Exit.isFailure(schemaExit)) throw new Error("expected invalid number")
       const reason = schemaExit.cause.reasons.find(Cause.isFailReason)!
       const exit = yield* Effect.exit(
         DurableQueue.process(Queue, { id: "offer-schema", value: 0 }, {
@@ -513,8 +532,11 @@ describe("DurableQueue", () => {
       )
       expect(offers).toBe(1)
       expect(exit).toEqual(Exit.die(reason.error))
+      expect(logs.length).toBeGreaterThan(0)
+      expect(logs.join("\n")).not.toContain("rejected-private-payload")
     }).pipe(
       Effect.provideService(FlowRuntime.FlowInstance, makeInstance(Flow_, "offer-schema")),
+      Effect.provide(Logger.layer([capture])),
       Effect.provide(layerMemory)
     )
   })
