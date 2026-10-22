@@ -2,12 +2,18 @@
 title: Run hand-edited personal flows in a sandbox
 status: todo
 area: app
-owner: flow authoring builder after plugin review
-updated: 2026-10-20
+owner: flows builder (Opus)
+updated: 2026-10-21
 links: [flow-authoring.md, prompt-flows-are-code-flows.md, sandboxes.md, everything-is-a-plugin.md, ../decisions/0017-everything-is-a-plugin.md, ../rulings.md]
 ---
 
-## Current specification — 2026-10-20, 18:55 PDT
+## Current specification
+
+**2026-10-21:** The [FLOW-2 addendum](../rulings.md#10-flows) now records Will's answer to decision 0017 question 2, "quickjs is a sandbox". The next step is the QuickJS realm flow host ([decision 0017](../decisions/0017-everything-is-a-plugin.md), slice 5), after the [2026-10-21 flows fixes](flow-authoring.md#current-specification) land. Hand-edited source still saves but cannot run; keep the `FlowNeedsSandbox` refusal until the host passes execution, isolation, cancellation and durable recovery checks (`src/features/flows-ui/steps.ts`, `src/features/flows-ui/flows.test.ts`).
+
+## Earlier tracker history (retained)
+
+## Specification — 2026-10-20, 18:55 PDT
 
 **What:** Run hand-edited Flow.make code in QuickJS through the shared plugin execution contract.
 

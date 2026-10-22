@@ -2,12 +2,33 @@
 title: Creating flows (a form card, the agent builds, a PR activates)
 status: in-progress
 area: app
-owner: flow authoring builder; plugin runtime slice next
-updated: 2026-10-20
+owner: flows builder (Opus)
+updated: 2026-10-21
 links: [review-round-4.md, land-to-main.md, ../decisions/0014-flows-authoring-debugging-and-home-view.md, flow-debugging.md, repository-declared-home.md, flows-and-agent.md, slash-commands.md, scratch-branches.md, sandboxes.md, todos-and-stack.md, pull-request-list-and-tabs.md, agent-ui-rendering.md, roles-and-labels.md, old-app-feature-gaps.md, decisions-for-will.md, ../decisions/0003-flows-and-the-agent.md, ../decisions/0004-agent-ui-codemode-and-rendering.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../decisions/0011-the-agent-runs-in-the-browser.md, ../proposals/mvp-gaps.md, dev-stack-hygiene.md, smithers-playground.md, prompt-flows-are-code-flows.md, docs-truth-pass.md]
 ---
 
-## Current specification — 2026-10-20, 17:14 PDT
+## Current specification
+
+Draft, save, edit and run `Flow.make` modules through one flow model. The 2026-10-21 fixes cover default answers, failed-round diagnostics, Draft again, duplicate Draft presses, draft deletion and concurrent Save (`src/features/flows-ui/actions.ts`, `failure.ts`, `round.ts`, `steps.ts` and `store.ts` in that folder; `worker/PersonalFlows.ts`). [Flows](../features/flows.md#your-own-flows) documents the behavior.
+
+### Evidence: 2026-10-21
+
+Production run 1 at 11:13 reached Done in both flows tests. The production test failures came from the spec: it looked for the removed Steps listbox, then for a Pages navigation that a deployment's branch page does not have. The spec now opens `/app/flows` directly and checks the run graph's `<name>/load, Done` and `<name>/prompt, Done` nodes. It requires `member` and `liveModel`, reports a failed or stopped round with the card's words, and includes draft deletion (`e2e/flows.spec.ts`, `e2e/target.ts`).
+
+Fixes, by subject:
+
+- **Spec repair:** Direct navigation, run graph assertions, model requirements and immediate failure diagnostics (`e2e/flows.spec.ts`, `e2e/target.ts`).
+- **Answer with defaults:** Answer includes each unanswered blocking question's shown default (`src/features/flows-ui/actions.ts`; `src/features/flows-ui/tab.test.ts`).
+- **Why a round failed and failed checks:** Closed failure codes, card words, failure telemetry and checks that fail the round while keeping its file (`src/features/flows-ui/failure.ts`, `contract.ts`, `metrics.ts` and `steps.ts` in that folder).
+- **The card follows its round, Draft again and no double Draft:** Read this device's round status, restart at a free round and join duplicate Draft presses to one execution (`src/features/flows-ui/round.ts`, `store.ts` and `actions.ts` in that folder).
+- **Delete a draft:** Stop this device's round, delete the draft and reject late writes (`src/features/flows-ui/steps.ts`, `worker/PersonalFlows.ts`, `db/migrations/0039_flow_draft_deleted.ts`).
+- **One save per draft:** Claim the ready draft inside the transaction; simultaneous saves return the one revision, and a claim that finds the draft no longer ready refuses `not_ready` (`worker/PersonalFlows.ts`, `worker/PersonalFlows.test.ts`).
+
+**Remaining:** Production proof after deployment, then the QuickJS realm flow host for hand-edited code ([decision 0017](../decisions/0017-everything-is-a-plugin.md), slice 5; [sandbox work](personal-code-flow-sandbox.md)). The [FLOW-2 addendum](../rulings.md#10-flows) records Will's answer to 0017 question 2, "quickjs is a sandbox". Until that host lands, hand-edited code keeps the `FlowNeedsSandbox` refusal (`src/features/flows-ui/steps.ts`).
+
+## Earlier tracker history (retained)
+
+## Specification — 2026-10-20, 17:14 PDT
 
 **What:** Draft, save, edit and execute Flow.make modules through one flow model.
 

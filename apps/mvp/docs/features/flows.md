@@ -166,7 +166,7 @@ export default Flow.make("release-notes", { description: "…", capabilities: []
 | Placement | Source | Runs |
 |---|---|---|
 | `client` | exactly the module `renderSource` writes for its name, description, instructions and calls | on your device's engine. The body is the system's own agent step, and only its data came from the draft, so `flow/run/load` pins that data and `flow/run/prompt` runs the step as this engine declares it |
-| `sandbox` | any other code, a hand edit included, even one that keeps the behavior | only on a host that runs untrusted code (decision [0005](../decisions/0005-sandboxes-secrets-and-the-forge.md)). None exists yet, so its run fails `FlowNeedsSandbox` before anything runs, and the Flows page turns Run off and says `Needs a sandbox` |
+| `sandbox` | any other code, a hand edit included, even one that keeps the behavior | The QuickJS realm flow host will run this code: Will answered decision [0017](../decisions/0017-everything-is-a-plugin.md#wills-answers-2026-10-20-1703) question 2, "quickjs is a sandbox" ([FLOW-2 addendum](../rulings.md#10-flows)). Until that host lands, `flow/run/load` fails `FlowNeedsSandbox` before anything runs, and the Flows page turns Run off and says `Needs a sandbox` (`src/features/flows-ui/steps.ts`, `components/FlowsPage.tsx` in that folder) |
 
 Editing a drafted flow's instructions, description or calls in code still makes other code, because the comparison is byte for byte. Drafting again (`Edit`) writes a drafted module, which runs here again.
 
@@ -174,9 +174,13 @@ Editing a drafted flow's instructions, description or calls in code still makes 
 /app/flows/new: Name + What it should do ─ Draft ─▶ flow/new { name, request }   execution <draftId>:<round>
   flow/new/open   the draft row (drafting); a name you have edits that flow, from its latest source
   flow/new/draft  AgentAction, role agent: description, instructions, flows, questions ≤ 5 (corrected twice at most)
-  flow/new/write  the flow.ts it makes, the static checks, the row: ready, needs_you (a blocking question) or failed
-/app/flows/drafts/<id>: the draft card ─ Answer ─▶ flow/answer ─▶ records them, starts <draftId>:<round + 1>
-                                       ─ Save ───▶ flow/save ─▶ POST /api/flows/save ─▶ flows + flow_revisions
+  flow/new/write  the flow.ts it makes, the static checks, the row: ready, needs_you (a blocking question), or failed with a closed code
+/app/flows/drafts/<id>: the draft card
+  Answer ─▶ flow/answer ─▶ changed answers + each unanswered blocking question's shown value (its default)
+                        ─▶ records them, starts <draftId>:<round + 1>
+  Draft again ─▶ flow/new at <draftId>:<next free round>
+  Delete ─▶ flow/draft/delete ─▶ stops this device's round, deletes the draft
+  Save ─▶ flow/save ─▶ POST /api/flows/save ─▶ flows + flow_revisions
 /app/flows: Code ─▶ /app/flows/code/<name> ─ beforeLoad ─▶ flow/read { name } ─▶ GET /api/flows/source
                     the flow.ts to edit; Needs a sandbox once it isn't the drafted module
                   ─ Save ─▶ flow/write { name, revision, source } ─▶ POST /api/flows/write ─▶ next revision
@@ -186,24 +190,53 @@ Editing a drafted flow's instructions, description or calls in code still makes 
   flow/run/prompt a child run whose payload pins the revision and its list; its agent follows the instructions
 ```
 
+The form and card dispatch through `src/features/flows-ui/actions.ts`; `flows.ts` declares the flows from `reference.ts` in that folder. The agent's confirmation questions come from `src/flows/registry.ts`.
+
 | Flow | Doors | What it does |
 |---|---|---|
-| `flow/new { name, request }` | `/flow.new <name> <what>`, Draft, the agent | One draft round. The execution id `<draftId>:<round>` names the draft; any other id starts round 0 of a new draft |
-| `flow/answer { draftId, round, answers }` | Answer (user only) | Records the answers on the draft and starts the next round as a run of its own |
+| `flow/new { name, request }` | `/flow.new <name> <what>`, Draft, Draft again, the agent | One draft round. The execution id `<draftId>:<round>` names the draft; any other id starts round 0 of a new draft. Two Draft presses before admission start the same execution, which runs once. Draft again uses the first round from the draft's current round that this device's engine does not hold |
+| `flow/answer { draftId, round, answers }` | Answer (user only) | Sends the changed answers plus each unanswered blocking question at the value its field shows, its default until changed. Records them on the draft and starts the next round as a run of its own |
 | `flow/save { draftId }` | Save, the agent | A ready draft whose checks all pass becomes your flow, or its next revision; `NameTaken`, `DraftNotReady { code }`. Save stays busy until this device has the saved revision, then opens the list; one Electric doesn't deliver within `confirmWithin` (15 s) opens the list anyway, logged `flow.save.unconfirmed` |
 | `flow/read { name, revision? }` | Code, the agent | A revision's source, the latest unless set, and its placement; `FlowNotFound` |
 | `flow/write { name, revision, source }` | Save on the code page, the agent | Checks the source as every revision is checked, then saves it as the next revision while `revision` is still the latest; `FlowInvalid { check }`, `FlowsRefused { code: "stale" }`, `FlowNotFound`. Answers the new revision and its placement |
 | `flow/run { name, input?, revision? }` | `/flow.run <name> <input>`, Run, the agent | Runs your flow at `revision`, the latest unless set; `FlowNotFound`, `FlowInvalid { check }`, `FlowNeedsSandbox`, `FlowAgentFailed` |
 | `flow/run/prompt` | none (user only) | The pinned child `flow/run` starts |
 | `flow/delete { flowId }`, `flow/list {}` | Delete, the agent | Deletes one; lists them, each with its placement |
+| `flow/draft/delete { draftId }` | Delete on the card and each Drafts row, the agent | The agent asks first, "Delete this draft?". Stops the draft's round on this device's engine, then deletes the draft. Answers `deleted: false` when the draft is gone or is not yours |
 
-**The static checks** run when a round writes its draft, when Save or a write admits a revision, and when a run loads one (`checkSource`, `src/features/flows-ui/checks.ts`, over `@smthrs/registry`'s `ModuleFlow`, which reads a repository's `flow.ts` the same way, without importing it): it `parses` (a `Flow.make` default export, no warning); its `name`, the tag `Flow.make` declares, follows the pattern, stays outside the app's names (`RESERVED_NAMES`) and is the flow's name; its `description` is 1 to 1,024 characters; its `calls` (`flows`) are at most 20 of the flows a person's flow may call (the agent's catalog minus `flow/*` and `run/*`, `PROMPT_CALLABLE`); its `model` is absent or `agent`, with no placement directive of its own; its `size` is at most 64 KiB. A failing check keeps a draft `ready` with the check named and Save off, and refuses a write.
+**The static checks** run when a round writes its draft, when Save or a write admits a revision, and when a run loads one (`checkSource`, `src/features/flows-ui/checks.ts`, over `@smthrs/registry`'s `ModuleFlow`, which reads a repository's `flow.ts` the same way, without importing it): it `parses` (a `Flow.make` default export, no warning); its `name`, the tag `Flow.make` declares, follows the pattern, stays outside the app's names (`RESERVED_NAMES`) and is the flow's name; its `description` is 1 to 1,024 characters; its `calls` (`flows`) are at most 20 of the flows a person's flow may call (the agent's catalog minus `flow/*` and `run/*`, `PROMPT_CALLABLE`); its `model` is absent or `agent`, with no placement directive of its own; its `size` is at most 64 KiB. A failing check fails the round with code `checks`; its file and checks stay shown, and Save is off (`roundOutcome`, `src/features/flows-ui/steps.ts`). A failing check also refuses a write.
 
-**ChatApi's routes** (`worker/PersonalFlows.ts`) are the person's own: signed out is 401, a Guest 403, and another person's draft or flow is 403 or 404. `POST /api/flow-drafts/<id>` takes a round and refuses an older round (`409 stale_round`) or a saved draft (`409 settled`); `POST /api/flow-drafts/<id>/answers` lands answers on the round's questions; `POST /api/flows/save` admits only the draft's own file, unchanged, with its SHA-256, under a free name (`409 name_taken`); `POST /api/flows/write` admits source with its SHA-256 as the next revision of a live flow while `revision` is its latest (`409 stale`, `404 not_found`, `409 name`, `409 digest`, `413 too_large`), and the same bytes again answer the revision they made, so a step tried again after its answer was lost isn't refused; both record the revision's placement on `flows`, read from the source; `GET /api/flows/source` reads a revision, of a deleted flow too, so a pinned run can be retried; `GET /api/shapes/flows` and `/api/shapes/flow-drafts` sync the person's rows without the owner's id; when sessions can't be read they answer `503` with `Retry-After: 5`, never another scope under the device's handle.
+**ChatApi's routes** (`worker/PersonalFlows.ts`) are the person's own: signed out is 401, a Guest 403, and another person's draft or flow is 403 or 404. `POST /api/flow-drafts/<id>` takes a round and refuses an older round (`409 stale_round`) or a saved or proposed draft (`409 settled`); `POST /api/flow-drafts/<id>/answers` lands answers on the round's questions. `POST /api/flow-drafts/<id>/delete` [deletes a draft](#delete-a-draft). `POST /api/flows/save` admits only the draft's own file, unchanged, with its SHA-256, under a free name (`409 name_taken`). Save claims the ready draft first inside its transaction, so two saves at once make one revision and both answer it. If the claim finds the draft no longer ready and not already saved, Save answers `409 not_ready`.
 
-**Tables** (migrations `0015_flows` and `0025_flow_source`): `flows` (one live name per person, with the latest revision's `placement`), `flow_revisions` (append-only source, each with its digest) and `flow_drafts`. 0025 converted every `SKILL.md` the first slice stored into the module drafting writes, with its new digest. On the device, `flows` and `flow_drafts` are Electric collections kept on the device (`flows` at schema version 2, for `placement`); the form, the unsent answers, the shown draft and the shown code are local (`src/features/flows-ui/store.ts`).
+`POST /api/flows/write` admits source with its SHA-256 as the next revision of a live flow while `revision` is its latest (`409 stale`, `404 not_found`, `409 name`, `409 digest`, `413 too_large`), and the same bytes again answer the revision they made, so a step tried again after its answer was lost isn't refused; both save and write record the revision's placement on `flows`, read from the source. `GET /api/flows/source` reads a revision, of a deleted flow too, so a pinned run can be retried. `GET /api/shapes/flows` and `/api/shapes/flow-drafts` sync the person's rows without the owner's id; when sessions can't be read they answer `503` with `Retry-After: 5`, never another scope under the device's handle.
 
-**Not built yet:** a host that runs a person's own code (a job sandbox, decision 0005), a repository's flows (`flow_bindings`, `flow/refresh`, `flow/propose`), Try, a draft card in the conversation (the card has its own page), and personal flows as their own slash commands (`/<name>`). A repository's home view is [its own feature](home.md).
+**Tables** (migrations `0015_flows`, `0025_flow_source` and `0039_flow_draft_deleted` in `db/migrations/`): `flows` (one live name per person, with the latest revision's `placement`), `flow_revisions` (append-only source, each with its digest) and `flow_drafts`. 0025 converted every `SKILL.md` the first slice stored into the module drafting writes, with its new digest. 0039 adds `flow_drafts.deleted_at`; the drafts shape reads `actor_id = $1 AND deleted_at IS NULL` (`worker/PersonalFlows.ts`). Devices sync no new column.
+
+On the device, `flows` and `flow_drafts` are Electric collections kept on the device (`flows` at schema version 2, for `placement`). The form, unsent answers, shown draft, shown code and `flow-round` are local (`src/features/flows-ui/store.ts`). The form row holds the draft id its Draft starts. `flow-round` holds the shown draft's round as this device's engine last read it. The store reads it again on engine events for that draft and on draft changes, at most once every 200 ms (`FOLLOW_EVERY`).
+
+**Not built yet:** the QuickJS realm flow host for hand-edited code (decision [0017](../decisions/0017-everything-is-a-plugin.md), slice 5), a repository's flows (`flow_bindings`, `flow/refresh`, `flow/propose`), Try, a draft card in the conversation (the card has its own page), and personal flows as their own slash commands (`/<name>`). A repository's home view is [its own feature](home.md).
+
+### Why a draft failed
+
+`flow/new/write` reduces the drafting agent's failure to a code from `DRAFT_FAILURES` (`src/features/flows-ui/failure.ts`), reading tags and codes only, never a message. The card uses `DRAFT_FAILURE_WORDS` (`src/features/flows-ui/contract.ts`).
+
+| Code | Card words | Comes from |
+|---|---|---|
+| `no_model` | No model available | The agent: no model route or authentication, or an unresolved or unrouted seat |
+| `quota` | Model budget spent | The agent: quota exceeded, out of credit, a budget exceeded or a call skipped for budget |
+| `rate_limited` | Model busy. Try again. | The agent: the model's `rate_limited` code |
+| `undecodable` | The draft didn't come out right | The agent: structured output never decoded |
+| `frames` | Ran out of steps | The agent: exhausted its frames |
+| `model_error` | The model failed | The agent: any failure without a recognized tag or code |
+| `checks` | A check failed | The round: its static checks failed (`roundOutcome`, `src/features/flows-ui/steps.ts`) |
+| `stopped` | Stopped | This device's engine: the round's run was cancelled before writing the draft (`shownRound`, `src/features/flows-ui/round.ts`) |
+| `ended` | Ended before it finished | This device's engine: the round's run failed before writing the draft (`shownRound`) |
+
+Older rows carry `draft`, shown as "Couldn't draft". A failed round offers Draft again. If the round runs on another device, the card keeps the row's status and offers Delete; this engine's absence of the run says nothing about its outcome (`shownRound`, `src/features/flows-ui/round.ts`; `src/features/flows-ui/components/DraftCard.tsx`).
+
+### Delete a draft
+
+`POST /api/flow-drafts/<id>/delete` deletes only the author's draft: another person's is `403 forbidden`, an unknown or deleted draft is `404 not_found`, and a saved or proposed draft is `409 settled` (`worker/PersonalFlows.ts`). After deletion, GET, answers, save and a round's write answer 404, so a round still running cannot bring the draft back. The card and each Drafts row dispatch `flow/draft/delete` (`src/features/flows-ui/components/DraftCard.tsx`, `FlowsPage.tsx` in that folder).
 
 ## Observability
 
@@ -215,9 +248,9 @@ Nothing records a flow's payload, a cell's code or a flow's result.
 | `smithers_flow_dispatches` | counter | `flow`, `door`, `outcome` |
 | `web.navigate` | log, span | `door`, `outcome`, `executionId`, `durationMs`, `reason` on a refusal; the span's `smithers.navigation.door` and `smithers.navigation.outcome`. Info, Warn for `refused`, Error for `failed` |
 | `smithers_web_navigations` | counter | `door` (the dispatch's; `agent` for the agent's call; `unknown` when the tab that dispatched it is gone), `outcome` (`navigated`, `refused`, `gone`, `failed`) |
-
-| `flow.author` | log | `draftId`, `round`, `scope`, `target`, `outcome` (`ready`, `needs_you`, `failed`), `checks` (failing codes), `questions` (a count), `durationMs` |
-| `smithers_flow_author_rounds` | counter | `scope`, `outcome` |
+| `flow.author` | log | `draftId`, `round`, `scope`, `target`, `outcome` (`ready`, `needs_you`, `failed`), `failure` on a failed round, `checks` (failing codes), `questions` (a count), `durationMs` |
+| Round span | span attributes | `smithers.flow.outcome`, and `smithers.flow.failure` on a failed round (`src/features/flows-ui/metrics.ts`) |
+| `smithers_flow_author_rounds` | counter | `scope`, `outcome`, `failure` on a failed round |
 | `flow.save` | log | `draftId`, `outcome` (`saved`, or the refusal's code) |
 | `smithers_flow_saves` | counter | `outcome` |
 | `flow.save.unconfirmed` | log, Warn | `feature`: Save's flow is saved, but Electric didn't deliver it to this device within `confirmWithin` |
@@ -225,7 +258,8 @@ Nothing records a flow's payload, a cell's code or a flow's result.
 | `smithers_flow_writes` | counter | `outcome`, `placement` |
 | `flow.run.load` | log | `outcome` (`loaded`, the failing check, or `sandbox`) |
 | `flow.client.*` | span | one per route a `flow/*` step calls, with its status |
-| `flow.route` | log, span (ChatApi) | `route`, `status`, `draftId`, `flowId`, `round`, `code`, `durationMs`; never a request, a file, a question, an answer, a description or a name |
+| `flow.client.delete_draft` | span | the draft-delete request (`src/features/flows-ui/api.ts`) |
+| `flow.route` | log, span (ChatApi) | `route` (`draft_delete` for deleting a draft), `status`, `draftId`, `flowId`, `round`, `code`, `durationMs`; never a request, a file, a question, an answer, a description or a name (`worker/PersonalFlows.ts`) |
 | `smithers_flow_route_requests` | counter (ChatApi) | `route`, `status` |
 
 Navigation's records come from the engine worker, where its step runs, and never carry the path, which can carry content; the agent's call is also its own `execute_tool app/navigate` span (`NAVIGATION_TELEMETRY`, `src/features/navigation/contract.ts`). `app/web/open` records `web.page.open` and `smithers_web_pages_opened` by mode, door and outcome, never the page ([web pages](web-pages.md#observability)).
@@ -245,16 +279,18 @@ Navigation's records come from the engine worker, where its step runs, and never
 | `src/flows/requests.test.ts` | A tab's requests: their doors, its latest only, one per tab; an execution's requester |
 | `worker/Body.test.ts` | Every bound of the body reader |
 | `src/flows/catalog.test.ts` | The catalog's scope: reads while drafting, a person's flow's own list, and nothing when its list can't be read |
-| `src/flows/registry.test.ts` "side effects" | Every model-invocable flow is a read or says what it changes, and no person-only flow does; only `flow/save` and `flow/delete` ask first; the catalog shows a side effect after the description and nothing more for a read |
+| `src/flows/registry.test.ts` "side effects" | Every model-invocable flow is a read or says what it changes, and no person-only flow does; `flow/save`, `flow/delete` and `flow/draft/delete` ask first; the catalog shows a side effect after the description and nothing more for a read |
 | `src/features/agent/agent.test.ts` "a call the person must approve" | The agent's `flow/save` asks the person first: denied, the flow never runs and the cell reads `NotApproved`; approved, it runs |
 | `src/features/flows-ui/source.test.ts` | A drafted flow's module written and read back exactly, quotes, newlines and line separators included; any edit, a step label or a space, reads as other code (`sandbox`); the module type-checks against `@smthrs/flow` and `@smthrs/agent` |
 | `src/features/flows-ui/checks.test.ts` | Reading a flow's source through `ModuleFlow`, and every static check's refusal, for a drafted module and one written by hand |
-| `src/features/flows-ui/flows.test.ts` | Every `flow/*` flow on the Node host's engine against ChatApi with a scripted model: a round, a new draft from any id, a blocking question answered into round 1, a draft that never decodes, a failing check, an edit into revision 2, Save and `NameTaken`, a run that calls its list, a call outside it refused, an agent that never finishes, a missing or tampered revision, `flow/read`, `flow/write` (a hand edit saved as `sandbox` whose run fails `FlowNeedsSandbox` before any model call, the drafted module running again, a failed check, a stale revision, a missing flow), list and delete, and the whole catalog outside a run |
+| `src/features/flows-ui/flows.test.ts` | Every `flow/*` flow on the Node host's engine against ChatApi with a scripted model: a round, a new draft from any id, a blocking question answered into round 1, `undecodable` when a draft never decodes, `no_model` from an injected refusing model without its message reaching the draft, failing checks that fail the round with its file shown, an edit into revision 2, Save and `NameTaken`, a run that calls its list, a call outside it refused, an agent that never finishes, a missing or tampered revision, `flow/read`, `flow/write` (a hand edit saved as `sandbox` whose run fails `FlowNeedsSandbox` before any model call, the drafted module running again, a failed check, a stale revision, a missing flow), `flow/draft/delete` stopping a live round, list and delete, and the whole catalog outside a run |
+| `src/features/flows-ui/failure.test.ts` | Failure codes from agent tags and model codes, including failures read back through the journal codec; nested causes, cycles, the 16-level bound, unreadable fields, unknown failures and no message content in a code |
 | `src/features/flows-ui/api.test.ts` | `FlowsClient` against every kind of answer: refusals, 404s, 5xx, an unreadable body, no network and the deadline |
-| `worker/PersonalFlows.test.ts` | Every route and refusal, `POST /api/flows/write` and the placement it records, the shapes, and no content in any record (a sentinel) |
-| `e2e/flows.spec.ts` | In a real browser with the real model: draft from a prompt, open the flow's code (a `Flow.make` module), run it to Done, relabel its step in code and save, and Run is off with `Needs a sandbox`. GIF: `flows-flows-draft-a-flow-from-a-prompt-open-its-code-run-it-relabe.gif` |
+| `worker/PersonalFlows.test.ts` | Every route and refusal, draft deletion (author only, gone after deletion, saved draft settled, concurrent deletes and a late round unable to restore it), two saves at once making one revision and both answering it, a claim finding the draft no longer ready and writing nothing, `POST /api/flows/write` and the placement it records, the shapes excluding deleted drafts, and no content in any record (a sentinel) |
+| `e2e/flows.spec.ts` | Requires `member` and `liveModel` (`e2e/target.ts`); opens `/app/flows` directly. In a real browser with the real model, drafts and saves, runs to Done, checks the run graph's `<name>/load, Done` and `<name>/prompt, Done`, then stops and retries a run. A round ending Failed or Stopped fails at once with the card's words. Also opens the flow's code (a `Flow.make` module), runs it to Done, relabels its step in code and saves, and Run is off with `Needs a sandbox`. Existing GIF: `flows-flows-draft-a-flow-from-a-prompt-open-its-code-run-it-relabe.gif` |
+| `e2e/flows.spec.ts` "flows: delete a draft while it drafts, and it leaves your drafts" | Deletes from the card, returns to Flows without the draft and checks it stays absent after reload. GIF: `flows-flows-delete-a-draft-while-it-drafts-and-it-leaves-your-draf.gif` (`e2e/gifs.mjs` truncates the title slug to 60 characters) |
 | `db/Database.test.ts` "0025_flow_source" | Every stored `SKILL.md` revision and draft becomes the drafted module with its new digest; a draft that doesn't read fails `migrated` unless saved; a revision that doesn't read fails the migration by id, never by text |
-| `src/features/flows-ui/tab.test.ts` | The whole app on a Node device whose engine leads: Draft, Save, Run, the run page following the run, Retry, the list, Edit and Delete; an answer into the next round; `Name taken`; Stop on a live run, and Resume refused once it settled; Code: a failed check, a relabelled step saved as `sandbox` whose run fails before the model, the drafted module again, a flow not found, and a read that ends after the tab moved on |
+| `src/features/flows-ui/tab.test.ts` | The whole app on a Node device whose engine leads: Draft, Save, Run, the run page following the run, Retry, the list, Edit and Delete; Answer with a blocking question's shown default and with an edited answer; two Draft presses making one draft with one model call; Stop the round then Draft again to Ready; Delete a drafting draft; `shownRound` and failure words; `Name taken`; Stop on a live run, and Resume refused once it settled; Code: a failed check, a relabelled step saved as `sandbox` whose run fails before the model, the drafted module again, a flow not found, and a read that ends after the tab moved on |
 
 Run them with the compose Postgres up (`pnpm db:up`): `pnpm exec vitest run src/flows src/features/theme src/features/navigation worker/Body.test.ts`.
 
