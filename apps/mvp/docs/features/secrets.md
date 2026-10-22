@@ -68,7 +68,7 @@ The branch's `SandboxObject` (`worker/BranchSandboxes.ts`) routes the box's outb
 
 1. registers `interceptAllOutboundHttp` and `interceptOutboundHttps("*")` beside the forge's intercept (`@smthrs/platform-cloudflare`'s `SandboxObject.wake` with `egress`), so every request for another host reaches the object;
 2. answers each such request with `SandboxEgress.forward({ repoId, branchId, generation })`, the guest taken from the object's own state (the branch it serves and its generation), never from the request;
-3. writes `environment(guest)` to `/run/smithers/env` as root, trusts the container's CA (`/etc/cloudflare/certs/cloudflare-containers-ca.crt`, through `update-ca-certificates`, and `NODE_EXTRA_CA_CERTS`) when Cloudflare provides it, and has every login shell source the file (`/etc/profile.d/smithers-env.sh`); the sandbox tools' commands get the same placeholders as their environment.
+3. writes `environment(guest)` to `/run/smithers/env` as root, trusts the container's CA (`/etc/cloudflare/certs/cloudflare-containers-ca.crt`, through `update-ca-certificates`, and `NODE_EXTRA_CA_CERTS`) when Cloudflare provides it, and has every login shell source the file (`/etc/profile.d/smithers-env.sh`), all in `SandboxEgress.SETUP`, which prints nothing whatever fails (workerd reports a command's exit only once its unread output closes); the sandbox tools' commands get the same placeholders as their environment.
 
 The terminal's sockets reach the same `fetch`, so the object attaches one only with a one-use ticket ChatApi takes from it over RPC: the box can't get one. With `SANDBOX_SECRETS` off, the box reaches only the forge.
 
@@ -87,6 +87,7 @@ SECRETS_KEY is a Worker secret Alchemy generates once (`infra/Secrets.ts`, 32 ra
 ## Tests
 
 - `packages/smithers/flows/secrets/test/` (100% coverage): substitution only in headers and only for bound hosts and methods; refusals unsent; redirects returned unfollowed, also against real servers and the real `fetch`, with a control that shows a followed redirect would leak; scrubbing of every form at every chunk split; header and placeholder limits; vault, audit and upstream failures; and a sentinel search of every span, log line, metric and failure.
+- `worker/secrets/Setup.docker.test.ts`, in a real branch-sandbox container: another user's login shell gets the placeholders and `NODE_EXTRA_CA_CERTS`, the CA is trusted, and the setup prints nothing, also when the CA can't be trusted (exit 2).
 - `worker/secrets/Secrets.test.ts`, on the compose Postgres and Electric, with the flows on the Node host's engine: an Admin's set, replace and delete, and every refusal; a sentinel search of every table, the flow journal and everything recorded; the shape's columns; the egress end to end with a scripted upstream, including another host, an earlier generation and a redirect.
 - `src/features/secrets/` (100% coverage), on the app's layer against ChatApi's real handler: Add, Rotate and Delete as an Admin, read-only for a Member, nothing for anyone else, every refusal and a network failure; and a sentinel search, after Add and Rotate, of every collection row, the outbox, the device's SQLite files, ChatApi's spans and everything the tab exported.
 

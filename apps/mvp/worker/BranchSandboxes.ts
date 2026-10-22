@@ -90,20 +90,6 @@ export const sandboxStartTimeoutSeconds = Config.schema(
   "SANDBOX_START_TIMEOUT_SECONDS",
 ).pipe(Config.withDefault(150))
 
-/** Where Cloudflare puts the container's per-instance CA, which signs the HTTPS the egress decrypts. */
-export const CONTAINER_CA = "/etc/cloudflare/certs/cloudflare-containers-ca.crt"
-
-/**
- * Run as root on a wake with the egress on: the box's environment file from stdin, readable by every user and sourced
- * by every login shell (tmux starts one), and the container's CA trusted system-wide when Cloudflare provides it.
- */
-const EGRESS_SETUP = `umask 022
-mkdir -p /run/smithers && cat >/run/smithers/env.tmp && mv -f /run/smithers/env.tmp /run/smithers/env || exit 1
-if [ -f ${CONTAINER_CA} ]; then
-  echo "NODE_EXTRA_CA_CERTS=${CONTAINER_CA}" >>/run/smithers/env
-  cp ${CONTAINER_CA} /usr/local/share/ca-certificates/cloudflare-containers-ca.crt && update-ca-certificates >/dev/null 2>&1
-fi
-printf '%s\n' '[ -r /run/smithers/env ] && { set -a; . /run/smithers/env; set +a; }' >/etc/profile.d/smithers-env.sh`
 
 /** Whether a wake failed because the container didn't finish starting in time (`SANDBOX_START_TIMEOUT_SECONDS`). */
 const startTimedOut = (cause: Cause.Cause<unknown>) => Cause.squash(cause) instanceof SandboxHost.StartTimedOut
@@ -300,7 +286,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
 
       /**
        * With the egress on, every wake writes the generation's placeholders to /run/smithers/env and trusts the
-       * container's CA (EGRESS_SETUP), and the object keeps them for the tools' commands. Values never enter the box.
+       * container's CA (SandboxEgress.SETUP), and the object keeps them for the tools' commands. Values never enter the box.
        */
       const placeholders = (branch: SandboxBranch, generation: number) =>
         Effect.gen(function* () {
@@ -311,7 +297,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
           yield* state.storage.put("environment", { generation, environment })
           const root = yield* ContainerSession.make(box, { id: state.id.toString(), workdir: "/", ...(yield* asUser("root")) })
           const code = yield* Effect.scoped(Effect.flatMap(
-            root.spawn(EGRESS_SETUP, { stdin: new TextEncoder().encode(environment) }),
+            root.spawn(SandboxEgress.SETUP, { stdin: new TextEncoder().encode(environment) }),
             (process) => process.exitCode,
           ))
           if (code !== 0) yield* Effect.logWarning("sandbox.egress.setup").pipe(Effect.annotateLogs({ exitCode: code }))
@@ -324,12 +310,12 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         )
 
       /**
-       * A check job's box: its egress's CA trusted (EGRESS_SETUP with no placeholders), so its package installs reach the
+       * A check job's box: its egress's CA trusted (SandboxEgress.SETUP with no placeholders), so its package installs reach the
        * registry over HTTPS. A failure leaves the box without the registry, and its install fails as a check would.
        */
       const trustEgress = Effect.gen(function* () {
         const root = yield* ContainerSession.make(box, { id: state.id.toString(), workdir: "/", ...(yield* asUser("root")) })
-        const code = yield* Effect.scoped(Effect.flatMap(root.spawn(EGRESS_SETUP, { stdin: new Uint8Array() }), (process) => process.exitCode))
+        const code = yield* Effect.scoped(Effect.flatMap(root.spawn(SandboxEgress.SETUP, { stdin: new Uint8Array() }), (process) => process.exitCode))
         if (code !== 0) yield* Effect.logWarning("sandbox.egress.setup").pipe(Effect.annotateLogs({ exitCode: code }))
       }).pipe(
         Effect.catchCause((cause) => Effect.logWarning("sandbox.egress.setup").pipe(Effect.annotateLogs(failureFields(cause)))),
@@ -341,7 +327,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
        * commands get no placeholder, only their tools' trust of the egress's CA (`JobEgress.trustOf`).
        */
       const environmentNow = Effect.gen(function* () {
-        if (JobEgress.isJob(yield* branchOf)) return JobEgress.trustOf(CONTAINER_CA)
+        if (JobEgress.isJob(yield* branchOf)) return JobEgress.trustOf(SandboxEgress.CONTAINER_CA)
         if (!secretsOn) return {}
         const kept = yield* state.storage.get<{ readonly generation: number; readonly environment: string }>("environment")
         const generation = yield* state.storage.get<number>("generation")
