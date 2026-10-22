@@ -310,7 +310,8 @@ describe("GET /api/shapes/messages", () => {
 
     // Follow the shape's log from its start, as a device does: an earlier test may have opened the shape before this
     // ask, so the rows can arrive after its snapshot. Electric may still be replicating the ask, so read until both
-    // rows are in.
+    // rows are in. The truncate before each test may reach Electric only now: then it answers 409 must-refetch, and,
+    // as a device does, the copy starts again from the shape's beginning.
     let body = ""
     const rows: Array<Record<string, unknown>> = []
     let at = "offset=-1"
@@ -318,6 +319,12 @@ describe("GET /api/shapes/messages", () => {
       const response = await h.fetch(`/api/shapes/messages?${at}`)
       const text = await response.text()
       body += text
+      if (response.status === 409) {
+        rows.length = 0
+        at = "offset=-1"
+        return false
+      }
+      expect(response.status).toBe(200)
       for (const message of JSON.parse(text) as Array<{ readonly value?: Record<string, unknown> }>) {
         if (message.value !== undefined) rows.push(message.value)
       }
