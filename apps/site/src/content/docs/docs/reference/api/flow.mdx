@@ -1720,6 +1720,13 @@ The pure core of the engine's single retry decision point. Non-retryable errors 
 
 The effect form of `RetryPolicy.decide`, sampling the `Random` service for jitter. It is the engine-facing decision function.
 
+### `RetryPolicy.schedule`
+
+- **Signature:** `schedule<E>(policy: RetryPolicy): Schedule.Schedule<number, E>`
+- **Since:** `1.0.0`
+
+The engine's retry decision as an Effect `Schedule`, for work no durable step can hold because it is bound to its caller's scope, such as a connection a page keeps open. Each failure is decided by `RetryPolicy.decideEffect`; the schedule waits the decided delay, or ends when the policy gives up, so `Effect.retry` or `Stream.retry` fails with that failure. Its output is the attempt that just failed, one for the first, and `elapsedMs` counts from the first failure. Nothing is persisted; `Stream.retry` starts the count over once the stream emits again.
+
 ## Sleep
 
 ### `Sleep.SleepRequestInvalid`

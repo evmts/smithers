@@ -2432,6 +2432,13 @@ The pure core of the engine's single retry decision point. Non-retryable errors 
 
 The effect form of `RetryPolicy.decide`, sampling the `Random` service for jitter. It is the engine-facing decision function.
 
+### `RetryPolicy.schedule`
+
+- **Signature:** `schedule<E>(policy: RetryPolicy): Schedule.Schedule<number, E>`
+- **Since:** `1.0.0`
+
+The engine's retry decision as an Effect `Schedule`, for work no durable step can hold because it is bound to its caller's scope, such as a connection a page keeps open. Each failure is decided by `RetryPolicy.decideEffect`; the schedule waits the decided delay, or ends when the policy gives up, so `Effect.retry` or `Stream.retry` fails with that failure. Its output is the attempt that just failed, one for the first, and `elapsedMs` counts from the first failure. Nothing is persisted; `Stream.retry` starts the count over once the stream emits again.
+
 ## Sleep
 
 ### `Sleep.SleepRequestInvalid`
@@ -25500,7 +25507,7 @@ Binding `Flows.recall` with `Flows.runRecall` reaches the store with no namespac
 
 ## MemoryTrellis
 
-`MemoryTrellis.make` is the delegation case. `Trellis.make` declares the topology a model-authored plan fits inside, and fills its leaf slots at run time, so a leaf cannot be handed a namespace at declaration time. `MemoryTrellis.make` applies one policy to the author, to the leaf, and to the memory flows those declare, then annotates the trellis itself.
+`MemoryTrellis.make` is the delegation case. `Trellis.make` runs the plans a model authors, one durable round per plan, so a leaf is known only when its round runs and cannot be handed a namespace at declaration time. `MemoryTrellis.make` applies one policy to the author, to the leaf, to the optional continuation, and to the memory flows those declare, then annotates the trellis itself.
 
 It takes what `Trellis.make` takes, plus `memory`. `Trellis.make` accepts any member it can record a call to; a memory trellis needs more of its author and its leaf, because a policy is an annotation and a member states no annotation bag, so both are declarations here. The `envelope` is the bound the authored plan is admitted under: `fuel` is the total number of leaf calls the plan may make, `depth` the nesting it may reach, and `fanout` the members any one group may hold.
 
@@ -25518,7 +25525,7 @@ const trellis = MemoryTrellis.make({
 })
 ```
 
-The graph is the plain trellis graph, node for node. `MemoryTrellis.parts` returns the scoped author and leaf on their own, for a caller that drives the plan with `Trellis.run` rather than calling the declared flow: calling the originals instead loses the policy.
+The graph is the plain trellis graph, node for node. `MemoryTrellis.parts` returns the scoped author and leaf on their own, for a caller that composes them itself rather than calling the declared flow: calling the originals instead loses the policy.
 
 See the [`@smthrs/patterns` reference](/docs/reference/api/patterns/) and its [delegation guide](https://smithers-patterns.smithers.sh/delegation/) for the trellis itself.
 
@@ -25758,8 +25765,8 @@ The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStor
 | Export        | Signature                                   | Behavior                                                                                                                     |
 | ------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `MakeOptions` | interface                                   | What `Trellis.make` accepts, with `author` and `leaf` narrowed to `Flow.Any` so each can carry an annotation, plus `memory`. |
-| `Parts`       | interface                                   | `{ author, leaf }`: the scoped flows to hold when you drive the plan yourself with `Trellis.run`.                            |
-| `parts`       | `(options) => Parts`                        | Applies the policy to the author and the leaf without composing them.                                                        |
+| `Parts`       | interface                                   | `{ author, leaf, continue? }`: the scoped flows to hold when you compose them yourself.                                      |
+| `parts`       | `(options) => Parts`                        | Applies the policy to the author, the leaf, and the continuation without composing them.                                     |
 | `make`        | `(options) => Trellis.TrellisFlow<unknown>` | Declares a trellis whose author, leaves, and memory flows all run under one policy. The graph is unchanged.                  |
 
 ### `@smthrs/memory/Migrations`
@@ -26135,8 +26142,8 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `AmpAgent`                               | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `AnthropicAgent`                         | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `AntigravityAgent`                       | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
-| `Approval`                               | `WithApproval.withApproval(inner, { reason, approval })`                                     | `@smthrs/patterns/WithApproval`                                                 | automatic |
-| `ApprovalGate`                           | `WithApproval.withApproval`                                                                  | `@smthrs/patterns/WithApproval`                                                 | automatic |
+| `Approval`                               | `HumanTask.action (kind: confirm) with Node.branch`                                          | `@smthrs/flow, @smthrs/plan/Node`                                               | automatic |
+| `ApprovalGate`                           | `HumanTask.action (kind: confirm) with Node.branch`                                          | `@smthrs/flow, @smthrs/plan/Node`                                               | automatic |
 | `Aspects`                                | `Sandbox.Limits and Envelope.budget`                                                         | `@smthrs/harness/Sandbox, @smthrs/control/ControlSchema`                        | guided    |
 | `BackpressurePlanning`                   | none                                                                                         | none                                                                            | unsafe    |
 | `Branch`                                 | `Node.branch({ if, then, else })`                                                            | `@smthrs/plan/Node`                                                             | automatic |
@@ -26206,7 +26213,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `PoolAgent`                              | `A seat resolved by SeatResolver from the model this agent already names`                    | `@smthrs/agent/SeatResolver, @smthrs/model/Route`                               | guided    |
 | `Ralph`                                  | `Recursion.recurse`                                                                          | `@smthrs/patterns/Recursion`                                                    | guided    |
 | `ReviewLoop`                             | `ReviewLoop.run(input, { maxRounds, produce, review, revise })`                              | `@smthrs/patterns/ReviewLoop`                                                   | guided    |
-| `Runbook`                                | `Node.bindPlanned with WithApproval`                                                         | `@smthrs/plan/Node, @smthrs/patterns/WithApproval`                              | automatic |
+| `Runbook`                                | `Runbook.make`                                                                               | `@smthrs/patterns/Runbook`                                                      | automatic |
 | `Saga`                                   | `Node.catch plus CompensationHandlers`                                                       | `@smthrs/plan/Node, @smthrs/time-travel/CompensationHandlers`                   | guided    |
 | `SagaStep`                               | `Node.catch plus CompensationHandlers`                                                       | `@smthrs/plan/Node, @smthrs/time-travel/CompensationHandlers`                   | guided    |
 | `Sandbox`                                | `WorkspaceSandbox, RemoteChildProcessSpawner, or std Container`                              | `@smthrs/engine-store/WorkspaceSandbox, @smthrs/sandbox, @smthrs/std/Container` | guided    |
@@ -29981,14 +29988,16 @@ The [module index](https://github.com/smithersai/smithers/blob/main/packages/smi
 
 ## The two halves of a pattern
 
-Every container exports a pair.
+Most containers still export a pair. `Optimizer` and `ScanFixVerify` export
+`make` only; execute the returned flow on the engine.
 
 | Half                  | What it is                                                                                                                                                    | What it must not do                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `make(options)`       | A `Flow` whose body is the **conservative topology**: every rung, round, member, and compensation that the pattern could reach, declared before anything runs | Branch on a value. Core plans continuations against symbolic values, so a plan-time `if` on a result is always the same arm |
 | `run(input, options)` | The `Effect` that performs the value-dependent branch at runtime, short-circuiting the parts the topology reserved                                            | Change the shape the declaration promised                                                                                   |
 
-A planner reads `make`. A handler runs `run`. Every `make` takes one options
+A planner reads `make`. Execute a declared flow on the engine. The remaining
+`run` forms perform their callbacks as Effects. Every `make` takes one options
 object, and every `MakeOptions` accepts an optional `name` and `description`
 for the returned `Flow`. An unnamed pattern is named after its kind and its
 declared bounds, the way the decorators name theirs: `reviewLoop(maxRounds=3)`,
@@ -29996,9 +30005,7 @@ declared bounds, the way the decorators name theirs: `reviewLoop(maxRounds=3)`,
 same behavioral option names with call-shape differences: `Kanban` declares
 `items` in its `make` options, because a static declaration needs them to lay
 out the board, and `run` receives them as its first argument, the runtime
-input, reserving `until` and `maxIterations` for runtime branching. `Trellis`
-is the remaining exception: `run` additionally accepts `continue` and
-`concurrency`.
+input, reserving `until` and `maxIterations` for runtime branching.
 
 `Intervene` uses the same stage payloads in `make` and `run`:
 
@@ -30047,9 +30054,7 @@ ahead of the rest.
 returned. The deferred body that core runs when the graph builds reads that
 snapshot and never the caller's option object again. `run` snapshots its
 options when it is called, before the `Effect` is returned, so an edit
-between the call and the execution does not reach the effect. The decorator
-factory `WithApproval.make` snapshots when `make` is called, not when the
-decorator is applied. `Pattern.slot` returns a
+between the call and the execution does not reach the effect. `Pattern.slot` returns a
 frozen copy of its declaration, which is what `Pattern.bind` reads.
 
 ### What is copied
@@ -30068,7 +30073,7 @@ the tasks of the plan its `plan` callback returns when it validates them.
 The package never freezes a caller's object and never copies below the fields
 it interprets. Flows, callbacks, and schemas are references. A value the
 package carries without reading stays the caller's: the flow input, the
-`baseline` of `DriftDetector`, the values inside `Loop` `captures`, the
+`baseline` of `DriftDetector`, the
 `Item` record `Kanban` hands a column, and every value a callback returns.
 `Kanban` reads an item's `id` once at the call, keys the board by it, and
 hands the column the caller's own record. `DriftDetector.run` reads
@@ -30088,13 +30093,14 @@ every module except `Trellis` and `DelegationChain` reports its refusals and
 exhaustions through it. Those two own their own errors because every
 rejection they report carries a plan path, and a path is what an author has
 to read to repair a plan. All three carry a `code` from a stable literal
-schema, a `message`, and an optional `cause`, and none of them carries the
-input that produced the failure.
+schema, a `message`, and an optional `cause`. Causes can preserve member
+errors and results that contain caller input; patterns do not redact them.
 
 ### `PatternError`
 
 `PatternError` carries a `code` from `PatternErrorCode`, a message, and an
 optional `cause` with the reported error or errors.
+Member errors retain their original values, including any input they hold.
 
 | Code                  | Raised when                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -30112,18 +30118,16 @@ optional `cause` with the reported error or errors.
 `TrellisError` carries a `code` from `TrellisErrorCode`, the plan `path` the
 fault was found at (`root`, or a path such as `root.parallel[1].sequence[0]`),
 a message, and an optional `cause`. `Trellis.validate` returns every refusal
-it finds as an array and attaches no cause. `Trellis.make` throws one, and
-`Trellis.execute` and `Trellis.run` fail with one for admission errors.
-A plan validation failure from `Trellis.run` preserves the first refusal's code,
-path, and message and carries `{ rounds, remaining, refusals }` as its cause.
-`refusals` contains every validation reason. A later round that exceeds the
-remaining fuel carries `{ rounds, remaining }`.
-
-Typed leaf failures in `Trellis.run` become `leaf_failed` at the leaf's path,
-with `{ rounds, remaining, error }` as the cause. `error` is the original leaf
-failure. `rounds` contains completed rounds only; `remaining` is the fuel left
-after those rounds, before charging the failed round. `Trellis.execute`
-continues to propagate typed leaf failures unchanged.
+it finds as an array and attaches no cause. `Trellis.make` throws one for an
+invalid envelope, and `Trellis.execute` fails with one for an invalid
+concurrency. A trellis round that refuses its plan fails with the first
+refusal's code, path, and message and carries `{ rounds, remaining, refusals }`
+as its cause; `refusals` lists every validation reason as `{ code, path,
+message }` data, so a durable engine can journal it. A round that needs more
+fuel than remains carries `{ rounds, remaining }`. `rounds` holds the settled
+rounds only, and `remaining` is the fuel left after them. Round state that
+claims fuel outside the envelope fails `invalid_envelope`. A leaf failure is
+not wrapped: the round fails with the leaf's own error.
 
 `DelegationChain.run` reports the first refusal with all `refusals` in the
 same cause when the derisked plan does not fit its envelope. Its `rounds` is
@@ -30131,12 +30135,11 @@ empty and `remaining` is the envelope fuel because execution has not started.
 
 | Code               | Path          | Raised when                                                                                                                                                                      |
 | ------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid_envelope` | `root`        | A `fuel`, `depth`, or `fanout` bound, or a `concurrency`, is not a positive safe integer                                                                                         |
+| `invalid_envelope` | `root`        | A `fuel`, `depth`, or `fanout` bound, or an `execute` `concurrency`, is not a positive safe integer                                                                              |
 | `invalid_plan`     | the node      | A node is not exactly one of `agent`, `sequence`, or `parallel`, an agent has no non-empty string `goal` or carries a non-string `seat`, or a container is not a non-empty array |
 | `depth_exceeded`   | the node      | A node nests deeper than the envelope `depth`                                                                                                                                    |
 | `fanout_exceeded`  | the container | A container holds more members than the envelope `fanout`                                                                                                                        |
 | `fuel_exhausted`   | `root`        | A plan needs more leaf calls than the envelope `fuel`, or than the fuel left after earlier rounds                                                                                |
-| `leaf_failed`      | the leaf      | A leaf effect fails during `Trellis.run`                                                                                                                                         |
 
 ### `DelegationError`
 
@@ -30164,7 +30167,9 @@ default, applies the same check, and raises `missing_slot` when there is
 neither and `invalid_decorator` when the schemas do not fit.
 
 `Pattern.decorate(flow, decorator)` applies a decorator and re-declares the
-result under the wrapped flow's schemas and its authority ceiling: capabilities
+result under the wrapped flow's schemas and authority ceiling. Its payload,
+success, and error schemas must pass the compatibility check; an incompatible
+schema raises `invalid_decorator`. Capabilities
 are intersected with the wrapped flow's, and a decorator result that widens the
 wrapped flow's effect envelope is refused with `envelope_conflict`. The
 decorator call becomes part of declaration identity, so a wrapped flow and a
@@ -30174,29 +30179,22 @@ list left to right, which puts the last decorator outermost.
 supplied flow: the capabilities, reads, writes, mode, and tier that the
 re-declaration removes.
 
-`WithApproval` uses this combinator to attach an approval policy.
+`Pattern.Approved` is the literal `"approved"` that `Runbook` and `Intervene`
+require from their approval members. To ask a person, call `HumanTask` and
+branch on the answer.
 
 A retry is not a decorator. Declare it as the `retryPolicy` of the action that
 can fail: the engine records every attempt and the wait before the next one,
 so a crash resumes the ladder where it stopped. See
 [Retries](/docs/concepts/retries/).
 
-## `WithApproval`
-
-`WithApproval.withApproval(flow, { reason, approval })` runs an approval flow
-ahead of the flow it gates, calling it with `{ input, reason, scope }`, where
-`scope` is the string `"run"`. The approval flow must declare its output as
-`WithApproval.Approved`, the literal `"approved"`. A denial therefore cannot
-decode, and it fails on the typed schema-error channel before the gated flow
-starts, rather than arriving as a boolean the gated flow is trusted to honor.
-An empty `reason` is refused with `invalid_decorator`. `WithApproval.make`
-is the decorator form.
-
 ## `Bounded`
 
 `Bounded.all(members, { concurrency, priority? })` splits a named record into
 batches of `concurrency` and sequences the batches, so the plan shows exactly
-how many calls can be in flight. `Bounded.run(members, { concurrency,
+how many calls can be in flight. Its node preserves each named member's
+success type and the union of member errors and requirements, as `Node.all` does.
+`Bounded.run(members, { concurrency,
 priority?, priorities? })` is the Effect form.
 
 Members are ordered by priority, highest first, and declaration order breaks a
@@ -30219,13 +30217,16 @@ interrupt siblings. `Quarantine.run` is the Effect form, and
 `Quarantine.settle` unwraps successes or returns a `quarantined` failure.
 `isSucceeded` and `isQuarantined` narrow joined entries. Typed failures are
 isolated; defects and interruptions still propagate.
+`settle` preserves member errors in its failure cause, including any caller
+input those errors contain. Quarantine first shipped in 1.0.0-rc.0; its API
+tags use 1.0.0.
 
 ## `MapReduce`
 
 `MapReduce.make({ map, reduce, concurrency, onEmpty })` declares one map call
 per shard, batched into `Node.all` groups of `concurrency` with the batches
 sequenced, then one reduce call. The flow input is `{ shards }`, and the array
-has to be a literal value available while the graph builds, because a
+must pass the `Payload` schema's array check and be available while the graph builds, because a
 declaration cannot count shards it does not hold. Members are keyed by ordinal
 (`shard-0`, `shard-1`), which makes the reduce input independent of the order
 the workers finish in.
@@ -30237,6 +30238,9 @@ receives `{ input, mapped }`.
 `onEmpty` decides what an empty shard list means: `"reduce"` calls the reducer
 with an empty array, `"succeed"` returns an empty array without calling it, and
 `"fail"` reports `exhausted`. `concurrency` must be a positive safe integer.
+For `"reduce"` and `"fail"`, the runtime success type is the reducer's result.
+For `"succeed"` or a policy typed as `OnEmpty`, it also permits a readonly array
+of mapped values.
 
 ## `Recursion`
 
@@ -30279,7 +30283,9 @@ the caller's own references. `rounds` must be a positive safe integer.
 `Panel.make({ panelists, moderator, roles?, concurrency? })` declares one call
 per panelist, then the moderator over `{ input, opinions }`. A role named in
 `roles` is passed to that panelist as `{ input, role }` and enters its key
-material, so changing a role changes the declaration. `Panel.run` keys opinions
+material, so changing a role changes the declaration. Generated labels include
+the panelist names, roles, and concurrency. An explicit `name` overrides the
+generated label. `Panel.run` keys opinions
 by panelist name whatever order they complete in.
 
 ## `ReviewLoop`
@@ -30376,14 +30382,20 @@ length of a backlog that no plan knows when it is built.
 `make({ discover, dispatch, capacity?, maxRounds, deadline?, signal?, error? })`
 settles to `{ rows, rounds, stopped }`. Each row is `{ id, status, detail, requeues? }`
 with `status` one of `landed`, `held`, `failed`, `skipped`, or `requeued`. A round that
-launched at least one item hands off to the next round, which rediscovers the
-backlog; a round that launched nothing settles the lineage as `drained`,
+launched, deferred or requeued at least one item hands off to the next round,
+which rediscovers the backlog. A round with none of these outcomes settles as `drained`,
 unless its selection erred, when the round's `Stop` fails the lineage.
 `maxRounds` bounds every round the lineage opens, parks included, and
 settles it as `max_rounds`. `deadline` is the lineage deadline `Flow.make`
 enforces. `make` throws an `invalid_decorator` `PatternError` for a
 `maxRounds` that is not a positive safe integer below `Number.MAX_SAFE_INTEGER`, a `deadline` that is not a
 positive finite duration, or a blank `signal`.
+
+`MakeOptions<E, I>` checks discovery and capacity against `{ input: I, round: number }`,
+with results `ReadonlyArray<Item>` and `Capacity`. It checks dispatch against
+`DispatchPayload` and `RoundResult`. `make` infers `I` from the members.
+The fold captures the full carried rows because their status, detail and requeue
+count affect its output and plan identity.
 
 `error` declares the schema for failed lineage results, including provider
 step errors, `Stop` and `PatternError`. It defaults to `Schema.Unknown`;
@@ -30412,12 +30424,16 @@ still in flight. The items never admitted count as `deferred`; without a round
 `Held` settles the item `held` and is not released. A typed claim, work, or landing failure classified by `Fault.of` as `infra`
 requeues its item up to `maxRequeues` (default 3), then fails it. The count
 is persisted in `row.requeues`; pass the carried `rows` to `round`.
+Each execution of the same round Effect initializes its counts from those
+input rows, without retaining counts from a previous execution.
 `make` passes these rows through `DispatchPayload`, and `layer` forwards them.
 Other failures settle only their own item as `failed`. A worked item enters the landing queue at once: `land`
 runs one item at a time, in the order work finished, while other items still
 work, and a failed landing does not stop the next; without `land`, a worked
 item counts as landed. `release` runs once for every successful claim, as soon
-as the item settles, with its final status. Interrupted work settles its item
+as the item settles, with its final status. Claim acquisition and registration
+for cleanup form one uninterruptible step; cancellation waits for acquisition
+to finish and releases the acquired claim. Interrupted work settles its item
 `failed` with `work: interrupted` only when the optional `cancelled` member
 answers `true` for a recorded operator cancel; any other interruption, such as
 a child released because its host's lease lapsed, gets a `requeued` row and a
@@ -30431,7 +30447,8 @@ interrupted, each open claim is released the same way if `cancelled` answers
 discovery order. `round` fails with `PatternError` before any member runs for a
 blank `key`, a `concurrency` or `slots` that is not a positive safe integer,
 a negative or fractional `round`, or an item without a unique nonblank string
-`id`.
+`id`. A duplicate id error carries at most the first 64 UTF-16 code units and
+the id's full length.
 
 Each `work` call receives `executionId` `${key}/${item.id}`. Hand it to
 `Flow.execute`, or build `work` with `child`, so a rerun reaches the child
@@ -30442,7 +30459,10 @@ Inside a running flow, `round` runs each landing as a durable action named
 instead of calling `land` again. It journals each landing and release as it
 settles, as `flows.engine.node-scheduled` and `flows.engine.node-settled`
 records with node id `${key}/${item.id}/land` or `${key}/${item.id}/release`
-and the item's row as the settled value. See
+and the item's row as the settled value. A scheduling failure stops before
+settlement. Each scheduled step attempts settlement once; a settlement failure
+stops the round without a second attempt. If the step itself failed, a recording
+failure preserves the original step error. See
 [Burn down a backlog](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/burndown.md) for a GitHub issues example.
 
 ## A worked release
@@ -30456,26 +30476,22 @@ anything runs, to show the compensations in reverse order.
 ## Declaration size
 
 Every `make` expands its declared bounds eagerly into graph nodes. The options
-that expand or multiply topology are `Loop.maxIterations`,
+that expand or multiply topology are `Optimizer.maxIterations`,
 `ReviewLoop.maxRounds`, `Debate.rounds`, `Recursion` envelope depth across
 fanout, `ScanFixVerify.maxRetries` times `maxIssues` in concurrency-sized
 batches, `Trellis` envelope fuel, and `DelegationChain.maxDepth` together with
 `maxDeriskRounds`. These bounds are sized for tens to low hundreds of declared
-calls. A very large bound builds a very large graph before anything runs. For
-an unbounded loop, use the `run` half under an external scheduler instead of
-unrolling it in `make`.
+calls. A very large bound builds a very large graph before anything runs. For a loop whose count depends on runtime values, use a flow that hands off
+to itself with `Flow.to` and bounds its lineage with `maxRounds`.
 
 A bound that unrolls into a sequenced chain is capped a second way. Core
 refuses a plan nested past the exported `Graph.maximumGraphDepth` (currently
 1,000 levels). The declaration limit for a chain with `callsPerUnit` nested
 calls per unit is `Math.floor((Graph.maximumGraphDepth - 1) / callsPerUnit) - 1`:
-the root and settled value also spend depth. Eager branch construction also
-obeys `Node.maximumArmDepth`: `Loop.ralph` accepts at most 512 iterations,
-or 256 with a stall breaker. Constructors using these bounds
-refuse oversized options at declaration with an `invalid_decorator`
-`PatternError` naming the option and limit. This includes `Loop.make`,
-and `Optimizer.make`; see the boundary assertions in
-`Loop.test.ts` and `Optimizer.test.ts`. Other topology, including deeper
+the root and settled value also spend depth. `Optimizer.make` refuses oversized
+options at declaration with an `invalid_decorator` `PatternError` naming the
+option and limit. See the boundary assertions in `Optimizer.test.ts`.
+Other topology, including deeper
 member flows or an enclosing unrolled pattern, spends the same depth budget:
 even a declaration within its constructor's limit can fail at `Graph.build`
 with a `graph_too_deep` `GraphBuildError` naming the node.
@@ -30484,7 +30500,7 @@ with a `graph_too_deep` `GraphBuildError` naming the node.
 
 The root exports each module as a namespace, and every module is also
 importable as `@smthrs/patterns/<Module>`. The `internal/*` and nested
-`*/index` subpaths are private. The [module index](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/modules.md) lists all 27
+`*/index` subpaths are private. The [module index](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/modules.md) lists all 24
 modules with their specifiers.
 
 [`@smthrs/flow`](/docs/reference/api/flow/) supplies `Flow` and `Graph`, and
@@ -32432,7 +32448,8 @@ provides faulty ones and an app can share one instance.
 | `SharedSqlite.open({ name, within? })`, `Database`, `filename`                                                    | tab    | The database as `{ execute, close }` Promises, for TanStack DB's browser persistence; resolves once a leader answers, rejects after `within` (30 s) otherwise.                                                                                                                                                                                                                                                                                                                       |
 | `SharedSqlite.SqliteError`                                                                                        | tab    | What `Database.execute` rejects with: SQLite's own `message` and `code`, as wa-sqlite's `SQLiteError`, which TanStack DB reads; the `SqlError` is its `cause`.                                                                                                                                                                                                                                                                                                                       |
 | `WebLock.WebLock`, `make(locks)`, `layer`                                                                         | both   | `hold(name, { steal? })`: wait for the exclusive lock, or take it at once with `steal`; hold it until the scope closes. `tryHold(name)`: take it only when no context holds it or waits for it, else none at once. `lost` completes if another context steals it.                                                                                                                                                                                                                    |
-| `TabChannel.TabChannel`, `make(construct)`, `layer`                                                               | both   | `open(name)`: a port that posts to every other port of the channel and subscribes to what they post.                                                                                                                                                                                                                                                                                                                                                                                 |
+| `TabChannel.TabChannel`, `make(construct, { capacity })`, `layer`                                                 | both   | `open(name)`: a port that posts to every other port of the channel and subscribes to what they post. A subscription holds at most `capacity` untaken messages (`defaultCapacity`, 10,000); one that falls that far behind fails after them with `TabChannelOverflow`.                                                                                                                                                                                                                |
+| `TabChannel.TabChannelOverflow`, `overflows`                                                                      | both   | The failure of a subscriber that fell its capacity behind, and the counter of them by `channel`; each is also logged as `browser.tab_channel.overflow`. A leader that falls behind stops leading and leads again; a tab's `SharedSqlite` fails every statement and its `BrowserEngine` becomes unavailable (`channel-overflow`) until it reloads.                                                                                                                                    |
 | `StoragePersistence.StoragePersistence`, `make(storage)`, `layer`                                                 | tab    | `persist`: ask for persistent storage and answer whether the origin has it.                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 `BrowserSqlite` uses `@journeyapps/wa-sqlite`, the build TanStack DB's browser
@@ -32508,8 +32525,13 @@ redialing.
 ```ts
 const connect: (
   url: string,
-  options: { readonly onOutput: (bytes: Uint8Array) => void }
+  options: {
+    readonly onOutput: (bytes: Uint8Array) => void
+    readonly reconnect?: RetryPolicy.RetryPolicy | undefined
+  }
 ) => Effect.Effect<Connection, never, Scope.Scope | Socket.WebSocketConstructor>
+
+const reconnect: RetryPolicy.RetryPolicy // 1 s doubling to 30 s, at most 11 dials
 
 interface Connection {
   readonly send: (data: string | Uint8Array) => Effect.Effect<void>
@@ -32535,8 +32557,16 @@ const layerWebSocket: Layer.Layer<Socket.WebSocketConstructor>
 | `ready`       | Opens the terminal with the host's access, and resets the reconnect count.                                                                                                 |
 | `ended`       | Ends the terminal with the host's reason and closes the socket with 1000. It never redials.                                                                                |
 | Final close   | 1000, 1003, 1008 and 1009 close it for good as `Closed`.                                                                                                                   |
-| Other close   | 1006, 1011 and any other code go `Offline` and redial after 1 s, doubling to 30 s, at most 10 times in a row; then `Closed` with the last code.                            |
+| Other close   | 1006, 1011 and any other code go `Offline` and redial as `reconnect` decides: 1 s doubling to 30 s, 10 times; then `Closed`.                                               |
+| Output throws | An `onOutput` that throws ends it as `Closed` with 1011 and logs `browser.terminal.closed`. It never redials.                                                              |
 | Status stream | Starts with the current status and ends when the scope closes.                                                                                                             |
+
+The redial is the flow engine's retry decision, not a loop of the socket's
+own: `TerminalSocket.reconnect` is `TerminalProtocol.reconnect` as a
+`RetryPolicy` from `@smthrs/flow`, and `RetryPolicy.schedule` decides each
+delay and when to give up, as the engine decides an action's. No durable step
+holds the socket, because it lives in the page that shows its bytes. The count
+starts over when the host sends `ready`. Pass `reconnect` for another policy.
 
 The socket comes from Effect's `Socket.WebSocketConstructor`, and
 `TerminalSocket.layerWebSocket` provides the browser's own `WebSocket`. Delays

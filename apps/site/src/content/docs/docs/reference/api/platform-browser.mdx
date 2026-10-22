@@ -229,7 +229,8 @@ provides faulty ones and an app can share one instance.
 | `SharedSqlite.open({ name, within? })`, `Database`, `filename`                                                    | tab    | The database as `{ execute, close }` Promises, for TanStack DB's browser persistence; resolves once a leader answers, rejects after `within` (30 s) otherwise.                                                                                                                                                                                                                                                                                                                       |
 | `SharedSqlite.SqliteError`                                                                                        | tab    | What `Database.execute` rejects with: SQLite's own `message` and `code`, as wa-sqlite's `SQLiteError`, which TanStack DB reads; the `SqlError` is its `cause`.                                                                                                                                                                                                                                                                                                                       |
 | `WebLock.WebLock`, `make(locks)`, `layer`                                                                         | both   | `hold(name, { steal? })`: wait for the exclusive lock, or take it at once with `steal`; hold it until the scope closes. `tryHold(name)`: take it only when no context holds it or waits for it, else none at once. `lost` completes if another context steals it.                                                                                                                                                                                                                    |
-| `TabChannel.TabChannel`, `make(construct)`, `layer`                                                               | both   | `open(name)`: a port that posts to every other port of the channel and subscribes to what they post.                                                                                                                                                                                                                                                                                                                                                                                 |
+| `TabChannel.TabChannel`, `make(construct, { capacity })`, `layer`                                                 | both   | `open(name)`: a port that posts to every other port of the channel and subscribes to what they post. A subscription holds at most `capacity` untaken messages (`defaultCapacity`, 10,000); one that falls that far behind fails after them with `TabChannelOverflow`.                                                                                                                                                                                                                |
+| `TabChannel.TabChannelOverflow`, `overflows`                                                                      | both   | The failure of a subscriber that fell its capacity behind, and the counter of them by `channel`; each is also logged as `browser.tab_channel.overflow`. A leader that falls behind stops leading and leads again; a tab's `SharedSqlite` fails every statement and its `BrowserEngine` becomes unavailable (`channel-overflow`) until it reloads.                                                                                                                                    |
 | `StoragePersistence.StoragePersistence`, `make(storage)`, `layer`                                                 | tab    | `persist`: ask for persistent storage and answer whether the origin has it.                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 `BrowserSqlite` uses `@journeyapps/wa-sqlite`, the build TanStack DB's browser
@@ -305,8 +306,13 @@ redialing.
 ```ts
 const connect: (
   url: string,
-  options: { readonly onOutput: (bytes: Uint8Array) => void }
+  options: {
+    readonly onOutput: (bytes: Uint8Array) => void
+    readonly reconnect?: RetryPolicy.RetryPolicy | undefined
+  }
 ) => Effect.Effect<Connection, never, Scope.Scope | Socket.WebSocketConstructor>
+
+const reconnect: RetryPolicy.RetryPolicy // 1 s doubling to 30 s, at most 11 dials
 
 interface Connection {
   readonly send: (data: string | Uint8Array) => Effect.Effect<void>
@@ -332,8 +338,16 @@ const layerWebSocket: Layer.Layer<Socket.WebSocketConstructor>
 | `ready`       | Opens the terminal with the host's access, and resets the reconnect count.                                                                                                 |
 | `ended`       | Ends the terminal with the host's reason and closes the socket with 1000. It never redials.                                                                                |
 | Final close   | 1000, 1003, 1008 and 1009 close it for good as `Closed`.                                                                                                                   |
-| Other close   | 1006, 1011 and any other code go `Offline` and redial after 1 s, doubling to 30 s, at most 10 times in a row; then `Closed` with the last code.                            |
+| Other close   | 1006, 1011 and any other code go `Offline` and redial as `reconnect` decides: 1 s doubling to 30 s, 10 times; then `Closed`.                                               |
+| Output throws | An `onOutput` that throws ends it as `Closed` with 1011 and logs `browser.terminal.closed`. It never redials.                                                              |
 | Status stream | Starts with the current status and ends when the scope closes.                                                                                                             |
+
+The redial is the flow engine's retry decision, not a loop of the socket's
+own: `TerminalSocket.reconnect` is `TerminalProtocol.reconnect` as a
+`RetryPolicy` from `@smthrs/flow`, and `RetryPolicy.schedule` decides each
+delay and when to give up, as the engine decides an action's. No durable step
+holds the socket, because it lives in the page that shows its bytes. The count
+starts over when the host sends `ready`. Pass `reconnect` for another policy.
 
 The socket comes from Effect's `Socket.WebSocketConstructor`, and
 `TerminalSocket.layerWebSocket` provides the browser's own `WebSocket`. Delays
