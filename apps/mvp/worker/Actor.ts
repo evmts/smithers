@@ -85,9 +85,15 @@ export const signedOut: Layer.Layer<Sessions> = Layer.succeed(Sessions, Sessions
 /** The actor a flow step runs as. The host that starts the run provides it; a payload never names it. */
 export class CurrentActor extends Context.Service<CurrentActor, Actor>()("@smthrs/mvp/CurrentActor") {}
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /** Whether a run-bound route may act on run `runId` for `actor`: the person may; a credential only on its own chain. */
-export const boundTo = (actor: Actor, runId: string): boolean =>
-  actor.act === undefined || (actor.act.root ?? actor.act.id).toLowerCase() === runId.toLowerCase()
+export const boundTo = (actor: Actor, runId: string): boolean => {
+  if (actor.act === undefined) return true
+  const bound = actor.act.root ?? actor.act.id
+  // Postgres UUIDs have equivalent case spellings; opaque execution identifiers do not.
+  return bound === runId || (UUID.test(bound) && bound.toLowerCase() === runId.toLowerCase())
+}
 
 // Person-only acts (decision 0017, slice 0): what only the person's own press does. The list is the registry's: every
 // flow with a `userOnlyReason` (src/flows/registry.ts) is a key below, and the compiler refuses one missing or one too

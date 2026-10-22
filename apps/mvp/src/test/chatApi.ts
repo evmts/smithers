@@ -368,6 +368,7 @@ export class TestChatApi extends Context.Service<
         })
         const config = ConfigProvider.fromUnknown({
           ELECTRIC_URL: LOCAL_ELECTRIC_URL,
+          ALERT_APP_URL: "http://chat.test/app",
           ...(options.forge === "code-storage"
             ? { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: yield* Effect.promise(codeStorageKey) }
             : {}),

@@ -9,7 +9,6 @@ import {
   ALERT_CHANNELS_TABLE,
   ALERT_DELIVERIES_TABLE,
   ALERT_DELIVERY_COLUMNS,
-  APP_PATH,
   MAX_ALERT_CHANNEL_BODY_BYTES,
   MAX_DESTINATIONS,
 } from "../src/features/spend/contract.ts"
@@ -22,8 +21,8 @@ import * as ShapeAccess from "./ShapeAccess.ts"
 // atm i think alerts to email make sense but telegram too would be useful".
 //
 // - `POST /api/alert-channels { channel, destinations }`: an Admin, in person, sets one channel's destinations: email
-//   addresses, or one Telegram chat id. None turns the channel off. The row also keeps the app's address on the origin
-//   the Admin set it from, which each message links to.
+//   addresses, or one Telegram chat id. None turns the channel off. The row keeps the configured ALERT_APP_URL,
+//   which each message links to, independently of a local or preview request's origin.
 // - `GET /api/shapes/alert-channels` and `GET /api/shapes/alert-deliveries`: the setting and the receipts, to Admins
 //   only; anyone else gets a shape with no rows.
 // - `channels`: the deployment's providers, from its secrets, as `@smthrs/notifications`' `Channels` layer. The
@@ -160,8 +159,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const destinations = destinationsOf(channel, decoded.value.destinations)
         if (destinations === undefined) return refusal(400, "invalid_destination")
         fields.destinations = destinations.length
-        const appUrl = `${new URL(request.originalUrl, "http://localhost").origin}${APP_PATH}`
-        const txid = yield* write(channel, destinations, appUrl, actor.value.subject.id).pipe(Effect.provide(database))
+        const appUrl = new URL(yield* Config.NonEmptyString("ALERT_APP_URL"))
+        if (!["http:", "https:"].includes(appUrl.protocol) || appUrl.username !== "" || appUrl.password !== "") {
+          fields.errorCode = "configuration"
+          return refusal(503, "unavailable")
+        }
+        const txid = yield* write(channel, destinations, appUrl.href, actor.value.subject.id).pipe(Effect.provide(database))
         if (txid === null) fields.existing = true
         return ok(txid)
       }).pipe(

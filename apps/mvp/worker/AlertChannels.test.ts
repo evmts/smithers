@@ -31,11 +31,12 @@ const channelRows = () =>
   )
 
 /** ChatApi as `actor`, its Electric requests recorded and pointed at this file's schema. */
-const open = async (actor: Actor | null, options: Pick<NonNullable<Parameters<typeof harness>[2]>, "database"> = {}) => {
+const open = async (actor: Actor | null, options: Pick<NonNullable<Parameters<typeof harness>[2]>, "database" | "config"> = {}) => {
   const { name } = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
   const upstream: Array<URL> = []
   const h = await harness(runtime, answers("never"), {
     ...(actor === null ? {} : { actor }),
+    config: { ALERT_APP_URL: "http://chat.test/app" },
     ...options,
     fetch: async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input))
@@ -61,6 +62,22 @@ const values = async (response: Response) =>
   )
 
 describe("POST /api/alert-channels", () => {
+  test("a local or preview request persists the configured alert link", async () => {
+    const { h } = await open(admin, { config: { ALERT_APP_URL: "https://smithers.example/app" } })
+    expect((await set(h, { channel: "email", destinations: ["ops@example.com"] })).status).toBe(200)
+    expect((await channelRows())[0]?.appUrl).toBe("https://smithers.example/app")
+  })
+
+  test.each([undefined, "relative", "javascript:alert(1)", "https://user:password@example.com/app", "https://:password@example.com/app"])(
+    "refuses saving without a usable configured app URL: %j", async (appUrl) => {
+      const config: Record<string, string> = {}
+      if (appUrl !== undefined) config.ALERT_APP_URL = appUrl
+      const { h } = await open(admin, { config })
+      expect((await set(h, { channel: "email", destinations: ["ops@example.com"] })).status).toBe(503)
+      expect(await channelRows()).toEqual([])
+    },
+  )
+
   test("an Admin sets email addresses, trimmed and without repeats, and the app address messages link to", async () => {
     const { h } = await open(admin)
 
@@ -203,12 +220,18 @@ describe("the channels' and receipts' shapes", () => {
   })
 
   test("a Member, an agent acting for an Admin, and a signed-out request get shapes with no rows", async () => {
+    const { h: adminHandler } = await open(admin)
+    expect((await set(adminHandler, { channel: "email", destinations: ["hidden@example.com"] })).status).toBe(200)
+    await sql(`INSERT INTO alert_deliveries (alert_id, channel, status)
+      VALUES ('hidden-alert', 'email', 'sent')`)
+    expect(await values(await adminHandler.fetch("/api/shapes/alert-channels?offset=-1"))).toHaveLength(1)
+    expect(await values(await adminHandler.fetch("/api/shapes/alert-deliveries?offset=-1"))).toHaveLength(1)
     for (const actor of [member, agentForAdmin, null]) {
       const { h, upstream } = await open(actor)
       for (const path of ["/api/shapes/alert-channels?offset=-1", "/api/shapes/alert-deliveries?offset=-1"]) {
         const response = await h.fetch(path)
         expect(response.status).toBe(200)
-        await response.body?.cancel()
+        expect(await values(response)).toEqual([])
       }
       expect(upstream.map((url) => url.searchParams.get("params[1]"))).toEqual(["", ""])
     }

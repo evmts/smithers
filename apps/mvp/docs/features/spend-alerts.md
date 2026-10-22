@@ -43,7 +43,7 @@ Settings ── Save ──▶ alert/channel { channel, destinations }      (the
 
 - **Who:** an Admin acting in person. An agent, flow or sandbox acting for them is refused `403 person_only` (`alert/channel` is person-only in the registry); any other role `403 forbidden`; signed out `401`.
 - **Email:** 1 to 10 addresses, one `@` and a dotted domain each, separated by commas or spaces. **Telegram:** one chat id: a person's or a group's number, a supergroup's `-100…`, or a public channel's `@username`. The fields check the same rules before Save (`type="email" multiple`, and a `pattern`); the route checks them again with `@smthrs/notifications`' `isEmailAddress` and `isTelegramChatId` (`400 invalid_destination`). Blanks and repeats are dropped.
-- **The link:** each message links to `/app` on the origin the Admin saved the setting from.
+- **The link:** each message links to the deployment’s configured `ALERT_APP_URL`, independently of the origin the Admin saved from.
 - **The message:** short. The subject is the toast's words, `Model spend · 12,340 tokens · $0.02`; the text is the window (`15:00–15:15 UTC, 2026-10-20`), the three roles that spent most (`agent 12,000 · judge 340`) and the link. Telegram gets both as one plain-text message, link previews off.
 - **Saving:** the Save button's flow runs at once on the tab's engine; `Saving` shows beside the button until it lands, and `Not saved` if ChatApi refused it, until the next Save.
 
@@ -63,11 +63,12 @@ Settings ── Save ──▶ alert/channel { channel, destinations }      (the
 |---|---|---|
 | `ALERT_EMAIL_API_KEY` | unset: no email | a Resend API key, a deployment secret |
 | `ALERT_EMAIL_FROM` | `Smithers <onboarding@resend.dev>` | the sender; Resend's test sender reaches only the Resend account's own address, so set one on a domain Resend verified to reach anyone else |
+| `ALERT_APP_URL` | required | absolute HTTP or HTTPS app URL without credentials; a missing or invalid value refuses destination saves with 503 |
 | `ALERT_EMAIL_API_URL` | `https://api.resend.com` | Resend's origin |
 | `ALERT_TELEGRAM_BOT_TOKEN` | unset: no Telegram | a bot's token from @BotFather, a deployment secret. The bot reaches a person only after they started a chat with it, and a group once it is a member |
 | `ALERT_TELEGRAM_API_URL` | `https://api.telegram.org` | the Bot API's origin |
 
-FlowExecution reads them when its Durable Object starts. Neither key is ever in a row, a payload, a log line, a span or a metric. Under `alchemy dev` (`worker/DevChatApi.ts`), a provider whose URL is set and whose key isn't sends with the key `dev`, so a local stand-in takes it: the end-to-end test runs that way.
+ChatApi reads `ALERT_APP_URL` when saving destinations. FlowExecution reads the provider settings when its Durable Object starts. Neither key is ever in a row, a payload, a log line, a span or a metric. Under `alchemy dev` (`worker/DevChatApi.ts`), a provider whose URL is set and whose key isn't sends with the key `dev`, so a local stand-in takes it: the end-to-end test runs that way.
 
 ## What each call records
 
