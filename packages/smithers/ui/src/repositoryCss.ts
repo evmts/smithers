@@ -19,6 +19,9 @@ export const breadcrumbsCss = `
 .sui-breadcrumbs-link { color:${t.primary}; text-decoration:none; border-radius:${t.radiusControl}; overflow-wrap:anywhere; }
 .sui-breadcrumbs-link:hover { text-decoration:underline; }
 .sui-breadcrumbs-link:focus-visible { ${focusRing} }
+@media (max-width:960px) {
+  .sui-breadcrumbs-link { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }
+}
 .sui-breadcrumbs-current { color:${t.foreground}; font-weight:650; overflow-wrap:anywhere; }
 `;
 

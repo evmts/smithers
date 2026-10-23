@@ -21,6 +21,9 @@ export const issuesViewCss = `
 .sui-issues-filter:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; }
 .sui-issues-filter .sui-state-icon { color:currentColor; }
 .sui-issues-filter-count { font-variant-numeric:tabular-nums; }
+@media (max-width:960px) {
+  .sui-issues-filter { min-height:32px; min-width:32px; }
+}
 .sui-issues-loading { display:grid; gap:10px; padding:12px 14px; }
 .sui-issues-skeleton { height:18px; }
 .sui-issues-list { margin:0; padding:0; list-style:none; }

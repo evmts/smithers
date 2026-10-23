@@ -14,7 +14,7 @@ const test = base.extend<{ recording: void }>({
     await writeManifest(info, "flow.json", startedAt, [{ name: "", video: "video.webm", openedAt: 0 }])
   }, { auto: true }],
 })
-test.use({ video: "on", colorScheme: "light" })
+test.use({ video: "on", screenshot: "only-on-failure", colorScheme: "light" })
 
 type Finding = { element: string; problem: string }
 const audit = async (page: Page, info: TestInfo, name = "screen") => {
@@ -45,6 +45,8 @@ const audit = async (page: Page, info: TestInfo, name = "screen") => {
     for (const element of document.querySelectorAll<HTMLElement>("p, h1, h2, h3, h4, label, button, a, span, li, td, th, pre")) {
       if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) || !element.textContent?.trim() || element.clientWidth === 0) continue
       const style = getComputedStyle(element)
+      // Accessibility-only labels are intentionally visually clipped, not visible prose.
+      if (style.clipPath === "inset(50%)" || style.clip === "rect(0px, 0px, 0px, 0px)") continue
       // Source viewers intentionally scroll; clipped labels and prose do not.
       if (element.scrollWidth > element.clientWidth + 1 && !["auto", "scroll"].includes(style.overflowX)) {
         errors.push({ element: `${element.tagName.toLowerCase()}.${element.className} ${element.textContent.trim().slice(0, 80)}`, problem: `text clipped ${element.scrollWidth} > ${element.clientWidth}` })
