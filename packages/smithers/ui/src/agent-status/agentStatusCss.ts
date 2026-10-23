@@ -88,6 +88,8 @@ button.sui-notification-row:focus-visible { outline:none; box-shadow:0 0 0 3px $
   button.sui-toast-open { min-height:${t.controlHeight}; }
   .sui-toast-text, .sui-notification-text { white-space:normal; overflow-wrap:anywhere; }
   .sui-notification-bell { flex-shrink:0; }
+  .sui-notification-count { position:static; flex:none; }
+  .sui-notification-bell:has(.sui-notification-count) { width:auto; padding-inline:8px; }
 }
 @media (max-width: 640px) { .sui-notification-panel { top:0; right:0; left:0; width:auto; max-height:100dvh; border-radius:0; } }
 `;
