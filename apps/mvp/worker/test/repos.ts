@@ -292,12 +292,15 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
   )
   // A repository's docs, which worker/ChatApi.ts routes before RepoApi's reads: the index its home names, read from
   // the outside web through the same cache as what GitHub says of it.
+  const docsSettings = await runtime.runPromise(observed(DocsSource.settings.pipe(
+    Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, electric),
+  )))
   const docs = DocsApi.make()
   const docsHandler = HttpEffect.toWebHandler(
     observed(
       docs.fetch.pipe(
         Effect.provide(
-          DocsSource.layer(options.homes === undefined ? {} : { homes: options.homes }).pipe(
+          DocsSource.layer(docsSettings, options.homes === undefined ? {} : { homes: options.homes }).pipe(
             Layer.provide(Layer.merge(FetchHttpClient.layer, Layer.succeedContext(cache))),
           ),
         ),

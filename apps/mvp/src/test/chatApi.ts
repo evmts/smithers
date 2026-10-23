@@ -492,8 +492,11 @@ export class TestChatApi extends Context.Service<
         // A repository's docs, as ChatApi routes them (worker/ChatApi.ts): the index its home names, or the curated home
         // a test gives, read from the scripted outside web and kept beside what GitHub says of it. A `docs` view reads
         // its page through the same source.
+        const docsSettings = yield* DocsSource.settings.pipe(
+          Effect.provide(FetchHttpClient.layer), Effect.provideService(ConfigProvider.ConfigProvider, config),
+        )
         const docs = DocsApi.make()
-        const docsSource = DocsSource.layer(options.homes === undefined ? {} : { homes: options.homes }).pipe(
+        const docsSource = DocsSource.layer(docsSettings, options.homes === undefined ? {} : { homes: options.homes }).pipe(
           Layer.provide(Layer.merge(FetchHttpClient.layer, Layer.succeedContext(repoCache))),
         )
         const starts: Array<Started> = []

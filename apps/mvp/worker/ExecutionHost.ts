@@ -165,12 +165,13 @@ export const withSandboxTools = <ROut, E, R, DE, DR, ME, MR>(
   flows: Flows<ROut, E, R>,
   database: Layer.Layer<SqlClient.SqlClient, DE, DR>,
   machines: Layer.Layer<Machines, ME, MR>,
+  idleMs?: number,
 ) => ({
   flows: [...flows.flows, SandboxCall.SandboxCall, SandboxKeep.Keep, ...SandboxCommand.Command.flows],
   registration: Layer.mergeAll(
     flows.registration,
     SandboxCall.registration(database).pipe(Layer.provide(machines)),
-    SandboxKeep.registration(database).pipe(Layer.provide(machines)),
+    SandboxKeep.registration(database, idleMs).pipe(Layer.provide(machines)),
     SandboxCommand.registration.pipe(Layer.provide(machines)),
   ),
 })

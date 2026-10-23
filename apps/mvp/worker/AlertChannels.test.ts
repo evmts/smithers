@@ -63,7 +63,9 @@ const values = async (response: Response) =>
 
 describe("POST /api/alert-channels", () => {
   test("a local or preview request persists the configured alert link", async () => {
-    const { h } = await open(admin, { config: { ALERT_APP_URL: "https://smithers.example/app" } })
+    const config: Record<string, string> = { ALERT_APP_URL: "https://smithers.example/app" }
+    const { h } = await open(admin, { config })
+    delete config.ALERT_APP_URL
     expect((await set(h, { channel: "email", destinations: ["ops@example.com"] })).status).toBe(200)
     expect((await channelRows())[0]?.appUrl).toBe("https://smithers.example/app")
   })

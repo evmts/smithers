@@ -356,7 +356,9 @@ describe("the sandbox egress", () => {
   })
 
   test("EGRESS_ALLOW_HOSTS lets a box reach a host with no secret; anything else answers off or unavailable", async () => {
-    const allowed = await open({ upstream, config: { EGRESS_ALLOW_HOSTS: "registry.npmjs.org, not a host" } })
+    const config: Record<string, string> = { EGRESS_ALLOW_HOSTS: "registry.npmjs.org, not a host" }
+    const allowed = await open({ upstream, config })
+    delete config.EGRESS_ALLOW_HOSTS
     expect((await allowed.egress(guest)(new Request("https://registry.npmjs.org/left-pad"))).status).toBe(200)
     expect(seen).toHaveLength(1)
 

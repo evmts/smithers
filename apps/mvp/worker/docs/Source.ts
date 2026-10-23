@@ -76,13 +76,20 @@ const docsOfHome = (text: string): string | undefined => {
 }
 
 /**
- * Reads `REPO_ABOUT_*`, `GITHUB_*` and `DOCS_KEPT`, and answers the source over the `HttpClient` and `ImmutableCache`
- * in context when it is made.
+ * Captures `REPO_ABOUT_*`, `GITHUB_*` and `DOCS_KEPT` at program build, without acquiring a runtime cache.
  */
-export const make = (options: Options = {}) =>
+export const settings = Effect.gen(function* () {
+  const about = yield* RepoAbout.settings
+  const kept = Duration.toMillis(yield* Config.Duration("DOCS_KEPT").pipe(Config.withDefault(KEPT)))
+  return { about, kept }
+})
+
+/** Captured deployment settings over the runtime's HTTP client and cache; never reads Config. */
+export const make = (
+  { about, kept }: { readonly about: RepoAbout.Settings; readonly kept: number },
+  options: Options = {},
+) =>
   Effect.gen(function* () {
-    const about = yield* RepoAbout.settings
-    const kept = Duration.toMillis(yield* Config.Duration("DOCS_KEPT").pipe(Config.withDefault(KEPT)))
     const privateHosts = options.privateHosts ?? []
     const context = yield* Effect.context<HttpClient.HttpClient | ImmutableCache.ImmutableCache>()
 
@@ -184,4 +191,7 @@ export const make = (options: Options = {}) =>
   })
 
 /** The source as a layer, over the `HttpClient` and `ImmutableCache` it is built with. */
-export const layer = (options: Options = {}) => Layer.effect(DocsSource, make(options))
+export const layer = (
+  captured: { readonly about: RepoAbout.Settings; readonly kept: number },
+  options: Options = {},
+) => Layer.effect(DocsSource, make(captured, options))

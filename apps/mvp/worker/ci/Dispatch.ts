@@ -192,7 +192,7 @@ export const starts = Metric.counter("smithers_ci_starts", {
 
 /** What dispatching needs: Postgres (the App's installations), GitHub as the App, and where a run starts. */
 export interface Services<E, R> {
-  readonly repositories?: Effect.Effect<ReadonlySet<string>, Config.ConfigError>
+  readonly repositories: ReadonlySet<string>
   readonly database: Layer.Layer<SqlClient.SqlClient, E, R>
   readonly tokens: GitHubTokens
   readonly http: HttpClient.HttpClient
@@ -205,7 +205,7 @@ export interface Services<E, R> {
 export const steps = <E, R>(services: Services<E, R>) => {
   const match = ({ request }: typeof Match.payloadSchema.Type) =>
     Effect.gen(function* () {
-      if (!(yield* (services.repositories ?? repositories)).has(request.repo.toLowerCase())) {
+      if (!services.repositories.has(request.repo.toLowerCase())) {
         return { flows: [], outcome: "not_allowed" } satisfies Matched
       }
       const repository = repositoryOf(request.repo)
@@ -257,7 +257,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
 
   const start = ({ flows, request }: typeof Start.payloadSchema.Type) =>
     Effect.gen(function* () {
-      if (!(yield* (services.repositories ?? repositories)).has(request.repo.toLowerCase())) {
+      if (!services.repositories.has(request.repo.toLowerCase())) {
         yield* Metric.update(Metric.withAttributes(starts, { outcome: "not_allowed" }), 1)
         yield* Effect.logInfo("ci.start").pipe(Effect.annotateLogs({ repo: request.repo, outcome: "not_allowed" }))
         return []

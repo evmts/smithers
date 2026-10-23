@@ -83,10 +83,11 @@ describe("sandbox/Keep on the Node host", () => {
     const branch = await withTerminals()
     const machines = machine([Effect.succeed("gone")])
     const configured = Layer.succeed(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ SANDBOX_IDLE_SECONDS: "60" }))
+    const idleMs = (await runtime.runPromise(SandboxKeep.idleSeconds.pipe(Effect.provide(configured)))) * 1000
     const ran = await runFlow(
       SandboxKeep.Keep,
       { branchId: branch.branchId, generation: 1 },
-      SandboxKeep.registration(await database()).pipe(Layer.provide(machines.layer), Layer.provide(configured)),
+      SandboxKeep.registration(await database(), idleMs).pipe(Layer.provide(machines.layer)),
     )
 
     expect(ran.exit).toEqual(Exit.succeed({ ended: "gone", terminals: 1 }))

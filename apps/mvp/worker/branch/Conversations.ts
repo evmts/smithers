@@ -1,5 +1,5 @@
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { Config, Effect, Schema } from "effect"
+import { Config, Context, Effect, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { CONVERSATION_NAMESPACE, HOME_BRANCH, type Mode, REPOSITORY_GRANTEE } from "../../src/features/branch/contract.ts"
 import { repoId } from "../../src/features/repo/contract.ts"
@@ -16,17 +16,25 @@ import { DEFAULT_REPOSITORY } from "../SignIn.ts"
 export const conversationIdOf = (branchId: string) =>
   Uuid.v5(CONVERSATION_NAMESPACE, branchId.toLowerCase()).pipe(Effect.provide(WebCrypto.layer), Effect.orDie)
 
-/** `GITHUB_REPOSITORY`'s id: the deployment's own repository, whose `main` is the home conversation. */
-export const homeRepositoryNames = Config.String("GITHUB_REPOSITORY").pipe(
+/** The deployment repository's owner and name. */
+const repositoryNames = (repository: string) => {
+  const [owner = "", name = ""] = repository.split("/")
+  return { owner, name }
+}
+
+/** Captured at program build; the deployment repository's `main` is the home conversation. */
+export const configuredHomeRepositoryNames = Config.String("GITHUB_REPOSITORY").pipe(
   Config.withDefault(DEFAULT_REPOSITORY),
-  Config.map((repository) => {
-    const [owner = "", name = ""] = repository.split("/")
-    return { owner, name }
-  }),
+  Config.map(repositoryNames),
+)
+
+/** The program's captured home repository; the unconfigured deployment uses the documented default. */
+export const homeRepositoryNames = Context.Reference<{ readonly owner: string; readonly name: string }>(
+  "@smthrs/mvp/HomeRepository", { defaultValue: () => repositoryNames(DEFAULT_REPOSITORY) },
 )
 
 /** `GITHUB_REPOSITORY`'s id. */
-export const homeRepository = homeRepositoryNames.pipe(Config.map(({ owner, name }) => repoId(owner, name)))
+export const homeRepository = homeRepositoryNames.pipe(Effect.map(({ owner, name }) => repoId(owner, name)))
 
 /** A tracked branch as the routes answer it. */
 export interface Branch {

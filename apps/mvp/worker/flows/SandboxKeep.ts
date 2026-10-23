@@ -122,12 +122,11 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, id
   return { sleepIfIdle, slept }
 }
 
-/** Registers `sandbox/Keep` with its steps over `database` and the host's `Machines`, reading the idle time. */
-export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
-  Layer.unwrap(Effect.map(idleSeconds.pipe(Effect.orDie), (seconds) => {
-    const implementation = steps(database, seconds * 1000)
-    return Interpreter.layerWithImplementations(
-      Keep,
-      Layer.mergeAll(SleepIfIdle.toLayer(implementation.sleepIfIdle), Slept.toLayer(implementation.slept)),
-    ).pipe(Layer.provideMerge(Action.layerImplementations))
-  }))
+/** Registers `sandbox/Keep` with the program's captured idle time and the host's `Machines`. */
+export const registration = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, idleMs = DEFAULT_IDLE_SECONDS * 1000) => {
+  const implementation = steps(database, idleMs)
+  return Interpreter.layerWithImplementations(
+    Keep,
+    Layer.mergeAll(SleepIfIdle.toLayer(implementation.sleepIfIdle), Slept.toLayer(implementation.slept)),
+  ).pipe(Layer.provideMerge(Action.layerImplementations))
+}

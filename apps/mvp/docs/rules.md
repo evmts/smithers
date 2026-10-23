@@ -220,6 +220,15 @@ Choices such as the model, provider, URLs and limits are services provided by la
 - **Enforced:** Jev.
 - **Jev asks:** Does this file hard-code a deployment choice, such as which model or provider to use, a service URL, a limit, a timeout or a credential name, inside a handler or module body, instead of reading it from a service provided by a layer or from Effect `Config` with a named default?
 
+### effect.config-at-build
+
+Worker request handlers and durable flow steps consume configuration captured when Alchemy builds the program. They never evaluate Effect Config against the runtime host, including through a deferred Effect, Layer or helper.
+
+- **Will:** Production CI follow-up, 2026-10-23: read `REPO_FLOWS_REPOSITORIES` beside `REPO_FLOWS` at program build, inject the set, and catch runtime Config reads as a class after the `SUMMARY_MODEL` defect.
+- **Scope:** all `worker/**/*.ts`, excluding tests and test support.
+- **Enforced:** `tests/worker-config.test.ts`, run by `pnpm test`: TypeScript source/type analysis of request handlers, step factories, flow bodies and runtime callbacks, following worker-owned deferred dependencies. Fixtures prove Config aliases, imports and lazy layers fail while values already yielded during build pass. The check failed on both original Dispatch reads before the fix.
+- **Limit:** reflects the worker's current authoring patterns; dynamic dispatch and erased types still require review. See [decision 0088](decisions/0088-worker-config-at-build.md).
+
 ## Frontend and state
 
 ### ui.react-is-only-the-view

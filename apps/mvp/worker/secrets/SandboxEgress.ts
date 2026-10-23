@@ -135,11 +135,10 @@ const audit = (guest: Guest, sql: SqlClient.SqlClient) =>
  * recorded through `database`'s `SqlClient` in the caller's context. `off` (503) when secrets are off, `unavailable`
  * (503) when its policy can't be read.
  */
-export const forward = (guest: Guest) =>
+export const forward = (guest: Guest, allow: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const keys = yield* SecretKeys
     if (Option.isNone(keys)) return HttpServerResponse.text("off", { status: 503 })
-    const allow = yield* allowHosts.pipe(Effect.orDie)
     const policy = yield* policyFor(guest, keys.value, allow).pipe(Effect.option)
     if (Option.isNone(policy)) {
       yield* Effect.logWarning("secrets.egress").pipe(Effect.annotateLogs({ outcome: "unavailable", errorCode: "policy" }))

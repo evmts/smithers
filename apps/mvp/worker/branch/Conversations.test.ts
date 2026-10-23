@@ -2,7 +2,7 @@
 // Postgres (`pnpm db:up`): a conversation's id is the version 5 UUID of its branch's id, recorded with the branch in one
 // transaction, and the home conversation is the deployment repository's `main`, which 0014_branch_workspace records.
 import { Uuid, WebCrypto } from "@smthrs/crypto"
-import { ConfigProvider, Effect } from "effect"
+import { ConfigProvider, Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import { CONVERSATION_NAMESPACE, HOME_BRANCH } from "../../src/features/branch/contract.ts"
@@ -16,7 +16,7 @@ beforeEach(() => resetBranches(runtime))
 const REPO = "github/octocat/spoon-knife"
 
 const withConfig = <A, E, R>(effect: Effect.Effect<A, E, R>, config: Record<string, string>) =>
-  effect.pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)))
+  effect.pipe(Effect.provide(Layer.effect(Conversations.homeRepositoryNames, Conversations.configuredHomeRepositoryNames)), Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(config)))
 
 const remove = (branchId: string) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
@@ -104,6 +104,17 @@ describe("home", () => {
     const home = await runtime.runPromise(Conversations.home)
     const main = await runtime.runPromise(Conversations.find("github/smithersai/smithers", HOME_BRANCH))
     expect(main).toMatchObject({ conversationId: home, mode: "locked" })
+  })
+
+  test("home uses the captured deployment repository after ambient Config disappears", async () => {
+    const captured = await runtime.runPromise(Conversations.configuredHomeRepositoryNames.pipe(
+      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ GITHUB_REPOSITORY: "acme/widgets" })),
+    ))
+    const tracked = await runtime.runPromise(Conversations.track("github/acme/widgets", HOME_BRANCH, "locked", shaOf("main")))
+    expect(await runtime.runPromise(Conversations.home.pipe(
+      Effect.provideService(Conversations.homeRepositoryNames, captured),
+      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
+    ))).toBe(tracked.branch.conversationId)
   })
 
   test("a deployment repository the app doesn't track has no home conversation", async () => {

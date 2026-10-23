@@ -14,6 +14,7 @@ import * as SecretsInfra from "../infra/Secrets.ts"
 import * as SignInSecret from "../infra/SignIn.ts"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract.ts"
+import * as Conversations from "./branch/Conversations.ts"
 import * as BranchApi from "./branch/BranchApi.ts"
 import { Forge } from "./branch/Forge.ts"
 import { Directory } from "./branch/People.ts"
@@ -86,6 +87,19 @@ export interface ProgramOptions {
 
 export const program = (options: ProgramOptions = {}) =>
   Effect.gen(function* () {
+    const repoFlows = yield* Dispatch.enabled
+    const repositories = yield* Dispatch.repositories
+    const homeRepository = yield* Conversations.configuredHomeRepositoryNames
+    return yield* configuredProgram(options, { repoFlows, repositories, homeRepository })
+  })
+
+/** All deployment choices below are already captured before Alchemy builds the handlers. */
+const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, homeRepository }: {
+  readonly repoFlows: boolean
+  readonly repositories: ReadonlySet<string>
+  readonly homeRepository: { readonly owner: string; readonly name: string }
+}) =>
+  Effect.gen(function* () {
     yield* Electric.bind
     yield* SignInSecret.bind
     yield* SecretsInfra.bind
@@ -126,7 +140,9 @@ export const program = (options: ProgramOptions = {}) =>
         person === undefined ? [] : [{ id: person.actor.subject.id, login: person.login }]
       ),
     )
-    const forge = Forge.layerConfig.pipe(Layer.provide(FetchHttpClient.layer))
+    const forge = Layer.succeed(Forge, yield* Effect.service(Forge).pipe(
+      Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer),
+    ))
     // Who has which role on which repository (decision 0079): the session's on the deployment's own, GitHub's, read
     // with the App, on any other it may act on. Local development without the App keeps the developer's everywhere.
     const repository = yield* GitHubConfig.repository
@@ -138,7 +154,7 @@ export const program = (options: ProgramOptions = {}) =>
       local: options.fallback !== undefined && Option.isNone(app),
     })
     // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes.
-    const github = yield* GitHubApi.make(database, { repository, app, roles, repoFlows: yield* Dispatch.enabled })
+    const github = yield* GitHubApi.make(database, { repository, app, roles, repoFlows })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
     const stack = yield* StackApi.make(database, roles)
@@ -174,7 +190,10 @@ export const program = (options: ProgramOptions = {}) =>
     // fetch and kept in the repositories' cache beside what GitHub says of it, which names them. The docs routes and
     // the views route (a `docs` view) read them.
     const docs = DocsApi.make()
-    const docsSource = DocsSource.layer().pipe(Layer.provide(Layer.merge(FetchHttpClient.layer, repoCache)), Layer.orDie)
+    const docsSettings = yield* DocsSource.settings.pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
+    const docsSource = DocsSource.layer(docsSettings).pipe(
+      Layer.provide(Layer.merge(FetchHttpClient.layer, repoCache)),
+    )
     const logs = Logger.layerStructuredJson()
     // ChatApi hosts the remote flow executions' Durable Object (worker/Executions.ts, docs/features/remote-flows.md), and
     // creates each one where the deployment places them (`FLOW_EXECUTION_LOCATION`, worker/Placement.ts).
@@ -296,10 +315,12 @@ export const program = (options: ProgramOptions = {}) =>
           Effect.provide(docsSource),
           Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
         )
-      }).pipe(Effect.provide(logs)),
+      }).pipe(Effect.provideService(Conversations.homeRepositoryNames, homeRepository), Effect.provide(logs)),
     }
   }).pipe(
     Effect.provide(Executions.live(ChatDatabase, {
+      repositories,
+      homeRepository,
       ...(options.dev === true ? { dev: true } : {}),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
     })),

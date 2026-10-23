@@ -332,13 +332,15 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
     }
     return globalThis.fetch(url, init)
   }
+  const config = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl), ...options.config })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
-      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(options.config ?? {})),
+      Effect.provideService(ConfigProvider.ConfigProvider, config),
     )
+  const homeRepository = await runtime.runPromise(observed(Conversations.configuredHomeRepositoryNames))
   const api = await runtime.runPromise(observed(BranchApi.make(database)))
   const starter = options.starter ?? Flows.FlowStarter.of({
     start: (flow, { executionId, payload }) =>
@@ -347,6 +349,7 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
   const handler = HttpEffect.toWebHandler(
     observed(
       api.fetch.pipe(
+        Effect.provideService(Conversations.homeRepositoryNames, homeRepository),
         Effect.provideService(Flows.FlowStarter, starter),
         Effect.provideService(TerminalSockets, options.sockets ?? sockets.service),
         Effect.provideService(Rooms, room.service),

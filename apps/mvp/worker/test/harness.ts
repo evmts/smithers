@@ -122,6 +122,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
   const requests: Array<ModelRequest.ModelRequest> = []
   const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
   const config = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl), ...options.config })
+  const homeRepository = await runtime.runPromise(Conversations.configuredHomeRepositoryNames.pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
   const model = Model.make({
     stream: (request) => {
       requests.push(request)
@@ -134,6 +135,7 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
       Effect.provideService(ConfigProvider.ConfigProvider, config),
+      Effect.provideService(Conversations.homeRepositoryNames, homeRepository),
     )
   const hostModel = Layer.succeed(
     HostModel,
@@ -169,7 +171,10 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
     ImmutableCache.ImmutableCache,
     ImmutableCache.make(ImmutableCache.makeMemoryWebCache(), { backend: "memory" }),
   )
-  const docsSource = DocsSource.layer(options.homes === undefined ? {} : { homes: options.homes }).pipe(
+  const docsSettings = await runtime.runPromise(observed(DocsSource.settings.pipe(
+    Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch),
+  )))
+  const docsSource = DocsSource.layer(docsSettings, options.homes === undefined ? {} : { homes: options.homes }).pipe(
     Layer.provide(Layer.merge(FetchHttpClient.layer, docsCache)),
   )
   // ChatApi routes a repository's docs before the chat routes (worker/ChatApiProgram.ts): open to everyone.

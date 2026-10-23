@@ -108,12 +108,13 @@ export const secretsHarness = async (runtime: Runtime, starter: Flows.FlowStarte
     if (url.searchParams.get("table") === SECRETS_TABLE) url.searchParams.set("table", `${scratch.name}.${SECRETS_TABLE}`)
     return globalThis.fetch(url, init)
   }
+  const config = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl), ...options.config })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
-      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(options.config ?? {})),
+      Effect.provideService(ConfigProvider.ConfigProvider, config),
     )
   const keys = options.keys === false ? SecretKeys.off : SecretKeys.layer(KEY)
   const sessions = options.actor === undefined || options.actor === null ? Actor.signedOut : signedIn(options.actor)
@@ -129,11 +130,12 @@ export const secretsHarness = async (runtime: Runtime, starter: Flows.FlowStarte
       ),
     ),
   )
+  const allowHosts = await runtime.runPromise(observed(SandboxEgress.allowHosts))
   /** A box's handler: its requests through the egress, as the guest `guest`. */
   const egress = (guest: SandboxEgress.Guest) =>
     HttpEffect.toWebHandler(
       observed(
-        SandboxEgress.forward(guest).pipe(
+        SandboxEgress.forward(guest, allowHosts).pipe(
           Effect.provide(keys),
           Effect.provide(database),
           Effect.provide(FetchHttpClient.layer),

@@ -177,6 +177,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
     const state = yield* Cloudflare.DurableObjectState
     const forge = yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer))
     const secretsOn = yield* sandboxSecrets.pipe(Effect.orDie)
+    const egressAllowHosts = yield* SandboxEgress.allowHosts.pipe(Effect.orDie)
     const instance = yield* sandboxInstance.pipe(Effect.orDie)
     const startTimeoutMs = (yield* sandboxStartTimeoutSeconds.pipe(Effect.orDie)) * 1000
     const sessionOn = yield* configuredSessionOn
@@ -457,7 +458,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
         const branch = yield* branchOf
         const generation = yield* state.storage.get<number>("generation")
         if (branch === undefined || generation === undefined) return HttpServerResponse.empty({ status: 403 })
-        return yield* SandboxEgress.forward(SandboxEgress.guestOf(branch, generation)).pipe(
+        return yield* SandboxEgress.forward(SandboxEgress.guestOf(branch, generation), egressAllowHosts).pipe(
           Effect.provideService(SecretKeys, secretKeys),
           Effect.provide(Layer.merge(database, FetchHttpClient.layer)),
         )

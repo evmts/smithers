@@ -128,6 +128,7 @@ const audience = Effect.as(ShapeAccess.admin, ADMINS)
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
+    const appUrlConfig = yield* Config.NonEmptyString("ALERT_APP_URL").pipe(Effect.result)
 
     const set = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
@@ -153,7 +154,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const destinations = destinationsOf(channel, decoded.value.destinations)
         if (destinations === undefined) return refusal(400, "invalid_destination")
         fields.destinations = destinations.length
-        const appUrl = new URL(yield* Config.NonEmptyString("ALERT_APP_URL"))
+        const appUrl = new URL(yield* Effect.fromResult(appUrlConfig))
         if (!["http:", "https:"].includes(appUrl.protocol) || appUrl.username !== "" || appUrl.password !== "") {
           fields.errorCode = "configuration"
           return refusal(503, "unavailable")

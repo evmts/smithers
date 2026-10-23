@@ -183,7 +183,9 @@ describe("GET /api/repos/<owner>/<name>/docs", () => {
   })
 
   test("keeps the index for DOCS_KEPT, then asks the docs site again", async () => {
-    const h = await open({ config: { DOCS_KEPT: "1 millis" } })
+    const config: Record<string, string> = { DOCS_KEPT: "1 millis" }
+    const h = await open({ config })
+    delete config.DOCS_KEPT
     await h.fetch(docsRoute("acme", "widgets"))
     // The next window: wait on the clock, never a fixed sleep.
     const read = Date.now()

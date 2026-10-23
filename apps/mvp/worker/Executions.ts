@@ -6,6 +6,7 @@ import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
 import * as Database from "../db/Database.ts"
 import * as AlertChannels from "./AlertChannels.ts"
+import * as Conversations from "./branch/Conversations.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as AgentSandbox from "./AgentSandbox.ts"
@@ -94,15 +95,22 @@ export const starter = (objects: Objects) =>
  * (docs/features/database-alerts.md): the window this isolate last started is built with the layer, once per isolate,
  * not with each object.
  */
+interface ProgramOptions {
+  readonly dev?: boolean
+  readonly spendAlerts?: boolean
+  readonly repositories: ReadonlySet<string>
+  readonly homeRepository: { readonly owner: string; readonly name: string }
+}
+
 export const live = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
-  options: { readonly dev?: boolean; readonly spendAlerts?: boolean } = {},
+  options: ProgramOptions,
 ) => Layer.unwrap(Effect.map(DatabaseLoad.sampler, (sampleLoad) => object(connection, options, sampleLoad)))
 
 /** One object, whose alarms start the window's `ops/DatabaseLoad` through `sampleLoad`. */
 const object = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
-  options: { readonly dev?: boolean; readonly spendAlerts?: boolean },
+  options: ProgramOptions,
   sampleLoad: Effect.Effect<void, never, Flows.FlowStarter>,
 ) =>
   FlowExecution.make(
@@ -143,6 +151,8 @@ const object = <E, R>(
       // The git loop's flows (`github/Apply`, `github/Reconcile`, `github/Write`, `triage/Run`) run here when the GitHub
       // App is configured (docs/features/issues.md#remote-flows). Triage decides with the `judge` model role, admitted
       // and metered in process as the model endpoint's calls are (docs/features/issues.md#triage).
+      const repositories = options.repositories
+      const idleMs = (yield* SandboxKeep.idleSeconds.pipe(Effect.orDie)) * 1000
       const github = yield* GitHubHost.ready(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
       // Each admitted call of a server seat starts its window's spend alert, as the endpoint's calls do: `spendAlerts`,
       // which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default (docs/features/spend-alerts.md).
@@ -170,7 +180,12 @@ const object = <E, R>(
           ExecutionHost.make(state.storage, {
             hostId: state.id.toString(),
             database,
-            flows,
+            flows: {
+              ...flows,
+              registration: flows.registration.pipe(
+                Layer.provide(Layer.succeed(Conversations.homeRepositoryNames, options.homeRepository)),
+              ),
+            },
             driveBudgetMs,
             canStart: (intent) => TodoRuns.canStart(intent).pipe(Effect.provide(appDatabase), Effect.orDie),
             router: {
@@ -218,6 +233,7 @@ const object = <E, R>(
             ),
             appDatabase,
             BranchSandboxes.machinesLayer(sandboxObjects, keep),
+            idleMs,
           ),
           appDatabase,
         ), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(sandboxObjects, keep))
@@ -274,6 +290,8 @@ const object = <E, R>(
               ),
             }
           })
+        const dispatchServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
+          todoServices(ready).pipe(Effect.map((services) => ({ ...services, repositories })))
         const withGitHub = <ROut, FE, FR>(flows: ExecutionHost.Flows<ROut, FE, FR>) =>
           Option.isSome(github)
             ? hostFor(
@@ -295,7 +313,7 @@ const object = <E, R>(
                   ))),
                 commandSeconds,
                 stepWaitSeconds,
-              ), githubServices(github.value), AgentSandbox.variant), todoServices(github.value)),
+              ), githubServices(github.value), AgentSandbox.variant), dispatchServices(github.value)),
             )
             : hostFor(flows)
         const host = Option.isSome(repoClone)
