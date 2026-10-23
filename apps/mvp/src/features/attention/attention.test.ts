@@ -19,7 +19,7 @@ import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Status } from "../status/status"
 import { StatusStore } from "../status/store"
-import { dropped, retry } from "./actions"
+import { dropped, hide, retry } from "./actions"
 import { Attention } from "./attention"
 import { ActRefused } from "./flows"
 import { panel as panelActs, shown } from "./metrics"
@@ -642,3 +642,19 @@ describe("expanded branch detail", { timeout: ENGINE_WITHIN }, () => {
     await until(() => expect(ann.detail()).toBeUndefined())
   })
 })
+
+
+test("a launched acknowledgement that fails restores its toast and records the refusal", async () => {
+  const api = await openApi()
+  const ann = await openDevice(api, { answers: false })
+  const subject = "clone:github/acme/failed-ack"
+  await Effect.runPromise(api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql`INSERT INTO notifications (recipient, subject, kind, state, mine, repo_id, title, ref, href, version)
+      VALUES ('person-member', ${subject}, 'clone', 'working', true, 'github/acme/failed-ack', 'Clone', 'fetching:1', '/acme/failed-ack', 1)`)))
+  await until(() => expect(ann.entry(subject)).toMatchObject({ stack: true }))
+  const fault = FlowDispatch.of({ dispatch: (() => Effect.succeed({ _tag: "Failed", error: new ActRefused({ status: 403 }) })) as FlowDispatch["Service"]["dispatch"] })
+  await ann.run(hide(subject).pipe(Effect.provideService(FlowDispatch, fault)))
+  await until(() => expect(ann.pending()).toEqual([]))
+  await until(() => expect(ann.entry(subject)).toMatchObject({ stack: true }))
+  expect(ann.count(Metric.withAttributes(dropped, { act: "hide", reason: "@smthrs/mvp/attention/ActRefused" }))).toBe(1)
+}, ENGINE_WITHIN)
