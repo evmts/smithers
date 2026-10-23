@@ -117,7 +117,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
                 // The request fixture has the test person's session, independent of
                 // a signed-out page's cookie. A real clone must precede file coverage.
                 const clone = await request.post("/api/repos", { data: repository })
-                expect(clone.ok(), "the file fixture's real clone is admitted").toBe(true)
+                expect(clone.ok(), `the file fixture's real clone is admitted (HTTP ${clone.status()}, ${await clone.text()})`).toBe(true)
                 const { cloneId } = await clone.json() as { cloneId: string }
                 const launch = await request.post("/api/repos/launch", { data: { ...repository, cloneId } })
                 expect(launch.ok(), "the file fixture's real clone is launched").toBe(true)
