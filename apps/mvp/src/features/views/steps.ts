@@ -34,18 +34,18 @@ import { readWritten, RENDERER_SYSTEM, rendererCorrection, rendererTask } from "
 /** The renderer's model: the endpoint's `renderer` role, which an Admin sets (`admin/SetModel`). */
 export class RendererSeat extends Context.Service<
   RendererSeat,
-  { readonly model: Model.Model; readonly route: FlowEngineLike.RouteResolver }
+  { readonly model: Model.Model; readonly route: FlowEngineLike.RouteResolver; readonly maxTokens: number }
 >()("@smthrs/mvp/views/RendererSeat") {
   /**
    * The `renderer` role of the model endpoint on `origin`, or `model` in its place: only the end-to-end tests' scripted
    * agent under the dev server (src/test/scriptedAgent.ts).
    */
-  static readonly layer = (origin: string, model?: Model.Model) =>
+  static readonly layer = (origin: string, model?: Model.Model, maxTokens = 8_000) =>
     Layer.effect(
       RendererSeat,
       Effect.gen(function* () {
         const url = `${origin}${MODEL_ROUTE}/renderer`
-        return { model: model ?? (yield* ModelProxy.makeClient({ url })), route: { prepare: ModelProxy.prepare({ url }) } }
+        return { model: model ?? (yield* ModelProxy.makeClient({ url })), route: { prepare: ModelProxy.prepare({ url }) }, maxTokens }
       }),
     )
 }
@@ -162,7 +162,8 @@ export const writeView = (planned: PlannedView) =>
         request: ModelRequest.ModelRequest.make({
           modelId: "renderer",
           tools: [],
-          params: ModelRequest.GenerationParams.make({ maxTokens: 4_096 }),
+          // The allowance includes reasoning: 4,096 tokens yielded empty replies in the live board eval.
+          params: ModelRequest.GenerationParams.make({ maxTokens: seat.maxTokens }),
           system: [{ type: "text", text: RENDERER_SYSTEM }],
           messages: [...messages],
         }),
@@ -258,4 +259,3 @@ export const registration = Layer.mergeAll(
   ),
   Interpreter.layerWithImplementations(SetViewState, SendState.toLayer(sendState)),
 )
-

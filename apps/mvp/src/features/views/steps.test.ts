@@ -3,7 +3,7 @@
 // Postgres (`pnpm db:up`), with faults injected as test implementations of their services: a views client that refuses
 // or fails, and a renderer whose model fails. The happy paths, with the agent calling them, are agentViews.test.ts.
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Model, ModelError, ModelProxy } from "@smthrs/model"
+import { Model, ModelError } from "@smthrs/model"
 import { Context, Effect, Exit, Layer, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, describe, expect, test } from "vitest"
@@ -58,6 +58,7 @@ const failing = (code: "no_route" | "unknown") =>
 const openEngine = async (options: {
   readonly views?: (real: ViewsClient["Service"]) => ViewsClient["Service"]
   readonly model?: Model.Model
+  readonly maxTokens?: number
 } = {}) => {
   const h = await harness(runtime, () => Stream.empty, { actor: member })
   const fetch: typeof globalThis.fetch = (input, init) => {
@@ -71,10 +72,7 @@ const openEngine = async (options: {
   const views = options.views === undefined
     ? real
     : Layer.effect(ViewsClient, Effect.map(Effect.service(ViewsClient), options.views)).pipe(Layer.provide(real))
-  const seat = Layer.succeed(RendererSeat, {
-    model: options.model ?? writesBoard,
-    route: { prepare: ModelProxy.prepare({ url: "http://chat.test/api/model/renderer" }) },
-  })
+  const seat = RendererSeat.layer("http://chat.test", options.model ?? writesBoard, options.maxTokens)
   const scope = Effect.runSync(Scope.make())
   scopes.push(scope)
   const { context } = await Effect.runPromise(
@@ -137,6 +135,17 @@ describe("ui/form", () => {
 })
 
 describe("ui/render", () => {
+  test("the renderer uses its seat's output allowance for every attempt", async () => {
+    const allowances: Array<number | undefined> = []
+    const model = Model.make({ stream: (request) => {
+      allowances.push(request.params.maxTokens)
+      // The first malformed reply exercises a correction with the same configured allowance.
+      return allowances.length === 1 ? Stream.make(usage, stop) : writesBoard.stream(request)
+    } })
+    expect(Exit.isSuccess(await (await openEngine({ model, maxTokens: 6_000 })).render())).toBe(true)
+    expect(allowances).toEqual([6_000, 6_000])
+  }, WITHIN)
+
   test("a renderer with no model for its role is ViewNotRendered unconfigured; one that fails, unavailable", async () => {
     expect(JSON.stringify(await (await openEngine({ model: failing("no_route") })).render())).toContain('"unconfigured"')
     expect(JSON.stringify(await (await openEngine({ model: failing("unknown") })).render())).toContain('"unavailable"')
