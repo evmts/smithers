@@ -70,3 +70,8 @@ statuses are 500, 502, 503 and 504; documented transient codes still apply.
 
 Library catalog entry: import a public GitHub repository into git hosting and
 read its files and commits (`@smthrs/effect-code-storage`).
+
+`yield* storage.deleteRepo(name)` retires a repository with only `repo:write`
+on that name. Success means deletion accepted; physical cleanup is asynchronous.
+Missing and already-deleted repositories remain typed `CodeStorageError`s.
+See [retiring a repository](docs/README.md#retiring-a-repository) for the contract.

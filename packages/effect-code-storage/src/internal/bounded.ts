@@ -19,7 +19,12 @@ export interface Bounded {
   readonly truncated: boolean
 }
 
-/** Whether a cap is finite, integral and can be counted exactly. */
+/**
+ * Whether a cap is finite, integral and can be counted exactly.
+ *
+ * @category guards
+ * @since 0.2.0
+ */
 export const isReadLimit = (maxBytes: number): boolean => Number.isSafeInteger(maxBytes) && maxBytes >= 0
 
 const concat = (chunks: ReadonlyArray<Uint8Array>, size: number): Uint8Array => {

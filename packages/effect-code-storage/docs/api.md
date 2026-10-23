@@ -29,6 +29,7 @@ import fails the layer with `{ operation: "configure", code: "invalid_key" }`.
 ```ts
 interface Client {
   readonly createRepo: (options: CreateRepoOptions) => Effect.Effect<CreatedRepo, CodeStorageError>
+  readonly deleteRepo: (repo: string) => Effect.Effect<void, CodeStorageError>
   readonly pullUpstream: (repo: string) => Effect.Effect<void, CodeStorageError>
   readonly listFiles: (repo: string, options?: ListFilesOptions) => Effect.Effect<FilesPage, CodeStorageError>
   readonly readFile: (repo: string, options: ReadFileOptions) => Effect.Effect<FileContents, CodeStorageError>
@@ -43,6 +44,17 @@ interface Client {
 - `createRepo` creates a repository, mirroring `github` when given. It is
   idempotent by name: `created` is `false` when the repository already
   existed. The same name with another upstream fails `conflict`.
+- `deleteRepo(repo)` permanently retires a repository through
+  `DELETE /api/repos/<repo>` with a five-minute `repo:write` token for exactly
+  that repository. The API origin defaults to `https://api.<org>.code.storage`;
+  the repository is encoded into one path segment. Returns `void` on acceptance;
+  physical storage cleanup continues asynchronously. HTTP 404 `not_found` and
+  `repository_not_found`, and HTTP 409 `repository_deleted`, remain typed
+  `CodeStorageError`s. No errors are swallowed or retried. A `transport` failure
+  may hide an accepted deletion. Records the `CodeStorage.deleteRepo` span,
+  request outcome count and bytes read from bounded error bodies; the success
+  body is not consumed. Contract: [Code Storage OpenAPI](https://code.storage/docs/openapi.json),
+  `repos-delete`, verified 2026-10-23.
 - `pullUpstream` starts a sync from the upstream. While one runs, calls on the
   repository fail `sync_in_progress`.
 - `listFiles` lists one page of the tree. `nextCursor` is set when there is
@@ -191,7 +203,7 @@ interface TagsPage {
 
 ```ts
 class CodeStorageError extends Schema.TaggedError<CodeStorageError>()("@smthrs/effect-code-storage/CodeStorageError", {
-  operation: "configure" | "createRepo" | "pullUpstream" | "listFiles" | "readFile" | "listCommits" | "listBranches" | "listTags" | "createBranch",
+  operation: "configure" | "createRepo" | "deleteRepo" | "pullUpstream" | "listFiles" | "readFile" | "listCommits" | "listBranches" | "listTags" | "createBranch",
   code: string,
   status?: number,
   retryAfterMillis?: number,
@@ -251,6 +263,7 @@ const bytesRead: Metric.Counter<number>
 type Operation =
   | "configure"
   | "createRepo"
+  | "deleteRepo"
   | "pullUpstream"
   | "listFiles"
   | "readFile"

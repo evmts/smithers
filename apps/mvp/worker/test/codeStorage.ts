@@ -136,6 +136,12 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
         })
         return { name: create.name, created: true }
       }),
+    deleteRepo: (repo) =>
+      Effect.gen(function* () {
+        calls.push(`deleteRepo:${repo}`)
+        yield* fault("deleteRepo")
+        if (!mirrors.delete(repo)) return yield* error("deleteRepo", "repository_not_found", 404)
+      }),
     pullUpstream: (repo) =>
       Effect.gen(function* () {
         calls.push(`pullUpstream:${repo}`)

@@ -14,7 +14,7 @@ what a host needs to import one and browse it.
 - **One short token per request.** Each call signs its own JWT with the
   organization's ES256 key through WebCrypto. The `repo` claim names the one
   repository the call touches, `scopes` holds only the scope the call needs
-  (`repo:write` to create, `git:write` to sync, `git:read` to read), and the
+  (`repo:write` to create or delete, `git:write` to sync, `git:read` to read), and the
   token lives five minutes. Code Storage refuses a restricted key's token past
   an hour.
 - **Secrets stay out of telemetry.** The key is imported once, when the layer
@@ -65,6 +65,32 @@ upstream to stay public. It does not support Git LFS.
    its commit: a public mirror carries every branch the upstream had at the
    sync.
 
+## Retiring a repository
+
+`yield* storage.deleteRepo(name)` sends `DELETE /api/repos/{repo_name}` to
+`https://api.<org>.code.storage`, with the name encoded as one path segment
+and a five-minute token naming exactly that repository and only `repo:write`.
+It returns `void` when deletion is accepted. Code Storage soft-deletes first;
+physical cleanup of hot and cold storage continues asynchronously.
+
+Missing repositories fail with a typed `CodeStorageError`: HTTP 404's
+`not_found` or `repository_not_found` is **not** swallowed as success. An
+already-deleted repository's HTTP 409 `repository_deleted` remains a typed
+error too. Other failures use the same classification and bounded error-body
+reads as every call, including `Retry-After`. The client never retries;
+`transport` means no answer was received and deletion may have been accepted.
+
+Each call records `CodeStorage.deleteRepo` and one `code_storage_requests`
+count with `operation=deleteRepo` and `outcome=ok` or the failure code. Like
+`pullUpstream`, it does not consume the success body. Error-body bytes read
+count on `code_storage_bytes_read` with `operation=deleteRepo`.
+
+The endpoint, scope, 200 acceptance and 409 already-deleted response are from
+Code Storage's [primary OpenAPI specification](https://code.storage/docs/openapi.json),
+read 2026-10-23 (`paths["/api/repos/{repo_name}"].delete`, operation `repos-delete`).
+This extends the library catalog's `@smthrs/effect-code-storage` entry (SDK-1)
+without adding a dependency.
+
 ## Cloning in a sandbox without a credential in it
 
 A sandbox's guest clones through a proxy the host runs, so no token ever
@@ -108,6 +134,7 @@ From `https://code.storage/docs/openapi.json`, read 2026-10-19:
 | Call           | Route                                                            | Scope        |
 | -------------- | ---------------------------------------------------------------- | ------------ |
 | `createRepo`   | `POST /api/repos` with `repo_name`, `default_branch`, `upstream` | `repo:write` |
+| `deleteRepo`   | `DELETE /api/repos/{repo}` (verified 2026-10-23)                 | `repo:write` |
 | `pullUpstream` | `POST /api/repos/{repo}/upstream/pull`                           | `git:write`  |
 | `listFiles`    | `GET /api/repos/{repo}/files`                                    | `git:read`   |
 | `readFile`     | `GET /api/repos/{repo}/file`                                     | `git:read`   |

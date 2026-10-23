@@ -6,7 +6,7 @@
  * commits read through a small HTTP API. This module is a client for the part
  * of that API a host needs to import a public GitHub repository and browse
  * it: create a repository with an upstream, start its sync, list its files,
- * read a file, list commits, and list its branches and tags.
+ * read a file, list commits, list its branches and tags, and retire a repository.
  *
  * - Every request carries its own ES256 JWT, signed with WebCrypto by the
  *   organization's key: one repository, only the scope the call needs, five
@@ -56,6 +56,7 @@ import * as Token from "./internal/token.ts"
 export type Operation =
   | "configure"
   | "createRepo"
+  | "deleteRepo"
   | "pullUpstream"
   | "listFiles"
   | "readFile"
@@ -91,6 +92,7 @@ export class CodeStorageError extends Schema.TaggedError<CodeStorageError>()(
     operation: Schema.Literals([
       "configure",
       "createRepo",
+      "deleteRepo",
       "pullUpstream",
       "listFiles",
       "readFile",
@@ -413,6 +415,9 @@ export interface CreatedBranch {
  * - `createRepo`: creates a repository, mirroring `github` when given.
  *   Idempotent by name; a name that exists with another upstream fails with
  *   `conflict`.
+ * - `deleteRepo`: permanently retires a repository. Success means deletion
+ *   was accepted; physical cleanup is asynchronous. Missing and already-deleted
+ *   repositories remain typed errors.
  * - `pullUpstream`: starts a sync from the upstream. While one runs, calls on
  *   the repository fail with `sync_in_progress`.
  * - `listFiles`, `readFile`, `listCommits`, `listBranches`, `listTags`:
@@ -425,6 +430,15 @@ export interface CreatedBranch {
  */
 export interface Client {
   readonly createRepo: (options: CreateRepoOptions) => Effect.Effect<CreatedRepo, CodeStorageError>
+  /**
+   * Permanently retires `repo` with only `repo:write` on that repository:
+   * `DELETE /api/repos/<repo>`. Success means accepted, not physical cleanup
+   * completed. `not_found`, `repository_not_found` and `repository_deleted`
+   * remain typed errors; no failure is swallowed and the client never retries.
+   *
+   * @since 0.2.0
+   */
+  readonly deleteRepo: (repo: string) => Effect.Effect<void, CodeStorageError>
   readonly pullUpstream: (repo: string) => Effect.Effect<void, CodeStorageError>
   readonly listFiles: (repo: string, options?: ListFilesOptions) => Effect.Effect<FilesPage, CodeStorageError>
   readonly readFile: (repo: string, options: ReadFileOptions) => Effect.Effect<FileContents, CodeStorageError>
@@ -758,6 +772,13 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
             const { body } = yield* readJson("createRepo", response, CreatedJson)
             return { name: body.repo_name, created: response.status === 201 }
           })
+        ),
+
+      deleteRepo: (repo) =>
+        observe(
+          "deleteRepo",
+          repo,
+          send("deleteRepo", repo, ["repo:write"], HttpClientRequest.delete(url(repo))).pipe(Effect.asVoid)
         ),
 
       pullUpstream: (repo) =>
