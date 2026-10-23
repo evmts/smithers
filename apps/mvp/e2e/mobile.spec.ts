@@ -1,5 +1,7 @@
 import { test as base, expect, type Page, type TestInfo } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
+import { digestSync } from "@smthrs/crypto"
+import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
 import { recordActions, writeManifest } from "./fixtures"
 import { openComposer } from "./composer"
 import { baseURL, requires, scriptedAgent } from "./target"
@@ -113,6 +115,43 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           const composer = await openComposer(page)
           await composer.fill("Review mobile layouts and preserve all available actions on a narrow screen.")
           await audit(page, info)
+        })
+        if (signedIn) test("flow draft and code: controls and text fit", async ({ page }, info) => {
+          const name = `mobile-${crypto.randomUUID()}`
+          const draftId = crypto.randomUUID()
+          const source = renderSource({ name, description: "Mobile layout", instructions: "Answer ready.", flows: [] })
+          expect((await page.request.post(`/api/flow-drafts/${draftId}`, { data: {
+            scope: "person", round: 0, request: "Answer ready.", name, status: "ready", summary: "Mobile layout",
+            files: [{ path: SOURCE_PATH, text: source }], checks: [{ check: "parses", ok: true }], questions: [], failure: null, flowId: null,
+          } })).ok()).toBe(true)
+          await page.goto(`/app/flows/drafts/${draftId}`)
+          await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible()
+          await audit(page, info, "flow-draft")
+          const saved = await page.request.post("/api/flows/save", { data: { draftId, name, description: "Mobile layout", source, digest: digestSync(source) } })
+          expect(saved.ok()).toBe(true)
+          const { flowId } = await saved.json() as { flowId: string }
+          try {
+            await page.goto(`/app/flows/code/${name}`)
+            await expect(page.getByRole("textbox", { name: "Code", exact: true })).toHaveValue(source)
+            await audit(page, info, "flow-code")
+          } finally {
+            expect((await page.request.post(`/api/flows/${flowId}/delete`, { data: {} })).ok()).toBe(true)
+          }
+        })
+        for (const kind of ["issues", "pulls"] as const) test(`${kind} detail: a synced item and its tabs fit`, async ({ page }, info) => {
+          await page.goto(`/smithersai/smithers/${kind}`)
+          const prefix = kind === "issues" ? "issues" : "pull"
+          const item = page.locator(`a[href^="/smithersai/smithers/${prefix}/"]`).filter({ hasNotText: "New issue" }).first()
+          await expect(item, "a real synced item is required; an empty list is not detail-page coverage").toBeVisible({ timeout: 30_000 })
+          const href = await item.getAttribute("href")
+          await item.click()
+          await expect(page.locator("main article").first()).toBeVisible()
+          await audit(page, info, "detail")
+          if (kind === "pulls") for (const tab of ["commits", "checks", "files"]) {
+            await page.goto(`${href}/${tab}`)
+            await expect(page.locator("main article").first()).toBeVisible()
+            await audit(page, info, tab)
+          }
         })
         if (signedIn) test("TODO: draft, stack and detail fit", async ({ page }, info) => {
           test.setTimeout(120_000)
