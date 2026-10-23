@@ -32,7 +32,8 @@ const proxy = async (
         "x-github-request-id": "abc"
       }
     }),
-  upstream: typeof UPSTREAM | { readonly url: string } = UPSTREAM
+  upstream: typeof UPSTREAM | { readonly url: string } = UPSTREAM,
+  branch?: string
 ) => {
   const seen: Array<Seen> = []
   const fetch: typeof globalThis.fetch = async (input, init) => {
@@ -52,7 +53,7 @@ const proxy = async (
   const { response, context } = await Effect.runPromise(
     recorded.provide(
       Effect.all({
-        response: GitProxy.uploadPack(HttpServerRequest.fromWeb(request), upstream),
+        response: GitProxy.uploadPack(HttpServerRequest.fromWeb(request), upstream, branch),
         context: Effect.context<never>()
       }).pipe(Effect.provide(httpClient(fetch)))
     )
@@ -213,3 +214,189 @@ describe("GitProxy.uploadPack", () => {
     expect(recorded.spans.map((span) => span.name)).toContain("GitProxy.uploadPack")
   })
 })
+
+const pkt = (line: string) => (new TextEncoder().encode(line).length + 4).toString(16).padStart(4, "0") + line
+const tip = "a".repeat(40)
+const other = "b".repeat(40)
+const listing = () =>
+  new Response(pkt(`${tip} refs/heads/conversation\n`) + pkt(`${other} refs/heads/private\n`) + "0000", {
+    headers: { "content-type": "application/x-git-upload-pack-result" }
+  })
+
+describe("branch scoped proxy", () => {
+  test("negotiates v0 and advertises only the selected branch, with no upstream capabilities", async () => {
+    const result = await proxy(
+      new Request(`${GUEST}/info/refs?service=git-upload-pack`, {
+        headers: { "git-protocol": "version=2" }
+      }),
+      listing,
+      UPSTREAM,
+      "conversation"
+    )
+    expect(result.response.status).toBe(200)
+    expect(result.body).toContain(`${tip} refs/heads/conversation`)
+    expect(result.body).not.toContain("private")
+    expect(result.body).not.toContain("version 2")
+  })
+
+  test("allows the exact tip, strips have probes, and forwards only validated v0 negotiation", async () => {
+    const input = pkt(`want ${tip} side-band-64k ofs-delta\n`) + "0000" + pkt(`have ${other}\n`) + pkt("done\n")
+    const result = await proxy(
+      new Request(`${GUEST}/git-upload-pack`, { method: "POST", body: input }),
+      (request) => request.headers.get("git-protocol") === "version=2" ? listing() : new Response("PACK"),
+      UPSTREAM,
+      "conversation"
+    )
+    expect(result.response.status).toBe(200)
+    expect(result.body).toBe("PACK")
+    expect(result.seen.at(-1)!.body).toBe(pkt(`want ${tip} side-band-64k ofs-delta\n`) + "0000" + pkt("done\n"))
+  })
+
+  test.each([
+    pkt(`want ${other}\n`) + "0000" + pkt("done\n"),
+    pkt(`want ${tip}\n`) + pkt(`want ${other}\n`) + "0000" + pkt("done\n"),
+    pkt("command=fetch\n") + "0001" + pkt(`want ${other}\n`) + "0000",
+    pkt(`want ${tip}\n`) + pkt("filter blob:none\n") + "0000" + pkt("done\n"),
+    pkt("want-ref refs/heads/private\n") + "0000",
+    pkt(`want ${tip} allow-tip-sha1-in-want\n`) + "0000" + pkt("done\n"),
+    pkt("command=ls-refs\n") + "00010000",
+    pkt(`shallow ${other}\n`) + "0000",
+    "0000junk",
+    "0001",
+    "ffffwant",
+    "00000000",
+    "0000",
+    "z000",
+    "0005\ufffd"
+  ])("refuses unsafe negotiation %s", async (body) => {
+    const result = await proxy(
+      new Request(`${GUEST}/git-upload-pack`, { method: "POST", body }),
+      listing,
+      UPSTREAM,
+      "conversation"
+    )
+    expect(result.response.status).toBe(403)
+    expect(result.seen.every((request) => request.headers.get("git-protocol") === "version=2")).toBe(true)
+  })
+
+  test.each([{ "content-encoding": "gzip" }, { "git-protocol": "version=3" }])(
+    "refuses encoded or v2 bodies",
+    async (headers) => {
+      const result = await proxy(
+        new Request(`${GUEST}/git-upload-pack`, { method: "POST", body: "0000", headers }),
+        listing,
+        UPSTREAM,
+        "conversation"
+      )
+      expect(result.response.status).toBe(403)
+      expect(result.seen).toEqual([])
+    }
+  )
+})
+
+test("scoped discovery fails closed when its branch cannot be read", async () => {
+  const result = await proxy(
+    new Request(`${GUEST}/info/refs?service=git-upload-pack`),
+    () => "throw",
+    UPSTREAM,
+    "conversation"
+  )
+  expect(result.response.status).toBe(502)
+  expect(result.recorded.count(GitProxy.requests, { service: "info-refs", outcome: "transport" })).toBe(1)
+})
+
+test.each(["", "a\nb", "a..b", "a@{b", "a//b", "-b", "/b", "b/", "b.", ".b", "a/.b", "a.lock", "a".repeat(256)])(
+  "invalid scoped branch %s is refused before any provider request",
+  async (branch) => {
+    const result = await proxy(new Request(`${GUEST}/info/refs?service=git-upload-pack`), listing, UPSTREAM, branch)
+    expect(result.response.status).toBe(403)
+    expect(result.seen).toEqual([])
+  }
+)
+
+test("unsupported discovery protocol is refused", async () => {
+  const result = await proxy(
+    new Request(`${GUEST}/info/refs?service=git-upload-pack`, { headers: { "git-protocol": "version=3" } }),
+    listing,
+    UPSTREAM,
+    "conversation"
+  )
+  expect(result.response.status).toBe(403)
+  expect(result.seen).toEqual([])
+})
+
+test.each([new Uint8Array([48, 48, 48, 53, 255]), new Uint8Array(1024 * 1024 + 1)])(
+  "invalid UTF-8 or oversized scoped bodies never reach upload-pack",
+  async (body) => {
+    const result = await proxy(
+      new Request(`${GUEST}/git-upload-pack`, { method: "POST", body }),
+      listing,
+      UPSTREAM,
+      "conversation"
+    )
+    expect(result.response.status).toBe(403)
+    expect(result.seen).toHaveLength(1)
+  }
+)
+
+test("a failed guest body is refused without forwarding partial negotiation", async () => {
+  const result = await proxy(
+    new Request(`${GUEST}/git-upload-pack`, {
+      method: "POST",
+      body: brokenBody("0000"),
+      duplex: "half"
+    } as RequestInit),
+    listing,
+    UPSTREAM,
+    "conversation"
+  )
+  expect(result.response.status).toBe(403)
+  expect(result.seen).toHaveLength(1)
+})
+
+test.each([
+  pkt(`want ${tip}\n`) + pkt(`want ${tip}\n`) + "00000000",
+  pkt(`want ${tip}\n`) + "0000" + pkt(`have ${other}\n`) + "0000"
+])("accepts safe repeated wants or a negotiation round", async (body) => {
+  const result = await proxy(
+    new Request(`${GUEST}/git-upload-pack`, { method: "POST", body, headers: { "content-encoding": "identity" } }),
+    (request) => request.headers.get("git-protocol") === "version=2" ? listing() : new Response("NAK"),
+    UPSTREAM,
+    "conversation"
+  )
+  expect(result.response.status).toBe(200)
+  expect(result.body).toBe("NAK")
+  expect(result.seen.at(-1)!.body).not.toContain(other)
+})
+
+test.each([
+  pkt(`want ${tip}\n`) + pkt(`want ${tip} ofs-delta\n`) + "00000000",
+  pkt(`want ${tip}\n`),
+  pkt(`want ${tip}\n`) + "0000" + pkt("deepen 1\n"),
+  pkt(`want ${tip}\n`) + "0000" + pkt("done\n") + pkt("done\n")
+])("rejects misplaced capabilities, incomplete rounds, and trailing commands", async (body) => {
+  const result = await proxy(
+    new Request(`${GUEST}/git-upload-pack`, { method: "POST", body }),
+    listing,
+    UPSTREAM,
+    "conversation"
+  )
+  expect(result.response.status).toBe(403)
+  expect(result.seen).toHaveLength(1)
+})
+
+test.each(["version=0", "version=1", "version=2"])(
+  "negotiated v0 bodies remain safe with a retained %s header",
+  async (protocol) => {
+    const body = pkt(`want ${tip} ofs-delta\n`) + "0000" + pkt("done\n")
+    const result = await proxy(
+      new Request(`${GUEST}/git-upload-pack`, { method: "POST", body, headers: { "git-protocol": protocol } }),
+      (request) => request.headers.get("git-protocol") === "version=2" ? listing() : new Response("PACK"),
+      UPSTREAM,
+      "conversation"
+    )
+    expect(result.response.status).toBe(200)
+    expect(result.body).toBe("PACK")
+    expect(result.seen.at(-1)!.headers.get("git-protocol")).toBeNull()
+  }
+)

@@ -43,7 +43,9 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import * as Metric from "effect/Metric"
 import * as Redacted from "effect/Redacted"
 import * as Stream from "effect/Stream"
-import type * as GitRemote from "./GitRemote.ts"
+import * as GitRemote from "./GitRemote.ts"
+import { readAtMost } from "./internal/bounded.ts"
+import { negotiation, packet, validBranch } from "./internal/scopedGit.ts"
 
 /**
  * Which part of a fetch a request is: the ref advertisement, or the pack
@@ -98,7 +100,13 @@ const statusClass = (status: number) => `${Math.floor(status / 100)}xx`
 
 /**
  * Answers one request from a guest by sending it to `upstream` with its
- * credential, or refuses it with 403. Upstream failures come back as their
+ * credential, or refuses it with 403. An optional `branch` confines the guest
+ * to that branch: discovery negotiates protocol v0 and synthesizes HEAD and
+ * that ref only; fetch permits only its current tip. Scoped requests are
+ * bounded to 1 MiB, accept uncompressed protocol v0 only, and strip haves to
+ * avoid exposing other objects through ACKs. Shallow, partial, and thin packs
+ * and arbitrary capabilities are refused. A failed scoped ref read is 502.
+ * Unscoped upstream failures come back as their
  * status; no answer at all is 502. Requires the host's `HttpClient`.
  *
  * @category proxy
@@ -106,7 +114,8 @@ const statusClass = (status: number) => `${Math.floor(status / 100)}xx`
  */
 export const uploadPack = (
   request: HttpServerRequest.HttpServerRequest,
-  upstream: GitRemote.Upstream
+  upstream: GitRemote.Upstream,
+  branch?: string
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpClient.HttpClient> =>
   Effect.gen(function*() {
     const startedAt = yield* Clock.currentTimeMillis
@@ -127,6 +136,40 @@ export const uploadPack = (
       yield* done("refused", 403)
       return HttpServerResponse.empty({ status: 403 })
     }
+    let scopedBody: string | undefined
+    if (branch !== undefined) {
+      const encoding = request.headers["content-encoding"]
+      const protocol = request.headers["git-protocol"]
+      if (
+        !validBranch(branch) || (encoding !== undefined && encoding !== "identity") ||
+        (protocol !== undefined && !/^version=[012]$/.test(protocol))
+      ) {
+        yield* done("refused", 403)
+        return HttpServerResponse.empty({ status: 403 })
+      }
+      const tip = yield* GitRemote.ref(upstream, branch).pipe(Effect.option)
+      if (tip._tag === "None") {
+        yield* done("transport", 502)
+        return HttpServerResponse.empty({ status: 502 })
+      }
+      if (service === "info-refs") {
+        yield* done("ok", 200)
+        return HttpServerResponse.text(
+          packet("# service=git-upload-pack\n") + "0000" +
+            packet(`${tip.value} HEAD\0side-band-64k ofs-delta symref=HEAD:refs/heads/${branch}\n`) +
+            packet(`${tip.value} refs/heads/${branch}\n`) + "0000",
+          { headers: { "content-type": "application/x-git-upload-pack-advertisement", "cache-control": "no-store" } }
+        )
+      }
+      const body = yield* readAtMost(request.stream, 1024 * 1024).pipe(Effect.option)
+      scopedBody = body._tag === "Some" && !body.value.truncated
+        ? negotiation(body.value.bytes, tip.value)
+        : undefined
+      if (scopedBody === undefined) {
+        yield* done("refused", 403)
+        return HttpServerResponse.empty({ status: 403 })
+      }
+    }
     const base = upstream.url.replace(/\/+$/, "")
     let outgoing = service === "info-refs"
       ? HttpClientRequest.get(`${base}/info/refs`).pipe(HttpClientRequest.setUrlParam("service", "git-upload-pack"))
@@ -135,7 +178,11 @@ export const uploadPack = (
           HttpBody.stream(request.stream, request.headers["content-type"], undefined)
         )
       )
+    if (scopedBody !== undefined) {
+      outgoing = HttpClientRequest.bodyText(outgoing, scopedBody, "application/x-git-upload-pack-request")
+    }
     for (const name of forwardedRequestHeaders) {
+      if (branch !== undefined) continue
       const value = request.headers[name]
       if (value !== undefined) outgoing = HttpClientRequest.setHeader(outgoing, name, value)
     }

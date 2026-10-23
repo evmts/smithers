@@ -180,3 +180,9 @@ on 2026-10-23: `ReposBranchesCreateRequest.base_is_ephemeral` and
 `target_is_ephemeral`, and the `ephemeral` query parameter on branches, files,
 file and commits. The [namespace guide](https://code.storage/docs/repos/ephemeral-branches.md)
 documents the remote suffix and isolation from GitHub.
+
+For a sandbox that may read only one ephemeral branch, use
+`GitProxy.uploadPack(request, upstream, branch)` with its persisted branch.
+An ephemeral namespace alone is not an access boundary: it can contain other
+conversations' refs. The scoped proxy synthesizes a one-branch v0 advertisement
+and validates every upload-pack want. See [the API contract](api.md#branch-scoped-sandbox-access).

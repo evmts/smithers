@@ -354,7 +354,8 @@ const requests: Metric.Counter<number>
 ```ts
 const uploadPack: (
   request: HttpServerRequest.HttpServerRequest,
-  upstream: GitRemote.Upstream
+  upstream: GitRemote.Upstream,
+  branch?: string
 ) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpClient.HttpClient>
 ```
 
@@ -403,3 +404,20 @@ The [provider OpenAPI](https://code.storage/docs/openapi.json) maps these to
 `ephemeral` on reads, `base_is_ephemeral` and `target_is_ephemeral` on create.
 `gitRemote(repo, "ephemeral")` appends `+ephemeral` before `.git` after encoding
 the repository path; signing still scopes the token to `repo`.
+
+### Branch-scoped sandbox access
+
+Pass `branch` to `GitProxy.uploadPack(request, upstream, branch)` when a
+namespace contains refs with different access policies. Discovery synthesizes
+only HEAD and `refs/heads/<branch>`; even a protocol-v2 discovery request
+receives a valid protocol-v0 advertisement. No upstream ref list or capability
+list reaches the guest. The namespace remains part of the host's `upstream`.
+
+Scoped upload-pack accepts uncompressed protocol-v0 pkt-lines up to 1 MiB.
+Every want must equal the selected branch's current tip. Have lines are
+removed, preventing private-object ACK probes; side-band-64k and ofs-delta are
+the only accepted capabilities. Unknown commands, v2 command bodies, malformed frames,
+trailing bytes, shallow/filter requests and compressed bodies return 403.
+The proxy therefore supports complete clone/fetch, with potentially larger
+packs; shallow and partial clones are unsupported. A failed host ref lookup
+returns 502, and an invalid branch name is refused before any upstream call.
