@@ -1,13 +1,14 @@
 // A person's merge (worker/github/Merge.ts, decision 0012 decision 6) on the Node host's engine over this file's schema
 // of the compose Postgres, against the scripted GitHub: the write is admitted as the writes route admits it, then
 // `pr/Merge` rechecks what the person saw and merges with their own token, or settles why not.
-import { Cause, Effect, Exit, Redacted } from "effect"
+import { Cause, Effect, Exit, Metric, Redacted } from "effect"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { mergeExecutionId } from "../../src/features/pulls/contract.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import * as Merge from "./Merge.ts"
+import * as Metrics from "./Metrics.ts"
 import { TokenUnavailable } from "./Tokens.ts"
 import * as Write from "./Write.ts"
 import { admit, REPOSITORY, reset, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
@@ -98,7 +99,7 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
     const ran = await run(github, writeId)
     expect(ran.exit).toEqual(Exit.succeed({ status: "done", mergeSha: github.pulls.get(seen.number)!.mergeSha }))
     expect(github.seen("PUT", /\/merge$/)).toHaveLength(1)
-    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", attempts: 2 })
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", attempts: 1 })
   })
 
   test("a session that ended is sign_in_required; a write with no session is too", async () => {
@@ -251,4 +252,82 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
       "not_allowed",
     ])
   })
+})
+
+
+test("a failed preflight read cannot claim another person's subsequent merge", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const seen = opened(github)
+  const { writeId } = await merging(github, seen)
+  const { services: built } = await services(runtime, github)
+  github.faults.push({ match: (method, path) => method === "GET" && path.endsWith(`/pulls/${seen.number}`), status: 502 })
+  await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId })))
+  expect(github.seen("PUT", /\/merge$/)).toHaveLength(0)
+  github.merge(seen.number)
+  expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "refused", mergeSha: null })
+  expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "merged" })
+})
+
+test("projection failure after GitHub merged cannot turn success into a failed write", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const seen = opened(github)
+  const { writeId } = await merging(github, seen)
+  const { services: built } = await services(runtime, github)
+  const registry: Metric.MetricRegistry = new Map()
+  // A real database constraint fails only projection; admission and settlement remain usable.
+  await sql(runtime, "ALTER TABLE pulls ADD CONSTRAINT reject_projection CHECK (number < 0)")
+  try {
+    await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId })).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))
+    const failures = await runtime.runPromise(Metric.value(Metric.withAttributes(Metrics.projectionFailures, { op: "pr/merge" })).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))
+    expect(failures.count).toBe(1)
+    expect(github.pulls.get(seen.number)!.merged).toBe(true)
+    await runtime.runPromise(Merge.steps(built).giveUp({ writeId }))
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done" })
+  } finally {
+    await sql(runtime, "ALTER TABLE pulls DROP CONSTRAINT reject_projection")
+  }
+})
+
+test.each(["octocat", "maya"])("a definitive merge refusal cannot recover a later merge by %s", async (login) => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const seen = opened(github)
+  const { writeId } = await merging(github, seen)
+  const { services: built } = await services(runtime, github)
+  github.faults.push({ match: (method, path) => method === "PUT" && path.endsWith("/merge"), status: 429, headers: { "retry-after": "1" } })
+  const sent = await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId })))
+  expect(sent._tag).toBe("Failure")
+  expect(github.seen("PUT", /\/merge$/)).toHaveLength(1)
+  github.merge(seen.number, login)
+  expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "refused", mergeSha: null })
+  expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "merged" })
+})
+
+
+test("a malformed successful merge response retains recovery of the person's actual merge", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const seen = opened(github)
+  const { writeId } = await merging(github, seen)
+  const { services: built } = await services(runtime, github)
+  github.faults.push({ match: (method, path) => method === "PUT" && path.endsWith("/merge"), malformed: true })
+  expect((await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId }))))._tag).toBe("Failure")
+  expect(github.pulls.get(seen.number)!.merged).toBe(true)
+  expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "done", mergeSha: github.pulls.get(seen.number)!.mergeSha })
+  expect(github.seen("PUT", /\/merge$/)).toHaveLength(1)
+})
+
+test("an unknown merge outcome cannot claim a different GitHub person's merge", async () => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const seen = opened(github)
+  const { writeId } = await merging(github, seen)
+  const { services: built } = await services(runtime, github)
+  github.faults.push({ match: (method, path) => method === "PUT" && path.endsWith("/merge"), status: 503 })
+  expect((await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId }))))._tag).toBe("Failure")
+  expect(await sql(runtime, `SELECT merge_unknown FROM github_writes WHERE id = '${writeId}'`)).toEqual([{ merge_unknown: true }])
+  github.merge(seen.number, "octocat")
+  expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "refused", mergeSha: null })
+  expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "merged" })
 })

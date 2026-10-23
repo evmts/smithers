@@ -172,7 +172,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
       repository: REPOSITORY,
       app: options.app === null ? Option.none() : Option.some(options.app ?? app()),
       http: github.http,
-    })),
+    }).pipe(Effect.provideService(Scope.Scope, scope))),
   )
   // Electric, as the routes call it: each table in this file's schema.
   const tables = new Set([

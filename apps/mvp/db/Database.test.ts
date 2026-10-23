@@ -784,3 +784,55 @@ describe("0043_docs_views", () => {
       expect(await insert("iframe")).toBe("refused")
     }))
 })
+
+describe("0048_github_projection_fences", () => {
+  test("upgrades legacy deletions and uncertain merge counters without resurrecting projections", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0042"))
+      const old = "2026-01-01T00:00:00Z"
+      const gone = "2026-01-02T00:00:00Z"
+      const id = "github/acme/widgets#1"
+      const head = "a".repeat(40)
+      const write = crypto.randomUUID()
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state,
+          created_at, updated_at, source_updated_at, fetched_at, deleted_at)
+          VALUES (${id}, 'github/acme/widgets', 1, 'pull', 1, 'Gone', '', 'closed',
+            ${old}::timestamptz, ${old}::timestamptz, ${old}::timestamptz, ${old}::timestamptz, ${gone}::timestamptz)`
+        yield* sql`INSERT INTO comments (id, repo_id, item_id, github_id, body, created_at, updated_at,
+          source_updated_at, fetched_at, deleted_at)
+          VALUES ('comment-1', 'github/acme/widgets', ${id}, 1, '', ${old}::timestamptz, ${old}::timestamptz,
+            ${old}::timestamptz, ${old}::timestamptz, ${gone}::timestamptz)`
+        yield* sql`INSERT INTO pulls (item_id, repo_id, number, head_ref, head_sha, base_ref, base_sha,
+          source_updated_at, fetched_at)
+          VALUES (${id}, 'github/acme/widgets', 1, 'feature', ${head}, 'main', ${head}, ${old}::timestamptz, ${old}::timestamptz)`
+        yield* sql`INSERT INTO pull_commits (item_id, position, repo_id, sha, headline)
+          VALUES (${id}, 1, 'github/acme/widgets', ${head}, 'Old')`
+        yield* sql`INSERT INTO reviews (id, repo_id, item_id, github_id, state, fetched_at)
+          VALUES ('review-1', 'github/acme/widgets', ${id}, 1, 'COMMENTED', ${old}::timestamptz)`
+        yield* sql`INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash, attempts)
+          VALUES (${write}::uuid, 'github/acme/widgets', 'maya', ${crypto.randomUUID()}::uuid, 'person', 'pr/merge',
+            ${JSON.stringify({ op: "pr/merge", number: 1, headSha: head, baseSha: head, method: "squash" })}::jsonb,
+            ${"a".repeat(64)}, 3)`
+      }))
+      await on(through("0048"))
+      const rows = await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        const [row] = yield* sql<{ readonly gone: number; readonly comment: number; readonly pulls: number;
+          readonly commits: number; readonly reviews: number; readonly mergeUnknown: boolean; readonly attempts: number }>`
+          SELECT (extract(epoch FROM gone_at) * 1000)::float8 AS gone,
+            (SELECT (extract(epoch FROM fetched_at) * 1000)::float8 FROM comments WHERE id = 'comment-1') AS comment,
+            (SELECT count(*)::int FROM pulls) AS pulls, (SELECT count(*)::int FROM pull_commits) AS commits,
+            (SELECT count(*)::int FROM reviews) AS reviews,
+            (SELECT merge_unknown FROM github_writes WHERE id = ${write}::uuid) AS "mergeUnknown",
+            (SELECT attempts FROM github_writes WHERE id = ${write}::uuid) AS attempts
+          FROM github_projection_fences WHERE item_id = ${id}`
+        return row
+      }))
+      expect(rows).toEqual({ gone: Date.parse(gone), comment: Date.parse(gone), pulls: 0, commits: 0,
+        reviews: 0, mergeUnknown: false, attempts: 3 })
+    }))
+})

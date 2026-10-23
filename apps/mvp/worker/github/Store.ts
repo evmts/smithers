@@ -35,74 +35,115 @@ export const shownBody = (body: string | null): string => GitHub.Issues.withoutW
 
 /**
  * Upserts issue `issue` of repository `repoId`, read at `fetchedAt` (epoch ms): inserted, or updated only when GitHub's
- * `updated_at` and the read time are newer than the row's and what GitHub said differs, so a repeated read writes
- * nothing and Electric sends nothing. A row seen again is no longer deleted. Its triage state is what its labels say
+ * `updated_at` and the read time are newer than the row's. Identical content advances only the observation fence,
+ * without counting a content change. A row seen again is no longer deleted. Its triage state is what its labels say
  * (`triageOf`); whether a person pinned it is Smithers' own and never changes here. Returns whether the row changed.
  */
 export const upsertIssue = (repoId: string, issue: Issue, fetchedAt: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const triage = triageOf(issue.labels.map((label) => label.name))
-    const commitment = commitmentOf(issue.labels.map((label) => label.name))
-    const rows = yield* sql`
-      INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, state_reason, author_login, comments,
-        created_at, updated_at, closed_at, deleted_at, write_id, triage, commitment, source_updated_at, fetched_at)
-      VALUES (${itemId(repoId, issue.number)}, ${repoId}, ${issue.number},
-        ${issue.pull_request === undefined ? "issue" : "pull"}, ${issue.id}, ${issue.title}, ${shownBody(issue.body)},
-        ${issue.state}, ${issue.state_reason}, ${issue.user?.login ?? null}, ${issue.comments},
-        ${issue.created_at}::timestamptz, ${issue.updated_at}::timestamptz, ${issue.closed_at}::timestamptz, NULL,
-        ${markedWrite(issue.body)}::uuid, ${triage}, ${commitment}, ${issue.updated_at}::timestamptz,
-        ${new Date(fetchedAt).toISOString()}::timestamptz)
-      ON CONFLICT (id) DO UPDATE SET
-        kind = EXCLUDED.kind, github_id = EXCLUDED.github_id, title = EXCLUDED.title, body = EXCLUDED.body,
-        state = EXCLUDED.state, state_reason = EXCLUDED.state_reason, author_login = EXCLUDED.author_login,
-        comments = EXCLUDED.comments, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at,
-        closed_at = EXCLUDED.closed_at, deleted_at = NULL, write_id = COALESCE(EXCLUDED.write_id, items.write_id),
-        commitment = EXCLUDED.commitment, triage = EXCLUDED.triage, source_updated_at = EXCLUDED.source_updated_at, fetched_at = EXCLUDED.fetched_at
-      WHERE (items.source_updated_at, items.fetched_at) < (EXCLUDED.source_updated_at, EXCLUDED.fetched_at)
-        AND (items.kind, items.github_id, items.title, items.body, items.state, items.state_reason, items.author_login,
-          items.comments, items.created_at, items.updated_at, items.closed_at, items.deleted_at,
-          COALESCE(EXCLUDED.write_id, items.write_id), items.triage, items.commitment)
-        IS DISTINCT FROM (EXCLUDED.kind, EXCLUDED.github_id, EXCLUDED.title, EXCLUDED.body, EXCLUDED.state,
-          EXCLUDED.state_reason, EXCLUDED.author_login, EXCLUDED.comments, EXCLUDED.created_at, EXCLUDED.updated_at,
-          EXCLUDED.closed_at, NULL::timestamptz, items.write_id, EXCLUDED.triage, EXCLUDED.commitment)
-      RETURNING id`
-    return rows.length > 0
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      const id = itemId(repoId, issue.number)
+      const at = new Date(fetchedAt).toISOString()
+      yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`
+      const fence = yield* sql`SELECT item_id FROM github_projection_fences WHERE item_id = ${id} AND gone_at >= ${at}::timestamptz`
+      if (fence.length > 0) return false
+      const triage = triageOf(issue.labels.map((label) => label.name))
+      const commitment = commitmentOf(issue.labels.map((label) => label.name))
+      const rows = yield* sql`
+        INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, state_reason, author_login, comments,
+          created_at, updated_at, closed_at, deleted_at, write_id, triage, commitment, source_updated_at, fetched_at)
+        VALUES (${itemId(repoId, issue.number)}, ${repoId}, ${issue.number},
+          ${issue.pull_request === undefined ? "issue" : "pull"}, ${issue.id}, ${issue.title}, ${shownBody(issue.body)},
+          ${issue.state}, ${issue.state_reason}, ${issue.user?.login ?? null}, ${issue.comments},
+          ${issue.created_at}::timestamptz, ${issue.updated_at}::timestamptz, ${issue.closed_at}::timestamptz, NULL,
+          ${markedWrite(issue.body)}::uuid, ${triage}, ${commitment}, ${issue.updated_at}::timestamptz,
+          ${new Date(fetchedAt).toISOString()}::timestamptz)
+        ON CONFLICT (id) DO UPDATE SET
+          kind = EXCLUDED.kind, github_id = EXCLUDED.github_id, title = EXCLUDED.title, body = EXCLUDED.body,
+          state = EXCLUDED.state, state_reason = EXCLUDED.state_reason, author_login = EXCLUDED.author_login,
+          comments = EXCLUDED.comments, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at,
+          closed_at = EXCLUDED.closed_at, deleted_at = NULL, write_id = COALESCE(EXCLUDED.write_id, items.write_id),
+          commitment = EXCLUDED.commitment, triage = EXCLUDED.triage, source_updated_at = EXCLUDED.source_updated_at, fetched_at = EXCLUDED.fetched_at
+        WHERE (items.source_updated_at, items.fetched_at) < (EXCLUDED.source_updated_at, EXCLUDED.fetched_at)
+          AND (items.deleted_at IS NULL OR items.fetched_at < EXCLUDED.fetched_at)
+          AND (items.kind, items.github_id, items.title, items.body, items.state, items.state_reason, items.author_login,
+            items.comments, items.created_at, items.updated_at, items.closed_at, items.deleted_at,
+            COALESCE(EXCLUDED.write_id, items.write_id), items.triage, items.commitment)
+          IS DISTINCT FROM (EXCLUDED.kind, EXCLUDED.github_id, EXCLUDED.title, EXCLUDED.body, EXCLUDED.state,
+            EXCLUDED.state_reason, EXCLUDED.author_login, EXCLUDED.comments, EXCLUDED.created_at, EXCLUDED.updated_at,
+            EXCLUDED.closed_at, NULL::timestamptz, items.write_id, EXCLUDED.triage, EXCLUDED.commitment)
+        RETURNING id`
+      // Even identical content is an observation: keep its ordering fence.
+      if (rows.length === 0) yield* sql`
+        UPDATE items SET source_updated_at = ${issue.updated_at}::timestamptz,
+          fetched_at = ${new Date(fetchedAt).toISOString()}::timestamptz
+        WHERE id = ${itemId(repoId, issue.number)} AND deleted_at IS NULL
+          AND (source_updated_at, fetched_at) < (${issue.updated_at}::timestamptz, ${new Date(fetchedAt).toISOString()}::timestamptz)`
+      return rows.length > 0
+    }))
   })
 
 /** Upserts comment `comment` on issue `number` of `repoId`, under the same guard. Returns whether the row changed. */
 export const upsertComment = (repoId: string, number: number, comment: IssueComment, fetchedAt: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql`
-      INSERT INTO comments (id, repo_id, item_id, github_id, author_login, body, created_at, updated_at, deleted_at,
-        write_id, source_updated_at, fetched_at)
-      VALUES (${commentId(repoId, comment.id)}, ${repoId}, ${itemId(repoId, number)}, ${comment.id},
-        ${comment.user?.login ?? null}, ${shownBody(comment.body)}, ${comment.created_at}::timestamptz,
-        ${comment.updated_at}::timestamptz, NULL, ${markedWrite(comment.body)}::uuid, ${comment.updated_at}::timestamptz,
-        ${new Date(fetchedAt).toISOString()}::timestamptz)
-      ON CONFLICT (id) DO UPDATE SET
-        item_id = EXCLUDED.item_id, author_login = EXCLUDED.author_login, body = EXCLUDED.body,
-        updated_at = EXCLUDED.updated_at, deleted_at = NULL, write_id = COALESCE(EXCLUDED.write_id, comments.write_id),
-        source_updated_at = EXCLUDED.source_updated_at, fetched_at = EXCLUDED.fetched_at
-      WHERE (comments.source_updated_at, comments.fetched_at) < (EXCLUDED.source_updated_at, EXCLUDED.fetched_at)
-        AND (comments.item_id, comments.author_login, comments.body, comments.updated_at, comments.deleted_at,
-          COALESCE(EXCLUDED.write_id, comments.write_id))
-        IS DISTINCT FROM (EXCLUDED.item_id, EXCLUDED.author_login, EXCLUDED.body, EXCLUDED.updated_at,
-          NULL::timestamptz, comments.write_id)
-      RETURNING id`
-    return rows.length > 0
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      const id = itemId(repoId, number)
+      const at = new Date(fetchedAt).toISOString()
+      yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`
+      const fence = yield* sql`SELECT item_id FROM github_projection_fences WHERE item_id = ${id} AND (gone_at >= ${at}::timestamptz OR comments_listed_at > ${at}::timestamptz)`
+      if (fence.length > 0) return false
+      const rows = yield* sql`
+        INSERT INTO comments (id, repo_id, item_id, github_id, author_login, body, created_at, updated_at, deleted_at,
+          write_id, source_updated_at, fetched_at)
+        VALUES (${commentId(repoId, comment.id)}, ${repoId}, ${itemId(repoId, number)}, ${comment.id},
+          ${comment.user?.login ?? null}, ${shownBody(comment.body)}, ${comment.created_at}::timestamptz,
+          ${comment.updated_at}::timestamptz, NULL, ${markedWrite(comment.body)}::uuid, ${comment.updated_at}::timestamptz,
+          ${new Date(fetchedAt).toISOString()}::timestamptz)
+        ON CONFLICT (id) DO UPDATE SET
+          item_id = EXCLUDED.item_id, author_login = EXCLUDED.author_login, body = EXCLUDED.body,
+          updated_at = EXCLUDED.updated_at, deleted_at = NULL, write_id = COALESCE(EXCLUDED.write_id, comments.write_id),
+          source_updated_at = EXCLUDED.source_updated_at, fetched_at = EXCLUDED.fetched_at
+        WHERE (comments.source_updated_at, comments.fetched_at) < (EXCLUDED.source_updated_at, EXCLUDED.fetched_at)
+          AND (comments.deleted_at IS NULL OR comments.fetched_at < EXCLUDED.fetched_at)
+          AND (comments.item_id, comments.author_login, comments.body, comments.updated_at, comments.deleted_at,
+            COALESCE(EXCLUDED.write_id, comments.write_id))
+          IS DISTINCT FROM (EXCLUDED.item_id, EXCLUDED.author_login, EXCLUDED.body, EXCLUDED.updated_at,
+            NULL::timestamptz, comments.write_id)
+        RETURNING id`
+      // Even identical content is an observation: keep its ordering fence.
+      if (rows.length === 0) yield* sql`
+        UPDATE comments SET source_updated_at = ${comment.updated_at}::timestamptz,
+          fetched_at = ${new Date(fetchedAt).toISOString()}::timestamptz
+        WHERE id = ${commentId(repoId, comment.id)} AND deleted_at IS NULL
+          AND (source_updated_at, fetched_at) < (${comment.updated_at}::timestamptz, ${new Date(fetchedAt).toISOString()}::timestamptz)`
+      return rows.length > 0
+    }))
   })
 
-/** Tombstones issue `number` of `repoId` and its comments: GitHub no longer has it here. Returns whether it was live. */
-export const tombstoneIssue = (repoId: string, number: number) =>
+/** Tombstones an issue and comments, and removes its pull projections, only if no newer read supersedes the absence. */
+export const tombstoneIssue = (repoId: string, number: number, fetchedAt: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const id = itemId(repoId, number)
+    const at = new Date(fetchedAt).toISOString()
     return yield* sql.withTransaction(Effect.gen(function* () {
-      const rows = yield* sql`UPDATE items SET deleted_at = now() WHERE id = ${id} AND deleted_at IS NULL RETURNING id`
-      yield* sql`UPDATE comments SET deleted_at = now() WHERE item_id = ${id} AND deleted_at IS NULL`
-      return rows.length > 0
+      yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`
+      yield* sql`INSERT INTO github_projection_fences (item_id, gone_at) VALUES (${id}, ${at}::timestamptz)
+        ON CONFLICT (item_id) DO UPDATE SET gone_at = GREATEST(github_projection_fences.gone_at, EXCLUDED.gone_at)`
+      const [before] = yield* sql<{ readonly live: boolean }>`
+        SELECT deleted_at IS NULL AS live FROM items WHERE id = ${id} AND fetched_at <= ${at}::timestamptz
+          AND NOT EXISTS (SELECT 1 FROM pulls WHERE item_id = ${id} AND fetched_at > ${at}::timestamptz)
+        FOR UPDATE`
+      if (before === undefined) return false
+      yield* sql`UPDATE items SET deleted_at = COALESCE(deleted_at, ${at}::timestamptz), fetched_at = ${at}::timestamptz WHERE id = ${id}`
+      yield* sql`UPDATE comments SET deleted_at = COALESCE(deleted_at, ${at}::timestamptz), fetched_at = ${at}::timestamptz
+        WHERE item_id = ${id} AND fetched_at <= ${at}::timestamptz`
+      yield* sql`DELETE FROM pull_commits WHERE item_id = ${id}`
+      yield* sql`DELETE FROM reviews WHERE item_id = ${id}`
+      yield* sql`DELETE FROM pulls WHERE item_id = ${id}`
+      return before.live
     }))
   })
 
@@ -113,13 +154,24 @@ export const tombstoneIssue = (repoId: string, number: number) =>
 export const tombstoneCommentsExcept = (repoId: string, number: number, kept: ReadonlyArray<number>, fetchedAt: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const rows = yield* sql`
-      UPDATE comments SET deleted_at = now()
-      WHERE item_id = ${itemId(repoId, number)} AND deleted_at IS NULL
-        AND NOT (github_id = ANY(${kept.map(String)}::bigint[]))
-        AND fetched_at <= ${new Date(fetchedAt).toISOString()}::timestamptz
-      RETURNING id`
-    return rows.length
+    const at = new Date(fetchedAt).toISOString()
+    return yield* sql.withTransaction(Effect.gen(function* () {
+      const id = itemId(repoId, number)
+      yield* sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`
+      yield* sql`INSERT INTO github_projection_fences (item_id, comments_listed_at) VALUES (${id}, ${at}::timestamptz)
+        ON CONFLICT (item_id) DO UPDATE SET comments_listed_at = GREATEST(github_projection_fences.comments_listed_at, EXCLUDED.comments_listed_at)`
+      const rows = yield* sql<{ readonly id: string; readonly live: boolean }>`
+        SELECT id, deleted_at IS NULL AS live FROM comments
+        WHERE item_id = ${itemId(repoId, number)}
+          AND NOT (github_id = ANY(${kept.map(String)}::bigint[]))
+          AND fetched_at <= ${at}::timestamptz
+        FOR UPDATE`
+      if (rows.length === 0) return 0
+      // Repeated absence advances the fence too, while preserving the original deletion time.
+      yield* sql`UPDATE comments SET deleted_at = COALESCE(deleted_at, ${at}::timestamptz), fetched_at = ${at}::timestamptz
+        WHERE id = ANY(${rows.map((row) => row.id)}::text[])`
+      return rows.filter((row) => row.live).length
+    }))
   })
 
 /** Records webhook delivery `deliveryId` once. Returns whether this was its first time. */
@@ -209,6 +261,7 @@ export interface Write {
   readonly id: string
   readonly repoId: string
   readonly actorId: string
+  readonly githubActorId: number | null
   /** The person's GitHub login, for the agent's attribution line; null when no person row has it. */
   readonly login: string | null
   readonly sessionId: string | null
@@ -217,6 +270,7 @@ export interface Write {
   readonly payload: WritePayload
   readonly status: WriteStatus
   readonly attempts: number
+  readonly mergeUnknown: boolean
   readonly itemNumber: number | null
   readonly githubId: number | null
   /** Epoch milliseconds. */
@@ -231,6 +285,7 @@ export const writeOf = (id: string) =>
       readonly id: string
       readonly repoId: string
       readonly actorId: string
+      readonly githubActorId: string | null
       readonly login: string | null
       readonly sessionId: string | null
       readonly via: WriteVia
@@ -238,18 +293,20 @@ export const writeOf = (id: string) =>
       readonly payload: unknown
       readonly status: WriteStatus
       readonly attempts: number
+      readonly mergeUnknown: boolean
       readonly itemNumber: number | null
       readonly githubId: string | null
       readonly createdAt: string
     }>`
-      SELECT w.id::text, w.repo_id AS "repoId", w.actor_id AS "actorId", p.github_login AS login,
-        w.session_id::text AS "sessionId", w.via, w.op, w.payload, w.status, w.attempts, w.item_number AS "itemNumber",
+      SELECT w.id::text, w.repo_id AS "repoId", w.actor_id AS "actorId", p.github_id::text AS "githubActorId", p.github_login AS login,
+        w.session_id::text AS "sessionId", w.via, w.op, w.payload, w.status, w.attempts, w.merge_unknown AS "mergeUnknown", w.item_number AS "itemNumber",
         w.github_id::text AS "githubId", (extract(epoch FROM w.created_at) * 1000)::bigint::text AS "createdAt"
       FROM github_writes w LEFT JOIN people p ON p.id::text = w.actor_id
       WHERE w.id = ${id}::uuid`
     return Option.map(Option.fromNullishOr(row), (found): Write => ({
       ...found,
       payload: decodePayload(found.payload),
+      githubActorId: found.githubActorId === null ? null : Number(found.githubActorId),
       githubId: found.githubId === null ? null : Number(found.githubId),
       createdAt: Number(found.createdAt),
     }))
@@ -260,10 +317,17 @@ export const beginAttempt = (id: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly before: number }>`
-      UPDATE github_writes SET attempts = attempts + 1 WHERE id = ${id}::uuid RETURNING attempts - 1 AS before`
+      UPDATE github_writes SET attempts = attempts + 1, merge_unknown = (op = 'pr/merge')
+      WHERE id = ${id}::uuid RETURNING attempts - 1 AS before`
     // The route recorded the write before its flow started, so the row is there.
     return row!.before
   })
+
+/** GitHub definitively rejected the merge PUT; a later merged pull cannot recover this request. */
+export const clearMergeUnknown = (id: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`UPDATE github_writes SET merge_unknown = false WHERE id = ${id}::uuid AND status = 'pending'`
+})
 
 /**
  * How a write ended: done, with the issue it wrote and what GitHub gave it (none for a write that made nothing on
@@ -277,17 +341,17 @@ export type Settlement =
  * Settles write `id` while it is still pending, and, for a write GitHub took, upserts what GitHub answered in the same
  * transaction (`project`). Returns whether this settled it.
  */
-export const settleWrite = <E, R>(id: string, settlement: Settlement, project: Effect.Effect<unknown, E, R> = Effect.void) =>
+export const settleWrite = <E = never, R = never>(id: string, settlement: Settlement, project: Effect.Effect<unknown, E, R> = Effect.void) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
       const rows = settlement.status === "done"
         ? yield* sql`
-          UPDATE github_writes SET status = 'done', item_number = ${settlement.itemNumber},
+          UPDATE github_writes SET status = 'done', merge_unknown = false, item_number = ${settlement.itemNumber},
             github_id = ${settlement.githubId}, settled_at = now()
           WHERE id = ${id}::uuid AND status = 'pending' RETURNING id`
         : yield* sql`
-          UPDATE github_writes SET status = ${settlement.status}, failure = ${settlement.failure}, settled_at = now()
+          UPDATE github_writes SET status = ${settlement.status}, merge_unknown = false, failure = ${settlement.failure}, settled_at = now()
           WHERE id = ${id}::uuid AND status = 'pending' RETURNING id`
       const settled = rows.length > 0
       yield* settled && settlement.status === "done" ? project : Effect.void

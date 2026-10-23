@@ -418,7 +418,7 @@ describe("the shapes", () => {
     const h = await githubHarness(runtime)
     await shape(h, ITEMS_SHAPE_ROUTE)
     await shape(h, ITEMS_SHAPE_ROUTE)
-    expect(h.starts.map((start) => start.flow)).toEqual(["github/Reconcile", "github/Reconcile"])
+    await expect.poll(() => h.starts.map((start) => start.flow), { timeout: 10_000 }).toEqual(["github/Reconcile", "github/Reconcile"])
     expect(new Set(h.starts.map((start) => start.executionId)).size).toBe(1)
     expect(h.starts[0]!.executionId).toBe(reconcileExecutionId(REPOSITORY.id, Date.now()))
     // Every read in the bucket asks with the bucket's start, so their starts are one intent.
@@ -440,7 +440,7 @@ describe("the shapes", () => {
       starter: FlowStarter.of({ start: () => Effect.fail(new StartUnavailable({ errorCode: "down" })) }),
     })
     expect((await shape(refusing, ITEMS_SHAPE_ROUTE)).status).toBe(200)
-    expect(refusing.line("github.reconcile.start")[0]!.annotations).toMatchObject({ outcome: "not_started" })
+    await expect.poll(() => refusing.line("github.reconcile.start")[0]?.annotations, { timeout: 10_000 }).toMatchObject({ outcome: "not_started" })
   })
 
   test("github-writes: only the signed-in person's own writes, their status only; signed out, none; sessions down, 503", async () => {
@@ -482,7 +482,7 @@ describe("the shapes", () => {
       expect(response.status).toBe(401)
       expect(await response.json()).toEqual({ code: "authentication" })
     }
-    expect(visitor.starts.map((start) => start.flow)).toEqual(["github/Reconcile"])
+    await expect.poll(() => visitor.starts.map((start) => start.flow), { timeout: 10_000 }).toEqual(["github/Reconcile"])
     // Private: refused to a visitor and to a person with no role on it; served to a Member, whom GitHub lets see it.
     await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, true)`)
     expect((await shape(visitor, ITEMS_SHAPE_ROUTE)).status).toBe(401)
@@ -511,4 +511,65 @@ describe("the shapes", () => {
     const h = await githubHarness(runtime)
     expect((await h.fetch("/api/shapes/elsewhere")).status).toBe(404)
   })
+})
+
+
+test("untrusted webhook event names have bounded metric attributes", async () => {
+  const h = await githubHarness(runtime)
+  const event = "untrusted-" + crypto.randomUUID()
+  expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery(event, {}, { signature: "sha256=bad" }))).status).toBe(401)
+  expect(h.count(Metrics.webhooks, { event, outcome: "refused" })).toBe(0)
+  expect(h.count(Metrics.webhooks, { event: "unknown", outcome: "refused" })).toBe(1)
+})
+
+test("Apply starts only after its delivery's received time is durable", async () => {
+  const seen: unknown[] = []
+  const h = await githubHarness(runtime, {
+    starter: FlowStarter.of({ start: () => Effect.promise(async () => {
+      seen.push(await sql(runtime, "SELECT delivery_id FROM github_deliveries"))
+    }) }),
+  })
+  const id = crypto.randomUUID()
+  expect((await h.fetch(GITHUB_WEBHOOK_ROUTE, await delivery("issues", issuesEvent(7), { id }))).status).toBe(200)
+  expect(seen).toEqual([[{ delivery_id: id }]])
+})
+
+test("item reads finish while reconciliation launch remains unresolved", async () => {
+  let launchPending = false
+  const h = await githubHarness(runtime, {
+    starter: FlowStarter.of({ start: () => Effect.sync(() => { launchPending = true }).pipe(Effect.andThen(Effect.never)) }),
+  })
+  const controller = new AbortController()
+  try {
+    const response = await h.fetch(`${ITEMS_SHAPE_ROUTE}?offset=-1`, {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+    })
+    expect(response.status).toBe(200)
+    await expect.poll(() => launchPending, { timeout: 10_000 }).toBe(true)
+  } finally {
+    controller.abort()
+  }
+})
+
+test("cached public visibility cannot authorize rows after GitHub becomes private", async () => {
+  await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  github.private = true
+  const h = await githubHarness(runtime, { actor: null, github, app: app({ privateKey: await import("./test/scriptedGitHub.ts").then((m) => m.appKey()) }) })
+  for (const route of [ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]) {
+    expect((await h.fetch(`${route}?offset=-1`)).status).toBe(401)
+  }
+  expect(h.count(Metrics.visibilityReads, { outcome: "private" })).toBe(3)
+  expect(h.line("github.visibility")).toHaveLength(3)
+})
+
+
+test("a cached public grant fails closed when current GitHub metadata is unavailable", async () => {
+  await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  github.faults.push({ match: (method, path) => method === "GET" && path === "/repos/acme/widgets", status: 502 })
+  const h = await githubHarness(runtime, { actor: null, github })
+  expect((await h.fetch(`${COMMENTS_SHAPE_ROUTE}?offset=-1`)).status).toBe(503)
+  expect(h.count(Metrics.visibilityReads, { outcome: "unavailable" })).toBe(1)
+  expect(h.line("github.visibility")[0]!.annotations).toMatchObject({ outcome: "unavailable" })
 })

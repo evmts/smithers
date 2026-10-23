@@ -1,12 +1,12 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
-import { Clock, Effect, Layer, Metric, Option, Schema } from "effect"
+import { Cause, Clock, Effect, Layer, Metric, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import type { WriteFailure } from "../../src/features/issues/contract.ts"
 import { codeOf } from "../ErrorCode.ts"
 import type { Services } from "./Apply.ts"
-import { classify, withToken } from "./Calls.ts"
+import { classify, statusOf, withToken } from "./Calls.ts"
 import { repositoryOf } from "./Config.ts"
 import * as Metrics from "./Metrics.ts"
 import { fetchPull, projectPull } from "./Pulls.ts"
@@ -18,7 +18,8 @@ import * as Store from "./Store.ts"
 // head (`head_moved`), a moved base (`base_moved`), a draft, or one already merged or closed; then merges it with the
 // person's own GitHub token, so GitHub shows them and applies their permissions and the branch protection, fenced by the
 // head SHA (GitHub answers 409 when it moved since). Squash by default. A lost answer is read back: a pull request
-// merged at that head is this merge. Nothing here bypasses a required check: GitHub's refusal is `not_mergeable`.
+// merged at that head by the requesting GitHub identity recovers an uncertain PUT. Nothing here bypasses a required
+// check: GitHub's refusal is `not_mergeable`.
 
 /** GitHub or Postgres couldn't answer, or the answer was lost: retried, after `retryAfterMillis`. */
 export class MergeUnavailable extends Schema.TaggedError<MergeUnavailable>()("@smthrs/mvp/github/MergeUnavailable", {
@@ -88,7 +89,16 @@ export const refusalOf = (status: number): WriteFailure =>
 export const steps = <E, R>(services: Services<E, R>) => {
   const settled = (write: Store.Write, settlement: Store.Settlement, mergeSha: string | null, project?: Effect.Effect<unknown>) =>
     Effect.gen(function* () {
-      const now = yield* Store.settleWrite(write.id, settlement, project)
+      const now = yield* Store.settleWrite(write.id, settlement)
+      // GitHub's successful write is durable before projection, which may fail independently.
+      if (now && settlement.status === "done" && project !== undefined) yield* project.pipe(
+        Effect.catchCause((cause) => Effect.gen(function* () {
+          yield* Metric.update(Metric.withAttributes(Metrics.projectionFailures, { op: write.op }), 1)
+          yield* Effect.logWarning("github.merge.projection").pipe(
+            Effect.annotateLogs({ writeId: write.id, outcome: "unavailable", errorCode: codeOf(Cause.squash(cause)) }),
+          )
+        })),
+      )
       const outcome = settlement.status === "done" ? "done" : settlement.failure
       if (now) {
         yield* Metric.update(Metric.withAttributes(merges, { outcome }), 1)
@@ -123,11 +133,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
         return yield* settled(write, { status: "refused", failure: "sign_in_required" }, null)
       }
       const outcome = yield* Effect.gen(function* () {
-        const earlier = (yield* Store.beginAttempt(write.id)) > 0
+        const earlier = write.mergeUnknown
         const pull = yield* GitHub.Pulls.getPull(repository.owner, repository.name, payload.number)
-        // An earlier attempt whose answer was lost merged it at this head: that was this merge.
+        // Recover only an uncertain PUT at this head attributed to the requesting GitHub identity.
         if (pull.merged) {
-          return earlier && pull.head.sha === payload.headSha && pull.merge_commit_sha !== null
+          return earlier && write.githubActorId !== null && pull.merged_by?.id === write.githubActorId &&
+              pull.head.sha === payload.headSha && pull.merge_commit_sha !== null
             ? { kind: "merged" as const, sha: pull.merge_commit_sha }
             : { kind: "refused" as const, failure: "merged" as const }
         }
@@ -135,6 +146,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         if (pull.draft) return { kind: "refused" as const, failure: "draft" as const }
         if (pull.head.sha !== payload.headSha) return { kind: "refused" as const, failure: "head_moved" as const }
         if (pull.base.sha !== payload.baseSha) return { kind: "refused" as const, failure: "base_moved" as const }
+        yield* Store.beginAttempt(write.id)
         const merged = yield* GitHub.Pulls.mergePull(repository.owner, repository.name, payload.number, {
           sha: payload.headSha,
           method: payload.method,
@@ -142,6 +154,11 @@ export const steps = <E, R>(services: Services<E, R>) => {
         }).pipe(Effect.result)
         if (merged._tag === "Success") return { kind: "merged" as const, sha: merged.success.sha }
         const classified = classify(merged.failure)
+        // A decode failure after HTTP success is still uncertain. Only a definite rejection clears recovery.
+        const status = statusOf(merged.failure)
+        if (classified.kind === "refused" || (classified.kind === "retry" && (status === 403 || status === 429))) {
+          yield* Store.clearMergeUnknown(write.id)
+        }
         if (classified.kind === "refused") return { kind: "refused" as const, failure: refusalOf(classified.status) }
         return yield* Effect.fail(merged.failure)
       }).pipe(withToken(token.success, services.apiBaseUrl), Effect.result)
@@ -165,7 +182,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       if (outcome.success.kind === "refused") {
         return yield* settled(write, { status: "refused", failure: outcome.success.failure }, null)
       }
-      // Merged: read the pull request back with the App's token and settle with its row in one transaction.
+      // Merged: read back with the App token. Settlement survives an unavailable projection.
       const read = yield* services.tokens.forInstallation(repository, "pulls").pipe(Effect.option)
       const fetched = Option.isSome(read)
         ? yield* fetchPull(repository, payload.number).pipe(withToken(read.value, services.apiBaseUrl), Effect.option)
@@ -196,6 +213,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
     Effect.gen(function* () {
       const found = yield* Store.writeOf(writeId)
       if (Option.isNone(found)) return { status: "missing", mergeSha: null } satisfies Merged
+      if (found.value.status !== "pending") return { status: found.value.status, mergeSha: null } satisfies Merged
       return yield* settled(found.value, { status: "failed", failure: "unavailable" }, null)
     }).pipe(
       Effect.provide(services.database),

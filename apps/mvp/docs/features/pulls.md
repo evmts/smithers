@@ -143,3 +143,11 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 
 - The pages' end-to-end run with its chaptered recording, against a live instance with the GitHub App ([pull requests](../work/pull-request-list-and-tabs.md)).
 - Opening a pull request by hand from a branch, Update branch and the branches page: cut by decision 0016's simplified factory.
+
+### Projection and merge recovery
+
+Pull snapshots serialize per item and project atomically. Commit replacement uses the same transaction lock, including when called directly. An older pull snapshot cannot replace newer commits; unchanged pull and review reads still advance their freshness fences.
+
+Merge attempts are recorded immediately before the merge PUT, after preflight succeeds. A failed preflight cannot claim someone else's subsequent merge. Confirmed GitHub success settles the write before projection; projection failure is logged as `github.merge.projection` and counted by `github_projection_failures`, and the projection waits for the next read or webhook. It cannot turn that successful write into a failed one.
+
+Recovery uses the server-only `github_writes.merge_unknown` flag and the person's stable GitHub identity, not an attempt count alone. Definite GitHub rejections clear recovery eligibility; unknown write outcomes retain it. Legacy attempt counts migrate without inventing an unknown merge receipt.

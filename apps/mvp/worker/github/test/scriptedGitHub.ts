@@ -103,6 +103,8 @@ export interface Fault {
   readonly status?: number
   readonly headers?: Readonly<Record<string, string>>
   readonly lost?: boolean
+  /** Applies the request, then returns a successful response with an invalid schema. */
+  readonly malformed?: boolean
 }
 
 /** One request GitHub saw: its method, path, and which kind of token made it. */
@@ -209,7 +211,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
 
   const apiPath = `/repos/${owner}/${name}`.toLowerCase()
 
-  const user = (login: string | null) => (login === null ? null : { id: login.length, login })
+  const user = (login: string | null) => (login === null ? null : { id: login.length * 1000, login })
 
   const issueJson = (issue: ScriptedIssue) => ({
     labels: issue.labels.map((label) => ({ id: label.length, name: label, color: "ededed" })),
@@ -310,6 +312,9 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       return graphql(body, login)
     }
     if (!path.startsWith(apiPath)) return { response: json({ message: "Not Found" }, 404) }
+    if (path === apiPath && method === "GET" && token === "none") {
+      return { response: github.private ? json({ message: "Not Found" }, 404) : json({ id: REPOSITORY_ID, private: false, default_branch: "main" }) }
+    }
     if (token === "none" || login === undefined) return { response: json({ message: "Bad credentials" }, 401) }
     const rest = path.slice(apiPath.length)
     const live = [...github.issues.values()].filter((issue) => !issue.gone)
@@ -854,7 +859,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       const body: unknown = raw === undefined || raw === "" ? undefined : JSON.parse(raw)
       const fault = github.faults.findIndex((candidate) => candidate.match(method, url.pathname))
       const armed = fault === -1 ? undefined : github.faults.splice(fault, 1)[0]
-      if (armed !== undefined && armed.lost !== true) {
+      if (armed !== undefined && armed.lost !== true && armed.malformed !== true) {
         return Effect.succeed(
           HttpClientResponse.fromWeb(request, json({ message: "scripted fault" }, armed.status ?? 502, { ...armed.headers })),
         )
@@ -883,6 +888,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       }
       const answered = answer(method, url, who.token, who.login, body)
       answered.apply?.()
+      if (armed?.malformed === true) return Effect.succeed(HttpClientResponse.fromWeb(request, json({})))
       if (armed?.lost === true) {
         return Effect.fail(
           new HttpClientError.HttpClientError({

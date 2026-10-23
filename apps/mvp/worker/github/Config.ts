@@ -48,6 +48,9 @@ export const repository = Config.schema(repositoryName, "GITHUB_REPOSITORY").pip
   Config.map(repositoryOf),
 )
 
+/** The same API origin for metadata reads, including when the App is no longer configured. */
+export const apiUrl = Config.schema(httpUrl, "GITHUB_API_URL").pipe(Config.withDefault(DEFAULT_API_URL))
+
 /**
  * Reads `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_REPOSITORY` and `GITHUB_API_URL`.
  * `None` without the ID or the key: the git loop is off. The key's text is never read into a log line.
@@ -57,7 +60,7 @@ export const configured = Effect.gen(function* () {
   const privateKey = yield* Config.option(Config.Redacted("GITHUB_APP_PRIVATE_KEY"))
   const webhookSecret = yield* Config.option(Config.Redacted("GITHUB_WEBHOOK_SECRET"))
   const synced = yield* repository
-  const apiBaseUrl = yield* Config.schema(httpUrl, "GITHUB_API_URL").pipe(Config.withDefault(DEFAULT_API_URL))
+  const apiBaseUrl = yield* apiUrl
   if (Option.isNone(appId) || Option.isNone(privateKey) || Redacted.value(privateKey.value).trim() === "") {
     return Option.none<GitHubApp>()
   }

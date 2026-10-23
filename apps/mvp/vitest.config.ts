@@ -122,6 +122,7 @@ export default defineConfig({
         // (docs/features/issues.md). The scripted GitHub and the fixtures are test support.
         "worker/github/*.ts",
         "db/migrations/0016_github_issues.ts",
+        "db/migrations/0048_github_projection_fences.ts",
         // Issue triage: its settings, decisions and pins (docs/features/issues.md#triage).
         "db/migrations/0018_triage.ts",
         // Repository secrets: the write routes, the flows, the shape and the sandbox egress (docs/features/secrets.md).

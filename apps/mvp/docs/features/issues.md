@@ -280,3 +280,13 @@ Validation so far: the lifecycle policy has 100% statements/branches/functions/l
 ## Deferred at burn-down
 
 Sandbox reproduction verification, automatic POC generation, playable previews, token budgets, expiry, the repository switch and POC-to-TODO context are todo. Their draft files remain in the shared checkout but are outside this landing. `issue/Prototype` is not registered by the execution host; no preview or repository-switch UI is exposed. Needs-repro checks snippet presence only.
+
+### Observation ordering and anonymous reads
+
+Anonymous projection reads verify current GitHub repository metadata, using the shared read-token policy; cached public visibility alone grants no access. Failed checks return 503, and a newly private or unavailable repository grants no anonymous read. `github.visibility` logs and traces each check; `github_visibility_reads` counts its bounded outcome. Webhook event metric attributes use a finite allowlist, with all other names grouped as `unknown`.
+
+Delivery receipt is stored before Apply starts, including on a launch retry. Item reads request reconciliation in the Worker's scope without awaiting remote admission; execution remains on the durable flow engine. The next stale read can request the same idempotent bucket if admission failed.
+
+Identical issue and comment reads advance freshness fences without counting a content change. Absence carries the read's start time, cannot overwrite a newer observation, and fences older in-flight reads. A gone pull also removes its pull, commits and reviews in the same transaction.
+
+Migration `0048_github_projection_fences` keeps absence and complete-list fences even when no local row exists yet. It backfills existing deletion fences and removes pull projections left behind by legacy tombstones. The table is server-only and is not an Electric shape.

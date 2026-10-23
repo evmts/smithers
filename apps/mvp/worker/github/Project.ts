@@ -23,7 +23,7 @@ export type Fetched =
     readonly complete: boolean
     readonly fetchedAt: number
   }
-  | { readonly kind: "gone" }
+  | { readonly kind: "gone"; readonly fetchedAt: number }
 
 /** What a projection did: the issue's row and how many rows changed, or that GitHub no longer has it. */
 export type Projected =
@@ -37,7 +37,7 @@ export const fetchIssue = (repository: Repository, number: number) =>
     const issue = yield* GitHub.Issues.getIssue(repository.owner, repository.name, number).pipe(Effect.result)
     if (issue._tag === "Failure") {
       const status = statusOf(issue.failure)
-      if (status === 404 || status === 410) return { kind: "gone" } satisfies Fetched
+      if (status === 404 || status === 410) return { kind: "gone", fetchedAt } satisfies Fetched
       return yield* Effect.fail(issue.failure)
     }
     const comments = yield* GitHub.Issues.listComments(repository.owner, repository.name, number, {
@@ -56,7 +56,7 @@ export const fetchIssue = (repository: Repository, number: number) =>
 export const project = (repository: Repository, number: number, fetched: Fetched) =>
   Effect.gen(function* () {
     if (fetched.kind === "gone") {
-      const tombstoned = yield* Store.tombstoneIssue(repository.id, number)
+      const tombstoned = yield* Store.tombstoneIssue(repository.id, number, fetched.fetchedAt)
       return { outcome: "tombstoned", changed: tombstoned ? 1 : 0 } satisfies Projected
     }
     let changed = (yield* Store.upsertIssue(repository.id, fetched.issue, fetched.fetchedAt)) ? 1 : 0

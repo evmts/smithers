@@ -103,3 +103,15 @@ export const triageTokens = Metric.counter("triage_tokens", {
   description: "Model tokens triage decisions spent",
   incremental: true,
 })
+
+/** Live anonymous visibility checks, by a bounded outcome. */
+export const visibilityReads = Metric.counter("github_visibility_reads", {
+  description: "Current anonymous repository visibility checks, by outcome",
+  incremental: true,
+})
+
+/** Projection failures after a confirmed successful GitHub write, by operation. */
+export const projectionFailures = Metric.counter("github_projection_failures", {
+  description: "Projection failures after a confirmed GitHub write, by operation",
+  incremental: true,
+})

@@ -5,7 +5,7 @@ import { testFile } from "../test/harness.ts"
 import { Effect } from "effect"
 import { project } from "./Project.ts"
 import * as Store from "./Store.ts"
-import { admit, comments, REPOSITORY, reset, writeRow } from "./test/fixtures.ts"
+import { admit, comments, REPOSITORY, reset, items, writeRow } from "./test/fixtures.ts"
 
 const runtime = testFile("github_project")
 
@@ -72,4 +72,56 @@ describe("settleWrite", () => {
     expect(projected).toBe(1)
     expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", itemNumber: 4 })
   })
+})
+
+
+describe("observation ordering regressions", () => {
+  const base = Date.now() - 10_000
+  test("an unchanged comment read fences an older listing tombstone", async () => {
+    await runtime.runPromise(Store.upsertComment(REPOSITORY.id, 1, comment(1), base))
+    await runtime.runPromise(Store.upsertComment(REPOSITORY.id, 1, comment(1), base + 2000))
+    await runtime.runPromise(Store.tombstoneCommentsExcept(REPOSITORY.id, 1, [], base + 1000))
+    expect((await comments(runtime))[0]!.deleted).toBe(false)
+  })
+  test("an older comment read cannot resurrect a listing tombstone", async () => {
+    await runtime.runPromise(Store.upsertComment(REPOSITORY.id, 1, comment(1), base))
+    await runtime.runPromise(Store.tombstoneCommentsExcept(REPOSITORY.id, 1, [], base + 2000))
+    await runtime.runPromise(Store.upsertComment(REPOSITORY.id, 1, comment(1), base + 1000))
+    expect((await comments(runtime))[0]!.deleted).toBe(true)
+  })
+  test("an older gone issue observation cannot tombstone a newer read", async () => {
+    await runtime.runPromise(Store.upsertIssue(REPOSITORY.id, issue, base + 2000))
+    await runtime.runPromise(project(REPOSITORY, 1, { kind: "gone", fetchedAt: base + 1000 }))
+    expect((await items(runtime))[0]!.deleted).toBe(false)
+  })
+  test("an older found issue observation cannot undo a newer tombstone", async () => {
+    await runtime.runPromise(Store.upsertIssue(REPOSITORY.id, issue, base))
+    await runtime.runPromise(project(REPOSITORY, 1, { kind: "gone", fetchedAt: base + 2000 }))
+    await runtime.runPromise(Store.upsertIssue(REPOSITORY.id, { ...issue, updated_at: new Date(Date.now() + 1000).toISOString() }, base + 1000))
+    expect((await items(runtime))[0]!.deleted).toBe(true)
+  })
+})
+
+
+test("repeated comment absence advances the tombstone fence without counting another deletion", async () => {
+  const base = Date.now() - 10_000
+  await runtime.runPromise(Store.upsertComment(REPOSITORY.id, 1, comment(1), base))
+  expect(await runtime.runPromise(Store.tombstoneCommentsExcept(REPOSITORY.id, 1, [], base + 1000))).toBe(1)
+  expect(await runtime.runPromise(Store.tombstoneCommentsExcept(REPOSITORY.id, 1, [], base + 3000))).toBe(0)
+  await runtime.runPromise(Store.upsertComment(REPOSITORY.id, 1, comment(1), base + 2000))
+  expect((await comments(runtime))[0]!.deleted).toBe(true)
+})
+
+test("a gone first observation fences an older initial issue read", async () => {
+  const base = Date.now() - 10_000
+  await runtime.runPromise(project(REPOSITORY, 1, { kind: "gone", fetchedAt: base + 2000 }))
+  await runtime.runPromise(Store.upsertIssue(REPOSITORY.id, issue, base + 1000))
+  expect(await items(runtime)).toEqual([])
+})
+
+test("a complete listing fences an unseen comment from an older listing", async () => {
+  const base = Date.now() - 10_000
+  await runtime.runPromise(project(REPOSITORY, 1, { kind: "found", issue, comments: [], complete: true, fetchedAt: base + 2000 }))
+  await runtime.runPromise(project(REPOSITORY, 1, { kind: "found", issue, comments: [comment(1)], complete: true, fetchedAt: base + 1000 }))
+  expect(await comments(runtime)).toEqual([])
 })

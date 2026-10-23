@@ -1,9 +1,9 @@
 import { COMMITMENTS } from "../../src/features/issues/lifecycle.ts"
 import { digestSync } from "@smthrs/crypto"
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Core } from "@smthrs/integrations"
-import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
-import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Core, GitHub } from "@smthrs/integrations"
+import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Schema, Scope } from "effect"
+import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
@@ -69,10 +69,12 @@ import * as Notifications from "../Notifications.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import { Apply, PULL_EVENTS } from "./Apply.ts"
 import * as Compare from "./Compare.ts"
-import type { GitHubApp, Repository } from "./Config.ts"
+import { statusOf } from "./Calls.ts"
+import { apiUrl, type GitHubApp, type Repository } from "./Config.ts"
 import { Merge } from "./Merge.ts"
 import * as Metrics from "./Metrics.ts"
 import { Reconcile } from "./Reconcile.ts"
+import * as ReadToken from "./ReadToken.ts"
 import * as Store from "./Store.ts"
 import { TriageRun } from "./Triage.ts"
 import * as TriageStore from "./TriageStore.ts"
@@ -288,6 +290,31 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
   Effect.gen(function* () {
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const { repository } = options
+    const scope = yield* Scope.Scope
+    // Check current metadata for anonymous readers, using the shared metadata token policy.
+    const readToken = yield* ReadToken.fromConfig.pipe(
+      options.http === undefined ? Effect.provide(FetchHttpClient.layer) : Effect.provideService(HttpClient.HttpClient, options.http),
+      Effect.orDie,
+    )
+    const metadataApiUrl = Option.isSome(options.app) ? options.app.value.apiBaseUrl : (yield* apiUrl)
+    const metadataClient = Effect.flatMap(readToken, (token) => GitHub.GitHubClient.make({
+      apiBaseUrl: metadataApiUrl,
+      token: Option.isSome(token) ? Redacted.value(token.value) : undefined,
+    }, {})).pipe(
+      options.http === undefined ? Effect.provide(FetchHttpClient.layer) : Effect.provideService(HttpClient.HttpClient, options.http),
+      Effect.orDie,
+    )
+    const visibility = Effect.gen(function* () {
+      const client = yield* metadataClient
+      const result = yield* client.request("GET", `/repos/${GitHub.Repository.repositoryPath(repository.owner, repository.name)}`,
+        undefined, { schema: Schema.Struct({ private: Schema.Boolean }) }).pipe(Effect.result)
+      const visible = result._tag === "Success" ? Option.some(!result.success.private)
+        : statusOf(result.failure) === 404 || statusOf(result.failure) === 410 ? Option.some(false) : Option.none<boolean>()
+      const outcome = Option.isNone(visible) ? "unavailable" : visible.value ? "public" : "private"
+      yield* Metric.update(Metric.withAttributes(Metrics.visibilityReads, { outcome }), 1)
+      yield* Effect.logInfo("github.visibility").pipe(Effect.annotateLogs({ repoId: repository.id, outcome }))
+      return visible
+    }).pipe(Effect.withSpan("github.visibility"))
     // A pull request's files (worker/github/Compare.ts), read with the App's token: none without the App.
     const compare = Option.isSome(options.app)
       ? Option.some(yield* Compare.make(options.app.value, Option.fromUndefinedOr(options.http)))
@@ -326,11 +353,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const webhook = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       const event = request.headers["x-github-event"] ?? "unknown"
-      const fields: Record<string, string | number> = { event }
+      const metricEvent = new Set(["issues", "issue_comment", "pull_request", "pull_request_review", "pull_request_review_comment",
+        "push", "release", "ping", "installation", "installation_repositories", "repository"]).has(event) ? event : "unknown"
+      const fields: Record<string, string | number> = { event: metricEvent }
       const answer = (status: number, outcome: string, code?: "not_configured" | "invalid_signature" | WriteRefusal) =>
         Effect.gen(function* () {
           fields.outcome = outcome
-          yield* Metric.update(Metric.withAttributes(Metrics.webhooks, { event, outcome }), 1)
+          yield* Metric.update(Metric.withAttributes(Metrics.webhooks, { event: metricEvent, outcome }), 1)
           return code === undefined
             ? HttpServerResponse.empty({ status, headers: noStore })
             : refuse(status, code)
@@ -364,6 +393,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           const [owner = "", name = ""] = found.repository.full_name.split("/")
           return repoId(owner, name) === repository.id
         })
+        const first = yield* Store.recordDelivery({
+          deliveryId,
+          event,
+          action: typeof action === "string" ? action.slice(0, 64) : null,
+          repoId: Option.isSome(named) ? repository.id : null,
+          subject: Option.isSome(named) ? named.value.issue.number : null,
+        }).pipe(Effect.provide(database))
         // Only issue and pull request events of the synced repository name a subject; the rest (ping, installation,
         // other repositories) are recorded and answered.
         if (Option.isSome(named)) {
@@ -389,13 +425,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         if (Option.isSome(repoEvent)) {
           fields.notified = yield* Notifications.recordRepoEvent(repoEvent.value).pipe(Effect.provide(database))
         }
-        const first = yield* Store.recordDelivery({
-          deliveryId,
-          event,
-          action: typeof action === "string" ? action.slice(0, 64) : null,
-          repoId: Option.isSome(named) ? repository.id : null,
-          subject: Option.isSome(named) ? named.value.issue.number : null,
-        }).pipe(Effect.provide(database))
         if (!first) return yield* answer(200, "duplicate")
         return yield* answer(200, Option.isSome(named) || Option.isSome(repoEvent) ? "applied" : "ignored")
       }).pipe(
@@ -573,8 +602,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     /**
      * Who may read the repository's rows (decision 0012, Consequences: until shapes are authorized per request, only a
      * public repository's rows reach a visitor): a signed-in person with a role on it, which GitHub granted because
-     * they can see it; anyone else only once GitHub has said the repository is public. `None` when they may read,
-     * else the refusal: signed out `401`, no role `403`, sessions or Postgres down `503`.
+     * they can see it; anyone else only when a current GitHub metadata read says the repository is public. `None` when they may read,
+     * else the refusal: signed out `401`, no role `403`, unavailable checks `503`.
      */
     const readRefusal = Effect.gen(function* () {
       const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
@@ -582,7 +611,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (Option.isSome(actor.value) && actor.value.value.role !== null) return Option.none()
       const isPublic = yield* Store.isPublic(repository.id).pipe(Effect.provide(database), Effect.option)
       if (Option.isNone(isPublic)) return Option.some(refuse(503, "unavailable"))
-      if (Option.getOrElse(isPublic.value, () => false)) return Option.none()
+      if (Option.getOrElse(isPublic.value, () => false)) {
+        const current = yield* visibility
+        if (Option.isNone(current)) return Option.some(refuse(503, "unavailable"))
+        if (current.value) return Option.none()
+      }
       return Option.some(Option.isNone(actor.value) ? refuse(401, "authentication") : refuse(403, "forbidden"))
     })
 
@@ -622,8 +655,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const path = request.url.split("?")[0]!
       if (path === GITHUB_WEBHOOK_ROUTE) return yield* webhook
       if (path === ITEMS_SHAPE_ROUTE) {
-        // Whoever reads, the sync stays fresh: it is what learns whether a visitor may read the rows at all.
-        yield* reconcileIfStale
+        // Only admission runs in the Worker's scope; Reconcile's work stays on the durable engine.
+        // A read never waits for admission, and a later stale read can request the same bucket again.
+        yield* Effect.forkIn(reconcileIfStale, scope)
         return yield* readable(ITEMS_TABLE, ITEM_COLUMNS)
       }
       if (path === COMMENTS_SHAPE_ROUTE) return yield* readable(COMMENTS_TABLE, COMMENT_COLUMNS)
