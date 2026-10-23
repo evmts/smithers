@@ -5,19 +5,34 @@ import { Model, ModelError } from "@smthrs/model"
 import { HostModel } from "@smthrs/model-host"
 import { EgressHttpClient, NodeHost } from "@smthrs/platform-node"
 import { Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
-import { expect, test } from "vitest"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { afterAll, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { DEFAULT_CHAT_MODEL } from "../worker/ModelRoles.ts"
 import { testFile } from "../worker/test/harness.ts"
 import { answerRow, openAgent } from "../src/test/agent"
 import { openDevice } from "../src/test/device"
 
+// Only synthetic eval context and canonical model messages; never provider headers or app logs.
+const transcript: Array<{ test: string | undefined; request: unknown; reply: string }> = []
+const artifact = new URL(`results/memory-${new Date().toISOString().replace(/[:.]/g, "-")}.json`, import.meta.url)
+afterAll(() => {
+  mkdirSync(new URL("results/", import.meta.url), { recursive: true })
+  writeFileSync(artifact, JSON.stringify({ transcript }, null, 2) + "\n")
+})
 const runtime = testFile("eval_memory")
 const realModel = (scope: Scope.Closeable) => Effect.runPromise(Effect.gen(function*() {
   const fetch = yield* Scope.provide(scope)(EgressHttpClient.providerFetch(process.env))
-  return yield* Effect.gen(function*() { return yield* HostModel }).pipe(
+  const host = yield* Effect.gen(function*() { return yield* HostModel }).pipe(
     Effect.provide(HostModel.layerConfig("CHAT_MODEL", DEFAULT_CHAT_MODEL, { fetch })),
   )
+  return { ...host, model: Model.make({ ...host.model, stream: (request) => {
+    const turn = { test: expect.getState().currentTestName, request, reply: "" }
+    transcript.push(turn)
+    return host.model.stream(request).pipe(Stream.tap((event) => Effect.sync(() => {
+      if (event.type === "text-delta") turn.reply += event.text
+    })))
+  } }) }
 }))
 // The memory store on its own schema of the compose Postgres, dropped when the layer's scope closes.
 const memoryStore = MemoryStore.layer.pipe(
