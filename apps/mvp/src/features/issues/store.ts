@@ -37,6 +37,7 @@ import {
   VIEW,
   WriteRow,
 } from "./schema"
+import { observeIssueShape } from "./shapeSync"
 import { ISSUE_WRITE, IssueWrites } from "./writes"
 
 // Issues on this tab (decision 0012 §6, docs/features/issues.md#the-browser): the repository's issues, comments, sync
@@ -117,6 +118,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     syncMode: "eager",
     persist: { schemaVersion: 3 },
   })
+  yield* observeIssueShape(items.sync).pipe(Effect.forkScoped)
   const comments = yield* ElectricCollection.make<Comment>({
     id: "issue-comments",
     schema: Comment,
@@ -162,24 +164,49 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     id: "issue-access",
     schema: Access,
     getKey: (row) => row.id,
-    initialData: [{ id: ACCESS, status: "unknown" }],
+    initialData: [{ id: ACCESS, status: "unknown", installed: false }],
   })
 
   // The followers: a requested write whose GitHub row arrived goes, and the synced row shows in its place; and the
   // items shape's answers say whether this person may read the repository's issues at all.
   const delivered = yield* deliveredQuery(requested, items, comments, writes)
   const started = yield* Ref.make(false)
+  const awaitingItems = yield* Ref.make(false)
+  yield* items.sync.pipe(
+    Stream.runForEach((event) => Effect.gen(function* () {
+      const status = accessOf(event)
+      if (status === undefined) return
+      yield* Effect.ignore(access.update(ACCESS, (row) => {
+        row.status = status
+        if (status !== "allowed") row.installed = false
+      }))
+      // A 2xx precedes installation. Restored rows can also make `preload` ready before the network answers.
+      if (status !== "allowed" || (yield* Ref.getAndSet(awaitingItems, true))) return
+      yield* items.currentApplied.pipe(
+        Effect.flatMap(() => Effect.ignore(access.update(ACCESS, (row) => {
+          if (row.status === "allowed") row.installed = true
+        }))),
+        Effect.ensuring(Ref.set(awaitingItems, false)),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
+    })),
+    Effect.forkIn(scope, { startImmediately: true }),
+  )
+  // A fast first batch can be followed by a live Sent before this listener subscribes. Its installed receipt remains
+  // current until a refusal or failed request invalidates it; an older receipt cannot undo a current refusal.
+  yield* items.currentApplied.pipe(
+    Effect.flatMap(() => Effect.ignore(access.update(ACCESS, (row) => {
+      if (row.status === "unknown" || row.status === "allowed") {
+        row.status = "allowed"
+        row.installed = true
+      }
+    }))),
+    Effect.forkIn(scope, { startImmediately: true }),
+  )
   const activate = Effect.gen(function* () {
     if (yield* Ref.getAndSet(started, true)) return
     yield* delivered.rows.pipe(
       Stream.runForEach((rows) => Effect.forEach(rows, ({ id }) => Effect.ignore(requested.delete(id)), { discard: true })),
-      Effect.forkIn(scope, { startImmediately: true }),
-    )
-    yield* items.sync.pipe(
-      Stream.runForEach((event) => {
-        const status = accessOf(event)
-        return status === undefined ? Effect.void : Effect.ignore(access.update(ACCESS, (row) => void (row.status = status)))
-      }),
       Effect.forkIn(scope, { startImmediately: true }),
     )
   })

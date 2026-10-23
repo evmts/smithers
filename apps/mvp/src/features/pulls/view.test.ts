@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest"
+import { pageOf } from "../issues/view"
 import {
   checkRows,
   checksSummaryOf,
@@ -10,6 +11,7 @@ import {
   mayMerge,
   mergeBoxOf,
   mergeNoticeOf,
+  pullAccessOf,
   type MergeView,
   type Pull,
   runStateOf,
@@ -81,27 +83,36 @@ describe("the list page", () => {
   const row = { id: "a", number: 3, title: "T", state: "open", author: "maya", comments: 0, updatedAt: "u", draft: false, merged: false, headRef: "x" }
   const repository = { owner: "octo", name: "hello" }
 
-  test("loading until the first complete sync or a row; never once refused", () => {
-    expect(listPageOf([], repository, undefined, undefined)).toEqual({ refused: undefined, pulls: [], loading: true })
-    expect(listPageOf([], repository, { complete: true }, undefined).loading).toBe(false)
-    expect(listPageOf([row], repository, undefined, { status: "allowed" })).toMatchObject({ loading: false, refused: undefined })
+  test("an unsynced empty repository has unknown counts instead of a lasting loading state", () => {
+    expect(listPageOf([], repository, undefined, undefined)).toEqual({ refused: undefined, pulls: [], loading: false, unknown: true })
+    expect(listPageOf([], repository, { complete: true }, undefined)).toMatchObject({ loading: false, unknown: false })
+    expect(listPageOf([row], repository, undefined, { status: "allowed" })).toMatchObject({ loading: false, unknown: false, refused: undefined })
     expect(listPageOf([row], repository, undefined, undefined).pulls.map((pull) => pull.href)).toEqual(["/octo/hello/pull/3"])
   })
 
-  test("the GitHub sync receipt does not finish the device's hydration", () => {
-    for (const synced of [undefined, { syncedAt: "now" }]) {
-      expect(listPageOf([], repository, synced, { status: "allowed" }, false).loading).toBe(true)
-      expect(listPageOf([row], repository, synced, { status: "allowed" }, false).loading).toBe(false)
-      for (const status of ["sign_in", "forbidden"]) {
-        expect(listPageOf([], repository, synced, { status }, false)).toMatchObject({ refused: status, loading: false })
-      }
+  test("a completed GitHub sync still waits for device hydration", () => {
+    const synced = { syncedAt: "now" }
+    expect(listPageOf([], repository, synced, { status: "allowed" }, false)).toMatchObject({ loading: true, unknown: false })
+    expect(listPageOf([row], repository, synced, { status: "allowed" }, false).loading).toBe(false)
+    for (const status of ["sign_in", "forbidden"]) {
+      expect(listPageOf([], repository, synced, { status }, false)).toMatchObject({ refused: status, loading: false, unknown: false })
     }
-    expect(listPageOf([], repository, { syncedAt: "now" }, { status: "allowed" }, true).loading).toBe(false)
+    expect(listPageOf([], repository, synced, { status: "allowed" }, true)).toMatchObject({ loading: false, unknown: false })
   })
 
   test("a person the shape refused signs in, or is not allowed: no rows, never loading", () => {
     expect(listPageOf([], repository, undefined, { status: "sign_in" })).toMatchObject({ refused: "sign_in", loading: false })
     expect(listPageOf([], repository, undefined, { status: "forbidden" })).toMatchObject({ refused: "forbidden", loading: false })
+  })
+
+  test("the pull shape's current refusal hides cached rows while the issue shape still says allowed", () => {
+    const cached = { status: "allowed" }
+    for (const [pullRefusal, detail] of [["sign_in", "sign_in"], ["forbidden", "missing"]] as const) {
+      const access = pullAccessOf(cached, { pullRefusal })
+      expect(listPageOf([row], repository, { syncedAt: "now" }, access)).toMatchObject({ refused: pullRefusal, pulls: [] })
+      expect(pageOf({ number: 3 }, { syncedAt: "now" }, true, true, access)).toBe(detail)
+    }
+    expect(pullAccessOf(cached, { pullRefusal: null })).toBe(cached)
   })
 })
 

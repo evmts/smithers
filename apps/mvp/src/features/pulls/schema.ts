@@ -116,6 +116,10 @@ export const PullsView = Schema.Struct({
   merging: Schema.Boolean,
   mergeWriteId: Schema.NullOr(Schema.String),
   mergeRefused: Schema.NullOr(Schema.String),
+  /** True after the first complete pull shape is installed, not just its first 2xx. */
+  installed: Schema.Boolean,
+  /** A current refusal from the pull shape, even if the issue shape still permits cached rows. */
+  pullRefusal: Schema.NullOr(Schema.Literals(["sign_in", "forbidden"])),
 })
 export type PullsView = typeof PullsView.Type
 

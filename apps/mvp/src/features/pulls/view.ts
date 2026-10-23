@@ -13,6 +13,15 @@ import {
 } from "./contract"
 import type { ChangedFile } from "./schema"
 
+/** A current pull-shape refusal wins over an older issue-shape success and cached pull content. */
+export const pullAccessOf = (
+  issueAccess: { readonly status: string; readonly installed?: boolean } | undefined,
+  pullView: { readonly pullRefusal: string | null } | undefined,
+): { readonly status: string; readonly installed?: boolean } | undefined =>
+  pullView?.pullRefusal === "sign_in" || pullView?.pullRefusal === "forbidden"
+    ? { status: pullView.pullRefusal }
+    : issueAccess
+
 // What the pull request pages show, from the queries' rows (decision 0012 §6, docs/features/pulls.md#the-browser):
 // framework-free, so the web app and later the TUI share it. Every word is a product word, and a control the person
 // can't use isn't shown.
@@ -64,11 +73,15 @@ export const listPageOf = (
   synced: unknown,
   access: { readonly status: string } | undefined,
   ready = true,
-) => ({
-  refused: refusedOf(access),
-  pulls: listProps(rows, repository.owner, repository.name),
-  loading: refusedOf(access) === undefined && (!ready || synced === undefined) && rows.length === 0,
-})
+) => {
+  const refused = refusedOf(access)
+  return {
+    refused,
+    pulls: refused === undefined ? listProps(rows, repository.owner, repository.name) : [],
+    loading: refused === undefined && synced !== undefined && !ready && rows.length === 0,
+    unknown: refused === undefined && synced === undefined && rows.length === 0,
+  }
+}
 
 /** Who is at the page, as sign-in says: signed in, and their role on the repository, confirmed when known. */
 const roleOf = (

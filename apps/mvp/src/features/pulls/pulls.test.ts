@@ -16,12 +16,13 @@ import { CHATAPI_ORIGIN, openTab, openTestApp, type TabOptions, TEST_REPOSITORY,
 import { itemId } from "../issues/contract"
 import { ISSUES_STREAM } from "../issues/contract"
 import { Issues } from "../issues/issues"
+import { pageOf } from "../issues/view"
 import { repoId } from "../repo/contract"
 import { mergePresses } from "./actions"
 import { PullsClient, PullsRequestFailed } from "./api"
 import { mergeExecutionId } from "./contract"
 import { Pulls } from "./pulls"
-import { listPageOf } from "./view"
+import { listPageOf, pullAccessOf } from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -208,6 +209,19 @@ const server = (api: TestChatApi["Service"]) => {
 }
 
 describe("the list and a pull request's page", () => {
+  test("an absent direct pull settles after both current shape batches are installed", async () => {
+    const tab = await open()
+    tab.issues.queries.access.startSyncImmediate()
+    tab.issues.queries.synced.startSyncImmediate()
+    tab.actions.open(OWNER, NAME, 404)
+    await until(() => expect(tab.view()).toMatchObject({ installed: true }))
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
+    await until(() => expect(tab.queries.pull.isReady()).toBe(true))
+    await until(() => expect(tab.issues.queries.synced.isReady()).toBe(true))
+    expect(pageOf(tab.pull(), tab.issues.queries.synced.toArray[0], tab.queries.pull.isReady() && tab.view()?.installed === true,
+      tab.issues.queries.synced.isReady(), pullAccessOf(tab.issues.queries.access.toArray[0], tab.view()))).toBe("unknown")
+  }, WITHIN)
+
   test("a fresh signed-out device hydrates a chunked issue snapshot without losing its pulls", async () => {
     const source = await open({}, null)
     await Effect.runPromise(source.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
@@ -252,11 +266,17 @@ describe("the list and a pull request's page", () => {
     await Effect.runPromise(tab.api.github.run(Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: true, failure: null })))
     tab.actions.open(OWNER, NAME)
     tab.issues.queries.synced.startSyncImmediate()
-    await until(() => expect(listPageOf(tab.queries.list.toArray, { owner: OWNER, name: NAME },
-      tab.issues.queries.synced.toArray[0], undefined).loading).toBe(false))
-    expect(tab.queries.list.toArray).toEqual([])
+    await until(() => expect(tab.issues.queries.synced.toArray[0]).toMatchObject({ syncedAt: expect.any(String) }))
+    await until(() => expect(tab.queries.list.isReady()).toBe(true))
+    expect(listPageOf(tab.queries.list.toArray, { owner: OWNER, name: NAME },
+      tab.issues.queries.synced.toArray[0], undefined, tab.queries.list.isReady()))
+      .toMatchObject({ loading: false, unknown: false, pulls: [] })
     tab.actions.open("other", "repository")
     await until(() => expect(tab.issues.queries.synced.toArray).toEqual([]))
+    await until(() => expect(tab.queries.list.toArray).toEqual([]))
+    expect(listPageOf(tab.queries.list.toArray, { owner: "other", name: "repository" },
+      tab.issues.queries.synced.toArray[0], { status: "allowed" }, tab.queries.list.isReady()))
+      .toMatchObject({ loading: false, unknown: true, pulls: [] })
   }, WITHIN)
 
   test("the repository's pull requests newest first, never its issues; each with its head, draft and merge", async () => {

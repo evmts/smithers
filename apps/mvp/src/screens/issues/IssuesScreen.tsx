@@ -16,12 +16,12 @@ import {
   PAUSE_TRIAGE,
 } from "../../features/issues/contract"
 import { COMMITMENTS, COMMITMENT_COPY, filterCommitment } from "../../features/issues/lifecycle"
-import { listProps, mayManageTriage, mayWrite, triageSwitchOf } from "../../features/issues/view"
+import { listProps, mayManageTriageOnList, mayWrite, triageSwitchOf } from "../../features/issues/view"
 import "./issues-screen.css"
 
 // /$owner/$repo/issues: the repository's issues, this device's own new ones first with their chip, each with its triage
 // chip and the TODOs made from it, Make TODO in its menu for a Member (docs/features/todos.md#from-an-issue), New issue
-// for a person who may open one, and Enable triage or Pause triage for a Maintainer. A repository whose issues this person may not read shows sign-in, or Not found. A new issue that wasn't sent gets Edit, back to the form, and Discard. The route's loader
+// for a person who may open one, and Enable triage or Pause triage for a Maintainer once this repository's issue sync is complete. A repository whose issues this person may not read shows sign-in, or Not found. A new issue that wasn't sent gets Edit, back to the form, and Discard. The route's loader
 // opens the repository (`open`); this screen only renders what the device has.
 export function IssuesScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/issues" })
@@ -73,7 +73,7 @@ export function IssuesScreen() {
         actions={session !== undefined && mayWrite(session, confirmed)
           ? (
             <>
-              {mayManageTriage(session, confirmed)
+              {mayManageTriageOnList(session, confirmed, synced)
                 ? (
                   <Button
                     variant="outline"

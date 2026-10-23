@@ -7,8 +7,8 @@ import { useIssues } from "../../features/issues/components/IssuesContext"
 import { NOT_FOUND } from "../../features/issues/contract"
 import { pageOf } from "../../features/issues/view"
 import { usePulls } from "../../features/pulls/components/PullsContext"
-import { type PullTab, pullTabPath } from "../../features/pulls/contract"
-import { checkRows, checksSummaryOf, conversationProps, fileStatusOf, mergeBoxOf, unifiedOf } from "../../features/pulls/view"
+import { githubPullUrl, type PullTab, pullTabPath } from "../../features/pulls/contract"
+import { checkRows, checksSummaryOf, conversationProps, fileStatusOf, mergeBoxOf, pullAccessOf, unifiedOf } from "../../features/pulls/view"
 import "./pulls-screen.css"
 
 // /$owner/$repo/pull/$number and its tabs: one pull request. Conversation shows its body, comments and reviews (the
@@ -20,7 +20,7 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const { owner, repo, number } = useParams({ strict: false }) as { owner: string; repo: string; number: number }
   const { queries, actions } = usePulls()
   const auth = useAuth()
-  const { data: pull } = useLiveQuery(queries.pull)
+  const { data: pull, isReady: pullReady } = useLiveQuery(queries.pull)
   const { data: comments } = useLiveQuery(queries.comments)
   const { data: reviews } = useLiveQuery(queries.reviews)
   const { data: commits } = useLiveQuery(queries.commits)
@@ -30,12 +30,19 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const { data: session } = useLiveQuery(auth.queries.session)
   const { data: confirmed } = useLiveQuery(auth.queries.confirmed)
   const issues = useIssues()
-  const { data: synced } = useLiveQuery(issues.queries.synced)
+  const { data: synced, isReady: syncedReady } = useLiveQuery(issues.queries.synced)
   const { data: access } = useLiveQuery(issues.queries.access)
   // A pull request is an issue row of kind `pull`: shown, loading until the first complete sync, or not there.
-  const page = pageOf(pull, synced, access)
+  const page = pageOf(pull, synced, pullReady && view?.installed === true, syncedReady, pullAccessOf(access, view))
   if (page === "sign_in") return <main className="pulls-screen"><SignInButton /></main>
   if (page === "missing") return <main className="pulls-screen"><EmptyState title={NOT_FOUND} /></main>
+  if (page === "unknown") return (
+    <main className="pulls-screen">
+      <EmptyState title="Pull request unavailable here" action={
+        <Button asChild variant="outline"><a href={githubPullUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
+      } />
+    </main>
+  )
   if (pull === undefined) {
     return (
       <main className="pulls-screen">

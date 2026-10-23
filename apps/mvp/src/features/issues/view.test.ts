@@ -15,6 +15,7 @@ import {
   listProps,
   type ListRow,
   mayManageTriage,
+  mayManageTriageOnList,
   mayTriage,
   mayWrite,
   pageOf,
@@ -146,9 +147,10 @@ describe("an issue's page", () => {
   })
 
   test("loading until the first complete sync; then an issue the device doesn't have is missing", () => {
-    expect(pageOf(undefined, undefined)).toBe("loading")
-    expect(pageOf(undefined, { syncedAt: "x" })).toBe("missing")
-    expect(pageOf(shownItem, undefined)).toBe("shown")
+    expect(pageOf(undefined, undefined, false, false)).toBe("loading")
+    expect(pageOf(undefined, { syncedAt: "x" }, true, true)).toBe("loading")
+    expect(pageOf(undefined, { syncedAt: "x" }, true, true, { status: "allowed", installed: true })).toBe("missing")
+    expect(pageOf(shownItem, undefined, true, true)).toBe("shown")
   })
 })
 
@@ -226,10 +228,11 @@ describe("a repository this person may not read", () => {
     expect(listProps([], undefined, { status: "forbidden" })).toMatchObject({ refused: "forbidden", unknown: false })
     expect(listProps([], undefined, { status: "unknown" })).toMatchObject({ refused: undefined, unknown: true })
     expect(listProps([], undefined, { status: "allowed" })).toMatchObject({ refused: undefined, unknown: true })
-    expect(pageOf(undefined, undefined, { status: "sign_in" })).toBe("sign_in")
-    expect(pageOf(undefined, undefined, { status: "forbidden" })).toBe("missing")
-    expect(pageOf(undefined, undefined, { status: "allowed" })).toBe("loading")
-    expect(pageOf({ number: 1 }, undefined, { status: "sign_in" })).toBe("shown")
+    expect(pageOf(undefined, undefined, true, true, { status: "sign_in" })).toBe("sign_in")
+    expect(pageOf(undefined, undefined, true, true, { status: "forbidden" })).toBe("missing")
+    expect(pageOf(undefined, undefined, true, true, { status: "allowed" })).toBe("loading")
+    expect(pageOf(undefined, undefined, true, true, { status: "allowed", installed: true })).toBe("unknown")
+    expect(pageOf({ number: 1 }, undefined, true, true, { status: "sign_in" })).toBe("sign_in")
   })
 
   test("the items shape's answers: allowed once one succeeds, refused when stopped with 401 or 403, else nothing new", () => {
@@ -313,6 +316,13 @@ describe("triage", () => {
     expect(mayManageTriage({ status: "signed_out", role: null }, { role: "admin" })).toBe(false)
     // Offline, the role sign-in last confirmed stands.
     expect(mayManageTriage({ status: "unreachable", role: null }, { role: "maintainer" })).toBe(true)
+  })
+
+  test("an unsynced repository never offers the triage switch even to a Maintainer", () => {
+    const maintainer = { status: "signed_in" as const, role: "maintainer" as const }
+    expect(mayManageTriageOnList(maintainer, undefined, undefined)).toBe(false)
+    expect(mayManageTriageOnList(maintainer, undefined, { syncedAt: "2026-10-23" })).toBe(true)
+    expect(mayManageTriageOnList({ status: "signed_in", role: "member" }, undefined, { syncedAt: "2026-10-23" })).toBe(false)
   })
 })
 

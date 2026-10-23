@@ -7,7 +7,7 @@
 // behind switches (test.faults-by-injection), or a host capability that fails (an outbox storage that refuses).
 import { Outbox } from "@smthrs/effect-tanstack-db"
 import { GitHub } from "@smthrs/integrations"
-import { Effect, Layer, type ManagedRuntime, Metric } from "effect"
+import { Effect, Layer, type ManagedRuntime, Metric, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
@@ -36,6 +36,7 @@ import {
 } from "./contract"
 import { Issues } from "./issues"
 import { pendingActions, sends } from "./metrics"
+import { shapeTransitions } from "./shapeSync"
 import { IssuesStore } from "./store"
 import {
   commentOf,
@@ -357,7 +358,7 @@ describe("a comment", () => {
     await server(tab.api).seed(7, "Crash on start")
     tab.actions.open(OWNER, NAME, 7)
     await until(() => expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 7, title: "Crash on start" }))
-    expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0])).toBe("shown")
+    expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0], true, true)).toBe("shown")
     expect(tab.actions.comment(OWNER, NAME, 7)).toBe(false)
     tab.actions.setCommentDraft(OWNER, NAME, 7, "Looks good")
     expect(tab.view()).toMatchObject({ number: 7, body: "Looks good" })
@@ -393,20 +394,33 @@ describe("a comment", () => {
 })
 
 describe("loading", () => {
+  test("a late issues visit recognizes a batch installed before the live poll began", async () => {
+    const tab = await open()
+    await until(() => expect(tab.count(shapeTransitions, { phase: "ready" })).toBeGreaterThan(0))
+    await tab.runtime.runPromise(tab.store.items.sync.pipe(
+      Stream.filter((event) => event._tag === "Sent"),
+      Stream.runHead,
+      Effect.timeout("10 seconds"),
+    ))
+    tab.actions.open(OWNER, NAME, 3)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }), 2_000)
+  }, WITHIN)
+
   test("a list is unknown before the repository's first complete sync, never falsely empty; then empty is empty", async () => {
     const tab = await open()
     tab.actions.open(OWNER, NAME)
     expect(tab.list()).toEqual({ issues: [], unknown: true, notSent: [] })
     tab.actions.open(OWNER, NAME, 3)
-    expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0])).toBe("loading")
+    expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0], false, false)).toBe("loading")
 
     await server(tab.api).synced()
 
     tab.actions.open(OWNER, NAME)
     await until(() => expect(tab.list()).toEqual({ issues: [], unknown: false, notSent: [] }))
     tab.actions.open(OWNER, NAME, 3)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
     await until(() =>
-      expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0])).toBe("missing")
+      expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0], true, true, tab.issues.queries.access.toArray[0])).toBe("missing")
     )
   }, WITHIN)
 })
@@ -433,12 +447,12 @@ describe("who reads a repository's issues", () => {
     const refused = listProps([], undefined, access(visitor))
     expect(refused).toMatchObject({ refused: "sign_in", unknown: false })
     visitor.actions.open(OWNER, NAME, 1)
-    expect(pageOf(undefined, undefined, access(visitor))).toBe("sign_in")
+    expect(pageOf(undefined, undefined, false, false, access(visitor))).toBe("sign_in")
 
     const outsider = await open({}, { ...maya, role: null })
     outsider.actions.open(OWNER, NAME)
     await until(() => expect(access(outsider)).toMatchObject({ status: "forbidden" }))
-    expect(pageOf(undefined, undefined, access(outsider))).toBe("missing")
+    expect(pageOf(undefined, undefined, false, false, access(outsider))).toBe("missing")
 
     // GitHub says it is public: a visitor's next page reads it.
     await Effect.runPromise(visitor.api.github.run(Store.recordRepository(REPO_ID, { githubId: 1, private: false })))
@@ -838,6 +852,7 @@ describe("records", () => {
     tab.actions.create(OWNER, NAME)
     const writeId = await pendingIssue(tab)
     await until(() => expect(tab.count(sends, { op: "issue/create", outcome: "started" })).toBe(1))
+    await until(() => expect(tab.count(shapeTransitions, { phase: "ready" })).toBeGreaterThan(0))
     // An issue whose author GitHub no longer has shows none.
     expect(tab.list().issues.find(({ number }) => number === 2)?.author).toBeUndefined()
     for (const each of runtimes.splice(0).reverse()) await each.dispose()
@@ -850,6 +865,10 @@ describe("records", () => {
       expect.objectContaining({ attributes: expect.objectContaining({ writeId, outcome: "started", feature: "issues" }) }),
     )
     expect(records.point("smithers_issue_write_sends", { op: "issue/create", outcome: "started" })?.value).toBe(1)
+    expect(records.log("issues.shape.sync")).toContainEqual(
+      expect.objectContaining({ attributes: expect.objectContaining({ phase: "ready", durationMs: expect.any(Number) }) }),
+    )
+    expect(records.point("smithers_issue_shape_transitions", { phase: "ready" })?.value).toBeGreaterThan(0)
     expect(tab.api.telemetry.map(({ body }) => body).join("\n")).not.toContain(secret)
     expect(JSON.stringify(tab.api.spans.map((span) => [...span.attributes]))).not.toContain(secret)
   }, WITHIN)

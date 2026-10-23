@@ -1,6 +1,6 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, type Scope } from "effect"
+import { Context, Effect, Layer, Ref, Stream, type Scope } from "effect"
 import { IssuesStore } from "../issues/store"
 import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "./contract"
 import {
@@ -104,8 +104,38 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
       merging: false,
       mergeWriteId: null,
       mergeRefused: null,
+      installed: false,
+      pullRefusal: null,
     }],
   })
+  const awaitingPulls = yield* Ref.make(false)
+  yield* pulls.sync.pipe(
+    Stream.runForEach((event) => Effect.gen(function* () {
+      if (event._tag === "Stopped" && (event.error.status === 401 || event.error.status === 403)) {
+        yield* Effect.ignore(view.update(VIEW, (row) => {
+          row.installed = false
+          row.pullRefusal = event.error.status === 401 ? "sign_in" : "forbidden"
+        }))
+      }
+      if (event._tag !== "Succeeded") return
+      yield* Effect.ignore(view.update(VIEW, (row) => void (row.pullRefusal = null)))
+      if (yield* Ref.getAndSet(awaitingPulls, true)) return
+      yield* pulls.currentApplied.pipe(
+        Effect.flatMap(() => Effect.ignore(view.update(VIEW, (row) => void (row.installed = true)))),
+        Effect.ensuring(Ref.set(awaitingPulls, false)),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
+    })),
+    Effect.forkIn(scope, { startImmediately: true }),
+  )
+  // The first batch can finish while the other pull collections are being built. Its current installed receipt
+  // survives a later live Sent event; a current refusal still wins over that receipt.
+  yield* pulls.currentApplied.pipe(
+    Effect.flatMap(() => Effect.ignore(view.update(VIEW, (row) => {
+      if (row.pullRefusal === null) row.installed = true
+    }))),
+    Effect.forkIn(scope, { startImmediately: true }),
+  )
   return PullsStore.of({
     pulls,
     commits,

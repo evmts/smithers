@@ -8,10 +8,11 @@ import { requires, scratchRepository } from "./target"
 // (e2e/deployment/sign-in.setup.ts), on the scratch repository E2E_ISSUES_REPOSITORY, which must not be the
 // deployment's own GITHUB_REPOSITORY (E2E_SYNCED_REPOSITORY, smithersai/smithers unless set): on smithers.sh,
 // roninjin10/smithers-github-tests (`requires("secondRepository")`, e2e/target.ts). The issues list syncs only the
-// deployment's own repository so far (0079, Slice 1), so the issue is checked where it lands: on GitHub.
+// deployment's own repository so far (0079, Slice 1), so GitHub proves creation and Smithers gives an honest link
+// on the direct issue route until that repository's sync is supported.
 
-test("another repository: a Member opens an issue on a repository other than the deployment's own, and GitHub has it", {
-  annotation: { type: "summary", description: "An issue opened on a second repository reaches that repository on GitHub." },
+test("another repository: an issue reaches GitHub and its Smithers page stays honest before sync", {
+  annotation: { type: "summary", description: "An issue reaches GitHub; Smithers gives its link until that repository syncs." },
 }, async ({ devices }) => {
   requires("secondRepository", "member")
   test.setTimeout(240_000)
@@ -43,6 +44,18 @@ test("another repository: a Member opens an issue on a repository other than the
       (issues) => issues.some((issue) => issue.title === title),
     )
     return issues.find((issue) => issue.title === title)!.html_url
+  })
+
+  await test.step("the issue's Smithers page stays honest before this repository's first sync", async () => {
+    const number = Number(new URL(url).pathname.split("/").at(-1))
+    expect(Number.isSafeInteger(number) && number > 0).toBe(true)
+    await page.goto(`/${repo}/issues/${number}`)
+    await expect(page.getByText("Issue unavailable here")).toBeVisible({ timeout: 30_000 })
+    const link = page.getByRole("link", { name: "Open on GitHub ↗" })
+    const target = new URL((await link.getAttribute("href")) ?? "")
+    const created = new URL(url)
+    expect(target.origin).toBe(created.origin)
+    expect(target.pathname.toLowerCase()).toBe(created.pathname.toLowerCase())
   })
 
   await test.step("the issue on GitHub", async () => {

@@ -476,6 +476,7 @@ The git loop's routes, flows and tokens, triage, and the browser's issue writes,
 | `triage.read`, `triage.decide`, `triage.apply`, `triage.comment` | log, span | the `FlowExecution` Durable Object ([triage](features/issues.md#triage)); `triage.apply` with `dropped: enabler_demoted` is an Error |
 | `triage_runs{outcome}`, `triage_decisions{decision,via}`, `triage_dropped{reason}`, `triage_overrides{from,to}`, `triage_tokens` | counters | the Durable Object; a person's override is counted by `github/Write`. Overrides of the flow are its error rate |
 | `issues.write.queue`, `issues.write.send`, `issues.pending`, `smithers_issue_writes`, `smithers_issue_write_sends`, `smithers_issue_pending_actions` | browser | the engine worker and the tab |
+| `issues.shape.sync`, `smithers_issue_shape_transitions` | browser log, span, counter | the tab; first request, first answer, changed failure status or recovery with finite phase, status and observation duration, without repository or issue content |
 | `pulls.merge.post`, `pulls.compare.get`, `smithers_web_pull_merges` | browser | the tab ([pull requests](features/pulls.md#observability)) |
 
 ### Agent status

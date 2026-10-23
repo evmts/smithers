@@ -8,7 +8,7 @@ import { useIssues } from "../../features/issues/components/IssuesContext"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import { MAKE_TODO, MAKE_TODO_KEY, TODO } from "../../features/todos/contract"
 import { mayChange, mayMakeTodo, todosByIssue } from "../../features/todos/view"
-import { DISCARD, EDIT, NOT_FOUND } from "../../features/issues/contract"
+import { DISCARD, EDIT, githubIssueUrl, NOT_FOUND } from "../../features/issues/contract"
 import {
   conversationProps,
   draftOf,
@@ -24,16 +24,17 @@ import "./issues-screen.css"
 // its triage state with Accept, Not accepted and Run triage again for a Member and above, and the comment composer for a
 // person who may comment. A comment that wasn't sent gets Edit, back to the composer,
 // and Discard. A side column shows the TODOs made from it and, for a Member while none is open, Make TODO, which its
-// key `t` also presses (docs/features/todos.md#from-an-issue). Loading until the repository's first complete sync; then
-// an issue the device doesn't have isn't there.
-// A repository whose issues this person may not read shows sign-in, or Not found.
+// key `t` also presses (docs/features/todos.md#from-an-issue). An answered shape with no first complete sync shows
+// the GitHub link instead of waiting forever; only a complete sync establishes Not found.
+// A repository whose issues this person may not read shows sign-in, or Not found. A cold item query remains loading
+// until the eager shape finishes, even if its first 2xx already granted access.
 export function IssueScreen() {
   const { owner, repo, number } = useParams({ from: "/$owner/$repo/issues/$number" })
   const { queries, actions } = useIssues()
   const auth = useAuth()
-  const { data: item } = useLiveQuery(queries.item)
+  const { data: item, isReady: itemReady } = useLiveQuery(queries.item)
   const { data: rows } = useLiveQuery(queries.conversation)
-  const { data: synced } = useLiveQuery(queries.synced)
+  const { data: synced, isReady: syncedReady } = useLiveQuery(queries.synced)
   const { data: view } = useLiveQuery(queries.view)
   const { data: access } = useLiveQuery(queries.access)
   const { data: triage } = useLiveQuery(queries.triage)
@@ -45,9 +46,16 @@ export function IssueScreen() {
   const todosRepoId = todosView?.repoId ?? ""
   const { data: todoRows } = useLiveQuery(todos.queries.stack(todosRepoId).todos)
   const navigate = useNavigate()
-  const page = pageOf(item, synced, access)
+  const page = pageOf(item, synced, itemReady, syncedReady, access)
   if (page === "sign_in") return <main className="issues-screen"><SignInButton /></main>
   if (page === "missing") return <main className="issues-screen"><EmptyState title={NOT_FOUND} /></main>
+  if (page === "unknown") return (
+    <main className="issues-screen">
+      <EmptyState title="Issue unavailable here" action={
+        <Button asChild variant="outline"><a href={githubIssueUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
+      } />
+    </main>
+  )
   if (item === undefined) {
     return (
       <main className="issues-screen">

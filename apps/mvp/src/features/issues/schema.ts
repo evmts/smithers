@@ -177,7 +177,7 @@ export type IssueView = typeof IssueView.Type
  */
 export const ACCESS = "access"
 export const ACCESS_STATES = ["unknown", "allowed", "sign_in", "forbidden"] as const
-export const Access = Schema.Struct({ id: Schema.Literal(ACCESS), status: Schema.Literals(ACCESS_STATES) })
+export const Access = Schema.Struct({ id: Schema.Literal(ACCESS), status: Schema.Literals(ACCESS_STATES), installed: Schema.Boolean })
 export type Access = typeof Access.Type
 
 /** What a write's step asks the tab that started its request (src/flows/askingTab.ts): queue `write`. */

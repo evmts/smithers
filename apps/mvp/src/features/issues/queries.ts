@@ -339,4 +339,4 @@ export const triagePendingQuery = (
 
 /** Whether this person may read the repository's issues, as the shape last answered. */
 export const accessQuery = (access: Local<Access>) =>
-  LiveQuery.make((q) => q.from({ access: access.tanstack }).select(({ access }) => ({ status: access.status })).findOne())
+  LiveQuery.make((q) => q.from({ access: access.tanstack }).select(({ access }) => ({ status: access.status, installed: access.installed })).findOne())

@@ -1,7 +1,7 @@
 import { COMMITMENTS, COMMITMENT_COPY, type Commitment } from "./lifecycle"
 import type { IssuesViewIssue, IssuesViewTriage } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
-import { viewerOf } from "../commands/catalog"
+import { viewerOf } from "../auth/viewer"
 import { githubIssueUrl, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, NOT_SENT_COPY, TRIAGE_STATES, type TriageState } from "./contract"
 
 type Pending = NonNullable<IssuesViewIssue["pending"]>
@@ -147,20 +147,30 @@ export const draftOf = (view: { readonly title?: string | undefined; readonly bo
 }
 
 /**
- * What an issue's page shows: the issue; the shape's refusal (sign in, or Not found for a person with no role); loading
- * until the repository's first complete sync; else not found.
+ * What an issue or pull page shows: a current shape refusal wins over cached content (sign in, or Not found for a
+ * person with no role); otherwise the item, then loading until the eager item and sync queries are ready. A 2xx can
+ * report access before its rows are installed. An absent item stays unknown before this repository's first complete sync;
+ * other repositories do not yet receive that sync, so unknown settles the skeleton without claiming Not found.
  */
 export const pageOf = (
   item: unknown,
   synced: unknown,
-  access?: { readonly status: string },
-): "shown" | "loading" | "missing" | "sign_in" =>
-  item !== undefined
-    ? "shown"
-    : refusedOf(access) === "sign_in"
+  itemReady: boolean,
+  syncedReady: boolean,
+  access?: { readonly status: string; readonly installed?: boolean },
+): "shown" | "loading" | "unknown" | "missing" | "sign_in" =>
+  refusedOf(access) === "sign_in"
     ? "sign_in"
-    : refusedOf(access) === "forbidden" || synced !== undefined
+    : refusedOf(access) === "forbidden"
     ? "missing"
+    : item !== undefined
+    ? "shown"
+    : !itemReady || !syncedReady || access?.installed !== true
+    ? "loading"
+    : synced !== undefined
+    ? "missing"
+    : access?.status === "allowed"
+    ? "unknown"
     : "loading"
 
 /**
@@ -192,6 +202,13 @@ export const mayManageTriage = (
   const viewer = viewerOf(session, confirmed)
   return viewer.signedIn && (viewer.role === "admin" || viewer.role === "maintainer")
 }
+
+/** The write route fences triage to the repository whose issues shape can complete (decision 0079). */
+export const mayManageTriageOnList = (
+  session: Parameters<typeof mayManageTriage>[0],
+  confirmed: Parameters<typeof mayManageTriage>[1],
+  synced: unknown,
+): boolean => synced !== undefined && mayManageTriage(session, confirmed)
 
 /** A row of this device's triage writes (queries.ts `triagePendingQuery`). */
 export interface TriagePendingRow {

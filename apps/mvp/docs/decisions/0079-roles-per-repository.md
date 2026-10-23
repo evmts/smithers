@@ -37,9 +37,9 @@ The device's outbox sends 429 and 5xx again and keeps a 4xx as Not sent with its
 
 ### Unsynced lists (2026-10-23 production regression)
 
-The issue list renders the device's rows without a loading state (ARCH-5), using the existing library catalog's
+The issue and pull-request lists render the device's rows without a lasting loading state (ARCH-5), using the existing library catalog's
 `@smthrs/ui` `IssuesView.unknown` contract until a complete sync or GitHub row arrives. Unknown counts and an empty
-list stay blank rather than claiming "No issues". This also applies to the default repository before its first sync.
+list stay blank rather than claiming "No issues" or "No pull requests". This also applies to the default repository before its first sync.
 Other repositories keep their Requested rows visible; this does not broaden the shapes or claim they synced.
 Production on 9696f4c4 confirmed that an issue reached the second repository on GitHub while its list spun forever.
 The e2e verification now shares dogfood's authenticated GitHub reader and fails immediately on HTTP refusals,
