@@ -130,18 +130,35 @@ describe("needs", () => {
       "secondRepository",
       "dogfood",
       "repoFlows",
+      "githubAppKey",
+      "githubPushToken",
       "githubApp",
       "longRun",
       "docsSite",
     ])
   })
 
-  it("requires a deployment and a non-production repository with push credentials for CI", () => {
-    const env = { E2E_REPO_FLOWS_REPOSITORY: "acme/ci-tests", E2E_GITHUB_TOKEN: "test-only" }
-    expect(NEEDS.repoFlows.met(deployedAs("admin", env))).toBe(true)
-    expect(NEEDS.repoFlows.met({ ...local, env })).toBe(false)
-    expect(NEEDS.repoFlows.met(deployedAs("admin", { ...env, E2E_GITHUB_TOKEN: "" }))).toBe(false)
-    expect(NEEDS.repoFlows.met(deployedAs("admin", { ...env, E2E_REPO_FLOWS_REPOSITORY: "SmithersAI/smithers" }))).toBe(false)
+  it("requires a scratch CI fixture independently of the deployment's pusher credentials", () => {
+    for (const target of ["local", "deployment"] as const) {
+      const run = { ...local, target }
+      for (const repository of [undefined, "", "SmithersAI/smithers", "invalid", "a/b/c"]) {
+        expect(NEEDS.repoFlows.met({ ...run, env: { E2E_REPO_FLOWS_REPOSITORY: repository } })).toBe(false)
+      }
+      expect(NEEDS.repoFlows.met({ ...run, env: { E2E_REPO_FLOWS_REPOSITORY: "acme/ci-tests" } })).toBe(true)
+    }
+  })
+
+  it("declares App key credentials separately from a local person's push token", () => {
+    const env = { GITHUB_APP_ID: "123", GITHUB_APP_PRIVATE_KEY: "test-only", E2E_GITHUB_TOKEN: "test-only" }
+    expect(NEEDS.githubAppKey.met(deployedAs("admin", env))).toBe(true)
+    expect(NEEDS.githubPushToken.met({ ...local, env })).toBe(true)
+    for (const name of ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"]) {
+      for (const value of [undefined, ""]) {
+        expect(NEEDS.githubAppKey.met(deployedAs("admin", { ...env, [name]: value }))).toBe(false)
+      }
+    }
+    expect(NEEDS.githubPushToken.met(local)).toBe(false)
+    expect(NEEDS.githubPushToken.met({ ...local, env: { E2E_GITHUB_TOKEN: "" } })).toBe(false)
   })
 
   it("for the docs site, are met only by a deployment at its custom domain", () => {

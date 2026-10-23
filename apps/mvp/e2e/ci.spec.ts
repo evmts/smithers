@@ -1,53 +1,46 @@
 import { createHmac, randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
+import { GitHub } from "@smthrs/integrations"
+import { Effect, Redacted } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { installationToken, pushDelivery } from "./ciAuth"
 import { expect, test } from "./devices"
 import { field, type LogRecord, LogTail } from "./logs"
-import { requires } from "./target"
+import { requires, target } from "./target"
 
-// CI on Smithers (docs/features/ci.md): a person pushes a branch to a test repository, and its own flow,
-// `.smithers/flows/ci/flow.ts` on the default branch's trigger, runs each job on its own machine at the pushed commit
-// and reports `smithers/ci` on it, as GitHub shows a check. The repository (`E2E_REPO_FLOWS_REPOSITORY`, never a
-// smithersai one) holds e2e/fixtures/ci-repo on its default branch; the instance runs with REPO_FLOWS=true, REPO_FLOWS_REPOSITORIES naming the fixture repository, and the
-// GitHub App installed there with Contents: read and Commit statuses: read and write.
-//
-// The push is real, as the test account (`E2E_GITHUB_TOKEN`). The App's one webhook URL points at production, so this
-// test delivers the push to the instance under test itself, signed as GitHub signs it, with GitHub's own payload shape.
-// Each step waits for the run's own records (e2e/logs.ts), then the status on GitHub's commit page.
+// CI on Smithers (docs/features/ci.md): on a deployment the pusher is the App installation, authenticated with
+// GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY from the vault's environment wrapper. GitHub delivers the real push to
+// the App's one production webhook; ChatApi's ci.dispatch record correlates its delivery id with the pushed SHA.
+// Local development keeps the person push (E2E_GITHUB_TOKEN) and self-signed delivery (E2E_GITHUB_WEBHOOK_SECRET).
+// E2E_REPO_FLOWS_REPOSITORY (never smithersai) holds e2e/fixtures/ci-repo on its default branch. The target enables
+// REPO_FLOWS and allows the repository in REPO_FLOWS_REPOSITORIES; the App has Contents and Commit statuses write.
+// GitHub API calls use the SDK's redacted authentication and HTTP outside Playwright's request context: no key,
+// JWT or access token enters a Playwright trace, error attachment or browser. Each step follows the run's records.
 
 const REPOSITORY = process.env.E2E_REPO_FLOWS_REPOSITORY ?? ""
-const API = "https://api.github.com"
 
-/** GitHub's REST API as the test account. */
-const github = async (method: string, path: string, body?: unknown) => {
-  const response = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${process.env.E2E_GITHUB_TOKEN}`,
-      "x-github-api-version": "2022-11-28",
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-  if (!response.ok) throw new Error(`GitHub answered ${response.status} to ${method} ${path}`)
-  return response.status === 204 ? undefined : (await response.json() as Record<string, unknown>)
-}
+/** GitHub REST as the target's pusher, with the SDK's credential scrubbing (including error causes). */
+const github = (token: Redacted.Redacted<string>, method: GitHub.GitHubClient.RequestMethod, path: string, body?: unknown) =>
+  Effect.runPromise(Effect.gen(function* () {
+    const client = yield* GitHub.GitHubClient.make({ token: Redacted.value(token) }, {})
+    return yield* client.request(method, path, body)
+  }).pipe(Effect.provide(FetchHttpClient.layer)))
 
 /** Pushes one commit adding `ci-e2e.txt` onto the default branch's head, as branch `branch`: its SHA. */
-const push = async (branch: string, word: string) => {
-  const repo = await github("GET", `/repos/${REPOSITORY}`) as { default_branch: string }
-  const head = await github("GET", `/repos/${REPOSITORY}/git/ref/heads/${repo.default_branch}`) as { object: { sha: string } }
-  const base = await github("GET", `/repos/${REPOSITORY}/git/commits/${head.object.sha}`) as { tree: { sha: string } }
-  const tree = await github("POST", `/repos/${REPOSITORY}/git/trees`, {
+const push = async (token: Redacted.Redacted<string>, branch: string, word: string) => {
+  const repo = await github(token, "GET", `/repos/${REPOSITORY}`) as { default_branch: string }
+  const head = await github(token, "GET", `/repos/${REPOSITORY}/git/ref/heads/${repo.default_branch}`) as { object: { sha: string } }
+  const base = await github(token, "GET", `/repos/${REPOSITORY}/git/commits/${head.object.sha}`) as { tree: { sha: string } }
+  const tree = await github(token, "POST", `/repos/${REPOSITORY}/git/trees`, {
     base_tree: base.tree.sha,
     tree: [{ path: "ci-e2e.txt", mode: "100644", type: "blob", content: `${word}\n` }],
   }) as { sha: string }
-  const commit = await github("POST", `/repos/${REPOSITORY}/git/commits`, {
+  const commit = await github(token, "POST", `/repos/${REPOSITORY}/git/commits`, {
     message: `CI e2e ${word}`,
     tree: tree.sha,
     parents: [head.object.sha],
   }) as { sha: string }
-  await github("POST", `/repos/${REPOSITORY}/git/refs`, { ref: `refs/heads/${branch}`, sha: commit.sha })
+  await github(token, "POST", `/repos/${REPOSITORY}/git/refs`, { ref: `refs/heads/${branch}`, sha: commit.sha })
   return { sha: commit.sha, before: head.object.sha, defaultBranch: repo.default_branch }
 }
 
@@ -58,15 +51,30 @@ const recordsOf = async (logs: LogTail, message: string, key: string, value: str
 test("ci: a push runs the repository's flow, each job on its own machine, and GitHub shows smithers/ci passed", {
   annotation: { type: "summary", description: "A push runs the repository's own CI on Smithers machines; GitHub shows the check." },
 }, async ({ devices, request }) => {
-  requires("githubApp", "webhookSecret", "localLogs", "repoFlows")
+  requires("localLogs", "repoFlows")
+  if (target === "deployment") requires("githubAppKey")
+  else requires("githubPushToken", "webhookSecret")
   test.setTimeout(20 * 60_000)
+  const token = target === "deployment"
+    ? (await Effect.runPromise(installationToken(REPOSITORY, {
+      appId: process.env.GITHUB_APP_ID!,
+      privateKey: Redacted.make(process.env.GITHUB_APP_PRIVATE_KEY!),
+    }).pipe(Effect.provide(FetchHttpClient.layer)))).token
+    : Redacted.make(process.env.E2E_GITHUB_TOKEN!)
   const logs = await LogTail.start()
   const [a] = await devices.open("A")
   const branch = `smithers-ci-e2e-${devices.word}`
   try {
-    const pushed = await test.step("Push a commit to a branch", () => push(branch, devices.word))
-    const delivery = randomUUID()
-    await test.step("GitHub delivers the push", async () => {
+    const pushed = await test.step("Push a commit to a branch", () => push(token, branch, devices.word))
+    const delivery = await test.step("GitHub delivers the push", async () => {
+      if (target === "deployment") {
+        await expect.poll(async () => pushDelivery((await logs.records()).own, REPOSITORY, pushed.sha), {
+          timeout: 2 * 60_000,
+          message: "GitHub's real push delivery reaches ChatApi for this commit",
+        }).toBeTruthy()
+        return pushDelivery((await logs.records()).own, REPOSITORY, pushed.sha)!
+      }
+      const delivery = randomUUID()
       const body = JSON.stringify({
         ref: `refs/heads/${branch}`,
         before: "0".repeat(40),
@@ -86,6 +94,7 @@ test("ci: a push runs the repository's flow, each job on its own machine, and Gi
         data: body,
       })
       expect(delivered.status()).toBe(200)
+      return delivery
     })
     const run = `ci:${delivery}`
     await test.step("The default branch's trigger starts the ci flow", async () => {
@@ -95,6 +104,18 @@ test("ci: a push runs the repository's flow, each job on its own machine, and Gi
       await expect.poll(async () => (await recordsOf(logs, "ci.repo_flow.plan", "run", run)).map((record) => field(record, "outcome")), {
         timeout: 3 * 60_000,
       }).toEqual(["planned"])
+    })
+    await test.step("Watch the repository run on Smithers", async () => {
+      await a.page.goto(`/${REPOSITORY}/actions`)
+      const runLink = a.page.locator(`a[href$="/actions/runs/${encodeURIComponent(run)}"]`)
+      await expect(runLink).toBeVisible({ timeout: 30_000 })
+      await runLink.click()
+      await expect(a.page.getByRole("main", { name: "Run", exact: true })).toBeVisible()
+      await expect(a.page.getByRole("link", { name: "Runs", exact: true })).toBeVisible()
+      const stop = a.page.getByRole("button", { name: "Stop", exact: true })
+      if (await stop.isVisible()) await expect(stop).toBeEnabled()
+      await a.page.reload()
+      await expect(a.page.getByRole("main", { name: "Run", exact: true })).toBeVisible()
     })
     await test.step("Each job runs on its own machine at the commit", async () => {
       await expect.poll(
@@ -110,20 +131,10 @@ test("ci: a push runs the repository's flow, each job on its own machine, and Gi
         async () => (await recordsOf(logs, "ci.repo_flow.status", "run", run)).map((record) => [field(record, "state"), field(record, "outcome")]),
         { timeout: 2 * 60_000 },
       ).toContainEqual(["success", "sent"])
-      const combined = await github("GET", `/repos/${REPOSITORY}/commits/${pushed.sha}/status`) as {
+      const combined = await github(token, "GET", `/repos/${REPOSITORY}/commits/${pushed.sha}/status`) as {
         statuses: Array<{ context: string; state: string; description: string }>
       }
       expect(combined.statuses.find((status) => status.context === "smithers/ci")).toMatchObject({ state: "success", description: "Passed" })
-    })
-    await test.step("Watch the repository run on Smithers", async () => {
-      await a.page.goto(`/${REPOSITORY}/actions`)
-      const runLink = a.page.locator(`a[href$="/actions/runs/${encodeURIComponent(run)}"]`)
-      await expect(runLink).toBeVisible({ timeout: 30_000 })
-      await runLink.click()
-      await expect(a.page.getByRole("main", { name: "Run", exact: true })).toBeVisible()
-      await expect(a.page.getByRole("link", { name: "Runs", exact: true })).toBeVisible()
-      await a.page.reload()
-      await expect(a.page.getByRole("main", { name: "Run", exact: true })).toBeVisible()
     })
     await test.step("GitHub shows the check on the commit", async () => {
       await a.page.goto(`https://github.com/${REPOSITORY}/commit/${pushed.sha}`)
@@ -131,7 +142,7 @@ test("ci: a push runs the repository's flow, each job on its own machine, and Gi
       await expect(a.page.getByText("smithers/ci").first()).toBeVisible({ timeout: 30_000 })
     })
   } finally {
-    await github("DELETE", `/repos/${REPOSITORY}/git/refs/heads/${branch}`).catch(() => undefined)
+    await github(token, "DELETE", `/repos/${REPOSITORY}/git/refs/heads/${branch}`).catch(() => undefined)
     await logs.dispose()
   }
 })

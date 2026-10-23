@@ -1,0 +1,23 @@
+import { GitHub } from "@smthrs/integrations"
+import { Effect } from "effect"
+import { field, type LogRecord } from "./logs"
+
+/** A repository-scoped App token. HTTP stays outside Playwright, so credentials enter no request trace or attachment. */
+export const installationToken = (repository: string, credentials: GitHub.AppAuth.AppCredentials) => Effect.gen(function* () {
+  const app = yield* GitHub.AppAuth.make(credentials)
+  const [owner, name] = repository.split("/") as [string, string]
+  const installation = yield* app.installation(owner, name)
+  return yield* app.installationToken({
+    installationId: installation.id,
+    repositories: [name],
+    permissions: { contents: "write", statuses: "read" },
+  })
+})
+
+/** Correlates a real push with its dispatch, including tails containing unrelated or repeated deliveries. */
+export const pushDelivery = (records: ReadonlyArray<LogRecord>, repository: string, sha: string): string | undefined => {
+  const record = records.find((record) => record.message === "ci.dispatch" &&
+    field(record, "repo") === repository && field(record, "event") === "push" && field(record, "sha") === sha &&
+    typeof field(record, "delivery") === "string" && field(record, "delivery") !== "")
+  return record === undefined ? undefined : field(record, "delivery") as string
+}

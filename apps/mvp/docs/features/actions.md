@@ -69,6 +69,6 @@ No record carries a value of a run.
 | `worker/RemoteRuns.test.ts` "a repository's run", "stop" | a Member reads the synced repository's run and its jobs and follows each, never another repository's; Stop's answers and refusals |
 | `worker/github/PullsApi.test.ts` "the repository's runs" | the actions shape carries a repository's flows' runs, the Checks shape its checks |
 | `src/features/runs/remote.test.ts` "a repository's run on Cloudflare" | a tab lists the run, watches it, and stops it through `run/cancel` and ChatApi; a job's progress reads its run's page, and a job's own page, with no Stop; a Guest reads Not found |
-| `e2e/ci.spec.ts` | a real push, repository run list, run page and reload; `requires("githubApp", "webhookSecret", "localLogs", "repoFlows")` declares the credentials and deployment prerequisites; its recording supplies the run-view GIF |
+| `e2e/ci.spec.ts` | a real push, repository run list, run page and reload; `requires("localLogs", "repoFlows")` plus `githubAppKey` on deployments, or `githubPushToken` and `webhookSecret` locally, declare the prerequisites; its recording supplies the run-view GIF |
 
 Triggered runs are recorded by `triggers/Start` before the Durable Object start. A repeated delivery or failed start reuses the execution and its row.

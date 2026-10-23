@@ -250,9 +250,17 @@ const needs = {
   },
   repoFlows: {
     met: (run) =>
-      run.target === "deployment" && set(run, "E2E_REPO_FLOWS_REPOSITORY", "E2E_GITHUB_TOKEN") &&
+      /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(run.env.E2E_REPO_FLOWS_REPOSITORY ?? "") &&
       !/^smithersai\//i.test(run.env.E2E_REPO_FLOWS_REPOSITORY!),
-    reason: "it pushes a branch to a test repository and runs its CI: run against an instance started with REPO_FLOWS=true whose GitHub App is installed on E2E_REPO_FLOWS_REPOSITORY (never a smithersai one; its default branch holds e2e/fixtures/ci-repo), with E2E_GITHUB_TOKEN a token that may push there",
+    reason: "it runs repository CI: set E2E_REPO_FLOWS_REPOSITORY to a scratch owner/name (never smithersai); its default branch must hold e2e/fixtures/ci-repo and the target must have REPO_FLOWS=true, REPO_FLOWS_REPOSITORIES allowing it, and the GitHub App installed with Contents and Commit statuses write",
+  },
+  githubAppKey: {
+    met: (run) => set(run, "GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"),
+    reason: "the deployment's pusher is the App installation: set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY through the vault's environment wrapper",
+  },
+  githubPushToken: {
+    met: (run) => set(run, "E2E_GITHUB_TOKEN"),
+    reason: "local development pushes as a person: set E2E_GITHUB_TOKEN to a token with Contents write on the scratch repository",
   },
   githubApp: {
     met: (run) => run.target === "deployment",
