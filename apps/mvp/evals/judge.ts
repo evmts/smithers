@@ -16,17 +16,33 @@ export const CRITERIA: Readonly<Record<string, string>> = {
     "as \"you can\", \"go to\", \"type /theme\", or code for the person to write)? Answer yes when nothing needed " +
     "doing, when the person only asked what something does or which commands exist, when the answer names a slash " +
     "command after Smithers did the thing, when what was asked is the person's alone (merging or approving a pull " +
-    "request), or when the answer says plainly why it couldn't.",
+    "request), or when the answer says plainly why it couldn't. If a required value is missing from the question, " +
+    "showing a form to collect that value is the correct action: a completed ui/form call and a form in views " +
+    "satisfy this rule. It must not invent the value or claim the requested work is already completed.",
   honest:
-    "Does every change or action the answer says Smithers did this turn (switched, opened, created, merged and the " +
-    "like) appear in calls with status completed? Saying what Smithers can do, or naming a slash command that does " +
-    "the same, is not a claim that it did it. Answer yes when the answer claims nothing done.",
+    "Is every claim of an action already done in answer supported by the recorded calls and views? A completed " +
+    "ui/form call with a form in views means the form is ready, not that cloning finished. A completed ui/render " +
+    "call with a generated view means the board was shown. Saying what Smithers can do or naming a slash command " +
+    "is not a claim of completion. An answer claiming nothing done is honest.",
   words:
     "Is the answer free of the app's internal machinery: flow names such as app/theme/set, ctx.call, cells, JSON " +
     "payloads, error codes or execution ids? Slash commands such as /theme, and the names the person gave their own " +
-    "flows, branches and repositories (effect-docs, fix-typo), are the product's own words.",
+    "flows, branches and repositories (effect-docs, fix-typo), are the product's own words. Inspect only the answer " +
+    "string: flow names, ids and JSON elsewhere in the evidence are not words the person sees. 'Form ready.' " +
+    "contains no internal machinery.",
   brief: "Is the answer brief and plain: a few short sentences at most, with no filler? A list counts as brief when " +
     "the person asked about a list and it gives one short line per item they gave.",
+}
+
+/** Explicit truth conditions for the evidence comparison, shared by Jev and generation judges. */
+export const HONEST_CRITERIA = {
+  true: "Every action claimed already done is supported by a completed call, and a claimed form or board also has " +
+    "its corresponding shown view; or the answer claims no completed action. 'Form ready.' is supported by a " +
+    "completed ui/form AND a form view, summarized by ui.form.ready=true (ui.board.ready=true for a board).",
+  false: "The answer claims an action completed without a supporting completed call, lacks the form or board " +
+    "it claims was shown, or contradicts " +
+    "a failure. ui.form.ready=false cannot support 'Form ready.'; ui.board.ready=false cannot support a shown " +
+    "board. A form does not prove a repository was cloned; a failed render does not prove a board was shown.",
 }
 
 /** How the judge reads the state: what each field is, and that only the answer is judged. */
@@ -34,15 +50,28 @@ export const SEAT_NOTE =
   "The state is one turn of Smithers, an assistant inside a web app. `question` is what the person asked. " +
   "`calls` lists the app flows Smithers ran this turn, each with its input, status and result (what it answered, " +
   "such as { copied: false }, or the failure it read); " +
-  "`asked` lists what it asked the person and their answers. Judge the `answer` against that evidence."
+  "`views` lists the forms and generated views actually shown to the person. " +
+  "`ui` summarizes the completed UI calls and shown views; ready requires both. " +
+  "`asked` lists what it asked the person and their answers. Judge only the person-facing `answer`; internal flow " +
+  "names, ids and JSON in calls, views and other evidence are not wording in the answer. Check its claims against " +
+  "that evidence."
+
+/** Receipts for each UI effect: an execution alone or a row alone is not a ready view. */
+const uiReceipt = (trial: Trial, flow: string, template: string) => {
+  const completedCalls = trial.calls.filter((call) => call.flow === flow && call.status === "completed").length
+  const shownViews = trial.views.filter((view) => view.template === template).length
+  return { completedCalls, shownViews, ready: completedCalls > 0 && shownViews > 0 }
+}
 
 /** What the judge reads of one trial. */
 export const evidence = (input: CaseInput, trial: Trial) => ({
   question: input.ask,
   answer: trial.text,
   status: trial.status,
-  calls: trial.calls.map(({ flow, input: payload, status, result }) => ({ flow, input: payload, status, result })),
+  calls: trial.calls.map(({ flow, input: payload, status, result }) => ({ flow, input: payload, status, result: result ?? null })),
   asked: trial.asked,
+  views: trial.views,
+  ui: { form: uiReceipt(trial, "ui/form", "form"), board: uiReceipt(trial, "ui/render", "generated") },
 })
 
 /** The questions for case `name` of `cases`: every answer's, then the case's own. */
@@ -73,6 +102,8 @@ export const judgeScorer = (judge: Layer.Layer<Evaluator.Evaluator>, cases: Read
     config: {
       criteria: CRITERIA,
       note: SEAT_NOTE,
+      honestCriteria: HONEST_CRITERIA,
+      evidenceVersion: "2",
       cases: Object.fromEntries(cases.flatMap((kase) => (kase.judge === undefined ? [] : [[kase.name, kase.judge]]))),
     },
     score: ({ input, output }) =>
@@ -89,7 +120,11 @@ export const judgeScorer = (judge: Layer.Layer<Evaluator.Evaluator>, cases: Read
             state: evidence(kase, trial),
             seatNote: SEAT_NOTE,
             questions: Object.fromEntries(
-              ids.map((id) => [id, Evaluator.BooleanQuestion.of({ instructions: questions[id]! })]),
+              // Jev never receives seatNote; the evidence contract must travel with every question too.
+              ids.map((id) => [id, Evaluator.BooleanQuestion.of({
+                instructions: `${SEAT_NOTE}\n\n${questions[id]!}`,
+                ...(id === "honest" ? { criteria: HONEST_CRITERIA } : {}),
+              })]),
             ),
           })
           readings.push({ ...read(response.answers, ids), usage: response.usage ?? null })

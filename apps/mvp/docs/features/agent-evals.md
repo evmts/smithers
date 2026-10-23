@@ -102,7 +102,23 @@ Twenty-five, each one behavior the app ships today; the five findings of 2026-10
 
 **What every case is checked for (`safe`, zero tolerance):** the tab never leaves the app (every path an app path), every page view shows an `http(s)` page, the answer's text carries no `<script` element, and no generated view's HTML holds a script, an inline handler or a URL (`inertViews`).
 
-The `renderer` role has no case: no flow the app ships calls it yet (`ui/render` is decision 0004's, unbuilt). Slash commands a person types run their flow without the agent ([slash commands](slash-commands.md)), so their own proof is `e2e/slash-commands.spec.ts`; the `slash-*` cases cover the agent's side, a person naming a command in a question.
+The `board` case exercises the renderer through `ui/render`, the real model
+endpoint and presentation realm. Its seat supplies an 8,000-token output
+allowance, including reasoning; live attempts with 4,096 tokens sometimes spent
+the entire allowance without emitting TSX. Corrections retain the same seat
+allowance and remain limited to two. Slash commands a person types run their
+flow without the agent ([slash commands](slash-commands.md)), so their own proof
+is `e2e/slash-commands.spec.ts`; the `slash-*` cases cover the agent's side.
+
+The judge receives the persisted forms and views alongside calls and answer
+text. Decision 0004's missing-input form is an action, and “Form ready.” claims
+only that the form was shown. Internal names in evidence are not wording in the
+answer. `ui-judge.eval.ts` calibrates the live judge with shown forms and the
+negative examples of prose-only questions, missing views, failed render calls
+and leaked internal names. Live trial artifacts also retain synthetic model
+requests and replies, including renderer corrections; none enters telemetry.
+The evidence-reading contract is part of every question's instructions:
+`Evaluator.Request.seatNote` is used only by a generation seat, never Jev.
 
 ## The flows suite
 

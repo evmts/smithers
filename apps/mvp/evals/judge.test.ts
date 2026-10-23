@@ -6,7 +6,7 @@ import { Effect, Layer } from "effect"
 import { describe, expect, test } from "vitest"
 import { caseNamed, inputOf } from "./cases"
 import { call, trial } from "./fixtures"
-import { CRITERIA, evidence, judgeScorer, questionsFor, read, SEAT_NOTE } from "./judge"
+import { CRITERIA, evidence, HONEST_CRITERIA, judgeScorer, questionsFor, read, SEAT_NOTE } from "./judge"
 
 /** A judge that answers each question with the probability `answer` gives it, and records what it was asked. */
 const scripted = (
@@ -43,6 +43,7 @@ describe("the questions", () => {
       text: "Asked; set dark.",
       calls: [{ ...call("app/theme/set", { mode: "dark" }), result: { mode: "dark" } }],
       asked: [{ kind: "question", prompt: "Light or dark?", value: "dark" }],
+      views: [],
     })
     expect(evidence(inputOf(caseNamed("greeting")), t)).toEqual({
       question: "hi",
@@ -50,7 +51,30 @@ describe("the questions", () => {
       status: "done",
       calls: [{ flow: "app/theme/set", input: { mode: "dark" }, status: "completed", result: { mode: "dark" } }],
       asked: [{ kind: "question", prompt: "Light or dark?", value: "dark" }],
+      views: [],
+      ui: {
+        form: { completedCalls: 0, shownViews: 0, ready: false },
+        board: { completedCalls: 0, shownViews: 0, ready: false },
+      },
     })
+  })
+
+  test("a call without a result remains valid JSON evidence", () => {
+    expect(evidence(inputOf(caseNamed("board")), trial({ calls: [call("ui/render", {}, "failed")] })).calls)
+      .toEqual([{ flow: "ui/render", input: {}, status: "failed", result: null }])
+  })
+
+  test("UI readiness requires both a completed matching call and its shown view", () => {
+    for (const [flow, template, key] of [["ui/form", "form", "form"], ["ui/render", "generated", "board"]] as const) {
+      for (const completed of [false, true]) {
+        for (const shown of [false, true]) {
+          const t = trial({ calls: [call(flow, {}, completed ? "completed" : "failed")],
+            views: shown ? [{ template, url: null }] : [] })
+          expect(evidence(inputOf(caseNamed("greeting")), t).ui[key])
+            .toEqual({ completedCalls: Number(completed), shownViews: Number(shown), ready: completed && shown })
+        }
+      }
+    }
   })
 })
 
@@ -88,7 +112,12 @@ describe("judgeScorer", () => {
     expect(judge.requests).toHaveLength(2)
     expect(judge.requests[0]!.seatNote).toBe(SEAT_NOTE)
     expect(Object.keys(judge.requests[0]!.questions)).toEqual(Object.keys(CRITERIA))
-    expect(judge.requests[0]!.questions["brief"]).toMatchObject({ type: "boolean", instructions: CRITERIA["brief"] })
+    for (const request of judge.requests) {
+      for (const [id, question] of Object.entries(request.questions)) {
+        expect(question).toMatchObject({ type: "boolean", instructions: `${SEAT_NOTE}\n\n${CRITERIA[id]}` })
+      }
+      expect(request.questions.honest).toMatchObject({ criteria: HONEST_CRITERIA })
+    }
     expect((result.meta as { readings: Array<{ usage: unknown }> }).readings.map((reading) => reading.usage))
       .toEqual([null, null])
   })
