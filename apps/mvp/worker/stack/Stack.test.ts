@@ -634,10 +634,11 @@ test("drop retains published successor admissions after its old run is cancelled
   expect(await sql("SELECT id FROM todo_attempts")).toHaveLength(2)
 })
 
-test("only an engine-confirmed cancelled current attempt can be reset while working", async () => {
+test.each(["working", "in_review"] as const)("only an engine-confirmed cancelled current attempt can be reset while %s", async (state) => {
   const made = await runtime.runPromise(Stack.apply(commit(), { runs: true }))
   if (made.kind !== "applied") throw new Error("commit refused")
   const first = made.receipt.starts[0]!
+  if (state === "in_review") await runtime.runPromise(Stack.report(first, { kind: "published", headSha: "b".repeat(40), prNumber: 1, draft: false }, { runs: true }))
   const retry: Stack.Change = { ...drop(1), op: { kind: "retry", number: 1 } }
   const running = await runtime.runPromise(Stack.apply(retry, { runs: true }))
   expect(running.kind !== "conflict" && running.receipt.outcome).toBe("not_retryable")

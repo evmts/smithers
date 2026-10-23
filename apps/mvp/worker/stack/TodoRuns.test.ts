@@ -95,3 +95,12 @@ test("start conflicts are idempotent, unavailable hosts propagate and cancellati
   const interrupted = TodoRuns.make({ start: () => Effect.void }, () => Effect.interrupt)
   expect(Exit.isFailure(yield* Effect.exit(interrupted.stop(attempt)))).toBe(true)
 })))
+
+test("the stopped-receipt adapter propagates an unreadable engine database instead of treating it as not stopped", () => runtime.runPromise(Effect.gen(function* () {
+  // This is the real app database, which has no engine tables: the engine schema is unavailable.
+  const scratch = yield* TestDatabase.Scratch
+  const adapter = TodoRuns.make({ start: () => Effect.void }, () => Effect.void, TodoRuns.isStopped(scratch.database.pipe(Layer.orDie)))
+  const exit = yield* Effect.exit(adapter.isStopped!(crypto.randomUUID()))
+  expect(Exit.isFailure(exit)).toBe(true)
+  expect(JSON.stringify(exit)).toContain("@smthrs/mvp/stack/RunsUnavailable")
+})))

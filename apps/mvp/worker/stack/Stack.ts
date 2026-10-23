@@ -224,7 +224,7 @@ export const apply = (change: Change, options: { readonly runs: boolean; readonl
             AND t.branch IS NOT NULL
             AND t.repo_id = ${change.repoId} AND t.number = ${change.op.number}`
         yield* sql`UPDATE todo_attempts SET status = 'failed', settled_at = coalesce(settled_at, now())
-          WHERE id = ${options.stoppedAttemptId ?? null}::uuid AND todo_id = ${rows.find((row) => row.number === named)?.id ?? null}::uuid`
+          WHERE id = ${options.stoppedAttemptId ?? null}::uuid AND todo_id = ${rows.find((row) => row.number === named)!.id}::uuid`
         yield* sql`UPDATE todos SET failure = NULL, step = NULL, branch = NULL, base_sha = NULL, base_ref = NULL, base_reset = true,
           head_sha = NULL, pr_number = NULL, pr_draft = NULL, note = NULL
           WHERE repo_id = ${change.repoId} AND number = ${change.op.number}`

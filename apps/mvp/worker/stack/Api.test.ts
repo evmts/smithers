@@ -1,7 +1,16 @@
+import * as Pg from "@effect/sql-pg"
+import { PostgresDatabase } from "@smthrs/database"
+import { FlowRuntime } from "@smthrs/flow"
+import { NodeHost } from "@smthrs/platform-node"
+import * as TestDatabase from "../../db/TestDatabase.ts"
+import * as Pause from "../flows/Pause.ts"
+import { build } from "../test/flowHost.ts"
+import * as TodoRuns from "./TodoRuns.ts"
+import * as Flows from "../Flows.ts"
 // The stack's routes (worker/stack/Api.ts, decision 0016 §1 and §5) through the real handler on this file's schema of
 // the compose Postgres and Electric (`pnpm db:up`): every refusal of `POST /api/repos/<owner>/<name>/stack`, a commit and
 // a drop end to end, repeated ops, the run host's seam, the shapes' access, and records free of titles and prompts.
-import { Effect, Layer } from "effect"
+import { Context, Deferred, Effect, Layer } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import {
@@ -421,3 +430,37 @@ test("Guest cannot retry; Member retries own, Maintainer anyone; agent uses same
   expect((await post(maintainer, { opId: uuid(), op: "retry", number: 1 })).status).toBe(202)
   expect(host.started[2]).toMatchObject({ ordinal: 3 })
 })
+
+
+test("Retry waits for the engine's terminal cancellation receipt, then replaces only the cancelled attempt", async () => {
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const ready = yield* Deferred.make<void>()
+    const { context, engine } = yield* build(Pause.registration((label) => Effect.as(Deferred.succeed(ready, undefined), label)))
+    const flows = Context.get(context, FlowRuntime.FlowRuntime)
+    const server = yield* TestDatabase.serverUrl
+    const database = PostgresDatabase.layer({ url: server.toString(), driver: Pg, schema: engine.schema }).pipe(Layer.provide(NodeHost.layer), Layer.orDie)
+    const started: Stack.AttemptStart[] = []
+    const adapter = TodoRuns.make({ start: (_flow, options) => Effect.gen(function* () {
+      const attempt = options.payload as Stack.AttemptStart
+      started.push(attempt)
+      yield* flows.execute(Pause.Pause, { executionId: options.executionId, payload: { label: options.executionId, pauseMs: 3_600_000 }, discard: true }).pipe(
+        Effect.provide(context), Effect.mapError(() => new Flows.StartUnavailable({ errorCode: "engine" })),
+      )
+    }) }, (id) => flows.interrupt(Pause.Pause, id), TodoRuns.isStopped(database))
+    const host = { ...runs(), started, layer: Layer.succeed(Stack.TodoRuns, adapter) }
+    const h = yield* Effect.promise(() => stackHarness(runtime, { actor: member, runs: host }))
+    expect((yield* Effect.promise(() => post(h, commitBody()))).status).toBe(202)
+    yield* Deferred.await(ready)
+    const first = started[0]!
+    expect((yield* Effect.promise(() => post(h, { opId: uuid(), op: "retry", number: 1 }))).status).toBe(409)
+    yield* flows.interrupt(Pause.Pause, `todo:${first.attemptId}`)
+    yield* Effect.promise(() => eventually(async () => await Effect.runPromise(adapter.isStopped!(first.attemptId)), 20_000))
+    expect((yield* Effect.promise(() => post(h, { opId: uuid(), op: "retry", number: 1 }))).status).toBe(202)
+    expect(started[1]).toMatchObject({ todoId: first.todoId, ordinal: 2 })
+    expect((yield* Effect.promise(() => post(h, { opId: uuid(), op: "retry", number: 99 }))).status).toBe(404)
+    const second = started[1]!
+    yield* Effect.promise(() => runtime.runPromise(Stack.report(second, { kind: "finished", state: "failed", failure: "implement" }, { runs: true })))
+    expect((yield* Effect.promise(() => post(h, { opId: uuid(), op: "retry", number: 1 }))).status).toBe(202)
+    for (const attempt of started.slice(1)) yield* flows.interrupt(Pause.Pause, `todo:${attempt.attemptId}`)
+  })))
+}, 60_000)
