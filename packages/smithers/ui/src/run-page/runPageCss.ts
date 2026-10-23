@@ -18,6 +18,9 @@ export const runPageCss = `
 .sui-run-list-flow a { color:${t.foreground}; text-decoration:none; }
 .sui-run-list-flow a:hover { text-decoration:underline; }
 .sui-run-list-flow a:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; border-radius:${t.radiusControl}; }
+@media (max-width:960px) {
+  .sui-run-list-flow a { display:inline-flex; align-items:center; min-height:${t.controlHeight}; min-width:32px; }
+}
 .sui-run-list-time { color:${t.mutedForeground}; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .sui-span-tree { display:flex; flex-direction:column; min-width:0; }
 .sui-span-tree-row { display:flex; align-items:center; gap:8px; min-width:0; padding:4px 8px 4px calc(8px + var(--sui-span-depth, 0) * 14px); border-radius:${t.radiusControl}; cursor:pointer; font-size:13px; }
