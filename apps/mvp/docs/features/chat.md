@@ -1,5 +1,10 @@
 # Chat with Smithers
 
+Opening Chat records `focusRequested` in the memory-only composer collection.
+The input consumes it through `takeComposerFocus` when attached, then focuses.
+Closing Chat cancels it; a route remount or draft change creates no request.
+The React view holds no focus state. See [decision 0081](../decisions/0081-keyboard-focus-through-file-navigation.md).
+
 ## What the user does
 
 1. Opens the app (`/app`) and presses ⌘K (Ctrl+K), or clicks Chat ⌘K. The app opens at once, from the device, online or not. It installs as a PWA.

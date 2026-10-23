@@ -31,6 +31,12 @@ without navigating. The SDK's existing persistence log and counter record the fa
 
 The strip shows on a file's page and on a branch's directory pages. A file's page is part of its branch's workspace, as a directory's is, so when the agent opens a file from the conversation, the conversation stays beside it.
 
+Keyboard focus survives both branch retracking and the router's pending screen.
+`FileTabs` restores its focused link after Suspense reveals it, unless another
+control has focus. Opening Chat requests focus once through the memory-only
+composer collection; its input consumes that request on attachment. A remount
+creates no new focus request. Device writes still finish before navigation.
+
 ## The flows
 
 | Flow | Payload | Answers | Fails |
@@ -76,5 +82,7 @@ Each step logs `files.tab` (Warn for `no_repository`), records a span of the sam
 - `src/features/files/files.test.ts`: the strip and links; a tab on RepoApi's real handler and Electric (`src/test/repoDevice.ts`) keeping a tab for every file its view shows; `file/open` and `file/close` through the tab's dispatch, as the strip and as the agent, with closing on and off screen, a tab on no repository and refused payloads; a step whose tab is gone.
 - `src/features/files/persistence.test.ts`: real browser persistence on SQLite, with a stalled SQL host; navigation waits for insertion, line updates and deletion, then reopening the store restores exactly the remaining tab, its position and its lines.
 - `packages/smithers/ui/tests/file-tabs.test.tsx`: the strip's roles, clicks and keys.
+- `tests/FileTabs.test.ts`: Delete and Backspace preserve the remaining tab's focus when the real composer remounts; explicit-open, idle-remount and read-only composer focus.
+- `tests/FileTabs.browser.test.ts`: real Chromium and TanStack Router, with navigation held past the pending delay; restores tab focus and respects focus moved outside the strip before or during the wait, including removal of the remaining tab.
 - `e2e/files.spec.ts`: the agent opens a file at a line range from the branch workspace's conversation, the tab and highlight show and the conversation stays; the person switches and closes tabs by keyboard (both need Code Storage); moving between a branch's directory, a file and its terminal keeps the workspace (no clone needed).
 - `evals/cases.ts` `files-show-lines`: asked to show code, the agent calls `file/open` with the lines.

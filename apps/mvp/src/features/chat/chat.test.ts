@@ -956,6 +956,25 @@ describe("the composer", () => {
     expect(tab.count(Metric.withAttributes(composerOpens, { via: "button" }))).toBe(1)
   })
 
+  test("an opening requests focus once, closing cancels it, and reopening requests it again", async () => {
+    const tab = await openChat()
+    expect(tab.actions.takeComposerFocus()).toBe(false)
+    tab.actions.openComposer("button")
+    expect(tab.composer()).toMatchObject({ open: true, focusRequested: true })
+    expect(tab.actions.takeComposerFocus()).toBe(true)
+    expect(tab.composer()).toMatchObject({ open: true, focusRequested: false })
+    expect(tab.actions.takeComposerFocus()).toBe(false)
+    tab.actions.openComposer("button")
+    expect(tab.actions.takeComposerFocus()).toBe(false)
+    tab.actions.closeComposer()
+    tab.actions.openComposer("shortcut")
+    tab.actions.closeComposer()
+    expect(tab.actions.takeComposerFocus()).toBe(false)
+    tab.actions.openComposer("shortcut")
+    expect(tab.actions.takeComposerFocus()).toBe(true)
+    expect(tab.actions.takeComposerFocus()).toBe(false)
+  })
+
   test("belongs to one tab", async () => {
     const a = await openChat()
     const b = await tabOn(openTab(a.api))

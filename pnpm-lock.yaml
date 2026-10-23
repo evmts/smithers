@@ -561,6 +561,9 @@ importers:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      happy-dom:
+        specifier: 20.13.2
+        version: 20.13.2
       miniflare:
         specifier: 5.20261019.0-beta
         version: 5.20261019.0-beta(@types/node@26.4.1)

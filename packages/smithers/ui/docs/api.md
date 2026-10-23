@@ -1308,7 +1308,9 @@ function FileTabs(props: Omit<ComponentProps<"div">, "children" | "role"> & {
 tab is a link (`role="tab"`, `aria-selected` on the active file) with a close
 button. A plain click, Enter or Space calls `onOpen`; a modified or middle click
 is the browser's. ←, →, Home and End move focus between tabs; Delete or
-Backspace calls `onClose` and focuses the tab that takes its place. Only the
+Backspace calls `onClose` and focuses the tab that takes its place. A strip hidden
+by a pending route restores its focused tab when revealed, unless another control
+has focus. Only the
 active tab, else the first, is in the Tab order. It holds no state, and renders
 nothing without tabs. The tablist is named "Open files" unless `aria-label` says
 otherwise.

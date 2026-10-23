@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps, KeyboardEvent, MouseEvent } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { cn } from "./cn";
 import { isPlainNavigationClick } from "./internal/navigationClick";
 import { useInjectUiCss } from "./styles";
@@ -48,6 +49,16 @@ const NEXT: Readonly<Record<string, (index: number, count: number) => number>> =
  */
 export function FileTabs({ tabs, onOpen, onClose, className, "aria-label": label, ...props }: FileTabsProps) {
   useInjectUiCss();
+  const focused = useRef<HTMLAnchorElement | null>(null);
+  useLayoutEffect(() => {
+    // Suspense hides a pending route and drops browser focus to the body.
+    // Restore the strip's focus on reveal unless another control now owns it.
+    const element = focused.current;
+    if (element?.isConnected && element.ownerDocument.activeElement === element.ownerDocument.body) element.focus();
+    return () => {
+      if (focused.current !== focused.current?.ownerDocument.activeElement) focused.current = null;
+    };
+  }, []);
   if (tabs.length === 0) return null;
   const focusable = Math.max(0, tabs.findIndex((tab) => tab.active));
   const follow = (tab: FileTab) => (event: MouseEvent<HTMLAnchorElement>) => {
@@ -90,6 +101,7 @@ export function FileTabs({ tabs, onOpen, onClose, className, "aria-label": label
             tabIndex={index === focusable ? 0 : -1}
             onClick={follow(tab)}
             onKeyDown={keys(index)}
+            onFocus={(event) => { focused.current = event.currentTarget; }}
           >
             {tab.label}
           </a>

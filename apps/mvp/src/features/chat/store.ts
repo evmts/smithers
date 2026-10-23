@@ -262,7 +262,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     id: "chat-composer",
     schema: Composer,
     getKey: (row) => row.id,
-    initialData: [{ id: COMPOSER, open: false, draft: "", saved: true }],
+    initialData: [{ id: COMPOSER, open: false, focusRequested: false, draft: "", saved: true }],
   })
   const connection = yield* Collection.local<Connection, string>({
     id: "chat-connection",

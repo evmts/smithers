@@ -42,6 +42,7 @@ export const openComposer = (via: Via) =>
     if ((yield* composerNow).open) return
     yield* changeComposer((composer) => {
       composer.open = true
+      composer.focusRequested = true
     })
     yield* Metric.update(Metric.withAttributes(composerOpens, { via }), 1)
   })
@@ -49,6 +50,16 @@ export const openComposer = (via: Via) =>
 /** Hides the composer. The draft stays. */
 export const closeComposer = changeComposer((composer) => {
   composer.open = false
+  composer.focusRequested = false
+})
+
+/** Claims this opening's focus request once, when a frontend has an input to focus. */
+export const takeComposerFocus = Effect.gen(function* () {
+  if (!(yield* composerNow).focusRequested) return false
+  yield* changeComposer((composer) => {
+    composer.focusRequested = false
+  })
+  return true
 })
 
 export const toggleComposer = (via: Via) =>

@@ -18,6 +18,7 @@ import {
   retryAnswer,
   setDraft,
   show,
+  takeComposerFocus,
   type Via,
 } from "./actions"
 import { ChatStore } from "./store"
@@ -58,6 +59,8 @@ export interface ChatActions {
   readonly ask: (text: string) => AskResult
   readonly openComposer: (via: Via) => void
   readonly closeComposer: () => void
+  /** Consume an opening's focus request when the frontend input mounts. */
+  readonly takeComposerFocus: () => boolean
   readonly setDraft: (text: string) => void
   readonly loadEarlier: () => void
   /** Retry on the connection pill: sync and send now. */
@@ -128,6 +131,7 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
           ask: (text) => run(ask(text)),
           openComposer: (via) => run(openComposer(via)),
           closeComposer: () => run(closeComposer),
+          takeComposerFocus: () => run(takeComposerFocus),
           setDraft: (text) => run(setDraft(text)),
           loadEarlier: () => run(loadEarlier),
           retry: () => run(retry("button")),

@@ -86,6 +86,8 @@ export const COMPOSER = "composer"
 export const Composer = Schema.Struct({
   id: Schema.Literal(COMPOSER),
   open: Schema.Boolean,
+  /** One focus request per opening, consumed by the mounted input. Never persisted. */
+  focusRequested: Schema.Boolean,
   draft: Schema.String,
   saved: Schema.Boolean,
 })

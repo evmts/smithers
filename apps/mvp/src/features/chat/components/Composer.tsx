@@ -66,7 +66,11 @@ export function Composer({ docked = true, readOnly = false }: { readonly docked?
       placeholder="Message Smithers"
       inputAriaLabel="Message Smithers"
       textareaProps={{
-        autoFocus: true,
+        ref: (element) => {
+          // The opening action owns this request. Remounting a route does not
+          // request focus, even when Suspense has left it on the document body.
+          if (element !== null && actions.takeComposerFocus()) element.focus()
+        },
         maxLength: MAX_QUESTION_LENGTH,
         "data-draft": (prompt === undefined ? composer.saved : prompt.stored) ? "saved" : "unsaved",
       }}
