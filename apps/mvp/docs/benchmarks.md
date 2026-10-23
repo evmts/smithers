@@ -248,3 +248,35 @@ These read the first results above, so they describe the app as it was then.
 A concurrent ask passes only after its browser displays completion. Shape refetches validate their status and cursor and replay their messages; repository replay merges updates and removes deletes. A follower request times out after 30 seconds at startup or 90 seconds while live, including the response body. Transport failure fails observation instead of retrying across an unmeasured gap. Effect scopes close acquired resources on failure and cancellation.
 
 Selected-suite baseline updates retain omitted metrics. Each metric keeps its original run source and environment; mixed-machine baselines still warn. Run benchmark unit tests with `node --test bench/*.test.ts` from `apps/mvp`.
+
+## ChatApi startup
+
+`pnpm bench:startup --out /tmp/chatapi-startup-<unique-run>` bundles
+`worker/ChatApi.ts` with Alchemy's real rolldown and Cloudflare plugins, then
+imports the emitted entry in three fresh Node processes. The median elapsed
+module evaluation must remain below **200 ms**, unchanged from the former unit
+test. Run this separately from parallel suites on an idle machine; an exceeded
+budget exits nonzero and retains its result and failure receipt. No retries or
+automatic baseline changes occur. The deterministic unit gate separately checks
+that `ChatApiProgram.ts` is absent from the entry's static dependency closure,
+reachable through a dynamic import, and that the emitted bundle actually loads.
+
+The fresh artifact directory contains `result.json`: all three elapsed and CPU
+samples, the median, budget, pass/fail, emitted-file SHA-256 identities, revision,
+Node version, CPU, platform and host load before and after. The runner refuses
+an existing directory and removes its temporary bundle. There is no warmup;
+process module caches are cold but the OS file cache is retained. The benchmark
+uses the existing startup-only Node adapter for `cloudflare:*` module values;
+it executes no requests, SQL, model calls or credentials.
+
+Node elapsed import time is a local regression proxy, sensitive to scheduling
+and different from Cloudflare's startup CPU limit. It is not a production
+latency guarantee. For live evidence retain the matching deployment's
+`startup_time_ms` upload receipt separately; this command neither deploys nor
+measures a live Worker. The historical live observations remain documented in
+[infrastructure](infrastructure.md#limits).
+
+The retained [2026-10-23 local receipt](../bench/startup-results/2026-10-23.json)
+observed a 63.3 ms median (60.7, 69.2, 63.3 ms) on Node 26.5.0, Apple M4 Pro.
+Its recorded load was about 30; it is a reproducibility receipt, not an idle-host
+or live-deployment performance claim.

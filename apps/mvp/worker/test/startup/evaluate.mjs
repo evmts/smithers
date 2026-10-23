@@ -7,5 +7,8 @@ registerHooks({
     specifier.startsWith("cloudflare:") ? { url: stub, shortCircuit: true } : next(specifier, context),
 })
 const started = performance.now()
+const cpuStarted = process.cpuUsage()
 await import(process.argv[2])
-console.log(JSON.stringify({ evaluationMs: performance.now() - started }))
+const evaluationMs = performance.now() - started
+const cpu = process.cpuUsage(cpuStarted)
+console.log(JSON.stringify({ evaluationMs, cpuMs: (cpu.user + cpu.system) / 1000 }))

@@ -1,0 +1,463 @@
+{
+  "fullCommand": "pnpm test --maxWorkers=2 --reporter=verbose",
+  "focusedCommand": "pnpm test src/features/timeline/engine.test.ts worker/ChatApi.startup.test.ts -t 'grant-store failure|startup' --coverage.enabled=false --maxWorkers=2 --reporter=verbose",
+  "testDatabasePort": 55593,
+  "testElectricPort": 31593,
+  "fullStartedAt": "2026-10-23T23:31:27.370347+00:00",
+  "runs": [
+    {
+      "iteration": 1,
+      "startedAt": "2026-10-23T23:31:27.374092+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 37.61098137497902,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 122
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 28032
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "startedAt": "2026-10-23T23:32:04.986125+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 16.779005958000198,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 109
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 4915
+        }
+      ]
+    },
+    {
+      "iteration": 3,
+      "startedAt": "2026-10-23T23:32:21.765871+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 13.7861823750427,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 132
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 2527
+        }
+      ]
+    },
+    {
+      "iteration": 4,
+      "startedAt": "2026-10-23T23:32:35.552862+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 14.760062166955322,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 124
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 2678
+        }
+      ]
+    },
+    {
+      "iteration": 5,
+      "startedAt": "2026-10-23T23:32:50.313600+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 18.41926454100758,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 218
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 10394
+        }
+      ]
+    },
+    {
+      "iteration": 6,
+      "startedAt": "2026-10-23T23:33:08.733575+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 14.715699332999066,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 141
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 4346
+        }
+      ]
+    },
+    {
+      "iteration": 7,
+      "startedAt": "2026-10-23T23:33:23.449971+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 11.30832695798017,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 193
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 1368
+        }
+      ]
+    },
+    {
+      "iteration": 8,
+      "startedAt": "2026-10-23T23:33:34.759851+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 13.277336249942891,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 115
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 2434
+        }
+      ]
+    },
+    {
+      "iteration": 9,
+      "startedAt": "2026-10-23T23:33:48.037959+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 8.729003791930154,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 128
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 1331
+        }
+      ]
+    },
+    {
+      "iteration": 10,
+      "startedAt": "2026-10-23T23:33:56.767581+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 14.506568874930963,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 116
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 7648
+        }
+      ]
+    },
+    {
+      "iteration": 11,
+      "startedAt": "2026-10-23T23:34:11.274472+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 9.86706929106731,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 101
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 2250
+        }
+      ]
+    },
+    {
+      "iteration": 12,
+      "startedAt": "2026-10-23T23:34:21.142094+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 21.32129741704557,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 111
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 13371
+        }
+      ]
+    },
+    {
+      "iteration": 13,
+      "startedAt": "2026-10-23T23:34:42.464058+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 10.688744832994416,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 125
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 1843
+        }
+      ]
+    },
+    {
+      "iteration": 14,
+      "startedAt": "2026-10-23T23:34:53.154007+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 13.794349667034112,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 124
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 2426
+        }
+      ]
+    },
+    {
+      "iteration": 15,
+      "startedAt": "2026-10-23T23:35:06.949076+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 11.745771541958675,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 111
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 1916
+        }
+      ]
+    },
+    {
+      "iteration": 16,
+      "startedAt": "2026-10-23T23:35:18.695907+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 19.827528540976346,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 175
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 10236
+        }
+      ]
+    },
+    {
+      "iteration": 17,
+      "startedAt": "2026-10-23T23:35:38.524247+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 9.160192208946683,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 92
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 1851
+        }
+      ]
+    },
+    {
+      "iteration": 18,
+      "startedAt": "2026-10-23T23:35:47.684831+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 10.882966291974299,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 109
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 1324
+        }
+      ]
+    },
+    {
+      "iteration": 19,
+      "startedAt": "2026-10-23T23:35:58.568494+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 12.836184792104177,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 127
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 4553
+        }
+      ]
+    },
+    {
+      "iteration": 20,
+      "startedAt": "2026-10-23T23:36:11.405321+00:00",
+      "fullRunningBefore": true,
+      "exitCode": 0,
+      "seconds": 10.863636833964847,
+      "fullRunningAfter": true,
+      "tests": [
+        {
+          "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+          "durationMs": 99
+        },
+        {
+          "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+          "durationMs": 4919
+        }
+      ]
+    }
+  ],
+  "fullPid": 18940,
+  "summary": {
+    "consecutiveGreenRunsPerTest": 20,
+    "overlappedFullGateForEveryRun": true,
+    "fullGate": "failed",
+    "files": {
+      "failed": 23,
+      "passed": 290,
+      "skipped": 4,
+      "total": 317
+    },
+    "tests": {
+      "failed": 116,
+      "passed": 3917,
+      "expectedFail": 2,
+      "skipped": 10,
+      "total": 4045
+    },
+    "durationSeconds": 3919.59
+  },
+  "fullExitCode": 1,
+  "fullFinishedAt": "2026-10-24T00:37:00.423863+00:00",
+  "coverage": {
+    "statements": 98.56,
+    "branches": 97.75,
+    "functions": 98.44,
+    "lines": 98.75,
+    "requiredEach": 100
+  },
+  "failuresByFile": {
+    "worker/flows/Todo.test.ts": 1,
+    "worker/github/Triage.test.ts": 1,
+    "db/Database.test.ts": 20,
+    "worker/RepoApi.test.ts": 1,
+    "worker/github/Api.test.ts": 5,
+    "worker/RemoteRuns.test.ts": 4,
+    "src/features/home/home.test.ts": 14,
+    "src/features/agent/agent.test.ts": 1,
+    "src/features/repo/repo.test.ts": 15,
+    "worker/stack/Api.test.ts": 3,
+    "worker/domains/Domains.test.ts": 2,
+    "worker/branch/Terminals.test.ts": 2,
+    "src/features/code-intel/code-intel.test.ts": 14,
+    "worker/secrets/Secrets.test.ts": 2,
+    "worker/branch/Shares.test.ts": 2,
+    "worker/branch/Texts.test.ts": 2,
+    "src/features/files/files.test.ts": 9,
+    "worker/github/PullsApi.test.ts": 6,
+    "src/features/repo/warm.test.ts": 7,
+    "worker/branch/ConversationPeople.test.ts": 1,
+    "src/features/domains/domains.test.ts": 2,
+    "tests/FileTabs.navigation.test.ts": 1,
+    "tests/ThemeButton.test.ts": 1
+  },
+  "fullGateRequestedCases": [
+    {
+      "name": "src/features/timeline/engine.test.ts > a model grant-store failure leaves the summary unavailable without exposing its detail",
+      "durationMs": 1067
+    },
+    {
+      "name": "worker/ChatApi.startup.test.ts > ChatApi's startup > loads its settings while keeping the request program out of startup's static module graph",
+      "durationMs": 99
+    }
+  ],
+  "checks": {
+    "appTypecheck": {
+      "command": "pnpm typecheck",
+      "exitCode": 0,
+      "projects": 4
+    },
+    "importRules": {
+      "command": "pnpm exec smithers-build test '//apps/mvp:importRules'",
+      "exitCode": 0
+    },
+    "startupRunnerTypecheck": {
+      "exitCode": 0
+    },
+    "startupBenchmark": {
+      "command": "pnpm bench:startup --out /tmp/test-budgets-startup-measurement",
+      "exitCode": 0,
+      "medianMs": 63.297166999999995,
+      "budgetMs": 200
+    },
+    "extraWholeBenchTypecheck": {
+      "exitCode": 2,
+      "existingErrorsIn": "bench/cerebras-load/{admission.test,report,run}.ts"
+    }
+  },
+  "logs": {
+    "fullGate": "/tmp/test-budgets-full.log",
+    "repetitions": "/tmp/test-budgets-repeat-{01..20}.log",
+    "typecheck": "/tmp/test-budgets-typecheck.log",
+    "importRules": "/tmp/test-budgets-importRules.log"
+  }
+}

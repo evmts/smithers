@@ -1,0 +1,77 @@
+{
+  "ok": true,
+  "budgetMs": 200,
+  "medianMs": 63.297166999999995,
+  "samples": [
+    {
+      "evaluationMs": 60.669333,
+      "cpuMs": 68.454
+    },
+    {
+      "evaluationMs": 69.18008400000001,
+      "cpuMs": 74.252
+    },
+    {
+      "evaluationMs": 63.297166999999995,
+      "cpuMs": 69.308
+    }
+  ],
+  "hashes": {
+    "ChatApi.js": "a7e7be0ce0c5fb3adbcc33c6bc0ae6437a48be58db4c92af0173119459e27d23",
+    "BunServices-Dy0qScOx.js": "3824cd4ce48f263dbc2f2f482622fc44446341a79d3a4ccad0ed62df8070e41b",
+    "BunSocket-CqVvdTD6.js": "3660f5db944f967d08e56b432f00351785d156e574e912abf18f309d9fa90f3d",
+    "ChatApiProgram-sDs2-PFJ.js": "ee6c1cba63b1fe7e9df8fea0ab61915f2f470a28d1e44657cc2fd52bc7e5ff0b",
+    "Crypto-DQ456ZwC.js": "fe40b99b009c9f9e2341278bda325c6652025872a3e35956bcb6639b96b5edaf",
+    "NodeServices-8wgpbGz0.js": "ac2140fd4b071912bcf706ff72ea6c27381ebfe6e0fc8e00dab22c0cedb40791",
+    "NodeSocket-AOQGZdde.js": "164f5e23dd8e122d880fa4d5a132be2ec8d4185d8a414eb28ccc303d9f8ddddd",
+    "NodeSocket-D4bwr2F-.js": "6a65f7805927b598b4f44850c962b94117288a860afd3843a8efdfd95acfe105",
+    "NodeTerminal-DUWUwmtq.js": "9df6e6a4d6b5f451d4b02ab74222796468f37ea86fea85bb738284098657527d",
+    "Path-CSnk7Hp9.js": "c32a762cdea7477fa73fbd2b493331eefb7e76e42e8f49d85c4077993dd1a508",
+    "Schema-D7YNmniv.js": "d224d3fd9d15cdb88a0b441248ab406a9943a2c1885347ad1ad5535e0d653b33",
+    "Socket-B3N5ILTC.js": "93aaea989c600da0e1caf7f993d5a73bf8819aeaa773df47c2729120824828e8",
+    "Worker-CtvtgCvd.js": "a530d52edc165142c1fb248fccac6305c266cd139f74314a0722bb3d495e3fae",
+    "api-nOCBcs7W.js": "9da85a678d45eec4b5e56843e286f95191f7eea848214167b8d5f6fca367a37f",
+    "browser-DV2xTiqh.js": "ba57f720f473f43f333f3792cb1d8d12d88a856126697f764c4b15fbf74442b9",
+    "build-B9yiAMf7.js": "3a589a1d20b73ef7f1d685b7dec3ac5e4c259290a4832a4e097ac39a1727ee23",
+    "builtin_esm-external-require-os-B6a2izbJ.js": "5fd6003791135eddf300fe276ddb989f5d7da633f46d4ad609b4b0c0d0e5351a",
+    "builtin_esm-external-require-path-DOjMjw-I.js": "d807a147d0b68f718c3184722f5862e8ee4d50c2a24b74eedced73b55caa0b86",
+    "bundle.generated-9pa9X8Ep.js": "879f5b4c5267ec7c7e12c4e05bb4c929140655371c39ebb7f88e275176139eeb",
+    "chunk-V2S4ZYJR-_oL2UPkz.js": "fa23a245f42faf56204687e083b8c580cddcf9b012459a117f82ef1e804ee0de",
+    "emscripten-module.browser-XIKQQPVU-B6D1MW3D.js": "dd79887d064fb96cc60b08f3057459be4145cfde66e91090263810d8b1bc96ea",
+    "emscripten-module.cloudflare-BGDAzONH.js": "c07362ce25adc1af06c3efaf05b4ad13ac572592f007e98669fe26dadb35b7a3",
+    "ffi-BLVS8D-k.js": "d5a4b11272be6298d0f716dc12ddf54c4536d9176a70daeed12662d6f1495925",
+    "ffi-CamzLEe4.js": "ebafeabf221ab0b6fe81a18561edde43a59377f4ab4b359fa58dfd44fcf016d6",
+    "jiti-BIJVB13e.js": "992596c6c04b990bf69ca9d5dfef57d6f308dfff640488d8ed39753401cb01d9",
+    "lexer-DQCqS3nf-BIBEW-TJ.js": "64fdac84f26a16d5f625d337b3e50cd575ba822f231d8f28f884b7a244e92417",
+    "lib-BdTdfxXC.js": "bf0040c9a0c0e217fd8231047fd4c3ad8fc660dcfc930b6a0ceb0f27e972f5f2",
+    "main-DMAndoFd.js": "3dde5741e62290426ce8e3e47248872932ea072f77c7147d11759be5de4a3f7f",
+    "main-OxCDJWD3.js": "ec6d95d3fac4376471a4310015128ab1daca8559610523ba868196d28f4e7f79",
+    "module-ES6BEMUI-BLdircac.js": "5e9e5ca09d316d671610ed656a36d5e65ba29140240c78b187b99e0b5788fd16",
+    "postcss-1-z0gbu2.js": "153fbfb156cdddf4a093dbb00550fe4c25b714f8a4f8690c030713a330bbd984",
+    "postcss-import-BsDurgcv.js": "a11b2fc0e9fc65b65aa012e261d46e540fc55775d9c992394c0265c130532370",
+    "prompt-CH6TK0bC-BRigjhB9.js": "616bf42d235b39c43f7e4eda4864b788cd0740a4450f76d42506ad4148f37ebd",
+    "rolldown-runtime-htSClZ5J.js": "e595c8d008b39ad49e0e0449f539b7b5a5247fec203bca4c70f53b8c994f9ee6",
+    "assets/emscripten-module-uFzwHH0Y.wasm": "105c3bed22d457e43e3d1c3c1c6959fda62a8fe06f0fc8a985303c3a2be72232"
+  },
+  "method": "Three fresh Node processes importing the real Alchemy bundle; median elapsed module import, no warmup. OS file cache is retained. Cloudflare imports use the startup-only Node adapter.",
+  "limitations": "Node elapsed time is sensitive to host contention and is not Cloudflare startup CPU. No live deployment was measured by this command.",
+  "environment": {
+    "date": "2026-10-23T23:28:16.615Z",
+    "revision": "47ca1739b1b127c8232960e202bc748eb7dd329e",
+    "node": "v26.5.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Pro",
+    "cores": 14,
+    "loadBefore": [
+      29.85546875,
+      18.31982421875,
+      13.99267578125
+    ],
+    "loadAfter": [
+      29.85546875,
+      18.31982421875,
+      13.99267578125
+    ]
+  }
+}

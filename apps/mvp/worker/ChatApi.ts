@@ -6,7 +6,7 @@ import { workerBuild } from "../infra/WorkerBuild.ts"
 // ChatApi's Worker: its settings and its program. The program, and every module it reaches, lives in
 // worker/ChatApiProgram.ts and is imported when the Worker first builds it: Cloudflare refuses a deploy whose Worker
 // takes longer than its startup limit to evaluate its modules, and with the whole program at the top level ChatApi took
-// 400 to 750 ms of it (docs/infrastructure.md#limits). worker/ChatApi.startup.test.ts holds the startup to a budget.
+// 400 to 750 ms of it (docs/infrastructure.md#limits). worker/ChatApi.startup.test.ts checks the lazy module graph; bench/startup.ts holds the timing budget.
 
 /** ChatApi's Worker settings; `worker/DevChatApi.ts` uses them with its own `main`. */
 export const props = {
