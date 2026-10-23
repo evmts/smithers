@@ -124,6 +124,7 @@ included, and:
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `sync`       | The shape's sync status: each request's outcome, and the shape stopping. A stream started late begins with the latest event.                                             |
 | `applied`    | Installed sync transactions whose resume cursor matches the latest accepted response, after schema decoding; no replay.                                                  |
+| `currentApplied` | Waits for the latest accepted response's rows and resume cursor to be installed, including an empty batch. A late caller also observes an already installed current response. |
 | `reconnect`  | Sends every request waiting out the policy now, and restarts a stopped shape where it stopped.                                                                           |
 | `awaitTxId`  | Waits until Electric delivers Postgres transaction `txid` and TanStack DB has applied it.                                                                                |
 | `awaitMatch` | Waits until Electric delivers a change `match` accepts and TanStack DB has applied it. A change already applied and still among the collection's recent messages counts. |
@@ -138,6 +139,8 @@ for an older cursor after a failed request cannot report recovery either.
 Installation and successful source decoding may arrive in either order; both
 are required before recovery is reported.
 Each accepted response emits at most once, even if its cursor is installed again.
+`currentApplied` remains pending through failed or stopped requests and is
+interruptible; a caller also reads `sync` to handle a terminal refusal.
 
 ### `ElectricCollection.SyncEvent`
 

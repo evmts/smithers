@@ -147,6 +147,8 @@ export interface ElectricCollection<A extends object>
   readonly sync: Stream.Stream<SyncEvent>
   /** Successfully installed sync transactions, after decoding and any persistence receipt; no replay. */
   readonly applied: Stream.Stream<void>
+  /** Waits until the latest accepted network batch has installed its rows and resume cursor, including an empty batch. */
+  readonly currentApplied: Effect.Effect<void>
   /** Sends every request waiting out the sync policy now, and restarts a stopped shape where it stopped. */
   readonly reconnect: Effect.Effect<void>
   /**
@@ -259,6 +261,7 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     // The latest event is replayed to each new subscriber: a status read after the fact is still the status.
     const events = yield* PubSub.unbounded<SyncEvent>({ replay: 1 })
     const applied = yield* PubSub.unbounded<void>()
+    const waitingForApplied = new Set<() => void>()
     let accepted: { readonly handle: string | null; readonly offset: string | null } | undefined
     let decoded: typeof accepted
     let certified: typeof accepted
@@ -269,6 +272,8 @@ export function make<A extends Row<unknown>, E = never, R = never>(
         installed.handle === accepted.handle && installed.offset === accepted.offset
       ) {
         certified = accepted
+        for (const ready of waitingForApplied) ready()
+        waitingForApplied.clear()
         PubSub.publishUnsafe(applied, undefined)
       }
     }
@@ -469,6 +474,12 @@ export function make<A extends Row<unknown>, E = never, R = never>(
       ...collection,
       sync: Stream.fromPubSub(events),
       applied: Stream.fromPubSub(applied),
+      currentApplied: Effect.callback<void>((resume) => {
+        if (accepted !== undefined && certified === accepted) return resume(Effect.void)
+        const ready = () => resume(Effect.void)
+        waitingForApplied.add(ready)
+        return Effect.sync(() => waitingForApplied.delete(ready))
+      }),
       reconnect: Effect.andThen(woken.release, restart.open).pipe(Effect.asVoid),
       awaitTxId: (txid, timeout) => awaiting(() => utils.awaitTxId(txid, Duration.toMillis(timeout))),
       awaitMatch: (match, timeout) =>

@@ -171,7 +171,9 @@ describe.skipIf(!electricUp)("make", () => {
         ),
         Effect.forkScoped({ startImmediately: true })
       )
+      const firstInstalled = yield* notes.currentApplied.pipe(Effect.forkScoped({ startImmediately: true }))
       yield* notes.preload
+      yield* Fiber.join(firstInstalled)
       yield* eventually(() => installed.length > 0)
       const before = installed.length
       yield* faults.refuse(503)
@@ -180,10 +182,12 @@ describe.skipIf(!electricUp)("make", () => {
       yield* eventually(() => events.includes("Failed:503"))
       yield* faults.heal
       yield* eventually(() => events.includes("Stopped:none"))
-      return { installed, before, after: installed.length }
+      const afterRefusal = yield* Effect.result(notes.currentApplied.pipe(Effect.timeout("50 millis")))
+      return { installed, before, after: installed.length, afterRefusal }
     }))
     expect(result.installed[0]).toEqual(["a"])
     expect(result.after).toBe(result.before)
+    expect(result.afterRefusal._tag).toBe("Failure")
   })
 
   test("an expired handle's metadata reset is not an applied batch before its replacement arrives", async () => {
@@ -823,6 +827,25 @@ describe.skipIf(!electricUp)("persisted", () => {
       retry: Schedule.spaced("10 millis"),
       persist: { schemaVersion }
     })
+
+  test.each([false, true])("a persisted writer certifies the first current batch, including empty (%s)", async (empty) => {
+    await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      if (!empty) yield* write({ id: "a", text: "one", n: 1 })
+      const path = databaseFile()
+      const device = `device-${crypto.randomUUID()}`
+      const result = yield* Effect.gen(function*() {
+        const notes = yield* persisted(table, `notes-${crypto.randomUUID()}`)
+        yield* notes.restored
+        const waiting = yield* notes.currentApplied.pipe(Effect.forkScoped({ startImmediately: true }))
+        yield* notes.preload
+        yield* Fiber.join(waiting).pipe(Effect.timeout("5 seconds"))
+        yield* notes.currentApplied.pipe(Effect.timeout("5 seconds"))
+        return ids(yield* notes.toArray)
+      }).pipe(Effect.provide(persistenceOn(path, device)))
+      expect(result).toEqual(empty ? [] : ["a"])
+    }))
+  })
 
   // A program on `path`, its shape requests through the faulty source, which `start` switches before it syncs.
   const program = <A, E>(
