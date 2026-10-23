@@ -5,7 +5,7 @@ import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
 import { recordActions, writeManifest } from "./fixtures"
 import { desktopBaseline } from "./mobile-baseline"
 import { openComposer } from "./composer"
-import { baseURL, requires, scriptedAgent, target, writeHeaders } from "./target"
+import { baseURL, requires, scriptedAgent, target, writeHeaders, me } from "./target"
 
 // Real pages and services. Persist a structured audit even when several checks fail,
 // so the first run is the red receipt for each subsequent layout change.
@@ -197,9 +197,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
         })
         for (const screen of screens) {
           test(`${screen.name}: controls and text fit`, async ({ page, request }, info) => {
-            if (screen.name === "files" || screen.name === "file-tabs") requires("codeStorage")
+            if (screen.name === "files" || screen.name === "file-tabs") requires("codeStorage", "member")
             await test.step(`Open ${screen.name}`, async () => {
               if (screen.name === "conversations" && signedIn) {
+                requires("member")
                 await page.goto("/octocat/Spoon-Knife/tree/test-branch")
                 await expect(page.getByRole("navigation", { name: "Branch" })).toBeVisible({ timeout: 30_000 })
               }
@@ -218,8 +219,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               const ready = screen.name === "terminal" && !signedIn ? ".branch-screen-view" : screen.ready
               await expect(page.locator(ready).first()).toBeVisible({ timeout: 30_000 })
               if (screen.name === "conversations" && signedIn) await expect(page.getByRole("list", { name: "Conversations" }).getByRole("link").first()).toBeVisible({ timeout: 30_000 })
-              if (screen.name === "secrets" && signedIn) await expect(page.getByRole("form", { name: "Add secret" })).toBeVisible({ timeout: 30_000 })
-              if (screen.name === "repo-settings" && signedIn) await expect(page.getByRole("region", { name: "Domains" })).toBeVisible({ timeout: 30_000 })
+              if (screen.name === "secrets" && signedIn && me().role === "admin") await expect(page.getByRole("form", { name: "Add secret" })).toBeVisible({ timeout: 30_000 })
+              if (screen.name === "repo-settings" && signedIn && ["admin", "maintainer"].includes(me().role ?? "")) await expect(page.getByRole("region", { name: "Domains" })).toBeVisible({ timeout: 30_000 })
               if (screen.name === "doc-page") await expect(page.getByRole("heading", { name: "Retrying", exact: true }).first()).toBeVisible({ timeout: 60_000 })
               if (screen.name === "branch") await expect(page.locator(".branch-screen-view")).toBeVisible({ timeout: 30_000 })
               if (screen.name === "terminal" && !signedIn) await expect(page.locator(".terminal-panel")).toHaveCount(0)
@@ -274,6 +275,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           }
         })
         if (signedIn) test("TODO: draft, stack and detail fit", async ({ page }, info) => {
+          requires("member")
           test.setTimeout(120_000)
           await page.goto("/octocat/Spoon-Knife/stack")
           await page.getByRole("button", { name: "New TODO" }).click()
