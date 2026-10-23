@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-23 13:29 PDT
+updated: 2026-10-23 13:34 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -75,3 +75,7 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 
 - The checked-out `src/features/runs/flows.ts` explicitly describes `run/list` and `run/inspect` as **this device's** runs. `src/features/todos/flows.ts` exposes draft/issue authoring to the model but no TODO status read. That explains why the chat agent could see its local `todo/commit` receipt but could not establish the Cloud attempt state through the tools it chose. The reply must not turn the absence of a device run into a claim that no attempt started; the durable repair needs a same-authority TODO/Cloud-run read with a real agent eval.
 - The Issues repair tracker now reports a token-aware GitHub reader and bounded unsynced state at commit `14177c08` with the lander. It has no landing or production rerun receipt yet, so the live failure remains open for retest after deployment.
+
+## 2026-10-23, 13:34 PDT
+
+- The Issues repair landed and was pushed to `main` as `0c544cbd51ee`. It adds an unknown state for unsynced issue lists and an authenticated GitHub reader for end-to-end checks. This is a source receipt, not a deployment or production acceptance receipt. Arc is still blocked by the Mac's screen lock; retest the existing loading cases when the user unlocks it and the new revision is live.
