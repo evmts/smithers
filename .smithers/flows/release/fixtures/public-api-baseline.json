@@ -9205,6 +9205,17 @@
           }
         },
         "./SandboxCommand/*": null,
+        "./CiJob": {
+          "import": {
+            "types": "./dist/esm/CiJob/index.d.ts",
+            "default": "./dist/esm/CiJob/index.js"
+          },
+          "require": {
+            "types": "./dist/cjs/CiJob/index.d.ts",
+            "default": "./dist/cjs/CiJob/index.js"
+          }
+        },
+        "./CiJob/*": null,
         "./AwsSandbox": {
           "import": {
             "types": "./dist/esm/AwsSandbox/index.d.ts",
@@ -9300,6 +9311,7 @@
         "AwsSandbox/Sdk.d.ts": "1102de965333f870451757daafbbf6e7a1a66b5549983bcf7b5c125662623174",
         "AwsSandbox/index.d.ts": "af21c1a9a6709988c915dbc49706cbfd5b2b656bba589e12cb517fc012860c8f",
         "AwsSandbox/make.d.ts": "eed68fa32de3c95d56ac0d8a3b27cd6506beefa4e3a7f3cb58d70e726b7dacf1",
+        "CiJob/index.d.ts": "b277532ceba6171fa9a5aba8a02d4a41a5f10cb095ee3847074335ad8243adb9",
         "CloudflareSandbox/Sdk.d.ts": "d6a4eec7e55b8d680d9c6dd5042ada6449f78dd8088312d448264c7f4c070a23",
         "CloudflareSandbox/index.d.ts": "d11742a7327592870cb0d1e912ad1d5d3ed400b8ca59e6dfc693a60cbc204485",
         "CloudflareSandbox/make.d.ts": "152130d979685b2c7312f03f1f1fb849c7a773c27b8f5157c3a7ad04f87136f7",
@@ -9384,12 +9396,12 @@
         "SandboxSupervision/layer.d.ts": "f282459dd2f33712dad813f5041936bb1724cdb25f42df7f5cd461eb87888738",
         "SandboxSupervision/make.d.ts": "dc11d1a29a5750e2a71f4e35a3846562c5d9f2db65402d8a2a5e32ae1e8fdd55",
         "SandboxTools/index.d.ts": "239cdb55f237488159753efac02a43deef3dbde49cff3d2d78eeb67d63919d64",
-        "TerminalProtocol/index.d.ts": "39c79207a0704e46fd1b716fe943750ca71df59ab186cda5845cf7d055922116",
+        "TerminalProtocol/index.d.ts": "bd47b088906556f995f6c80839b46c03d62c36b9736fe757847c7d22eea69ff8",
         "VercelSandbox/Credentials.d.ts": "2ea4129204aaa93e0ae078cb02b803f2906b7b7f549fbe68f15278f15c2d715d",
         "VercelSandbox/Sdk.d.ts": "e740f20b370598b7a0d81e96f77cf03a1cd44ce25473cc0fbf2f09299004c8d2",
         "VercelSandbox/index.d.ts": "ba4e6e533ef9cd2fa68382b07ba808b78437160c94a46a4a5f420c3b0a4dbc77",
         "VercelSandbox/make.d.ts": "7763d6eda7a5928d6bbef5c19892010c6f7b014407aedd2d1458928c49e3d2a4",
-        "index.d.ts": "5da9ec73bd270f146c60422b20a0720dd99cc9671aa7b709f46b1fc49ab4937e",
+        "index.d.ts": "ff5de5933498030894f6719665a4bd440df9b1ec889b23bbf3815ffe5b7c047c",
         "internal/MicrosandboxReattachRefusal.d.ts": "a27e0963e509bffe86a433d1f221ef197e68d7e5c208be740107f57d9674c247",
         "internal/attempt.d.ts": "7c83e3cf8e170917a393f290cee45adaaae02849bc16445739be67e1e131ceaf",
         "internal/base64.d.ts": "ec5d4cefd1183cb5eb9513bb7081dd506feae020a02861b8eb3c7775e941cd8c",
