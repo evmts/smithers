@@ -201,12 +201,13 @@ const routes = async (
     electric.push(new URL(url))
     return globalThis.fetch(url, init)
   }
+  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl) })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
-      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
+      Effect.provideService(ConfigProvider.ConfigProvider, provider),
     )
   const api = await runtime.runPromise(
     observed(

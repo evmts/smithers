@@ -7,7 +7,6 @@ import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { MAX_SHARE_BODY_BYTES, MAX_SHARES, SHARES_SHAPE_ROUTE, sharesRoute } from "../../src/features/branch/contract.ts"
-import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import {
   branchHarness,
@@ -26,7 +25,7 @@ const runtime = testFile("shares")
 beforeEach(() => resetBranches(runtime))
 
 beforeAll(async () => {
-  const health = `${LOCAL_ELECTRIC_URL}/v1/health`
+  const health = `${await runtime.runPromise(TestDatabase.electricUrl)}/v1/health`
   const response = await fetch(health).catch((error: unknown) => {
     throw TestDatabase.explain("Electric", new URL(health).host)(error)
   })

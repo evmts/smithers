@@ -10,7 +10,6 @@ import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { sharesRoute } from "../../src/features/branch/contract.ts"
-import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
   HOME,
   MAX_TEXT_BODY_BYTES,
@@ -28,7 +27,7 @@ const runtime = testFile("texts")
 beforeEach(() => resetBranches(runtime))
 
 beforeAll(async () => {
-  const health = `${LOCAL_ELECTRIC_URL}/v1/health`
+  const health = `${await runtime.runPromise(TestDatabase.electricUrl)}/v1/health`
   const response = await fetch(health).catch((error: unknown) => {
     throw TestDatabase.explain("Electric", new URL(health).host)(error)
   })

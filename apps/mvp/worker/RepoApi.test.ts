@@ -8,7 +8,6 @@ import { SqlClient } from "effect/sql"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
 import * as TestDatabase from "../db/TestDatabase.ts"
-import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import { aboutRoute, blobRoute, cloneExecutionId, rawRoute, refsRoute, treeRoute } from "../src/features/repo/contract.ts"
 import * as RepoFlows from "../src/features/repo/flows.ts"
 import * as Actor from "./Actor.ts"
@@ -24,7 +23,7 @@ import { repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.t
 const runtime = testFile("repo_api")
 
 beforeAll(async () => {
-  const health = `${LOCAL_ELECTRIC_URL}/v1/health`
+  const health = `${await runtime.runPromise(TestDatabase.electricUrl)}/v1/health`
   const response = await fetch(health).catch((error: unknown) => {
     throw TestDatabase.explain("Electric", new URL(health).host)(error)
   })

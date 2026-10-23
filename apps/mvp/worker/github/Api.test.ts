@@ -9,7 +9,6 @@ import type { AddressInfo } from "node:net"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
   applyExecutionId,
   COMMENTS_SHAPE_ROUTE,
@@ -38,7 +37,7 @@ import { type ScriptedGitHub, scriptedGitHub } from "./test/scriptedGitHub.ts"
 const runtime = testFile("github_api")
 
 beforeAll(async () => {
-  const health = `${LOCAL_ELECTRIC_URL}/v1/health`
+  const health = `${await runtime.runPromise(TestDatabase.electricUrl)}/v1/health`
   const response = await fetch(health).catch((error: unknown) => {
     throw TestDatabase.explain("Electric", new URL(health).host)(error)
   })
@@ -843,7 +842,7 @@ test.each([undefined, "metadata-fixture-token"])("default metadata transport che
   try {
     await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
     const config = ConfigProvider.fromUnknown({
-      ELECTRIC_URL: LOCAL_ELECTRIC_URL,
+      ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl),
       GITHUB_API_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
       ...(token === undefined ? {} : { GITHUB_TOKEN: token }),
     })

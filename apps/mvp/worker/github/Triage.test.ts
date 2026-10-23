@@ -8,7 +8,6 @@ import { ModelError } from "@smthrs/model"
 import { Cause, Effect, Exit, Stream } from "effect"
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
   ACCEPTED_LABEL,
   GITHUB_WEBHOOK_ROUTE,
@@ -47,7 +46,7 @@ import * as Write from "./Write.ts"
 const runtime = testFile("github_triage")
 
 beforeAll(async () => {
-  const health = `${LOCAL_ELECTRIC_URL}/v1/health`
+  const health = `${await runtime.runPromise(TestDatabase.electricUrl)}/v1/health`
   const response = await fetch(health).catch((error: unknown) => {
     throw TestDatabase.explain("Electric", new URL(health).host)(error)
   })

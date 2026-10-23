@@ -7,7 +7,6 @@ import { HttpClient } from "effect/http"
 import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { ACTIONS_SHAPE_ROUTE } from "../../src/features/actions/contract.ts"
-import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { applyExecutionId, GITHUB_WEBHOOK_ROUTE, writesRoute } from "../../src/features/issues/contract.ts"
 import {
   CHECKS_SHAPE_ROUTE,
@@ -30,7 +29,7 @@ import { appKey, BOT_LOGIN, scriptedGitHub } from "./test/scriptedGitHub.ts"
 const runtime = testFile("github_pulls_api")
 
 beforeAll(async () => {
-  const health = `${LOCAL_ELECTRIC_URL}/v1/health`
+  const health = `${await runtime.runPromise(TestDatabase.electricUrl)}/v1/health`
   const response = await fetch(health).catch((error: unknown) => {
     throw TestDatabase.explain("Electric", new URL(health).host)(error)
   })

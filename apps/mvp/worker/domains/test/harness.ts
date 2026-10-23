@@ -155,12 +155,13 @@ export const domainsHarness = async (runtime: Runtime, options: Options) => {
   const logs: Array<StructuredLog> = []
   const logger = Logger.make((logOptions) => void logs.push(StructuredLogger.formatStructured.log(logOptions)))
   const registry: Metric.MetricRegistry = new Map()
+  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl) })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
-      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
+      Effect.provideService(ConfigProvider.ConfigProvider, provider),
     )
   const sessions = options.actor === undefined || options.actor === null ? Actor.signedOut : signedIn(options.actor)
   const api = await runtime.runPromise(observed(DomainsApi.make({ id: REPO_ID }, scratch.database)))
