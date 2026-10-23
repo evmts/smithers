@@ -41,6 +41,8 @@ const audit = async (page: Page, info: TestInfo, name = "screen") => {
     await control.scrollIntoViewIfNeeded()
     await control.evaluate((element) => element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" }))
     const issues = await control.evaluate((element) => {
+      // Scrolling to the latest message legitimately hides its jump button.
+      if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return []
       const rect = element.getBoundingClientRect()
       const name = `${element.tagName.toLowerCase()}.${element.className} ${element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 80) ?? ""}`
       const errors: Finding[] = []
