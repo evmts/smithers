@@ -167,3 +167,5 @@ SCOPE-14 applies within the repository where the session's role was read. A Memb
 views; a Maintainer defaults to maintainer and can switch down. Opening another repository resets View as and
 uses that repository's audience: the session's role grants nothing there. Returning to the roles repository starts
 at the person's highest authorized view again. This applies to GitHub's declared home before cloning and to curated homes.
+
+A preview selects its home and default branch in one conditional store update. If the clone has selected its home meanwhile, the preview leaves both unchanged. `home.test.ts` pauses that write, lets the real clone finish, then releases it; the clone’s `release/1.0` branch remains selected.

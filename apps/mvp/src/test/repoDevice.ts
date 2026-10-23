@@ -51,6 +51,8 @@ export interface DeviceOptions {
   readonly client?: Layer.Layer<RepoClient>
   /** The home's client in place of the real one (ChatApi's home route on `origin`), for an unhappy path. */
   readonly homeClient?: Layer.Layer<HomeClient>
+  /** The real home store with injected scheduling faults. */
+  readonly homeStore?: typeof HomeStore.layer
   /** `down`: every shape request fails on the network, as offline. */
   readonly shapes?: "real" | "down"
   /** How long a failed shape request waits: the store's default unless set. */
@@ -129,7 +131,7 @@ export const openTab = async (options: DeviceOptions) => {
           }),
         ),
       ),
-      Home.layer.pipe(Layer.provide(HomeStore.layer)),
+      Home.layer.pipe(Layer.provide(options.homeStore ?? HomeStore.layer)),
       options.languageServers === undefined
         ? Layer.empty
         : CodeIntel.layer.pipe(Layer.provide(CodeIntelStore.layer), Layer.provide(options.languageServers)),

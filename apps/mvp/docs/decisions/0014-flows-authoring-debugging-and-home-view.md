@@ -469,3 +469,7 @@ Opus and Sol wrote their designs independently on 2026-10-20; Opus merged them. 
 | Walking skeleton | a personal drafted flow: create, save, run, inspect | a repository code flow: sandbox tests, a pull request, a merge, activation and the home | Opus; Sol's path becomes L1 and L2 | a skeleton that waits on two unbuilt platforms (0005, 0012) doesn't walk |
 | Tests | the slice, durability, two devices, the home | adds spoofed rows, fuzzing, gap-free paging and benchmarks | both | broader failure coverage |
 | Questions for Will | two | none | one, answered | the split between prompt and code flows decided the slice, and the designs disagreed on it; Will ruled one model (question 1). The other is settled by M-04 and Will's 2026-10-13 ruling |
+
+### Preview selection (2026-10-23)
+
+The clone’s home selection wins over an earlier preview. Check and selection happen in the same `HomeStore.current.update` recipe: checking before an asynchronous update lets a delayed preview overwrite the clone’s default branch. A regression delays the real store write until the clone has selected its home.

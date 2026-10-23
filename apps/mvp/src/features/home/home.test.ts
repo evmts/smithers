@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { fixture } from "../../../worker/test/codeStorage"
+import { fixture, scripted } from "../../../worker/test/codeStorage"
 import { testFile } from "../../../worker/test/harness"
 import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/repos"
 import { openTab, type Tab } from "../../test/repoDevice"
-import { Deferred, Effect, Layer } from "effect"
+import { Deferred, Effect, Layer, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
 import type { CuratedFile } from "../../../worker/home/Curated.ts"
 import { scriptedGitHub, spoonKnife } from "../../../worker/test/githubRest"
 import { RepoClient } from "../repo/api"
 import { RepoStore } from "../repo/store"
 import { HomeClient, HomeRefused } from "./api"
+import { HomeStore } from "./store"
 import { HOME_FILE, HOME_INVALID, HOME_UNREADABLE } from "./contract"
 import { answers, resolves } from "./metrics"
 import { homePageOf, tabsOf } from "./view"
@@ -536,9 +537,9 @@ test("an interrupted Markdown read can be read on the next open", async () => {
   expect(tab.lines("home.file.load").map((line) => line.annotations.outcome)).toContain("interrupted")
 })
 
-test("concurrent warm and open share a declaration read", async () => {
+test("concurrent warm and open share a declaration read and warm its Markdown files", async () => {
   const h = await repoHarness(server)
-  await seeded(h, { [HOME_FILE]: JSON.stringify({ blocks: [{ type: "text", text: "Hi" }] }) })
+  await seeded(h, { [HOME_FILE]: JSON.stringify({ blocks: [{ type: "markdown", path: "intro.md" }] }), "intro.md": "Introduction" })
   const entered = Deferred.makeUnsafe<void>()
   const release = Deferred.makeUnsafe<void>()
   let reads = 0
@@ -561,6 +562,56 @@ test("concurrent warm and open share a declaration read", async () => {
   tab.home.actions.open("maya", "tinyhttp")
   await Effect.runPromise(Deferred.succeed(release, undefined))
   await warming
+  await waitFor(() => expect(files(tab)["intro.md"]?.state).toBe("text"))
   await waitFor(() => expect(page(tab).home?.state).toBe("declared"))
   expect(reads).toBe(1)
+})
+
+
+test("a preview delayed at its write cannot replace the clone's default branch", async () => {
+  const provider = scripted()
+  const cloneRelease = Deferred.makeUnsafe<void>()
+  const previewEntered = Deferred.makeUnsafe<void>()
+  const previewRelease = Deferred.makeUnsafe<void>()
+  const previewDone = Deferred.makeUnsafe<void>()
+  const h = await repoHarness(server, { scripted: provider, codeStorage: {
+    ...provider.client,
+    listCommits: (...args) => Effect.andThen(Deferred.await(cloneRelease), provider.client.listCommits(...args)),
+  } })
+  const text = JSON.stringify({ blocks: [{ type: "text", text: "Home" }] })
+  provider.publish("maya", "tinyhttp", fixture({ branch: "release/1.0", files: { [HOME_FILE]: text } }))
+  h.github.publish("maya", "tinyhttp", spoonKnife({ home: { text } }))
+  let paused = false
+  const homeStore = Layer.effect(HomeStore, Effect.map(HomeStore, (real) => HomeStore.of({
+    ...real,
+    current: { ...real.current, update: (...args) => Effect.gen(function* () {
+      const span = yield* Effect.option(Effect.currentSpan)
+      const delay = !paused && Option.isSome(span) && span.value.name === "home.preview"
+      if (delay) {
+        paused = true
+        yield* Deferred.succeed(previewEntered, undefined)
+        yield* Deferred.await(previewRelease)
+      }
+      const result = yield* real.current.update(...args)
+      if (delay) yield* Deferred.succeed(previewDone, undefined)
+      return result
+    }) },
+  }))).pipe(Layer.provide(HomeStore.layer))
+  await h.clone("maya", "tinyhttp")
+  const tab = await openTab({ origin: h.origin, fetch: h.fetch, homeStore })
+  tabs.push(tab)
+  tab.home.actions.open("maya", "tinyhttp")
+  try {
+    await Effect.runPromise(Deferred.await(previewEntered).pipe(Effect.timeout("10 seconds")))
+    await Effect.runPromise(Deferred.succeed(cloneRelease, undefined))
+    await h.settled()
+    await waitFor(() => expect(page(tab).current.defaultBranch).toBe("release/1.0"))
+    await Effect.runPromise(Deferred.succeed(previewRelease, undefined))
+    await Effect.runPromise(Deferred.await(previewDone).pipe(Effect.timeout("10 seconds")))
+    expect(page(tab).current.defaultBranch).toBe("release/1.0")
+    await waitFor(() => expect(page(tab).page).toMatchObject({ askHref: "/maya/tinyhttp/tree/release/1.0" }))
+  } finally {
+    await Effect.runPromise(Deferred.succeed(cloneRelease, undefined))
+    await Effect.runPromise(Deferred.succeed(previewRelease, undefined))
+  }
 })

@@ -166,9 +166,14 @@ const preview = (owner: string, name: string, id: string) =>
     if (row.state !== "declared" || markdownPaths(row.sections).length > 0) return
     if (Option.isNone(yield* store.homes.get(key))) yield* put<HomeRow>(store.homes, key, row)
     // Opening another repository interrupts this read; a clone that landed meanwhile wins with its own read.
-    if (Option.getOrThrow(yield* store.current.get(CURRENT)).key !== null) return
-    yield* setCurrent({ key, defaultBranch: about.defaultBranch })
-    yield* recordResolve(row, "preview", (yield* Clock.currentTimeMillis) - startedAt, undefined)
+    let selected = false
+    yield* Effect.orDie(store.current.update(CURRENT, (current) => {
+      if (current.key !== null) return
+      current.key = key
+      current.defaultBranch = about.defaultBranch
+      selected = true
+    }))
+    if (selected) yield* recordResolve(row, "preview", (yield* Clock.currentTimeMillis) - startedAt, undefined)
   }).pipe(
     // `open` interrupts this read before it names another repository, so the row is still this one's here.
     Effect.ensuring(Effect.flatMap(HomeStore, ({ current }) =>
