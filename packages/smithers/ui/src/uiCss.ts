@@ -223,6 +223,7 @@ export const chatCss = `
 .sui-chat-composer-input:focus-visible { border-color:transparent; box-shadow:none; }
 .sui-chat-composer-input::placeholder { color:${t.placeholder}; }
 .sui-chat-composer-input:disabled { cursor:not-allowed; opacity:.55; }
+@media (max-width:960px) { .sui-chat-composer-input { min-height:32px; } }
 .sui-chat-composer-toolbar { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .sui-chat-composer-status { min-width:0; color:${t.mutedForeground}; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sui-chat-composer-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex:none; }
