@@ -131,7 +131,7 @@ export const registrations = (options: HostOptions) =>
     TerminalSteps.registrationAt(options.origin),
     SandboxSteps.registrationAt(options.origin),
     Issues.registration,
-    TodoSteps.registration,
+    TodoSteps.registrationAt(options.origin),
     ChatSteps.registration,
     PinSteps.registrationAt(options.origin),
     Attention.registrationAt(options.origin),

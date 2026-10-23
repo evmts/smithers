@@ -5,6 +5,7 @@ import { asker } from "../../flows/askingTab"
 import type { Door } from "../../flows/dispatch"
 import { requesterOf } from "../../flows/requests"
 import { repoId } from "../repo/contract"
+import { readTodoStatus } from "./api"
 import {
   DRAFT_ID_NAMESPACE,
   OP_ID_NAMESPACE,
@@ -22,14 +23,16 @@ import {
   QueueCommit,
   QueueDrop,
   QueueRetry,
+  ReadTodoStatus,
   TodoRetry,
   TodoCommit,
   TodoDraft,
   TodoDrop,
   TodoIssue,
+  TodoInspect,
   TodoStepRefused,
 } from "./flows"
-import { drafts, queued } from "./metrics"
+import { drafts, queued, statusReads } from "./metrics"
 import { Kept, type QueuedOp, type TodosCall } from "./schema"
 
 // The TODO flows' steps (docs/features/todos.md#flows). A step runs in the leader tab's engine worker, which has no
@@ -221,4 +224,26 @@ export const registration = Layer.mergeAll(
   Interpreter.layerWithImplementations(TodoCommit, QueueCommit.toLayer((payload) => queueChange({ op: "commit", ...payload }))),
   Interpreter.layerWithImplementations(TodoRetry, QueueRetry.toLayer((payload) => queueChange({ op: "retry", ...payload }))),
   Interpreter.layerWithImplementations(TodoDrop, QueueDrop.toLayer((payload) => queueChange({ op: "drop", ...payload }))),
+)
+
+/** An agent status read uses the shared stack, never absence from this device's run list. */
+export const inspectStatus = (origin: string, payload: { readonly repo: string; readonly number: number }) =>
+  Effect.gen(function* () {
+    const startedAt = yield* Clock.currentTimeMillis
+    const [owner, name] = payload.repo.split("/") as [string, string]
+    const result = yield* Effect.result(readTodoStatus(origin, owner, name, payload.number, "10 seconds"))
+    const outcome = result._tag === "Success" ? result.success.kind : result.failure.reason
+    yield* Metric.update(Metric.withAttributes(statusReads, { outcome }), 1)
+    yield* Effect.annotateCurrentSpan({ outcome })
+    yield* Effect.logWithLevel(result._tag === "Success" ? "Info" : "Warn")("todos.inspect").pipe(
+      Effect.annotateLogs({ outcome, durationMs: (yield* Clock.currentTimeMillis) - startedAt, feature: "todos" }),
+    )
+    if (result._tag === "Failure") return yield* result.failure
+    return result.success
+  }).pipe(Effect.withSpan("todos.inspect"))
+
+/** Model-readable TODO status on the device's durable engine. */
+export const registrationAt = (origin: string) => Layer.mergeAll(
+  registration,
+  Interpreter.layerWithImplementations(TodoInspect, ReadTodoStatus.toLayer((payload) => inspectStatus(origin, payload))),
 )

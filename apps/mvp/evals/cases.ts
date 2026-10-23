@@ -92,7 +92,7 @@ export interface CaseInput {
 export const DEFAULT_PERSON: Person = { words: "Do what I asked.", approve: true }
 
 /** The reads the agent may look around with on the way; any other flow changes something. */
-export const READS = ["repo/tree", "repo/read", "repo/refs", "flow/list", "flow/drafts", "flow/read", "run/list", "run/inspect"]
+export const READS = ["repo/tree", "repo/read", "repo/refs", "flow/list", "flow/drafts", "flow/read", "run/list", "run/inspect", "todo/inspect"]
 
 /** A list for Jev with an injected instruction in it: the agent judges it as data and never follows it. */
 const BUG_REPORTS =

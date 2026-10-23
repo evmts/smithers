@@ -43,7 +43,7 @@ import { ConversationArchive, ConversationNew } from "../features/conversations/
 import { AlertChannelSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { SetTheme } from "../features/theme/flows"
-import { TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoRetry } from "../features/todos/flows"
+import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { AskWithForm, RenderView, SetViewState } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
@@ -118,6 +118,7 @@ export const declarations = {
   "triage/pause": TriagePause,
   "todo/draft": TodoDraft,
   "todo/issue": TodoIssue,
+  "todo/inspect": TodoInspect,
   "todo/commit": TodoCommit,
   "todo/Retry": TodoRetry,
   "todo/drop": TodoDrop,

@@ -4,6 +4,7 @@ import { Schema } from "effect"
 import { MAX_ISSUE_NUMBER } from "../issues/contract"
 import { RepoName } from "../repo/flows"
 import { isAcceptance, isPrompt, isTitle, MAX_TODO_NUMBER } from "./contract"
+import { TodoStatusRead } from "./schema"
 
 // The TODO flows of slice 1 (decision 0016 §2, docs/features/todos.md#flows). The agent drafts and a person commits:
 // `todo/draft` keeps a private draft on the person's device and shows its card, whose Commit runs `todo/commit`; Drop
@@ -141,6 +142,39 @@ export const TodoIssue = Flow.make("todo/issue", {
   success: Drafted,
   error: TodoStepRefused,
   body: Node.capture({ action: KeepIssueDraft.name }, (payload) => KeepIssueDraft.call(payload)),
+}).annotate(Flow.Placement, Placement.client())
+
+/** A missing TODO is proven only by an authorized server read. */
+export const TodoStatusResult = Schema.Union([
+  TodoStatusRead,
+  Schema.Struct({ kind: Schema.Literal("not_found"), number: TodoNumber }),
+])
+export type TodoStatusResult = typeof TodoStatusResult.Type
+
+/** The server refused or could not finish a status read; absence of a device run is never a TODO result. */
+export class TodoStatusUnavailable extends Schema.TaggedError<TodoStatusUnavailable>()(
+  "@smthrs/mvp/todos/TodoStatusUnavailable",
+  { reason: Schema.Literals(["authentication", "forbidden", "unavailable"]) },
+) {}
+
+/** Read one numbered TODO under the stack's Member policy. */
+export const ReadTodoStatus = Action.make("todo/inspect/read", {
+  payload: { repo: RepoName, number: TodoNumber },
+  success: TodoStatusResult,
+  error: TodoStatusUnavailable,
+})
+
+/** The current shared status of Tn, including its Cloud run and failure reason when present. */
+export const TodoInspect = Flow.make("todo/inspect", {
+  description: "Read the current status of a repository TODO Tn from the shared stack. Pass repo as owner/name and " +
+    "number as n. Answers found with state, step, failure, branch, pull request and Cloud run ID, or not_found after " +
+    "an authorized read. A refused or unavailable read is not evidence that no attempt started. Use this when asked " +
+    "about a TODO; run/list and run/inspect cover only this device's runs.",
+  modelInvocable: true,
+  payload: { repo: RepoName, number: TodoNumber },
+  success: TodoStatusResult,
+  error: TodoStatusUnavailable,
+  body: Node.capture({ action: ReadTodoStatus.name }, (payload) => ReadTodoStatus.call(payload)),
 }).annotate(Flow.Placement, Placement.client())
 
 /** `todo/commit { repo, title, prompt, acceptance?, issue? }`: a person commits a TODO to the end of the stack. */

@@ -4,6 +4,7 @@
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { ConfigProvider, Effect, Layer, Logger, Metric, Option, Tracer } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
+import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { TODO_REQUESTS_TABLE, TODOS_TABLE } from "../../../src/features/todos/contract.ts"
 import * as Actor from "../../Actor.ts"
@@ -71,6 +72,8 @@ export interface StackOptions {
   readonly roles?: Partial<RepoRoles.Options>
   /** A faulty `RepoRoles` in place of the real one. */
   readonly faultyRoles?: RepoRoles.RepoRoles<never>
+  /** A faulty database service for the status read's unavailable and privacy path. */
+  readonly faultyDatabase?: Layer.Layer<SqlClient.SqlClient, unknown>
 }
 
 /** The deployment's own repository in these tests: the one whose role is the session's. */
@@ -110,7 +113,7 @@ export const stackHarness = async (runtime: Runtime, options: StackOptions = {})
   const roles = options.faultyRoles ?? await runtime.runPromise(
     observed(RepoRoles.make(scratch.database, { repository: OWN_REPOSITORY, app: Option.none(), ...options.roles })),
   )
-  const api = await runtime.runPromise(observed(Api.make(scratch.database, roles)))
+  const api = await runtime.runPromise(observed(Api.make(options.faultyDatabase ?? scratch.database, roles)))
   const routes = options.runs === undefined ? api.fetch : api.fetch.pipe(Effect.provide(options.runs.layer))
   const handler = HttpEffect.toWebHandler(
     observed(

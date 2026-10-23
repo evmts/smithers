@@ -40,6 +40,22 @@ export const Todo = Schema.Struct({
 })
 export type Todo = typeof Todo.Type
 
+/** A current server read for the agent: status only, with no prompt, title or person fields. */
+export const TodoStatusRead = Schema.Struct({
+  kind: Schema.Literal("found"),
+  number: Schema.Number,
+  state: Schema.Literals(TODO_STATES),
+  step: Schema.NullOr(Schema.Literals(TODO_STEPS)),
+  attempt: Schema.Number,
+  branch: Schema.NullOr(Schema.String),
+  prNumber: Schema.NullOr(Schema.Number),
+  failure: Schema.NullOr(Schema.Literals(TODO_FAILURES)),
+  note: Schema.NullOr(Schema.Literals(TODO_NOTES)),
+  runId: Schema.NullOr(Schema.String),
+  updatedAt: Schema.String,
+})
+export type TodoStatusRead = typeof TodoStatusRead.Type
+
 /** One row of Postgres `todo_requests` (`TODO_REQUEST_COLUMNS`): a revision of a TODO's prompt. */
 export const TodoRequest = Schema.Struct({
   todoId: Schema.String,

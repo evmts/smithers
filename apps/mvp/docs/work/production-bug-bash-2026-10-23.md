@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-23 13:37 PDT
+updated: 2026-10-23 14:04 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -83,3 +83,17 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 ## 2026-10-23, 13:37 PDT
 
 - Source tracing narrowed the chat status error: `TodosStore` opens a repository's TODO shapes only when `stackOf(repoId)` is requested; the model-invocable TODO flows expose draft/issue authoring but no read, while `run/list` and `run/inspect` are explicitly device-only. A correct status answer needs an authorized read of the synced stack or Cloud attempt, including an explicit unknown/refused result while sync or access is unresolved. The run-list absence alone cannot establish a TODO's Cloud state. This is a diagnosis, not a deployed fix; verify with a real agent eval and a production rerun.
+
+## 2026-10-23, 13:56 PDT
+
+- Drafted an isolated `todo/inspect` flow and repository-scoped status route so the agent can read the server's current TODO state, failure code and Cloud run ID. The route returns no title, prompt or person field, checks the repository's role, and distinguishes an authorized `not_found` from unavailable and refused reads. The browser client emits an outcome-only span, log and counter. This draft is **not landed or deployed**.
+- The real-socket client test passes (8 tests, including a stalled response). The focused server integration test reaches a 500 before route logic because this sparse workspace resolves an installed `@smthrs/integrations` package from a different revision: `SessionKeys` calls `.pipe` on `Core.Pkce.createCodeVerifier(32)`, which is a string in that package. App and worker typechecks also report many package revision mismatches; none identified yet in the changed files. All three saved Cloud test workspaces returned `workspace_not_ready`, and the Beaver SSH host refused connection. Do not count the unrun server test as a pass. Arc remains screen-locked.
+
+## 2026-10-23, 14:03 PDT
+
+- The concurrent root checkout already has a one-line `SessionKeys` compatibility fix (`Effect.sync(() => Core.Pkce.createCodeVerifier(32))`). Applied that exact line temporarily in the isolated workspace: the new status route's **four real Postgres tests passed**, including refusal to read another repository without its role. Restored the temporary line immediately afterward; it is absent from this bug-bash draft. The client tests still pass (8). The wider typecheck has unrelated package-revision errors, with no diagnostic in the changed source files. Rerun the server tests on a landed revision that contains the compatibility fix before landing this draft.
+
+## 2026-10-23, 14:08 PDT
+
+- Self-review caught a contract ambiguity: `RepoRoles` can return `404 { code: "not_found" }` for a missing repository, while the draft client treated that same body as proof that a TODO was absent. The draft now reserves `404 { code: "todo_not_found" }` for a missing TODO after authorization; a repository 404 remains unavailable to the agent. The real-socket client tests pass (8), including that repository 404 case. The four real Postgres status-route tests pass with the same temporary, immediately restored `SessionKeys` compatibility adjustment. No deployment or production retest yet.
+- The existing `steps.test.ts` suite ran 10/11 green. Its unchanged “no tab answers” case consistently received a successful reply from `TabTodos.layerChannel` instead of `tab_gone`; the new status read does not change the queue/ask path. The registry suite could not load because this sparse checkout lacks `@smthrs/memory`. These are validation gaps for this checkout; check against a complete landing revision before attributing either to production.

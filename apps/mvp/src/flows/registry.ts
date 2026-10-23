@@ -44,7 +44,7 @@ import { Ack, WatchSet } from "../features/attention/flows"
 import { AlertChannelSet } from "../features/spend/flows"
 import { DomainAdd, DomainRemove } from "../features/domains/flows"
 import { SetTheme } from "../features/theme/flows"
-import { TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoRetry } from "../features/todos/flows"
+import { TodoCommit, TodoDraft, TodoDrop, TodoInspect, TodoIssue, TodoRetry } from "../features/todos/flows"
 import { AskWithForm, RenderView, SetViewState } from "../features/views/flows"
 import { OpenWebPage } from "../features/web/flows"
 import { SearchDocs } from "../features/docs/flows"
@@ -311,6 +311,7 @@ export const registry = {
     changes: "drafts a TODO from an issue for the person",
     slash: { command: "todo.issue", minimum: "member", fields: ["repo", "issue"] },
   },
+  "todo/inspect": { flow: TodoInspect },
   "todo/commit": {
     flow: TodoCommit,
     userOnlyReason: "A person commits a TODO from its draft card; the agent drafts and never commits one.",

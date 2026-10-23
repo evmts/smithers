@@ -11,6 +11,13 @@ export const STACK_SEGMENT = "stack"
 export const stackRoute = (owner: string, name: string): string =>
   `${REPOS_ROUTE}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${STACK_SEGMENT}`
 
+/** The current server-held status of one numbered TODO, through the stack's Member read policy. */
+export const todoStatusRoute = (owner: string, name: string, number: number): string =>
+  `${stackRoute(owner, name)}/${number}`
+
+/** The status read's 404 after repository access succeeds; distinct from a repository access refusal. */
+export const TODO_STATUS_NOT_FOUND = "todo_not_found" as const
+
 /** Electric shape proxies: `GET ...?repo=<owner>/<name>`, one repository's rows. */
 export const TODOS_SHAPE_ROUTE = "/api/shapes/todos"
 export const TODO_REQUESTS_SHAPE_ROUTE = "/api/shapes/todo-requests"
@@ -76,8 +83,8 @@ export const LANE_STATES = ["working"] as const satisfies ReadonlyArray<TodoStat
 export const ACTIVE_STATES = ["working", "in_review"] as const satisfies ReadonlyArray<TodoState>
 
 /**
- * The states whose run a TODO links to (ruling TODO-3): its attempt's, while the run works (Working) or waits for a
- * person's merge (In review).
+ * The states with a live attempt to watch (ruling TODO-3): Working or waiting for a person's merge (In review).
+ * The view also keeps a failed attempt's Run link so its failure can be inspected.
  */
 export const RUNNING_STATES = ACTIVE_STATES
 
@@ -353,11 +360,14 @@ export const TODOS_TELEMETRY = {
     "todos.queue",
     "todos.send",
     "todos.pending",
+    "todos.inspect",
     "smithers_todo_drafts",
     "smithers_todo_queued",
     "smithers_todo_sends",
     "smithers_todo_pending_actions",
+    "smithers_todo_status_reads_client",
     "execute_tool todo/draft",
+    "execute_tool todo/inspect",
   ],
   fields: ["op", "door", "via", "outcome", "status", "code", "opId", "draftId", "durationMs", "action"],
 } as const

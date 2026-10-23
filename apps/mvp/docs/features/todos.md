@@ -44,6 +44,7 @@ Every role here is the person's on the repository the route names ([decision 007
 | Route | Answers |
 |---|---|
 | `POST /api/repos/<owner>/<name>/stack` | `202 { txid, opId, outcome, number }` for a new change, `200 { txid: null, … }` for a repeated op id. Refusals below |
+| `GET /api/repos/<owner>/<name>/stack/<number>` | current status, step, failure, branch, PR and Cloud run ID for a Member there; `404 { code: "todo_not_found" }` only after authorization; never cached |
 | `GET /api/shapes/todos?repo=<owner>/<name>` | the repository's `todos`, `TODO_COLUMNS`; never cached |
 | `GET /api/shapes/todo-requests?repo=<owner>/<name>` | their `todo_requests`, `TODO_REQUEST_COLUMNS`; never cached |
 
@@ -73,11 +74,12 @@ A shape request whose `repo` names no repository reads no repository's rows; on 
 |---|---|---|---|
 | `todo/draft` | `{ repo, prompt, title?, acceptance? }` | the agent; `/todo.new owner/repo <prompt>` (Member) | yes: it answers `{ draftId, status: "drafted", path }` |
 | `todo/issue` | `{ repo, issue, title?, prompt?, acceptance? }` | Make TODO in an issue's menu or on its page, and its key `t`; `/todo.issue owner/repo <n>` (Member) | yes: with a better title and prompt than the issue's, if it has them |
+| `todo/inspect` | `{ repo, number }` | the agent reads a TODO's current shared state | yes: found or authorized not found; access and network errors remain errors |
 | `todo/commit` | `{ repo, title, prompt, acceptance?, issue? }` | Commit on a draft card | never |
 | `todo/drop` | `{ repo, number }` | Drop on a row or the TODO's card; `/todo.drop owner/repo <n>` (Member) | never |
 | `todo/Retry` | `{ repo, number }` | Retry on a failed TODO or its run | yes, with the same ownership and role checks |
 
-Each is one step (`src/features/todos/steps.ts`) that asks, over the engine's todos channel, the tab that started the request (`TabTodos`, `src/flows/askingTab.ts`) to keep the draft or queue the change. `todo/issue` fails `issue_not_found` when the device doesn't have the issue. The draft's and the change's ids are UUIDv5s of the execution id, so a step run again names the same draft or change, and the tab keeps it once. A draft without a title takes the prompt's first line.
+Drafts and changes are steps (`src/features/todos/steps.ts`) that ask, over the engine's todos channel, the tab that started the request (`TabTodos`, `src/flows/askingTab.ts`) to keep the draft or queue the change. `todo/inspect` is a durable read step through ChatApi, scoped to the run's credential and the repository's Member policy. It returns no title, prompt or person fields. The device's `run/list` cannot establish a Cloud TODO's status. `todo/issue` fails `issue_not_found` when the device doesn't have the issue. The draft's and the change's ids are UUIDv5s of the execution id, so a step run again names the same draft or change, and the tab keeps it once. A draft without a title takes the prompt's first line.
 
 ## The browser
 
@@ -223,8 +225,10 @@ No record carries a title, a prompt, a criterion or a login ([observability.md](
 | `todo.start`; `smithers_todo_admissions{flow,outcome}` | log, span, counter | flow, execution id, `started` / `not_started`, error code; records admission acknowledgment, not execution completion |
 | `todo.restack` | log | attempt and TODO ids, the TODO below's number, the pull request's number: a stacked TODO took in the one below it and moved onto the default branch |
 | `stack.shape.todos`, `stack.shape.todo_requests` | log, span | Electric's request records |
+| `stack.status`; `smithers_todo_status_reads{outcome}` | log, span, counter | HTTP status, duration and distinct `todo_not_found` or repository refusal outcomes; no TODO content or person field |
 | `smithers_stack_requests{op,outcome}`, `smithers_stack_ops{op,outcome}`, `smithers_todo_transitions{from,to}`, `smithers_todo_shape_requests`, `smithers_todo_request_shape_requests` | counters | |
 | `todos.draft`, `todos.queue`, `todos.send`, `todos.pending`; `smithers_todo_drafts`, `smithers_todo_queued`, `smithers_todo_sends`, `smithers_todo_pending_actions` | browser logs, spans, counters | `op`, `door`, `via`, `outcome` (a draft's `issue_not_found` too), `fromIssue`, `status`, `code`, `opId`, `draftId`, `action` |
+| `todos.inspect`; `smithers_todo_status_reads_client{outcome}` | browser worker log, span, counter | found, not found or refusal and duration; no TODO content |
 | `keys.press`; `smithers_web_shortcut_presses{key}` | browser log, counter | `key`: a one-key shortcut pressed a button |
 
 ## Tests

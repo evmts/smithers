@@ -26,3 +26,9 @@ export const pendingActions = Metric.counter("smithers_todo_pending_actions", {
   description: "Edit and Discard on a stack change Not sent, and Discard on a draft, by action",
   incremental: true,
 })
+
+/** Agent reads of the shared TODO state, by found, missing or refusal outcome. */
+export const statusReads = Metric.counter("smithers_todo_status_reads_client", {
+  description: "Shared TODO status reads from the device's durable agent, by outcome",
+  incremental: true,
+})

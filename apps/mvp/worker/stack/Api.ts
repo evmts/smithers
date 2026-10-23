@@ -1,7 +1,7 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import type { SqlClient } from "effect/sql"
+import { SqlClient, SqlError } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { MAX_ISSUE_NUMBER } from "../../src/features/issues/contract.ts"
 import { isRepository, REPOS_ROUTE, repoId } from "../../src/features/repo/contract.ts"
@@ -13,6 +13,7 @@ import {
   MAX_TODO_NUMBER,
   REFUSAL_STATUS,
   STACK_SEGMENT,
+  TODO_STATUS_NOT_FOUND,
   type StackRefusal,
   TODO_COLUMNS,
   TODO_REQUEST_COLUMNS,
@@ -29,6 +30,7 @@ import * as RepoRoles from "../github/RepoRoles.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import { mayChange, mayRead, mayRetryAny, viaOf } from "./Access.ts"
 import * as Stack from "./Stack.ts"
+import type { TodoStatusRead } from "../../src/features/todos/schema.ts"
 
 // The stack's routes in ChatApi (decision 0016 §1, docs/features/todos.md#routes):
 //
@@ -57,6 +59,12 @@ export const todoShapes = Metric.counter("smithers_todo_shape_requests", {
 })
 export const requestShapes = Metric.counter("smithers_todo_request_shape_requests", {
   description: "GET /api/shapes/todo-requests requests, by status and live",
+  incremental: true,
+})
+
+/** Current TODO status reads, by outcome; no prompt, title or person field is recorded. */
+export const statusReads = Metric.counter("smithers_todo_status_reads", {
+  description: "GET /api/repos/<owner>/<name>/stack/<number> reads, by outcome",
   incremental: true,
 })
 
@@ -98,9 +106,26 @@ export const parseStackPath = (path: string): { readonly owner: string; readonly
   }
 }
 
+/** One numbered TODO's status route; malformed and out-of-range numbers match no route. */
+export const parseTodoStatusPath = (path: string): { readonly owner: string; readonly name: string; readonly number: number } | undefined => {
+  if (!path.startsWith(`${REPOS_ROUTE}/`)) return undefined
+  const segments = path.slice(REPOS_ROUTE.length + 1).split("/")
+  if (segments.length !== 4 || segments[2] !== STACK_SEGMENT || !/^[1-9][0-9]*$/.test(segments[3]!)) return undefined
+  const number = Number(segments[3])
+  if (!Number.isSafeInteger(number) || number > MAX_TODO_NUMBER) return undefined
+  try {
+    const owner = decodeURIComponent(segments[0]!)
+    const name = decodeURIComponent(segments[1]!)
+    return isRepository(owner, name) ? { owner, name, number } : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Whether a path is one of the stack's routes. */
 export const handles = (path: string): boolean =>
-  path === TODOS_SHAPE_ROUTE || path === TODO_REQUESTS_SHAPE_ROUTE || parseStackPath(path) !== undefined
+  path === TODOS_SHAPE_ROUTE || path === TODO_REQUESTS_SHAPE_ROUTE ||
+  parseStackPath(path) !== undefined || parseTodoStatusPath(path) !== undefined
 
 /** What a shape filters on when its `repo` isn't a repository: no repository's id, so it holds no rows. */
 const NO_REPOSITORY = "-"
@@ -158,6 +183,65 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
       })
     const todos = shape(TODOS_TABLE, TODO_COLUMNS, "stack.shape.todos", todoShapes)
     const todoRequests = shape(TODO_REQUESTS_TABLE, TODO_REQUEST_COLUMNS, "stack.shape.todo_requests", requestShapes)
+
+    /** The shared TODO status, behind the same repository role check as its Electric shape. */
+    const status = (target: { readonly owner: string; readonly name: string; readonly number: number }) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const startedAt = yield* Clock.currentTimeMillis
+        const fields: Record<string, string | number> = {}
+        const response = yield* Effect.gen(function* () {
+          if (request.method !== "GET") {
+            fields.outcome = "method"
+            return HttpServerResponse.empty({ status: 405, headers: { allow: "GET", ...noStore } })
+          }
+          const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+          if (Option.isNone(actor)) return refusal(503, "unavailable")
+          if (Option.isNone(actor.value)) return refusal(401, "authentication")
+          const who = actor.value.value
+          const resolved = yield* roles.resolve(who, repositoryNamed(`${target.owner}/${target.name}`)).pipe(Effect.result)
+          if (resolved._tag === "Failure") {
+            const { code, retryAfterSeconds } = resolved.failure
+            fields.outcome = code
+            return refusal(REFUSAL_STATUS[code], code, retryAfterSeconds)
+          }
+          if (!mayRead(Option.some<Actor>({ ...who, role: resolved.success.role }))) return refusal(403, "forbidden")
+          const row = yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient
+            const [found] = yield* sql<Omit<TodoStatusRead, "kind">>`
+              SELECT number, state, step, attempt, branch, pr_number AS "prNumber", failure, note,
+                run_id AS "runId", updated_at::text AS "updatedAt"
+              FROM todos WHERE repo_id = ${repoId(target.owner, target.name)} AND number = ${target.number}`
+            return found
+          }).pipe(Effect.provide(database))
+          if (row === undefined) {
+            fields.outcome = TODO_STATUS_NOT_FOUND
+            return HttpServerResponse.jsonUnsafe({ code: TODO_STATUS_NOT_FOUND }, {
+              status: 404, headers: noStore,
+            })
+          }
+          return HttpServerResponse.jsonUnsafe({ kind: "found", ...row } satisfies TodoStatusRead, {
+            status: 200, headers: noStore,
+          })
+        }).pipe(Effect.catchCause((cause) => {
+          const error = Cause.squash(cause)
+          // A defect's arbitrary _tag can contain user text; only the SQL library's finite reason is safe here.
+          fields.errorCode = SqlError.isSqlError(error) ? codeOf(error) : "unexpected"
+          return Effect.succeed(refusal(503, "unavailable"))
+        }))
+        const outcome = String(fields.outcome ?? (response.status === 200 ? "found" :
+          response.status === 404 ? "not_found" : response.status === 401 ? "authentication" :
+          response.status === 403 ? "forbidden" : "unavailable"))
+        fields.outcome = outcome
+        fields.status = response.status
+        fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
+        yield* Metric.update(Metric.withAttributes(statusReads, { outcome }), 1)
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+        yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+          "stack.status",
+        ).pipe(Effect.annotateLogs(fields))
+        return response
+      }).pipe(Effect.withSpan("stack.status", { kind: "server" }))
 
     /** `POST /api/repos/<owner>/<name>/stack`. */
     const change = (target: { readonly owner: string; readonly name: string }) =>
@@ -281,6 +365,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
       const path = request.url.split("?")[0]!
       if (path === TODOS_SHAPE_ROUTE) return yield* todos
       if (path === TODO_REQUESTS_SHAPE_ROUTE) return yield* todoRequests
+      const todo = parseTodoStatusPath(path)
+      if (todo !== undefined) return yield* status(todo)
       const target = parseStackPath(path)
       return target === undefined ? HttpServerResponse.empty({ status: 404 }) : yield* change(target)
     })

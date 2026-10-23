@@ -19,6 +19,7 @@ import {
   MAX_STACK_BODY_BYTES,
   MAX_TITLE_LENGTH,
   stackRoute,
+  todoStatusRoute,
   TODO_REQUESTS_SHAPE_ROUTE,
   TODOS_SHAPE_ROUTE,
 } from "../../src/features/todos/contract.ts"
@@ -45,6 +46,7 @@ const noLogin: Actor = { subject: { kind: "person", id: "person-nologin" }, role
 const agentForMember: Actor = { ...member, act: { kind: "agent", id: "answer-1" } }
 
 const ROUTE = stackRoute("Octo", "hello")
+const STATUS = todoStatusRoute("Octo", "hello", 1)
 
 const post = (h: StackHarness, body: unknown, init: RequestInit = {}, route = ROUTE) =>
   h.fetch(route, {
@@ -338,13 +340,15 @@ describe("the shapes", () => {
 
 describe("routing", () => {
   test("handles the stack route and the two shapes, and nothing else", () => {
-    for (const path of [ROUTE, "/api/repos/octo/hello/stack", "/api/repos/a%2Db/c/stack", TODOS_SHAPE_ROUTE, TODO_REQUESTS_SHAPE_ROUTE]) {
+    for (const path of [ROUTE, STATUS, "/api/repos/octo/hello/stack", "/api/repos/a%2Db/c/stack", TODOS_SHAPE_ROUTE, TODO_REQUESTS_SHAPE_ROUTE]) {
       expect([path, Api.handles(path)]).toEqual([path, true])
     }
     for (
       const path of [
         "/api/repos/octo/hello/writes",
-        "/api/repos/octo/hello/stack/1",
+        "/api/repos/octo/hello/stack/0",
+        "/api/repos/octo/hello/stack/01",
+        "/api/repos/octo/hello/stack/2147483648",
         "/api/repos/octo/stack",
         "/api/repos/app/flows/stack",
         "/api/repos/%E0%A4%A/hello/stack",
