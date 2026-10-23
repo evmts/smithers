@@ -326,7 +326,7 @@ test("start takes faulty services in place of the real ones, as the end-to-end e
   const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice() }
   const rendered: Array<ChatView> = []
   const { stop } = start(
-    { ...page, target: new EventTarget(), startedAt: Date.now(), render: (chat) => rendered.push(chat) },
+    { ...page, mac: false, target: new EventTarget(), startedAt: Date.now(), render: (chat) => rendered.push(chat) },
     faultyServices(page, (shapes) => shapes.refuse(400)),
   )
   await until(() => expect(rendered).toHaveLength(1))
