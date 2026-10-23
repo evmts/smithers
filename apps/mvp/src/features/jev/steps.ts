@@ -1,5 +1,5 @@
 import { type FlowEngineLike, ModelStep } from "@smthrs/agent"
-import { Interpreter } from "@smthrs/flow"
+import { Interpreter, type RetryPolicy } from "@smthrs/flow"
 import { Classifier, Evaluator, type Model, ModelProxy } from "@smthrs/model"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { MODEL_ROUTE } from "../model/contract"
@@ -26,7 +26,12 @@ import { recordJudgment, withJudgeSpan } from "./metrics"
 /** The judge's seat: the model endpoint's `judge` role, read with `ModelProxy`'s client and keyed with its `prepare`. */
 export class JudgeSeat extends Context.Service<
   JudgeSeat,
-  { readonly model: Model.Model; readonly route: FlowEngineLike.RouteResolver }
+  {
+    readonly model: Model.Model
+    readonly route: FlowEngineLike.RouteResolver
+    /** Host-selected retry timings; omitted uses the durable model step's production policy. */
+    readonly retryPolicy?: RetryPolicy.RetryPolicy
+  }
 >()("@smthrs/mvp/jev/JudgeSeat") {
   /** The `judge` role of the model endpoint on `origin`, through the host's `HttpClient`. */
   static readonly layer = (origin: string) =>

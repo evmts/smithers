@@ -1,5 +1,6 @@
 import { DurableWriter } from "@smthrs/database"
-import { Flow, Interpreter } from "@smthrs/flow"
+import { ModelStep } from "@smthrs/agent"
+import { Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Flows, MemoryError, MemoryStore, Opening, RecallKeyword } from "@smthrs/memory"
 import { NodeHost } from "@smthrs/platform-node"
@@ -129,7 +130,7 @@ test("remember returns a save receipt, stores in the host-owned bank and replace
 
 
 test.each(["judged", "unavailable"] as const)("a nonempty opening is %s through the durable judge seat", async (mode) => {
-  const agent = await openAgent(runtime, (request) => {
+  const agent = mode === "unavailable" ? undefined : await openAgent(runtime, (request) => {
     const asked = JSON.parse(contents(request).at(-1)!) as { questions: Record<string, unknown> }
     return Stream.make({ type: "text-delta" as const, id: "judge", text: JSON.stringify({ answers: Object.fromEntries(
       Object.keys(asked.questions).map((id, index) => [id, { type: "boolean", probability: index === 0 ? 0.01 : 0.99 }]),
@@ -143,12 +144,22 @@ test.each(["judged", "unavailable"] as const)("a nonempty opening is %s through 
     payload: {}, success: PreparedTurn, error: OpeningFailed,
     body: Node.capture({ prepare: Prepare.name, turn }, () => Prepare.call({ ...turn, candidates })),
   })
-  const transport = mode === "judged" ? agent.fetch : (() => Promise.reject(new Error("injected judge outage"))) as typeof fetch
+  let attempts = 0
+  const transport = agent?.fetch ?? (() => {
+    attempts++
+    return Promise.reject(new Error("injected judge outage"))
+  }) as typeof fetch
+  // Exercise the real retry exhaustion through the seat service, without production backoff waits.
+  const judge = Layer.effect(JudgeSeat, Effect.map(JudgeSeat, (seat) => ({
+    ...seat,
+    retryPolicy: RetryPolicy.make({ ...ModelStep.defaultRetryPolicy, initialMs: 1, maxMs: 1 }),
+  }))).pipe(Layer.provide(JudgeSeat.layer(ORIGIN)))
   const result = await runFlow(flow, {}, Interpreter.layerWithImplementations(flow, Prepare.toLayer(prepare)).pipe(
-    Layer.provide(JudgeSeat.layer(ORIGIN)), Layer.provide(http(transport)),
+    Layer.provide(judge), Layer.provide(http(transport)),
   ))
   if (mode === "unavailable") {
     expect(Exit.isFailure(result.exit) && Cause.squash(result.exit.cause)).toBeInstanceOf(OpeningFailed)
+    expect(attempts).toBe(6)
   } else {
     expect(result.exit).toEqual(Exit.succeed({ ...turn, memoryDebug: { recalled: 2, inserted: 1, filtered: 1, skillsInserted: 0 },
       opening: [{ bank: MEMORY_BANK, key: "launch", text: "launch mascot is cobalt", origin: "recall" }],

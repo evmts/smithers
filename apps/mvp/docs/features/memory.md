@@ -77,3 +77,7 @@ source or paying for judgment again. API/catalog discovery uses the real HTTP
 routes and SQL in `memory.test.ts`. Catalog failures are intentionally visible:
 three durable attempts for transient errors, immediate refusal for permission
 errors, never an unreported empty catalog.
+
+The unavailable-judge regression injects short retry delays through `JudgeSeat`.
+It keeps the durable model step's six attempts and verifies `OpeningFailed`;
+production uses the model step's default backoff policy.
