@@ -94,7 +94,7 @@ run page ─▶ the run's journal: Admitted (who, what), Promoted (when), the tu
 
 ## Flows
 
-Above the list, one line per flow on this device: its runs, the share of its settled runs that succeeded (`Success`), and the 95th percentile of their durations from admission to settlement (`p95`, `–` until one settles). Acts on runs (`run/*`) are left out. It reads the same `runs` collection the list does, the engine's newest 50 runs (`flowSummary`, `src/features/runs/summary.ts`); across devices and hosts, the engine's usage metrics count the same things ([flow usage](../observability.md#flow-usage)).
+Above the list, one line per flow on this device: its runs, the share of its settled runs that succeeded (`Success`), and the 95th percentile of their durations from admission to settlement (`p95`, `–` until one settles). Acts on runs (`run/*`) are left out. It reads the same `runs` collection the list does, the engine's newest 50 runs (`flowSummary`, `src/features/runs/summary.ts`). A completed `flow/new` round or `chat/Answer` can return failed work even when the engine completed it. The list keeps Success unknown until a person opens that run and its bounded result establishes `succeeded` or `failed`; after a failed detail read, the list row says `Failed`. The list read itself never waits for those results. Across devices and hosts, the engine's usage metrics count engine settlements ([flow usage](../observability.md#flow-usage)).
 
 ## The run page
 
@@ -105,6 +105,8 @@ Above the list, one line per flow on this device: its runs, the share of its set
 | Steps | The plan's action calls and child boundaries, and the runs this run started (an agent's cell calls, a person's flow's pinned child), in the order they started. The selected one's input, output, attempts (`1 ✕ FlowsUnavailable · 2 ✓`) and wait; a child links to its own page |
 | Timeline | One bar per step on a shared axis |
 | Journal | Sequence, type and time of each event, its payload on demand, and More for the next 500 |
+
+A Cloud TODO's engine can complete after settling the TODO as failed. A `flow/new` round or `chat/Answer` can likewise complete after recording failed work. In each case the header shows `Failed`, matching the work's result. A failed TODO's Retry action starts a fresh stack attempt.
 
 An answer's debug info in the conversation opens its run's page, `/app/runs/<answer id>`, since an answer's id is its run's ([chat](chat.md#message-controls)).
 

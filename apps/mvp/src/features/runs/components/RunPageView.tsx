@@ -19,6 +19,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { Link } from "@tanstack/react-router"
 import { ANSWER, OPEN, REFUSAL_WORDS, RESUME, RETRY, RETRY_LATEST, STOP } from "../contract"
 import { actsOf, hostOf, journalOf, missingOf, selectedStep } from "../page"
+import { headerStatusOf } from "../todoRun"
 import { graphOf, runTitle } from "../graph"
 import type { RunsActions } from "../runs"
 import type { Inspection, RunTab, RunPage, RunView } from "../schema"
@@ -71,7 +72,7 @@ function ReadRunPage({ page, view, actions }: { page: RunPage; view: RunView; ac
     }}>
       <RunHeader
         title={runTitle(run)}
-        state={run.status}
+        state={headerStatusOf(run)}
         cancelRequested={run.cancelRequestedAtMs !== null}
         startedAtMs={run.startedAtMs ?? run.createdAtMs}
         finishedAtMs={run.finishedAtMs}

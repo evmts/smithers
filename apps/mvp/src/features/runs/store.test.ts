@@ -18,7 +18,7 @@ const value = (text: string) => ({ text, bytes: text.length, clipped: false })
 
 const event = (seq: number) => ({ seq, eventType: "flows.engine.node-scheduled", emittedAtMs: seq, payload: value("{}") })
 
-const summary = (runId: string) => ({
+const summary = (runId: string, overrides: Partial<Inspection["run"]> = {}) => ({
   runId,
   flowName: "flow/run",
   status: "running" as const,
@@ -29,6 +29,7 @@ const summary = (runId: string) => ({
   cancelRequestedAtMs: 5,
   waiting: null,
   lastSeq: 3,
+  ...overrides,
 })
 
 const inspection = (runId: string, events: ReadonlyArray<ReturnType<typeof event>>, hasMore: boolean): Inspection => ({
@@ -257,6 +258,70 @@ describe("a run on Cloudflare", () => {
 })
 
 describe("readList and following the engine", () => {
+  test("an answer's list waits for a detail read before counting its domain result", async () => {
+    let inspections = 0
+    const t = open({
+      inspect: (id) => {
+        inspections++
+        return Effect.succeed({
+          ...inspection(id, [], false),
+          run: { ...summary(id, { flowName: "chat/Answer", status: "completed", finishedAtMs: 10, lastSeq: 3 }),
+            input: value("{}"), result: value(JSON.stringify({ status: "failed", text: "private" })) },
+        })
+      },
+      list: () => Effect.succeed({ runs: [summary("answer", {
+        flowName: "chat/Answer", status: "completed", finishedAtMs: 10, lastSeq: 3,
+      })], cursor: null }),
+    })
+    await t.run(t.store.readList)
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("unknown")
+    expect(inspections).toBe(0)
+    await t.run(t.store.readRun("answer"))
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed")
+    await t.run(t.store.readList)
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed")
+    expect(inspections).toBe(1)
+  })
+
+  test("lists a completed draft promptly and uses only a detail read's same-version finite outcome", async () => {
+    let seq = 3
+    let outcome: "failed" | "ready" = "failed"
+    let unavailable = false
+    let inspections = 0
+    const t = open({
+      inspect: (id) => {
+        inspections++
+        return unavailable ? refused("unavailable") : Effect.succeed({
+          ...inspection(id, [], false),
+          run: { ...summary(id, { flowName: "flow/new", status: "completed", finishedAtMs: 10, lastSeq: seq }),
+            input: value("{}"), result: value(JSON.stringify({ status: outcome, request: "private" })) },
+        })
+      },
+      list: () => Effect.succeed({ runs: [summary("draft", {
+        flowName: "flow/new", status: "completed", finishedAtMs: 10, lastSeq: seq,
+      })], cursor: null }),
+    })
+    await t.run(t.store.readList)
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("unknown")
+    expect(inspections).toBe(0)
+    await t.run(t.store.readRun("draft"))
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed")
+    await t.run(t.store.readList)
+    expect(inspections).toBe(1)
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("failed")
+    seq = 4
+    unavailable = true
+    await t.run(t.store.readList)
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("unknown")
+    await t.run(t.store.readRun("draft"))
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("unknown")
+    unavailable = false
+    outcome = "ready"
+    await t.run(t.store.readRun("draft"))
+    expect((await t.run(t.store.runs.toArray))[0]?.outcome).toBe("succeeded")
+    expect(inspections).toBe(3)
+  })
+
   test("a slow engine is warmed without opening the list, and the click reuses it until an engine event", async () => {
     const started = Effect.runSync(Deferred.make<void>())
     const pending = Effect.runSync(Deferred.make<{ runs: ReadonlyArray<ReturnType<typeof summary>>; cursor: null }>())
@@ -324,7 +389,7 @@ describe("readList and following the engine", () => {
         reads.push(runId)
         return Effect.succeed(inspection(runId, [], false))
       },
-      list: () => Effect.succeed({ runs: listed.map(summary), cursor: null }),
+      list: () => Effect.succeed({ runs: listed.map((id) => summary(id)), cursor: null }),
     })
     await t.run(t.store.readList)
     expect((await t.run(t.store.runs.toArray)).map((row) => row.id).sort()).toEqual(["a", "b"])

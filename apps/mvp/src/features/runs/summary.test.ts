@@ -50,6 +50,28 @@ describe("flowSummary", () => {
     ])
   })
 
+  test("a failed draft round is not counted as success, and unread results do not claim a rate", () => {
+    const failed = { ...run("flow/new", "completed", 10), outcome: "failed" as const }
+    const ready = { ...run("flow/new", "completed", 20), outcome: "succeeded" as const }
+    expect(flowSummary([failed, ready])).toEqual([
+      { flow: "flow/new", runs: 2, settled: 2, succeeded: 1, successRate: 0.5, p95Ms: 20 },
+    ])
+    expect(flowSummary([failed, run("flow/new", "completed", 30)])[0]).toMatchObject({
+      settled: 2, succeeded: 0, successRate: null,
+    })
+  })
+
+  test("a failed answer is not counted as success, and an unread answer has no rate", () => {
+    const failed = { ...run("chat/Answer", "completed", 10), outcome: "failed" as const }
+    const done = { ...run("chat/Answer", "completed", 20), outcome: "succeeded" as const }
+    expect(flowSummary([failed, done])).toEqual([
+      { flow: "chat/Answer", runs: 2, settled: 2, succeeded: 1, successRate: 0.5, p95Ms: 20 },
+    ])
+    expect(flowSummary([failed, run("chat/Answer", "completed", 30)])[0]).toMatchObject({
+      settled: 2, succeeded: 0, successRate: null,
+    })
+  })
+
   test("leaves out acts on runs, and ties sort by name", () => {
     const rows = flowSummary([
       run("run/retry", "completed", 10),

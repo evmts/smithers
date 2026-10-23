@@ -17,7 +17,8 @@ import {
   type SteerRefusal,
   THIS_DEVICE,
 } from "./contract"
-import { failedTodoRun, retryable, todoRetryPayload } from "./retry"
+import { retryable } from "./retry"
+import { failedTodoRun, hasDomainOutcome, todoRetryPayload } from "./todoRun"
 import { ACTIONS_LIMIT, actionRunPath } from "../actions/contract"
 import { isoOf } from "../pulls/view"
 import { repoId } from "../repo/contract"
@@ -108,7 +109,7 @@ export const listRows = (runs: ReadonlyArray<RunRow>): ReadonlyArray<UiRunRow> =
     .map((run) => ({
       id: run.id,
       flow: run.flow,
-      state: run.status,
+      state: run.status === "completed" && hasDomainOutcome(run.flow) && run.outcome === "failed" ? "failed" : run.status,
       cancelRequested: run.cancelRequested,
       startedAtMs: run.startedAtMs ?? run.createdAtMs,
       finishedAtMs: run.finishedAtMs,

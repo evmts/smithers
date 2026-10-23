@@ -24,6 +24,8 @@ export const RunRow = Schema.Struct({
   startedAtMs: Schema.NullOr(Schema.Number),
   finishedAtMs: Schema.NullOr(Schema.Number),
   seq: Schema.Number,
+  /** The finite result of a completed answer or draft, when its inspection could be read. */
+  outcome: Schema.optionalKey(Schema.Literals(["succeeded", "failed", "unknown"])),
 })
 export type RunRow = typeof RunRow.Type
 

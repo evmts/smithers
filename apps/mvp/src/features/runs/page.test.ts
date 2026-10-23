@@ -200,6 +200,18 @@ describe("the list", () => {
       ])
   })
 
+  test("shows an inspected answer or draft's failed work in its list row", () => {
+    expect(listRows([
+      row({ id: "answer", flow: "chat/Answer", outcome: "failed" }),
+      row({ id: "draft", flow: "flow/new", outcome: "failed" }),
+      row({ id: "unread", flow: "chat/Answer", outcome: "unknown" }),
+    ]).map(({ id, state }) => ({ id, state }))).toEqual([
+      { id: "answer", state: "failed" },
+      { id: "draft", state: "failed" },
+      { id: "unread", state: "completed" },
+    ])
+  })
+
   test("counts a run's retries from this device", () => {
     expect(retriesOf([row({ id: "retry:a:1", flow: "run/retry" }), row({ id: "retry:a:2", flow: "run/retry" }), row({ id: "retry:b:1", flow: "run/retry" })], "a"))
       .toBe(2)

@@ -1,9 +1,11 @@
 import { listed } from "./contract"
 import type { RunRow } from "./schema"
+import { hasDomainOutcome } from "./todoRun"
 
 // The Runs page's flows summary (docs/features/runs.md#flows): per flow, from this device's run index (`runs`), how many
-// runs, the share of its settled runs that succeeded and the 95th percentile of their durations. Pure: the engine's
-// usage metrics (`RunMetrics`, docs/observability.md#flow-usage) count the same things across devices.
+// runs, the share of its settled runs that succeeded and the 95th percentile of their durations. Engine usage metrics
+// (`RunMetrics`, docs/observability.md#flow-usage) count engine settlements across devices; a draft's domain result is
+// additionally known here only after the person opens its run.
 
 /** One flow's line of the summary. */
 export interface FlowSummary {
@@ -39,13 +41,16 @@ export const flowSummary = (runs: ReadonlyArray<RunRow>): ReadonlyArray<FlowSumm
     const ended = group.filter((run) =>
       (run.status === "completed" || run.status === "failed" || run.status === "cancelled") && run.finishedAtMs !== null
     )
-    const succeeded = ended.filter((run) => run.status === "completed").length
+    const unknown = ended.some((run) => hasDomainOutcome(run.flow) && run.status === "completed" &&
+      (run.outcome === undefined || run.outcome === "unknown"))
+    const succeeded = ended.filter((run) => run.status === "completed" &&
+      (!hasDomainOutcome(run.flow) || run.outcome === "succeeded")).length
     return {
       flow,
       runs: group.length,
       settled: ended.length,
       succeeded,
-      successRate: ended.length === 0 ? null : succeeded / ended.length,
+      successRate: ended.length === 0 || unknown ? null : succeeded / ended.length,
       p95Ms: percentile(ended.map((run) => run.finishedAtMs! - run.createdAtMs), 0.95),
     }
   }).sort((left, right) => right.runs - left.runs || left.flow.localeCompare(right.flow))

@@ -6,6 +6,7 @@ import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT } from "./contract"
 import { ACTIONS_SHAPE_ROUTE } from "../actions/contract"
 import { type Inspection, RepoRunRow, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema"
+import { domainOutcomeOf, hasDomainOutcome } from "./todoRun"
 
 // Runs on this tab (decision 0014 §1 and §3, docs/features/runs.md#the-browser): the list of this device's runs, each
 // open run's read, and the run view, all local collections read from this device's engine through `BrowserEngine`. A
@@ -75,6 +76,9 @@ const rowOf = (run: Inspection["children"][number] | Omit<Inspection["run"], "in
   startedAtMs: run.startedAtMs,
   finishedAtMs: run.finishedAtMs,
   seq: run.lastSeq,
+  ...("result" in run && hasDomainOutcome(run.flowName) && run.status === "completed"
+    ? { outcome: domainOutcomeOf(run.flowName, run.result) }
+    : {}),
 })
 
 /** Puts `row` into `collection`, replacing the one under its key. */
@@ -290,9 +294,20 @@ export class RunsStore extends Context.Service<
         const read = yield* Effect.result(engine.list({ limit: RUN_LIST_LIMIT }))
         if (read._tag === "Failure") return yield* recordRead("list", "unavailable", startedAt)
         const listedIds = new Set(read.success.runs.map((run) => run.runId))
-        const stale = (yield* runs.toArray).filter((row) => !listedIds.has(row.id)).map((row) => row.id)
+        const previous = yield* runs.toArray
+        const previousById = new Map(previous.map((row) => [row.id, row]))
+        const stale = previous.filter((row) => !listedIds.has(row.id)).map((row) => row.id)
         if (stale.length > 0) yield* Effect.asVoid(runs.delete(stale))
-        for (const run of read.success.runs) yield* put(runs, rowOf(run))
+        for (const run of read.success.runs) {
+          const row = rowOf(run)
+          const cached = previousById.get(run.runId)
+          // List summaries have no result. A detail read can establish a completed answer or draft's outcome; keep that finite
+          // result only for the same journal version. Opening Runs must never await a second read per row.
+          const outcome = hasDomainOutcome(run.flowName) && run.status === "completed"
+            ? cached?.seq === run.lastSeq ? cached.outcome ?? "unknown" : "unknown"
+            : undefined
+          yield* put(runs, outcome === undefined ? row : { ...row, outcome })
+        }
         yield* view.update(VIEW, (row) => { row.listReady = (row.listRevision ?? 0) === revision })
         yield* recordRead("list", "read", startedAt)
       }).pipe(Effect.orDie)

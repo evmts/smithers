@@ -2,7 +2,7 @@ import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Effect, Metric, Option } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { RETRY_ID_SEARCH_LIMIT, retriedRunId, retryActId, runPath } from "./contract"
-import { todoRetryPayload } from "./retry"
+import { todoRetryPayload } from "./todoRun"
 import { retriesOf } from "./page"
 import type { Inspection, RepoName, RunTab, RunView } from "./schema"
 import { VIEW } from "./schema"
@@ -14,7 +14,9 @@ import { RunsStore } from "./store"
 // sequence the page last read, so the engine refuses one on a run that moved since, and the page then reads it again.
 
 /** Where this tab goes: the router's `navigate`, which the host gives. */
-export class RunsNavigation extends Context.Service<RunsNavigation, { readonly navigate: (path: string) => void }>()(
+export class RunsNavigation extends Context.Service<RunsNavigation, {
+  readonly navigate: (path: string) => void
+}>()(
   "@smthrs/mvp/runs/RunsNavigation",
 ) {}
 
