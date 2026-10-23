@@ -10,6 +10,7 @@ import { Chat } from "../chat/chat"
 import { PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import { ThemeStore } from "../theme/store"
+import { CANT_OPEN } from "../web/contract"
 import { Load } from "@smthrs/plugin"
 import { BUILTIN } from "../../plugins/builtin"
 import { hostFacts } from "../../plugins/facts"
@@ -315,6 +316,15 @@ describe("submitting", () => {
     )
     expect(tab.shown()).toEqual([])
   }, 60_000)
+
+  test("/web keeps a refused URL in the composer without dispatching", async () => {
+    const tab = await open()
+    tab.actions.type("/web javascript:alert(1)")
+    tab.actions.submit("/web javascript:alert(1)")
+    expect(tab.draft()).toBe("/web javascript:alert(1)")
+    expect(tab.menu()?.refusal).toBe(CANT_OPEN.scheme)
+    expect(await tab.answered("web.preview")).toEqual([])
+  })
 
   test("/web runs app/web/open through its own door, the person's gesture, door slash", async () => {
     const tab = await open()

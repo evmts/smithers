@@ -9,11 +9,14 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { DEFAULT_REPOSITORY } from "../../../worker/SignIn.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { dispatches } from "../../flows/dispatch"
-import { nodeDevice, type NodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { failingWorker, nodeDevice, type NodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
 import { Chat } from "../chat/chat"
+import { COMPOSER, PLACE } from "../chat/schema"
+import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
+import { ACTION_FAILED } from "../home/contract"
 import { NEW_BRANCH_PREFIX } from "./contract"
 import { dropped } from "./metrics"
 import { ConversationsStore } from "./store"
@@ -47,8 +50,7 @@ const openApi = async () => {
 }
 
 /** One of the person's devices, its engine leading, signed in as a Member, with the live queries React starts. */
-const openDevice = async (api: TestChatApi["Service"]) => {
-  const host: NodeDevice = nodeDevice({ agent: api })
+const openDevice = async (api: TestChatApi["Service"], host: NodeDevice = nodeDevice({ agent: api })) => {
   const runtime = openTab(api, { host })
   runtimes.push(runtime)
   const branch = await runtime.runPromise(Effect.service(Branch))
@@ -185,6 +187,91 @@ test("an act a closed tab left on the device follows its run when the device ope
 }, WITHIN)
 
 describe("a new conversation", () => {
+  test("a Member's /new from home reports a missing deployment mirror and keeps the command retryable", async () => {
+    // No mirror is published for the deployment repository. This is the real
+    // branch handler's 404, not GitHub's repository-restricted writes endpoint.
+    const runtime = openTestApp({ answers: false }, { forge: "code-storage" })
+    runtimes.push(runtime)
+    const api = await runtime.runPromise(Effect.service(TestChatApi))
+    const laptop = await openDevice(api)
+    laptop.commands.queries.menu.startSyncImmediate()
+    laptop.commands.actions.type("/new")
+    laptop.commands.actions.submit("/new")
+    await until(() =>
+      expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "failed" })).toBe(1)
+    )
+    expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBe(ACTION_FAILED)
+    expect(laptop.host.navigated).toEqual([])
+    expect(api.branches.github.seen.map(row => row.path)).toEqual([
+      `/${DEFAULT_REPOSITORY}.git/info/refs?service=git-upload-pack`,
+    ])
+    // The composer and its menu agree, so the existing error is visible.
+    expect(laptop.commands.queries.menu.toArray[0]?.items.some(row => row.label === "/new")).toBe(true)
+  }, WITHIN)
+
+  test("an unavailable engine reports the same existing error and restores /new", async () => {
+    const api = await openApi()
+    const laptop = await openDevice(api, nodeDevice({ engineWorker: failingWorker }))
+    laptop.commands.queries.menu.startSyncImmediate()
+    laptop.commands.actions.type("/new")
+    laptop.commands.actions.submit("/new")
+    await until(() => expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBe(ACTION_FAILED))
+    expect(laptop.host.navigated).toEqual([])
+  }, WITHIN)
+
+  test("a refused /new chosen from the slash menu restores the accepted command", async () => {
+    const runtime = openTestApp({ answers: false }, { forge: "code-storage" })
+    runtimes.push(runtime)
+    const api = await runtime.runPromise(Effect.service(TestChatApi))
+    const laptop = await openDevice(api)
+    laptop.commands.queries.menu.startSyncImmediate()
+    laptop.commands.actions.type("/")
+    const index = laptop.commands.queries.menu.toArray[0]!.items.findIndex(row => row.label === "/new")
+    expect(index).toBeGreaterThanOrEqual(0)
+    laptop.commands.actions.choose(index, "accept")
+    await until(() => expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBe(ACTION_FAILED))
+    const store = await laptop.runtime.runPromise(Effect.service(ChatStore))
+    expect(store.composer.tanstack.get(COMPOSER)?.draft.trim()).toBe("/new")
+    expect(laptop.commands.queries.menu.toArray[0]?.items).toEqual([])
+  }, WITHIN)
+
+  test.each(["typing", "dismissal", "draft", "conversation"] as const)(
+    "a delayed refusal leaves newer %s alone",
+    async (change) => {
+      const api = await openApi()
+      const laptop = await openDevice(api)
+      laptop.commands.queries.menu.startSyncImmediate()
+      const store = await laptop.runtime.runPromise(Effect.service(ChatStore))
+      const release = api.branches.github.hold()
+      try {
+        laptop.commands.actions.type("/new taken")
+        laptop.commands.actions.submit("/new taken")
+        // The real branch request is still waiting for its forge.
+        await until(() => expect(api.branches.github.seen.length).toBeGreaterThan(0))
+        expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBeNull()
+        if (change === "typing") laptop.commands.actions.type("/theme")
+        if (change === "dismissal") laptop.commands.actions.dismiss()
+        if (change === "draft") {
+          await laptop.runtime.runPromise(store.composer.update(COMPOSER, row => { row.draft = "next question" }))
+        }
+        if (change === "conversation") {
+          await laptop.runtime.runPromise(store.place.update(PLACE, row => { row.conversationId = "another-conversation" }))
+        }
+      } finally {
+        release()
+      }
+      await until(() =>
+        expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "failed" })).toBe(1)
+      )
+      expect(laptop.commands.queries.menu.toArray[0]?.refusal ?? null).toBeNull()
+      expect(store.composer.tanstack.get(COMPOSER)?.draft).toBe(
+        change === "typing" ? "/theme" : change === "draft" ? "next question" : "",
+      )
+      expect(laptop.host.navigated).toEqual([])
+    },
+    WITHIN,
+  )
+
   test("/new makes a new branch of the repository the tab shows and opens it there; from home, the deployment's own", async () => {
     const api = await openApi()
     const laptop = await openDevice(api)
@@ -209,6 +296,7 @@ describe("a new conversation", () => {
   test("a name the forge already has is refused exists, never tried again, and the tab stays", async () => {
     const api = await openApi()
     const laptop = await openDevice(api)
+    laptop.commands.queries.menu.startSyncImmediate()
     laptop.commands.actions.type("/new taken")
     laptop.commands.actions.submit("/new taken")
     // The step's refusal is final: one failed run, no retries for a day.
@@ -216,5 +304,6 @@ describe("a new conversation", () => {
       expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "failed" })).toBe(1)
     )
     expect(laptop.host.navigated).toEqual([])
+    expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBe(ACTION_FAILED)
   }, WITHIN)
 })

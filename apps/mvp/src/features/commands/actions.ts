@@ -1,12 +1,13 @@
 import { slashMenu, slashSubmit } from "@smthrs/ui"
-import { Effect, Metric, Option } from "effect"
+import { Effect, Metric, Option, Ref } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { AuthStore, SESSION } from "../auth/store"
 import { ask, setDraft } from "../chat/actions"
 import type { DraftSelection } from "../chat/sharedPrompt"
-import { COMPOSER } from "../chat/schema"
+import { COMPOSER, PLACE } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import { pinRepository } from "../conversations/pin"
+import { ACTION_FAILED } from "../home/contract"
 import { pinConversation } from "../sandbox/actions"
 import { openWebPage, refusedPage } from "../web/actions"
 import { CANT_OPEN } from "../web/contract"
@@ -45,7 +46,8 @@ const menuNow = Effect.gen(function* () {
 
 const write = (fields: Partial<Omit<Menu, "id">>) =>
   Effect.gen(function* () {
-    const { menu } = yield* CommandsStore
+    const { menu, revision } = yield* CommandsStore
+    yield* Ref.update(revision, n => n + 1)
     yield* menu.update(MENU, (row) => void Object.assign(row, fields))
   }).pipe(Effect.orDie)
 
@@ -82,15 +84,20 @@ const refuse = (outcome: "unknown" | "missing" | "invalid", copy: string, comman
   })
 
 /** Runs `command`'s flow with `payload` through dispatch, door `slash`, in the background; the composer clears at once. */
-const run = (command: Command, payload: Readonly<Record<string, unknown>>) =>
+const run = (command: Command, payload: Readonly<Record<string, unknown>>, draft: string) =>
   Effect.gen(function* () {
     // `/web` names a page the app won't open: the line stays, saying why, and nothing runs (src/features/web/actions.ts).
     if (command.flow === "app/web/open") {
       const refused = yield* refusedPage(payload as never, "slash")
       if (Option.isSome(refused)) return yield* refuse("invalid", CANT_OPEN[refused.value], command)
     }
+    const { place } = yield* ChatStore
+    const conversation = (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId
     yield* type("")
-    const { scope } = yield* CommandsStore
+    // New typing, dismissal or another command advances the revision even when
+    // its row is unchanged, so an older refusal cannot take over the composer.
+    const { scope, revision } = yield* CommandsStore
+    const cleared = yield* Ref.get(revision)
     const flows = yield* FlowDispatch
     // `/web … tab` opens its tab inside this keypress when the browser allows it (src/features/web/actions.ts).
     if (command.flow === "app/web/open") yield* openWebPage(payload as never, "slash", scope)
@@ -103,8 +110,15 @@ const run = (command: Command, payload: Readonly<Record<string, unknown>>) =>
         : command.flow === "conversation/new"
         ? yield* pinRepository(payload)
         : payload
-      // A dispatch that fails is already logged and counted with the flow.
-      yield* flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash" }).pipe(Effect.ignore, Effect.forkIn(scope))
+      const dispatch = flows.dispatch(command.flow, { ...pinned, ...command.args } as never, { door: "slash" })
+      yield* Effect.gen(function* () {
+        const result = yield* Effect.result(dispatch)
+        if (command.flow !== "conversation/new" || (result._tag === "Success" && result.success._tag === "Done")) return
+        if ((yield* Ref.get(revision)) !== cleared || (yield* draftNow) !== "" ||
+          (yield* place.get(PLACE)).pipe(Option.getOrThrow).conversationId !== conversation) return
+        yield* type(draft)
+        yield* list(draft, ACTION_FAILED)
+      }).pipe(Effect.forkIn(scope))
     }
     yield* Metric.update(Metric.withAttributes(submits, { outcome: "run", command: command.name }), 1)
     yield* Effect.logInfo("slash.run").pipe(Effect.annotateLogs({ command: command.name, flow: command.flow }))
@@ -137,7 +151,7 @@ export const submit = (text: string) =>
         return yield* refuse("invalid", invalidArgument(command.name, field.options!.map(({ value }) => value)), command)
       }
       case "run":
-        return yield* run(submitted.command, submitted.payload)
+        return yield* run(submitted.command, submitted.payload, text)
     }
   }).pipe(Effect.annotateLogs({ feature: "commands" }))
 

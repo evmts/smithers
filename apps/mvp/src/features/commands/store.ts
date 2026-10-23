@@ -1,5 +1,5 @@
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer, type Scope } from "effect"
+import { Context, Effect, Layer, Ref, type Scope } from "effect"
 import { ChatStore } from "../chat/store"
 import { menuQuery } from "./queries"
 import { Menu, MENU } from "./schema"
@@ -17,6 +17,8 @@ export class CommandsStore extends Context.Service<
   {
     readonly menu: Collection.Collection<Menu, string>
     readonly menuState: Query<typeof menuQuery>
+    /** Every menu act, including one that leaves its row unchanged. */
+    readonly revision: Ref.Ref<number>
     /** Where the flows a command starts run, closed with the store. */
     readonly scope: Scope.Scope
   }
@@ -32,7 +34,7 @@ export class CommandsStore extends Context.Service<
         getKey: (row) => row.id,
         initialData: [CLOSED],
       })
-      return { menu, menuState: yield* menuQuery(menu, composer), scope: yield* Effect.scope }
+      return { menu, menuState: yield* menuQuery(menu, composer), revision: yield* Ref.make(0), scope: yield* Effect.scope }
     }),
   )
 }

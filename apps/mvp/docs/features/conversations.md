@@ -50,6 +50,13 @@ Archive is personal: it changes your own list, on all your devices, and nobody e
 - **Always fresh.** The step names its run's request (`request`, a version 5 UUID of the run). ChatApi answers a branch the app tracks only to the request that made it, so a step tried again gets its own branch, and any other name someone already has, tracked or not, is refused `exists`: `/new` never opens an existing conversation as a fresh one.
 - **Offline**, the step tries again for a day: the branch is made, and your tab opens it, once the device is back.
 - **A name the forge already has** is refused `exists` and never tried again; the tab stays where it is.
+- **The repository must already have a Code Storage mirror with a default branch.**
+  `/new` creates there through `POST /api/branches`, not GitHub's writes route;
+  being a Member of the deployment repository permits creation but does not
+  create its mirror. A missing mirror or default branch is `not_found`.
+- **A failed command** restores its line in the composer with the existing
+  `Couldn't make a branch` status. The person can submit it again. A late
+  failure leaves newer typing, a dismissed menu or another conversation alone.
 - `/new` is a Member's command, as making a branch is.
 
 ## Flows
