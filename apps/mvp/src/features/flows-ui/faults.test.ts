@@ -2,7 +2,7 @@
 // test.faults-by-injection): nothing opens a page for a run that never started, unsent answers stay, a refused Save
 // says it couldn't, and a refused act on a run says it was refused. Everything else is the real app.
 import { ShapeSource } from "@smthrs/effect-electric"
-import { Effect, type ManagedRuntime, Metric } from "effect"
+import { Effect, Layer, ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { nodeDevice, openFaultyApp, openFaultyTab, type TabOptions, TestChatApi } from "../../test/chatApi"
 import { read } from "../../test/otlp"
@@ -10,6 +10,8 @@ import { EngineFaults } from "../../test/faults"
 import { dispatches } from "../../flows/dispatch"
 import { Runs } from "../runs/runs"
 import { FLOWS_PATH, SAVE_REFUSALS } from "./contract"
+import { draftAgain } from "./actions"
+import { FlowsUiStore, SHOWN } from "./store"
 import { FlowsUi } from "./flowsUi"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -32,7 +34,7 @@ const open = async (options: TabOptions = {}) => {
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const host = nodeDevice({ agent: api })
-  const tab: ManagedRuntime.ManagedRuntime<FlowsUi | Runs | EngineFaults | ShapeSource.Faults, unknown> = openFaultyTab(
+  const tab = openFaultyTab(
     api,
     { ...options, host },
   )
@@ -44,6 +46,12 @@ const open = async (options: TabOptions = {}) => {
   for (const query of [...Object.values(flows.queries), ...Object.values(runs.queries)]) query.startSyncImmediate()
   return {
     api,
+    tab,
+    standalone: async () => {
+      const runtime = ManagedRuntime.make(FlowsUiStore.layer({ origin: api.origin }).pipe(Layer.provideMerge(Layer.succeedContext(await tab.context()))))
+      runtimes.push(runtime)
+      return { runtime, store: await runtime.runPromise(Effect.service(FlowsUiStore)) }
+    },
     host,
     flows,
     runs,
@@ -67,6 +75,10 @@ describe("an engine that refuses a start", () => {
     // No draft shown: Answer and Save do nothing.
     t.flows.actions.answer()
     t.flows.actions.save()
+    t.flows.actions.draftAgain()
+    const isolated = await t.standalone()
+    const { store } = isolated
+    await isolated.runtime.runPromise(store.readRound)
 
     // A draft, then each act refused.
     t.flows.actions.setName("hello")
@@ -78,6 +90,19 @@ describe("an engine that refuses a start", () => {
     await t.reply("The flow's name: hello", `ctx.done(${JSON.stringify(drafted)})`)
     await t.flows.actions.openDraft(draftId)
     await until(() => expect(t.flows.queries.draft.toArray[0]?.draft.status).toBe("ready"))
+
+    // Unchanged optional answers do not launch another round.
+    t.flows.actions.answer()
+    await t.tab.runPromise(Effect.yieldNow)
+    expect(t.done("flow/answer")).toBe(0)
+    await isolated.runtime.runPromise(store.drafts.preload)
+    await isolated.runtime.runPromise(store.shown.update(SHOWN, (row) => { row.draftId = draftId }))
+    for (const state of ["Pending", "Unreadable"] as const) {
+      await isolated.runtime.runPromise(draftAgain.pipe(Effect.provideService(FlowsUiStore, { ...store,
+        nextRound: () => Effect.succeed({ _tag: state, round: 1 }),
+      })))
+    }
+    expect((await isolated.runtime.runPromise(store.shown.get(SHOWN)))).toMatchObject({ value: { refusal: "again_unavailable" } })
 
     await t.refuse("flow/answer")
     t.flows.actions.setAnswer(draftId, "r0q1", "Hi")
