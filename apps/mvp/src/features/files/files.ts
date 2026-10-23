@@ -1,6 +1,8 @@
-import { Context, Effect, Layer } from "effect"
+import type { FileTabsFocusEvent } from "@smthrs/ui"
+import { Context, Effect, Layer, Metric } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { closeTab, FilesPage, openTab } from "./actions"
+import { fileFocus } from "./metrics"
 import { FilesStore } from "./store"
 
 // File tabs as a frontend sees them: a live query to read and plain functions to act. React renders the query with
@@ -15,6 +17,7 @@ export interface FilesQueries {
 
 /** What a person does on the strip: open a tab's file, or close it. Each resolves once its flow has run. */
 export interface FilesActions {
+  readonly recordFocus: (event: FileTabsFocusEvent) => void
   readonly open: (path: string) => Promise<void>
   readonly close: (path: string) => Promise<void>
 }
@@ -32,9 +35,18 @@ export class Files extends Context.Service<Files, { readonly queries: FilesQueri
     Effect.gen(function* () {
       const store = yield* FilesStore
       const run = Effect.runPromiseWith(yield* Effect.context<FilesStore | FilesPage | FlowDispatch>())
+      const record = Effect.runSyncWith(yield* Effect.context<never>())
       return Files.of({
         queries: { tabs: store.all.tanstack },
-        actions: { open: (path) => run(openTab(path)), close: (path) => run(closeTab(path)) },
+        actions: {
+          recordFocus: (event) => record(Effect.logInfo("files.focus").pipe(
+            Effect.annotateLogs(event),
+            Effect.andThen(Metric.update(Metric.withAttributes(fileFocus, event), 1)),
+            Effect.withSpan("files.focus", { attributes: event }),
+          )),
+          open: (path) => run(openTab(path)),
+          close: (path) => run(closeTab(path)),
+        },
       })
     }),
   )

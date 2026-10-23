@@ -19,6 +19,7 @@ export function FileTabsBar() {
     <FileTabs
       className="file-tabs-bar"
       tabs={strip}
+      onFocusLifecycle={actions.recordFocus}
       onOpen={(tab) => void actions.open(tab.key)}
       onClose={(tab) => void actions.close(tab.key)}
     />

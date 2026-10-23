@@ -86,3 +86,13 @@ Each step logs `files.tab` (Warn for `no_repository`), records a span of the sam
 - `tests/FileTabs.browser.test.ts`: real Chromium and TanStack Router, with navigation held past the pending delay; restores tab focus and respects focus moved outside the strip before or during the wait, including removal of the remaining tab.
 - `e2e/files.spec.ts`: the agent opens a file at a line range from the branch workspace's conversation, the tab and highlight show and the conversation stays; the person switches and closes tabs by keyboard (both need Code Storage); moving between a branch's directory, a file and its terminal keeps the workspace (no clone needed).
 - `evals/cases.ts` `files-show-lines`: asked to show code, the agent calls `file/open` with the lines.
+
+The strip also logs and traces `files.focus` and counts
+`smithers_web_file_focus`, with `phase` (`requested`, `consumed`, `dropped`) and
+`reason` (`keyboard`, `restored`, `disconnected`, `outside`). Detachment can be
+temporary under Suspense; a later `restored` receipt distinguishes reveal from
+a remount that lost keyboard ownership. No record includes a file identity.
+The directory and file routes share a pending screen that reads the current
+match's parameters; selecting the directory route strictly on a file page
+throws, remounts the strip and loses its focus. The navigation regression uses
+the real pending screen and repository loaders after an awaited SQLite write.

@@ -41,6 +41,8 @@ import { CodeIntelStore } from "../features/code-intel/store"
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
 
 export interface DeviceOptions {
+  /** Optional real router used by navigation integration tests. */
+  readonly navigate?: (path: string) => void
   /** RepoApi's origin. */
   readonly origin: string
   /** How the tab reaches RepoApi and Electric: the global `fetch` unless set. */
@@ -122,6 +124,7 @@ export const openTab = async (options: DeviceOptions) => {
             navigate: (path) => {
               navigated.push(path)
               pathname = path.split("?")[0]!
+              options.navigate?.(path)
             },
           }),
         ),

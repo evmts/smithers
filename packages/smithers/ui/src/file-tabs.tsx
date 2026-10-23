@@ -19,6 +19,12 @@ export type FileTab = {
   active: boolean;
 };
 
+/** Content-free diagnostics for the strip's keyboard focus handoff. */
+export type FileTabsFocusEvent = {
+  phase: "requested" | "consumed" | "dropped";
+  reason: "keyboard" | "restored" | "disconnected" | "outside";
+};
+
 export type FileTabsProps = Omit<ComponentProps<"div">, "children" | "role"> & {
   /** The open files, in the order they opened. */
   tabs: ReadonlyArray<FileTab>;
@@ -30,6 +36,8 @@ export type FileTabsProps = Omit<ComponentProps<"div">, "children" | "role"> & {
   onOpen: (tab: FileTab) => void;
   /** The tab's close button, or Delete or Backspace on the tab. */
   onClose: (tab: FileTab) => void;
+  /** Records focus ownership without including file names or paths. */
+  onFocusLifecycle?: (event: FileTabsFocusEvent) => void;
 };
 
 const NEXT: Readonly<Record<string, (index: number, count: number) => number>> = {
@@ -47,16 +55,27 @@ const NEXT: Readonly<Record<string, (index: number, count: number) => number>> =
  * focus to the tab that takes its place. It holds no state: the host says
  * which files are open and which is active.
  */
-export function FileTabs({ tabs, onOpen, onClose, className, "aria-label": label, ...props }: FileTabsProps) {
+export function FileTabs({ tabs, onOpen, onClose, onFocusLifecycle, className, "aria-label": label, ...props }: FileTabsProps) {
   useInjectUiCss();
   const focused = useRef<HTMLAnchorElement | null>(null);
+  const report = useRef(onFocusLifecycle);
+  report.current = onFocusLifecycle;
   useLayoutEffect(() => {
     // Suspense hides a pending route and drops browser focus to the body.
     // Restore the strip's focus on reveal unless another control now owns it.
     const element = focused.current;
-    if (element?.isConnected && element.ownerDocument.activeElement === element.ownerDocument.body) element.focus();
+    if (element?.isConnected && element.ownerDocument.activeElement === element.ownerDocument.body) {
+      report.current?.({ phase: "requested", reason: "restored" });
+      element.focus();
+      report.current?.({ phase: "consumed", reason: "restored" });
+    }
     return () => {
-      if (focused.current !== focused.current?.ownerDocument.activeElement) focused.current = null;
+      if (focused.current !== null && focused.current !== focused.current.ownerDocument.activeElement) {
+        report.current?.({ phase: "dropped", reason: "outside" });
+        focused.current = null;
+      } else if (focused.current !== null) {
+        report.current?.({ phase: "dropped", reason: "disconnected" });
+      }
     };
   }, []);
   if (tabs.length === 0) return null;
@@ -68,7 +87,14 @@ export function FileTabs({ tabs, onOpen, onClose, className, "aria-label": label
   };
   const keys = (index: number) => (event: KeyboardEvent<HTMLAnchorElement>) => {
     const strip = event.currentTarget.closest("[data-slot=file-tabs]");
-    const focusAt = (at: number) => strip?.querySelectorAll<HTMLElement>("[role=tab]")[at]?.focus();
+    const focusAt = (at: number) => {
+      report.current?.({ phase: "requested", reason: "keyboard" });
+      const element = strip?.querySelectorAll<HTMLElement>("[role=tab]")[at];
+      element?.focus();
+      report.current?.(element !== undefined && element.ownerDocument.activeElement === element
+        ? { phase: "consumed", reason: "keyboard" }
+        : { phase: "dropped", reason: "disconnected" });
+    };
     const move = NEXT[event.key];
     if (move !== undefined) {
       event.preventDefault();

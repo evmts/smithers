@@ -1301,6 +1301,7 @@ function FileTabs(props: Omit<ComponentProps<"div">, "children" | "role"> & {
   tabs: ReadonlyArray<FileTab>
   onOpen: (tab: FileTab) => void
   onClose: (tab: FileTab) => void
+  onFocusLifecycle?: (event: FileTabsFocusEvent) => void
 }): JSX.Element | null
 ```
 
@@ -1313,7 +1314,10 @@ by a pending route restores its focused tab when revealed, unless another contro
 has focus. Only the
 active tab, else the first, is in the Tab order. It holds no state, and renders
 nothing without tabs. The tablist is named "Open files" unless `aria-label` says
-otherwise.
+otherwise. `onFocusLifecycle` reports content-free `{ phase, reason }` diagnostics:
+`requested` and `consumed` for keyboard movement or Suspense restoration, and
+`dropped` when the strip detaches or another control owns focus. Reasons are
+`keyboard`, `restored`, `disconnected`, or `outside`; no file identity is included.
 
 ## TODOs and the stack
 

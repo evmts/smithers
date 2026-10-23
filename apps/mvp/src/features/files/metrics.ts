@@ -11,3 +11,6 @@ export const fileTabs = Metric.counter("smithers_web_file_tabs", {
   description: "File tabs file/open and file/close opened and closed, by op, door and outcome",
   incremental: true,
 })
+
+/** Focus requests and their fate, without file names or user content. */
+export const fileFocus = Metric.counter("smithers_web_file_focus", { incremental: true })

@@ -2,9 +2,9 @@
 // FileTabs under happy-dom: real createRoot + act, as breadcrumbs.test.tsx does. Clicks and keys are dispatched as
 // native events, so the modifier keys, the default-prevented flag and the focus are the browser's own.
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, type ReactElement } from "react";
+import { act, createRef, Suspense, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { type FileTab, FileTabs, SMITHERS_UI_STYLE_ATTR } from "../src/index";
+import { type FileTab, type FileTabsFocusEvent, FileTabs, SMITHERS_UI_STYLE_ATTR } from "../src/index";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLElement | undefined;
@@ -128,4 +128,87 @@ describe("FileTabs", () => {
     expect(document.activeElement?.textContent).toBe("router.ts");
     expect(seen).toEqual(["src/router.ts", "src/app.ts"]);
   });
+});
+
+
+test("focus diagnostics report keyboard requests, consumption, removal and outside ownership without paths", async () => {
+  const events: Array<FileTabsFocusEvent> = [];
+  const record = (event: FileTabsFocusEvent) => { events.push(event); };
+  const draw = (files: ReadonlyArray<FileTab>) => <FileTabs tabs={files} onOpen={() => {}} onClose={() => {}} onFocusLifecycle={record} />;
+  await render(draw(TABS));
+  tabs()[0]!.focus();
+  await press(tabs()[0]!, "Delete");
+  expect(events).toEqual([
+    { phase: "requested", reason: "keyboard" },
+    { phase: "consumed", reason: "keyboard" },
+  ]);
+  await act(async () => root!.render(draw([tab("only.ts")])));
+  tabs()[0]!.focus();
+  await press(tabs()[0]!, "Delete");
+  expect(events.slice(-2)).toEqual([
+    { phase: "requested", reason: "keyboard" },
+    { phase: "dropped", reason: "disconnected" },
+  ]);
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  outside.focus();
+  await act(async () => root!.unmount());
+  root = undefined;
+  outside.remove();
+  expect(events.at(-1)).toEqual({ phase: "dropped", reason: "outside" });
+});
+
+
+test("Suspense reveal records restoration and preserves the caller's strip ref", async () => {
+  const events: Array<FileTabsFocusEvent> = [];
+  const ref = createRef<HTMLDivElement>();
+  let release!: () => void;
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  function Pending({ pause }: { pause: boolean }) { if (pause) throw wait; return null; }
+  const draw = (pause: boolean) => <Suspense fallback={<p>Pending</p>}>
+    <FileTabs ref={ref} tabs={TABS} onOpen={() => {}} onClose={() => {}} onFocusLifecycle={(event) => { events.push(event); }} />
+    <Pending pause={pause} />
+  </Suspense>;
+  await render(draw(false));
+  const link = tabs()[0]!;
+  const strip = ref.current;
+  expect(strip).toBe(container!.querySelector('[role=tablist]'));
+  link.focus();
+  await act(async () => root!.render(draw(false)));
+  expect(events).toEqual([]);
+  expect(ref.current).toBe(strip);
+  expect(document.activeElement).toBe(link);
+  await act(async () => root!.render(draw(true)));
+  // happy-dom keeps focus on a hidden link; Chromium's actual blur on hide
+  // is covered by apps/mvp/tests/FileTabs.browser.test.ts.
+  link.blur();
+  await act(async () => { release(); root!.render(draw(false)); });
+  expect(ref.current).toBe(strip);
+  expect(document.activeElement).toBe(link);
+  expect(events.slice(-2)).toEqual([
+    { phase: "requested", reason: "restored" },
+    { phase: "consumed", reason: "restored" },
+  ]);
+});
+
+
+test("caller callback ref changes preserve focus, cleanup and accurate diagnostics", async () => {
+  const events: Array<FileTabsFocusEvent> = [];
+  const cleanups: Array<string> = [];
+  const draw = (name: string) => <FileTabs
+    ref={() => () => { cleanups.push(name); }}
+    tabs={TABS} onOpen={() => {}} onClose={() => {}}
+    onFocusLifecycle={(event) => { events.push(event); }}
+  />;
+  await render(draw("first"));
+  const link = tabs()[0]!;
+  link.focus();
+  await act(async () => root!.render(draw("second")));
+  expect(document.activeElement).toBe(link);
+  expect(events).toEqual([]);
+  expect(cleanups).toEqual(["first"]);
+  await act(async () => root!.unmount());
+  root = undefined;
+  expect(cleanups).toEqual(["first", "second"]);
+  expect(events).toEqual([{ phase: "dropped", reason: "disconnected" }]);
 });

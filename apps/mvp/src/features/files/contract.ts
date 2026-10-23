@@ -32,6 +32,6 @@ export const filesChannel = (name: string): string => `${name}/files`
  * every feature.
  */
 export const FILES_TELEMETRY = {
-  records: ["files.tab", "smithers_web_file_tabs", "execute_tool file/open", "execute_tool file/close"],
-  fields: ["op", "door", "outcome", "executionId", "durationMs", "smithers.files.op", "smithers.files.door", "smithers.files.outcome"],
+  records: ["files.focus", "smithers_web_file_focus", "files.tab", "smithers_web_file_tabs", "execute_tool file/open", "execute_tool file/close"],
+  fields: ["phase", "reason", "op", "door", "outcome", "executionId", "durationMs", "smithers.files.op", "smithers.files.door", "smithers.files.outcome"],
 } as const
