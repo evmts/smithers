@@ -96,7 +96,7 @@ export const isBranchName = (name: string): boolean =>
 
 /**
  * The refusal codes the branch routes answer with, as `{ code }`: `invalid` (400), `authentication` (401),
- * `forbidden` (403: not a Member), `not_found` (404: GitHub has no such repository or branch), `locked` (409: the
+ * `forbidden` (403: access or a forge write refused), `not_found` (404: GitHub has no such repository or branch), `locked` (409: the
  * branch is locked), and `unavailable` (503).
  */
 export const REFUSALS = [

@@ -68,6 +68,7 @@ The repository's default branch is recorded `locked` (decision 0007 §5) and is 
 | `201`, `200` | as tracking |
 | `404 not_found` | the forge has no such repository, or no default branch to start from |
 | `409 exists` | the forge already has a branch of that name, which the app doesn't track: the flow fails `exists`, never tried again, and the home's New branch shows "Couldn't make a branch" |
+| `403 forbidden` | Code Storage refused the ref write with HTTP 401 or 403; the flow fails `forbidden` without retrying, with the provider cause in its records |
 | `503 not_configured` | the forge is GitHub, read with no credential, which can't make a branch: the flow fails `not_configured`, never tried again |
 | `503 unavailable` | the forge or Code Storage didn't answer; the step tries again for 30 s |
 

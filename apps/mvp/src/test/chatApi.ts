@@ -170,9 +170,9 @@ export interface ChatApiOptions {
   readonly homes?: ReadonlyArray<CuratedFile>
   /**
    * The branches' forge: GitHub, read with no credential, unless `code-storage`: Code Storage scripted over the same git
-   * host (worker/test/branch.ts `codeStorageGit`), which can make a new branch.
+   * host (worker/test/branch.ts `codeStorageGit`), which can make a new branch. A service injects forge faults.
    */
-  readonly forge?: "github" | "code-storage"
+  readonly forge?: "github" | "code-storage" | Forge["Service"]
   readonly origin?: string
   /**
    * Other people a test's devices may be, by name: a request carrying `x-test-person: <name>` is signed in as them
@@ -665,7 +665,9 @@ export class TestChatApi extends Context.Service<
               Effect.provideService(TerminalSockets, sockets.service),
               Effect.provideService(Rooms, branchRooms.service),
               Effect.provide(directory),
-              Effect.provide(options.forge === "code-storage" ? Forge.layerConfig : Forge.gitHub)
+              Effect.provide(typeof options.forge === "object"
+                ? Layer.succeed(Forge, options.forge)
+                : options.forge === "code-storage" ? Forge.layerConfig : Forge.gitHub)
             )
           }
           if (DomainsApi.handles(path)) {

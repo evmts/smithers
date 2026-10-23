@@ -178,3 +178,28 @@ test("Code Storage transport refusal retains its tag and code without inventing 
   })
   expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).not.toHaveProperty("errorStatus")
 })
+
+
+test.each([
+  [401, "unauthorized"],
+  [403, "forbidden"],
+  [403, "insufficient_scope"],
+  [403, "authentication_unavailable"],
+  [401, "conflict"],
+])("Code Storage %s %s is a terminal refusal with its cause", async (status, code) => {
+  const exit = await Effect.runPromiseExit(Effect.gen(function* () {
+    const client = yield* CodeStorage.CodeStorage.pipe(Effect.provide(
+      CodeStorage.CodeStorage.layer({ org: "acme", key: Redacted.make(yield* Effect.promise(pem)) }),
+    ))
+    const faulty: CodeStorage.Client = { ...client, createBranch: () => Effect.fail(new CodeStorage.CodeStorageError({
+      operation: "createBranch", code, status,
+    })) }
+    return yield* createBranch({ owner: "smithersai", name: "smithers" }, "b", "main").pipe(
+      Effect.provide(Forge.codeStorage(faulty)),
+    )
+  }).pipe(Effect.provide(FetchHttpClient.layer)))
+  expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
+    _tag: "CreateRefused", code: "forbidden",
+    errorTag: "@smthrs/effect-code-storage/CodeStorageError", errorCode: code, errorStatus: status,
+  })
+})

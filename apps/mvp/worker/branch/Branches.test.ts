@@ -381,6 +381,33 @@ describe("POST /api/branches with create: a new branch", () => {
     expect(await rows()).toEqual([])
   })
 
+  test.each([401, 403])("Code Storage %s refuses branch creation with no tracked row and safe cause records", async (status) => {
+    const code = status === 401 ? "unauthorized" : "insufficient_scope"
+    const h = await open({ forge: Forge.of({
+      upstream: () => Effect.succeed({ url: "https://github.com/octocat/Spoon-Knife.git" }),
+      create: () => Effect.fail(new CreateRefused({
+        code: "forbidden", errorTag: "@smthrs/effect-code-storage/CodeStorageError",
+        errorCode: code, errorStatus: status,
+      })),
+    }) })
+    expect(await json(await create(h, `${SENTINEL}-new`))).toEqual([403, { code: "forbidden" }])
+    const cause = {
+      forgeOperation: "create_ref", forgeErrorTag: "@smthrs/effect-code-storage/CodeStorageError",
+      forgeErrorCode: code, forgeStatus: status,
+    }
+    expect(h.only("branch.track")).toMatchObject({
+      level: "WARN", annotations: { ...cause, created: "forbidden", outcome: "forbidden", status: 403 },
+    })
+    expect(h.count(Branches.tracks, { outcome: "forbidden" })).toBe(1)
+    expect(h.only("forge.createBranch").annotations).toMatchObject(cause)
+    for (const name of ["forge.createBranch", "branch.track"]) {
+      expect(h.span(name)).toHaveLength(1)
+      expect(Object.fromEntries(h.span(name)[0]!.attributes)).toMatchObject(cause)
+    }
+    expect(recorded(h)).not.toContain(SENTINEL)
+    expect(await rows()).toEqual([])
+  })
+
   test("home create omits both repository names and opening refreshes the personal snapshot", async () => {
     const h = await onCodeStorage({ config: { GITHUB_REPOSITORY: "octocat/Spoon-Knife", CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() } })
     const response = await track(h, { ref: "conversation-abcdef", create: true })

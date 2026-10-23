@@ -6,6 +6,7 @@
 // ChatApi's real refusals.
 import { Effect, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { CreateRefused, Forge } from "../../../worker/branch/Forge.ts"
 import { DEFAULT_REPOSITORY } from "../../../worker/SignIn.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { dispatches } from "../../flows/dispatch"
@@ -36,8 +37,8 @@ const WITHIN = 120_000
  * ChatApi on Code Storage, from a first tab whose engine never leads; `octo/hello` has `main` and `feature/one`, and the
  * deployment's own repository (`GITHUB_REPOSITORY`, unset here) has `main` and `taken`.
  */
-const openApi = async () => {
-  const runtime = openTestApp({ answers: false }, { forge: "code-storage" })
+const openApi = async (forge?: Forge["Service"]) => {
+  const runtime = openTestApp({ answers: false }, { forge: forge ?? "code-storage" })
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   api.branches.github.publish("octo", "hello", {
@@ -315,6 +316,31 @@ describe("a new conversation", () => {
     await until(() =>
       expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "done" })).toBe(2)
     )
+  }, WITHIN)
+
+  test.each([401, 403])("/new stops after Code Storage %s: one write attempt, no navigation", async (status) => {
+    let attempts = 0
+    const api = await openApi(Forge.of({
+      upstream: () => Effect.succeed({ url: `https://github.com/${DEFAULT_REPOSITORY}.git` }),
+      create: () => Effect.suspend(() => {
+        attempts++
+        return Effect.fail(new CreateRefused({
+          code: "forbidden", errorTag: "@smthrs/effect-code-storage/CodeStorageError",
+          errorCode: status === 401 ? "unauthorized" : "insufficient_scope", errorStatus: status,
+        }))
+      }),
+    }))
+    const laptop = await openDevice(api)
+    laptop.commands.queries.menu.startSyncImmediate()
+    laptop.commands.actions.type("/new")
+    laptop.commands.actions.submit("/new")
+    // A completed failure is a durable terminal result, with no retry pending.
+    await until(() =>
+      expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "failed" })).toBe(1)
+    )
+    expect(attempts).toBe(1)
+    expect(laptop.host.navigated).toEqual([])
+    expect(laptop.commands.queries.menu.toArray[0]?.refusal).toBe(ACTION_FAILED)
   }, WITHIN)
 
   test("a name the forge already has is refused exists, never tried again, and the tab stays", async () => {

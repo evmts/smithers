@@ -137,7 +137,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             fields.outcome = "exists"
             return refusal(409, "exists")
           }
-          return made.failure.code === "not_found"
+          return made.failure.code === "forbidden"
+            ? refusal(403, "forbidden")
+            : made.failure.code === "not_found"
             ? refusal(404, "not_found")
             : made.failure.code === "not_configured"
             ? refusal(503, "not_configured")

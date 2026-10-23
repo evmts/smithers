@@ -15,7 +15,7 @@ export const BranchName = Schema.String.check(Schema.makeFilter(isBranchName))
 
 /**
  * ChatApi didn't track the branch: GitHub has no such repository or branch (`not_found`), signed out (`sign_in`), a
- * branch this person may not open, or a new one only a Member may track (`forbidden`), a name that can't be one
+ * branch this person may not open, a new one only a Member may track, or a forge write denied (`forbidden`), a name that can't be one
  * (`invalid`), or, for a new branch, a forge that can't make one (`not_configured`: GitHub, read with no credential)
  * or a name the forge already has (`exists`: someone else's branch, never taken as the new one).
  */

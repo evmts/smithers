@@ -36,3 +36,48 @@ Storage credentials; no Keychain entry matches `CODE_STORAGE_KEY` or Code Storag
 Requested the source's location, never its secret value. Need an authenticated
 reproduction through `@smthrs/effect-code-storage` before a product/SDK fix or an
 exact deployment setting can be established. No production e2e, push or deploy.
+
+Second round (resumed): reviewed the 11 unfinished files in the same working
+copy. Production evidence identifies `create_ref` unauthorized (401). Reproduced
+the refusal bug against the prior Forge/Branches behavior: 7 regression failures,
+36 passes. Restored the fix: Code Storage HTTP 401/403 becomes 403 `forbidden`,
+with provider tag/code/status retained in logs and spans. The browser's durable
+`conversation/new` completes as a failure after one write attempt, with no
+navigation; it does not retry the provider refusal.
+
+Credential investigation remains blocked, separate from the completed refusal
+fix. Clone create, sync, reads and Forge use the canonical lowercased
+`github/<owner>/<name>` ID. All REST operations use the same signer; import asks
+for `repo:write`, sync and createBranch both ask for `git:write`, reads for
+`git:read`. Each token gets current Effect Clock Unix seconds, ES256 and a
+300-second lifetime. No namespace or ref-policy claim is set. The current
+provider docs/OpenAPI match these claims and request shape. Clone and ChatApi
+read the same Config names, but their deployed values and registered key
+restrictions cannot be compared from this clone. Local shell, expected infra
+path and the local secrets names supply no Code Storage credential. Requested
+the approved deployed credential/config source (path only). A 401 alone does not
+prove a missing scope, expiry, key rotation or repository mismatch; no speculative
+SDK or deployment permission change is included. See decision 0085.
+
+
+Resumed validation: `pnpm install --frozen-lockfile` passed under Node 26.5.0.
+`pnpm --filter @smthrs/mvp exec vitest run worker/branch/Forge.test.ts
+worker/branch/Branches.test.ts worker/branch/Shares.test.ts
+worker/branch/Presence.test.ts src/features/conversations/conversations.test.ts
+src/features/branch/branch.test.ts --coverage.include=worker/branch/Forge.ts
+--coverage.include=worker/branch/Branches.ts
+--coverage.include=src/features/branch/flows.ts
+--coverage.include=src/features/branch/contract.ts`: 108 passed; 100% statements,
+branches, functions and lines across those production modules. An initial
+four-suite run passed 86 tests but missed unchanged contract helper coverage;
+the expanded existing suites close it without changing thresholds.
+`pnpm --filter @smthrs/effect-code-storage exec vitest run`: 127 passed, one
+credential-dependent live integration skipped; 100% in every coverage category.
+`pnpm exec smithers-build test '//apps/mvp:importRules'` passed (executed), as did
+`pnpm --filter @smthrs/mvp exec tsc -p worker/tsconfig.json --noEmit` and
+`pnpm --filter @smthrs/mvp exec tsc -p tsconfig.json --noEmit`.
+`pnpm --filter @smthrs/mvp exec vitest run worker/flows/RepoClone.test.ts
+--coverage.enabled=false`: 19 passed (unchanged investigative suite).
+Resumed Astra review: no findings. Fable review could not run: `claude-rr`
+reported every account failed or cooling, tried none. No production e2e,
+deployment, push, `main` mutation or SDK credential change.
