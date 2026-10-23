@@ -607,6 +607,9 @@ export const markdownCss = `
 .sui-md-inline-code { padding:2px 6px; border-radius:${t.radiusControl}; background:color-mix(in srgb, ${t.foreground} 7%, transparent); font-family:${t.fontMono}; font-size:.9em; }
 .sui-md-link { color:${t.primary}; text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
 .sui-md-link:hover { text-decoration-thickness:2px; }
+@media (max-width:960px) {
+  .sui-md-link { display:inline-block; min-width:32px; min-height:${t.controlHeight}; line-height:var(--ctl-h, 32px); max-width:100%; overflow-wrap:anywhere; }
+}
 .sui-md-pre { margin:8px 0; padding:12px 14px; border-radius:${t.radius}; background:${t.codeBg}; color:${t.codeText}; font-family:${t.fontMono}; font-size:12px; line-height:1.5; white-space:pre; overflow-wrap:normal; overflow-x:auto; tab-size:4; }
 .sui-md-pre > code { display:block; width:max-content; font:inherit; color:inherit; white-space:inherit; }
 .sui-md-pre[data-align='center'] > code { margin-inline:auto; }
@@ -642,6 +645,7 @@ export const agenticResponseCss = `
 .sui-codeblock-action { min-height:24px; padding:0 8px; border:1px solid color-mix(in srgb, ${t.codeText} 16%, transparent); border-radius:${t.radiusControl}; background:transparent; color:color-mix(in srgb, ${t.codeText} 76%, transparent); font:inherit; font-size:11px; cursor:pointer; ${interaction} }
 .sui-codeblock-action:hover { background:color-mix(in srgb, ${t.codeText} 9%, transparent); color:${t.codeText}; }
 .sui-codeblock-action:focus-visible { ${focusRing} }
+@media (max-width:960px) { .sui-codeblock-action { min-height:${t.controlHeight}; min-width:32px; } }
 .sui-codeblock-body { margin:0; padding:12px 14px; font-family:${t.fontMono}; font-size:12px; line-height:1.5; overflow:auto; tab-size:4; }
 .sui-codeblock-body:focus-visible { ${focusRing} }
 .sui-codeblock-body code { display:block; min-width:max-content; white-space:pre; font:inherit; color:inherit; }
