@@ -109,7 +109,7 @@ export const AskWithForm = Flow.make("ui/form", {
     "secrets are added in Settings. submitLabel names the button (default \"Send\"). The form ends your answer: " +
     "finish with only 'Form ready.', without repeating the question or promising later work. The person's submission " +
     "arrives as their next question: the submit label, then the " +
-    "values they sent. Answers { viewId, shown }.",
+    "values they sent. Answers { viewId, shown: \"form\" }.",
   modelInvocable: true,
   payload: formPayload,
   success: FormShown,
