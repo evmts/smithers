@@ -12,6 +12,7 @@ import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/cont
 import { TODO_FAILURES } from "../../src/features/todos/contract.ts"
 import { Machines } from "../branch/Machines.ts"
 import { codeOf } from "../ErrorCode.ts"
+import { agentFailureCodes } from "./TodoDiagnostic.ts"
 import { classify, withToken } from "../github/Calls.ts"
 import { repositoryOf } from "../github/Config.ts"
 import { fetchPull, projectPull } from "../github/Pulls.ts"
@@ -780,8 +781,9 @@ export const steps = <E, R>(services: Services<E, R>) => {
   const fail = ({ request, error }: typeof Fail.payloadSchema.Type) =>
     Effect.gen(function* () {
       const failure = failureOf(error)
+      const { harnessCode, modelCode, budgetScope, causeCode } = agentFailureCodes(error)
       yield* Effect.logWarning("todo.fail").pipe(
-        Effect.annotateLogs({ attemptId: request.attemptId, todoId: request.todoId, failure, errorCode: codeOf(error) }),
+        Effect.annotateLogs({ attemptId: request.attemptId, todoId: request.todoId, failure, errorCode: codeOf(error), harnessCode, modelCode, budgetScope, causeCode }),
       )
       if (failure === "ended") return { state: "ended" } satisfies Ran
       const reported = yield* Stack.report(attemptOf(request), { kind: "finished", state: "failed", failure }, {
