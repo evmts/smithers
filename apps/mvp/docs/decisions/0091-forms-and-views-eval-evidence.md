@@ -30,3 +30,21 @@ The complete agent run also exposed a file-view miss: “show lines” was treat
 as a sandbox read. File tabs are visible effects too. Teach the existing
 `file/open` contract explicitly: the tab supplies the repository context, and
 showing a file needs no checkout. Its unchanged live eval is the regression.
+
+The complete flow run exposed two more prompt failures: a refused `repo/refs`
+was followed by a sandbox command, and a refused sandbox read by unrelated UI
+actions. Teach that `{ ok: false, error }` is a refusal even without a thrown
+exception; dependent actions must stop. FLOW-5 requires acting through the
+requested flow, not evading its refusal. The existing exact-call checks remain
+the regressions.
+
+Clarify the sandbox-read prompt to request sandbox contents explicitly. Its
+former “show me package.json” overlaps the native file-tab action required by
+SCOPE-6 feature 4, FLOW-3 and decision 0004's preference for native views. The
+`sandbox/read` call, path and no-extra-effects expectations are unchanged; the
+separate show-lines case continues to require `file/open`.
+
+The conversation archive case's expectation was correct. Its harness omitted
+the real ConversationApi route and therefore refused a valid archive request.
+Route that API through the same database and authenticated test boundary as
+production. A real openAgent regression verifies the persisted archive flag.

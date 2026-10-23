@@ -295,7 +295,8 @@ export const FLOW_CASES: ReadonlyArray<AgentCase> = [
   },
   {
     name: "sandbox-read",
-    ask: "Show me package.json on this branch.",
+    // SCOPE-6 feature 4 shows a file with file/open. This case specifically exercises reading sandbox contents.
+    ask: "Read package.json from this branch's sandbox and tell me its contents.",
     checks: (t) => [answered(t), attempted(t, "sandbox/read", fieldSays("path", "package.json")),
       ...changedOnly(t, [])],
   },
