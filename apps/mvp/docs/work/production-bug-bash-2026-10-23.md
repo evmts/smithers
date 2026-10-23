@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-23 13:05 PDT
+updated: 2026-10-23 13:16 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -17,7 +17,7 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 - Public repository pages for `smithersai/vibelang` and `smithersai/tevm-monorepo` rendered only the repository shell and “Sign in to clone.” Their `/api/repos/<owner>/<name>/about` requests returned 503 twice. Direct `GET /api/repos/smithersai/vibelang/about` returned `{"code":"unavailable"}` with `Retry-After: 60` at 12:53 PDT.
 - The existing `e2e/repo-browse.spec.ts` “first visit” test failed against `BASE_URL=https://smithers.sh` after 30 s: the About panel never appeared for `octocat/linguist`. A direct request to that repository's About endpoint also returned 503. The Playwright trace, video and browser log are in `apps/mvp/test-results/repo-browse-first-visit-a--75fee-DME-and-about-panel-at-once/` in the active checkout; a direct response sample is in `/tmp/smithers-bugbash-20261023/linguist-about.json`.
 - The server returns a generic `unavailable`. In the checked-out source, `RepoApi.about` logs that code while `RepoAbout` drops the upstream stage and status; the deployed bundle must be checked before attributing its behavior to this source. `Retry-After: 60` suggests a rate limit but does not establish its source. Diagnose from production records and add safe stage/status diagnostics before choosing a fix. Do not log credentials or repository content.
-- Signed-in engineering workflows await an authorized production Member test session. Asked Will where the existing test session can be accessed; public paths continue in the meantime.
+- Signed-in engineering workflows required an authorized production Member test session. Will directed this bug bash to Arc; its existing GitHub session signed Smithers in as `roninjin10` at 13:10 PDT.
 
 ## 2026-10-23, 12:58 PDT
 
@@ -34,3 +34,20 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 ## 2026-10-23, 13:05 PDT
 
 - PWA offline reload passed in a fresh Chromium profile once `navigator.serviceWorker.ready` resolved. The service worker took 20.9 s from navigation to ready; after going offline, `/app/` reloaded and showed the signed-out view. A first probe timed out at 15 s and failed to reload offline because it had gone offline before installation; that probe is not a product failure.
+
+## 2026-10-23, 13:07 PDT
+
+- A signed-out visit to `/smithersai/vibelang/issues` remained at “Loading issues” after 35 s. The same state appeared for `/Effect-TS/effect/issues` and `/octocat/linguist/issues` after 15 s. A 90 s probe of `Effect-TS/effect/issues` also remained loading while Issues shapes (`items`, `comments`, `github-sync`) repeatedly returned 200. The visible 401s were for TODO feeds, not Issues feeds. `/smithersai/vibelang/stack` settled on “Sign in with GitHub.” The exact Issues failure is already owned in `multi-repository-issues-loading.md`; retest after its deployment.
+
+## 2026-10-23, 13:13 PDT
+
+- Switched live journeys to Arc at Will's direction. Screen was unlocked and a bounded `caffeinate` was active. Arc's `Canary William` profile completed GitHub OAuth in its own browser window and Smithers identified the signed-in account as `roninjin10`.
+- Signed-in `smithersai/vibelang` Home and `tree/main` Code rendered. The signed-in Issues page still showed “Loading issues” and skeleton rows. Its repair is already in progress in another workstream.
+- In the signed-in Stack, created a real TODO for the existing `smithersai/vibelang#1` docs search accessibility issue. The draft committed, briefly showed `Requested`, then became `T1` and `Working` with branch `smithers/t1-fix-docs-search-active-result-accessibil-ad313abc8224` and run `todo:58952106-9637-44cf-8777-495037822360`. The run card showed Begin done and Implement working. Prompt asks for a real keyboard regression and PR for human review; it explicitly forbids agent merge.
+- While T1 was working, the app stayed usable. Arc opened `/app/`, loaded the prior chat timeline, and accepted a new “What is the current status of VibeLang TODO T1?” message with immediate “Smithers is answering” feedback. The model answer and T1 implementation outcome are pending.
+
+## 2026-10-23, 13:16 PDT
+
+- Chat answered the T1 question incorrectly: it said the TODO was still `requested` and “no attempt has started on this device.” At that time the T1 page and Cloud run card showed `Working`, `todo/Begin` done, and `todo/Implement` running for more than a minute. The answer's debug run is `/app/runs/644ed269-5653-42e2-8d07-49701e661098`.
+- That chat run called `run/list/read` and then `run/inspect/read` twice. The visible run list contained the local `todo/commit` receipt and device runs but omitted the active Cloud `todo:58952106-9637-44cf-8777-495037822360` run. The inspected run shown in the card was `repo/about`. The source `run/list/read` reads the local `EngineStore.RunInspection` service. This strongly suggests the agent's run read did not include Cloud runs; the answer should have qualified its scope or followed the TODO's Cloud run link. Retain a real eval/regression and safe read diagnostics when repairing.
+- `evmts/tevm` loaded its main branch Code view in Arc, but its Stack route rendered `Not found` for this account. That may reflect repository installation/access state; no mutation was attempted there and this is not classified as a product defect yet.
