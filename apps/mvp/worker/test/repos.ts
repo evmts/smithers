@@ -25,7 +25,6 @@ import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { onTestFinished } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { repoId, REPOSITORIES_TABLE } from "../../src/features/repo/contract.ts"
 import * as Actor from "../Actor.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
@@ -174,7 +173,7 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
   const logs: Array<StructuredLog> = []
   const logger = Logger.make((logOptions) => void logs.push(StructuredLogger.formatStructured.log(logOptions)))
   const registry: Metric.MetricRegistry = new Map()
-  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: LOCAL_ELECTRIC_URL, ...options.config })
+  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: await Effect.runPromise(TestDatabase.electricUrl), ...options.config })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),

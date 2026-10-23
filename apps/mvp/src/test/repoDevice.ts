@@ -99,9 +99,14 @@ export const openTab = async (options: DeviceOptions) => {
   const name = `repo-${crypto.randomUUID()}`
   const client = options.client ??
     RepoClient.layer({ origin: options.origin, within: "10 seconds" }).pipe(Layer.provide(FetchHttpClient.layer))
-  const shapes = options.shapes === "down"
+  // Each real browser tab has its own module realm. These Node tabs share Electric's URL-keyed replay caches,
+  // so give each tab a namespace just as src/test/chatApi.ts does; it is never sent to RepoApi.
+  const shapes = Layer.effect(ShapeSource.ShapeSource, Effect.map(ShapeSource.ShapeSource, (source) => ({
+    ...source,
+    cacheNamespace: name,
+  }))).pipe(Layer.provideMerge(options.shapes === "down"
     ? ShapeSource.layerFaulty((switches) => switches.down())
-    : Layer.empty
+    : Layer.empty))
   // The engine: the Node host over the compose Postgres, running what the engine worker registers for these flows.
   const registration = Layer.mergeAll(RepoSteps.registration, Navigation.registration, FileFlows.registration).pipe(
     Layer.provide(TabClipboard.layerChannel({ name, origin: options.origin })),

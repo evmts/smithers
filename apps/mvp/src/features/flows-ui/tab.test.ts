@@ -14,7 +14,7 @@ import { codeSaveable, formReady, savedRefusal, writtenRefusal } from "./actions
 import { codePath, draftFailureWords, draftPath, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
 import { type RunStatus, shownRound } from "./round"
 import { FlowsUi } from "./flowsUi"
-import { placementOf, renderSource } from "./source"
+import { placementOf, renderSource, SOURCE_PATH } from "./source"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -68,6 +68,28 @@ const open = async () => {
 }
 
 type Tab = Awaited<ReturnType<typeof open>>
+
+test("a fresh persisted device opens a ready draft written through the API before navigation", async () => {
+  const t = await open()
+  const draftId = crypto.randomUUID()
+  const name = `mobile-${draftId}`
+  const source = renderSource({ name, description: "Mobile layout", instructions: "Answer ready.", flows: [] })
+  const saved = await t.api.fetch(`${t.api.origin}/api/flow-drafts/${draftId}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+      scope: "person", round: 0, request: "Answer ready.", name, status: "ready", summary: "Mobile layout",
+      files: [{ path: SOURCE_PATH, text: source }], checks: [{ check: "parses", ok: true }], questions: [], failure: null, flowId: null,
+    }),
+  })
+  expect(saved.status).toBe(200)
+  const runtime = openTab(t.api, { host: nodeDevice({ agent: t.api }) })
+  runtimes.push(runtime)
+  const flows = await runtime.runPromise(Effect.service(FlowsUi))
+  flows.queries.draft.startSyncImmediate()
+  await flows.actions.openDraft(draftId)
+  await until(() => expect(flows.queries.draft.toArray[0]?.draft).toMatchObject({
+    id: draftId, status: "ready", name, files: [{ path: SOURCE_PATH, text: source }], checks: [{ check: "parses", ok: true }],
+  }))
+}, WITHIN)
 
 test("Runs warms the real device's engine without opening its page, then opens the warmed list", async () => {
   const t = await open()

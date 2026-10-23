@@ -9,6 +9,12 @@ import { type RepoHarness, repoHarness, resetRepos } from "../../../worker/test/
 import { runFlow } from "../../../worker/test/flowHost"
 import { repoFlows } from "../../flows/registrations"
 import { openTab, type Tab } from "../../test/repoDevice"
+import { persistenceOn } from "../../test/deviceFixture"
+import { tempDirectory } from "../../test/tempDirectory"
+import { join } from "node:path"
+import { SqlClient } from "effect/sql"
+import { RepoStore } from "./store"
+import { VIEW } from "./rows"
 import { RepoClient, RepoRefused } from "./api"
 import { BUSY, COULDNT_LOAD, NOT_FOUND, rawRoute, READING_PAUSED } from "./contract"
 import { TabClipboard } from "./copy"
@@ -67,6 +73,24 @@ const at = (tab: Tab, kind: "tree" | "blob", ref: string, path = "") =>
   tab.repo.actions.openRoute(kind, { owner: "octocat", repo: "Spoon-Knife", ref, _splat: path }, {})
 
 describe("cloning from a tab", () => {
+  test("a fresh persisted device projects a ready repository and retains it on reload", async () => {
+    const h = await repoHarness(server, { codeStorage: "none" })
+    // Only the persisted projection is under test; no forge or Code Storage stand-in is called.
+    await server.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      INSERT INTO repositories (id, owner, name, status, default_branch, head_sha)
+      VALUES ('github/octocat/spoon-knife', 'octocat', 'Spoon-Knife', 'ready', 'main', ${"a".repeat(40)})`))
+    const path = join(tempDirectory("mobile-repo-"), "device.sqlite")
+    for (let visit = 0; visit < 2; visit++) {
+      const tab = await openTab({ origin: h.origin, fetch: h.fetch, persistence: persistenceOn(path) })
+      tabs.push(tab)
+      const store = await tab.runtime.runPromise(Effect.service(RepoStore))
+      await tab.runtime.runPromise(store.view.update(VIEW, (row) => { row.repoId = "github/octocat/spoon-knife" }))
+      await waitFor(() => expect(header(tab)).toEqual({ kind: "ready" }))
+      await tab.dispose()
+      tabs.pop()
+    }
+  })
+
   test("Clone shows cloning, Electric delivers the row, and the view opens at its README", async () => {
     const h = await repoHarness(server)
     h.scripted.publish("octocat", "Spoon-Knife")
