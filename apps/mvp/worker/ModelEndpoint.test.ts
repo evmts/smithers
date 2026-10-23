@@ -1157,7 +1157,7 @@ describe("a server flow's own calls (ModelEndpoint.local)", () => {
     })
     const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
     const local = await Effect.runPromise(
-      ModelEndpoint.local(database).pipe(
+      ModelEndpoint.local(database, { alerts: true }).pipe(
         Effect.provideService(HostModel, HostModel.of({ modelId: "default-model", model, route: { prepare: () => Effect.die("unused") } })),
         Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
       ),
@@ -1314,7 +1314,7 @@ describe("timeline summary role", () => {
   const summarize = async (config: Record<string, string> = {}) => {
     const database = await runtime.runPromise(Effect.map(TestDatabase.Scratch, (scratch) => scratch.database))
     const local = await Effect.runPromise(
-      ModelEndpoint.local(database).pipe(
+      ModelEndpoint.local(database, { alerts: true }).pipe(
         // The agent's model, which the summary role must never reach.
         Effect.provideService(HostModel, HostModel.of({
           modelId: "agent-model",
