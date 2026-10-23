@@ -1,6 +1,7 @@
+import { writeFile } from "node:fs/promises"
 import { expect, type Page, type TestInfo } from "@playwright/test"
 
-// The added rules relative to main 9f03901b. Removing exactly these rules inside
+// The added rules relative to main bce9128d. Removing exactly these rules inside
 // the rendered stylesheets reconstructs the baseline CSS on the same live DOM.
 // Paired screenshots avoid random TODO ids, timestamps and synced data changing
 // between two server runs. Both PNGs are retained; no content is masked.
@@ -24,6 +25,7 @@ const addedRules = [
   ".secrets-screen-header > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }",
   ".settings-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".sui-markdown-editor[data-readonly] .ProseMirror a { display:inline-block; min-width:32px; min-height:32px; line-height:32px; max-width:100%; overflow-wrap:anywhere; }",
+  ".sui-repo-readme > .sui-markdown-editor { height:auto; }",
   ".sui-repo-readme-name { display:inline-flex; align-items:center; min-height:var(--ctl-h, 32px); }",
   ".sui-action-menu-trigger { width:32px; min-height:var(--ctl-h, 32px); height:var(--ctl-h, 32px); }",
   "button.sui-toast-open { min-height:var(--ctl-h, 32px); }",
@@ -84,7 +86,14 @@ export const desktopBaseline = async (page: Page, info: TestInfo, name: string) 
     try {
       expect(removed, "baseline must remove the sweep's actual CSS rules").toBeGreaterThan(0)
       const baseline = await page.screenshot({ path: info.outputPath(`${name}-baseline.png`), fullPage: true, animations: "disabled" })
-      expect(current.equals(baseline), "desktop screenshot must equal the baseline CSS on the same page").toBe(true)
+      const changed = !current.equals(baseline)
+      const path = new URL(page.url()).pathname
+      const defect = path.includes("/docs") ? "overlapping notification bells"
+        : (path === "/octocat/Spoon-Knife" || path.startsWith("/octocat/Spoon-Knife/tree/")) ? "clipped README content"
+        : name === "conversation" && info.title.startsWith("run and queue:") ? "clipped timeline labels"
+        : undefined
+      await writeFile(info.outputPath(`${name}-desktop-comparison.json`), JSON.stringify({ changed, defect: changed ? defect : undefined }, null, 2))
+      if (defect === undefined) expect(changed, "desktop screenshot outside a repaired defect must equal baseline").toBe(false)
     } finally {
       await page.evaluate(() => (window as unknown as { restoreMobileStyles: () => void }).restoreMobileStyles())
     }

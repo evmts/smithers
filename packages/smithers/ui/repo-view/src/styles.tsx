@@ -65,6 +65,7 @@ const repositoryCss = `
 .sui-repo-content { min-width:0; display:grid; align-content:start; gap:16px; }
 .sui-repo[data-size='inline'] .sui-repo-content { max-height:420px; overflow:auto; }
 .sui-repo-box { min-width:0; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; overflow:hidden; }
+.sui-repo-readme > .sui-markdown-editor { height:auto; }
 .sui-repo-toolbar { min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid ${t.border}; color:${t.mutedForeground}; font-size:${t.fontSizeCompact}; }
 .sui-repo-readme-name { color:${t.foreground}; font-weight:650; text-decoration:none; border-radius:${t.radiusControl}; }
 .sui-repo-readme-name:hover { text-decoration:underline; }

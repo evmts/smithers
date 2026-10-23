@@ -1,6 +1,6 @@
 ---
 title: Mobile responsiveness sweep
-status: blocked
+status: in-progress
 area: frontend
 owner: codex-mobile-sweep
 updated: 2026-10-23
@@ -22,3 +22,5 @@ Docs cold loads first passed six times. A later failure was traced to the farm's
 Latest-main Latitude app suite: 283 files passed, 6 skipped; 3644 tests passed, 2 expected failures, 16 skipped. Only the known unchanged coverage gate failed: lines 99.81%, functions 99.53%, statements 99.69%, branches 99.3%. UI: 2633 passed, 0 failed. Typecheck (four configurations) and importRules passed. Full mini: 109 passed, 24 skipped, 20 failed. Phone/tablet each 37/8/6; desktop 35/8/8. Final conversations/docs follow-up passed all twelve phone/tablet cases and both desktop conversations cases; desktop docs retain four overlapping-bell failures. Combined latest receipts give phone/tablet 43 passed and 8 declared skips each, not a single green full run. Desktop also exposed README clipping in three cases after scrolling controls; retain these for investigation. All 49 desktop paired CSS-baseline PNGs were byte-identical. Full media: 129 converted, zero build failures, three flash-frame check failures. The report retains exact artifact paths and counts.
 
 The external report is ~/smithers-builders/mobile-sweep-REPORT.md, evidence ~/smithers-builders/mobile-sweep-evidence/. Earlier receipts are historical; final status and per-size results belong in the report. BLOCKED: no push and no claim of a fully passing sweep while the desktop baseline defects remain.
+
+2026-10-23 follow-up: Will authorized fixing the eight desktop defects. Rebased cleanly onto bce9128d. Owner codex-mobile-sweep is reproducing each case before CSS changes; desktop tap sizing remains excluded. Validation stays on Latitude and the mini.
