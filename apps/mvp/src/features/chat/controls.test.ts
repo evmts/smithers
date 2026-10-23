@@ -189,18 +189,21 @@ describe("Edit on a queued question", () => {
     await until(() => expect(device.stored("chat-drafts")).toBe(1))
 
     // Online, the outbox sends only the edit: the question taken back never reaches Postgres.
+    await tab.run(faults.failNext("invalid_response"))
     tab.actions.setDraft("first question")
-    tab.actions.ask("first question")
+    const replacement = tab.actions.ask("first question")
+    if (!replacement.asked) throw new Error(replacement.reason)
     tab.actions.setDraft("next")
     network.online()
     await until(() => expect(tab.shown().slice(0, 1)).toEqual(["user done first question"]))
     const rows = await tab.run(api.rows)
     expect(rows.map(({ text }) => text).filter((text) => text !== "")).toEqual(["first question"])
-    // Only the edit was sent. Delivery slower than `confirmWithin` sends it again with the same ids, which Postgres
-    // stores once, so the client may have been given it more than once.
-    const asked = await tab.run(faults.asked)
-    expect([...new Set(asked.map(({ text }) => text))]).toEqual(["first question"])
-    expect(new Set(asked.map(({ id }) => id)).size).toBe(1)
+    // A lost receipt may redeliver the replacement; every attempt must keep its identity and exclude the withdrawn text.
+    await until(async () => expect((await tab.run(faults.asked)).length).toBeGreaterThanOrEqual(2))
+    const attempted = await tab.run(faults.asked)
+    expect(new Set(attempted.map(({ id }) => id))).toEqual(new Set([replacement.questionId]))
+    expect(new Set(attempted.map(({ answerId }) => answerId))).toEqual(new Set([replacement.answerId]))
+    expect(new Set(attempted.map(({ text }) => text))).toEqual(new Set(["first question"]))
 
     // The draft typed after it is the one a reload finds.
     await until(() => expect(tab.composer()).toMatchObject({ draft: "next", saved: true }))

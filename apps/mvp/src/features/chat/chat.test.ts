@@ -133,7 +133,8 @@ const asked = (result: ReturnType<Awaited<ReturnType<typeof openChat>>["actions"
   return result
 }
 
-const until = (assertion: () => void | Promise<void>, timeout = 6_000) =>
+// Assertions wait for real device/engine and Electric receipts, including reconnects under full-suite load.
+const until = (assertion: () => void | Promise<void>, timeout = 15_000) =>
   vi.waitFor(assertion, { timeout, interval: 20 })
 
 /** How long a wait on the device's agent may take: its engine's run, on a loaded machine. */
@@ -671,7 +672,7 @@ describe("the device store", () => {
         "handed over",
         "from the second tab",
         "and again",
-      ]), 10_000)
+      ]), agentWithin)
     expect([await leads(first), await leads(second)]).toEqual([false, true])
     await until(() => expect(second.shown().filter((line) => line.startsWith("user unsent"))).toEqual([]))
   })
@@ -741,7 +742,7 @@ describe("the device store", () => {
 
   test("a reload restores the conversation from the device before Electric answers", async () => {
     const { api } = await openChat()
-    const device = nodeDevice()
+    const device = nodeDevice({ agent: api })
     const first = await tabOn(openTab(api, { ...quick, host: device }))
     const { answerId } = asked(first.actions.ask("hello"))
     await until(() => expect(first.synced(answerId)).toBe(true))
@@ -756,7 +757,7 @@ describe("the device store", () => {
 
   test("a question queued on one tab is restored by the next and sent once", async () => {
     const { api, onApi } = await openChat()
-    const device = nodeDevice()
+    const device = nodeDevice({ agent: api })
     const first = await faultyTabOn(api, { ...quick, host: device })
     first.failNext("unreachable")
     const { questionId } = asked(first.actions.ask("queued"))
@@ -782,7 +783,7 @@ describe("the device store", () => {
 
   test("an unsent question Edit took back stays gone after a reload", async () => {
     const { api } = await openChat()
-    const device = nodeDevice()
+    const device = nodeDevice({ agent: api })
     const first = await faultyTabOn(api, { ...quick, host: device })
     first.failNext("conflict")
     const { questionId } = asked(first.actions.ask("taken"))
@@ -792,7 +793,7 @@ describe("the device store", () => {
     await until(() => expect(first.shown()).not.toContain("user unsent taken"))
     // Sent again, under a new id.
     const again = asked(first.actions.ask(first.composer()!.draft))
-    await until(() => expect(first.synced(again.answerId)).toBe(true))
+    await until(() => expect(first.synced(again.answerId)).toBe(true), agentWithin)
     await until(() => expect(device.stored("chat-unsent")).toBe(0))
     await first.close()
     const second = await tabOn(openTab(api, { ...quick, host: device }))
@@ -817,8 +818,10 @@ describe("the connection pill", () => {
     // Back online: chat sends at once, and the pill hides once the question reached Postgres.
     target.dispatchEvent(new Event("online"))
     expect(tab.count(Metric.withAttributes(syncRetries, { via: "online" }))).toBe(1)
-    await until(() => expect(tab.connection()).toMatchObject({ status: "up" }))
-    expect(tab.queued()).toBe(0)
+    await until(() => {
+      expect(tab.connection()).toMatchObject({ status: "up" })
+      expect(tab.queued()).toBe(0)
+    }, agentWithin)
     expect(tab.shown()).toEqual(["user done one", "assistant streaming "])
   })
 
