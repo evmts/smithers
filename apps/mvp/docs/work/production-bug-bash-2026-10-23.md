@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-23 13:34 PDT
+updated: 2026-10-23 13:37 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -79,3 +79,7 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 ## 2026-10-23, 13:34 PDT
 
 - The Issues repair landed and was pushed to `main` as `0c544cbd51ee`. It adds an unknown state for unsynced issue lists and an authenticated GitHub reader for end-to-end checks. This is a source receipt, not a deployment or production acceptance receipt. Arc is still blocked by the Mac's screen lock; retest the existing loading cases when the user unlocks it and the new revision is live.
+
+## 2026-10-23, 13:37 PDT
+
+- Source tracing narrowed the chat status error: `TodosStore` opens a repository's TODO shapes only when `stackOf(repoId)` is requested; the model-invocable TODO flows expose draft/issue authoring but no read, while `run/list` and `run/inspect` are explicitly device-only. A correct status answer needs an authorized read of the synced stack or Cloud attempt, including an explicit unknown/refused result while sync or access is unresolved. The run-list absence alone cannot establish a TODO's Cloud state. This is a diagnosis, not a deployed fix; verify with a real agent eval and a production rerun.
