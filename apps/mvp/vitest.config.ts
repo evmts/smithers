@@ -49,6 +49,7 @@ export default defineConfig({
         // Remote flows (docs/features/remote-flows.md). worker/Executions.ts, the Alchemy Durable Object declaration,
         // runs only under Alchemy's bundle, so the workerd test proves it through ExecutionHost.ts instead.
         "worker/ExecutionHost.ts",
+        "worker/index.ts",
         "worker/flows/**/*.ts",
         // The metered model endpoint and admin/SetModel (docs/features/model-endpoint.md).
         "worker/Actor.ts",

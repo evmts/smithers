@@ -1,8 +1,4 @@
-// The site's Worker: it hands /api/* to the Effect-native ChatApi Worker (worker/ChatApi.ts) over a service binding.
-// Every other path is the single-page app, which the assets binding serves before this Worker runs, apart from a bare
-// docs folder: on a domain the docs site's zone routes take `/docs` before it gets here, but a route path without a
-// trailing `*` never matches a query, so `/docs?ref=x` arrives here and goes on as `/docs/?ref=x`, which they do take
-// (docs/infrastructure.md#domain).
+// The site Worker serves origin-aware HTML and forwards API and docs requests.
 import { DOCS_SITE_FOLDERS } from "../src/pwa.ts"
 
 interface Env {
@@ -11,13 +7,23 @@ interface Env {
 }
 
 export default {
-  fetch: (request, env) => {
+  fetch: async (request, env) => {
     const url = new URL(request.url)
     if (url.pathname.startsWith("/api/")) return env.CHAT_API.fetch(request)
     if (DOCS_SITE_FOLDERS.includes(url.pathname)) {
       url.pathname = `${url.pathname}/`
       return Response.redirect(url.toString(), 301)
     }
-    return env.ASSETS.fetch(request)
+    const response = await env.ASSETS.fetch(request)
+    if (response.status !== 200 || !response.headers.get("content-type")?.startsWith("text/html")) return response
+    // Asset validators and lengths describe the stored shell, not this origin-specific representation.
+    const headers = new Headers(response.headers)
+    headers.delete("content-length")
+    headers.delete("etag")
+    return new Response((await response.text()).replaceAll("__SMITHERS_ORIGIN__", url.origin), {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    })
   },
 } satisfies ExportedHandler<Env>

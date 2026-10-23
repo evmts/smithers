@@ -45,3 +45,32 @@ test.each([
   expect(response.headers.get("location")).toBe(location)
   expect(seen).toEqual([])
 })
+
+
+// Real asset responses keep the shell's metadata, with the requesting origin substituted.
+test.each(["text/html; charset=utf-8", "text/html"])("HTML response %s resolves the card origin", async (contentType) => {
+  const { readFile } = await import("node:fs/promises")
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8")
+  const response = new Response(html, { headers: {
+    "content-type": contentType, "content-length": String(html.length), etag: '"asset"', "cache-control": "public, max-age=0",
+  } })
+  const env = { CHAT_API: binding("CHAT_API", []), ASSETS: { fetch: () => Promise.resolve(response) } as unknown as Fetcher }
+  const result = await site.fetch(new Request("https://custom.example:8443/app") as Parameters<typeof site.fetch>[0], env)
+  expect(await result.text()).toBe(html.replaceAll("__SMITHERS_ORIGIN__", "https://custom.example:8443"))
+  expect(result.status).toBe(200)
+  expect(result.headers.get("etag")).toBeNull()
+  expect(result.headers.get("content-length")).toBeNull()
+  expect(result.headers.get("cache-control")).toBe("public, max-age=0")
+})
+
+test("binary assets retain their response and validators", async () => {
+  const response = new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "content-type": "image/png", etag: '"png"' } })
+  const env = { CHAT_API: binding("CHAT_API", []), ASSETS: { fetch: () => Promise.resolve(response) } as unknown as Fetcher }
+  expect(await site.fetch(new Request("https://custom.example/social-card.png") as Parameters<typeof site.fetch>[0], env)).toBe(response)
+})
+
+test("conditional asset responses retain their empty body", async () => {
+  const response = new Response(null, { status: 304, headers: { "content-type": "text/html" } })
+  const env = { CHAT_API: binding("CHAT_API", []), ASSETS: { fetch: () => Promise.resolve(response) } as unknown as Fetcher }
+  expect(await site.fetch(new Request("https://custom.example/") as Parameters<typeof site.fetch>[0], env)).toBe(response)
+})

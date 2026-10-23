@@ -45,7 +45,6 @@ import ElectricGateway, { DatabaseUrl as ElectricDatabaseUrl } from "./infra/Ele
 import { directUrl, Postgres } from "./infra/Postgres.ts"
 import * as Secrets from "./infra/Secrets.ts"
 import * as SignIn from "./infra/SignIn.ts"
-import { DOCS_SITE_FOLDERS } from "./src/pwa.ts"
 import ChatApi from "./worker/ChatApi.ts"
 import DevChatApi from "./worker/DevChatApi.ts"
 
@@ -89,9 +88,8 @@ export default Alchemy.Stack(
     const site = yield* Cloudflare.Website.Vite("smithers-mvp", {
       main: "worker/index.ts",
       compatibility: { date: "2026-10-01", flags: ["enable_request_signal"] },
-      // The Worker answers /api/* and sends a bare docs folder on to the docs site; every other path is the
-      // single-page app.
-      assets: { notFoundHandling: "single-page-application", runWorkerFirst: ["/api/*", ...DOCS_SITE_FOLDERS] },
+      // HTML must pass through the site Worker to resolve social image URLs on this request’s origin.
+      assets: { notFoundHandling: "single-page-application", runWorkerFirst: true },
       env: { CHAT_API: chatApi },
       // Production's custom domain and the hostnames that redirect to it, or none at all with APP_DOMAIN=workers.dev;
       // `alchemy dev` leaves it alone.
