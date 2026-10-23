@@ -43,7 +43,7 @@ export const surfaceOf = (routeId: string | undefined): Surface =>
 
 /**
  * The routes whose screen's header holds the top bar's bell: the home conversation's, and the repository header of a
- * repository's home, a branch, a file and its raw view.
+ * repository's home, a branch, a file, its raw view and docs.
  */
 export const BELL_ROUTES: ReadonlySet<string> = new Set([
   "/app",
@@ -51,6 +51,8 @@ export const BELL_ROUTES: ReadonlySet<string> = new Set([
   "/$owner/$repo/tree/$ref/$",
   "/$owner/$repo/blob/$ref/$",
   "/$owner/$repo/raw/$ref/$",
+  "/$owner/$repo/docs",
+  "/$owner/$repo/docs/$",
 ])
 
 /** Whether the route `routeId` needs the top bar's bell floated at the window's top-right: its header doesn't hold it. */

@@ -14,5 +14,5 @@
 .issues-not-sent-title { margin-right: auto; overflow-wrap: anywhere; }
 
 @media (max-width: 60rem) {
-  .issues-screen[aria-label="New issue"] > .sui-button { align-self: flex-start; }
+  .issues-screen > .sui-button { align-self: flex-start; }
 }

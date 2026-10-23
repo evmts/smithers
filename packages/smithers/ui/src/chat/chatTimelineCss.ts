@@ -6,6 +6,7 @@ export const chatTimelineCss = `
 .sui-timeline-disclosure>summary{cursor:pointer;font-size:11px;color:var(--text-muted,#665f54);padding:6px 8px;list-style:none}
 .sui-timeline-disclosure>summary::-webkit-details-marker{display:none}
 @media(max-width:960px){.sui-timeline-disclosure>summary{min-width:32px;min-height:${t.controlHeight};box-sizing:border-box;display:flex;align-items:center}}
+@media(max-width:1179px){.sui-chat-transcript:has(> .sui-timeline-disclosure[open]){z-index:41}}
 .sui-chat-timeline{width:190px;max-height:70vh;overflow:visible;scrollbar-width:thin;font-size:11px;font-weight:400;color:var(--text-muted,#665f54)}
 .sui-timeline-disclosure[open]{background:var(--surface,#fffefa);border:1px solid var(--border-solid,#e4ddcf);border-radius:${t.radius};box-shadow:${t.shadow2}}
 .sui-timeline-disclosure[open] .sui-chat-timeline{width:min(300px,80vw);padding:8px}
@@ -33,6 +34,8 @@ export const chatTimelineCss = `
 .sui-chat-timeline li{min-height:0}
 .sui-timeline-preview{position:absolute;z-index:6;inset-inline-start:0;top:100%;width:240px}
 }}
+/* The host measures the full label before choosing a height-bounded window. */
+.sui-chat-timeline button>span{max-height:none;overflow:visible;overflow-wrap:anywhere}
 .sui-timeline-band{position:absolute;pointer-events:none;z-index:1;left:-2px;right:-2px;border:1px solid var(--text-muted,#665f54);border-radius:2px;background:color-mix(in srgb,var(--text-muted,#665f54) 6%,transparent)}
 .sui-chat-timeline ol:not([data-level="0"]) .sui-timeline-band{border-inline-end-width:3px}
 .sui-chat-timeline li[data-state=working] button{animation:sui-timeline-pulse 1.8s ease-in-out infinite}

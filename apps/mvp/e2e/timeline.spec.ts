@@ -1,22 +1,24 @@
 import { expect, test } from "./devices"
 import { requires, scriptedAgent } from "./target"
+import { openComposer } from "./composer"
 
 // The scripted agent's model (a dev build) answers, and the test records questions and answers, which needs a Member.
 requires("scriptedAgent", "member")
 
 test("Conversation timeline: scroll, jump by key and receive durable summaries", {
-  annotation: { type: "summary", description: "A long conversation stays in sync with its rail; keys jump and summaries arrive without moving rows." },
+  annotation: { type: "summary", description: "A long conversation stays in sync with its rail; keys jump and summaries remain readable inside the available rail." },
 }, async ({ devices, request }) => {
   test.setTimeout(180_000)
   const [a] = await devices.open("Timeline")
   await a.page.goto(scriptedAgent("echo"))
   await a.ready()
   const word = `rail-${Date.now()}`
+  const firstQuestionId = crypto.randomUUID()
   await test.step("Build a long conversation", async () => {
     // Another real API client records the conversation, as in local-first-conflicts.spec.ts.
     // This journey tests rail navigation and summaries independently of the agent-answer journey.
     for (let n = 0; n < 8; n++) {
-      const id = crypto.randomUUID()
+      const id = n === 0 ? firstQuestionId : crypto.randomUUID()
       const answerId = crypto.randomUUID()
       const question = `Inspect release retry ${n + 1}: ${word}`
       const asked = await request.post("/api/questions", { data: { id, answerId, text: question } })
@@ -30,6 +32,7 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
   })
   const rail = a.page.getByRole("navigation", { name: "Conversation timeline" })
   await expect(rail).toBeVisible()
+  const detail = rail.locator('ol[data-level="0"]')
   const transcriptWidth = (await a.conversation.boundingBox())!.width
   const rowHeights = () => rail.getByRole("button").evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().height))
   const initialHeights = await rowHeights()
@@ -38,10 +41,18 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     expect((await a.conversation.boundingBox())!.width).toBe(transcriptWidth)
     expect(initialHeights.every(height => height > 0)).toBe(true)
     expect(await rowHeights()).toEqual(initialHeights)
+    expect(await rail.getByRole("button").evaluateAll(buttons => buttons.every(button => {
+      const row = button.getBoundingClientRect()
+      const column = button.closest("ol")!.getBoundingClientRect()
+      const label = button.querySelector("span")!.getBoundingClientRect()
+      return row.top >= column.top - 1 && row.bottom <= column.bottom + 1 && label.height <= row.height + 1
+    }))).toBe(true)
   })
   await test.step("Preview an entry on hover and focus", async () => {
-    const first = rail.getByRole("button").first()
-    const preview = rail.getByRole("tooltip").first()
+    await a.page.locator(`[id="${firstQuestionId}"]`).scrollIntoViewIfNeeded()
+    const first = detail.locator(`button[aria-controls="${firstQuestionId}"]`)
+    await expect(first).toBeVisible()
+    const preview = first.locator("..").getByRole("tooltip")
     await expect(preview).toBeHidden()
     await first.hover()
     await expect(preview).toBeVisible()
@@ -53,37 +64,48 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     await expect(preview).toBeVisible()
   })
   await test.step("Jump to the beginning by key", async () => {
-    const last = rail.getByRole("button").last()
+    const last = detail.getByRole("button").last()
     await last.focus()
+    const homeId = await detail.getByRole("button").first().getAttribute("aria-controls")
     await last.press("Home")
-    const first = rail.getByRole("button").first()
+    const first = detail.locator(`button[aria-controls="${homeId}"]`)
     await expect(first).toBeFocused()
     await expect(first).toHaveAttribute("aria-current", "location")
+    const nextId = await first.evaluate(button => button.closest("li")!.nextElementSibling!.querySelector("button")!.getAttribute("aria-controls"))
     await first.press("ArrowDown")
-    await expect(rail.getByRole("button").nth(1)).toBeFocused()
+    await expect(detail.locator(`button[aria-controls="${nextId}"]`)).toBeFocused()
   })
   await test.step("Scroll the transcript and follow its band", async () => {
     await a.conversation.locator('[data-slot="message-scroller-viewport"]').evaluate(el => { el.scrollTop = el.scrollHeight })
-    await expect(rail.getByRole("button").last()).toHaveAttribute("aria-current", "location")
-    await rail.getByRole("button").nth(1).press("End")
-    await expect(rail.getByRole("button").last()).toBeFocused()
+    await expect(detail.getByRole("button").last()).toHaveAttribute("aria-current", "location")
+    await detail.getByRole("button").nth(1).press("End")
+    await expect(detail.getByRole("button").last()).toBeFocused()
   })
-  await test.step("Keep the transcript usable on a phone", async () => {
-    await a.page.setViewportSize({ width: 390, height: 844 })
+  for (const viewport of [{ width: 1024, height: 800 }, { width: 1024, height: 600 }, { width: 390, height: 844 }]) await test.step(`Keep the open rail reachable at ${viewport.width}×${viewport.height}`, async () => {
+    await a.page.setViewportSize(viewport)
+    const composer = await openComposer(a.page)
+    await expect(composer).toBeVisible()
     await expect(rail).toBeHidden()
     await expect(a.conversation).toBeVisible()
     const toggle = a.page.locator(".sui-timeline-disclosure > summary")
     await expect(toggle).toBeVisible()
     await toggle.click()
     await expect(rail).toBeVisible()
-    await rail.getByRole("button").first().focus()
-    await expect(rail.getByRole("tooltip").first()).toBeVisible()
+    await expect(async () => {
+      expect(await rail.getByRole("button").evaluateAll(buttons => buttons.every(button => {
+        const box = button.getBoundingClientRect()
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+        return hit !== null && button.contains(hit)
+      }))).toBe(true)
+    }).toPass({ timeout: 10_000 })
+    await detail.getByRole("button").first().focus()
+    await expect(detail.getByRole("tooltip").first()).toBeVisible()
     await toggle.focus()
     await toggle.press("Enter")
     await expect(rail).toBeHidden()
     await toggle.press("Enter")
     await expect(rail).toBeVisible()
-    await rail.getByRole("button").first().press("Escape")
+    await detail.getByRole("button").first().press("Escape")
     await expect(rail).toBeHidden()
     await expect(toggle).toBeFocused()
   })

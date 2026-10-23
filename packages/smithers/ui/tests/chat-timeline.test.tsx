@@ -227,3 +227,47 @@ test("keyboard traversal does not activate an entry's external destination", asy
     expect(activations).toEqual(["todo"]);
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+test("horizontal keys navigate octaves and clamp to the nearest detailed window", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const entries = Array.from({ length: 100 }, (_, index) => ({ id: `octave-${index}`, kind: "ask" as const, state: "done" as const }));
+  try {
+    await act(async () => root.render(<ChatTimeline entries={entries} />));
+    const detail = host.querySelectorAll<HTMLButtonElement>('ol[data-level="0"] button');
+    const coarse = host.querySelectorAll<HTMLButtonElement>('ol[data-level="1"] button');
+    expect(coarse.length).toBeGreaterThan(1);
+    const key = async (button: HTMLButtonElement, value: string) => {
+      button.focus();
+      await act(async () => button.dispatchEvent(new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true })));
+    };
+    await key(detail[5]!, "ArrowLeft");
+    expect(document.activeElement).toBe(coarse[0]);
+    await key(coarse[0]!, "ArrowRight");
+    expect(document.activeElement).toBe(detail[0]);
+    await key(coarse[coarse.length - 1]!, "ArrowRight");
+    expect(document.activeElement).toBe(detail[detail.length - 1]);
+    await key(detail[0]!, "ArrowRight");
+    expect(document.activeElement).toBe(detail[0]);
+    await key(coarse[0]!, "ArrowLeft");
+    expect(document.activeElement).toBe(coarse[0]);
+    // A transcript entry can have left the mounted window; clicking it is safe.
+    await act(async () => detail[0]!.click());
+    expect(document.activeElement).toBe(coarse[0]);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+test("the default jump reaches a mounted transcript anchor and Escape focuses it", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<><article id="default-timeline-entry">Recorded question</article><ChatTimeline entries={[{ id: "default-timeline-entry", kind: "ask", state: "done" }]} /></>));
+    const button = host.querySelector("button")!;
+    await act(async () => button.click());
+    await act(async () => button.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.activeElement).toBe(host.querySelector("article"));
+    expect(host.querySelector("article")?.tabIndex).toBe(-1);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

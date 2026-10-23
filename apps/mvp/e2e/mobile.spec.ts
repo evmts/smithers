@@ -1,4 +1,4 @@
-import { test as base, expect, type Page, type TestInfo } from "@playwright/test"
+import { test as base, expect, type Page, type TestInfo, type Locator } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { digestSync } from "@smthrs/crypto"
 import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
@@ -47,19 +47,20 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
 test.use({ video: "on", screenshot: "only-on-failure", colorScheme: "light" })
 
 type Finding = { element: string; problem: string }
-const audit = async (page: Page, info: TestInfo, name = "screen") => {
+const audit = async (page: Page, info: TestInfo, name = "screen", scope?: Locator) => {
   await page.evaluate(() => document.fonts.ready)
   const findings: Finding[] = []
   const overflow = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }))
   if (overflow.scroll > overflow.width) findings.push({ element: "document", problem: `horizontal scroll ${overflow.scroll} > ${overflow.width}` })
-  const controls = page.locator('a[href], button, input:not([type="hidden"]), textarea, select, summary, [role="button"], [role="tab"], [contenteditable="true"]')
+  const controls = (scope ?? page).locator('a[href], button, input:not([type="hidden"]), textarea, select, summary, [role="button"], [role="tab"], [contenteditable="true"]')
   for (const control of await controls.all()) {
     if (!await control.isVisible()) continue
     // Long pages and scrollable panels are legitimate. Bring each target into view,
     // then verify it is reachable, rather than requiring the whole page above the fold.
-    await control.scrollIntoViewIfNeeded()
-    await control.evaluate((element) => element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" }))
     const issues = await control.evaluate((element) => {
+      // Scroll and measure in one browser turn: a live list may replace this
+      // control between separate scroll and measurement calls.
+      element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" })
       // Scrolling to the latest message legitimately hides its jump button.
       if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return []
       const rect = element.getBoundingClientRect()
@@ -191,7 +192,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           // The farm's static page can be ready before its Worker. Wait for
           // the session boundary before opening the page under test.
           await expect.poll(async () => {
-            const session = await context.request.get("/api/auth/session")
+            const session = await context.request.get("/api/auth/session").catch(() => undefined)
+            if (session === undefined) return { status: 0 }
             return { status: session.status(), ...(session.ok() ? await session.json() : {}) }
           }, { timeout: 30_000 }).toMatchObject({ status: 200, signedIn })
         })
@@ -302,6 +304,17 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           test.setTimeout(120_000)
           requires("scriptedAgent")
           await page.goto(scriptedAgent("needs-you"))
+          // A real settled conversation makes the rail use multiple zoom levels
+          // even when this case runs alone, without earlier route fixtures.
+          for (let index = 0; index < 8; index++) {
+            const answerId = crypto.randomUUID()
+            expect((await page.request.post("/api/questions", { headers: writeHeaders(), data: {
+              id: crypto.randomUUID(), answerId, text: `Inspect release regression ${index + 1}`,
+            } })).status()).toBe(202)
+            expect((await page.request.post(`/api/answers/${answerId}`, { headers: writeHeaders(), data: {
+              status: "done", text: `Release regression ${index + 1} checked both recorded attempts.`,
+            } })).status()).toBe(200)
+          }
           const composer = await openComposer(page)
           const question = `Deploy the docs preview, mobile-${crypto.randomUUID()}`
           const accepted = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/questions" && request.postDataJSON().text === question)
@@ -310,7 +323,41 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           const { answerId } = (await accepted).postDataJSON() as { answerId: string }
           try {
             await expect(page.locator('[data-slot="needs-you"]').first()).toBeVisible({ timeout: 60_000 })
-            await audit(page, info, "conversation")
+            const rail = page.getByRole("navigation", { name: "Conversation timeline" })
+            const disclosure = page.locator(".sui-timeline-disclosure > summary")
+            if (viewport.width < 1280) {
+              await audit(page, info, "conversation")
+              await disclosure.click()
+            }
+            await expect(rail.locator("button > span").filter({ hasText: "Find the release regression" }).first()).toBeVisible({ timeout: 30_000 })
+            await expect(async () => {
+              const errors = await rail.evaluate((element) => {
+                const failures: string[] = []
+                for (const column of element.querySelectorAll<HTMLElement>("ol")) {
+                  const bounds = column.getBoundingClientRect()
+                  const rows = [...column.querySelectorAll<HTMLElement>(":scope > li")]
+                  for (const row of rows) {
+                    const box = row.getBoundingClientRect()
+                    if (box.top < bounds.top - 1 || box.bottom > bounds.bottom + 1) failures.push("row outside rail")
+                    const label = row.querySelector<HTMLElement>("button > span")!
+                    if (label.getBoundingClientRect().height > box.height + 1) failures.push("label outside row")
+                  }
+                  if (column.dataset.level === "0") {
+                    const visible = rows.filter(row => row.hasAttribute("data-in-view"))
+                    const band = column.querySelector<HTMLElement>(".sui-timeline-band")!.getBoundingClientRect()
+                    if (visible.length && (Math.abs(band.top - visible[0]!.getBoundingClientRect().top) > 2 || Math.abs(band.bottom - visible.at(-1)!.getBoundingClientRect().bottom) > 2)) failures.push("band misses visible entries")
+                  }
+                }
+                return failures
+              })
+              expect(errors).toEqual([])
+            }).toPass({ timeout: 10_000 })
+            await audit(page, info, viewport.width < 1280 ? "timeline" : "conversation", viewport.width < 1280 ? rail : undefined)
+            if (viewport.width < 1280) {
+              await disclosure.click()
+              await expect(rail).toBeHidden()
+              await expect(composer).toBeVisible()
+            }
             await page.keyboard.press("Escape")
             await page.keyboard.press("g")
             await page.keyboard.press("q")

@@ -157,7 +157,7 @@ describe("floatsBell", () => {
     for (const route of ["/", "/app/runs", "/app/flows", "/$owner/$repo/issues", "/$owner/$repo/stack"]) {
       expect(floatsBell(route)).toBe(true)
     }
-    for (const route of ["/app", "/$owner/$repo", "/$owner/$repo/tree/$ref/$", "/$owner/$repo/blob/$ref/$", "/$owner/$repo/raw/$ref/$"]) {
+    for (const route of ["/app", "/$owner/$repo", "/$owner/$repo/tree/$ref/$", "/$owner/$repo/blob/$ref/$", "/$owner/$repo/raw/$ref/$", "/$owner/$repo/docs", "/$owner/$repo/docs/$"]) {
       expect(floatsBell(route)).toBe(false)
     }
     expect(floatsBell(undefined)).toBe(false)

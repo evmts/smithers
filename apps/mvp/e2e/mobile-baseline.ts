@@ -1,11 +1,13 @@
-import { writeFile } from "node:fs/promises"
 import { expect, type Page, type TestInfo } from "@playwright/test"
 
-// The added rules relative to main bce9128d. Removing exactly these rules inside
-// the rendered stylesheets reconstructs the baseline CSS on the same live DOM.
+// Mobile additions relative to main a7b2bd8c. Removing these rules keeps the
+// approved desktop defect repairs and compares them on the same live DOM.
 // Paired screenshots avoid random TODO ids, timestamps and synced data changing
 // between two server runs. Both PNGs are retained; no content is masked.
+// This guards against widening these indexed mobile rules to desktop. It is
+// not a historical golden comparison of the approved desktop repairs.
 const addedRules = [
+  ".sui-chat-transcript:has(> .sui-timeline-disclosure[open]) { z-index:41; }",
   ".app-shell-header { flex-wrap: wrap; }",
   ".app-shell-header [aria-label=\"Account\"] { min-width: 0; flex-wrap: wrap; }",
   ".app-shell-nav { flex-wrap: wrap; }",
@@ -17,15 +19,13 @@ const addedRules = [
   ".docs-page-links a { display:flex; align-items:center; min-width:32px; min-height:32px; }",
   ".flows-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".flows-page td a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; max-width:100%; overflow-wrap:anywhere; }",
-  ".issues-screen[aria-label=\"New issue\"] > .sui-button { align-self: flex-start; }",
+  ".issues-screen > .sui-button { align-self: flex-start; }",
   ".plugin-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".repo-header-name a { display: inline-flex; align-items: center; min-height: 32px; }",
-  ".repo-screen:has(.repo-header-bell) ~ .root-bell { display:none; }",
   ".runs-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".secrets-screen-header > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }",
   ".settings-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".sui-markdown-editor[data-readonly] .ProseMirror a { display:inline-block; min-width:32px; min-height:32px; line-height:32px; max-width:100%; overflow-wrap:anywhere; }",
-  ".sui-repo-readme > .sui-markdown-editor { height:auto; }",
   ".sui-repo-readme-name { display:inline-flex; align-items:center; min-height:var(--ctl-h, 32px); }",
   ".sui-action-menu-trigger { width:32px; min-height:var(--ctl-h, 32px); height:var(--ctl-h, 32px); }",
   "button.sui-toast-open { min-height:var(--ctl-h, 32px); }",
@@ -86,14 +86,7 @@ export const desktopBaseline = async (page: Page, info: TestInfo, name: string) 
     try {
       expect(removed, "baseline must remove the sweep's actual CSS rules").toBeGreaterThan(0)
       const baseline = await page.screenshot({ path: info.outputPath(`${name}-baseline.png`), fullPage: true, animations: "disabled" })
-      const changed = !current.equals(baseline)
-      const path = new URL(page.url()).pathname
-      const defect = path.includes("/docs") ? "overlapping notification bells"
-        : (path === "/octocat/Spoon-Knife" || path.startsWith("/octocat/Spoon-Knife/tree/")) ? "clipped README content"
-        : name === "conversation" && info.title.startsWith("run and queue:") ? "clipped timeline labels"
-        : undefined
-      await writeFile(info.outputPath(`${name}-desktop-comparison.json`), JSON.stringify({ changed, defect: changed ? defect : undefined }, null, 2))
-      if (defect === undefined) expect(changed, "desktop screenshot outside a repaired defect must equal baseline").toBe(false)
+      expect(current.equals(baseline), "mobile CSS must not change any desktop pixels, including repaired pages").toBe(true)
     } finally {
       await page.evaluate(() => (window as unknown as { restoreMobileStyles: () => void }).restoreMobileStyles())
     }

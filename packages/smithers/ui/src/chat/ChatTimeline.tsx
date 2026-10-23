@@ -42,7 +42,7 @@ export const timelineKey = (key: string, index: number, length: number): number 
   return undefined;
 };
 
-/** The browser viewport is an external store; summaries never change its geometry. */
+/** Viewport and label measurements keep every octave inside the available rail. */
 export function ChatTimeline({ entries, onJump, onActivate, groupSummaries = {}, onGroupsChange }: ChatTimelineProps) {
   useInjectUiCss();
   const rail = useRef<HTMLElement>(null);
@@ -51,7 +51,8 @@ export function ChatTimeline({ entries, onJump, onActivate, groupSummaries = {},
   const hasGroupsChange = onGroupsChange !== undefined;
   const ids = entries.map(entry => entry.id).join("\0");
   const geometry = useMemo(() => {
-    let snapshot = "408|";
+    let snapshot = "408||32";
+    let rowHeight = 32;
     return {
       read: () => snapshot,
       subscribe: (notify: () => void) => {
@@ -66,12 +67,15 @@ export function ChatTimeline({ entries, onJump, onActivate, groupSummaries = {},
             const bounds = viewport?.getBoundingClientRect();
             return box.bottom > (bounds?.top ?? 0) && box.top < (bounds?.bottom ?? window.innerHeight);
           });
-          const height = rail.current?.clientHeight || Math.min(560, window.innerHeight * .7);
-          const next = `${height}|${visible.join("\0")}`;
+          const height = rail.current?.querySelector("ol")?.clientHeight || rail.current?.clientHeight || Math.min(560, window.innerHeight * .7);
+          // Retain the largest measured label while this entry set is mounted.
+          // Shrinking to a different window must not oscillate the octave count.
+          for (const label of rail.current?.querySelectorAll<HTMLElement>("button > span") ?? []) rowHeight = Math.max(rowHeight, label.scrollHeight);
+          const next = `${height}|${visible.join("\0")}|${rowHeight}`;
           if (next !== snapshot) { snapshot = next; notify(); }
           const first = Math.max(0, list.indexOf(visible[0] ?? ""));
           const last = Math.max(first, list.indexOf(visible.at(-1) ?? ""));
-          const groups = timelineLevels(list, height, first, last).filter(level => level.level > 0).flatMap(level => level.blocks);
+          const groups = timelineLevels(list, height, first, last, rowHeight).filter(level => level.level > 0).flatMap(level => level.blocks);
           const key = JSON.stringify(groups);
           if (key !== groupKey) { groupKey = key; onGroupsChangeRef.current?.(groups); }
         };
@@ -80,17 +84,19 @@ export function ChatTimeline({ entries, onJump, onActivate, groupSummaries = {},
         const observer = new ResizeObserver(update);
         if (rail.current) observer.observe(rail.current);
         ids.split("\0").forEach(id => { const el = document.getElementById(id); if (el) observer.observe(el); });
+        const labels = new MutationObserver(update);
+        if (rail.current) labels.observe(rail.current, { childList: true, characterData: true, subtree: true });
         update();
-        return () => { observer.disconnect(); document.removeEventListener("scroll", update, true); window.removeEventListener("resize", update); };
+        return () => { labels.disconnect(); observer.disconnect(); document.removeEventListener("scroll", update, true); window.removeEventListener("resize", update); };
       },
     };
   }, [ids, hasGroupsChange]);
-  const snapshot = useSyncExternalStore(geometry.subscribe, geometry.read, () => "408|");
-  const [height, visible = ""] = snapshot.split("|");
+  const snapshot = useSyncExternalStore(geometry.subscribe, geometry.read, () => "408||32");
+  const [height, visible = "", rowHeight] = snapshot.split("|");
   const band = visible.split("\0");
   const first = Math.max(0, entries.findIndex(entry => entry.id === band[0]));
   const last = Math.max(first, entries.findIndex(entry => entry.id === band.at(-1)));
-  const levels = timelineLevels(entries.map(entry => entry.id), Number(height), first, last);
+  const levels = timelineLevels(entries.map(entry => entry.id), Number(height), first, last, Number(rowHeight));
   const jump = (id: string) => {
     if (onJump) { onJump(id); return; }
     const target = document.getElementById(id);
@@ -107,7 +113,7 @@ export function ChatTimeline({ entries, onJump, onActivate, groupSummaries = {},
         const state = (["failed", "waiting", "working", "queued", "done"] as const).find(state => members.some(member => member.state === state))!;
         const label = grouped ? groupSummaries[block.id] || `${members.length} entries` : timelineLabel(entry);
         const previewId = `timeline-preview-${level.level}-${entry.id}`;
-        return <li key={block.id} data-state={state} data-in-view={members.some(member => band.includes(member.id)) || undefined} style={{ flexGrow: members.length }}>
+        return <li key={block.id} data-state={state} data-in-view={members.some(member => band.includes(member.id)) || undefined} style={{ flexGrow: members.length, flexBasis: `${rowHeight}px` }}>
           <button type="button" aria-controls={entry.id} aria-current={members.some(member => band.includes(member.id)) ? "location" : undefined}
             aria-label={!grouped && entry.label && entry.label !== label ? `${label} · ${entry.label}` : undefined}
             data-summary={(grouped ? groupSummaries[block.id] : entry.summary) ? "ready" : "pending"} aria-describedby={previewId}
