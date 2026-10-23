@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-23 13:01 PDT
+updated: 2026-10-23 13:05 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -29,3 +29,8 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 ## 2026-10-23, 13:01 PDT
 
 - At a 390 × 844 mobile viewport, the landing page and signed-out repository shell had no horizontal document overflow or browser errors. The app's signed-out top navigation clips “Conversations”: its left edge settles at x = −11.45 px at 390 px wide, −26.45 px at 375 px, and −81.45 px at 320 px (almost entirely offscreen); the page cannot scroll horizontally to reach it. At 430 px the link starts at x = 24 px. Screenshot: `/tmp/smithers-bugbash-20261023/mobile-app.png`. Retest after the ongoing mobile work deploys.
+- The existing `e2e/home-effect.spec.ts` visitor journey passed against `BASE_URL=https://smithers.sh` (one test, 6.1 s): Effect's curated home, public blocks, and Code link rendered. This proves the public home path works while first-visit GitHub About reads fail.
+
+## 2026-10-23, 13:05 PDT
+
+- PWA offline reload passed in a fresh Chromium profile once `navigator.serviceWorker.ready` resolved. The service worker took 20.9 s from navigation to ready; after going offline, `/app/` reloaded and showed the signed-out view. A first probe timed out at 15 s and failed to reload offline because it had gone offline before installation; that probe is not a product failure.
