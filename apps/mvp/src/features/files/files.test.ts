@@ -1,4 +1,5 @@
 import { Persistence } from "@smthrs/effect-tanstack-db"
+import { BrowserCollectionCoordinator } from "@tanstack/browser-db-sqlite-persistence"
 import { close as closeFile, FilesPage, open as openFile } from "./actions"
 import { FilesStore } from "./store"
 // File tabs (docs/features/files.md): the strip and its links as pure functions; then a tab on RepoApi's real handler
@@ -16,6 +17,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { TabRequests } from "../../flows/requests"
 import { BROWSER_TELEMETRY } from "../../telemetry"
 import { openTab, type Tab } from "../../test/repoDevice"
+import { nodeDevice } from "../../test/chatApi"
 import { FILES_TELEMETRY, filesChannel, LINES_PATTERN } from "./contract"
 import { CloseFile, FileTabsTabs, normalPath, OpenFile, registration } from "./flows"
 import { fileTabs } from "./metrics"
@@ -148,6 +150,38 @@ const ran = async (...args: Parameters<typeof dispatch>) => {
 const paths = (tab: Tab) => tab.tabs().map((r) => [r.path, r.lines])
 
 describe("a file the repository view shows", () => {
+  test("a refused coordinator request leaves the route follower listening for the next file", async () => {
+    const h = await repoHarness(server)
+    await h.seed("octocat", "Spoon-Knife")
+    const host = nodeDevice().persistence!
+    let refuse = false
+    let refused = false
+    // A transient host/channel failure before SQLite is reached; a SQL durability
+    // failure deliberately puts TanStack's collection in a terminal error state.
+    class RefusingCoordinator extends BrowserCollectionCoordinator {
+      override async requestApplyLocalMutations(...args: Parameters<BrowserCollectionCoordinator["requestApplyLocalMutations"]>) {
+        if (refuse) {
+          refuse = false
+          refused = true
+          throw new Error("coordinator request refused")
+        }
+        return super.requestApplyLocalMutations(...args)
+      }
+    }
+    const device = `files-recovery-${crypto.randomUUID()}`
+    const persistence = Persistence.layer({ ...host, coordinator: () => new RefusingCoordinator({ dbName: device }) })
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, persistence })
+    tabs.push(tab)
+    await tab.runtime.runPromise(Effect.flatMap(FilesStore, (store) => store.tabs.restored))
+    await show(tab, "tree")
+    refuse = true
+    await show(tab, "blob", "README.md")
+    await waitFor(() => expect(refused).toBe(true))
+    await waitFor(() => expect(tab.lines("persisted write failed")).toHaveLength(1))
+    await show(tab, "blob", "src/index.ts", "2-4")
+    await waitFor(() => expect(paths(tab)).toContainEqual(["src/index.ts", "2-4"]))
+  })
+
   test("gets a tab with its lines; another file adds one after it; the lines follow the page", async () => {
     const h = await repoHarness(server)
     const tab = await open(h)

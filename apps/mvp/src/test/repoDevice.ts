@@ -65,6 +65,8 @@ export interface DeviceOptions {
   readonly engine?: "running" | "refusing"
   /** Code intelligence over these language servers (src/test/languageServer.ts); none unless set. */
   readonly languageServers?: Layer.Layer<LanguageServers>
+  /** The device store; memory unless a persistence or recovery test supplies SQLite. */
+  readonly persistence?: Layer.Layer<Persistence.Persistence>
 }
 
 /** The flows this device's engine runs, as the registry names them. */
@@ -150,7 +152,7 @@ export const openTab = async (options: DeviceOptions) => {
         ClientEngine.layerRuntime(options.engine === "refusing" ? [] : flows).pipe(Layer.provide(engine)),
       ),
       Layer.provideMerge(shapes),
-      Layer.provideMerge(Persistence.memory),
+      Layer.provideMerge(options.persistence ?? Persistence.memory),
       Layer.provideMerge(client),
       Layer.provideMerge(
         options.homeClient ??

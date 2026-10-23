@@ -247,6 +247,17 @@ interface Outbox {
 2. **Each device stores its whole conversation,** so reading works offline. A size limit with LRU eviction is deferred: see the TODO list.
 3. **The new TanStack packages land now,** under Will's same-day exception, recorded in `pnpm-workspace.yaml` until 2026-10-26.
 
+## File-tab completion (2026-10-23)
+
+File-tab actions await the local collection transaction's `persisted` receipt while
+holding the store's write permit, before navigation or a successful flow reply.
+An optimistic deletion is insufficient: reloading before SQLite commits can restore
+the closed tab. The repository-view follower handles a failed persistence receipt
+per event and keeps listening; explicit actions fail without navigating. The SDK
+already logs and counts the refused write. No new storage or schema is introduced.
+The real-SQLite regressions live in `src/features/files/persistence.test.ts` and
+`src/features/files/files.test.ts`.
+
 ## Sources
 
 [1] https://github.com/TanStack/db/blob/main/docs/guides/sqlite-persistence.md, and the browser package README at 0.2.36 · [2] https://github.com/TanStack/db/blob/main/docs/guides/offline-transactions.md, and `OfflineExecutor.ts`, `coordination/WebLocksLeader.ts`, `retry/RetryPolicy.ts` and `executor/TransactionExecutor.ts` in the 1.1.3 tarball · [3] https://github.com/TanStack/db/blob/main/docs/guides/mutations.md · [4] https://electric.ax/docs/guides/writes · [5] https://electric.ax/docs/guides/shapes · [6] https://electric.ax/blog/2026/01/12/durable-sessions-for-collaborative-ai · [7] https://electric.ax/blog/2026/03/26/stream-db · [8] https://github.com/electric-sql/electric/tree/main/packages/y-electric (README at 0.1.54) · [9] https://doc.replicache.dev/concepts/how-it-works · [HOST-PLAN] the lead's durable-answering plan, 2026-10-19.

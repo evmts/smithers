@@ -38,16 +38,17 @@ const make = Effect.gen(function* () {
       const existing = yield* tabs.get(key)
       if (Option.isSome(existing)) {
         if (existing.value.lines === lines) return
-        yield* tabs.update(key, (draft) => void (draft.lines = lines))
+        yield* (yield* tabs.update(key, (draft) => void (draft.lines = lines))).persisted
         return
       }
       const rows = yield* tabs.toArray
       const position = rows.reduce((last, row) => Math.max(last, row.position), 0) + 1
-      yield* tabs.insert({ key, owner: here.owner, name: here.name, revision: here.revision, path, lines, position })
+      yield* (yield* tabs.insert({ key, owner: here.owner, name: here.name, revision: here.revision, path, lines, position })).persisted
     }).pipe(
       Semaphore.withPermits(writes, 1),
-      // A local collection refuses only a row its own schema rejects, which these never are: a bug, not a state.
-      Effect.orDie,
+      // Keep the permit through the device write. Schema/key errors are bugs;
+      // persistence failures remain typed so the route follower can keep listening.
+      Effect.catchTag("MutationRefused", Effect.die),
     )
 
   /** Closes `path`'s tab at `here`; whether it had one. */
@@ -55,7 +56,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const key = tabKey(here, path)
       if (Option.isNone(yield* tabs.get(key))) return false
-      yield* tabs.delete(key)
+      yield* (yield* tabs.delete(key)).persisted
       return true
     }).pipe(Semaphore.withPermits(writes, 1), Effect.orDie)
 
@@ -72,7 +73,7 @@ const make = Effect.gen(function* () {
               { owner: change.value.owner, name: change.value.name, revision: change.value.revision! },
               change.value.path,
               linesOf(change.value.line, change.value.lineEnd),
-            ), { discard: true })
+            ).pipe(Effect.ignore), { discard: true })
       ),
       Effect.forkScoped,
     )

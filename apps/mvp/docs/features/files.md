@@ -20,6 +20,15 @@ The files open in a repository show as tabs above its code, and the agent opens 
 - **Keyboard:** Tab reaches the strip at the file on screen; ← and → (Home, End) move between tabs; Enter or Space opens one; Delete or Backspace closes it and focuses the tab taking its place. A ⌘, Ctrl or middle click opens the file in a new browser tab.
 - **Per device.** The tabs are kept on the device, so every browser tab of the device shows the same strip and a reload keeps it; they never sync to another device or person (decision 0004 Q3: "open tabs and scroll position stay per device"). The highlighted lines are in the URL (`?L=`), so a shared link shows them.
 
+`FilesStore.keep` and `drop` hold their write permit until the collection transaction's
+`persisted` receipt succeeds. Opening, updating remembered lines, and closing therefore
+finish their device write before the flow navigates or answers success. Optimistic
+collection changes alone are not completion: a reload could otherwise restore a tab
+whose deletion was still pending. This uses `@smthrs/effect-tanstack-db` from the
+library catalog; no new persistence mechanism or schema is needed.
+The route follower keeps listening after a refused write; explicit actions fail
+without navigating. The SDK's existing persistence log and counter record the failure.
+
 The strip shows on a file's page and on a branch's directory pages. A file's page is part of its branch's workspace, as a directory's is, so when the agent opens a file from the conversation, the conversation stays beside it.
 
 ## The flows
@@ -65,6 +74,7 @@ Each step logs `files.tab` (Warn for `no_repository`), records a span of the sam
 ## Tests
 
 - `src/features/files/files.test.ts`: the strip and links; a tab on RepoApi's real handler and Electric (`src/test/repoDevice.ts`) keeping a tab for every file its view shows; `file/open` and `file/close` through the tab's dispatch, as the strip and as the agent, with closing on and off screen, a tab on no repository and refused payloads; a step whose tab is gone.
+- `src/features/files/persistence.test.ts`: real browser persistence on SQLite, with a stalled SQL host; navigation waits for insertion, line updates and deletion, then reopening the store restores exactly the remaining tab, its position and its lines.
 - `packages/smithers/ui/tests/file-tabs.test.tsx`: the strip's roles, clicks and keys.
 - `e2e/files.spec.ts`: the agent opens a file at a line range from the branch workspace's conversation, the tab and highlight show and the conversation stays; the person switches and closes tabs by keyboard (both need Code Storage); moving between a branch's directory, a file and its terminal keeps the workspace (no clone needed).
 - `evals/cases.ts` `files-show-lines`: asked to show code, the agent calls `file/open` with the lines.

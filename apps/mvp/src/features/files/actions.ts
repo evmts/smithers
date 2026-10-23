@@ -49,7 +49,7 @@ export const open = (path: string, lines: string | null) =>
     const page = yield* FilesPage
     const here = yield* page.here
     if (Option.isNone(here)) return nowhere
-    yield* (yield* FilesStore).keep(here.value, path, lines)
+    yield* (yield* FilesStore).keep(here.value, path, lines).pipe(Effect.orDie)
     page.navigate(fileHref(here.value, path, lines))
     return { repository: `${here.value.owner}/${here.value.name}`, ref: here.value.revision, done: true }
   })
