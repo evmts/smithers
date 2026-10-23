@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-23 13:27 PDT
+updated: 2026-10-23 13:29 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -70,3 +70,8 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 - Read-only source inspection shows the exact no-change path in `worker/flows/Todo.ts`: Collect emits `empty_change`, and Fail reports a failed TODO through `Stack.report`. The run card hides that code behind the generic `TodoFailed` tag; the actionable reason is only inferable by combining the agent's summary with source. Improve the safe failure reason shown to the person and record the stage and outcome without credentials or content.
 - Used Arc on `vibelang.sh/001-onboarding` to check the original issue. Search for `scope` now sets a unique listbox ID and `aria-activedescendant`; advancing to result 3 linked the focused combobox to an existing selected option. A no-match query removed the active descendant and options. The GitHub issue's prior comment says the patch landed on main as `e680bb7` but was left open pending production deployment; this Arc check is production acceptance for the tested desktop semantics. No physical screen-reader test was run. The TODO's duplicate work arose from the stale open issue, not a missing code change.
 - Arc then locked. `CGSSessionScreenIsLocked` returned 1; browser control stopped, and this bug bash's bounded `caffeinate` was ended. Resume Arc only after it is unlocked by the user.
+
+## 2026-10-23, 13:29 PDT
+
+- The checked-out `src/features/runs/flows.ts` explicitly describes `run/list` and `run/inspect` as **this device's** runs. `src/features/todos/flows.ts` exposes draft/issue authoring to the model but no TODO status read. That explains why the chat agent could see its local `todo/commit` receipt but could not establish the Cloud attempt state through the tools it chose. The reply must not turn the absence of a device run into a claim that no attempt started; the durable repair needs a same-authority TODO/Cloud-run read with a real agent eval.
+- The Issues repair tracker now reports a token-aware GitHub reader and bounded unsynced state at commit `14177c08` with the lander. It has no landing or production rerun receipt yet, so the live failure remains open for retest after deployment.
