@@ -799,6 +799,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/guides/workerd/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/guides/workerd.md"],
     ["/installation/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/installation.md"],
     ["/quickstart/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/quickstart.md"],
+    ["/realm-flows/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/realm-flows.md"],
     ["/reference/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/reference.md"],
     ["/reference/api/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md"],
     ["/troubleshooting/", "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/troubleshooting.md"],

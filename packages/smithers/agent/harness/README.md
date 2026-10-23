@@ -138,3 +138,7 @@ The published site is https://github.com/smithersai/smithers/tree/main/packages/
   module and its exports, one table per module.
 - [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/troubleshooting.md): the failure
   modes the package raises, and what to do about each.
+
+Pinned repository `Flow.make` modules run through the isolated
+[`RealmFlow` host](docs/realm-flows.md), which returns durable action requests
+and resumes from validated receipts.

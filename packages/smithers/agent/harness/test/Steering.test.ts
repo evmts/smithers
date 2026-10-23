@@ -318,10 +318,16 @@ describe("Steering.Source", () => {
     const source = Steering.make({
       read: () => Effect.succeed(Steering.empty()),
       drain: () =>
-        Effect.succeed({ inserts: [steer], seatChanges: [], remaining: Steering.empty(), queued: false, duplicate: false })
+        Effect.succeed({
+          inserts: [steer],
+          seatChanges: [],
+          remaining: Steering.empty(),
+          queued: false,
+          duplicate: false
+        })
     })
     const paced = Steering.withTimeLeft(source, { startedAt: 0, budgetMs: 40 * 60_000 })
-    const drainAt = (elapsed: string, input: Steering.BoundaryInput) =>
+    const drainAt = (elapsed: Parameters<typeof TestClock.adjust>[0], input: Steering.BoundaryInput) =>
       Effect.runPromise(
         Effect.gen(function*() {
           yield* TestClock.adjust(elapsed)

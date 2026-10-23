@@ -1863,6 +1863,9 @@ importers:
       '@smthrs/core':
         specifier: 1.0.0-rc.16
         version: link:../../flows/core
+      '@smthrs/crypto':
+        specifier: workspace:*
+        version: link:../../flows/crypto
       '@smthrs/flow':
         specifier: 1.0.0-rc.16
         version: link:../../flows/flow
@@ -1878,6 +1881,9 @@ importers:
       '@smthrs/notifications':
         specifier: 1.0.0-rc.16
         version: link:../../notifications
+      '@smthrs/plan':
+        specifier: workspace:*
+        version: link:../../flows/plan
       '@smthrs/registry':
         specifier: 1.0.0-rc.16
         version: link:../registry
