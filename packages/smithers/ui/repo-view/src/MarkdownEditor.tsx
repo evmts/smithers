@@ -164,6 +164,9 @@ const hostCss = `
 .sui-markdown-editor .milkdown { height:100%; background:transparent; }
 .sui-markdown-editor .milkdown .milkdown-code-block { background:var(--code-bg, #efeae0); }
 .sui-markdown-editor .milkdown .ProseMirror { padding:16px 20px; }
+@media (max-width:960px) {
+  .sui-markdown-editor[data-readonly] .ProseMirror a { display:inline-block; min-width:32px; min-height:32px; line-height:32px; max-width:100%; overflow-wrap:anywhere; }
+}
 .sui-markdown-editor-fallback { display:block; box-sizing:border-box; width:100%; min-height:180px; height:100%; padding:16px 20px; border:0; outline:none; resize:none; background:transparent; color:inherit; font:inherit; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:13px; line-height:1.6; tab-size:2; }
 .sui-markdown-editor-fallback:read-only { cursor:default; }
 .sui-markdown-editor[data-readonly] .cm-editor, .sui-markdown-editor[data-readonly] .cm-gutters, .sui-markdown-editor[data-readonly] .cm-activeLine { background:transparent; color:inherit; }

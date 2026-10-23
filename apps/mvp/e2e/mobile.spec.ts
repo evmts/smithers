@@ -9,8 +9,11 @@ import { baseURL, requires, scriptedAgent } from "./target"
 const test = base.extend<{ recording: void }>({
   recording: [async ({ page }, use, info) => {
     const startedAt = Date.now()
+    const errors: string[] = []
+    page.on("pageerror", (error) => errors.push(error.message))
     await recordActions(page, info)
     await use()
+    await writeFile(info.outputPath("page-errors.json"), JSON.stringify(errors, null, 2))
     await writeManifest(info, "flow.json", startedAt, [{ name: "", video: "video.webm", openedAt: 0 }])
   }, { auto: true }],
 })
