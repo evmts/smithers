@@ -4,7 +4,8 @@
 // model endpoint's own `ModelEndpoint.local`: the only stand-ins. Each check is a `runs` row on the head's SHA.
 import { Model, ModelError, type ModelEvent } from "@smthrs/model"
 import { SandboxTools } from "@smthrs/sandbox"
-import { FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/flows"
 import { Context, Effect, Exit, Fiber, Layer, Redacted, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
@@ -468,6 +469,9 @@ describe("checks/Run on a host that dies mid-check", { timeout: 120_000 }, () =>
     const second = await engine(first.built.engine.schema)
     const resumed = await Effect.runPromise(Effect.exit(second.execute))
     await second.close()
+    // A fresh run against the same check receipts must not settle or execute the script twice.
+    const repeated = await runFlow(Checks.ChecksRun, request, registration)
+    expect(Exit.isSuccess(repeated.exit)).toBe(true)
 
     expect(Exit.isSuccess(resumed) && (resumed.value as Checks.Reported).statuses).toEqual(expect.arrayContaining([
       { name: "slow", state: "success", outcome: "sent" },
@@ -630,4 +634,28 @@ describe("the review's text", () => {
     expect(hugeText).not.toContain("+late")
     expect(hugeText).toContain("--- late.md")
   })
+})
+
+test.each(["token", "github", "database"] as const)("a review %s outage remains retryable instead of recording a failed check", async (fault) => {
+  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+  const { seat } = await judgeSeat(runtime, judge("must not reach the judge"))
+  const { services } = await githubServices(runtime, github, { judge: seat })
+  const request = await opened(github, { personId: "p" })
+  const { TokenUnavailable } = await import("../github/Tokens")
+  const unreachable = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+  if (fault === "github") github.faults.push({ match: (method, path) => method === "GET" && path.includes("/compare/"), status: 503 })
+  const steps = Checks.steps({ ...services, judge: seat,
+    ...(fault === "database" ? { database: unreachable } : {}),
+    tokens: { ...services.tokens, forInstallation: (repo, purpose) => purpose === "review" && fault === "token"
+      ? Effect.fail(new TokenUnavailable({ reason: "unavailable" })) : services.tokens.forInstallation(repo, purpose) },
+  })
+  // A no-retry test action exposes the durable step's error without spending the production retry deadline.
+  const review = Action.make("test/ReviewFault/step", { payload: { request: Checks.ChecksRequest }, success: Checks.Checked, error: Checks.ChecksUnavailable })
+  const flow = Flow.make("test/ReviewFault", { payload: { request: Checks.ChecksRequest }, success: Checks.Checked, error: Checks.ChecksUnavailable,
+    body: Node.capture({ review: review.name }, (payload) => review.call(payload)),
+  })
+  const result = await runFlow(flow, { request }, Interpreter.layerWithImplementations(flow, review.toLayer(steps.review)).pipe(Layer.provideMerge(Action.layerImplementations)))
+  expect(Exit.isFailure(result.exit)).toBe(true)
+  expect(JSON.stringify(result.exit)).toContain("ChecksUnavailable")
+  expect(github.pulls.get(request.prNumber)!.reviews).toEqual([])
 })
