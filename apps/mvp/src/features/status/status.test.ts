@@ -220,7 +220,10 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     const answerId = ask(a, "Pick two regions")
     const first = await Effect.runPromise(api.answerTo("Pick two regions"))
     first.cell(askCell(`{ kind: "question", prompt: "First region?" }`))
+    // Both devices show the question before either answers: an answer to a question a device doesn't show yet is
+    // nothing, and each device hears of it through its own sync.
     await until(() => expect(b.statusOf(answerId)?.state).toBe("needs_you"))
+    await until(() => expect(a.statusOf(answerId)?.state).toBe("needs_you"))
     // B answers the first question, but its engine hasn't taken the answer yet; A answers it meanwhile.
     await Effect.runPromise((await b.faults()).holdStarts)
     b.status.actions.answer(answerId, "us")
