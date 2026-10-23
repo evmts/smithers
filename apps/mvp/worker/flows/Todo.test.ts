@@ -13,6 +13,7 @@ import { HostModel } from "@smthrs/model-host"
 import { Notification, NotificationQueue, SteerPayload } from "@smthrs/notifications"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Schedule, Schema, Scope, Stream } from "effect"
+import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import { execFileSync } from "node:child_process"
@@ -1160,6 +1161,55 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     }
   })
 
+  test("a restored stacked wait whose base has no PR parks on its own PR and settles on its close", async () => {
+    const ctx = await setup()
+    const first = (await commit("One", "First"))!
+    await sql(runtime, "UPDATE stacks SET lanes = 2")
+    const base = "smithers/unpublished"
+    const sha = ctx.github.push(base, { "ONE.md": "one" })
+    await runtime.runPromise(Stack.report(first, { kind: "branch", branch: base, baseRef: "main", baseSha: sha }, { runs: true }))
+    const second = (await commit("Two", "Second"))!
+    const branch = "smithers/restored"
+    ctx.github.refs.set(branch, sha)
+    const pull = ctx.github.openPull(branch)
+    pull.base = base
+    await runtime.runPromise(Stack.report(second, { kind: "branch", branch, baseRef: base, baseSha: sha }, { runs: true }))
+    await runtime.runPromise(Stack.report(second, { kind: "published", headSha: sha, prNumber: pull.number, draft: true }, { runs: true }))
+    const begun = { ...onMain(branch), baseRef: base, baseSha: sha }
+    const published = { headSha: sha, prNumber: pull.number }
+    const Probe = Flow.make("todo", { payload: Todo.TodoRequest, success: Todo.Awaited, error: Todo.Await.errorSchema,
+      body: Node.capture({ begun, published, await: Todo.Await.name }, (request) => Todo.Await.call({ request, begun, published })),
+    })
+    const registration = Interpreter.layerWithImplementations(Probe, Todo.Await.toLayer(Todo.steps(ctx.services).awaitMerge))
+      .pipe(Layer.provideMerge(Action.layerImplementations))
+    const schema = `flows_${crypto.randomUUID().replaceAll("-", "")}`
+    const url = (await runtime.runPromise(TestDatabase.serverUrl)).toString()
+    const values = new Map<string, unknown>()
+    const storage: ExecutionHost.Storage = {
+      get: <A>(key: string) => Effect.sync(() => structuredClone(values.get(key)) as A | undefined),
+      put: (key, value) => Effect.sync(() => void values.set(key, structuredClone(value))),
+      delete: (key) => Effect.sync(() => values.delete(key)),
+      setAlarm: () => Effect.void, deleteAlarm: () => Effect.void,
+    }
+    const executionId = todoExecutionId(second.attemptId)
+    const host = ExecutionHost.make(storage, { hostId: executionId, database: ExecutionHost.database(url, schema),
+      flows: { flows: [Probe], registration }, router: { start: () => Effect.void, wake: () => Effect.void },
+    })
+    try {
+      await Effect.runPromise(Effect.gen(function* () {
+        yield* host.start(yield* ExecutionHost.intent(Probe, { executionId, payload: second }))
+        expect((yield* host.alarm())._tag).toBe("Parked")
+        ctx.github.close(pull.number)
+        yield* host.signal(WaitFor.deferred(`todo/pull/${pull.number}`).name)
+        expect((yield* host.alarm())._tag).toBe("Settled")
+      }))
+      expect(await sql(runtime, `SELECT status FROM ${schema}.flows_runs WHERE run_id = '${executionId}'`)).toEqual([{ status: "completed" }])
+      expect(await todo(1)).toMatchObject({ state: "working", prNumber: null })
+    } finally {
+      await sql(runtime, `DROP SCHEMA IF EXISTS ${schema} CASCADE`)
+    }
+  })
+
   test.each(["drop", "webhook"] as const)("%s cancels a successor during implementation without publishing; Retry uses main", async (trigger) => {
     let implementing = false
     let cancellations = 0
@@ -1230,9 +1280,12 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       body: Node.capture({ begun, published, await: Todo.Await.name }, (request) => Todo.Await.call({ request, begun, published })),
     })
     let cancel: (id: string) => Effect.Effect<void, unknown> = () => Effect.die("host not built")
+    let discoveryConnections = 0
+    const recoverableDatabase = Layer.unwrap(Effect.sync(() =>
+      ++discoveryConnections === 1 ? unreachable : ctx.services.database))
     const registration = Layer.mergeAll(
       Interpreter.layerWithImplementations(Waiting, Todo.Await.toLayer(Todo.steps(ctx.services).awaitMerge)).pipe(Layer.provideMerge(Action.layerImplementations)),
-      TodoBaseClosed.registration({ ...ctx.services, cancel: (id) => cancel(id) }),
+      TodoBaseClosed.registration({ ...ctx.services, database: recoverableDatabase, cancel: (id) => cancel(id) }),
     )
     const scope = Effect.runSync(Scope.make())
     try {
@@ -1253,6 +1306,7 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
       await eventually(async () => (await Effect.runPromise(engine.status(executionId))) === "cancelled", 20_000)
       expect(ctx.github.issues.get(published.prNumber)!.state).toBe(outcome === "refused" ? "open" : "closed")
       expect(await todo(2)).toMatchObject({ state: "failed", failure: "base_closed" })
+      expect(discoveryConnections).toBeGreaterThan(1)
     } finally {
       await Effect.runPromise(Scope.close(scope, Exit.void))
     }
@@ -1310,11 +1364,33 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     expect(requests).toEqual([{ attemptId: start1.attemptId, todoId: start1.todoId, baseClosed: true }])
   })
 
+  test("a base lookup outage after inspecting an open PR returns an unavailable wait, then recovers", async () => {
+    const ctx = await setup()
+    const { start2, begun, published } = await stacked(ctx)
+    let opened = 0
+    const flaky = { ...ctx, services: { ...ctx.services,
+      database: Layer.unwrap(Effect.sync(() => ++opened === 2 ? unreachable : ctx.services.database)),
+    } }
+    const payload = { request: start2, begun, published }
+    expect(failure(await step(flaky, (steps) => steps.awaitMerge(payload)))).toMatchObject({ step: "await" })
+    expect(opened).toBe(2)
+    expect(await todo(2)).toMatchObject({ state: "in_review", prNumber: published.prNumber })
+    expect(failure(await step(ctx, (steps) => steps.await(payload)))).toMatchObject({ _tag: "@smthrs/mvp/todo/StillOpen" })
+  })
+
   test("a closed base fences collection and publishing before another PR is created", async () => {
     const ctx = await setup()
     const { start2, begun } = await stacked(ctx)
     await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya,
       via: "person", op: { kind: "drop", number: 1 } }, { runs: true }))
+    for (const event of [
+      { kind: "step", step: "implement" },
+      { kind: "branch", branch: begun.branch, baseSha: begun.baseSha, baseRef: begun.baseRef! },
+      { kind: "published", headSha: begun.baseSha, prNumber: 999, draft: true },
+    ] as const) {
+      expect(await runtime.runPromise(Stack.report(start2, event, { runs: true })))
+        .toEqual({ outcome: "base_closed", starts: [] })
+    }
     const count = ctx.github.pulls.size
     expect(failure(await step(ctx, (steps) => steps.collect({ request: start2, begun })))).toMatchObject({ failure: "base_closed" })
     expect(failure(await step(ctx, (steps) => steps.publish({ request: start2, begun, collected: { additions: [], deletions: [] } })))).toMatchObject({ failure: "base_closed" })
@@ -1596,6 +1672,97 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     )
     const begun2 = await dispatched(ctx, (steps) => steps.begin({ request: starts[0]! }))
     expect(failure(begun2)).toMatchObject({ failure: "base_closed" })
+  })
+
+  test.each([true, false])("a restored attempt without a pinned base checks its predecessor's branch (exists=%s)", async (exists) => {
+    const ctx = await setup()
+    const first = (await commit("One", "First"))!
+    await commit("Two", "Second")
+    const branch = "smithers/legacy-base"
+    const sha = exists ? ctx.github.push(branch, { "ONE.md": "one" }) : BASE()
+    await runtime.runPromise(Stack.report(first, { kind: "branch", branch, baseRef: "main", baseSha: sha }, { runs: true }))
+    const second = (await runtime.runPromise(Stack.report(first, { kind: "published", headSha: sha, prNumber: 1, draft: false }, { runs: true }))).starts[0]!
+    // The persisted shape before admission pinned the base: Begin must still restore it.
+    await sql(runtime, `UPDATE todos SET base_ref = NULL WHERE id = '${second.todoId}'`)
+    const result = await dispatched(ctx, (steps) => steps.begin({ request: second }))
+    if (exists) expect(result).toMatchObject({ _tag: "Success", value: { baseRef: branch, baseSha: sha } })
+    else expect(failure(result)).toMatchObject({ failure: "base_closed" })
+  })
+
+  test("a base dropped after branch creation fences the branch report before implementation", async () => {
+    const ctx = await setup()
+    const first = (await commit("One", "First"))!
+    await commit("Two", "Second")
+    const branch = "smithers/base"
+    const sha = ctx.github.push(branch, { "ONE.md": "one" })
+    await runtime.runPromise(Stack.report(first, { kind: "branch", branch, baseRef: "main", baseSha: sha }, { runs: true }))
+    const start2 = (await runtime.runPromise(Stack.report(first, { kind: "published", headSha: sha, prNumber: 1, draft: false }, { runs: true }))).starts[0]!
+    const http = HttpClient.transform(ctx.services.http, (execute, request) => execute.pipe(
+      Effect.tap(() => request.method === "POST" && request.url.endsWith("/git/refs")
+        ? Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person",
+          op: { kind: "drop", number: 1 } }, { runs: true }).pipe(Effect.provide(ctx.services.database), Effect.orDie)
+        : Effect.void),
+    ))
+    const raced = { ...ctx, services: { ...ctx.services, http } }
+    const result = await dispatched(raced, (steps) => steps.begin({ request: start2 }))
+    expect(failure(result)).toMatchObject({ failure: "base_closed" })
+    expect(await todo(2)).toMatchObject({ branch: null })
+    expect(await todo(1)).toMatchObject({ state: "dropped" })
+  })
+
+  test.each(["gone", "merged", "open"] as const)("a wait reads an unprojected %s predecessor from GitHub", async (state) => {
+    const ctx = await setup()
+    const { pull1, start2, begun, published } = await stacked(ctx)
+    if (state === "gone") ctx.github.remove(pull1.number)
+    if (state === "merged") ctx.github.merge(pull1.number)
+    const result = await step(ctx, (steps) => steps.await({ request: start2, begun, published }))
+    if (state === "gone") {
+      expect(failure(result)).toMatchObject({ failure: "base_closed" })
+      expect(ctx.github.issues.get(published.prNumber)!.state).toBe("closed")
+    } else {
+      expect(failure(result)).toMatchObject({ _tag: "@smthrs/mvp/todo/StillOpen" })
+      expect(ctx.github.pulls.get(published.prNumber)!.base).toBe(state === "merged" ? "main" : begun.baseRef)
+    }
+  })
+
+  test.each(["absent", "replaced", "merged", "dropped"] as const)("a saved invalidation leaves a now %s descendant alone", async (state) => {
+    let cancellations = 0
+    const ctx = await setup({ cancel: () => Effect.sync(() => { cancellations++ }) })
+    const start = (await commit("One", "First"))!
+    if (state === "merged" || state === "dropped") await runtime.runPromise(Stack.report(start, { kind: "finished", state }, { runs: true }))
+    const request = { ...start, prNumber: null,
+      ...(state === "absent" ? { attemptId: crypto.randomUUID() } : {}),
+      ...(state === "replaced" ? { ordinal: start.ordinal + 1 } : {}),
+    }
+    await runtime.runPromise(TodoBaseClosed.stop(ctx.services)({ descendants: [request] }))
+    expect(cancellations).toBe(0)
+    expect(await todo(1)).toMatchObject({ state: state === "merged" || state === "dropped" ? state : "working" })
+  })
+
+  test.each(["missing", "interrupted"] as const)("invalidation with a %s cancellation service leaves the attempt unsettled", async (fault) => {
+    const ctx = await setup(fault === "interrupted" ? { cancel: () => Effect.interrupt } : {})
+    const start = (await commit("One", "First"))!
+    const result = await runtime.runPromise(Effect.exit(TodoBaseClosed.stop(ctx.services)({ descendants: [{ ...start, prNumber: null }] })))
+    if (fault === "missing") expect(failure(result)).toMatchObject({ step: "settle" })
+    else expect(result._tag === "Failure" && Cause.hasInterrupts(result.cause)).toBe(true)
+    expect(await todo(1)).toMatchObject({ state: "working", failure: null })
+  })
+
+  test("invalidation starts a queued Retry when cancelling a descendant frees its lane", async () => {
+    const cancelled: Array<string> = []
+    const ctx = await setup({ cancel: (id) => Effect.sync(() => { cancelled.push(id) }) })
+    const first = (await commit("One", "First"))!
+    await commit("Two", "Second")
+    await runtime.runPromise(Stack.report(first, { kind: "branch", branch: "base", baseRef: "main", baseSha: BASE() }, { runs: true }))
+    const second = (await runtime.runPromise(Stack.report(first, { kind: "published", headSha: BASE(), prNumber: 1, draft: false }, { runs: true }))).starts[0]!
+    await commit("Three", "Third")
+    await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person", op: { kind: "drop", number: 1 } }, { runs: true }))
+    await runtime.runPromise(Stack.apply({ opId: crypto.randomUUID(), repoId: REPOSITORY.id, actor: maya, via: "person", op: { kind: "retry", number: 3 } }, { runs: true }))
+    await runtime.runPromise(TodoBaseClosed.stop(ctx.services)({ descendants: [{ ...second, prNumber: null }] }))
+    expect(cancelled).toEqual([todoExecutionId(second.attemptId)])
+    expect(ctx.starts).toMatchObject([{ flow: Todo.Todo._tag, payload: { number: 3 } }])
+    expect(await todo(2)).toMatchObject({ state: "failed", failure: "base_closed" })
+    expect(await todo(3)).toMatchObject({ state: "working" })
   })
 
   test("settle and fail: an ended run changes nothing, a stale report ends it, and Postgres down is retried", async () => {

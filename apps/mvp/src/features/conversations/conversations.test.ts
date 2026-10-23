@@ -129,6 +129,30 @@ describe("your conversations", () => {
     await until(() => expect(phone.list()).toEqual(["feature/one"]))
   }, WITHIN)
 
+  test("a device clock behind its pending archive still restores with a later act", async () => {
+    const api = await openApi()
+    const laptop = await openDevice(api)
+    await laptop.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(laptop.list()).toEqual(["feature/one"]))
+    const store = await laptop.runtime.runPromise(Effect.service(ConversationsStore))
+    const conversationId = laptop.branch.queries.current.toArray[0]!.conversationId!
+    const future = Date.now() + 60_000
+    // A persisted act from a device whose clock was ahead has not reached the server yet.
+    await laptop.runtime.runPromise(store.pending.insert({ conversationId, archived: true, at: future }))
+    await laptop.actions.archive(conversationId, false)
+    await until(() => expect(store.mine.tanstack.get(conversationId)?.changedAt).toBeDefined())
+    await until(() => expect(laptop.pending()).toEqual([]))
+    expect(new Date(store.mine.tanstack.get(conversationId)!.changedAt).getTime()).toBeGreaterThan(future)
+    expect(laptop.list()).toEqual(["feature/one"])
+
+    const later = future + 60_000
+    await laptop.runtime.runPromise(store.pending.insert({ conversationId, archived: true, at: later }))
+    await laptop.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(laptop.pending()).toEqual([]))
+    expect(new Date(store.mine.tanstack.get(conversationId)!.changedAt).getTime()).toBeGreaterThan(later)
+    expect(laptop.list()).toEqual(["feature/one"])
+  }, WITHIN)
+
   test("search matches the repository and the branch, every word", async () => {
     const api = await openApi()
     const laptop = await openDevice(api)

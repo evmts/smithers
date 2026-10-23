@@ -275,7 +275,7 @@ test("start is the boundary: it builds the one runtime, renders the chat layer o
     }
   })()
   const rendered: Array<ChatView> = []
-  const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice({ codeIntelWorker: inProcessWorker }) }
+  const page = { origin: api.origin, fetch: api.fetch, reload: api.reload, host: nodeDevice({ codeIntelWorker: inProcessWorker, pathname: () => "/" }) }
   const { stop } = start(
     { ...page, target, startedAt: Date.now(), render: (chat) => {
       // Auth's subscriber is attached before the page becomes interactive; chat's subscriber follows rendering.

@@ -816,3 +816,14 @@ test("a queued Retry starts when cleanup frees the last lane in the same base_cl
   expect(settled.starts).toMatchObject([{ number: 3, ordinal: 1 }])
   expect((await runtime.runPromise(Stack.belowOf(settled.starts[0]!)))._tag).toBe("None")
 })
+
+test("descendant discovery ignores absent attempts, branchless work and a base that is still open", async () => {
+  const made = await applyOn(commit(), true)
+  if (made.kind !== "applied") throw new Error("commit refused")
+  const first = made.receipt.starts[0]!
+  expect(await runtime.runPromise(Stack.descendants({ ...first, attemptId: uuid() }))).toEqual([])
+  expect(await runtime.runPromise(Stack.descendants(first))).toEqual([])
+  await runtime.runPromise(Stack.report(first, { kind: "branch", branch: "open-base", baseRef: "main", baseSha: "a".repeat(40) }, { runs: true }))
+  expect(await runtime.runPromise(Stack.descendants(first))).toEqual([])
+  expect(await sql("SELECT state, failure FROM todos")).toEqual([{ state: "working", failure: null }])
+})

@@ -90,6 +90,10 @@ test("start conflicts are idempotent, unavailable hosts propagate and cancellati
   yield* TodoRuns.make({ start: () => Effect.fail(new Flows.StartConflict()) }, () => Effect.void).stop(attempt)
   expect(yield* Effect.flip(TodoRuns.make({ start: () => Effect.fail(new Flows.StartUnavailable({ errorCode: "down" })) }, () => Effect.void).stop(attempt)))
     .toEqual(new Stack.RunsUnavailable({ errorCode: "down" }))
+  // Invalidation starts successfully, then the independent PR cleanup launch fails.
+  expect(yield* Effect.flip(TodoRuns.make({ start: (flow) => flow._tag === TodoDrop.Drop._tag
+    ? Effect.fail(new Flows.StartUnavailable({ errorCode: "cleanup_down" })) : Effect.void }, () => Effect.void).stop(attempt)))
+    .toEqual(new Stack.RunsUnavailable({ errorCode: "cleanup_down" }))
   const adapter = TodoRuns.make({ start: () => Effect.void }, () => Effect.die(new Error("private-provider-message")))
   expect(yield* Effect.flip(adapter.stop(attempt))).toEqual(new Stack.RunsUnavailable({ errorCode: "unknown" }))
   const interrupted = TodoRuns.make({ start: () => Effect.void }, () => Effect.interrupt)

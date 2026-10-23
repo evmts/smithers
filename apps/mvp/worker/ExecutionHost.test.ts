@@ -329,6 +329,7 @@ describe("ExecutionHost over the compose Postgres", () => {
           flows: ExecutionHost.remote(services),
           router: recording().router,
         })
+        yield* host.signal(WaitFor.deferred("before-start").name)
         expect(yield* host.wake()).toBe(false)
         expect(object.alarm()).toBeNull()
         const payload = { label: "z", pauseMs: 60_000 }

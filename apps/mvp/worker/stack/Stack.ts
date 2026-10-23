@@ -400,8 +400,8 @@ export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly
           ? { outcome: "repeated", starts: Schema.decodeUnknownSync(Schema.Array(AttemptStart))(recorded.finishedReport.starts) } satisfies Reported
           : { outcome: "stale", starts: [] } satisfies Reported
       }
-      const rows = yield* sql<Row>`
-        SELECT t.id, t.number, t.state, t.position, t.attempt, t.revision,
+      const rows = yield* sql<Row & { readonly baseRef: string | null }>`
+        SELECT t.id, t.number, t.state, t.position, t.attempt, t.revision, t.base_ref AS "baseRef",
           (t.failure = 'base_closed' OR i.state = 'closed' AND NOT p.merged) IS TRUE AS "baseClosed", t.base_reset AS "baseReset"
         FROM todos t LEFT JOIN pulls p ON p.repo_id = t.repo_id AND p.number = t.pr_number
         LEFT JOIN items i ON i.id = p.item_id
@@ -411,8 +411,9 @@ export const report = (attempt: RunAttempt, event: RunEvent, options: { readonly
         (todo.state === "working" || todo.state === "in_review")
       if (!holds) return { outcome: "stale", starts: [] } satisfies Reported
       if (event.kind !== "finished") {
-        const current = yield* attemptTodo(attempt)
-        const base = event.kind === "branch" ? event.baseRef : Option.isSome(current) ? current.value.baseRef : null
+        // `holds` established the current TODO and attempt under the stack lock. Read its base
+        // from that same row; a second optional prompt lookup cannot change admission.
+        const base = event.kind === "branch" ? event.baseRef : todo.baseRef
         if (base !== null && (yield* closedBase(attempt.repoId, base))) return { outcome: "base_closed", starts: [] } satisfies Reported
       }
       if (event.kind === "step") {
