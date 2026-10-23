@@ -904,3 +904,26 @@ test("a legacy headerless queued write cannot commit with the next person's cook
   expect(auth.revocations).toEqual([])
   expect(await auth.session(bob.cookies)).toMatchObject({ signedIn: true, personId: identity.personId })
 })
+
+test("a forged sign-out cookie revokes nobody, and a signed run without a session id is ended", async () => {
+  const h = await signInHarness(runtime)
+  await h.signInAs()
+  const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(SECRET)))
+  const out = await h.fetch("/api/auth/sign-out", { method: "POST", headers: {
+    origin: "http://smithers.test", cookie: "smithers_session=forged", [DEVICE_PERSON_HEADER]: "absent-person",
+  } })
+  expect(out.status).toBe(204)
+  expect((await sessionRows())[0]!.revokedAt).toBeNull()
+  const { Base64Url } = await import("effect/encoding")
+  const token = await Effect.runPromise(keys.sign("run", Base64Url.encode(JSON.stringify({
+    v: 1, sub: (await sessionRows())[0]!.personId, run: "orphan", root: "orphan", act: "flow", chain: ["watch/set"], ceiling: [], exp: Date.now() + 60_000,
+  }))))
+  const response = await h.fetch("/api/auth/session", { headers: { authorization: `Bearer ${token}` } })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ signedIn: false, available: true })
+  // Identity reads intentionally ignore bearer credentials; a protected app route verifies this token.
+  const app = await harness(runtime, answers("Unused"), { sessions: h.sessions })
+  const write = await app.fetch("/api/watches", { method: "POST", headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ conversationId: null }) })
+  expect(write.status).toBe(401)
+  expect(app.snapshot()).toContainEqual(expect.objectContaining({ id: "smithers_run_credentials", attributes: expect.objectContaining({ op: "verify", outcome: "ended" }) }))
+})
