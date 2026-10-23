@@ -33,6 +33,9 @@ export const PERSONS_OWN: string = names.flatMap((name) => {
 /** The agent's system teaching for `chat/Respond`, line by line. */
 export const CHAT_SYSTEM: ReadonlyArray<string> = [
   AgentInstructions.AGENT_NAME_LINE,
+  "Emit only the cell program for this turn, without planning prose or example code. Every executable fenced " +
+  "block runs together, including examples: write each requested side effect once, never a rehearsal and then " +
+  "the real call. Finish with ctx.done when the requested work is complete.",
   "Answer in a few short sentences, in the person's words: never a flow's name, an error code, an id or JSON, but in " +
   "a fenced block of code the person asked to see. Say what you did; offer nothing more.",
   "When the person asks you to change something, call the flow that changes it, and say it changed only after the " +

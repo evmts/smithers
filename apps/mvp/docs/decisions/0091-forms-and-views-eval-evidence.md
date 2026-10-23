@@ -48,3 +48,9 @@ The conversation archive case's expectation was correct. Its harness omitted
 the real ConversationApi route and therefore refused a valid archive request.
 Route that API through the same database and authenticated test boundary as
 production. A real openAgent regression verifies the persisted archive flag.
+
+A complete follow-up run exposed duplicate drafting: the model printed an
+example call in its planning and then the intended cell. The cell contract
+executes all executable fences together, so both drafts were real. Teach the
+chat seat to emit only its cell program and each requested effect once. The
+unchanged `flow-new` exact-once and one-draft checks retain this regression.
