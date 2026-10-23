@@ -1,6 +1,11 @@
 /* Page layout only: the top bar's bell at the window's top-right, on every page whose header doesn't hold it. */
 .root-bell { position: fixed; z-index: 30; top: 0.625rem; right: 0.75rem; }
 
+/* Narrow repository pages already put the bell in their wrapping header. */
+@media (max-width: 60rem) {
+  .repo-screen:has(.repo-header-bell) ~ .root-bell { display:none; }
+}
+
 /* Live notices reserve their own space. The top strip keeps the floating bell usable on narrow screens too. */
 .root-notices { max-width:56rem; margin:0 auto; padding:3rem 1rem 0; box-sizing:border-box; }
 .root-notices:empty { display:none; }
