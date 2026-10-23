@@ -5,7 +5,7 @@
 // would.
 import type { SandboxTools } from "@smthrs/sandbox"
 import { PresenceProtocol, SharedText } from "@smthrs/sync"
-import { type Duration, Effect, Exit, Layer, type ManagedRuntime, Metric } from "effect"
+import { type Duration, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
 import { Base64 } from "effect/encoding"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -22,6 +22,7 @@ import {
   openTab,
   openTestApp,
   type TabOptions,
+  tabLayer,
   TestChatApi,
 } from "../../test/chatApi"
 import { EngineFaults } from "../../test/faults"
@@ -34,7 +35,7 @@ import { Commands } from "../commands/commands"
 import { postUpdate, TextsClient, UpdateNotTaken } from "./api"
 import { textRoomRoute } from "./contract"
 import { sends } from "./metrics"
-import { decodeCursor, encodeCursor } from "./store"
+import { CoeditStore, decodeCursor, encodeCursor, SAVED_MARK, savedMarkOf } from "./store"
 import { answerOf, fileOf, openAnswerOf, promptOf, saveLabelOf } from "./view"
 import { TextWrites } from "./writes"
 
@@ -53,7 +54,7 @@ const ben: Actor = { subject: { kind: "person", id: "person-ben" }, role: "membe
 
 /** One person's tab: their branch layer with its texts, their composer, and what they type with. */
 const tab = async (
-  runtime: ManagedRuntime.ManagedRuntime<Branch | Chat | ChatStore | Commands | AuthStore | TextWrites, unknown>,
+  runtime: ManagedRuntime.ManagedRuntime<Branch | Chat | ChatStore | Commands | AuthStore | TextWrites | CoeditStore, unknown>,
   login: string,
 ) => {
   const close = async () => {
@@ -82,6 +83,7 @@ const tab = async (
     type: commands.actions.type,
     submit: commands.actions.submit,
     texts,
+    marks: (id: string) => runtime.runPromise(Effect.flatMap(CoeditStore, (store) => store.live(id)!.replica.marks)),
     prompt: () => promptOf(texts()),
     draft: () => chat.queries.composer.toArray[0]?.draft,
     saved: () => chat.queries.composer.toArray[0]?.saved,
@@ -333,8 +335,16 @@ describe("the shared prompt", () => {
       Effect.forEach([Base64.encode(new Uint8Array([7, 255, 1, 3])), "%%%not-base64"], (data) =>
         sql`INSERT INTO text_updates (id, scope, text_id, data, person_id)
           VALUES (${crypto.randomUUID()}, ${scope}, ${textId}, ${data}, 'person-member')`)))
-    const other = await opened.ownTab()
+    const invalid: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+    const other = await tab(ManagedRuntime.make(tabLayer(opened.api, {
+      webSocket: dialing(opened.rooms.origin, { id: member.subject.id, name: "member", access: "write" }),
+    }).pipe(Layer.provide(Logger.layer([Logger.make((entry) => {
+      const line = Logger.formatStructured.log(entry)
+      if (line.message === "coedit.apply") invalid.push(line)
+    })])))), member.subject.id)
     await other.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(invalid.filter((line) => line.annotations.textId === textId)).toHaveLength(2))
+    expect(invalid.map((line) => line.annotations.outcome)).toEqual(["invalid", "invalid"])
     await until(() => expect(other.draft()).toBe("stands"))
   }, WITHIN)
 })
@@ -629,12 +639,18 @@ describe("a shared file", () => {
       generation: 1,
     }))
     await benSaving
+    // The later completion must observe the earlier mark, rather than race concurrent CRDT marks.
+    await until(async () => expect((await owner.marks(fileId)).get(SAVED_MARK)).toBe(savedMarkOf(y)))
     await opened.run(settle(ownerWrite.callId, {
       status: "done",
       result: { tool: "write", path: "styles.css", bytes: x.length },
       generation: 1,
     }))
     await ownerSaving
+    await until(async () => {
+      expect((await owner.marks(fileId)).get(SAVED_MARK)).toBe(savedMarkOf(x))
+      expect((await benTabOpen.marks(fileId)).get(SAVED_MARK)).toBe(savedMarkOf(x))
+    })
     await until(() => {
       expect(fileOf(owner.texts(), conversation, "styles.css")).toMatchObject({ text: x, saved: false })
       expect(fileOf(benTabOpen.texts(), conversation, "styles.css")).toMatchObject({ text: x, saved: false })
@@ -836,3 +852,19 @@ describe("cursors in a room", () => {
     expect(decodeCursor(JSON.stringify({ a: "%%%", h: "AA==" }))).toBeUndefined()
   })
 })
+
+test("a synced history deletion cannot erase text already applied to an open editor", async () => {
+  const opened = await open()
+  await openShared(opened, opened.owner)
+  const host = nodeDevice({ agent: opened.api })
+  const other = await opened.ownTab(host)
+  await other.branch.actions.open("octo", "hello", "feature/one")
+  opened.owner.type("stands", { anchor: 6, head: 6 })
+  await until(() => expect(other.draft()).toBe("stands"))
+  const id = other.prompt()!.id
+  await until(() => expect(host.stored(`text-updates:${id}`)).toBeGreaterThan(0))
+  // A faulty persisted history emits a real Electric deletion, rather than a text edit.
+  await opened.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`DELETE FROM text_updates WHERE text_id = ${id}`))
+  await until(() => expect(host.stored(`text-updates:${id}`)).toBe(0))
+  expect(other.draft()).toBe("stands")
+}, WITHIN)
