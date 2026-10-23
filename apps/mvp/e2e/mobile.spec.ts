@@ -80,7 +80,7 @@ const screens = [
   { name: "flows", path: "/app/flows", ready: 'main[aria-label="Flows"]' },
   { name: "new-flow", path: "/app/flows/new", ready: "main" },
   { name: "settings", path: "/app/settings", ready: 'main[aria-label="Settings"]' },
-  { name: "docs", path: "/smithersai/vibelang/docs", ready: '[aria-label="Docs"]' },
+  { name: "docs", path: "/smithersai/vibelang/docs", ready: '.docs-page-index' },
   { name: "doc-page", path: "/smithersai/vibelang/docs/error-management/018-retrying.md", ready: '[aria-label="Docs"]' },
   { name: "queue", path: "/app/queue", ready: "main" },
   { name: "terminal", path: "/octocat/Spoon-Knife/tree/test-branch?terminal=me", ready: ".terminal-panel" },

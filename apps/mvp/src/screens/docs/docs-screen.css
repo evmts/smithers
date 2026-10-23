@@ -5,6 +5,9 @@
 .docs-page-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .docs-page-links a { overflow-wrap: anywhere; }
 .docs-page-links a[aria-current="page"] { font-weight: 600; }
+@media (max-width: 60rem) {
+  .docs-page-links a { display:flex; align-items:center; min-width:32px; min-height:32px; }
+}
 .docs-page-index h1 { margin: 0 0 0.5rem; }
 .docs-page-index p { margin: 0; max-width: 48rem; }
 .docs-page-shown { min-width: 0; }
