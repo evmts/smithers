@@ -34,7 +34,7 @@ notifications ─▶ Electric (/api/shapes/notifications, your rows) ─▶ ever
 | someone else's run | `◌ Working · <who> · <question>`, then 4 s after it settles | none |
 | `main`, a release | 4 s | 7 days; expanded, who pushed or published |
 
-- **Over a conversation**, its own runs show in it instead of as toasts, unless they need you. `/app` and branch pages place the same stack under their headers beside the spend alerts (`src/screens/app/Toasts.tsx`), above their composers; every other page floats it at the bottom-left (`src/screens/root/Root.tsx`, `PageNotices`).
+- **Over a conversation**, its own runs show in it instead of as toasts, unless they need you. `/app` and branch pages place the same stack under their headers beside the spend alerts (`src/screens/app/Toasts.tsx`), above their composers. Every other page reserves space for the stack above its screen (`src/screens/root/Root.tsx`, `PageNotices`; [0036](../decisions/0036-toasts-reserve-page-space.md)).
 - **Order:** needs you, failed, live, done, updates; the newest first within each. Three toasts show; `+N` counts the rest and your list, and opens the panel.
 - **Clicking a toast** opens what it is about: a run's conversation at its answer (`<href>#<run id>`, which the router scrolls into view), or your question's card, which takes focus; `main`, the repository; a release, its tag.
 - **×** hides a toast (the entry stays in your list); in the panel, × dismisses a settled entry and hides a live one.

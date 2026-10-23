@@ -3,9 +3,11 @@
 // Postgres and Electric (src/test/chatApi.ts). A person drafts a flow, answers its question, saves it, runs it, watches
 // its run page, stops a run and retries one, and opens, edits and saves its code. The model is the only scripted piece:
 // each model call waits for the test's answer.
-import { Effect, type ManagedRuntime } from "effect"
+import { Deferred, Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { nodeDevice, openTab, openTestApp, TestChatApi } from "../../test/chatApi"
+import { Chat } from "../chat/chat"
+import { RunsNavigation } from "../runs/actions"
 import { RUNS_PATH } from "../runs/contract"
 import type { Inspection } from "../runs/schema"
 import { listRows } from "../runs/page"
@@ -14,7 +16,9 @@ import { codeSaveable, formReady, savedRefusal, writtenRefusal } from "./actions
 import { codePath, draftFailureWords, draftPath, FLOWS_PATH, NEW_FLOW_PATH, writeRefusalWords } from "./contract"
 import { type RunStatus, shownRound } from "./round"
 import { FlowsUi } from "./flowsUi"
+import { awaitEditorWrites } from "./editorWrites"
 import { placementOf, renderSource, SOURCE_PATH } from "./source"
+import { FlowsUiStore } from "./store"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -45,7 +49,7 @@ const open = async () => {
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const host = nodeDevice({ agent: api })
-  const tab: ManagedRuntime.ManagedRuntime<FlowsUi | Runs, unknown> = openTab(api, { host })
+  const tab = openTab(api, { host })
   runtimes.push(tab)
   const flows = await tab.runPromise(Effect.service(FlowsUi))
   const runs = await tab.runPromise(Effect.service(Runs))
@@ -55,6 +59,7 @@ const open = async () => {
   return {
     api,
     host,
+    runtime: tab,
     flows,
     runs,
     went,
@@ -68,6 +73,285 @@ const open = async () => {
 }
 
 type Tab = Awaited<ReturnType<typeof open>>
+
+test("a PWA reload restores an unfinished flow request and its unsent answer from device storage", async () => {
+  const t = await open()
+  const draftId = crypto.randomUUID()
+  t.flows.queries.form.startSyncImmediate()
+  t.flows.actions.setName("kept")
+  await until(() => expect(t.flows.queries.form.toArray[0]?.name).toBe("kept"))
+  t.flows.actions.setRequest("Keep this request")
+  t.flows.actions.setAnswer(draftId, "question", "Keep this answer")
+  await awaitEditorWrites()
+  await until(() => expect(t.host.stored("flow-answers")).toBe(1))
+  await until(() => expect(t.flows.queries.form.toArray[0]).toMatchObject({ name: "kept", request: "Keep this request" }))
+  expect(t.host.stored("flow-form")).toBe(1)
+  expect(t.host.stored("flow-answers")).toBe(1)
+  await t.runtime.dispose()
+
+  const reloaded = openTab(t.api, { host: t.host })
+  runtimes.push(reloaded)
+  const flows = await reloaded.runPromise(Effect.service(FlowsUi))
+  flows.queries.form.startSyncImmediate()
+  flows.queries.answers.startSyncImmediate()
+  await flows.actions.openNew(undefined)
+  await until(() => expect(flows.queries.form.toArray[0]).toMatchObject({ name: "kept", request: "Keep this request" }))
+  expect(flows.queries.answers.toArray).toContainEqual(expect.objectContaining({
+    id: `${t.host.editorTabId}:${draftId}:question`, tabId: t.host.editorTabId, draftId, questionId: "question", value: "Keep this answer",
+  }))
+  await flows.actions.openNew("another")
+  expect(flows.queries.form.toArray[0]).toMatchObject({ name: "kept", request: "Keep this request" })
+  flows.actions.setRequest("")
+  await awaitEditorWrites()
+  await flows.actions.openNew("another")
+  await until(() => expect(flows.queries.form.toArray[0]).toMatchObject({ name: "another", request: "" }))
+  await flows.actions.openNew(undefined)
+  flows.actions.setName("same")
+  await until(() => expect(flows.queries.form.toArray[0]).toMatchObject({ name: "same", seeded: false }))
+  await flows.actions.openNew("same")
+  await flows.actions.openNew(undefined)
+  await until(() => expect(flows.queries.form.toArray[0]).toMatchObject({ name: "", seeded: false }))
+}, WITHIN)
+
+test("two tabs keep separate unfinished flow requests and answers through reload", async () => {
+  const t = await open()
+  const otherHost = { ...t.host, editorTabId: crypto.randomUUID() }
+  const other = openTab(t.api, { host: otherHost })
+  runtimes.push(other)
+  const otherFlows = await other.runPromise(Effect.service(FlowsUi))
+  for (const query of [t.flows.queries.form, t.flows.queries.answers, otherFlows.queries.form, otherFlows.queries.answers]) query.startSyncImmediate()
+  const draftId = crypto.randomUUID()
+  t.flows.actions.setName("first")
+  t.flows.actions.setAnswer(draftId, "question", "first answer")
+  otherFlows.actions.setName("second")
+  otherFlows.actions.setAnswer(draftId, "question", "second answer")
+  await until(() => expect(t.host.stored("flow-form")).toBe(2))
+  await until(() => expect(t.host.stored("flow-answers")).toBe(2))
+  await until(() => expect(t.flows.queries.form.toArray[0]?.name).toBe("first"))
+  await until(() => expect(otherFlows.queries.form.toArray[0]?.name).toBe("second"))
+  expect(t.flows.queries.answers.toArray[0]?.value).toBe("first answer")
+  expect(otherFlows.queries.answers.toArray[0]?.value).toBe("second answer")
+  await other.dispose()
+  await t.runtime.dispose()
+
+  const firstReload = openTab(t.api, { host: t.host })
+  const secondReload = openTab(t.api, { host: otherHost })
+  runtimes.push(firstReload, secondReload)
+  const first = await firstReload.runPromise(Effect.service(FlowsUi))
+  const second = await secondReload.runPromise(Effect.service(FlowsUi))
+  for (const query of [first.queries.form, first.queries.answers, second.queries.form, second.queries.answers]) query.startSyncImmediate()
+  await until(() => expect(first.queries.form.toArray[0]?.name).toBe("first"))
+  await until(() => expect(second.queries.form.toArray[0]?.name).toBe("second"))
+  expect(first.queries.answers.toArray[0]?.value).toBe("first answer")
+  expect(second.queries.answers.toArray[0]?.value).toBe("second answer")
+}, WITHIN)
+
+test("a late code keystroke cannot replace a pending editor stash or leave the returned editor blank", async () => {
+  const t = await open()
+  const isolated = ManagedRuntime.make(FlowsUiStore.layer({
+    origin: t.api.origin, editorTabId: t.host.editorTabId, editorTabPersistent: t.host.editorTabPersistent,
+  }).pipe(Layer.provideMerge(Layer.succeedContext(await t.runtime.context()))))
+  runtimes.push(isolated)
+  const store = await isolated.runPromise(Effect.service(FlowsUiStore))
+  await isolated.runPromise(store.code.update(store.codeId, (row) => {
+    row.name = "first"
+    row.state = "read"
+    row.source = "current source"
+    row.text = "retained edit"
+  }))
+  const release = await isolated.runPromise(Deferred.make<void>())
+  let holdFirstReceipt = true
+  let updates = 0
+  const delayedCode = new Proxy(store.code, { get(target, key) {
+    if (key !== "update") return Reflect.get(target, key)
+    return (...args: Parameters<typeof target.update>) => {
+      updates += 1
+      return target.update(...args).pipe(Effect.map((write) => {
+        if (!holdFirstReceipt) return write
+        holdFirstReceipt = false
+        return { ...write, persisted: Deferred.await(release).pipe(Effect.andThen(write.persisted)) }
+      }))
+    }
+  } })
+  const delayedStore = FlowsUiStore.of({ ...store, code: delayedCode })
+  const ui = ManagedRuntime.make(FlowsUi.layer.pipe(
+    Layer.provide(Layer.succeed(FlowsUiStore, delayedStore)),
+    Layer.provideMerge(Layer.succeedContext(await t.runtime.context())),
+    Layer.provide(Layer.succeed(RunsNavigation, RunsNavigation.of({ navigate: t.host.navigate }))),
+  ))
+  runtimes.push(ui)
+  const flows = await ui.runPromise(Effect.service(FlowsUi))
+  const switching = flows.actions.openCode("second")
+  await until(async () => expect(await isolated.runPromise(store.code.get(store.codeId))).toMatchObject({
+    value: { name: "first", state: "loading", text: "retained edit" },
+  }))
+  flows.actions.editCode("first", "late input")
+  await until(() => expect(updates).toBe(2))
+  expect(await isolated.runPromise(store.code.get(store.codeId))).toMatchObject({
+    value: { name: "first", text: "retained edit" },
+  })
+  const returning = flows.actions.openCode("first")
+  await isolated.runPromise(Deferred.succeed(release, undefined))
+  await Promise.all([switching, returning])
+  expect(await isolated.runPromise(store.code.get(store.codeId))).toMatchObject({
+    value: { name: "first", state: "read", text: "retained edit" },
+  })
+}, WITHIN)
+
+test("an unretained tab identity refuses flow edits without blocking chat", async () => {
+  const t = await open()
+  const unretained = openTab(t.api, { host: { ...t.host, editorTabId: crypto.randomUUID(), editorTabPersistent: false } })
+  runtimes.push(unretained)
+  const flows = await unretained.runPromise(Effect.service(FlowsUi))
+  flows.queries.form.startSyncImmediate()
+  expect(flows.editorAvailable).toBe(false)
+  flows.actions.setRequest("Must not be stranded")
+  await awaitEditorWrites()
+  expect(flows.queries.form.toArray[0]?.request).toBe("")
+  expect(await unretained.runPromise(Effect.service(Chat))).toBeDefined()
+}, WITHIN)
+
+test("a database open failure refuses memory-only edits without blocking chat", async () => {
+  const t = await open()
+  t.flows.queries.form.startSyncImmediate()
+  t.flows.actions.setRequest("Retained on device")
+  await until(() => expect(t.host.storedRows("flow-form")).toContainEqual(expect.objectContaining({ request: "Retained on device" })))
+  await t.runtime.dispose()
+
+  const failedHost = { ...t.host, persistence: { ...t.host.persistence,
+    open: async () => { throw new Error("database unavailable") },
+  } }
+  const failed = openTab(t.api, { host: failedHost })
+  runtimes.push(failed)
+  const flows = await failed.runPromise(Effect.service(FlowsUi))
+  flows.queries.form.startSyncImmediate()
+  expect(flows.editorAvailable).toBe(false)
+  flows.actions.setRequest("Memory-only edit")
+  await awaitEditorWrites()
+  expect(flows.queries.form.toArray[0]?.request).toBe("")
+  expect(await failed.runPromise(Effect.service(Chat))).toBeDefined()
+  await failed.dispose()
+
+  const recovered = openTab(t.api, { host: t.host })
+  runtimes.push(recovered)
+  const restored = await recovered.runPromise(Effect.service(FlowsUi))
+  restored.queries.form.startSyncImmediate()
+  expect(restored.editorAvailable).toBe(true)
+  await until(() => expect(restored.queries.form.toArray[0]?.request).toBe("Retained on device"))
+}, WITHIN)
+
+test("an editor restore failure keeps retained text and leaves chat usable", async () => {
+  const t = await open()
+  t.flows.queries.form.startSyncImmediate()
+  t.flows.actions.setRequest("Retained request")
+  await until(() => expect(t.flows.queries.form.toArray[0]?.request).toBe("Retained request"))
+  await until(() => expect(t.host.storedRows("flow-form")).toContainEqual(expect.objectContaining({ request: "Retained request" })))
+  await t.runtime.dispose()
+
+  const originalMake = t.host.persistence.make
+  const selected: string[] = []
+  const brokenHost = { ...t.host, persistence: { ...t.host.persistence,
+    make: (database: Parameters<typeof originalMake>[0], coordinator: Parameters<typeof originalMake>[1]) => {
+      const normal = originalMake(database, coordinator)
+      return { ...normal, resolvePersistenceForCollection: (selection: { collectionId: string; mode: "sync-absent" | "sync-present"; schemaVersion?: number }) => {
+        selected.push(selection.collectionId)
+        const resolved = normal.resolvePersistenceForCollection?.(selection) ?? normal
+        const blocked = (adapter: object): object => new Proxy(adapter, { get: (target, property) => {
+          if (property === "loadResumeSnapshot" || property === "loadSubset") return () => Promise.reject(new Error("disk"))
+          const value = Reflect.get(target, property)
+          if (property === "runInHydrationScope" && typeof value === "function") {
+            return (task: (scoped: object) => Promise<unknown>) => value.call(target, (scoped: object) => task(blocked(scoped)))
+          }
+          return typeof value === "function" ? value.bind(target) : value
+        } })
+        return selection.collectionId === "flow-form"
+          ? { ...resolved, adapter: blocked(resolved.adapter) as typeof resolved.adapter }
+          : resolved
+      } }
+    },
+  } }
+  const broken = openTab(t.api, { host: brokenHost })
+  runtimes.push(broken)
+  const flows = await broken.runPromise(Effect.service(FlowsUi))
+  expect(selected).toContain("flow-form")
+  expect(flows.editorAvailable).toBe(false)
+  expect(await broken.runPromise(Effect.service(Chat))).toBeDefined()
+  expect(t.host.stored("flow-form")).toBe(1)
+  await broken.dispose()
+
+  const recovered = openTab(t.api, { host: t.host })
+  runtimes.push(recovered)
+  const restored = await recovered.runPromise(Effect.service(FlowsUi))
+  restored.queries.form.startSyncImmediate()
+  expect(restored.editorAvailable).toBe(true)
+  await until(() => expect(restored.queries.form.toArray[0]?.request).toBe("Retained request"))
+}, WITHIN)
+
+test("two tabs keep separate unsaved code edits through a PWA reload and revision check", async () => {
+  const t = await open()
+  await draftHello(t)
+  await until(() => expect(t.draft()?.draft.status).toBe("ready"))
+  t.flows.actions.save()
+  await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ name: "hello", revision: 1 }]))
+  await t.flows.actions.openCode("hello")
+  const source = t.flows.queries.code.toArray[0]!.source
+  const edited = source.replace("Say hello.", "Say hello again.")
+  expect(edited).not.toBe(source)
+  t.flows.actions.editCode("hello", edited)
+  await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(edited))
+  await t.flows.actions.openCode("nothing")
+  await until(() => expect(t.flows.queries.code.toArray[0]?.name).toBe("nothing"))
+  await t.flows.actions.openCode("hello")
+  await until(() => expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "hello", text: edited }))
+  // A PWA update waits for both tabs' editor writes before it reloads them.
+  await awaitEditorWrites()
+  const otherHost = { ...t.host, editorTabId: crypto.randomUUID() }
+  const other = openTab(t.api, { host: otherHost })
+  runtimes.push(other)
+  const otherFlows = await other.runPromise(Effect.service(FlowsUi))
+  otherFlows.queries.code.startSyncImmediate()
+  await otherFlows.actions.openCode("hello")
+  const otherEdited = source.replace("Say hello.", "Say hello from another tab.")
+  otherFlows.actions.editCode("hello", otherEdited)
+  await until(() => expect(otherFlows.queries.code.toArray[0]?.text).toBe(otherEdited))
+  await awaitEditorWrites()
+  await until(() => expect(t.host.stored("flow-code")).toBe(2))
+  await other.dispose()
+  await t.runtime.dispose()
+
+  const reloaded = openTab(t.api, { host: t.host })
+  runtimes.push(reloaded)
+  const flows = await reloaded.runPromise(Effect.service(FlowsUi))
+  flows.queries.flows.startSyncImmediate()
+  flows.queries.code.startSyncImmediate()
+  await flows.actions.openCode("hello")
+  await until(() => expect(flows.queries.code.toArray[0]).toMatchObject({
+    name: "hello", state: "read", revision: 1, source, text: edited, refusal: null,
+  }))
+  const otherReload = openTab(t.api, { host: otherHost })
+  runtimes.push(otherReload)
+  const otherRestored = await otherReload.runPromise(Effect.service(FlowsUi))
+  otherRestored.queries.flows.startSyncImmediate()
+  otherRestored.queries.code.startSyncImmediate()
+  await otherRestored.actions.openCode("hello")
+  await until(() => expect(otherRestored.queries.code.toArray[0]).toMatchObject({
+    name: "hello", state: "read", revision: 1, source, text: otherEdited, refusal: null,
+  }))
+  await otherRestored.actions.saveCode()
+  await until(() => expect(otherRestored.queries.flows.toArray[0]?.revision).toBe(2))
+  await flows.actions.saveCode()
+  await until(() => expect(flows.queries.code.toArray[0]).toMatchObject({
+    revision: 2, source: otherEdited, text: edited, refusal: "stale",
+  }))
+  await flows.actions.openCode("hello")
+  expect(flows.queries.code.toArray[0]?.refusal).toBe("stale")
+  await flows.actions.saveCode()
+  expect(flows.queries.flows.toArray[0]?.revision).toBe(2)
+  expect(flows.queries.code.toArray[0]?.refusal).toBe("stale")
+  await flows.actions.saveCode(true)
+  await until(() => expect(flows.queries.flows.toArray[0]?.revision).toBe(3))
+  expect(flows.queries.code.toArray[0]).toMatchObject({ revision: 3, source: edited, text: edited, refusal: null })
+}, WITHIN)
 
 test("a fresh persisted device opens a ready draft written through the API before navigation", async () => {
   const t = await open()
@@ -240,7 +524,8 @@ describe("a flow of your own, from a tab", () => {
     await t.flows.actions.openNew("hello")
     await until(() => expect(t.flows.queries.form.toArray[0]).toMatchObject({ name: "hello", request: "" }))
     await t.flows.actions.openNew(undefined)
-    await until(() => expect(t.flows.queries.form.toArray[0]).toMatchObject({ name: "" }))
+    // New flow clears an untouched name seeded by Edit; a typed form is kept instead.
+    await until(() => expect(t.flows.queries.form.toArray[0]).toMatchObject({ name: "", request: "" }))
     t.flows.actions.remove(flow.id)
     await until(() => expect(t.flows.queries.flows.toArray).toEqual([]))
   }, WITHIN)
@@ -272,7 +557,7 @@ describe("a flow of your own, from a tab", () => {
     t.flows.actions.setAnswer(draftId, "r0q1", "Howdy")
     await until(() =>
       expect(t.flows.queries.answers.toArray.map(({ id, questionId, value }) => ({ id, questionId, value }))).toEqual([
-        { id: `${draftId}:r0q1`, questionId: "r0q1", value: "Howdy" },
+        { id: `${t.host.editorTabId}:${draftId}:r0q1`, questionId: "r0q1", value: "Howdy" },
       ])
     )
     t.flows.actions.answer()
@@ -417,14 +702,14 @@ describe("a flow's code, from a tab", () => {
     t.flows.actions.saveCode()
 
     // A check that fails stays on the page, by its code.
-    t.flows.actions.editCode(drafted.replace(`Flow.make("hello"`, `Flow.make("goodbye"`))
+    t.flows.actions.editCode("hello", drafted.replace(`Flow.make("hello"`, `Flow.make("goodbye"`))
     await until(() => expect(t.flows.queries.code.toArray[0]?.text).toContain(`Flow.make("goodbye"`))
     t.flows.actions.saveCode()
     await until(() => expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: "check:name" }))
 
     const relabelled = drafted.replace(`"hello/agent"`, `"hello/greet"`)
     expect(placementOf(relabelled)).toBe("sandbox")
-    t.flows.actions.editCode(relabelled)
+    t.flows.actions.editCode("hello", relabelled)
     await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(relabelled))
     const before = host(t).navigated.length
     t.flows.actions.saveCode()
@@ -444,7 +729,7 @@ describe("a flow's code, from a tab", () => {
 
     // The drafted code again: it runs here.
     await t.flows.actions.openCode("hello")
-    t.flows.actions.editCode(drafted)
+    t.flows.actions.editCode("hello", drafted)
     await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(drafted))
     t.flows.actions.saveCode()
     await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ revision: 3, placement: "client" }]))

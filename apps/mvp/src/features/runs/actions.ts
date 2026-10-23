@@ -16,6 +16,8 @@ import { RunsStore } from "./store"
 /** Where this tab goes: the router's `navigate`, which the host gives. */
 export class RunsNavigation extends Context.Service<RunsNavigation, {
   readonly navigate: (path: string) => void
+  /** The host router's current path, when one is mounted. */
+  readonly pathname?: () => string
 }>()(
   "@smthrs/mvp/runs/RunsNavigation",
 ) {}

@@ -32,6 +32,10 @@ export type FlowDraftViewProps = Omit<ComponentProps<"section">, "children" | "o
   checks: ReadonlyArray<DraftCheck>;
   /** Why the draft failed, in a few words. */
   failure?: string | null;
+  /** Short validation message shown beside an invalid name. */
+  nameHint?: string;
+  /** Short validation message shown beside an invalid request. */
+  requestHint?: string;
   onNameChange?: (name: string) => void;
   onRequestChange?: (request: string) => void;
   /** `Draft`, shown before the first round; off while the request is empty. */
@@ -72,6 +76,8 @@ export function FlowDraftView({
   files,
   checks,
   failure,
+  nameHint,
+  requestHint,
   onNameChange,
   onRequestChange,
   onStart,
@@ -123,16 +129,22 @@ export function FlowDraftView({
                   value={name}
                   autoComplete="off"
                   spellCheck={false}
+                  aria-invalid={nameHint === undefined ? undefined : true}
+                  aria-describedby={nameHint === undefined ? undefined : `${id}-name-hint`}
                   onChange={(event) => onNameChange?.(event.currentTarget.value)}
                 />
+                {nameHint === undefined ? null : <span id={`${id}-name-hint`} className="sui-flow-draft-hint">{nameHint}</span>}
               </Field>
               <Field>
                 <Label htmlFor={`${id}-request`}>What it should do</Label>
                 <Textarea
                   id={`${id}-request`}
                   value={request}
+                  aria-invalid={requestHint === undefined ? undefined : true}
+                  aria-describedby={requestHint === undefined ? undefined : `${id}-request-hint`}
                   onChange={(event) => onRequestChange?.(event.currentTarget.value)}
                 />
+                {requestHint === undefined ? null : <span id={`${id}-request-hint`} className="sui-flow-draft-hint">{requestHint}</span>}
               </Field>
             </>
           ) : (

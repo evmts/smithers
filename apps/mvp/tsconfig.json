@@ -8,7 +8,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "types": [
-      "vite/client"
+      "vite/client",
+      "vite-plugin-pwa/client"
     ],
     "allowImportingTsExtensions": true
   },

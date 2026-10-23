@@ -132,8 +132,9 @@ export const FLOWS_UI_TELEMETRY = {
     "flow.client.save",
     "flow.client.write",
     "flow.client.delete",
+    "flows.editor.storage",
   ],
-  fields: ["draftId", "round", "scope", "target", "outcome", "checks", "questions", "durationMs", "code", "placement"],
+  fields: ["draftId", "round", "scope", "target", "outcome", "checks", "questions", "durationMs", "code", "placement", "collection"],
 } as const
 
 /** The flows pages' buttons, links and lines (MINIMAL TEXT). */
@@ -193,3 +194,4 @@ export const writeRefusalWords = (code: string): string =>
 /** The code page when the flow can't be read: none by that name, or ChatApi didn't answer. */
 export const NO_SUCH_FLOW = "No such flow"
 export const COULDNT_READ_FLOW = "Couldn't read this flow"
+export const DEVICE_STORAGE_UNAVAILABLE = "Device storage unavailable"

@@ -10,6 +10,7 @@ export const flowDraftViewCss = `
 .sui-flow-draft-status[data-status='ready'], .sui-flow-draft-status[data-status='saved'], .sui-flow-draft-status[data-status='proposed'] { color:${t.success}; }
 .sui-flow-draft-body { display:flex; flex-direction:column; gap:10px; min-width:0; }
 .sui-flow-draft-fields { display:grid; gap:10px; min-width:0; margin:0; }
+.sui-flow-draft-hint { color:${t.destructive}; font-size:${t.fontSizeCompact}; }
 .sui-flow-draft-row { display:flex; gap:8px; min-width:0; font-size:13px; }
 .sui-flow-draft-key { flex:none; width:4rem; color:${t.mutedForeground}; }
 .sui-flow-draft-where, .sui-flow-draft-name { font-weight:650; overflow-wrap:anywhere; }

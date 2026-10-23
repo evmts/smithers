@@ -241,7 +241,7 @@ It is a contribution to the repository's file view (`src/features/generated/cont
 
 ChatApi and the Durable Object read them with Effect `Config` (`worker/RepoConfig.ts`, `worker/Repos.ts`, `worker/RepoReads.ts`), so Alchemy binds each one that is set. On this Mac the key is `CODE_STORAGE_API_KEY` in `~/.zshrc`: map it to `CODE_STORAGE_KEY` and set `CODE_STORAGE_ORG=smithers`.
 
-The App read token's cache check and mint share one Effect semaphore in an isolate. Concurrent first reads use one installation token; a failed mint lets the next read try again. GitHub calls remain through the library catalog's `@smthrs/integrations` AppAuth and GitHubClient.
+The App read token's cache check and mint share one Effect semaphore in an isolate. Concurrent first reads therefore use one installation token; a failed mint still leaves the next read able to try again. GitHub calls remain through the library catalog's `@smthrs/integrations` AppAuth and GitHubClient.
 
 ## Tests
 

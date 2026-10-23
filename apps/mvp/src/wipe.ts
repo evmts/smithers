@@ -193,7 +193,7 @@ export const memoryStorage = (): StorageAdapter => {
 const nothing = () => {}
 
 /** An engine worker that fails as it starts, with `error`: the tab's engine is unavailable, and says why. */
-const failedWorker = (error: () => Error) => (): BrowserEngine.WorkerLike & Endpoint => ({
+export const failedWorker = (error: () => Error) => (): BrowserEngine.WorkerLike & Endpoint => ({
   terminate: nothing,
   postMessage: nothing,
   removeEventListener: nothing,

@@ -142,6 +142,25 @@ describe("what Answer sends", () => {
 });
 
 describe("FlowDraftView before its first round: the form", () => {
+  test("an invalid field explains why Draft is unavailable and associates the hint with its input", async () => {
+    await render(<FlowDraftView {...base} status={null} name="Bug bash status" request="x" questions={[]} files={[]} checks={[]} nameHint="Use lowercase letters, numbers and hyphens" requestHint="4,096 characters max" />);
+    const name = labelled("Name")!;
+    const hint = container!.querySelector<HTMLElement>(`#${CSS.escape(name.getAttribute("aria-describedby")!)}`);
+    expect(name.getAttribute("aria-invalid")).toBe("true");
+    expect(hint?.textContent).toBe("Use lowercase letters, numbers and hyphens");
+    const request = labelled("What it should do")!;
+    const requestHint = container!.querySelector<HTMLElement>(`#${CSS.escape(request.getAttribute("aria-describedby")!)}`);
+    expect(request.getAttribute("aria-invalid")).toBe("true");
+    expect(requestHint?.textContent).toBe("4,096 characters max");
+    expect(button("Draft")).toBeUndefined();
+
+    await render(<FlowDraftView {...base} status={null} questions={[]} files={[]} checks={[]} onStart={() => undefined} />);
+    expect(labelled("Name")!.hasAttribute("aria-invalid")).toBe(false);
+    expect(labelled("Name")!.hasAttribute("aria-describedby")).toBe(false);
+    expect(labelled("What it should do")!.hasAttribute("aria-invalid")).toBe(false);
+    expect(button("Draft")).toBeDefined();
+  });
+
   test("Where, Name and What as inputs, Draft off until there is a request, and no status", async () => {
     const names: Array<string> = [];
     const requests: Array<string> = [];

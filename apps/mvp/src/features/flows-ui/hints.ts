@@ -1,0 +1,16 @@
+import { MAX_REQUEST_CHARS, NAME_PATTERN, RESERVED_NAMES } from "./contract"
+
+/** The shortest useful correction for a New flow name that cannot be drafted. */
+export const nameHint = (name: string): string | undefined => {
+  if (name.length === 0) return undefined
+  if (name.length > 64) return "64 characters max"
+  if (/^[0-9-]/.test(name)) return "Start with a lowercase letter"
+  if (name.endsWith("-") || name.includes("--")) return "No trailing or repeated hyphens"
+  if (!NAME_PATTERN.test(name)) return "Use lowercase letters, numbers and hyphens"
+  if ((RESERVED_NAMES as ReadonlyArray<string>).includes(name)) return "Name unavailable"
+  return undefined
+}
+
+/** A request may be empty while the person is still typing; only an overlong one needs a hint. */
+export const requestHint = (request: string): string | undefined =>
+  request.trim().length > MAX_REQUEST_CHARS ? `${MAX_REQUEST_CHARS.toLocaleString()} characters max` : undefined

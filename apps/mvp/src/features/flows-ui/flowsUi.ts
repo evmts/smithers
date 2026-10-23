@@ -53,8 +53,8 @@ export interface FlowsUiActions {
   readonly draftAgain: () => void
   readonly deleteDraft: (draftId: string) => void
   readonly save: () => void
-  readonly editCode: (text: string) => void
-  readonly saveCode: () => void
+  readonly editCode: (name: string, text: string) => void
+  readonly saveCode: (confirmStale?: boolean) => Promise<void>
   readonly run: (name: string, revision: number) => void
   readonly edit: (name: string) => void
   readonly remove: (flowId: string) => void
@@ -64,7 +64,7 @@ type Services = FlowsUiStore | FlowDispatch | RunsNavigation
 
 export class FlowsUi extends Context.Service<
   FlowsUi,
-  { readonly queries: FlowsUiQueries; readonly actions: FlowsUiActions }
+  { readonly queries: FlowsUiQueries; readonly actions: FlowsUiActions; readonly editorAvailable: boolean }
 >()("@smthrs/mvp/flows/FlowsUi") {
   /** Binds the store's queries and the actions, run with the services this layer was built with. */
   static readonly layer = Layer.effect(
@@ -74,7 +74,11 @@ export class FlowsUi extends Context.Service<
       const context = yield* Effect.context<Services>()
       const promise = Effect.runPromiseWith(context)
       const fork = (effect: Effect.Effect<void, never, Services>) => void Effect.runForkWith(context)(effect)
+      const editor = (effect: Effect.Effect<void, never, Services>): Promise<void> => {
+        return promise(effect)
+      }
       return FlowsUi.of({
+        editorAvailable: store.editorAvailable,
         queries: {
           flows: store.flowList.tanstack,
           drafts: store.draftList.tanstack,
@@ -85,19 +89,22 @@ export class FlowsUi extends Context.Service<
           round: store.roundRow.tanstack,
         },
         actions: {
-          openNew: (name) => promise(openNew(name)),
+          openNew: (name) => editor(openNew(name)),
           openDraft: (draftId) => promise(openDraft(draftId)),
-          openCode: (name) => promise(openCode(name)),
-          setName: (name) => fork(setForm({ name })),
-          setRequest: (request) => fork(setForm({ request })),
-          startDraft: () => fork(startDraft),
-          setAnswer: (draftId, questionId, value) => fork(setAnswer(draftId, questionId, value)),
-          answer: () => fork(answer),
+          openCode: (name) => editor(openCode(name)),
+          setName: (name) => void editor(setForm({ name, seeded: false })),
+          setRequest: (request) => void editor(setForm({ request })),
+          startDraft: () => void editor(startDraft),
+          setAnswer: (draftId, questionId, value) => void editor(setAnswer(draftId, questionId, value)),
+          answer: () => void editor(answer),
           draftAgain: () => fork(draftAgain),
           deleteDraft: (draftId) => fork(deleteDraft(draftId)),
           save: () => fork(save),
-          editCode: (text) => fork(editCode(text)),
-          saveCode: () => fork(saveCode),
+          editCode: (name, text) => {
+            const epoch = store.codeEpoch.current
+            void editor(editCode(name, text, epoch))
+          },
+          saveCode: (confirmStale) => editor(saveCode(confirmStale)),
           run: (name, revision) => fork(run(name, revision)),
           edit: (name) => fork(edit(name)),
           remove: (flowId) => fork(remove(flowId)),

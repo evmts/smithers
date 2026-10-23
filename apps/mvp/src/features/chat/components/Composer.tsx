@@ -39,7 +39,7 @@ export function Composer({ docked = true, readOnly = false }: { readonly docked?
   }
   if (composer?.open !== true) {
     return (
-      <Button variant="outline" aria-keyshortcuts={SHORTCUT} onClick={() => actions.openComposer("button")}>
+      <Button variant="outline" aria-keyshortcuts={SHORTCUT} data-draft={(prompt === undefined ? composer?.saved !== false : prompt.stored) ? "saved" : "unsaved"} onClick={() => actions.openComposer("button")}>
         Chat <kbd>⌘K</kbd>
       </Button>
     )

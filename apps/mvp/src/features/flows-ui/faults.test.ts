@@ -9,7 +9,7 @@ import { read } from "../../test/otlp"
 import { EngineFaults } from "../../test/faults"
 import { dispatches } from "../../flows/dispatch"
 import { Runs } from "../runs/runs"
-import { FLOWS_PATH, SAVE_REFUSALS } from "./contract"
+import { codePath, draftPath, FLOWS_PATH, SAVE_REFUSALS } from "./contract"
 import { draftAgain } from "./actions"
 import { FlowsUiStore, SHOWN } from "./store"
 import { FlowsUi } from "./flowsUi"
@@ -29,11 +29,11 @@ const drafted = {
   summary: "Says hello.",
 }
 
-const open = async (options: TabOptions = {}) => {
+const open = async (options: TabOptions = {}, route?: { current: string }) => {
   const app = openFaultyApp()
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
-  const host = nodeDevice({ agent: api })
+  const host = nodeDevice({ agent: api, ...(route === undefined ? {} : { pathname: () => route.current }) })
   const tab = openFaultyTab(
     api,
     { ...options, host },
@@ -48,7 +48,7 @@ const open = async (options: TabOptions = {}) => {
     api,
     tab,
     standalone: async () => {
-      const runtime = ManagedRuntime.make(FlowsUiStore.layer({ origin: api.origin }).pipe(Layer.provideMerge(Layer.succeedContext(await tab.context()))))
+      const runtime = ManagedRuntime.make(FlowsUiStore.layer({ origin: api.origin, editorTabId: host.editorTabId, editorTabPersistent: host.editorTabPersistent }).pipe(Layer.provideMerge(Layer.succeedContext(await tab.context()))))
       runtimes.push(runtime)
       return { runtime, store: await runtime.runPromise(Effect.service(FlowsUiStore)) }
     },
@@ -166,7 +166,7 @@ describe("an engine that refuses a start", () => {
     await t.flows.actions.openCode("hello")
     expect(t.flows.queries.code.toArray[0]).toMatchObject({ state: "read", revision: 1 })
     await t.refuse("flow/write")
-    t.flows.actions.editCode(`${t.flows.queries.code.toArray[0]!.text}// mine\n`)
+    t.flows.actions.editCode("hello", `${t.flows.queries.code.toArray[0]!.text}// mine\n`)
     await until(() => expect(t.flows.queries.code.toArray[0]?.text).toContain("// mine"))
     t.flows.actions.saveCode()
     await until(() => expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: "unavailable" }))
@@ -209,6 +209,63 @@ const readyDraft = async (t: Awaited<ReturnType<typeof open>>) => {
 }
 
 describe("Electric slow to deliver the saved flow", () => {
+  test("draft Save finishing after leaving its page does not redirect the person", async () => {
+    const route = { current: "/app/flows" }
+    const t = await open({}, route)
+    await readyDraft(t)
+    const draftId = t.flows.queries.draft.toArray[0]!.draft.id
+    route.current = draftPath(draftId)
+    await t.shapes(t.stall)
+    const priorListOpens = t.host.navigated.filter((path) => path === FLOWS_PATH).length
+    t.flows.actions.save()
+    await until(() => expect(t.done("flow/save")).toBe(1))
+    route.current = "/app/conversations"
+    await t.shapes(t.heal)
+    await until(() => expect(t.flows.queries.draft.toArray[0]?.shown.busy).toBe(false))
+    expect(t.host.navigated.filter((path) => path === FLOWS_PATH)).toHaveLength(priorListOpens)
+  }, 180_000)
+
+  test("a code save finishing after the person leaves Code does not redirect them", async () => {
+    const route = { current: codePath("hello") }
+    const t = await open({}, route)
+    await readyDraft(t)
+    t.flows.actions.save()
+    await until(() => expect(t.flows.queries.flows.toArray[0]).toMatchObject({ name: "hello", revision: 1 }))
+    await t.flows.actions.openCode("hello")
+    const source = t.flows.queries.code.toArray[0]!.text
+    t.flows.actions.editCode("hello", `${source}\n// mine`)
+    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(`${source}\n// mine`))
+    await t.shapes(t.stall)
+    const priorListOpens = t.host.navigated.filter((path) => path === FLOWS_PATH).length
+    const saving = t.flows.actions.saveCode()
+    await until(() => expect(t.done("flow/write")).toBe(1))
+    route.current = "/app/conversations"
+    await t.shapes(t.heal)
+    await saving
+    expect(t.host.navigated.filter((path) => path === FLOWS_PATH)).toHaveLength(priorListOpens)
+  }, 180_000)
+
+  test("a code save finishing after navigation leaves the next flow's editor alone", async () => {
+    const t = await open()
+    await readyDraft(t)
+    t.flows.actions.save()
+    await until(() => expect(t.flows.queries.flows.toArray[0]).toMatchObject({ name: "hello", revision: 1 }))
+    await t.flows.actions.openCode("hello")
+    const source = t.flows.queries.code.toArray[0]!.text
+    t.flows.actions.editCode("hello", `${source}\n// mine`)
+    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(`${source}\n// mine`))
+    await t.shapes(t.stall)
+    const priorListOpens = t.host.navigated.filter((path) => path === FLOWS_PATH).length
+    const saving = t.flows.actions.saveCode()
+    await until(() => expect(t.done("flow/write")).toBe(1))
+    await t.flows.actions.openCode("nothing")
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "nothing", state: "not_found" })
+    await t.shapes(t.heal)
+    await saving
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "nothing", state: "not_found" })
+    expect(t.host.navigated.filter((path) => path === FLOWS_PATH)).toHaveLength(priorListOpens)
+  }, 180_000)
+
   test("Save opens the list only once this device has the flow", async () => {
     const t = await open()
     await readyDraft(t)

@@ -114,6 +114,10 @@ export const bootTime = Metric.histogram("smithers_web_boot_ms", {
  */
 export interface Host extends ChatHost {
   readonly persistence: Persistence.Options<BrowserWASQLiteDatabase>
+  /** One tab's stable, locally claimed editor identity across reloads. */
+  readonly editorTabId: string
+  /** False when the tab id cannot survive reload; editors refuse writes. */
+  readonly editorTabPersistent: boolean
   /** Asks the browser to keep this site's storage: `@smthrs/platform-browser`'s `StoragePersistence`. */
   readonly storage: StoragePersistence.Service
   /** Where the theme paints, mirrors and reads the system's mode (src/features/theme/store.ts). */
@@ -257,9 +261,14 @@ export const appLayer = <S = never>(
     // Your own flows and this device's runs (decision 0014): their pages, and the router's navigate their acts open.
     Layer.merge(Runs.layer.pipe(Layer.provide(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
       origin,
+      editorTabId: host.editorTabId,
+      editorTabPersistent: host.editorTabPersistent,
       ...(chat.confirmWithin === undefined ? {} : { confirmWithin: chat.confirmWithin }),
     }))))
-      .pipe(Layer.provide(Layer.succeed(RunsNavigation, RunsNavigation.of({ navigate: host.navigate })))),
+      .pipe(Layer.provide(Layer.succeed(RunsNavigation, RunsNavigation.of({
+        navigate: host.navigate,
+        ...(host.pathname === undefined ? {} : { pathname: host.pathname }),
+      })))),
   ).pipe(
     // The feed reads the conversation chat shows and who sign-in says is signed in, and opens an entry's page through
     // the router (decision 0009). Agent status, beside it, reads chat's messages beside the runs, and answers through

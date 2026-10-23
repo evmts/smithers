@@ -22,6 +22,11 @@ test("the production build succeeds and precaches the app's bundle and the engin
   const serviceWorker = readFileSync(join(outDir, "sw.js"), "utf8")
   expect(serviceWorker).toContain(`assets/${bundle}`)
   expect(serviceWorker).toContain(`assets/${engine}`)
+  // A newly installed worker must take control of already-open tabs. The registration module in the app bundle
+  // observes activation and reloads them; a bare registerSW.js leaves the old bundle active after a normal reload.
+  expect(serviceWorker).toContain("self.skipWaiting()")
+  expect(serviceWorker).toContain("clientsClaim()")
+  expect(readdirSync(outDir)).not.toContain("registerSW.js")
   // The docs site's paths, which share the app's hostname, are left to the network: by the shell's fallback for a
   // navigation and by its cache (src/pwa.ts DOCS_SITE).
   expect(serviceWorker.split(DOCS_SITE.source).length - 1).toBe(2)

@@ -40,8 +40,9 @@ export default defineConfig({
     // the flow engine, and never caches or answers /api/*.
     VitePWA({
       registerType: "autoUpdate",
-      // The plugin adds the registration script to index.html, so the app's code registers nothing itself.
-      injectRegister: "script-defer",
+      // main.tsx imports the virtual registration module so an activated update reloads open tabs.
+      // Keep auto injection: with autoUpdate this also enables skipWaiting and clientsClaim in the generated worker.
+      injectRegister: "auto",
       // The shell's glob already lists the icons.
       includeManifestIcons: false,
       manifest: {

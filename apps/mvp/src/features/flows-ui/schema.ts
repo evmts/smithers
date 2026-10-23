@@ -26,6 +26,42 @@ export const Description = Schema.String.check(Schema.isBetweenLength(1, MAX_DES
 /** What a person asks `flow/new` for. */
 export const Request = Schema.Trim.check(Schema.isBetweenLength(1, MAX_REQUEST_CHARS))
 
+/** The new-flow form kept on this device, including the id that deduplicates Draft presses. */
+export const FORM = "form"
+export const Form = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  request: Schema.String,
+  draftId: Schema.String,
+  /** A named-flow route supplied the untouched name; New flow may clear that seed. */
+  seeded: Schema.Boolean,
+})
+export type Form = typeof Form.Type
+
+/** One answer still in the person's draft composer on this device. */
+export const AnswerRow = Schema.Struct({
+  id: Schema.String,
+  tabId: Schema.String,
+  draftId: Schema.String,
+  questionId: Schema.String,
+  value: Schema.String,
+})
+export type AnswerRow = typeof AnswerRow.Type
+
+/** The last code editor on this device; `text` can hold an unsaved revision through reload. */
+export const CODE = "code"
+export const Code = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  state: Schema.Literals(["loading", "read", "not_found", "unavailable"]),
+  revision: Schema.Number,
+  source: Schema.String,
+  text: Schema.String,
+  busy: Schema.Boolean,
+  refusal: Schema.NullOr(Schema.String),
+})
+export type Code = typeof Code.Type
+
 /** A draft's status. */
 export const DraftStatus = Schema.Literals(DRAFT_STATUSES)
 export type DraftStatus = typeof DraftStatus.Type

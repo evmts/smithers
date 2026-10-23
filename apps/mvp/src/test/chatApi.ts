@@ -1044,6 +1044,8 @@ const ownMetrics = () => Layer.succeed(Metric.MetricRegistry, new Map())
 export interface NodeDevice extends Host {
   /** How many rows the device's SQLite file holds for `collection`. */
   readonly stored: (collection: string) => number
+  /** The rows actually committed to SQLite, for a reload test's persistence barrier. */
+  readonly storedRows: (collection: string) => ReadonlyArray<unknown>
   /** Every mode the theme painted on this device's page, in order. */
   readonly painted: ReadonlyArray<ThemeMode | undefined>
   /** Every text written to this device's clipboard, in order. */
@@ -1190,8 +1192,11 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
   const copied: Array<string> = []
   const navigated: Array<string> = []
   const engineName = `${device}-engine`
+  const editorTabId = crypto.randomUUID()
   const turn = deviceTurn()
   const host: Omit<NodeDevice, "busyTab"> = {
+    editorTabId,
+    editorTabPersistent: true,
     // As main.tsx's: one database per device, shared by its tabs through TanStack DB's coordinator, which Node runs on
     // its own Web Locks and BroadcastChannel.
     persistence: {
@@ -1233,6 +1238,7 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     },
     ...overrides,
     stored: (collection) => storedRows(path, collection),
+    storedRows: (collection) => storedValues(path, collection),
     painted,
     copied,
     navigated
@@ -1263,6 +1269,20 @@ const storedRows = (path: string, collection: string): number => {
       | undefined
     if (row === undefined) return 0
     return Number((database.prepare(`select count(*) as n from "${row.table_name}"`).get() as { n: number }).n)
+  } finally {
+    database.close()
+  }
+}
+
+/** Real SQLite values, read through a second connection after a write is durable. */
+const storedValues = (path: string, collection: string): ReadonlyArray<unknown> => {
+  const database = new DatabaseSync(path)
+  try {
+    const row = database.prepare("select table_name from collection_registry where collection_id = ?").get(collection) as
+      | { table_name: string }
+      | undefined
+    if (row === undefined) return []
+    return (database.prepare(`select value from "${row.table_name}"`).all() as Array<{ value: string }>).map((value) => JSON.parse(value.value))
   } finally {
     database.close()
   }

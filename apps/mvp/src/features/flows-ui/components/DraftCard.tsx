@@ -1,6 +1,6 @@
 import { FlowDraftView } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { draftFailureWords, MINE, SAVE_REFUSALS } from "../contract"
+import { DEVICE_STORAGE_UNAVAILABLE, draftFailureWords, MINE, SAVE_REFUSALS } from "../contract"
 import { shownRound } from "../round"
 import { useFlowsUi } from "./FlowsUiContext"
 
@@ -8,7 +8,7 @@ import { useFlowsUi } from "./FlowsUiContext"
 // device ended without writing it, Failed with why; questions with the defaults it assumed, its flow.ts and checks;
 // Answer, Draft again on a failed round, Save once it is ready and every check passed, and Delete.
 export function DraftCard() {
-  const { queries, actions } = useFlowsUi()
+  const { queries, actions, editorAvailable } = useFlowsUi()
   const { data } = useLiveQuery(queries.draft)
   const { data: unsent } = useLiveQuery(queries.answers)
   const { data: run } = useLiveQuery(queries.round)
@@ -32,12 +32,12 @@ export function DraftCard() {
         files={draft.files}
         checks={draft.checks}
         failure={round.failure === null ? null : draftFailureWords(round.failure)}
-        onAnswerChange={(id, value) => actions.setAnswer(draft.id, id, value)}
-        onAnswer={actions.answer}
+        {...(editorAvailable ? { onAnswerChange: (id: string, value: string) => actions.setAnswer(draft.id, id, value), onAnswer: actions.answer } : {})}
         {...(round.retry ? { onRetry: actions.draftAgain } : {})}
         {...(draft.status === "saved" ? {} : { onSave: actions.save, saveDisabled: !saveable || shown.busy })}
         {...(draft.status === "saved" || draft.status === "proposed" ? {} : { onDelete: () => actions.deleteDraft(draft.id) })}
       />
+      {editorAvailable ? null : <p role="alert">{DEVICE_STORAGE_UNAVAILABLE}</p>}
       {shown.refusal === null ? null : <p role="alert">{SAVE_REFUSALS[shown.refusal] ?? shown.refusal}</p>}
     </>
   )

@@ -1,40 +1,33 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
-import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
+import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Context, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import { FLOW_DRAFTS_SHAPE_ROUTE, FLOWS_SHAPE_ROUTE } from "./contract"
 import * as Following from "./following"
 import { roundExecutionId } from "./round"
-import { Draft, FlowRow } from "./schema"
+import { AnswerRow, Code, CODE, Draft, FlowRow, Form, FORM } from "./schema"
+export { AnswerRow, Code, CODE, Form, FORM } from "./schema"
 
 // Your own flows on this tab (decision 0014 §1 "On the device", docs/features/flows.md#the-browser): the person's flows
 // and drafts, which Postgres keeps and Electric syncs to every device they sign in on, kept on the device; and this
-// tab's own form, unsent answers, the draft it shows and a draft's last refusal, the code it shows, and how the shown
-// draft's round runs on this device's engine, in memory. The round is read again on each batch of the engine's events
+// tab's own form, unsent answers and code editor kept on the device; the draft it shows, its last refusal and how the
+// shown draft's round runs on this device's engine in memory. The round is read again on each batch of the engine's events
 // and each change of the drafts, at most once per `FOLLOW_EVERY`; nothing polls.
 
 /** Where the shapes sync from: ChatApi's origin, the site's own. */
 export interface FlowsUiConfig {
   readonly origin: string
+  /** Stable for one browser tab across reloads; different tabs never share unfinished editors. */
+  readonly editorTabId: string
+  readonly editorTabPersistent: boolean
   /** How long Save waits for Electric to deliver the flow it saved before the list opens anyway. Default 15 s. */
   readonly confirmWithin?: Duration.Input
 }
 
-/**
- * The new-flow form: its one row, with the draft id its Draft starts. A second press before the first is admitted
- * starts the same execution, which the engine runs once.
- */
-export const FORM = "form"
-export const Form = Schema.Struct({
-  id: Schema.Literal(FORM),
-  name: Schema.String,
-  request: Schema.String,
-  draftId: Schema.String,
-})
-export type Form = typeof Form.Type
-
 /** How often the shown draft's round is read again while the engine works or the drafts change. */
 export const FOLLOW_EVERY = Duration.millis(200)
+/** A failed editor store cannot hold the shared app layer at boot forever. Its rows stay untouched for a later reload. */
+export const EDITOR_RESTORE_WITHIN = Duration.seconds(5)
 
 /** A run's status on this device's engine, or `absent` when the engine doesn't hold it (another device, or none). */
 export const RoundStatus = Schema.Literals(["pending", "running", "suspended", "completed", "failed", "cancelled", "absent"])
@@ -45,15 +38,6 @@ export const ROUND = "round"
 export const RoundRun = Schema.Struct({ id: Schema.Literal(ROUND), runId: Schema.NullOr(Schema.String), status: RoundStatus })
 export type RoundRun = typeof RoundRun.Type
 
-/** One unsent answer, `<draftId>:<questionId>`. */
-export const AnswerRow = Schema.Struct({
-  id: Schema.String,
-  draftId: Schema.String,
-  questionId: Schema.String,
-  value: Schema.String,
-})
-export type AnswerRow = typeof AnswerRow.Type
-
 /** The draft this tab shows full size, and the last refusal of an act on it (`name_taken`, `checks`, ...). */
 export const SHOWN = "shown"
 export const Shown = Schema.Struct({
@@ -63,23 +47,6 @@ export const Shown = Schema.Struct({
   busy: Schema.Boolean,
 })
 export type Shown = typeof Shown.Type
-
-/**
- * The flow whose code this tab shows: its name, how reading it went, the revision and source it read, the text as the
- * person edited it, and a write in flight or its last refusal (`stale`, `check:<check>`, ...).
- */
-export const CODE = "code"
-export const Code = Schema.Struct({
-  id: Schema.Literal(CODE),
-  name: Schema.String,
-  state: Schema.Literals(["loading", "read", "not_found", "unavailable"]),
-  revision: Schema.Number,
-  source: Schema.String,
-  text: Schema.String,
-  busy: Schema.Boolean,
-  refusal: Schema.NullOr(Schema.String),
-})
-export type Code = typeof Code.Type
 
 /** The shown draft's round run. */
 export const roundQuery = (round: Collection.Collection<RoundRun, string>) =>
@@ -109,16 +76,16 @@ export const draftsQuery = (drafts: Collection.Collection<Draft>) =>
   )
 
 /** The form's row. */
-export const formQuery = (form: Collection.Collection<Form, string>) =>
-  LiveQuery.make((q) => q.from({ form: form.tanstack }).findOne())
+export const formQuery = (form: Collection.Collection<Form, string>, id: string) =>
+  LiveQuery.make((q) => q.from({ form: form.tanstack }).where(({ form }) => Query.eq(form.id, id)).findOne())
 
 /** The code this tab shows. */
-export const codeQuery = (code: Collection.Collection<Code, string>) =>
-  LiveQuery.make((q) => q.from({ code: code.tanstack }).findOne())
+export const codeQuery = (code: Collection.Collection<Code, string>, id: string) =>
+  LiveQuery.make((q) => q.from({ code: code.tanstack }).where(({ code }) => Query.eq(code.id, id)).findOne())
 
 /** Every unsent answer. */
-export const answersQuery = (answers: Collection.Collection<AnswerRow, string>) =>
-  LiveQuery.make((q) => q.from({ answer: answers.tanstack }))
+export const answersQuery = (answers: Collection.Collection<AnswerRow, string>, tabId: string) =>
+  LiveQuery.make((q) => q.from({ answer: answers.tanstack }).where(({ answer }) => Query.eq(answer.tabId, tabId)))
 
 type Live<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
 
@@ -128,6 +95,13 @@ export class FlowsUiStore extends Context.Service<
   {
     readonly flows: ElectricCollection.ElectricCollection<FlowRow>
     readonly drafts: ElectricCollection.ElectricCollection<Draft>
+    readonly editorTabId: string
+    readonly formId: string
+    readonly codeId: string
+    /** Distinguishes successive openings, including A → B → A in one tab. */
+    readonly codeEpoch: { current: number }
+    /** Unavailable device storage disables the editors; retained rows are never overwritten. */
+    readonly editorAvailable: boolean
     readonly form: Collection.Collection<Form, string>
     readonly answers: Collection.Collection<AnswerRow, string>
     readonly shown: Collection.Collection<Shown, string>
@@ -160,6 +134,13 @@ export class FlowsUiStore extends Context.Service<
       FlowsUiStore,
       Effect.gen(function* () {
         const engine = yield* BrowserEngine.BrowserEngine
+        const storageAvailable = Option.isSome((yield* Persistence.Persistence).persistence)
+        if (!storageAvailable) yield* Effect.logWarning("flows.editor.storage").pipe(
+          Effect.annotateLogs({ collection: "device", outcome: "unavailable" }),
+        )
+        const editorTabId = config.editorTabId
+        const formId = `${FORM}:${editorTabId}`
+        const codeId = `${CODE}:${editorTabId}`
         const shape = (route: string) => ({
           url: `${config.origin}${route}`,
           columnMapper: ElectricCollection.snakeCamelMapper(),
@@ -185,16 +166,51 @@ export class FlowsUiStore extends Context.Service<
           persist: { schemaVersion: 1 },
           shape: shape(FLOW_DRAFTS_SHAPE_ROUTE),
         })
-        const form = yield* Collection.local<Form, string>({
+        const formSeed = (): Form => ({ id: formId, name: "", request: "", draftId: crypto.randomUUID(), seeded: false })
+        const savedForm = yield* Collection.persisted<Form, string>({
           id: "flow-form",
           schema: Form,
           getKey: (row) => row.id,
-          initialData: [{ id: FORM, name: "", request: "", draftId: crypto.randomUUID() }],
+          schemaVersion: 1,
         })
-        const answers = yield* Collection.local<AnswerRow, string>({
+        const savedAnswers = yield* Collection.persisted<AnswerRow, string>({
           id: "flow-answers",
           schema: AnswerRow,
           getKey: (row) => row.id,
+          schemaVersion: 1,
+        })
+        const codeSeed = (): Code => ({
+          id: codeId, name: "", state: "loading", revision: 0, source: "", text: "", busy: false, refusal: null,
+        })
+        const savedCode = yield* Collection.persisted<Code, string>({
+          id: "flow-code",
+          schema: Code,
+          getKey: (row) => row.id,
+          schemaVersion: 1,
+        })
+        // Restore independently so one unavailable store adds at most one deadline to app boot.
+        const [formReady, answersReady, codeReady] = yield* Effect.all([
+          Effect.result(Effect.gen(function* () {
+            yield* savedForm.restored
+            if (Option.isNone(yield* savedForm.get(formId))) {
+              yield* Effect.flatMap(savedForm.insert(formSeed()), (write) => write.persisted)
+            }
+          }).pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
+          Effect.result(savedAnswers.restored.pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
+          Effect.result(Effect.gen(function* () {
+            yield* savedCode.restored
+            if (Option.isNone(yield* savedCode.get(codeId))) {
+              yield* Effect.flatMap(savedCode.insert(codeSeed()), (write) => write.persisted)
+            }
+          }).pipe(Effect.timeout(EDITOR_RESTORE_WITHIN))),
+        ] as const, { concurrency: 3 })
+        if (formReady._tag === "Failure") yield* Effect.logWarning("flows.editor.storage").pipe(Effect.annotateLogs({ collection: "flow-form", outcome: "failed" }))
+        const form = formReady._tag === "Success" ? savedForm : yield* Collection.local<Form, string>({
+          id: "flow-form-unavailable", schema: Form, getKey: (row) => row.id, initialData: [formSeed()],
+        })
+        if (answersReady._tag === "Failure") yield* Effect.logWarning("flows.editor.storage").pipe(Effect.annotateLogs({ collection: "flow-answers", outcome: "failed" }))
+        const answers = answersReady._tag === "Success" ? savedAnswers : yield* Collection.local<AnswerRow, string>({
+          id: "flow-answers-unavailable", schema: AnswerRow, getKey: (row) => row.id, initialData: [],
         })
         const shown = yield* Collection.local<Shown, string>({
           id: "flow-shown",
@@ -202,14 +218,11 @@ export class FlowsUiStore extends Context.Service<
           getKey: (row) => row.id,
           initialData: [{ id: SHOWN, draftId: null, refusal: null, busy: false }],
         })
-        const code = yield* Collection.local<Code, string>({
-          id: "flow-code",
-          schema: Code,
-          getKey: (row) => row.id,
-          initialData: [
-            { id: CODE, name: "", state: "loading", revision: 0, source: "", text: "", busy: false, refusal: null },
-          ],
+        if (codeReady._tag === "Failure") yield* Effect.logWarning("flows.editor.storage").pipe(Effect.annotateLogs({ collection: "flow-code", outcome: "failed" }))
+        const code = codeReady._tag === "Success" ? savedCode : yield* Collection.local<Code, string>({
+          id: "flow-code-unavailable", schema: Code, getKey: (row) => row.id, initialData: [codeSeed()],
         })
+        const editorAvailable = config.editorTabPersistent && storageAvailable && formReady._tag === "Success" && answersReady._tag === "Success" && codeReady._tag === "Success"
         const round = yield* Collection.local<RoundRun, string>({
           id: "flow-round",
           schema: RoundRun,
@@ -259,6 +272,11 @@ export class FlowsUiStore extends Context.Service<
         return FlowsUiStore.of({
           flows,
           drafts,
+          editorTabId,
+          formId,
+          codeId,
+          codeEpoch: { current: 0 },
+          editorAvailable,
           form,
           answers,
           shown,
@@ -269,9 +287,9 @@ export class FlowsUiStore extends Context.Service<
           draft: yield* draftQuery(shown, drafts),
           flowList: yield* flowsQuery(flows),
           draftList: yield* draftsQuery(drafts),
-          formRow: yield* formQuery(form),
-          answerList: yield* answersQuery(answers),
-          codeRow: yield* codeQuery(code),
+          formRow: yield* formQuery(form, formId),
+          answerList: yield* answersQuery(answers, editorTabId),
+          codeRow: yield* codeQuery(code, codeId),
           roundRow: yield* roundQuery(round),
           confirmWithin: config.confirmWithin ?? Duration.seconds(15),
         })

@@ -6,7 +6,7 @@ import { Mine, Pending as ConversationPending } from "../features/conversations/
 import { Confirmed } from "../features/auth/schema"
 import { Asking, Message, Unsent } from "../features/chat/schema"
 import { Sending as TextSending, TextUpdate } from "../features/coedit/schema"
-import { Draft as FlowDraft, FlowRow } from "../features/flows-ui/schema"
+import { AnswerRow as FlowAnswerRow, Code as FlowCode, Draft as FlowDraft, FlowRow, Form as FlowForm } from "../features/flows-ui/schema"
 import { FileTabRow } from "../features/files/schema"
 import { CuratedRow, HomeRow } from "../features/home/rows"
 import {
@@ -126,6 +126,11 @@ export const SpendSeenStore = Migrations.local({ id: "spend-seen", versions: [Se
 /** TODO drafts. */
 export const TodoDraftsStore = Migrations.local({ id: "todo-drafts", versions: [TodoDraft], getKey: (row) => row.id })
 
+/** The new-flow form and unsent answers survive a page reload or PWA update. */
+export const FlowFormStore = Migrations.local({ id: "flow-form", versions: [FlowForm], getKey: (row) => row.id })
+export const FlowAnswersStore = Migrations.local({ id: "flow-answers", versions: [FlowAnswerRow], getKey: (row) => row.id })
+export const FlowCodeStore = Migrations.local({ id: "flow-code", versions: [FlowCode], getKey: (row) => row.id })
+
 /**
  * Changes to a stack the server took or refused. Version 3 (after TODO retry version 2): a change to a repository the App
  * isn't installed on stays Not sent as App not installed (decision 0079); every version 2 row is a version 3 row.
@@ -241,6 +246,9 @@ export const deviceRegistry = Migrations.registry({
     ConversationPendingStore,
     SpendSeenStore,
     TodoDraftsStore,
+    FlowFormStore,
+    FlowAnswersStore,
+    FlowCodeStore,
     TodoRequestedStore,
     SteerSentStore,
     TimelineSummariesStore,

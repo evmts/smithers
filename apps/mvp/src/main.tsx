@@ -5,6 +5,7 @@ import { IndexedDBAdapter, startOfflineExecutor, WebOnlineDetector } from "@tans
 import { RouterProvider } from "@tanstack/react-router"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
+import { registerSW } from "virtual:pwa-register"
 import { ChatProvider } from "./AppContext"
 import { type BootOptions, type Host, realServices, start } from "./boot"
 import { AttentionProvider } from "./features/attention/components/AttentionContext"
@@ -35,13 +36,70 @@ import { WebProvider } from "./features/web/components/WebContext"
 import { router } from "./router"
 import { activationGate, type Adoption, boundFetch, outboxPrincipal, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt, type Receipt, VISITOR } from "./device/identity"
 import { DEVICE_ADOPTED_EVENT, NO_DEVICE_DATA, type SessionState } from "./features/auth/contract"
-import { inMemory, memoryStorage, pageWipe, unwiped } from "./wipe"
+import { failedWorker, memoryStorage, pageWipe, unwiped } from "./wipe"
+import { claimEditorTabId } from "./device/editorTab"
+import { awaitEditorWrites, hasFailedEditorWrite, hasPendingEditorWrites } from "./features/flows-ui/editorWrites"
 import "./styles/fonts.css"
 
 // The page: `start` runs the app's one program, and React renders the chat, sign-in, theme, repository and slash-command
 // layers it hands over.
 // This is the browser's host: everything platform-specific the app's layers take as arguments
 // (docs/decisions/0002-local-first.md §6).
+const inputStillUnsaved = () =>
+  document.querySelector('[data-draft="unsaved"]') !== null ||
+  Array.from(document.querySelectorAll<HTMLInputElement>('input[type="password"]')).some((input) => input.value !== "")
+
+/** Passwords stay only in their field; chat marks its composer unsaved until SQLite or the shared prompt confirms it. */
+const awaitSafeInputs = (): Promise<void> => {
+  if (!inputStillUnsaved()) return Promise.resolve()
+  return new Promise((resolve) => {
+    const done = () => {
+      if (inputStillUnsaved()) return
+      observer.disconnect()
+      document.removeEventListener("input", done, true)
+      document.removeEventListener("reset", afterReset, true)
+      resolve()
+    }
+    const afterReset = () => queueMicrotask(done)
+    const observer = new MutationObserver(done)
+    observer.observe(document.documentElement, { attributes: true, childList: true, subtree: true, attributeFilter: ["data-draft"] })
+    document.addEventListener("input", done, true)
+    document.addEventListener("reset", afterReset, true)
+    done()
+  })
+}
+
+let updateReloading = false
+const editorUpdateParked = () => {
+  console.warn("pwa.update", { outcome: "editor_unpersisted" })
+  window.alert("Couldn't save your edit on this device. Copy it before reloading.")
+}
+registerSW({
+  immediate: true,
+  onNeedReload: () => {
+    if (updateReloading) return
+    updateReloading = true
+    console.info("pwa.update", { outcome: "activated" })
+    void (async () => {
+      for (;;) {
+        await awaitEditorWrites()
+        if (hasFailedEditorWrite()) {
+          editorUpdateParked()
+          return
+        }
+        await awaitSafeInputs()
+        if (hasFailedEditorWrite()) {
+          editorUpdateParked()
+          return
+        }
+        if (hasPendingEditorWrites() || inputStillUnsaved()) continue
+        window.location.reload()
+        return
+      }
+    })()
+  },
+  onRegisterError: () => console.warn("pwa.register", { outcome: "failed" }),
+})
 const root = createRoot(document.getElementById("root")!)
 
 // Sign-out's wipe (src/wipe.ts, decision 0008 §4.6): this page hears wipes from the start and holds the device's data
@@ -165,7 +223,7 @@ const outboxStorage = async () => {
 // The device store: the app's shared SQLite database in the engine worker's OPFS pool (@smthrs/platform-browser's
 // `SharedSqlite`), one per origin, reached by every tab through the leading tab's worker. The outbox: IndexedDB,
 // sending when the browser says it can, led by one tab through @smthrs/platform-browser's Web Lock service.
-const host: Host = {
+const host: Omit<Host, "editorTabId" | "editorTabPersistent"> = {
   persistence: {
     open: async () => {
       await activation.ready
@@ -248,7 +306,7 @@ const host: Host = {
   engineName: ENGINE_NAME,
   engineWorker: () => {
     // A page already on memory never starts a worker that could lead over the device's data.
-    if (activation.state() === "memory") return inMemory(host, sealed).engineWorker()
+    if (activation.state() === "memory") return failedWorker(sealed)()
     const search = new URLSearchParams(window.location.search)
     const dev = new URLSearchParams([...search].filter(([key]) => key === "agent" || key === "faults"))
     // Vite reads the worker's `type` statically, so it comes after the spread.
@@ -387,9 +445,13 @@ const page = {
 // (src/test/e2e.ts). A production build drops this branch, and the test module with it. Either way, a wipe a sign-out
 // marked finishes first, and a page whose wipe couldn't delete starts on stores that aren't the device's
 // (src/wipe.ts `unwiped`). Leaving on a wipe drops the view, then stops the program.
-void wipe.open().then((wiped) => {
+void Promise.all([wipe.open(), claimEditorTabId({
+  storage: { getItem: (key) => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value) },
+  locks: navigator.locks, page: window, randomId: () => crypto.randomUUID(),
+})]).then(([wiped, editorTab]) => {
   if (!wiped) activation.refuse()
-  const opened = wiped ? page : { ...page, host: unwiped(host) }
+  const tabHost: Host = { ...host, editorTabId: editorTab.id, editorTabPersistent: editorTab.persistent }
+  const opened = { ...page, host: wiped ? tabHost : unwiped(tabHost) }
   const leaving = (stop: () => Promise<void>) =>
     wipe.started(() => {
       root.unmount()
