@@ -45,6 +45,9 @@ export const issuesViewCss = `
 .sui-issues-meta-link { color:${t.mutedForeground}; font-family:${t.fontMono}; text-decoration:none; border-radius:${t.radiusControl}; overflow-wrap:anywhere; }
 .sui-issues-meta-link:hover { color:${t.primary}; text-decoration:underline; text-underline-offset:3px; }
 .sui-issues-meta-link:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; }
+@media (max-width:960px) {
+  .sui-issues-link, .sui-issues-meta-link { display:inline-flex; align-items:center; min-height:${t.controlHeight}; min-width:32px; }
+}
 .sui-issues-comments { flex:none; color:${t.mutedForeground}; font-size:${t.fontSizeCompact}; }
 .sui-issues-menu { margin:-4px -6px -4px 0; }
 .sui-state-icon { flex:none; display:block; color:${t.mutedForeground}; }
