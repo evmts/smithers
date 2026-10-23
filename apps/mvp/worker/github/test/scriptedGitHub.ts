@@ -97,7 +97,11 @@ export interface ScriptedStatus {
   readonly login: string
 }
 
-/** A one-shot fault on the next request that `match`es: GitHub's `status`, or `lost` (applied, then no answer). */
+/**
+ * A one-shot fault on the next request that `match`es: GitHub's `status`, or `lost` (applied, then no answer), or
+ * `hold`, a request still in flight: GitHub applies and answers it only once `hold` resolves, so another writer can land
+ * first.
+ */
 export interface Fault {
   readonly match: (method: string, path: string) => boolean
   readonly status?: number
@@ -105,6 +109,7 @@ export interface Fault {
   readonly lost?: boolean
   /** Applies the request, then returns a successful response with an invalid schema. */
   readonly malformed?: boolean
+  readonly hold?: () => Promise<void>
 }
 
 /** One request GitHub saw: its method, path, and which kind of token made it. */
@@ -859,7 +864,22 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       const body: unknown = raw === undefined || raw === "" ? undefined : JSON.parse(raw)
       const fault = github.faults.findIndex((candidate) => candidate.match(method, url.pathname))
       const armed = fault === -1 ? undefined : github.faults.splice(fault, 1)[0]
-      if (armed !== undefined && armed.lost !== true && armed.malformed !== true) {
+      if (armed?.hold !== undefined) return Effect.promise(armed.hold).pipe(Effect.andThen(respond(request, url, method, who, body, armed)))
+      return respond(request, url, method, who, body, armed)
+    })
+  )
+
+  /** GitHub's answer to one request, once any hold on it is over. */
+  const respond = (
+    request: Parameters<Parameters<typeof HttpClient.make>[0]>[0],
+    url: URL,
+    method: string,
+    who: ReturnType<typeof caller>,
+    body: unknown,
+    armed: Fault | undefined,
+  ) =>
+    Effect.suspend(() => {
+      if (armed !== undefined && armed.lost !== true && armed.malformed !== true && armed.hold === undefined) {
         return Effect.succeed(
           HttpClientResponse.fromWeb(request, json({ message: "scripted fault" }, armed.status ?? 502, { ...armed.headers })),
         )
@@ -898,7 +918,6 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       }
       return Effect.succeed(HttpClientResponse.fromWeb(request, answered.response))
     })
-  )
 
   const github: ScriptedGitHub = {
     http,

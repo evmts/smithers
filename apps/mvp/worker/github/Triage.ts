@@ -47,7 +47,8 @@ import * as TriageStore from "./TriageStore.ts"
 //   issue/ApplyTriage/label ─ system, never a repository's: re-checks the enabler is a Maintainer, re-reads the issue;
 //        │                    pinned, relabeled or edited since the read ─▶ dropped, recorded why; else one label on,
 //        │                    the other off, the label receipt
-//   issue/ApplyTriage/comment ─ a rejection only: one comment, its own receipt; past its retries, `comment_failed`
+//   issue/ApplyTriage/comment ─ a rejection only, and none once a person triaged it: one comment, its own receipt;
+//                                past its retries, `comment_failed`
 //
 // The model call holds no token, and only the typed decision leaves it: issue text never reaches GitHub. It runs
 // remotely because an issue opens while every device may be off, and its writes need the App's key (decision 0011 §2).
@@ -156,11 +157,20 @@ export const Decide = Action.make("triage/Decide", {
   retryPolicy: TRIAGE_RETRY,
 })
 
+/**
+ * The label and comment steps' implementation versions. v2 (2026-10-21) record when they start writing, before they
+ * check the pin, and the comment posts nothing once a person triaged the issue or is triaging it; a run parked on a v1
+ * plan stops with `plan_changed` rather than write unseen by a person's triage.
+ */
+export const LABEL_VERSION = "triage/label/v2"
+export const COMMENT_VERSION = "triage/comment/v2"
+
 /** The system step that labels: never overridden by a repository. */
 export const Label = Action.make("issue/ApplyTriage/label", {
   payload: { decided: Decided },
   success: Labeled,
   error: TriageUnavailable,
+  implementationVersion: LABEL_VERSION,
   retryPolicy: TRIAGE_RETRY,
 })
 
@@ -169,6 +179,7 @@ export const Comment = Action.make("issue/ApplyTriage/comment", {
   payload: { labeled: Labeled },
   success: Ran,
   error: TriageUnavailable,
+  implementationVersion: COMMENT_VERSION,
   retryPolicy: COMMENT_RETRY,
 })
 
@@ -530,6 +541,8 @@ export const steps = <E, R>(services: Services<E, R>) => {
             )
             return outcome("dropped")
           })
+        // Recorded before the pin is checked: a person admitted after the check waits for this label to land.
+        yield* TriageStore.startLabel(decided.decisionId)
         const settings = yield* TriageStore.settingsOf(repository.id)
         if (Option.isNone(settings)) return yield* dropped("off")
         if (settings.value.paused) return yield* dropped("paused")
@@ -591,6 +604,16 @@ export const steps = <E, R>(services: Services<E, R>) => {
         const found = yield* TriageStore.decisionOf(labeled.decisionId)
         if (Option.isSome(found) && found.value.commentGithubId !== null) {
           return yield* ended({ outcome: "commented", decisionId: labeled.decisionId })
+        }
+        // A person triaged the issue since the label landed, or is triaging it: their decision supersedes the flow's,
+        // so its reason is never posted under theirs. Recorded before the pin is checked: a person admitted after the
+        // check waits for this comment to land.
+        yield* TriageStore.startComment(labeled.decisionId)
+        const item = yield* TriageStore.itemTriage(repository.id, labeled.number)
+        if (Option.isSome(item) && item.value.pinned) {
+          yield* TriageStore.skipComment(labeled.decisionId)
+          yield* Effect.logInfo("triage.comment").pipe(Effect.annotateLogs({ ...fields, outcome: "superseded" }))
+          return yield* ended({ outcome: "labeled", decisionId: labeled.decisionId })
         }
         /** The comment can't be posted: the label receipt stands, and nothing claims the author was told. */
         const failed = (why: Record<string, unknown>) =>
@@ -676,8 +699,8 @@ export const registration = <E, R>(services: Services<E, R>) => {
     Layer.mergeAll(
       Read.toLayer(implementation.read),
       Decide.toLayer(implementation.decide),
-      Label.toLayer(implementation.label),
-      Comment.toLayer(implementation.comment),
+      Label.toLayer(implementation.label, { implementationVersion: LABEL_VERSION }),
+      Comment.toLayer(implementation.comment, { implementationVersion: COMMENT_VERSION }),
       CommentFailed.toLayer(implementation.commentFailed),
     ),
   ).pipe(Layer.provideMerge(Action.layerImplementations))

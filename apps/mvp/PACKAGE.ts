@@ -187,11 +187,15 @@ export const importRules: ReadonlyArray<ImportRule> = [
       "GitHub.Pulls.createPull",
       "GitHub.Pulls.findPullByHead",
       "GitHub.Pulls.createReview",
-      "GitHub.Pulls.findReviewByWrite"
+      "GitHub.Pulls.findReviewByWrite",
+      "GitHub.Issues.createIssue",
+      "GitHub.Issues.findIssueByWrite",
+      "GitHub.Issues.createComment",
+      "GitHub.Issues.findCommentByWrite"
     ],
-    because: "durable.external-writes-once: a branch, commit, pull request or review a step makes goes through " +
-      "Action.once with a GitHub.Once adapter, which keys it by the step and finds it by that key; never adopt one " +
-      "because its name, message or parent looks like yours. See apps/mvp/docs/rules.md and " +
+    because: "durable.external-writes-once: a branch, commit, pull request, review, issue or comment a step makes " +
+      "goes through Action.once with a GitHub.Once adapter, which keys it by the step and finds it by that key; " +
+      "never adopt one because its name, message or parent looks like yours. See apps/mvp/docs/rules.md and " +
       "apps/mvp/docs/proposals/durable-external-effects.md."
   },
   {

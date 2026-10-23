@@ -6,7 +6,7 @@
 import { FlowRuntime } from "@smthrs/flow"
 import { ModelError } from "@smthrs/model"
 import { Cause, Effect, Exit, Stream } from "effect"
-import { beforeAll, beforeEach, describe, expect, test } from "vitest"
+import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
@@ -574,6 +574,18 @@ describe("triage/Run", () => {
     expect((await decisions())[0]).toMatchObject({ commented: true, commentFailed: false })
   })
 
+  test("the comment GitHub couldn't take for a moment is tried again: the author gets one comment", async () => {
+    const github = repository()
+    await enable()
+    github.open("Spam", "Body")
+    github.faults.push({ match: (method, path) => method === "POST" && /\/comments$/.test(path), status: 502 })
+    const { value } = await judged(github, judging("reject", "duplicate"))
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "commented", decisionId: expect.any(String) }))
+    expect(githubComments(github, 1)).toHaveLength(1)
+    expect(github.seen("POST", /\/comments$/)).toHaveLength(2)
+    expect((await decisions())[0]).toMatchObject({ commented: true, commentFailed: false })
+  })
+
   // A window back from "now" missed a comment whose answer was lost once the run resumed later than the window
   // (91 minutes), and the author got a second one. The lookup reads the whole thread instead.
   test("the comment's answer lost and the run resumed hours later: the marker is still found, one comment", async () => {
@@ -945,6 +957,164 @@ describe("a person's triage", () => {
     expect(githubComments(github, 1)).toHaveLength(1)
     expect(await triageRow(1)).toEqual({ triage: "accepted", pinned: true })
     expect(h.count(Metrics.triageOverrides, { from: "not_accepted", to: "accept" })).toBe(1)
+  })
+
+  test("a person's Accept wins over a flow label already past its checks, though the flow's request lands later", { timeout: 120_000 }, async () => {
+    const github = repository()
+    await enable()
+    github.open("Real bug", "Steps")
+    const { value } = await judged(github, judging("reject", "spam"))
+    await project(value)
+    const person = await maya(github)
+    const h = await githubHarness(runtime, { actor: person.actor, run: true, github })
+    const write = { writeId: crypto.randomUUID(), op: "issue/triage", number: 1, decision: "accept" }
+    let personSettled: Promise<void> | undefined
+    const waiting = () => h.line("github.write").some((line) => line.annotations["outcome"] === "waiting")
+    // The flow passed its pin and label checks; its label request is still in flight at GitHub when Maya presses
+    // Accept. GitHub takes the flow's request only once Maya's write settled, or said it waits for the flow's label.
+    github.faults.push({
+      match: (method, path) => method === "POST" && /\/issues\/1\/labels$/.test(path),
+      hold: async () => {
+        expect((await h.fetch(writesRoute(REPOSITORY.owner, REPOSITORY.name), post(write))).status).toBe(202)
+        personSettled = h.settled()
+        await Promise.race([personSettled, vi.waitFor(() => expect(waiting()).toBe(true), { timeout: 60_000, interval: 50 })])
+      },
+    })
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "labeled", decisionId: expect.any(String) }))
+    await personSettled
+    // Before 2026-10-21 Maya's labels landed first and the flow's overwrote them: the issue stayed not accepted.
+    expect(await writeRow(runtime, write.writeId)).toMatchObject({ status: "done", itemNumber: 1 })
+    expect(github.issues.get(1)!.labels).toEqual([ACCEPTED_LABEL])
+    expect(await triageRow(1)).toEqual({ triage: "accepted", pinned: true })
+    // The flow's reason is never posted under Maya's decision.
+    expect(githubComments(github, 1)).toEqual([])
+    expect(waiting()).toBe(true)
+    expect(await decisions()).toEqual([
+      expect.objectContaining({ via: "flow", decision: "reject", labeled: true, commented: false, commentFailed: false }),
+      expect.objectContaining({ via: "person", decision: "accept", labeled: true }),
+    ])
+  })
+
+  test("a person's write pins the issue from the moment it is admitted: the flow drops a decision it hadn't labeled", async () => {
+    const github = repository()
+    await enable()
+    github.open("Real bug", "Steps")
+    const { value, requests } = await judged(github, judging("reject", "spam"))
+    await project(value)
+    const person = await maya(github)
+    // Admitted and not yet run: the write is pending.
+    const h = await githubHarness(runtime, { actor: person.actor, github })
+    const write = { writeId: crypto.randomUUID(), op: "issue/triage", number: 1, decision: "accept" }
+    expect((await h.fetch(writesRoute(REPOSITORY.owner, REPOSITORY.name), post(write))).status).toBe(202)
+    expect(await runtime.runPromise(TriageStore.itemTriage(REPOSITORY.id, 1))).toEqual(
+      expect.objectContaining({ value: { triage: "proposed", pinned: true } }),
+    )
+    // Before 2026-10-21 nothing pinned the issue until the write settled, and the flow labeled it.
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "skipped", decisionId: null }))
+    expect(requests).toEqual([])
+    expect(github.issues.get(1)!.labels).toEqual([])
+    // Settled, the write leaves its own pin; refused, it leaves none.
+    await sql(runtime, `UPDATE github_writes SET status = 'refused', failure = 'not_allowed', settled_at = now() WHERE id = '${write.writeId}'`)
+    expect(await runtime.runPromise(TriageStore.itemTriage(REPOSITORY.id, 1))).toEqual(
+      expect.objectContaining({ value: { triage: "proposed", pinned: false } }),
+    )
+  })
+
+  test("a person waits only for a flow write that started and hasn't finished, however long ago it was decided", async () => {
+    const github = repository()
+    github.open("Real bug", "Steps")
+    const { services: value } = await services(runtime, github)
+    await project(value)
+    const inFlight = () => runtime.runPromise(TriageStore.flowWriteInFlight(REPOSITORY.id, 1))
+    const decide = (id: string, decision: "reject" | "abstain") =>
+      runtime.runPromise(TriageStore.recordDecision({
+        id,
+        repoId: REPOSITORY.id,
+        number: 1,
+        via: "flow",
+        decidedBy: null,
+        runId: null,
+        writeId: null,
+        guidelinesSha: null,
+        inputDigest: null,
+        triageBefore: "proposed",
+        decision,
+        reason: decision === "reject" ? "spam" : null,
+        abstained: decision === "abstain" ? "judge" : null,
+        tokens: 0,
+      }))
+    // Decided, but its label step hasn't started: when it does, it finds the pin.
+    const id = crypto.randomUUID()
+    await decide(id, "reject")
+    await decide(crypto.randomUUID(), "abstain")
+    expect(await inFlight()).toBe(false)
+    // Decided 40 minutes ago, its label step starting now: in flight (before 2026-10-21 the decision's age ruled it out,
+    // Codex Astra review).
+    await sql(runtime, `UPDATE triage_decisions SET created_at = now() - interval '40 minutes' WHERE id = '${id}'`)
+    await runtime.runPromise(TriageStore.startLabel(id))
+    expect(await inFlight()).toBe(true)
+    // A label step that started past its lease stopped for good.
+    await sql(runtime, `UPDATE triage_decisions SET label_started_at = now() - interval '32 minutes' WHERE id = '${id}'`)
+    expect(await inFlight()).toBe(false)
+    await sql(runtime, `UPDATE triage_decisions SET label_started_at = now() WHERE id = '${id}'`)
+    await runtime.runPromise(TriageStore.labeled(id))
+    expect(await inFlight()).toBe(false)
+    // Its rejection comment: in flight from its start until it is posted, failed or skipped.
+    await runtime.runPromise(TriageStore.startComment(id))
+    expect(await inFlight()).toBe(true)
+    await runtime.runPromise(TriageStore.skipComment(id))
+    expect(await inFlight()).toBe(false)
+    await runtime.runPromise(TriageStore.startComment(id))
+    await sql(runtime, `UPDATE triage_decisions SET comment_started_at = now() - interval '62 minutes' WHERE id = '${id}'`)
+    expect(await inFlight()).toBe(false)
+    await sql(runtime, `UPDATE triage_decisions SET comment_started_at = now() WHERE id = '${id}'`)
+    await runtime.runPromise(TriageStore.commentFailed(id))
+    expect(await inFlight()).toBe(false)
+    await sql(runtime, `UPDATE triage_decisions SET comment_failed = false WHERE id = '${id}'`)
+    await runtime.runPromise(TriageStore.commented(id, 77))
+    expect(await inFlight()).toBe(false)
+    // A dropped label step is done; a step that found the decision settled records no start.
+    const dropped = crypto.randomUUID()
+    await decide(dropped, "reject")
+    await runtime.runPromise(TriageStore.startLabel(dropped))
+    await runtime.runPromise(TriageStore.drop(dropped, "pinned"))
+    expect(await inFlight()).toBe(false)
+    await runtime.runPromise(TriageStore.startLabel(dropped))
+    expect(await sql(runtime, `SELECT label_started_at IS NOT NULL AS started FROM triage_decisions WHERE id = '${dropped}'`))
+      .toEqual([{ started: true }])
+    // The leases cover each step's whole retry policy.
+    expect(TriageStore.LABEL_LEASE_MS).toBeGreaterThan(Triage.TRIAGE_RETRY.expirationMs!)
+    expect(TriageStore.COMMENT_LEASE_MS).toBeGreaterThan(Triage.COMMENT_RETRY.expirationMs!)
+  })
+
+  test("a person's Accept waits for a flow's rejection comment already past its checks, then labels last", { timeout: 120_000 }, async () => {
+    const github = repository()
+    await enable()
+    github.open("Real bug", "Steps")
+    const { value } = await judged(github, judging("reject", "spam"))
+    await project(value)
+    const person = await maya(github)
+    const h = await githubHarness(runtime, { actor: person.actor, run: true, github })
+    const write = { writeId: crypto.randomUUID(), op: "issue/triage", number: 1, decision: "accept" }
+    let personSettled: Promise<void> | undefined
+    const waiting = () => h.line("github.write").some((line) => line.annotations["outcome"] === "waiting")
+    // The flow labeled, passed its comment's pin check, and its comment is in flight when Maya presses Accept.
+    github.faults.push({
+      match: (method, path) => method === "POST" && /\/issues\/1\/comments$/.test(path),
+      hold: async () => {
+        expect((await h.fetch(writesRoute(REPOSITORY.owner, REPOSITORY.name), post(write))).status).toBe(202)
+        personSettled = h.settled()
+        await Promise.race([personSettled, vi.waitFor(() => expect(waiting()).toBe(true), { timeout: 60_000, interval: 50 })])
+      },
+    })
+    expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "commented", decisionId: expect.any(String) }))
+    await personSettled
+    // Before this, Maya's write saw the flow's decision labeled and went ahead while its comment was still to land.
+    expect(waiting()).toBe(true)
+    expect(await writeRow(runtime, write.writeId)).toMatchObject({ status: "done" })
+    expect(github.issues.get(1)!.labels).toEqual([ACCEPTED_LABEL])
+    expect(await triageRow(1)).toEqual({ triage: "accepted", pinned: true })
+    expect(githubComments(github, 1)).toEqual([{ login: BOT_LOGIN, body: expect.stringContaining("Not accepted") }])
   })
 
   test("Run triage again: unpins the issue, settles the write and decides it again", async () => {

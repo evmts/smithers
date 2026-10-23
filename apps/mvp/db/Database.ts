@@ -1,4 +1,5 @@
 import conversationPeople from "./migrations/0047_conversation_people.ts"
+import triageWriteClaims from "./migrations/0049_triage_write_claims.ts"
 import githubProjectionFences from "./migrations/0048_github_projection_fences.ts"
 import timelineSummaryRole from "./migrations/0030_timeline_summary_role.ts"
 import pulls from "./migrations/0031_pulls.ts"
@@ -133,6 +134,7 @@ export const migrations = {
   "0046_domains": domains,
   "0047_conversation_people": conversationPeople,
   "0048_github_projection_fences": githubProjectionFences,
+  "0049_triage_write_claims": triageWriteClaims,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

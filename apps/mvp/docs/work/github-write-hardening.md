@@ -58,7 +58,7 @@ that passed its checks before the person's labels landed can land after them, an
   `pinned` is `triage_pinned` or a person's `issue/triage` write on the issue still pending, so F's read and label steps
   drop the decision `pinned` from the moment P is admitted.
 - **P waits for F's writes already past the check.** F's label and comment steps record when they start
-  (`label_started_at`, `comment_started_at`, migration `0040_triage_write_claims`) before they check the pin, and mark
+  (`label_started_at`, `comment_started_at`, migration `0049_triage_write_claims`) before they check the pin, and mark
   the decision labeled, commented or failed only after the write landed. Before any GitHub call, P looks for a flow write
   on the issue that started and hasn't finished, within its step's retries and a minute (31 minutes for the label, 61
   for the comment); a step that never started will find the pin when it does. While one is in flight, P's step fails
@@ -91,7 +91,7 @@ and New branch.
 
 The curator's fix for the same review (3314ec3a: projection fences and merge outcomes, decision 0027) lands first. This
 change keeps its fences and its projection-failure count, and replaces its merge recovery (a `merge_unknown` flag and a
-match on the person's GitHub id) with the key in the merge commit's message; migration `0041_drop_merge_unknown` drops
+match on the person's GitHub id) with the key in the merge commit's message; migration `0050_drop_merge_unknown` drops
 the flag.
 
 ## The lint rule

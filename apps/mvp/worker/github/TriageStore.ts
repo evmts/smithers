@@ -63,13 +63,81 @@ export const pause = (repoId: string, reason: PausedReason) =>
     return rows.length > 0
   })
 
-/** Issue `number`'s triage state and pin, as the projection has them; `None` before the issue's first read. */
+/**
+ * Issue `number`'s triage state and pin; `None` before the issue's first read. It is pinned once a person triaged it,
+ * and from the moment a person's Accept or Not accepted is admitted until that write settles: the route records the
+ * write before its flow starts, so the flow drops a decision as soon as a person makes one (docs/features/issues.md#triage).
+ */
 export const itemTriage = (repoId: string, number: number) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly triage: TriageState; readonly pinned: boolean }>`
-      SELECT triage, triage_pinned AS pinned FROM items WHERE id = ${itemId(repoId, number)} AND deleted_at IS NULL`
+      SELECT i.triage, (i.triage_pinned OR EXISTS (
+          SELECT 1 FROM github_writes w
+          WHERE w.repo_id = ${repoId} AND w.op = 'issue/triage' AND w.status = 'pending'
+            AND (w.payload->>'number')::int = ${number}
+        )) AS pinned
+      FROM items i WHERE i.id = ${itemId(repoId, number)} AND i.deleted_at IS NULL`
     return Option.fromNullishOr(row)
+  })
+
+/**
+ * How long after its label step started a flow decision may still put a label on GitHub: the step's retries (30
+ * minutes, `TRIAGE_RETRY` in worker/github/Triage.ts) and a minute's slack. A label write that started longer ago and
+ * never finished stopped for good.
+ */
+export const LABEL_LEASE_MS = 31 * 60_000
+
+/** The same for the rejection comment: its step's retries (an hour, `COMMENT_RETRY`) and a minute's slack. */
+export const COMMENT_LEASE_MS = 61 * 60_000
+
+/**
+ * Records that decision `id`'s label step is about to check the pin and write: the first attempt's time, kept by every
+ * later one. Only a decision neither labeled nor dropped takes it.
+ */
+export const startLabel = (id: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`
+      UPDATE triage_decisions SET label_started_at = COALESCE(label_started_at, now())
+      WHERE id = ${id}::uuid AND labeled_at IS NULL AND dropped IS NULL`
+  })
+
+/** Records that decision `id`'s comment step is about to check the pin and post: the first attempt's time. */
+export const startComment = (id: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`
+      UPDATE triage_decisions SET comment_started_at = COALESCE(comment_started_at, now())
+      WHERE id = ${id}::uuid AND comment_github_id IS NULL AND NOT comment_failed`
+  })
+
+/** Decision `id`'s comment step found the issue pinned and posts nothing: it is no longer writing. */
+export const skipComment = (id: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`UPDATE triage_decisions SET comment_started_at = NULL WHERE id = ${id}::uuid AND comment_github_id IS NULL`
+  })
+
+/**
+ * Whether a flow decision on issue `number` may still write to GitHub: its label or comment step started, within its
+ * lease, and hasn't finished. Each step records its start before it checks the pin, and finishes only after its write
+ * landed, so a person's write that finds none after it was admitted writes after every flow write that could precede
+ * it; a decision whose step hasn't started will find the pin when it does.
+ */
+export const flowWriteInFlight = (repoId: string, number: number) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql`
+      SELECT 1 FROM triage_decisions
+      WHERE item_id = ${itemId(repoId, number)} AND via = 'flow' AND (
+        (label_started_at > now() - ${LABEL_LEASE_MS}::bigint * interval '1 millisecond'
+          AND labeled_at IS NULL AND dropped IS NULL)
+        OR (comment_started_at > now() - ${COMMENT_LEASE_MS}::bigint * interval '1 millisecond'
+          AND comment_github_id IS NULL AND NOT comment_failed)
+      )
+      LIMIT 1`
+    return rows.length > 0
   })
 
 /**

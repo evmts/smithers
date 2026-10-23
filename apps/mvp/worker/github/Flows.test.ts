@@ -84,8 +84,9 @@ describe("github/Write", () => {
     expect(made.login).toBe("maya")
     expect(GitHub.Issues.writeIdOf(made.body)).toBe(writeId)
     expect(github.seen("POST", /\/issues$/).map((call) => call.token)).toEqual(["user"])
-    // No marker search on a first attempt: nothing could have reached GitHub before it.
-    expect(github.seen("GET", /\/issues$/)).toHaveLength(0)
+    // Action.once looks for the marker before every write, a first attempt's included: a host that lost its journal
+    // is still right. One read, as the person's own token.
+    expect(github.seen("GET", /\/issues$/).map((call) => call.token)).toEqual(["user"])
     expect(await writeRow(runtime, writeId)).toEqual({ status: "done", failure: null, attempts: 1, itemNumber: 1 })
     expect(await items(runtime)).toEqual([
       {
@@ -136,7 +137,7 @@ describe("github/Write", () => {
     expect((await items(runtime))[0]).toMatchObject({ number: 1, title: "Existing", comments: 1, author: "sam" })
   })
 
-  test("an answer lost after GitHub made the issue: the retry finds it by its marker and makes no second one", async () => {
+  test("an answer lost after GitHub made the issue: Action.once finds it by the write's marker and makes no second one", async () => {
     const github = scriptedGitHub()
     const person = await maya(github)
     const writeId = await admit(runtime, { actorId: person.personId, sessionId: person.sessionId, via: "person", payload: issueWrite() })
@@ -146,10 +147,11 @@ describe("github/Write", () => {
     const ran = await runFlow(Write.Write, { writeId }, metrics.registration, { executionId: writeExecutionId(writeId), maxConnections: 3 })
     expect(ran.exit).toEqual(Exit.succeed({ status: "done", itemNumber: 1 }))
     expect(github.issues.size).toBe(1)
+    // Looked for first, posted once, then found by the marker after the lost answer, in the one attempt.
     expect(github.seen("POST", /\/issues$/)).toHaveLength(1)
-    expect(github.seen("GET", /\/issues$/)).toHaveLength(1)
-    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", attempts: 2 })
-    expect(metrics.count(Metrics.writeUnknown, { op: "issue/create" })).toBe(1)
+    expect(github.seen("GET", /\/issues$/)).toHaveLength(2)
+    expect(github.issues.get(1)!.body).toBe(GitHub.Issues.withWriteMarker("Steps to reproduce", writeId))
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", attempts: 1 })
     expect(metrics.count(Metrics.writes, { op: "issue/create", outcome: "done", token: "user" })).toBe(1)
   })
 
@@ -375,15 +377,41 @@ describe("github/Write", () => {
     expect(Exit.isFailure(noDatabaseGiveUp)).toBe(true)
   })
 
-  test("a write settled by another run is left as it is: settling it again changes nothing and counts nothing", async () => {
+  test("giving up on a write another run settled answers what that run settled, never failed, and records nothing", async () => {
     const github = scriptedGitHub()
     const person = await maya(github)
     const writeId = await admit(runtime, { actorId: person.personId, sessionId: null, via: "agent", payload: issueWrite() })
     const { services: value } = await services(runtime, github)
     expect((await runWrite(writeId, value)).exit).toEqual(Exit.succeed({ status: "done", itemNumber: 1 }))
-    const { logs } = await logged(Write.steps(value).giveUp({ writeId }))
-    expect(logs.find((log) => log.message === "github.write")!.annotations).toMatchObject({ settled: false, tokenKind: "app" })
+    const { exit, logs } = await logged(Write.steps(value).giveUp({ writeId }))
+    // Before 2026-10-21 give-up answered `failed` here while the row said done (Fable review).
+    expect(exit).toEqual(Exit.succeed({ status: "done", itemNumber: 1 }))
+    expect(logs.filter((log) => log.message === "github.write")).toEqual([])
     expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done" })
+  })
+
+  test("giving up counts the token kind send counts: none for a settings write, app for the agent's, user for a person's", async () => {
+    const github = scriptedGitHub()
+    const person = await maya(github)
+    const { services: value } = await services(runtime, github)
+    const kinds: Array<unknown> = []
+    for (const [via, payload] of [
+      ["person", { op: "triage/enable", dailyTokens: 1_000 }],
+      ["person", { op: "triage/pause" }],
+      ["agent", issueWrite()],
+      ["person", issueWrite()],
+    ] as const) {
+      const writeId = await admit(runtime, {
+        actorId: person.personId,
+        sessionId: via === "person" ? person.sessionId : null,
+        via,
+        payload,
+      })
+      const { logs } = await logged(Write.steps(value).giveUp({ writeId }))
+      kinds.push(logs.find((log) => log.message === "github.write")!.annotations["tokenKind"])
+    }
+    // Before 2026-10-21 the settings writes counted `user` here and `none` in send (Fable review).
+    expect(kinds).toEqual(["none", "none", "app", "user"])
   })
 
   test("under the host's redaction a write's record still says whose token wrote: user for a person, app for the agent", async () => {
@@ -411,6 +439,35 @@ describe("github/Write", () => {
     const { services: value } = await services(runtime, github)
     expect((await runWrite(writeId, value)).exit).toEqual(Exit.succeed({ status: "done", itemNumber: 1 }))
     expect(github.issues.get(1)!.body).toContain("Smithers for @unknown")
+  })
+
+  test("a commitment from someone with no GitHub login is no Maintainer's: refused, nothing labeled", async () => {
+    const github = scriptedGitHub()
+    github.open("Accepted", "Body")
+    const writeId = await admit(runtime, {
+      actorId: "local-developer",
+      sessionId: null,
+      via: "agent",
+      payload: { op: "issue/commitment", number: 1, commitment: "now" },
+    })
+    const { services: value } = await services(runtime, github)
+    expect((await runWrite(writeId, value)).exit).toEqual(Exit.succeed({ status: "refused", itemNumber: null }))
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "not_allowed" })
+    expect(github.issues.get(1)!.labels).toEqual([])
+  })
+
+  test("a write another run settles while this one is at GitHub: settling again changes nothing and counts nothing", async () => {
+    const github = scriptedGitHub()
+    const person = await maya(github)
+    const writeId = await admit(runtime, { actorId: person.personId, sessionId: person.sessionId, via: "person", payload: issueWrite() })
+    github.faults.push({
+      match: (method, path) => method === "POST" && path.endsWith("/issues"),
+      hold: async () => void await sql(runtime, `UPDATE github_writes SET status = 'refused', failure = 'invalid', settled_at = now() WHERE id = '${writeId}'`),
+    })
+    const { services: value } = await services(runtime, github)
+    const { logs } = await logged(Write.steps(value).send({ writeId }))
+    expect(logs.find((log) => log.message === "github.write")!.annotations).toMatchObject({ outcome: "done", settled: false })
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "invalid" })
   })
 
   test("the App's installation or token unreachable fails the step for its retry policy", async () => {
