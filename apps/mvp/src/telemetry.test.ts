@@ -86,6 +86,10 @@ describe("the relay keeps everything the browser exports", () => {
 
     const fromTab = await relay(tab.exports)
     const fromEngine = await relay(engine.exports)
+    expect([...fromTab.kept, ...fromEngine.kept]).toContainEqual(expect.objectContaining({
+      name: "flows_engine_replay_seeds",
+      fields: expect.objectContaining({ "otlp.value": expect.any(Number) }),
+    }))
     expect(drift(fromTab.dropped)).toEqual({ records: [], fields: [] })
     expect(drift(fromEngine.dropped)).toEqual({ records: [], fields: [] })
 
