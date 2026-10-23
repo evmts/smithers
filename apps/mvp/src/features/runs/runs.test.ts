@@ -1,3 +1,5 @@
+import { EngineStore } from "@smthrs/flows"
+import * as RunSteps from "./steps"
 import { InspectionJournal } from "@smthrs/gateway"
 // The acts on runs and the run reads (src/features/runs, decision 0014 §2 and §6, docs/features/runs.md#acts), on this
 // device's engine as the browser's engine worker registers them, over the compose Postgres, against ChatApi's real
@@ -325,4 +327,22 @@ test("a real completed personal flow journal lights its graph as completed", asy
   const settlements = journal.filter((e) => e.eventType.endsWith("node-settled")).map((e) => JSON.parse(e.payload.text))
   expect(nodes.length).toBeGreaterThan(0)
   expect(nodes.map((node) => node.state), JSON.stringify(settlements)).toEqual(nodes.map(() => "done"))
+}, SLOW)
+
+
+test("pinned retry refuses corrupt history when the child is missing, unreadable or has no pinned revision", async () => {
+  const d = await device()
+  const runId = crypto.randomUUID()
+  await d.run(d.engine.flows.execute(FlowRun, { executionId: runId, payload: { name: "hello" } }))
+  const service = d.engine.inspection
+  for (const fault of ["missing", "unreadable", "malformed"] as const) {
+    const reads = EngineStore.RunInspection.RunInspection.of({ ...service,
+      inspect: (id, options) => service.inspect(id, options).pipe(Effect.map((result) => fault === "missing" ? { ...result, children: [] } : result)),
+      payload: (id) => id === runId ? Effect.succeed({ flowName: "flow/run", payload: { name: 5 } }) : fault === "unreadable"
+        ? Effect.fail(new EngineStore.RunInspection.RunNotFound({ runId: id }))
+        : Effect.succeed({ flowName: "flow/run/prompt", payload: {} }),
+    })
+    const exit = await Effect.runPromiseExit(RunSteps.retry({ runId, version: "pinned" }).pipe(Effect.provideService(EngineStore.RunInspection.RunInspection, reads)) as Effect.Effect<unknown, unknown>)
+    expect(refusal(exit), fault).toBe("not_retryable")
+  }
 }, SLOW)

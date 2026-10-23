@@ -233,3 +233,10 @@ test("the run page retries a system TODO through todo/Retry instead of replaying
   expect(t.navigated).toEqual([])
   expect(t.inspections.some((id) => id.startsWith("retry:"))).toBe(false)
 })
+
+test("Retry refuses a TODO run whose stored input cannot identify its TODO", async () => {
+  const t = await setup({ exists: (id) => Effect.succeed({ ...inspection(id), run: { ...inspection(id).run, flowName: "todo", input: { text: "{}", bytes: 2, clipped: false } } }) })
+  await t.runtime.runPromise(actions.retry("current"))
+  expect((await t.view()).refusal).toBe("not_retryable")
+  expect(t.calls).toEqual([])
+})

@@ -60,3 +60,16 @@ test("Runs hover warms before navigation; a failed engine never leaves a ready s
   await runs.actions.openList()
   expect(runs.queries.view.toArray[0]).toMatchObject({ listOpen: true, listReady: false })
 })
+
+test("leaving a run through the frontend clears only that run and preserves a newer page", async () => {
+  const tab = await open(nodeDevice({ engineWorker: failingWorker }))
+  const runs = await tab.runtime.runPromise(Effect.service(Runs))
+  runs.queries.view.startSyncImmediate()
+  await runs.actions.openRun("first")
+  runs.actions.closeRun("first")
+  await vi.waitFor(() => expect(runs.queries.view.toArray[0]?.runId).toBeNull())
+  await runs.actions.openRun("second")
+  runs.actions.closeRun("first")
+  await tab.runtime.runPromise(Effect.yieldNow)
+  expect(runs.queries.view.toArray[0]?.runId).toBe("second")
+})
