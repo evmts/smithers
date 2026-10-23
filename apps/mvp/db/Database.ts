@@ -1,3 +1,4 @@
+import messagePins from "./migrations/0054_message_pins.ts"
 import conversationPeople from "./migrations/0047_conversation_people.ts"
 import dropMergeUnknown from "./migrations/0050_drop_merge_unknown.ts"
 import triageWriteClaims from "./migrations/0049_triage_write_claims.ts"
@@ -143,6 +144,7 @@ export const migrations = {
   "0051_github_repo_roles": githubRepoRoles,
   "0052_agent_views": agentViews,
   "0053_repo_runs": repoRuns,
+  "0054_message_pins": messagePins,
 }
 
 /** Applies every migration in `db/migrations` that hasn't run, in order; returns the ones it applied. */

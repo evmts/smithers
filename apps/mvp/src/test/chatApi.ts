@@ -1,3 +1,4 @@
+import { PINS_TABLE } from "../features/pins/contract"
 import * as ViewRealm from "../../worker/ViewRealm.ts"
 import * as Pg from "@effect/sql-pg"
 import { ImmutableCache } from "@smthrs/artifacts"
@@ -218,6 +219,7 @@ export interface Started {
 const SCHEMA_TABLES: ReadonlySet<string> = new Set([
   DOMAINS_TABLE,
   MESSAGES_TABLE,
+  PINS_TABLE,
   TEXT_UPDATES_TABLE,
   REPOSITORIES_TABLE,
   VIEWS_TABLE,

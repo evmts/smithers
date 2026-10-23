@@ -1,3 +1,5 @@
+import * as Pins from "./Pins.ts"
+import { PIN_ROUTE, PINS_SHAPE_ROUTE } from "../src/features/pins/contract.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { OtlpRelay } from "@smthrs/observability"
 import { Interactions, type PresentationRealm } from "@smthrs/views"
@@ -159,6 +161,7 @@ export const make = <E, R>(
     )
     // GET and POST /api/answers/<id>: the write path for the browser's agent (docs/features/agent.md).
     const answers = yield* Answers.make(database)
+    const pins = yield* Pins.make(database)
     // POST /api/views and GET /api/shapes/views: the conversation's views (docs/features/web-pages.md).
     const views = yield* Views.make(database, options)
     // POST /api/web/preview: a page checked before it is framed (docs/features/web-pages.md#before-a-page-is-framed).
@@ -357,6 +360,8 @@ export const make = <E, R>(
         const parent = parentOf(request.headers.traceparent)
         return yield* questions.pipe(Effect.withSpan("chat.question", { kind: "server", parent }))
       }
+      if (path === PIN_ROUTE || path === `${PIN_ROUTE}/stamp`) return yield* pins.write
+      if (path === PINS_SHAPE_ROUTE) return yield* pins.shape
       if (path === SHAPE_ROUTE) return yield* shape
       if (path === VIEWS_ROUTE) return yield* views.add
       const stateOf = Views.stateViewId(path)

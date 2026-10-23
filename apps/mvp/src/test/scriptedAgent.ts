@@ -266,6 +266,9 @@ export const scriptedRenderer = Model.make({
 
 /** The scripted model named `name`, or `undefined` for a name no script has. */
 export const scriptedModel = (name: string): Model.Model | undefined => {
+  if (name === "pin-message") return Model.make({ stream: () => turn(`ctx.done(${JSON.stringify(
+    "GARDEN\n\n" + Array.from({ length: 35 }, (_, i) => `${i + 1}. The garden has room for trees, flowers, a winding path, and a quiet place to sit.`).join("\n\n"),
+  )})`) })
   if (name === "sandbox-once") return sandboxOnce
   if (name === "sandbox-long") return sandboxLong
   if (name === "todo-draft") return todoDraft

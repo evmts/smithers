@@ -1,3 +1,4 @@
+import { ChatPin, ChatUnpin } from "../features/pins/flows"
 import { Context, Layer } from "effect"
 import { Remember } from "../features/agent/memoryFlows"
 import { Summarize } from "../features/timeline/flow"
@@ -166,6 +167,8 @@ export const registry = {
   },
   // Message controls (docs/features/chat.md#message-controls): Copy on a message and `/copy`, which the agent runs to
   // copy its last answer; Edit on a question Smithers doesn't have yet and `/edit`, the person's only.
+  "chat/pin": { flow: ChatPin, minimum: "guest", changes: "pins a message for the person across their devices" },
+  "chat/unpin": { flow: ChatUnpin, minimum: "guest", changes: "unpins the person's message across their devices" },
   "chat/copy": { flow: ChatCopy, changes: "writes the person's clipboard", slash: { command: "copy", minimum: "anyone", hints: { fields: { messageId: { hidden: true } } } } },
   "chat/edit": {
     flow: ChatEdit,

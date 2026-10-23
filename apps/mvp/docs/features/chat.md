@@ -220,3 +220,15 @@ to remove the capture listener on both browsers and the Node test host.
 - **Observability:** see [observability.md](../observability.md).
 
 IPv4-mapped IPv6 addresses use the IPv4 /24 throttle key in dotted, hexadecimal and fully expanded forms.
+
+## Pin a message
+
+Pin on a person's or the agent's message keeps a copy above the conversation while the conversation scrolls. Pin another to replace it; Unpin on either copy removes it. A tall copy scrolls within a capped height and collapses with its toggle, including at 390, 768 and 1280 pixels. The composer stays usable.
+
+A pin belongs to one person in one conversation and follows that person across devices. Other people on the branch keep their own pins. Migration 0054 stores `message_pins`; Electric's session-filtered `/api/shapes/message-pins` keeps device schema version 1. The device holds unsynced intents in the versioned `message-pin-pending` collection and runs `chat/pin` or `chat/unpin` durably. Newer timestamped acts supersede older retries; unpin keeps a tombstone. Collapse lives in a tab-local TanStack DB collection.
+
+Both controls and the agent use the same model-invocable flows. “Pin that” without an id targets the previous completed agent answer in its conversation. The write route `/api/message-pin` derives the person from the session, checks conversation access and message membership, and refuses unrelated run targets. Its `chat.pin` span, log and `smithers_message_pins` counter record status and outcome without content. See [decision 0090](../decisions/0090-pin-message.md). Tests: `src/features/pins`, `worker/Pins.test.ts`, and `e2e/pin-message.spec.ts`; eval cases `chat-pin-that` and `chat-unpin`.
+
+Agent calls first journal a timestamp from `/api/message-pin/stamp`, newer than the current personal pin even after a device's fast clock. Device intents retain their original timestamp through retries. A refused launch restores the synced pin and keeps Retry available; reloading resumes unfinished intents without silently retrying a final refusal.
+
+Queued and unsent questions pin immediately. The versioned intent keeps a local copy, including if its original is taken back or discarded, until Unpin. Retry preserves that copy and its expected answer id. A conflicting synced message with the same id cannot replace its text: the same durable flow waits for the matching question and answer before syncing the pin to other devices; a newer pin or unpin ends an obsolete wait. This also works for the first question, before any message has synced. No message text enters the flow payload or telemetry.

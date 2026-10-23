@@ -1,3 +1,5 @@
+import { postgresTime } from "./view"
+import { Clock, Option } from "effect"
 import { Context, Data, Effect, Layer, Stream } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { Page, reload } from "../../page"
@@ -31,6 +33,10 @@ type Store = ChatStore["Service"]
 
 /** What a frontend reads: the TanStack DB collection of each live query, for its binding. */
 export interface ChatQueries {
+  /** The person's pinned copy, independent of the conversation's window. */
+  readonly pinned: Store["pinned"]["tanstack"]
+  readonly pinPending: Store["pinState"]["pendingState"]["tanstack"]
+  readonly pinCollapsed: Store["pinState"]["collapseState"]["tanstack"]
   /** The window of the conversation, oldest first. */
   readonly conversation: Store["shown"]["tanstack"]
   readonly summaries: Store["summaries"]["tanstack"]
@@ -46,6 +52,7 @@ export interface ChatQueries {
    * not opened yet.
    */
   readonly of: (conversationId: string | null | undefined) => {
+    readonly pinned: Store["pinned"]["tanstack"]
     readonly conversation: Store["shown"]["tanstack"]
     readonly history: Store["historyState"]["tanstack"]
     readonly queued: Store["queued"]["tanstack"]
@@ -57,6 +64,10 @@ export class NotCopied extends Data.TaggedError("NotCopied") {}
 
 /** What a person does, as plain functions. Each finishes before it returns, but Copy, which resolves once it copied. */
 export interface ChatActions {
+  readonly retryPin: (conversationId: string) => void
+  readonly pin: (messageId: string, local?: boolean) => void
+  readonly unpin: () => void
+  readonly collapsePin: (messageId: string, collapsed: boolean) => void
   readonly ask: (text: string) => AskResult
   /** Asks from a form or a view: its submit label or event label, with the view and the values (docs/features/views.md). */
   readonly askFromView: (text: string, from: FromView) => AskResult
@@ -112,8 +123,61 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
         Stream.runForEach(() => resendUnadmitted),
         Effect.forkIn(store.scope, { startImmediately: true }),
       )
+      const sendPin = (held: import("../pins/schema").Pending) => Effect.gen(function* () {
+        const fail = Effect.gen(function* () {
+          const current = yield* store.pinState.pending.get(held.conversationId)
+          if (Option.isSome(current) && current.value.at === held.at) yield* store.pinState.pending.update(held.conversationId, row => { row.failed = true })
+          yield* Effect.logWarning("chat.pin").pipe(Effect.annotateLogs({ outcome: "failed", feature: "pins" }))
+        }).pipe(Effect.orDie)
+        yield* (yield* FlowDispatch).dispatch(held.messageId === null ? "chat/unpin" : "chat/pin",
+          { ...(held.home ? {} : { conversationId: held.conversationId }), ...(held.messageId === null ? {} : { messageId: held.messageId }), at: held.at, awaitAdmission: held.awaitAdmission,
+            ...(held.questionAnswerId === undefined ? {} : { questionAnswerId: held.questionAnswerId }) },
+          { door: "button", executionId: `pin:${held.conversationId}:${held.at}` }).pipe(
+            Effect.flatMap(done => done._tag === "Done" ? Effect.gen(function* () {
+              const current = yield* store.pinState.pending.get(held.conversationId)
+              if (Option.isSome(current) && current.value.at === held.at) {
+                yield* store.pinState.pending.update(held.conversationId, row => { row.serverConversationId = done.value.conversationId })
+              }
+            }).pipe(Effect.orDie) : fail),
+            Effect.catch(() => fail), Effect.forkIn(store.scope))
+      })
+      yield* store.pinState.pending.restored.pipe(Effect.ignore, Effect.andThen(Effect.gen(function* () {
+        for (const held of yield* store.pinState.pending.toArray) if (!held.failed) yield* sendPin(held)
+      })), Effect.forkIn(store.scope))
+      const pin = (messageId?: string, local?: boolean) => Effect.gen(function* () {
+        const place = (yield* store.place.toArray)[0]?.conversationId
+        const messages = place == null ? store.messages : store.opened(place)!.messages
+        const conversation = place == null ? store.conversation : store.opened(place)!.conversation
+        const rows = yield* conversation.toArray
+        const conversationId = place ?? "home"
+        const target = rows.find(row => row.id === messageId && (local === undefined || row.local === Number(local)))
+        const pending = store.pinState.pending
+        const held = yield* pending.get(conversationId)
+        if (place == null && (yield* messages.toArray).length === 0 && rows.length === 0 && Option.isNone(held)) return
+        const retained = Option.isSome(held) && held.value.messageId === messageId && held.value.awaitAdmission && local !== false ? held.value : undefined
+        const unsent = messageId === undefined ? Option.none() : yield* store.unsent.get(messageId)
+        const asking = messageId === undefined ? Option.none() : yield* store.asking.get(messageId)
+        const question = Option.getOrUndefined(Option.orElse(unsent, () => asking))
+        const awaitAdmission = local === true || target?.local === 1 || (target === undefined && retained !== undefined)
+        if (awaitAdmission && question === undefined && retained === undefined) return
+        const questionAnswerId = awaitAdmission ? question?.answerId ?? retained?.questionAnswerId : undefined
+        const text = awaitAdmission ? question?.text ?? retained?.text : undefined
+        if (Option.isSome(held) && !held.value.failed && held.value.messageId === (messageId ?? null) && held.value.awaitAdmission === awaitAdmission && held.value.questionAnswerId === questionAnswerId) return
+        const serverConversationId = place ?? (yield* messages.toArray)[0]?.conversationId ?? (Option.isSome(held) ? held.value.serverConversationId : undefined)
+        const synced = serverConversationId === undefined ? Option.none() : yield* store.pinState.pins.get(serverConversationId)
+        const at = Math.max(yield* Clock.currentTimeMillis,
+          Option.isSome(held) ? held.value.at + 1 : 0,
+          Option.isSome(synced) ? (postgresTime(synced.value.changedAt) ?? 0) + 1 : 0)
+        const next = { home: place == null, failed: false, conversationId, personId: "", messageId: messageId ?? null, at, changedAt: new Date(at).toISOString(), awaitAdmission,
+          ...(text === undefined ? {} : { text }), ...(questionAnswerId === undefined ? {} : { questionAnswerId }), ...(serverConversationId === undefined ? {} : { serverConversationId }) }
+        const kept = Option.isSome(held) ? yield* pending.update(conversationId, row => { delete row.text; delete row.questionAnswerId; Object.assign(row, next) }) : yield* pending.insert(next)
+        yield* kept.persisted.pipe(Effect.andThen(sendPin(next)), Effect.forkIn(store.scope))
+      }).pipe(Effect.orDie)
       return Chat.of({
         queries: {
+          pinned: store.pinned.tanstack,
+          pinPending: store.pinState.pendingState.tanstack,
+          pinCollapsed: store.pinState.collapseState.tanstack,
           summaries: store.summaries.tanstack,
           conversation: store.shown.tanstack,
           queued: store.queued.tanstack,
@@ -126,11 +190,22 @@ export class Chat extends Context.Service<Chat, { readonly queries: ChatQueries;
               ? undefined
               : store.opened(conversationId)
             return branch === undefined
-              ? { conversation: store.shown.tanstack, history: store.historyState.tanstack, queued: store.queued.tanstack }
-              : { conversation: branch.shown.tanstack, history: branch.historyState.tanstack, queued: branch.queued.tanstack }
+              ? { pinned: store.pinned.tanstack, conversation: store.shown.tanstack, history: store.historyState.tanstack, queued: store.queued.tanstack }
+              : { pinned: branch.pinned.tanstack, conversation: branch.shown.tanstack, history: branch.historyState.tanstack, queued: branch.queued.tanstack }
           },
         },
         actions: {
+          retryPin: (conversationId) => run(Effect.gen(function* () {
+            const held = yield* store.pinState.pending.get(conversationId)
+            if (Option.isSome(held)) yield* pin(held.value.messageId ?? undefined, held.value.awaitAdmission ? true : undefined)
+          })),
+          pin: (id, local) => run(pin(id, local)),
+          unpin: () => run(pin()),
+          collapsePin: (id, collapsed) => run(Effect.gen(function* () {
+            const rows = store.pinState.collapsed
+            if (Option.isSome(yield* rows.get(id))) yield* rows.update(id, r => { r.collapsed = collapsed })
+            else yield* rows.insert({ id, collapsed })
+          }).pipe(Effect.orDie)),
           ask: (text) => run(ask(text)),
           askFromView: (text, from) => run(ask(text, from)),
           openComposer: (via) => run(openComposer(via)),

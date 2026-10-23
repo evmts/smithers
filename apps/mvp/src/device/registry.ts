@@ -1,3 +1,4 @@
+import { Pin, Pending as PinPending } from "../features/pins/schema"
 import { Migrations } from "@smthrs/effect-tanstack-db"
 import { Notice, Pending } from "../features/attention/schema"
 import { ConversationRoute } from "../features/branch/schema"
@@ -147,6 +148,8 @@ export const TimelineSummariesStore = Migrations.local({
   discard: true,
 })
 
+export const PinPendingStore = Migrations.local({ id: "message-pin-pending", versions: [PinPending], getKey: r => r.conversationId })
+
 // --- Synced: the server's rows, kept on the device ---
 
 /** The conversation's messages, one collection per conversation. Version 3: an answer's steps (`parts`). */
@@ -157,6 +160,7 @@ export const ViewsStore = Migrations.synced({ id: "views", version: 4, schema: V
 
 const synced = [
   MessagesStore,
+  Migrations.synced({ id: "message-pins", version: 1, schema: Pin }),
   ViewsStore,
   // Version 2: an approval's answer may carry a note (`Decision`).
   Migrations.synced({ id: "runs", version: 2, schema: Run }),
@@ -221,6 +225,7 @@ export const SteerSendingPayload = Migrations.payload({ key: "steer-sending", ve
 /** Every store this build keeps, and its outbox's writes. */
 export const deviceRegistry = Migrations.registry({
   stores: [
+    PinPendingStore,
     BranchConversationsStore,
     ChatUnsentStore,
     ChatDraftsStore,

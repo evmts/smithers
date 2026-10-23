@@ -1,0 +1,6 @@
+.mvp-conversation { display:flex; flex-direction:column; flex:1 1 auto; min-width:0; min-height:0; }
+.mvp-pinned-message { flex:0 0 auto; min-width:0; border-bottom:1px solid var(--border); background:var(--surface); }
+.mvp-pin-actions { display:flex; justify-content:flex-end; }
+.mvp-pin-content { max-height:min(30dvh,20rem); overflow:auto; overscroll-behavior:contain; padding:0 1rem .75rem; overflow-wrap:anywhere; white-space:pre-wrap; }
+.mvp-pin-content[hidden] { display:none; }
+.mvp-pin-content pre { max-width:100%; overflow:auto; }

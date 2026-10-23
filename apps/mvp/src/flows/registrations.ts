@@ -1,3 +1,4 @@
+import * as PinSteps from "../features/pins/steps"
 import { FlowRegistry } from "./registry"
 import * as Timeline from "../features/timeline/steps"
 import { Action } from "@smthrs/flow"
@@ -132,6 +133,7 @@ export const registrations = (options: HostOptions) =>
     Issues.registration,
     TodoSteps.registration,
     ChatSteps.registration,
+    PinSteps.registrationAt(options.origin),
     Attention.registrationAt(options.origin),
     SpendSteps.registrationAt(options.origin),
     DomainSteps.registrationAt(options.origin),

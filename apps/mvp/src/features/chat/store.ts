@@ -1,3 +1,4 @@
+import { makePins, pinnedQuery } from "../pins/store"
 import { observeLoad } from "./load"
 import { makeLane, makeSummaries, followSummaries, summaryQuery } from "../timeline/store"
 import { answerCannotFinish } from "./answerEnd"
@@ -106,6 +107,7 @@ type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>
  */
 export interface ConversationState {
   readonly conversationId: string
+  readonly pinned: Query<typeof pinnedQuery>
   readonly messages: ElectricCollection.ElectricCollection<Message>
   readonly conversation: Query<typeof conversationQuery>
   readonly latest: Query<typeof latestQuery>
@@ -129,6 +131,8 @@ export interface ConversationState {
 export class ChatStore extends Context.Service<
   ChatStore,
   {
+    readonly pinState: Effect.Success<ReturnType<typeof makePins>>
+    readonly pinned: Query<typeof pinnedQuery>
     readonly messages: ElectricCollection.ElectricCollection<Message>
     readonly asking: Collection.Collection<Asking, string>
     readonly unsent: Collection.Collection<Unsent, string>
@@ -305,6 +309,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
     },
     ...(config.retry === undefined ? {} : { retry: config.retry }),
   })
+  const pinState = yield* makePins(new URL(config.shapeUrl).origin, messages)
 
   // --- Sending: the outbox's `ask` mutation (docs/decisions/0002-local-first.md §3) ---
 
@@ -456,6 +461,7 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
       // The rail summarizes what this conversation's window shows (src/features/timeline/store.ts).
       yield* followSummaries(branchLatest, branchMessages, summaries, flows, summaryLane).pipe(Effect.forkIn(scope))
       const opened: ConversationState = {
+        pinned: yield* pinnedQuery(pinState.effective, branchMessages, pinState.pending, conversationId),
         conversationId,
         messages: branchMessages,
         conversation: branchConversation,
@@ -607,6 +613,8 @@ const make = Effect.fnUntraced(function* (config: ChatConfig, host: ChatHost) {
   // The rail summarizes what the window shows, never every message the device holds (src/features/timeline/store.ts).
   yield* followSummaries(latest, messages, summaries, flows, summaryLane).pipe(Effect.forkIn(scope))
   const store = ChatStore.of({
+    pinState,
+    pinned: yield* pinnedQuery(pinState.effective, messages, pinState.pending),
     summaries: yield* summaryQuery(summaries),
     messages,
     asking,

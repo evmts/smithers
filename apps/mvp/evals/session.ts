@@ -219,7 +219,7 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
     // would otherwise spend the scratch deployment's day and refuse every later case `quota_exceeded`. The run's own
     // cap is `maxTokens`, counted from what the model reported.
     await query((sql) =>
-      sql`TRUNCATE messages, views, runs, flow_drafts, flow_revisions, flows, model_usage, model_budget_days, watches
+      sql`TRUNCATE message_pins, messages, views, runs, flow_drafts, flow_revisions, flows, model_usage, model_budget_days, watches
         RESTART IDENTITY CASCADE`
     )
     const asking = await agentFor(kase.provider)

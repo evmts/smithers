@@ -1,3 +1,4 @@
+import { ChatPin, ChatUnpin } from "../features/pins/flows"
 import { Remember } from "../features/agent/memoryFlows"
 import { Summarize } from "../features/timeline/flow"
 import { Flow } from "@smthrs/flow"
@@ -69,6 +70,8 @@ export const declarations = {
   "view/set-state": SetViewState,
   "chat/Answer": Answer,
   "chat/Close": Close,
+  "chat/pin": ChatPin,
+  "chat/unpin": ChatUnpin,
   "chat/copy": ChatCopy,
   "chat/edit": ChatEdit,
   "app/memory/remember": Remember,

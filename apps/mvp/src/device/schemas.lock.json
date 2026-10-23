@@ -1,6 +1,12 @@
 {
-  "epoch": 75,
+  "epoch": 77,
   "stores": {
+    "message-pin-pending": {
+      "kind": "local",
+      "versions": {
+        "1": "04d27563af6f12d9"
+      }
+    },
     "branch-conversations": {
       "kind": "local",
       "versions": {
@@ -120,6 +126,12 @@
       "kind": "synced",
       "versions": {
         "3": "fad6fd295c841426"
+      }
+    },
+    "message-pins": {
+      "kind": "synced",
+      "versions": {
+        "1": "87cecdd8ec6b2979"
       }
     },
     "views": {

@@ -60,6 +60,16 @@ const personsOwn = (ask: string): AgentCase => ({
 
 export const FLOW_CASES: ReadonlyArray<AgentCase> = [
   {
+    name: "chat-pin-that",
+    ask: "Pin that — your previous answer — so I can talk about it without scrolling back up.",
+    checks: t => [answered(t), attempted(t, "chat/pin"), ...changedOnly(t, ["chat/pin"])],
+  },
+  {
+    name: "chat-unpin",
+    ask: "Unpin my pinned message.",
+    checks: t => [answered(t), attempted(t, "chat/unpin"), ...changedOnly(t, ["chat/unpin"])],
+  },
+  {
     name: "todo-retry",
     ask: `Retry my failed TODO T1 in ${REPO}.`,
     checks: (t) => [answered(t), attempted(t, "todo/Retry", all(repo, fieldIs("number", 1))),

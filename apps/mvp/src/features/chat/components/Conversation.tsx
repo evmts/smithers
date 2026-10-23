@@ -1,3 +1,5 @@
+import { PinControl } from "../../pins/PinControl"
+import { PinnedMessage } from "../../pins/PinnedMessage"
 import { TimelineContribution } from "../../timeline/TimelineContribution"
 import { Badge, Button, ChatMessage, ChatTranscript, CopyButton, MessageResponse, RelativeTime, Wordmark } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
@@ -41,11 +43,20 @@ export function Conversation({ empty = <Wordmark />, readOnly = false, timelineT
   const status = useStatus().queries.of(place?.conversationId)
   const { data: statuses } = useLiveQuery(status.statuses)
   const { data: conversation } = useLiveQuery(shown.conversation)
+  const { data: pinned } = useLiveQuery(shown.pinned)
+  const { data: collapsedPins } = useLiveQuery(queries.pinCollapsed)
+  const { data: pinPending } = useLiveQuery(queries.pinPending)
+  const failedPin = pinPending.find(row => row.failed && (row.home ? place?.conversationId == null : row.conversationId === place?.conversationId))
+  const pin = pinned[0]
+  const collapsed = pin === undefined ? false : collapsedPins.some(row => row.id === pin.id && row.collapsed)
   const { data: history } = useLiveQuery(shown.history)
   const { data: summaries } = useLiveQuery(queries.summaries)
   const { data: connection } = useLiveQuery(queries.connection)
   const pill = connection !== undefined && connection.status !== "up"
   return (
+    <div className="mvp-conversation">
+    {failedPin === undefined ? null : <Button variant="ghost" size="sm" aria-label={failedPin.messageId === null ? "Retry unpin" : "Retry pin"} onClick={() => actions.retryPin(failedPin.conversationId)}>Retry</Button>}
+    {pin === undefined ? null : <PinnedMessage message={pin} collapsed={collapsed} onUnpin={actions.unpin} onCollapse={() => actions.collapsePin(pin.id, !collapsed)} />}
     <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={conversation} summaries={summaries} statuses={statuses} drafts={readOnly ? [] : drafts} todos={timelineTodos} onJump={jump} onActivate={activate} />}>
       {history?.earlier === true ? (
         <Button variant="ghost" size="sm" onClick={actions.loadEarlier}>
@@ -76,6 +87,7 @@ export function Conversation({ empty = <Wordmark />, readOnly = false, timelineT
           pendingLabel="Smithers is answering"
           actions={
             <>
+            <PinControl pinned={pin?.id === message.id && pin.local === message.local} onClick={() => pin?.id === message.id && pin.local === message.local ? actions.unpin() : actions.pin(message.id, message.local === 1)} />
             {timeOf(message) === undefined ? null : <RelativeTime ts={timeOf(message)!} />}
             {message.status === "done" ? (
               <CopyButton variant="ghost" size="sm" onCopy={() => actions.copy(message.id)}>
@@ -141,5 +153,6 @@ export function Conversation({ empty = <Wordmark />, readOnly = false, timelineT
         ),
       )}
     </ChatTranscript>
+    </div>
   )
 }

@@ -421,6 +421,14 @@ class Devices {
   readonly word = `lf${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
   private readonly startedAt = Date.now()
   private readonly all: Array<Device> = []
+  private viewport = VIEWPORT
+
+  /** Record responsive proofs at their actual viewport size, without letterboxing or cropping. */
+  atWidth(width: number) {
+    this.viewport = { width, height: VIEWPORT.height }
+    return this
+  }
+
 
   constructor(
     private readonly browser: Browser,
@@ -476,10 +484,10 @@ class Devices {
     return Promise.all(
       names.map(async (name) => {
         const context = await this.browser.newContext({
-          viewport: VIEWPORT,
+          viewport: this.viewport,
           // The test's mode, from the first frame (e2e/fixtures.ts `themeOf`).
           colorScheme: themeOf(this.testInfo),
-          recordVideo: { dir: this.testInfo.outputPath("videos"), size: VIEWPORT },
+          recordVideo: { dir: this.testInfo.outputPath("videos"), size: this.viewport },
         })
         if (cookie !== undefined) {
           // Over HTTPS, as the dev server and production serve the app, ChatApi reads the `__Host-` name, which a

@@ -55,6 +55,8 @@ export default defineConfig({
         "worker/ci/*.ts",
         "worker/flows/**/*.{ts,vibe}",
         // The metered model endpoint and admin/SetModel (docs/features/model-endpoint.md).
+        "worker/Pins.ts",
+        "db/migrations/0054_message_pins.ts",
         "worker/Actor.ts",
         "worker/ErrorCode.ts",
         "worker/ModelEndpoint.ts",

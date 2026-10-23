@@ -25,6 +25,8 @@ const failed = (flow: string, input: unknown) => ({ calls: [call(flow, input, "f
 
 /** For each case: what the agent should do, and something it might do instead. */
 const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Partial<Trial> }> = {
+  "chat-pin-that": { good: failed("chat/pin", {}), bad: steps },
+  "chat-unpin": { good: failed("chat/unpin", {}), bad: steps },
   "todo-retry": { good: failed("todo/Retry", { repo: REPO, number: 1 }), bad: steps },
   "file-open-close": {
     good: { calls: [call("file/open", { path: "README.md", lines: "2-4" }), call("file/close", { path: "README.md" })] },

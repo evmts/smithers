@@ -1,3 +1,4 @@
+import { PINS_TELEMETRY } from "./features/pins/contract"
 // The browser's telemetry contract (docs/observability.md#relayed-browser-records): every record the tab and its
 // engine worker export, by name, and every attribute those records carry, merged from each feature's contract. ChatApi's
 // relay (worker/Chat.ts) keeps exactly these and drops the rest, and the engine worker exports only these spans
@@ -127,6 +128,7 @@ export const WITHHELD = {
 const features: ReadonlyArray<Telemetry> = [
   APP_TELEMETRY,
   CHAT_TELEMETRY,
+  PINS_TELEMETRY,
   COMMANDS_TELEMETRY,
   AUTH_TELEMETRY,
   FLOWS_TELEMETRY,
