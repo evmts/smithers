@@ -47,6 +47,8 @@ export type Credential =
   | { readonly _tag: "Anonymous" }
   | { readonly _tag: "Refused"; readonly status: number; readonly code: string }
 
+const sessionCredential: Credential = { _tag: "Session" }
+
 /** The server couldn't be asked for a run's credential, or a run's lineage couldn't be read: nothing was sent. */
 export class CredentialUnavailable extends Data.TaggedError("CredentialUnavailable")<{ readonly reason: string }> {}
 
@@ -137,18 +139,25 @@ export const layer = (options: {
         (run: string): Effect.Effect<Credential, CredentialUnavailable> =>
           Effect.gen(function* () {
             const { flow, parent } = yield* runOf(run)
+            let ownPress = false
             if (parent === null && personFlow(registry, flow)) {
               const answered = yield* askDoor(run, {})
-              if (Option.isSome(answered) && PERSON_DOORS.includes(answered.value.door)) return { _tag: "Session" } as const
               if (Option.isNone(answered)) {
                 yield* Effect.logWarning("auth.run_credential").pipe(Effect.annotateLogs({ flow, outcome: "door_timeout" }))
-                if (refusesCredential(flow)) return { _tag: "Session" } as const
               }
+              ownPress = Option.match(answered, {
+                onNone: () => refusesCredential(flow),
+                onSome: (answer) => PERSON_DOORS.includes(answer.door),
+              })
             }
-            const under = parent === null ? { _tag: "Session" } as const : yield* Cache.get(credentials, parent)
-            if (under._tag === "Session") return yield* mint(run, flow, undefined)
-            if (under._tag === "Token") return yield* mint(run, flow, under.token)
-            return under
+            const under = parent === null ? sessionCredential : yield* Cache.get(credentials, parent)
+            return ownPress
+              ? sessionCredential
+              : under._tag === "Session"
+              ? yield* mint(run, flow, undefined)
+              : under._tag === "Token"
+              ? yield* mint(run, flow, under.token)
+              : under
           }).pipe(Effect.withSpan("auth.run_credential", { attributes: { "smithers.execution.id": run } })),
         {
           capacity: REMEMBERED,

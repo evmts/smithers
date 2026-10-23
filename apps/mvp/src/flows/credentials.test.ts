@@ -14,7 +14,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import type { Actor } from "../../worker/Actor.ts"
 import { build } from "../../worker/test/flowHost.ts"
 import { harness, testFile } from "../../worker/test/harness.ts"
-import { DOORS } from "./contract"
+import { credentialRoute, DOORS } from "./contract"
 import * as RunCredentials from "./credentials"
 import { tabDoors } from "./doors"
 import { TabRequests } from "./requests"
@@ -261,9 +261,11 @@ describe("who a run's requests go as", () => {
     expect(d.seenFor(answer.path)).toEqual([{ path: answer.path, bearer: false, credentials: undefined }])
     expect(d.seen.filter((request) => request.path.endsWith("/credential"))).toEqual([])
     // Any other person's flow whose tab is silent still gets a credential, and the wait is a record.
-    expect(await d.run(Watch, crypto.randomUUID(), { path: "/api/watches", body: { conversationId: null } }))
+    const watchRun = crypto.randomUUID()
+    expect(await d.run(Watch, watchRun, { path: "/api/watches", body: { conversationId: null } }))
       .toMatchObject({ status: 200 })
     expect(d.seenFor("/api/watches")).toEqual([{ path: "/api/watches", bearer: true, credentials: "omit" }])
+    expect(d.seen.filter((request) => request.path.endsWith("/credential")).map((request) => request.path)).toEqual([credentialRoute(watchRun)])
   })
 
   test("a run nested in the person's press asks for its credential in their session", async () => {
