@@ -21,13 +21,14 @@ page:  its own home, a section you may see ─▶ [Home] [Code] and RepositoryHo
 |---|---|---|
 | `everyone` | anyone who may open the page, signed out included | everyone's sections |
 | `contributor` | anyone signed in with a role on the repository, a Guest included; and anyone at all on a home that says `"contributors": "anyone"` | everyone's and contributors' sections |
-| `maintainer` | a Maintainer or an Admin | every section |
+| `maintainer` | a Maintainer or an Admin of the repository | every section |
 
 - **ChatApi decides the audience** from the session (`audienceOf`, `src/features/home/contract.ts`), in `GET /api/repos/<owner>/<name>/home`. It answers a curated home with only the sections that audience may see, so a maintainers' section never reaches anyone else's browser.
+- **A role counts only on its repository.** A session's role is the person's role on the repository sign-in reads roles on (`GITHUB_REPOSITORY`, [sign-in](sign-in.md#roles-and-role-checks)). On any other repository ChatApi answers as for someone with no role: a Maintainer of this deployment's repository sees `Effect-TS/effect` as a visitor does. Local development's people hold their roles on the dev server's `GITHUB_REPOSITORY` too.
 - **A repository's own `.smithers/home.json` is public in its repository,** so its declaration isn't secret. The page shows the sections the answered audience may see, widened by the file's own `contributors` (`Home.widen`); before ChatApi answers, everyone's.
 - **A live block's rows come from their own shape,** which checks the role again: the stack is Member and above (`/api/shapes/todos`), a person's runs are their own, the issues are the synced repository's.
 - **A person opens on their own view and may switch down** (SCOPE-14). `View as` lists their own view and each lower one that shows something: a maintainer `Maintainer`, `Contributor` and `User`, a contributor `Contributor` and `User`. A view above theirs never shows, and a person with one view, such as a signed-out visitor, sees no switcher, even on a home open to anyone that shows them its contributors' sections. Switching hides sections the page already has (`home.actions.view`, the current row's `viewing`); it asks nothing, and opening another repository goes back to the person's own view.
-- Roles are the deployment's repository's (decision 0007 phase 1, [sign-in](sign-in.md#roles-and-role-checks)); per-repository roles are 0007 phase 2.
+- Roles are the deployment's repository's (decision 0007 phase 1, [sign-in](sign-in.md#roles-and-role-checks)); a role on each repository is 0007 phase 2.
 
 ## Making a home
 
@@ -129,7 +130,7 @@ Reading a home runs no flow: it is a read at an immutable commit, which RepoApi 
 | `home.answer` | log and span; Warn `unreadable` | `outcome` (`declared`, `absent`, `unreadable`), `audience`, `sections`, `status`, `durationMs` |
 | `home.action` | log and span; Warn on a failure | `flow`, `outcome` (`done`, or why not: `not_configured`, `forbidden`, `not_found`, `unavailable`, …), `durationMs` |
 | `smithers_web_home_resolves`, `smithers_web_home_answers`, `smithers_web_home_actions` | counters | `outcome`; the last also `flow` |
-| `home.curated` (ChatApi) | log and span; Warn `unavailable`, `invalid` | `outcome` (`curated`, `absent`, `invalid`, `unavailable`, `method`), `audience`, `sections` sent, `hidden` held back, `status`, `durationMs` |
+| `home.curated` (ChatApi) | log and span; Warn `unavailable`, `invalid` | `outcome` (`curated`, `absent`, `invalid`, `unavailable`, `method`), `audience`, `rolesHere` (whether the repository is the one roles are read on), `sections` sent, `hidden` held back, `status`, `durationMs` |
 | `smithers_home_curated_requests` (ChatApi) | counter | `outcome`, `audience` |
 
 No record carries a section, a block, a title, a text, a path, a link, a branch's name or a file's contents ([observability.md](../observability.md#a-repositorys-home)).
@@ -141,12 +142,12 @@ No record carries a section, a block, a title, a text, a path, a link, a branch'
 | `src/features/home/home.test.ts` | on a tab against RepoApi's real handler and ChatApi's home route, the compose Postgres and Electric, the scripted Code Storage and GitHub: a repository's own home before a clone, by audience, and a Markdown, invalid or missing one leaving the tree; switching down to each lower view and never up; a declared home's blocks, skipped kinds, its Markdown files read once each at the same commit and a missing one read again on the next open, the tabs and the workspace link; the home kept on the device and not read again; a default branch named with a `/`; no home, an empty home; each invalid reason; Code Storage down as `unreadable`, read again on the next open; the wait for a repository that isn't ready, interrupted by another; a curated home before the clone, by audience, and the repository's own home winning; ChatApi failing (a faulty `HomeClient`) and a kept curated home; every record, and a sentinel in no log line |
 | `src/features/home/live.test.ts` | the whole app (`appLayer`) against ChatApi's real routes: a visitor's home asks no stack; a Member's stack block opens the stack and a committed TODO shows in it; a Maintainer's issues block reads synced issues; New branch on Code Storage makes a branch at main and answers its workspace, pressed twice runs once, and on GitHub says `not_configured` |
 | `src/features/home/view.test.ts` | what the page shows from each row and audience, the views each audience may switch to, the opt-in, the curated home's place, encoded links, the tabs, the composer's command, the files, each live block's rows, and VibeLang's draft home |
-| `worker/home/Api.test.ts` | the route by role, the opt-in, names without case, no curated home, an invalid file, sessions down, the method, records with no section's words; every curated file reads; Effect's home's sections |
+| `worker/home/Api.test.ts` | the route by role, a role on another repository counting for nothing, the opt-in, names without case, no curated home, an invalid file, sessions down, the method, records with no section's words; every curated file reads; Effect's home's sections |
 | `worker/branch/Branches.test.ts` | `create: true`: made on Code Storage at the default branch's head and tracked, again at once; one the forge has tracked as it is; refusals and failures; GitHub as the forge `not_configured`; Members only |
 | `packages/smithers/ui/views/test/Home*.test.ts` | `Home.read`: sections and audiences, every block and bound, HTML refused, unknown kinds skipped, the opt-in, `sees`, `visible`, `widen`, this repository's `.smithers/home.json`, fuzzing with kept counterexamples |
 | `packages/smithers/ui/tests/repository-home.test.tsx` | `RepositoryHome`: sections and their labels, every kind, the hero, code coloring and Copy, cards, stats, releases, the live blocks and their notices, in-app links, actions and their keys, files' states, the ask links' plain and modified clicks, offered app blocks |
 | `e2e/home.spec.ts` | in a real browser on `smithersai/home-fixture`: the home draws its blocks (an unknown kind and an app the composer hasn't skipped), survives a reload, Code opens the tree, a file opens by its URL with the tabs, Home comes back, and the prompt and an app block open the workspace's composer, the app block's command in it; `octocat/Spoon-Knife` opens on its tree with no tabs. It skips locally without `CODE_STORAGE_*` |
-| `e2e/home-effect.spec.ts` | `Effect-TS/effect`'s curated home signed out, as a Member and as a Maintainer: each sees its own sections and none above, and switches down to each lower view; New branch with `B` opens a new branch's workspace (skips without `CODE_STORAGE_*`) |
+| `e2e/home-effect.spec.ts` | `Effect-TS/effect`'s curated home signed out, and as a Maintainer of the dev server's own repository, both seeing the landing page alone; with the dev server and the run started with `GITHUB_REPOSITORY=Effect-TS/effect`, as a Member and as a Maintainer, each seeing its own sections and none above and switching down to each lower view, and New branch with `B` opening a new branch's workspace (skips without `CODE_STORAGE_*`) |
 | `e2e/vibelang-{visitor,contributor,maintainer}.spec.ts` | VibeLang's journeys on `smithersai/vibelang`, live from GitHub and vibelang.sh, locally and against a deployment: a visitor's landing page before any clone, nothing of the contributors' or maintainers', the Docs tab and the Code tab; a contributor's Contribute section above it, View as User, the docs and the code; a maintainer's Today first, View as Contributor, User and back, and B for a new branch (needs Code Storage). Shared steps in `e2e/vibelang.ts` |
 
 ## Not built yet
@@ -154,10 +155,15 @@ No record carries a section, a block, a title, a text, a path, a link, a branch'
 - Editing the home from the app (`repo/home/edit`, decision 0014 §2), which needs the pull-request flow of decision 0012.
 - `view` (a flow's `view.tsx` through `@smthrs/views`' presentation realm and `GeneratedView`, decision 0014 L3); the repository's own active flows (`flow_bindings`) in `flows`.
 - Who is on which branch, which needs a branches shape; the issue lifecycle's chain (a minimal repro, accepted for discussion, a commitment, a POC, a TODO), which the mock shows and its decision is designing.
-- Per-repository roles (decision 0007 phase 2): a person's audience is their role on the deployment's repository.
+- A role on each repository (decision 0007 phase 2): until then a person has a role on the deployment's repository alone, and is a visitor on every other repository's home.
 - A home benchmark (decision 0014 §8, "a home's first paint").
 
 
 Declaration reads are serialized per repository and commit, so concurrent warm and open calls share the cached result. Interrupting a Markdown read marks it failed and records `home.file.load` with outcome `interrupted`; opening the home again reads it again. Running actions and failures belong to the shown repository: navigation clears them, and a previous page's completion cannot update the new page or navigate it. Home pull-request entries link to the pull-request page.
 
 A branch action finishing after another repository opens keeps that repository selected. Its outcome is recorded; stale completion leaves the new home's running actions and failure state alone.
+
+SCOPE-14 applies within the repository where the session's role was read. A Member there gets contributor and user
+views; a Maintainer defaults to maintainer and can switch down. Opening another repository resets View as and
+uses that repository's audience: the session's role grants nothing there. Returning to the roles repository starts
+at the person's highest authorized view again. This applies to GitHub's declared home before cloning and to curated homes.

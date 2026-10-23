@@ -42,8 +42,9 @@ export const localGuest: Actor.Actor = {
 }
 
 /**
- * Local development's Maintainer: `smithers_dev_person=maintainer`. A repository's home shows them the Maintainers'
- * sections (docs/features/home.md#who-sees-what).
+ * Local development's Maintainer: `smithers_dev_person=maintainer`. The home of the dev server's `GITHUB_REPOSITORY`,
+ * the one repository local development's people hold their roles on, shows them the Maintainers' sections
+ * (docs/features/home.md#who-sees-what).
  */
 export const localMaintainer: Actor.Actor = {
   subject: { kind: "person", id: "local-maintainer" },

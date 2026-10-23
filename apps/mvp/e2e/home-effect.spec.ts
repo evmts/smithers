@@ -5,9 +5,12 @@ import { baseURL, requires, target } from "./target"
 // Effect's home (docs/features/home.md#curated-homes): Smithers' curated home for `Effect-TS/effect`, which declares
 // none, against the real app, ChatApi, Postgres and Electric. Who sees which section is ChatApi's to decide
 // (`GET /api/repos/<owner>/<name>/home`), so each test signs in as local development's person for its audience
-// (worker/DevChatApi.ts): signed out, a Member (a contributor) and a Maintainer. The visitor runs wherever the app runs,
-// signed out of this browser only; the others need local development's people. "new branch" makes a branch on Code
-// Storage's mirror of Effect, cloning it first when this deployment hasn't, so it also needs Code Storage.
+// (worker/DevChatApi.ts): signed out, a Member (a contributor) and a Maintainer. A role is the person's role on the
+// repository sign-in reads roles on (`GITHUB_REPOSITORY`) and counts nowhere else: with the dev server's default, a
+// Maintainer sees Effect's landing page alone; the contributor's and maintainer's tests run against a dev server, and a
+// run, started with `GITHUB_REPOSITORY=Effect-TS/effect`. The visitor runs wherever the app runs, signed out of this
+// browser only; the others need local development's people. "new branch" makes a branch on Code Storage's mirror of
+// Effect, cloning it first when this deployment hasn't, so it also needs Code Storage.
 
 const REPO = "/Effect-TS/effect"
 
@@ -74,10 +77,28 @@ test.describe("Effect-TS/effect's home", () => {
   )
 
   test(
+    "a Maintainer of another repository: the landing page, and nothing of Effect's contributors' or maintainers'",
+    { annotation: { type: "summary", description: "Roles are per repository: a Maintainer of this deployment's repository sees Effect as a visitor does." } },
+    async ({ page }) => {
+      requires("devPeople", "otherRoles")
+      await step("Open Effect-TS/effect as a Maintainer of this deployment's repository", async () => {
+        await as(page, "maintainer")
+        await openHome(page, "everyone")
+      })
+      await step("The landing page, as a visitor sees it", () => landing(page))
+      await step("No contributor or maintainer section reached this browser", async () => {
+        await expect(page.getByRole("region", { name: "Your work" })).toHaveCount(0)
+        await expect(page.getByRole("region", { name: "Today" })).toHaveCount(0)
+        await expect(page.getByRole("button", { name: "New branch" })).toHaveCount(0)
+      })
+    },
+  )
+
+  test(
     "contributor: their work above the landing page, and nothing of the maintainers'",
     { annotation: { type: "summary", description: "A Member sees Your work (ask, the stack, New TODO) above Effect's landing page." } },
     async ({ page }) => {
-      requires("devPeople")
+      requires("devPeople", "effectRoles")
       await step("Open Effect-TS/effect as a Member", async () => {
         await as(page, "teammate")
         await openHome(page, "contributor")
@@ -111,7 +132,7 @@ test.describe("Effect-TS/effect's home", () => {
     "maintainer: the day first, with New branch, then their work and the landing page",
     { annotation: { type: "summary", description: "A Maintainer sees Today first: New branch (B), triage and runs; then Your work and the landing page." } },
     async ({ page }) => {
-      requires("devPeople")
+      requires("devPeople", "effectRoles")
       await step("Open Effect-TS/effect as a Maintainer", async () => {
         await as(page, "maintainer")
         await openHome(page, "maintainer")
@@ -120,7 +141,7 @@ test.describe("Effect-TS/effect's home", () => {
         const today = page.getByRole("region", { name: "Today" })
         await expect(today.getByText("Maintainers", { exact: true })).toBeVisible()
         await expect(today.getByRole("button", { name: "New branch" })).toHaveAttribute("aria-keyshortcuts", "B")
-        // This deployment syncs its own repository's issues, not Effect's: the block says so.
+        // No GitHub App syncs Effect's issues on this dev server: the block says so.
         await expect(today.locator("[data-panel='issues']")).toContainText("Not synced")
         await expect(today.locator("[data-panel='runs']")).toBeVisible()
       })
@@ -148,7 +169,7 @@ test.describe("Effect-TS/effect's home", () => {
 })
 
 test.describe("Effect-TS/effect's home, New branch", () => {
-  requires("devPeople", "codeStorage")
+  requires("devPeople", "codeStorage", "effectRoles")
 
   test(
     "new branch: B makes a branch at main and opens its workspace",

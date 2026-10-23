@@ -22,8 +22,18 @@ const unavailable = Layer.succeed(
   Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) }),
 )
 
-/** The route over `sessions` and `files`, recording what it logs, spans and counts. */
-const route = (sessions: Layer.Layer<Actor.Sessions> = Actor.signedOut, files?: ReadonlyArray<Curated.CuratedFile>) => {
+/** The repository sign-in reads roles on in these tests, unless one says otherwise: Effect's. */
+const EFFECT_ROLES = { id: "github/effect-ts/effect" }
+
+/**
+ * The route over `sessions` and `files`, with roles read on `roles` (Effect unless set), recording what it logs, spans
+ * and counts.
+ */
+const route = (
+  sessions: Layer.Layer<Actor.Sessions> = Actor.signedOut,
+  files?: ReadonlyArray<Curated.CuratedFile>,
+  roles: { readonly id: string } = EFFECT_ROLES,
+) => {
   const logs: Array<StructuredLog> = []
   const spans: Array<Tracer.NativeSpan> = []
   const registry: Metric.MetricRegistry = new Map()
@@ -35,7 +45,7 @@ const route = (sessions: Layer.Layer<Actor.Sessions> = Actor.signedOut, files?: 
     },
   })
   const handler = HttpEffect.toWebHandler(
-    make(files).fetch.pipe(
+    make({ roles, ...(files === undefined ? {} : { files }) }).fetch.pipe(
       Effect.provide(sessions),
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))])),
@@ -88,6 +98,24 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
     expect(answer.audience).toBe("maintainer")
   })
 
+  test("a role on another repository counts for nothing here: its Maintainer sees everyone's sections alone", async () => {
+    // Sign-in read the role on the deployment's repository, not on Effect's (docs/features/sign-in.md#roles-and-role-checks).
+    const elsewhere = { id: "github/smithersai/smithers" }
+    for (const role of ["admin", "maintainer", "member", "guest"] as const) {
+      const r = route(signedIn(person(role)), undefined, elsewhere)
+      const response = await r.get(EFFECT)
+      const text = await response.clone().text()
+      expect([role, await answerOf(response)]).toMatchObject([role, { audience: "everyone" }])
+      for (const hidden of ["Today", "Your work"]) expect(text).not.toContain(hidden)
+      expect(r.logs.find((log) => log.message === "home.curated")).toMatchObject({
+        annotations: { outcome: "curated", audience: "everyone", rolesHere: false },
+      })
+    }
+    // On the repository the role was read on, the same session is a maintainer.
+    const here = await answerOf(await route(signedIn(person("maintainer")), undefined, elsewhere).get("/api/repos/smithersai/smithers/home"))
+    expect(here).toEqual({ audience: "maintainer", curated: null })
+  })
+
   test("a curated home open to anyone shows its contributors' sections to a visitor, never its maintainers'", async () => {
     const files: ReadonlyArray<Curated.CuratedFile> = [{
       repository: "maya/tinyhttp",
@@ -103,8 +131,12 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
     }]
     const answer = await answerOf(await route(Actor.signedOut, files).get("/api/repos/maya/tinyhttp/home"))
     expect([answer.audience, shape(answer)]).toEqual(["contributor", ["contributor:Contribute", "everyone:"]])
-    const maintainer = await answerOf(await route(signedIn(person("admin")), files).get("/api/repos/maya/tinyhttp/home"))
+    const roles = { id: "github/maya/tinyhttp" }
+    const maintainer = await answerOf(await route(signedIn(person("admin")), files, roles).get("/api/repos/maya/tinyhttp/home"))
     expect(maintainer.audience).toBe("maintainer")
+    // An Admin of another repository is a visitor here, widened like one.
+    const elsewhere = await answerOf(await route(signedIn(person("admin")), files).get("/api/repos/maya/tinyhttp/home"))
+    expect(elsewhere.audience).toBe("contributor")
   })
 
   test("a curated home that names docs answers them, for the Docs tab; one that names none answers none", async () => {
@@ -119,12 +151,16 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
   test("names compare without case, as GitHub's do", async () => {
     const answer = await answerOf(await route().get("/api/repos/effect-ts/EFFECT/home"))
     expect(answer.curated?.defaultBranch).toBe("main")
+    // The repository roles are read on compares without case too.
+    const maintainer = await answerOf(await route(signedIn(person("maintainer"))).get("/api/repos/EFFECT-TS/Effect/home"))
+    expect(maintainer.audience).toBe("maintainer")
   })
 
   test("a repository Smithers has no home for: the audience, and no curated home", async () => {
-    const r = route(signedIn(person("member")))
+    const r = route(signedIn(person("member")), undefined, { id: "github/octocat/spoon-knife" })
     expect(await answerOf(await r.get("/api/repos/octocat/Spoon-Knife/home"))).toEqual({ audience: "contributor", curated: null })
     expect(r.count({ outcome: "absent", audience: "contributor" })).toBe(1)
+    expect(r.logs.find((log) => log.message === "home.curated")).toMatchObject({ annotations: { rolesHere: true } })
   })
 
   test("a curated file that isn't a home answers none, and says so in its records", async () => {
@@ -163,7 +199,7 @@ describe("GET /api/repos/<owner>/<name>/home", () => {
     expect(lines).toHaveLength(1)
     expect(lines[0]).toMatchObject({
       level: "INFO",
-      annotations: { outcome: "curated", audience: "contributor", sections: 2, hidden: 1, status: 200 },
+      annotations: { outcome: "curated", audience: "contributor", sections: 2, hidden: 1, rolesHere: true, status: 200 },
     })
     expect(r.spans.map((span) => span.name)).toEqual(["home.curated"])
     expect(Object.fromEntries(r.spans[0]!.attributes)).toMatchObject({

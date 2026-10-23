@@ -89,7 +89,7 @@ const seeded = async (h: RepoHarness, files: Record<string, string | Uint8Array>
 
 describe("a repository's home", () => {
   test("a declared home draws its blocks, reads its Markdown files once each at the same commit, and gets tabs", async () => {
-    const h = await repoHarness(server)
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
     await seeded(h, { [HOME_FILE]: declared, "docs/intro.md": `# Intro ${SECRET}\n` })
     const tab = await open(h)
     expect(tab.home.queries.stack("unopened").toArray).toEqual([])
@@ -134,7 +134,7 @@ describe("a repository's home", () => {
   })
 
   test("opening it again, or another page of it, reads nothing more: a home at a commit never changes", async () => {
-    const h = await repoHarness(server)
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
     const home = JSON.stringify({ blocks: [{ type: "markdown", path: "docs/intro.md" }, { type: "text", text: "Hi" }] })
     await seeded(h, { [HOME_FILE]: home, "docs/intro.md": "# Intro\n" })
     const tab = await open(h)
@@ -150,7 +150,7 @@ describe("a repository's home", () => {
   })
 
   test("a default branch named with a `/` splits into the tree route's ref and splat", async () => {
-    const h = await repoHarness(server)
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
     await seeded(h, { [HOME_FILE]: declared }, "release/1.0")
     const tab = await open(h)
     tab.home.actions.open("maya", "tinyhttp")
@@ -159,7 +159,7 @@ describe("a repository's home", () => {
   })
 
   test("a repository without a home is its tree, with no tabs and no line", async () => {
-    const h = await repoHarness(server)
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
     await seeded(h, {})
     const tab = await open(h)
     tab.home.actions.open("maya", "tinyhttp")
@@ -169,7 +169,7 @@ describe("a repository's home", () => {
   })
 
   test("a home declaring no blocks is the tree too", async () => {
-    const h = await repoHarness(server)
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
     await seeded(h, { [HOME_FILE]: '{"blocks":[]}' })
     const tab = await open(h)
     tab.home.actions.open("maya", "tinyhttp")
@@ -188,7 +188,7 @@ describe("a repository's home", () => {
     ]
     for (const [body, reason] of cases) {
       await resetRepos(server)
-      const h = await repoHarness(server)
+      const h = await repoHarness(server, { roles: "maya/tinyhttp" })
       await seeded(h, { [HOME_FILE]: body })
       const tab = await open(h)
       tab.home.actions.open("maya", "tinyhttp")
@@ -200,7 +200,7 @@ describe("a repository's home", () => {
   })
 
   test("RepoApi couldn't read it: the tree under `Couldn't read home`, read again on the next open", async () => {
-    const h = await repoHarness(server)
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
     await seeded(h, { [HOME_FILE]: declared })
     h.scripted.fail("readFile", h.scripted.error("readFile", "unavailable", 503))
     const tab = await open(h)
@@ -214,7 +214,7 @@ describe("a repository's home", () => {
   })
 
   test("before the repository is ready the page is the tree's; another repository interrupts the wait", async () => {
-    const h = await repoHarness(server)
+    const h = await repoHarness(server, { roles: "maya/tinyhttp" })
     await seeded(h, { [HOME_FILE]: declared })
     const tab = await open(h)
     // Not cloned: nothing while ChatApi is first asked; then, with no curated home, the tree's page, which says why.
@@ -262,7 +262,8 @@ describe("a repository's own home before any clone", () => {
     expect(kinds(tab)).toEqual([["hero"]])
     expect(tab.count(resolves, { outcome: "preview" })).toBe(1)
 
-    const member = await repoHarness(server)
+    // This session's Member role was read on VibeLang, not the default deployment repository.
+    const member = await repoHarness(server, { roles: "smithersai/vibelang" })
     member.github.publish("smithersai", "vibelang", spoonKnife({ fullName: "smithersai/vibelang", home: { text: vibe } }))
     const inside = await open(member)
     inside.home.actions.open("smithersai", "vibelang")
@@ -358,7 +359,7 @@ describe("a repository's own home before any clone", () => {
 
 describe("Smithers' curated home", () => {
   test("shows for a repository that isn't on this device, with only the sections ChatApi sends a Member", async () => {
-    const h = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")] })
+    const h = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], roles: "octocat/Spoon-Knife" })
     const tab = await open(h)
     // No repository open: there is no view to switch.
     tab.home.actions.view("everyone")
@@ -375,24 +376,32 @@ describe("Smithers' curated home", () => {
     expect(JSON.stringify(tab.logs)).not.toContain(SECRET)
   })
 
-  test("signed out it is everyone's section alone; a Maintainer gets all three", async () => {
-    const out = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], actor: null })
+  test("signed out it is everyone's section alone; a Maintainer gets all three, but not a Maintainer of another repository", async () => {
+    const out = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], actor: null, roles: "octocat/Spoon-Knife" })
     const visitor = await open(out)
     visitor.home.actions.open("octocat", "Spoon-Knife")
     await waitFor(() => expect(kinds(visitor)).toEqual([["hero"]]))
     expect(page(visitor).page).toMatchObject({ audience: "everyone" })
 
     const maintainer = { subject: { kind: "person" as const, id: "maya" }, role: "maintainer" as const }
-    const inside = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], actor: maintainer })
+    const inside = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], actor: maintainer, roles: "octocat/Spoon-Knife" })
     const tab = await open(inside)
     tab.home.actions.open("octocat", "Spoon-Knife")
     await waitFor(() => expect(kinds(tab)).toEqual([["runs"], ["prompt"], ["hero"]]))
+
+    // A Maintainer of another repository: roles are per repository, so everyone's section alone.
+    const elsewhere = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], actor: maintainer, roles: "maya/tinyhttp" })
+    const other = await open(elsewhere)
+    other.home.actions.open("octocat", "Spoon-Knife")
+    await waitFor(() => expect(kinds(other)).toEqual([["hero"]]))
+    expect(page(other).page).toMatchObject({ audience: "everyone" })
   })
 
   test("a Maintainer switches down to the contributor and user views; another repository opens on their own", async () => {
     const maintainer = { subject: { kind: "person" as const, id: "maya" }, role: "maintainer" as const }
     const h = await repoHarness(server, {
       homes: [curatedFor("octocat/Spoon-Knife"), curatedFor("octocat/hello-world")],
+      roles: "octocat/Spoon-Knife",
       actor: maintainer,
     })
     const tab = await open(h)
@@ -410,12 +419,21 @@ describe("Smithers' curated home", () => {
 
     tab.home.actions.view("everyone")
     tab.home.actions.open("octocat", "hello-world")
+    // The role was read on Spoon-Knife alone. Navigation resets View as, never transfers authority.
+    await waitFor(() => expect(kinds(tab)).toEqual([["hero"]]))
+    expect(page(tab).page).toMatchObject({ audience: "everyone", views: [] })
+    expect(page(tab).current.viewing).toBeNull()
+    tab.home.actions.view("maintainer")
+    expect(kinds(tab)).toEqual([["hero"]])
+    expect(page(tab).current.viewing).toBeNull()
+    tab.home.actions.open("octocat", "Spoon-Knife")
     await waitFor(() => expect(kinds(tab)).toEqual([["runs"], ["prompt"], ["hero"]]))
+    expect(page(tab).page).toMatchObject({ audience: "maintainer", views: ["maintainer", "contributor", "everyone"] })
     expect(page(tab).current.viewing).toBeNull()
   })
 
   test("a Member may view as a user, never as a maintainer; a visitor has no view to switch to", async () => {
-    const h = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")] })
+    const h = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], roles: "octocat/Spoon-Knife" })
     const tab = await open(h)
     tab.home.actions.open("octocat", "Spoon-Knife")
     await waitFor(() => expect(kinds(tab)).toEqual([["prompt"], ["hero"]]))
@@ -435,7 +453,7 @@ describe("Smithers' curated home", () => {
   })
 
   test("a repository's own home wins over the curated one; without one, the curated home shows", async () => {
-    const h = await repoHarness(server, { homes: [curatedFor("maya/tinyhttp")] })
+    const h = await repoHarness(server, { homes: [curatedFor("maya/tinyhttp")], roles: "maya/tinyhttp" })
     await seeded(h, { [HOME_FILE]: declared, "docs/intro.md": "# Intro\n" })
     const tab = await open(h)
     tab.home.actions.open("maya", "tinyhttp")
@@ -444,7 +462,7 @@ describe("Smithers' curated home", () => {
     expect(page(tab).page).toMatchObject({ source: "declared" })
 
     await resetRepos(server)
-    const bare = await repoHarness(server, { homes: [curatedFor("maya/tinyhttp")] })
+    const bare = await repoHarness(server, { homes: [curatedFor("maya/tinyhttp")], roles: "maya/tinyhttp" })
     await seeded(bare, {})
     const other = await open(bare)
     other.home.actions.open("maya", "tinyhttp")
@@ -461,7 +479,7 @@ describe("Smithers' curated home", () => {
           answer: (owner, name) => (state.down ? Effect.fail(new HomeRefused({ status: 503 })) : real.answer(owner, name)),
         })),
     )
-    const h = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")] })
+    const h = await repoHarness(server, { homes: [curatedFor("octocat/Spoon-Knife")], roles: "octocat/Spoon-Knife" })
     const tab = await open(
       h,
       faulty.pipe(Layer.provide(HomeClient.layer({ origin: h.origin, within: "10 seconds" })), Layer.provide(fetchLayer(h))),
@@ -487,7 +505,7 @@ describe("Smithers' curated home", () => {
       defaultBranch: "main",
       home: { sections: [{ audience: "contributor", blocks: [{ type: "stack" }] }] },
     }
-    const h = await repoHarness(server, { homes: [withStack] })
+    const h = await repoHarness(server, { homes: [withStack], roles: "octocat/Spoon-Knife" })
     const tab = await open(h)
     tab.home.actions.open("octocat", "Spoon-Knife")
     await waitFor(() => expect(page(tab).page.kind).toBe("home"))

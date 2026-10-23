@@ -151,7 +151,7 @@ export const program = (options: ProgramOptions = {}) =>
     const githubApp = yield* GitHubConfig.configured
     const runTodos = yield* Todo.enabled
     // A repository's home (docs/features/home.md): who the asker is on it, and Smithers' curated home for it.
-    const home = HomeApi.make()
+    const home = HomeApi.make({ roles: yield* GitHubConfig.repository })
     const repoCache = EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
     const webCache = EdgeCache.layer({ name: "web" }).pipe(Layer.orDie)
     // A repository's docs (docs/features/docs.md): the index its home names and its pages, read through the Worker's

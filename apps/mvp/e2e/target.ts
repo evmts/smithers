@@ -152,6 +152,9 @@ const devBuildOnly = (reason: string): Need => ({ met: (run) => run.target === "
 /** Where the deployed build device-upgrade.spec.ts upgrades from sits: `OLD_BUILD_DIR`, or the round-4 build's copy. */
 export const oldBuildDir = (env: Run["env"]) => env.OLD_BUILD_DIR ?? join(homedir(), "Desktop", "smithers-mvp", "builds", "c6940ac53e5a")
 
+/** The repository the dev server reads roles on (`GITHUB_REPOSITORY`, smithersai/smithers unless set), without case. */
+const rolesRepositoryOf = (run: Run) => (run.env.GITHUB_REPOSITORY ?? "smithersai/smithers").toLowerCase()
+
 /** Whether the local dev server signs people in through GitHub instead of as local development's people. */
 const githubAppLocally = (run: Run) => set(run, "GITHUB_APP_CLIENT_ID")
 
@@ -161,6 +164,14 @@ const needs = {
   devPeople: {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "local development's second and third people (the smithers_dev_person cookie) exist only without GitHub sign-in; a deployment needs another real test account",
+  },
+  effectRoles: {
+    met: (run) => run.target === "local" && rolesRepositoryOf(run) === "effect-ts/effect",
+    reason: "local development's people hold their roles on the dev server's GITHUB_REPOSITORY alone (docs/features/home.md#who-sees-what): start it, and this run, with GITHUB_REPOSITORY=Effect-TS/effect",
+  },
+  otherRoles: {
+    met: (run) => run.target === "local" && rolesRepositoryOf(run) !== "effect-ts/effect",
+    reason: "it proves a role on another repository counts for nothing on Effect's home: the dev server's GITHUB_REPOSITORY must not be Effect-TS/effect",
   },
   devSignIn: {
     met: (run) => run.target === "local" && !githubAppLocally(run),

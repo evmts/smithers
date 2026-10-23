@@ -124,6 +124,11 @@ export interface RepoHarnessOptions {
   readonly sessions?: Layer.Layer<Actor.Sessions>
   /** The curated homes ChatApi's home route answers, as worker/ChatApi.ts routes it: the real ones unless set. */
   readonly homes?: ReadonlyArray<CuratedFile>
+  /**
+   * The repository sign-in reads roles on (`GITHUB_REPOSITORY`), `owner/name`: the home route counts the actor's role
+   * there alone. Unless set, a repository no test opens, so a role counts nowhere.
+   */
+  readonly roles?: string
   /** RepoApi's and the flow's configuration, in place of the environment. */
   readonly config?: Record<string, string>
   /** The scripted Code Storage and GitHub: a fresh one unless set. */
@@ -273,7 +278,10 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     ),
   )
   // ChatApi's home route, which worker/ChatApi.ts routes before RepoApi's: who the asker is, and the curated homes.
-  const home = HomeApi.make(options.homes)
+  const home = HomeApi.make({
+    roles: { id: repoId(...((options.roles ?? "smithersai/smithers").split("/") as [string, string])) },
+    ...(options.homes === undefined ? {} : { files: options.homes }),
+  })
   const homeHandler = HttpEffect.toWebHandler(
     observed(
       home.fetch.pipe(

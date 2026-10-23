@@ -80,6 +80,7 @@ describe("needs", () => {
   it("are all met locally, where local development's Admin is signed in, but GitHub sign-in", () => {
     const unmet = (Object.keys(NEEDS) as Array<NeedName>).filter((name) => !NEEDS[name].met(local))
     expect(unmet).toEqual([
+      "effectRoles",
       "sandboxSecrets",
       "webhookSecret",
       "alertProviders",
@@ -118,6 +119,15 @@ describe("needs", () => {
     expect(NEEDS.noGitHubApp.met(local)).toBe(true)
     expect(NEEDS.noGitHubApp.met({ ...local, env: { GITHUB_APP_ID: "1" } })).toBe(false)
     expect(NEEDS.noGitHubApp.met({ ...local, env: { E2E_ISSUES_REPOSITORY: "a/b" } })).toBe(false)
+  })
+
+  it("for whose roles local development's people hold, follow the dev server's GITHUB_REPOSITORY, without case", () => {
+    const onEffect: Run = { ...local, env: { GITHUB_REPOSITORY: "effect-ts/EFFECT" } }
+    expect([NEEDS.effectRoles.met(onEffect), NEEDS.otherRoles.met(onEffect)]).toEqual([true, false])
+    expect([NEEDS.effectRoles.met(local), NEEDS.otherRoles.met(local)]).toEqual([false, true])
+    const elsewhere: Run = { ...local, env: { GITHUB_REPOSITORY: "acme/widgets" } }
+    expect([NEEDS.effectRoles.met(elsewhere), NEEDS.otherRoles.met(elsewhere)]).toEqual([false, true])
+    expect(NEEDS.effectRoles.met(deployedAs("admin", { GITHUB_REPOSITORY: "Effect-TS/effect" }))).toBe(false)
   })
 
   it("for the dev server's own settings, are met only locally with those settings; the webhook's secret, wherever it is set", () => {
