@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every export of @smthrs/effect-code-storage: the CodeStorage, GitRemote and GitProxy namespaces, their service, layers, models, errors and metrics."
 ---
 
-The package root exports two namespaces and nothing else:
+The package root exports three namespaces and nothing else:
 
 ```ts
 import { CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-storage"
@@ -34,10 +34,10 @@ interface Client {
   readonly listFiles: (repo: string, options?: ListFilesOptions) => Effect.Effect<FilesPage, CodeStorageError>
   readonly readFile: (repo: string, options: ReadFileOptions) => Effect.Effect<FileContents, CodeStorageError>
   readonly listCommits: (repo: string, options?: ListCommitsOptions) => Effect.Effect<CommitsPage, CodeStorageError>
-  readonly listBranches: (repo: string, options?: ListRefsOptions) => Effect.Effect<BranchesPage, CodeStorageError>
+  readonly listBranches: (repo: string, options?: ListBranchesOptions) => Effect.Effect<BranchesPage, CodeStorageError>
   readonly listTags: (repo: string, options?: ListRefsOptions) => Effect.Effect<TagsPage, CodeStorageError>
   readonly createBranch: (repo: string, options: CreateBranchOptions) => Effect.Effect<CreatedBranch, CodeStorageError>
-  readonly gitRemote: (repo: string) => Effect.Effect<GitRemote.Upstream>
+  readonly gitRemote: (repo: string, namespace?: RefNamespace) => Effect.Effect<GitRemote.Upstream>
 }
 ```
 
@@ -390,3 +390,16 @@ status class such as `4xx`, `transport`, or `broken` for an answer that broke
 off), counted once the answer's body has ended. Each request is also one span,
 `GitProxy.uploadPack`, and one log line, `git.proxy`, with the service, the
 outcome, the status and the duration.
+
+### Ref namespaces
+
+`RefNamespace` is `"default" | "ephemeral"`. `ListBranchesOptions` extends
+`ListRefsOptions` with optional `namespace`. `ListFilesOptions`,
+`ReadFileOptions`, and `ListCommitsOptions` also accept `namespace`.
+`CreateBranchOptions.namespace` selects the destination and `fromNamespace`
+selects the source. Omitted options use the default namespace.
+
+The [provider OpenAPI](https://code.storage/docs/openapi.json) maps these to
+`ephemeral` on reads, `base_is_ephemeral` and `target_is_ephemeral` on create.
+`gitRemote(repo, "ephemeral")` appends `+ephemeral` before `.git` after encoding
+the repository path; signing still scopes the token to `repo`.

@@ -209,6 +209,24 @@ export interface CreatedRepo {
 }
 
 /**
+ * Code Storage ref namespace. Ephemeral refs share objects but never sync upstream.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export type RefNamespace = "default" | "ephemeral"
+
+/**
+ * Branch listing options, including its namespace.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface ListBranchesOptions extends ListRefsOptions {
+  readonly namespace?: RefNamespace | undefined
+}
+
+/**
  * Which files to list: at `ref` (default: the default branch), under `path`,
  * all descendants when `recursive`, one page of at most `limit` (Code Storage
  * allows up to 5,000), from `cursor`.
@@ -217,6 +235,8 @@ export interface CreatedRepo {
  * @since 0.1.0
  */
 export interface ListFilesOptions {
+  /** Ref namespace; omitted means the default namespace. */
+  readonly namespace?: RefNamespace | undefined
   readonly ref?: string | undefined
   readonly path?: string | undefined
   readonly recursive?: boolean | undefined
@@ -261,6 +281,8 @@ export interface FilesPage {
  * @since 0.1.0
  */
 export interface ReadFileOptions {
+  /** Ref namespace; omitted means the default namespace. */
+  readonly namespace?: RefNamespace | undefined
   readonly path: string
   readonly ref?: string | undefined
   /** Non-negative safe integer; invalid caps fail with invalid_argument before HTTP. */
@@ -287,6 +309,8 @@ export interface FileContents {
  * @since 0.1.0
  */
 export interface ListCommitsOptions {
+  /** Ref namespace; omitted means the default namespace. */
+  readonly namespace?: RefNamespace | undefined
   readonly ref?: string | undefined
   readonly path?: string | undefined
   readonly cursor?: string | undefined
@@ -393,6 +417,10 @@ export interface TagsPage {
  * @since 0.2.0
  */
 export interface CreateBranchOptions {
+  /** Destination namespace; omitted means the default namespace. */
+  readonly namespace?: RefNamespace | undefined
+  /** Source namespace; omitted means the default namespace. */
+  readonly fromNamespace?: RefNamespace | undefined
   readonly branch: string
   readonly from: string
 }
@@ -443,7 +471,7 @@ export interface Client {
   readonly listFiles: (repo: string, options?: ListFilesOptions) => Effect.Effect<FilesPage, CodeStorageError>
   readonly readFile: (repo: string, options: ReadFileOptions) => Effect.Effect<FileContents, CodeStorageError>
   readonly listCommits: (repo: string, options?: ListCommitsOptions) => Effect.Effect<CommitsPage, CodeStorageError>
-  readonly listBranches: (repo: string, options?: ListRefsOptions) => Effect.Effect<BranchesPage, CodeStorageError>
+  readonly listBranches: (repo: string, options?: ListBranchesOptions) => Effect.Effect<BranchesPage, CodeStorageError>
   readonly listTags: (repo: string, options?: ListRefsOptions) => Effect.Effect<TagsPage, CodeStorageError>
   /**
    * Creates `options.branch` at the commit `options.from` names, with a
@@ -460,7 +488,7 @@ export interface Client {
    *
    * @since 0.2.0
    */
-  readonly gitRemote: (repo: string) => Effect.Effect<GitRemote.Upstream>
+  readonly gitRemote: (repo: string, namespace?: RefNamespace) => Effect.Effect<GitRemote.Upstream>
 }
 
 /**
@@ -733,7 +761,7 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
     const gitBase = `https://${credentials.org}.code.storage`
 
     return {
-      gitRemote: (repo) =>
+      gitRemote: (repo, namespace = "default") =>
         Effect.gen(function*() {
           const now = yield* Clock.currentTimeMillis
           const token = yield* Token.sign(key, {
@@ -744,7 +772,9 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
             ttlSeconds: tokenTtlSeconds
           })
           return {
-            url: `${gitBase}/${repo.split("/").map(encodeURIComponent).join("/")}.git`,
+            url: `${gitBase}/${repo.split("/").map(encodeURIComponent).join("/")}${
+              namespace === "ephemeral" ? "+ephemeral" : ""
+            }.git`,
             authorization: Redacted.make(`Basic ${btoa(`t:${token}`)}`)
           }
         }),
@@ -796,7 +826,14 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
           repo,
           Effect.gen(function*() {
             const request = HttpClientRequest.post(url(repo, "/branches/create")).pipe(
-              HttpClientRequest.bodyJsonUnsafe({ base_ref: options.from, target_branch: options.branch })
+              HttpClientRequest.bodyJsonUnsafe({
+                base_ref: options.from,
+                target_branch: options.branch,
+                ...(options.fromNamespace === undefined
+                  ? {}
+                  : { base_is_ephemeral: options.fromNamespace === "ephemeral" }),
+                ...(options.namespace === undefined ? {} : { target_is_ephemeral: options.namespace === "ephemeral" })
+              })
             )
             const response = yield* send("createBranch", repo, ["git:write"], request)
             const { body } = yield* readJson("createBranch", response, CreatedBranchJson)
@@ -812,6 +849,7 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
             const request = HttpClientRequest.get(url(repo, "/files")).pipe(
               HttpClientRequest.setUrlParams(params({
                 ref: options.ref,
+                ephemeral: options.namespace === undefined ? undefined : options.namespace === "ephemeral",
                 path: options.path,
                 recursive: options.recursive,
                 cursor: options.cursor,
@@ -839,7 +877,13 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
               return yield* new CodeStorageError({ operation: "readFile", code: "invalid_argument" })
             }
             const request = HttpClientRequest.get(url(repo, "/file")).pipe(
-              HttpClientRequest.setUrlParams(params({ path: options.path, ref: options.ref }))
+              HttpClientRequest.setUrlParams(
+                params({
+                  path: options.path,
+                  ref: options.ref,
+                  ephemeral: options.namespace === undefined ? undefined : options.namespace === "ephemeral"
+                })
+              )
             )
             const response = yield* send("readFile", repo, ["git:read"], request)
             const declared = Number(response.headers["content-length"] ?? Number.NaN)
@@ -871,6 +915,7 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
             const request = HttpClientRequest.get(url(repo, "/commits")).pipe(
               HttpClientRequest.setUrlParams(params({
                 ref: options.ref,
+                ephemeral: options.namespace === undefined ? undefined : options.namespace === "ephemeral",
                 path: options.path,
                 cursor: options.cursor,
                 limit: options.limit
@@ -899,7 +944,13 @@ const make = (credentials: Credentials): Effect.Effect<Client, CodeStorageError,
           repo,
           Effect.gen(function*() {
             const request = HttpClientRequest.get(url(repo, "/branches")).pipe(
-              HttpClientRequest.setUrlParams(params({ cursor: options.cursor, limit: options.limit }))
+              HttpClientRequest.setUrlParams(
+                params({
+                  cursor: options.cursor,
+                  limit: options.limit,
+                  ephemeral: options.namespace === undefined ? undefined : options.namespace === "ephemeral"
+                })
+              )
             )
             const response = yield* send("listBranches", repo, ["git:read"], request)
             const { body: page, bytesRead } = yield* readJson("listBranches", response, BranchesJson)

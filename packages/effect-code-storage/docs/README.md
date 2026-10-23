@@ -161,3 +161,22 @@ From `https://code.storage/docs/llms.txt` and its pages, read 2026-10-19:
 ## Pages
 
 - [API reference](api.md)
+
+## Ref namespaces
+
+`createBranch(repo, { branch, from, namespace: "ephemeral" })` creates a
+Smithers-local ref from an ordinary ref on the same repository, including a
+GitHub-synced mirror. It does not create a GitHub branch. Set `fromNamespace`
+when the source is ephemeral too. Both options default to `"default"`.
+
+Pass the stored `namespace` to `listBranches`, `listFiles`, `readFile`, and
+`listCommits`; use `gitRemote(repo, namespace)` for smart HTTP reads and clones.
+Ephemeral remotes end in `+ephemeral.git`; their token still names the original
+repository. Ephemeral refs have no default branch, so always name the ref.
+Tags have no namespace option in the provider API.
+
+Verified against Code Storage's [OpenAPI](https://code.storage/docs/openapi.json)
+on 2026-10-23: `ReposBranchesCreateRequest.base_is_ephemeral` and
+`target_is_ephemeral`, and the `ephemeral` query parameter on branches, files,
+file and commits. The [namespace guide](https://code.storage/docs/repos/ephemeral-branches.md)
+documents the remote suffix and isolation from GitHub.
