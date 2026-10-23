@@ -29,6 +29,7 @@ import * as RunCredentials from "../RunCredentials.ts"
 import * as SessionKeys from "../SessionKeys.ts"
 import * as ViewRealm from "../ViewRealm.ts"
 import * as Conversations from "../branch/Conversations.ts"
+import * as ConversationApi from "../branch/ConversationApi.ts"
 import * as Chat from "../Chat.ts"
 import * as DocsApi from "../docs/Api.ts"
 import * as DocsSource from "../docs/Source.ts"
@@ -179,8 +180,11 @@ export const harness = async (runtime: Runtime, script: Script, options: Harness
   )
   // ChatApi routes a repository's docs before the chat routes (worker/ChatApiProgram.ts): open to everyone.
   const docs = DocsApi.make()
-  const routed = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
-    DocsApi.handles(new URL(request.url, "http://chat.test").pathname) ? docs.fetch : chat.fetch)
+  const conversations = await runtime.runPromise(observed(ConversationApi.make(database)))
+  const routed = Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => {
+    const path = new URL(request.url, "http://chat.test").pathname
+    return DocsApi.handles(path) ? docs.fetch : ConversationApi.handles(path) ? conversations.fetch : chat.fetch
+  })
   const handler = HttpEffect.toWebHandler(
     observed(
       routed.pipe(
