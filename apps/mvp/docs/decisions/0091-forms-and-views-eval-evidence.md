@@ -25,3 +25,8 @@ The SDK intentionally does not send `seatNote` to Jev. The common evidence
 instructions must therefore be included in every question, not only in that
 generation-seat note. The scorer configuration includes those instructions so
 the changed judging contract cannot silently compare against its old digest.
+
+The complete agent run also exposed a file-view miss: “show lines” was treated
+as a sandbox read. File tabs are visible effects too. Teach the existing
+`file/open` contract explicitly: the tab supplies the repository context, and
+showing a file needs no checkout. Its unchanged live eval is the regression.
