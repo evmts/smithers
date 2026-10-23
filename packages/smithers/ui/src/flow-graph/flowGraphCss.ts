@@ -35,4 +35,8 @@ export const flowGraphCss = `
 .sui-waterfall-segment[data-state=waiting] { background:repeating-linear-gradient(120deg,transparent 0 3px,${t.mutedForeground} 3px 5px); }
 .sui-waterfall-cursor { position:absolute; top:0; bottom:0; width:1px; background:${t.foreground}; pointer-events:none; }
 @media(max-width:640px) { .sui-flow-graph-viewport { height:330px; } }
+@media(max-width:960px) {
+  .sui-flow-graph-tools { position:static; width:max-content; max-width:100%; margin:8px; }
+  .sui-journal-scrubber input { min-height:32px; }
+}
 `;
