@@ -33882,6 +33882,25 @@ doesn't call `wake`. A failure is the container client's own error,
 unchanged; the `sandbox.rearm` span and the `cloudflare.sandbox.rearm` log
 line carry only its tag.
 
+### `SandboxObject.run`
+
+```ts
+const run: <E, R>(
+  container: ContainerTerminal.Container<E, R>,
+  argv: Array<string>,
+  options?: { readonly user?: string | undefined; readonly env?: Record<string, string> | undefined }
+) => Effect.Effect<number, E, R>
+```
+
+Runs `argv` in the running container to completion and answers its exit code;
+a nonzero one is an answer, not a failure. `user` is a numeric `uid:gid` (the
+image's user when absent) and `env` the variables beyond the image's `PATH`.
+Standard output and error are `ignore`d, never piped: workerd's exec pipes hold
+no bytes, so a command writing to a pipe nobody reads blocks on its first write
+and its exit code never comes. One line of warning on stderr is enough. Run a
+command whose output matters through `ContainerSession`. The process belongs to
+the call's own scope. A failure is the container client's own error, unchanged.
+
 ### `SandboxObject.Machine`
 
 ```ts
