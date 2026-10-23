@@ -318,6 +318,14 @@ describe("GET /api/shapes/messages", () => {
     await eventually(async () => {
       const response = await h.fetch(`/api/shapes/messages?${at}`)
       const text = await response.text()
+      // A retired Electric handle requires a fresh snapshot, not parsing its error object as rows.
+      if (response.status === 409) {
+        at = "offset=-1"
+        rows.length = 0
+        body = ""
+        return false
+      }
+      expect(response.status, text).toBe(200)
       body += text
       if (response.status === 409) {
         rows.length = 0
