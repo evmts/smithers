@@ -99,12 +99,13 @@ export const stackHarness = async (runtime: Runtime, options: StackOptions = {})
     if (table === TODOS_TABLE || table === TODO_REQUESTS_TABLE) url.searchParams.set("table", `${scratch.name}.${table}`)
     return globalThis.fetch(url, init)
   }
+  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl) })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),
       Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
       Effect.provideService(Metric.MetricRegistry, registry),
-      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
+      Effect.provideService(ConfigProvider.ConfigProvider, provider),
     )
   const roles = options.faultyRoles ?? await runtime.runPromise(
     observed(RepoRoles.make(scratch.database, { repository: OWN_REPOSITORY, app: Option.none(), ...options.roles })),
