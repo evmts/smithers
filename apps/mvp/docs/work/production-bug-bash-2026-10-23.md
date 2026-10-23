@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-23 13:16 PDT
+updated: 2026-10-23 13:20 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -51,3 +51,11 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 - Chat answered the T1 question incorrectly: it said the TODO was still `requested` and “no attempt has started on this device.” At that time the T1 page and Cloud run card showed `Working`, `todo/Begin` done, and `todo/Implement` running for more than a minute. The answer's debug run is `/app/runs/644ed269-5653-42e2-8d07-49701e661098`.
 - That chat run called `run/list/read` and then `run/inspect/read` twice. The visible run list contained the local `todo/commit` receipt and device runs but omitted the active Cloud `todo:58952106-9637-44cf-8777-495037822360` run. The inspected run shown in the card was `repo/about`. The source `run/list/read` reads the local `EngineStore.RunInspection` service. This strongly suggests the agent's run read did not include Cloud runs; the answer should have qualified its scope or followed the TODO's Cloud run link. Retain a real eval/regression and safe read diagnostics when repairing.
 - `evmts/tevm` loaded its main branch Code view in Arc, but its Stack route rendered `Not found` for this account. That may reflect repository installation/access state; no mutation was attempted there and this is not classified as a product defect yet.
+
+## 2026-10-23, 13:20 PDT
+
+- The T1 branch's Code route first gave a truthful `Not cloned` state and a Clone button. Pressing Clone acknowledged immediately as `Requested`, then reported `Fetching 153.2 MB`; about 30 s later its branch file tree and `site` directory rendered. Notifications later showed `Clone · smithersai/vibelang` as done. This branch-browse and clone path passed.
+- No Terminal control was exposed after the cloned branch tree settled, so the intended read-only terminal probe did not run; the transient `Terminal` text seen during initial loading was not a usable control. This is an untested capability, not a classified failure.
+- Direct navigation to the existing VibeLang issue `/smithersai/vibelang/issues/1` also remained on `Loading`, consistent with the already-owned Issues repair.
+- T1's Cloud run was still `Working` in `todo/Implement` after 6m 44s. The run card showed zero logs and no finer progress stage. Continue observing before classifying a stall; the card does not currently explain what work the agent is doing inside Implement.
+- Arc's T1 page displayed three full model-spend notices plus a `+67` overflow marker above the branch content. The notification bell was usable and showed three unread items, including the completed clone and the completed chat answer. The lasting notices substantially push down repo content for this established account; evaluate against the minimal-text and toast behavior rules.
