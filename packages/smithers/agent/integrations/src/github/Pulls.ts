@@ -12,9 +12,10 @@
  * idempotent, so a lost answer fails `outcomeUnknown: true`. Mark the body
  * with `Issues.withWriteMarker` and, on an attempt after `outcomeUnknown`,
  * look first: {@link findPullByHead} (GitHub allows one open pull request per
- * head and base) or {@link findReviewByWrite}. A merge whose answer was lost
- * is read back with {@link getPull}: `merged` and `merge_commit_sha` say
- * whether it happened. Closing is idempotent and retries as `retryable`.
+ * head and base) or {@link findReviewByWrite}. A step merges through
+ * `GitHub.Once.merge`, which keys the merge commit's message and finds the
+ * merge by that key, never by the pull request merely being merged. Closing is
+ * idempotent and retries as `retryable`.
  *
  * **Merging is fenced.** {@link mergePull} sends the head SHA the person saw,
  * so GitHub refuses with 409 when the head moved since, and 405 when the pull
@@ -464,8 +465,9 @@ export const markReady = (
  *
  * GitHub answers 409 when the head is no longer `sha`, 405 when the pull
  * request is not mergeable, and 422 for a method the repository disallows. A
- * lost answer fails `outcomeUnknown`: read the pull request back with
- * {@link getPull} before merging again.
+ * lost answer fails `outcomeUnknown`. A step that may run again merges through
+ * `GitHub.Once.merge`, which puts its key in the commit message and finds the
+ * merge by it.
  *
  * @category constructors
  * @since 1.0.0

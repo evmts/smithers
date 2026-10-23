@@ -124,7 +124,10 @@ const startGitHub = async (): Promise<FakeGitHub> => {
       return json(response, 200, { ref: `refs/heads/${ref[1]}`, object: { sha: head, type: "commit" } })
     }
     const commit = /^\/repos\/o\/r\/git\/commits\/([0-9a-f]{40})$/.exec(path)
-    if (commit !== null) return json(response, 200, state.commits.get(commit[1]!))
+    if (commit !== null) {
+      const found = state.commits.get(commit[1]!)
+      return found === undefined ? json(response, 404, { message: "Not Found" }) : json(response, 200, found)
+    }
     if (path === "/repos/o/r/pulls" && request.method === "POST") {
       const number = state.pulls.length + 1
       const pull = at({
@@ -144,6 +147,30 @@ const startGitHub = async (): Promise<FakeGitHub> => {
       })
       state.pulls.push(pull)
       return json(response, 201, pull)
+    }
+    const pullPath = /^\/repos\/o\/r\/pulls\/(\d+)(\/merge)?$/.exec(path)
+    if (pullPath !== null) {
+      const pull = state.pulls[Number(pullPath[1]) - 1]
+      if (pull === undefined) return json(response, 404, { message: "Not Found" })
+      if (pullPath[2] === undefined) return json(response, 200, pull)
+      const head = pull["head"] as Raw
+      const base = pull["base"] as Raw
+      if (pull["merged"] === true) return json(response, 405, { message: "Pull Request is not mergeable" })
+      if (head["sha"] !== body.sha) return json(response, 409, { message: "Head branch was modified" })
+      // A rebase writes the head's commits again with their own messages; squash and merge write the one given.
+      const message = body.merge_method === "rebase"
+        ? "Rebased commit"
+        : `${body.commit_title ?? "Merged"}${body.commit_message === undefined ? "" : `\n\n${body.commit_message}`}`
+      const oid = sha()
+      state.commits.set(oid, {
+        sha: oid,
+        message,
+        tree: { sha: `tree-${oid}` },
+        parents: [{ sha: state.refs.get(base["ref"] as string) }]
+      })
+      state.refs.set(base["ref"] as string, oid)
+      Object.assign(pull, { merged: true, merge_commit_sha: oid, merged_by: USER, state: "closed" })
+      return json(response, 200, { sha: oid, merged: true, message: "Pull Request successfully merged" })
     }
     if (path === "/repos/o/r/pulls") {
       const head = url.searchParams.get("head")
@@ -414,5 +441,74 @@ describe("pull, issue, comment and review", () => {
         details: { incomplete: true, retryable: false }
       })
     }
+  })
+})
+
+describe("merge", () => {
+  /** Pull request #1 from `smithers/t1-fix` into main, at head `e…`. */
+  const opened = async () => {
+    github = await startGitHub()
+    github.refs.set("smithers/t1-fix", "e".repeat(40))
+    return run(Pulls.createPull("o", "r", { head: "smithers/t1-fix", base: "main", title: "T1: Fix", body: "Do it." }))
+  }
+  const squash = (pull: Pulls.PullRequest) =>
+    Once.merge("o", "r", pull.number, { sha: pull.head.sha, method: "squash", commitTitle: "T1: Fix (#1)" })
+
+  it("merges at the head with the key's trailer, and finds that merge by it alone", async () => {
+    const pull = await opened()
+    const keyed = squash(pull)
+    expect(Option.isNone(await run(keyed.find(KEY)))).toBe(true)
+    const merged = await run(keyed.perform(KEY))
+    expect(merged.merged).toBe(true)
+    expect((github as FakeGitHub).commits.get(merged.sha)!["message"]).toBe(`T1: Fix (#1)\n\nSmithers-Write: ${KEY}`)
+    expect(await run(keyed.find(KEY))).toEqual(Option.some({ sha: merged.sha, merged: true }))
+    // Another write's key finds nothing: the merge is this one's.
+    expect(Option.isNone(await run(keyed.find(OTHER_KEY)))).toBe(true)
+    const withMessage = Once.merge("o", "r", pull.number, { sha: pull.head.sha, method: "merge", commitMessage: "Why" })
+    expect(Option.isNone(await run(withMessage.find(OTHER_KEY)))).toBe(true)
+  })
+
+  it("never adopts a merge someone else made at the same head, and keeps the head fence", async () => {
+    const pull = await opened()
+    // Merged on github.com, with GitHub's own message: no trailer.
+    await run(Pulls.mergePull("o", "r", pull.number, { sha: pull.head.sha, method: "squash" }))
+    expect(Option.isNone(await run(squash(pull).find(KEY)))).toBe(true)
+    const moved = await run(
+      Pulls.createPull("o", "r", { head: "smithers/t1-fix", base: "main", title: "T2", body: "x" })
+    )
+    const fenced = Once.merge("o", "r", moved.number, { sha: "f".repeat(40), method: "squash" })
+    expect(await failure(fenced.perform(KEY))).toMatchObject({ details: { status: 409 } })
+  })
+
+  it("preserves a merge message and recovers only the final key trailer", async () => {
+    const pull = await opened()
+    const keyed = Once.merge("o", "r", pull.number, {
+      sha: pull.head.sha,
+      method: "merge",
+      commitMessage: `Why\n\nSmithers-Write: ${OTHER_KEY}`
+    })
+    const merged = await run(keyed.perform(KEY))
+    expect((github as FakeGitHub).commits.get(merged.sha)!["message"])
+      .toBe(`Merged\n\nWhy\n\nSmithers-Write: ${OTHER_KEY}\n\nSmithers-Write: ${KEY}`)
+    expect(await run(keyed.find(KEY))).toEqual(Option.some({ sha: merged.sha, merged: true }))
+    expect(Option.isNone(await run(keyed.find(OTHER_KEY)))).toBe(true)
+  })
+
+  it("cannot recover a merged pull without its merge SHA and propagates a missing commit read", async () => {
+    const pull = await opened()
+    const raw = (github as FakeGitHub).pulls[0]!
+    Object.assign(raw, { merged: true, merge_commit_sha: null })
+    expect(Option.isNone(await run(squash(pull).find(KEY)))).toBe(true)
+    raw["merge_commit_sha"] = "f".repeat(40)
+    expect(await failure(squash(pull).find(KEY))).toMatchObject({ details: { status: 404 } })
+  })
+
+  it("never finds a rebase merge, since a rebase writes no message to carry the key", async () => {
+    const pull = await opened()
+    const rebase = Once.merge("o", "r", pull.number, { sha: pull.head.sha, method: "rebase" })
+    const merged = await run(rebase.perform(KEY))
+    expect(merged.merged).toBe(true)
+    // Merged by this very call, and still not provably this write's: a lost answer reads as someone else's merge.
+    expect(Option.isNone(await run(rebase.find(KEY)))).toBe(true)
   })
 })

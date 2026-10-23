@@ -13,6 +13,7 @@
  * | branch | the name's last `-` segment, its first {@link BRANCH_KEY_LENGTH} hex | the branches under the name's prefix |
  * | commit | a `Smithers-Write: <key>` trailer | the branch head, when it moved past the expected head |
  * | pull request, issue, comment, review | the body's hidden write marker | GitHub's listing, whole |
+ * | merge | a `Smithers-Write: <key>` trailer in the merge commit's message | the pull request and its merge commit |
  *
  * A step writes with them like this; the key comes from the dispatch, so the
  * step never names one:
@@ -253,4 +254,50 @@ export const review = (
     find: (key) => Pulls.findReviewByWrite(owner, repo, number, { writeId: key }),
     perform: (key) =>
       Pulls.createReview(owner, repo, number, { ...input, body: Issues.withWriteMarker(input.body, key) })
+  })
+
+/**
+ * A merge of pull request `number` at head `sha`, as the person whose token
+ * makes it, its commit message ending with the write's `Smithers-Write`
+ * trailer. Answers GitHub's {@link Pulls.Merged}.
+ *
+ * The merge is fenced by the head: GitHub answers 409 when the head is no
+ * longer `sha`. The lookup reads the pull request. Unmerged, nothing was made.
+ * Merged, the merge commit's trailer must carry the key; a merge without it is
+ * someone else's, and the lookup answers none. A rebase writes no message of
+ * its own, so a rebase merge carries no key and its lookup always answers
+ * none: a rebase whose answer was lost reads afterwards as a pull request
+ * someone merged, never as this write's merge.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const merge = (
+  owner: string,
+  repo: string,
+  number: number,
+  input: {
+    readonly sha: string
+    readonly method: Pulls.MergeMethod
+    readonly commitTitle?: string | undefined
+    readonly commitMessage?: string | undefined
+  }
+): Action.Keyed<Pulls.Merged, IntegrationError, GitHubClient> =>
+  Action.keyed({
+    find: (key) =>
+      Effect.gen(function*() {
+        const pull = yield* Pulls.getPull(owner, repo, number)
+        if (input.method === "rebase" || !pull.merged || pull.merge_commit_sha === null) return Option.none()
+        const commit = yield* Commits.getCommit(owner, repo, pull.merge_commit_sha)
+        return trailerKeyOf(commit.message) === key
+          ? Option.some({ sha: pull.merge_commit_sha, merged: true })
+          : Option.none()
+      }),
+    perform: (key) =>
+      Pulls.mergePull(owner, repo, number, {
+        sha: input.sha,
+        method: input.method,
+        commitTitle: input.commitTitle,
+        commitMessage: withTrailer(input.commitMessage ?? "", key)
+      })
   })
