@@ -8,7 +8,7 @@ import { tokens as t } from "../tokens";
 export const actionMenuCss = `
 .sui-action-menu-trigger { flex:none; width:28px; min-height:28px; height:28px; padding:0; color:${t.mutedForeground}; }
 @media (max-width:960px) {
-  .sui-action-menu-trigger { width:32px; min-height:${t.controlHeight}; height:32px; }
+  .sui-action-menu-trigger { width:32px; min-height:${t.controlHeight}; height:${t.controlHeight}; }
 }
 .sui-action-menu-trigger:hover, .sui-action-menu-trigger[data-state='open'] { color:${t.foreground}; }
 .sui-action-menu { z-index:60; min-width:160px; padding:4px; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.popover}; color:${t.popoverForeground}; box-shadow:${t.shadow3}; outline:none; }
