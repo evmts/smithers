@@ -26,6 +26,12 @@ Postgres views ─▶ Electric ─▶ every device's `views` ─▶ the conversa
 
 `ui/form { title, schema, submitLabel? }` adds a form to the conversation. `schema` is a JSON Schema object; its fields come from `@smthrs/ui`'s `declaredInput` and `formFieldsFor`, as `FlowFormView` renders them, so a field the form can't render never shows. The flow's description tells the agent to ask for any input this way, never in prose, and that the form ends its answer.
 
+Missing required input uses that form even when the person didn't explicitly ask
+for a form. The agent ends with “Form ready.” and leaves the question to the
+fields. An explicit request to ask and act in the same answer still uses
+`app/agent/ask`. Forms and generated views are visible to the person; other flow
+results must be included in the answer when requested.
+
 - **The submission is the person's next question.** Its text is the submit label (`Send` unless set), and it carries `source: { viewId, event: "submit" }` and `data`, the values. It goes through chat's outbox like any question, so it is durable: offline, it waits and is sent once; refused, it shows Not sent with Retry, which sends the values again (`chat-unsent` v2).
 - **Submitted once, everywhere.** ChatApi stores the question and marks the form `{ submitted: true, values, questionId }` in one transaction. The same question again changes nothing; another submission of the same form is `409`. Every device then shows the form answered: its values, disabled, with no button. It never parks the answer ([0004 §3](../decisions/0004-agent-ui-codemode-and-rendering.md#3-templates)): the agent goes on in the next answer.
 - **The agent reads the values.** The answer's turn and the history give the model the question's text, then `The values the person sent with it: {…}` (`SENT_VALUES`, `worker/Messages.ts`).

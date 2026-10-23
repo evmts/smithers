@@ -33,7 +33,7 @@ describe("CHAT_SYSTEM", () => {
     expect(system).toContain("Call only the flows the request needs.")
     expect(system).toContain("When a flow fails or is refused, say so and stop there")
     expect(system).toContain("never ask for that approval yourself")
-    expect(system).toContain("put it in your answer, code in a fenced block")
+    expect(system).toContain("put them in your answer, code in a fenced block")
     expect(system).toContain("Never promise to do something later")
     expect(system).toContain("never make up their files, branches, runs or results")
     expect(system).toContain("People merge, approve and move main; you never do, and never look for a way round it.")

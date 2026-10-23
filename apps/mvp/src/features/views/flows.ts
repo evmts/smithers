@@ -107,7 +107,8 @@ export const AskWithForm = Flow.make("ui/form", {
     "schema is a JSON Schema object whose properties are the fields (each with a title; string, number, boolean or " +
     "enum), with required listing the ones the person must fill. Never ask for a password, token or other secret: " +
     "secrets are added in Settings. submitLabel names the button (default \"Send\"). The form ends your answer: " +
-    "finish with one short line. The person's submission arrives as their next question: the submit label, then the " +
+    "finish with only 'Form ready.', without repeating the question or promising later work. The person's submission " +
+    "arrives as their next question: the submit label, then the " +
     "values they sent. Answers { viewId, shown }.",
   modelInvocable: true,
   payload: formPayload,
