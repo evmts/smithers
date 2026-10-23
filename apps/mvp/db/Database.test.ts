@@ -45,7 +45,7 @@ const emptySchema = async <A>(use: (url: string, schema: string) => Promise<A>) 
   const schema = `cli_${crypto.randomUUID().replaceAll("-", "")}`
   await sql(`CREATE SCHEMA ${schema}`)
   try {
-    const url = new URL("postgresql://smithers:smithers@localhost:54321/smithers")
+    const url = await runtime.runPromise(TestDatabase.serverUrl)
     url.searchParams.set("options", `-c search_path=${schema}`)
     return await use(url.toString(), schema)
   } finally {
@@ -73,7 +73,7 @@ describe("layer", () => {
         for (let index = 0; index < 150; index++) yield* sql.unsafe(`SELECT ${index} AS ${marker}`)
         return yield* sql<{ readonly count: number }>`SELECT count(*)::int AS count FROM pg_prepared_statements
           WHERE statement LIKE ${`%${marker}%`}`
-      }).pipe(Effect.provide(Database.layer(Effect.succeed(Redacted.make(Database.LOCAL_URL))))),
+      }).pipe(Effect.provide(Database.layer(Effect.map(TestDatabase.serverUrl, (url) => Redacted.make(url.toString()))))),
     )
     expect(held).toEqual([{ count: 0 }])
   })
