@@ -37,6 +37,8 @@ export default defineConfig({
     hookTimeout: 30_000,
     coverage: {
       enabled: true,
+      // Keep the coverage gate visible even when a behavioral test fails.
+      reportOnFailure: true,
       provider: "v8",
       reportsDirectory: join(tmpdir(), `mvp-coverage-${process.pid}`),
       include: [
