@@ -2,10 +2,23 @@
 title: Branch sandboxes (feature 5)
 status: in-progress
 area: infra
-owner: sandboxes builder (Opus, from 20:40 on 2026-10-21)
-updated: 2026-10-22 08:20 PDT
+owner: unassigned (the sandboxes builder handed off on 2026-10-23)
+updated: 2026-10-23 PDT
 links: [branch-terminal.md, branch-sharing.md, ../decisions/0005-sandboxes-secrets-and-the-forge.md, ../todo.md, sandbox-budgets.md, ../decisions/0007-roles-and-tags.md, ../decisions/0002-local-first.md, design-questions.md, ../decisions/0011-the-agent-runs-in-the-browser.md, connect-agents-sandboxes-forge.md, model-endpoint.md, token-spend-alerts.md, secrets-proxy.md]
 ---
+
+## Handoff — 2026-10-23
+
+**Works in production (push 28):** branch machines (terminal, keep-awake, sleep, wake with the working copy), agent tools on
+the same machine, commands up to an hour as `sandbox/Command` jobs (a 20-minute command settled once), a drive budget
+under Cloudflare's 15-minute alarm limit, and command latency: `git status` call to settled 0.9 to 1.1 s (5.6 s cold).
+**Open:**
+- A run woken after a job settles takes 12.0 s to answer (benchmark 7.3 s, expected ~2 s near the database). It only hits
+  commands that outlive the 10-minute drive budget. Next step: read the alarm's `build_ms`, `route_ms` and `drive_ms`
+  during one long command to split runtime build, routing and replay.
+- The browser's run tool advertises the build's 3600 s (`COMMAND_LIMIT_SECONDS`) even where `SANDBOX_COMMAND_MAX_SECONDS`
+  is lower; a longer call is refused `too_long` with the deployed limit, but the tool should state that limit up front.
+- Done, for the record: PR check scripts already run up to `SANDBOX_COMMAND_MAX_SECONDS` (worker/flows/Checks.ts).
 
 ## A command answers in the step that asks — 2026-10-22 PDT (evening)
 
