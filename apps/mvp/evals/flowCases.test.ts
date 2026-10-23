@@ -27,6 +27,10 @@ const failed = (flow: string, input: unknown) => ({ calls: [call(flow, input, "f
 const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Partial<Trial> }> = {
   "chat-pin-that": { good: failed("chat/pin", {}), bad: steps },
   "chat-unpin": { good: failed("chat/unpin", {}), bad: steps },
+  "todo-inspect": {
+    good: failed("todo/inspect", { repo: REPO, number: 1 }),
+    bad: { calls: [call("run/list")], text: "T1 is only requested; no attempt has started on this device." },
+  },
   "todo-retry": { good: failed("todo/Retry", { repo: REPO, number: 1 }), bad: steps },
   "file-open-close": {
     good: { calls: [call("file/open", { path: "README.md", lines: "2-4" }), call("file/close", { path: "README.md" })] },

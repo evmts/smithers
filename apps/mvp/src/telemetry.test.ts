@@ -345,6 +345,7 @@ describe("the contract", () => {
       "execute_tool issue/create": "`execute_tool ${call.flowName}`",
       "execute_tool issue/comment": "`execute_tool ${call.flowName}`",
       "execute_tool todo/draft": "`execute_tool ${call.flowName}`",
+      "execute_tool todo/inspect": "`execute_tool ${call.flowName}`",
       "execute_tool chat/copy": "`execute_tool ${call.flowName}`",
       // Code intelligence names a span after its act, and the browser language server after its method.
       "code.hover": "`code.${act}`",

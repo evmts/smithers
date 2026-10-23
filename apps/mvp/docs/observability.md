@@ -656,6 +656,7 @@ The stack's route, its one writer, its shapes and the browser's TODO steps and s
 | Record | Kind | Where | Fields |
 |---|---|---|---|
 | `stack.request` | log, span | ChatApi | `op`, `via` (from the session), `opId`, `outcome` (`committed`, `dropped`, `repeated`, or the refusal's code), `number`, `status`, `bytes`, `durationMs`, `errorCode` |
+| `stack.status`; `smithers_todo_status_reads` | log, span; counter | ChatApi, authenticated TODO status read | `outcome`, `status`, `durationMs`; unexpected database failures record only a finite SQL reason or `unexpected`, never an arbitrary error tag |
 | `stack.apply` | log, span | ChatApi, inside `stack.request` | `repoId`, `opId`, `op`, `via`, `outcome` (`committed`, `dropped`, `stack_full`, `merged`, `not_found`, `repeated`, `conflict`), `number`, `version`, `durationMs` |
 | `stack.report`; `smithers_todo_reports` | log, span; counter | TODO execution | attempt and TODO ids, kind, outcome (`applied`, `repeated`, `stale`), successor count; metric labels are kind and outcome |
 | `todo.start`; `smithers_todo_admissions` | log, span; counter | TODO execution | flow, execution id, outcome (`started`, `not_started`), error code; metric labels are flow and outcome. Admission acknowledgment is distinct from execution completion |

@@ -1,6 +1,6 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import { stackRoute, todoStatusRoute } from "./contract"
+import { stackRoute, TODO_STATUS_NOT_FOUND, todoStatusRoute } from "./contract"
 import { TodoStatusUnavailable, type TodoStatusResult } from "./flows"
 import { Refusal, Taken, TodoStatusRead } from "./schema"
 
@@ -45,7 +45,7 @@ export const readTodoStatus = (origin: string, owner: string, name: string, numb
     if (response.status !== 200) {
       const body = yield* response.json.pipe(Effect.orElseSucceed(() => undefined))
       const code = Option.getOrUndefined(decodeRefusal(body))?.code
-      if (response.status === 404 && code === "todo_not_found") {
+      if (response.status === 404 && code === TODO_STATUS_NOT_FOUND) {
         return { kind: "not_found", number } as const satisfies TodoStatusResult
       }
       return yield* new TodoStatusUnavailable({ reason:
