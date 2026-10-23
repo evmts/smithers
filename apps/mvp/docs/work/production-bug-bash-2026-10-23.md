@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-23 13:20 PDT
+updated: 2026-10-23 13:27 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -59,3 +59,14 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 - Direct navigation to the existing VibeLang issue `/smithersai/vibelang/issues/1` also remained on `Loading`, consistent with the already-owned Issues repair.
 - T1's Cloud run was still `Working` in `todo/Implement` after 6m 44s. The run card showed zero logs and no finer progress stage. Continue observing before classifying a stall; the card does not currently explain what work the agent is doing inside Implement.
 - Arc's T1 page displayed three full model-spend notices plus a `+67` overflow marker above the branch content. The notification bell was usable and showed three unread items, including the completed clone and the completed chat answer. The lasting notices substantially push down repo content for this established account; evaluate against the minimal-text and toast behavior rules.
+
+## 2026-10-23, 13:22 PDT
+
+- Resized Arc so the actual page viewport was 390 CSS px, then restored the prior browser size. In the signed-in `/app/` view, the `Conversations` link's bounding box was x = −109.86 to −21.65 px, fully outside the viewport; `Flows` began at x = −9.65 px. `document.documentElement.scrollWidth` remained 390 px, so horizontal scrolling cannot reach either link. This is a stronger signed-in reproduction of the mobile navigation defect. Screenshot: `/tmp/smithers-bugbash-20261023/arc-mobile-signed-in.png`.
+
+## 2026-10-23, 13:27 PDT
+
+- T1's Cloud run settled after 9m 25s with result `{ "state": "failed" }`. `todo/Implement` finished after 9m 11s and reported no edits: the VibeLang issue #1 patch and real keyboard regression were already committed on the branch's base. `todo/Collect` failed with `TodoFailed`; Publish, Await and Settle then failed as dependencies, and `todo/Fail` returned failed. The run card's top status is `Done` despite the failed product result. The T1 detail still displayed `Working` about 10 seconds after the run settled; retest after sync before classifying a persistent stale state.
+- Read-only source inspection shows the exact no-change path in `worker/flows/Todo.ts`: Collect emits `empty_change`, and Fail reports a failed TODO through `Stack.report`. The run card hides that code behind the generic `TodoFailed` tag; the actionable reason is only inferable by combining the agent's summary with source. Improve the safe failure reason shown to the person and record the stage and outcome without credentials or content.
+- Used Arc on `vibelang.sh/001-onboarding` to check the original issue. Search for `scope` now sets a unique listbox ID and `aria-activedescendant`; advancing to result 3 linked the focused combobox to an existing selected option. A no-match query removed the active descendant and options. The GitHub issue's prior comment says the patch landed on main as `e680bb7` but was left open pending production deployment; this Arc check is production acceptance for the tested desktop semantics. No physical screen-reader test was run. The TODO's duplicate work arose from the stale open issue, not a missing code change.
+- Arc then locked. `CGSSessionScreenIsLocked` returned 1; browser control stopped, and this bug bash's bounded `caffeinate` was ended. Resume Arc only after it is unlocked by the user.
