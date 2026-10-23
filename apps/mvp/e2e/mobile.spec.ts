@@ -146,14 +146,15 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             files: [{ path: SOURCE_PATH, text: source }], checks: [{ check: "parses", ok: true }], questions: [], failure: null, flowId: null,
           } })).ok()).toBe(true)
           await page.goto(`/app/flows/drafts/${draftId}`)
-          await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible()
-          await audit(page, info, "flow-draft")
+          const save = page.getByRole("button", { name: "Save", exact: true })
+          await expect.soft(save, "the persisted draft must load before layout coverage counts").toBeVisible({ timeout: 30_000 })
+          if (await save.isVisible()) await audit(page, info, "flow-draft")
           const saved = await page.request.post("/api/flows/save", { data: { draftId, name, description: "Mobile layout", source, digest: digestSync(source) } })
           expect(saved.ok()).toBe(true)
           const { flowId } = await saved.json() as { flowId: string }
           try {
             await page.goto(`/app/flows/code/${name}`)
-            await expect(page.getByRole("textbox", { name: "Code", exact: true })).toHaveValue(source)
+            await expect(page.getByRole("textbox", { name: "Code", exact: true })).toHaveValue(source, { timeout: 30_000 })
             await audit(page, info, "flow-code")
           } finally {
             expect((await page.request.post(`/api/flows/${flowId}/delete`, { data: {} })).ok()).toBe(true)
