@@ -22,7 +22,8 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
     await use()
     await writeFile(info.outputPath("page-errors.json"), JSON.stringify(errors, null, 2))
     const name = info.titlePath.slice(1).join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 150)
-    await writeManifest(info, "flow.json", startedAt, [{ name: "", video: await page.video()?.path(), openedAt: 0 }], { test: name, flow: name })
+    // Playwright moves its temporary recording beside the manifest during teardown.
+    await writeManifest(info, "flow.json", startedAt, [{ name: "", video: "video.webm", openedAt: 0 }], { test: name, flow: name })
   }, { auto: true }],
 })
 test.use({ video: "on", screenshot: "only-on-failure", colorScheme: "light" })
