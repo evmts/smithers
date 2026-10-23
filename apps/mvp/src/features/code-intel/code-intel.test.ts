@@ -511,3 +511,18 @@ describe("what the view draws", () => {
     ])
   })
 })
+
+test("a symbol lookup that finishes after leaving the file cannot overwrite the new page", async () => {
+  const gate = delayed("definition")
+  const tab = await open(await seeded(), "src/main.ts", gate.layer)
+  await waitFor(() => expect(row(tab).outline).not.toBeNull())
+  actions(tab).select({ line: 2, column: 22, text: "add" })
+  await waitFor(() => expect(gate.entered()).toBe(true))
+  route(tab, "README.md")
+  await waitFor(() => expect(row(tab).file).toBeNull())
+  gate.release()
+  await waitFor(() => expect(gate.completed()).toBe(true))
+  await waitFor(() => expect(tab.count(asks, { act: "definition", outcome: "answered" })).toBe(1))
+  expect(row(tab).file).toBeNull()
+  expect(row(tab).symbol).toBeNull()
+})
