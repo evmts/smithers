@@ -189,6 +189,7 @@ describe("todoCardOf", () => {
       prNumber: null,
       issueNumber: null,
       runId: null,
+      failure: null,
       pending: "requested",
     })
     expect(todoCardOf(1, [], todos, [request({ revision: 2 })])).not.toHaveProperty("pending")
@@ -393,7 +394,7 @@ describe("the stack as GitHub's issue list", () => {
     ])
   })
 
-  test("a running TODO links to its run: Watch while Working or In review; never Queued, settled, Failed or without one", () => {
+  test("a working or failed TODO links to its run; Queued, Merged and Dropped do not", () => {
     const RUN = "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f"
     const watch = { label: "Watch", href: `/app/runs/${encodeURIComponent(RUN)}` }
     expect(TODO_STATES.map((state) => runLinkOf({ state, runId: RUN }))).toEqual([
@@ -402,7 +403,7 @@ describe("the stack as GitHub's issue list", () => {
       watch,
       undefined,
       undefined,
-      undefined,
+      { label: "Open", href: `/app/runs/${encodeURIComponent(RUN)}` },
     ])
     expect(runLinkOf({ state: "working", runId: null })).toBeUndefined()
     const todos = [
@@ -413,7 +414,7 @@ describe("the stack as GitHub's issue list", () => {
     expect(items.map((item) => [item.status, item.links])).toEqual([
       [
         { kind: "running", label: "Working", live: true },
-        [{ label: "smithers/t4-retry", href: "/octo/hello/tree/smithers/t4-retry" }, watch],
+        [watch],
       ],
       [{ kind: "queued", label: "Queued" }, undefined],
     ])
@@ -476,6 +477,15 @@ describe("a TODO's page as GitHub's issue page", () => {
     const dropped = todoPageOf(card({ state: "dropped", settledAt: "2026-10-20 11:00:00+00" }), "octo", "hello")
     expect([dropped.state, dropped.status.kind, dropped.droppable]).toEqual(["closed", "dropped", false])
     expect(dropped.events.at(-1)).toEqual({ id: "dropped", kind: "dropped", text: "Dropped", createdAt: "2026-10-20T11:00:00+00:00" })
+  })
+
+  test("a failed TODO shows its safe failure reason and retains the run for diagnosis", () => {
+    const RUN = "todo:6f1c2a7e-3b4d-4c5e-8f90-1a2b3c4d5e6f"
+    const page = todoPageOf(card({ state: "failed", failure: "empty_change", branch: "smithers/t4-retry", runId: RUN, settledAt: "2026-10-20 11:00:00+00" }), "octo", "hello")
+    expect(page.events.at(-1)).toEqual({ id: "failed", kind: "failed", text: "No changes", createdAt: "2026-10-20T11:00:00+00:00" })
+    expect(page.run).toEqual({ label: "Open", href: `/app/runs/${encodeURIComponent(RUN)}` })
+    expect(page).not.toHaveProperty("branch")
+    expect(todoPageOf(card({ state: "failed", failure: null }), "octo", "hello").events.at(-1)?.text).toBe("Failed")
   })
 
   test("its branch and pull request, and this device's pending drop, which hides Drop", () => {

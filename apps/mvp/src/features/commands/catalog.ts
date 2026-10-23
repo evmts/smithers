@@ -1,6 +1,9 @@
 import { formFieldsFor, type SlashCommand } from "@smthrs/ui"
 import { type Entry, entryOf, type FlowName, type Minimum, names } from "../../flows/registry"
-import type { Role } from "../auth/contract"
+import type { Viewer } from "../auth/viewer"
+
+export { viewerOf } from "../auth/viewer"
+export type { Viewer } from "../auth/viewer"
 
 // The slash commands (docs/features/slash-commands.md): every registered flow with a slash door, in the registry's
 // order, and the ones a person may run. A command is its flow's own declaration seen from the composer: its row shows
@@ -63,12 +66,6 @@ export const pluginCommands = (
 /** Every slash command the registry declares. */
 export const COMMANDS: ReadonlyArray<Command> = commandsOf(names.map((name) => [name, entryOf(name)]))
 
-/** Who is at the composer: signed in or not, and their role on the repository, `null` for none. */
-export interface Viewer {
-  readonly signedIn: boolean
-  readonly role: Role | null
-}
-
 const RANKS = { anyone: 0, guest: 1, member: 2, maintainer: 3, admin: 4 } as const satisfies Record<Minimum, number>
 
 /** What a viewer counts as: anyone when signed out, a Guest when signed in with no role (decision 0007 §1), else the role. */
@@ -78,15 +75,3 @@ export const rankOf = (viewer: Viewer): number => (viewer.signedIn ? RANKS[viewe
 export const commandsFor = (viewer: Viewer, commands: ReadonlyArray<Command> = COMMANDS): ReadonlyArray<Command> =>
   commands.filter((command) => rankOf(viewer) >= RANKS[command.minimum])
 
-/**
- * Who is at the composer, as sign-in knows it: what ChatApi said, and while it hasn't said or can't be reached, the
- * session it last confirmed on this device, as `composerAccess` reads them (src/features/auth/contract.ts).
- */
-export const viewerOf = (
-  session: { readonly status: "loading" | "signed_in" | "signed_out" | "unreachable"; readonly role: Role | null },
-  confirmed: { readonly role: Role | null } | undefined,
-): Viewer => {
-  if (session.status === "signed_in") return { signedIn: true, role: session.role }
-  if (session.status === "signed_out" || confirmed === undefined) return { signedIn: false, role: null }
-  return { signedIn: true, role: confirmed.role }
-}

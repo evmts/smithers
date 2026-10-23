@@ -1,10 +1,10 @@
 import type { IssuesViewIssue, IssuesViewLink, ItemConversationEvent, ItemStateKind, ItemStatus } from "@smthrs/ui"
 import { mayAsk, type Role } from "../auth/contract"
-import { viewerOf } from "../commands/catalog"
+import { viewerOf } from "../auth/viewer"
 import { issuePath } from "../issues/contract"
 import { pullPath } from "../pulls/contract"
 import { hrefFor } from "../repo/paths"
-import { runPath } from "../runs/contract"
+import { OPEN, runPath } from "../runs/contract"
 import {
   COMMITTED,
   DROP,
@@ -17,6 +17,7 @@ import {
   RUNNING_STATES,
   SETTLED_STATES,
   TODO_STATE_WORDS,
+  type TodoFailure,
   type TodoState,
   todoPath,
   WATCH,
@@ -138,6 +139,7 @@ export interface TodoCardProps {
   readonly prNumber: number | null
   readonly issueNumber: number | null
   readonly runId: string | null
+  readonly failure?: TodoFailure | null
   readonly pending?: "requested" | "not_sent"
 }
 
@@ -168,6 +170,7 @@ export const todoCardOf = (
     prNumber: todo.prNumber,
     issueNumber: todo.issueNumber,
     runId: todo.runId,
+    failure: todo.failure,
     ...(pending === undefined ? {} : { pending }),
   }
 }
@@ -193,10 +196,10 @@ export const statusOf = (number: number | null, state: TodoState): ItemStatus =>
     ? { kind: "requested", label: REQUESTED }
     : { kind: STATE_KINDS[state], label: TODO_STATE_WORDS[state], ...(state === LIVE_STATE ? { live: true } : {}) }
 
-/** The run a running TODO links to (ruling TODO-3): its page, while the TODO is Working or In review. */
+/** The run a TODO links to while working or after failure, so the failed attempt remains inspectable. */
 export const runLinkOf = (todo: Pick<Todo, "state" | "runId">): IssuesViewLink | undefined =>
-  todo.runId !== null && (RUNNING_STATES as ReadonlyArray<TodoState>).includes(todo.state)
-    ? { label: WATCH, href: runPath(todo.runId) }
+  todo.runId !== null && ((RUNNING_STATES as ReadonlyArray<TodoState>).includes(todo.state) || todo.state === "failed")
+    ? { label: todo.state === "failed" ? OPEN : WATCH, href: runPath(todo.runId) }
     : undefined
 
 /** Postgres's `2026-10-20 10:00:00.123+00` as ISO 8601, which every browser reads. */
@@ -207,7 +210,7 @@ export const isDroppable = (todo: Pick<StackRow, "number" | "state" | "pending">
   todo.number !== null && !isSettled(todo.state) && todo.pending === undefined
 
 /**
- * A TODO's issue and branch, in the app, its pull request, on GitHub, when it has them, and its run while it runs.
+ * A TODO's issue and published branch, in the app, its pull request, on GitHub, when it has them, and its run while it runs.
  */
 const linksOf = (
   todo: Pick<Todo, "branch" | "prNumber" | "issueNumber" | "state" | "runId">,
@@ -222,7 +225,8 @@ const linksOf = (
   ...(todo.issueNumber === null
     ? {}
     : { issue: { label: `#${todo.issueNumber}`, href: issuePath(owner, name, todo.issueNumber) } }),
-  ...(todo.branch === null
+  // Begin reserves a branch name before Publish pushes it. The app cannot open that ref until a PR exists.
+  ...(todo.branch === null || todo.prNumber === null
     ? {}
     : {
       branch: {
@@ -318,6 +322,18 @@ export interface TodoPage {
   readonly droppable: boolean
 }
 
+/** The failure code's short, actionable words in a TODO's timeline. */
+export const TODO_FAILURE_WORDS: Readonly<Record<TodoFailure, string>> = {
+  plan: "Couldn't plan",
+  implement: "Implementation failed",
+  empty_change: "No changes",
+  publish_refused: "Publish refused",
+  pr_refused: "Pull request refused",
+  app_not_installed: "App not installed",
+  budget: "Budget reached",
+  base_closed: "Earlier change closed",
+}
+
 /**
  * TODO `card`'s page: its prompt and acceptance criteria as the body, and a timeline of who committed it and, once it
  * left Queued, the state it is in and since when.
@@ -333,7 +349,7 @@ export const todoPageOf = (card: TodoCardProps, owner: string, name: string): To
     events.push({
       id: card.state,
       kind: STATE_KINDS[card.state],
-      text: TODO_STATE_WORDS[card.state],
+      text: card.state === "failed" && card.failure != null ? TODO_FAILURE_WORDS[card.failure] : TODO_STATE_WORDS[card.state],
       createdAt: isoOf(card.settledAt ?? card.updatedAt),
     })
   }
