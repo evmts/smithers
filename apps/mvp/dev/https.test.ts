@@ -89,7 +89,7 @@ describe("startup regressions", () => {
     }
   })
 
-  it("waits for pending HTTPS startup when closed", async () => {
+  it.each(["before", "during"])("waits for HTTPS startup when closed %s listening", async (when) => {
     const certificates = directory()
     await certificate(certificates, { run: opensslOnly, env: {} })
     const plugin = devHttps(certificates, { port: 0 })
@@ -98,11 +98,12 @@ describe("startup regressions", () => {
       configFile: false,
       root: scratch,
       logLevel: "silent",
-      plugins: [plugin, { name: "close-during-startup", configureServer: (vite) => {
-        vite.httpServer!.once("listening", () => {
-          closing = (plugin.closeBundle as () => Promise<void>)()
-        })
-      } }],
+      plugins: (() => {
+        const closeEarly = { name: "close-during-startup", configureServer: (vite: import("vite").ViteDevServer) => {
+          vite.httpServer!.once("listening", () => { closing = (plugin.closeBundle as () => Promise<void>)() })
+        } }
+        return when === "before" ? [closeEarly, plugin] : [plugin, closeEarly]
+      })(),
       server: { host: "127.0.0.1", port: 0, ws: false, watch: null },
     })
     try {
