@@ -745,3 +745,15 @@ describe("stack initialization regressions", () => {
     })))
   }, WITHIN)
 })
+
+test("Retry on a failed TODO sends the same identity through the public action and durable outbox", async () => {
+  const tab = await open()
+  await tab.actions.open(OWNER, NAME)
+  await committed(tab, "Retry this", 1)
+  await sql(tab.api, "UPDATE todos SET state = 'failed', failure = 'implement' WHERE number = 1")
+  await until(() => expect(tab.stack().todos[0]?.state).toBe("failed"))
+  tab.actions.retry(OWNER, NAME, 1)
+  await until(() => expect(tab.count(sends, { op: "retry", outcome: "taken" })).toBe(1))
+  await until(() => expect(tab.stack().todos[0]?.state).toBe("queued"))
+  expect(tab.stack().todos[0]).toMatchObject({ number: 1, title: "Retry this" })
+}, WITHIN)

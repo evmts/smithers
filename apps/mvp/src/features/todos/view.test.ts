@@ -624,3 +624,10 @@ test("Retry names the least role: own Member or anyone Maintainer", () => {
   expect(mayRetry(todo, { ...session, role: "maintainer", login: "other" })).toBe(true)
   expect(mayRetry({ ...todo, state: "working" }, session)).toBe(false)
 })
+
+test("retry requests show Retry and leave the optimistic list only after the route took them", () => {
+  const row: Requested = { ...sending({ id: "retry", op: "retry", number: 3 }), status: "not_sent", reason: "forbidden", taken: null }
+  expect(notSentRows(REPO, [row])).toEqual([{ id: "retry", op: "retry", label: "Retry T3", reason: "Not allowed" }])
+  expect(deliveredOf(REPO, [], [row])).toEqual([])
+  expect(deliveredOf(REPO, [], [{ ...row, status: "requested", reason: null }])).toEqual(["retry"])
+})
