@@ -29,3 +29,10 @@
 
 /* The pages the header links to: Flows and Runs. */
 .app-shell-nav { display: flex; align-items: center; gap: 0.75rem; }
+
+@media (max-width: 60rem) {
+  .app-shell-header { flex-wrap: wrap; }
+  .app-shell-header [aria-label="Account"] { min-width: 0; flex-wrap: wrap; }
+  .app-shell-nav { flex-wrap: wrap; }
+  .app-shell-nav > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }
+}

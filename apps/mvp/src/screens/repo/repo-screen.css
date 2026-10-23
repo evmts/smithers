@@ -40,3 +40,7 @@
 .file-tabs-bar { flex: none; }
 /* The view switcher (SCOPE-14), at the home's top right, level with the tabs above it. */
 .home-views { align-self: flex-end; margin-top: -0.5rem; }
+
+@media (max-width: 60rem) {
+  .repo-header-name a { display: inline-flex; align-items: center; min-height: 32px; }
+}
