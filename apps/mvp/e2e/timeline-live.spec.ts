@@ -28,9 +28,6 @@ test("Branch timeline: a real question and its reply retain their object and out
   const { questionId, answerId } = a.asked.find(asked => asked.text === question)!
   const asked = entries.locator(`button[aria-controls="${questionId}"]`)
   const replied = entries.locator(`button[aria-controls="${answerId}"]`)
-  // Resolve through the rail's own transcript link, not a neighboring message.
-  const answer = a.conversation.locator(`[id="${answerId}"]`)
-
   await step("Find the question by its first words in the timeline", async () => {
     if (!(await rail.isVisible())) await a.page.locator(".sui-timeline-disclosure > summary").click()
     await expect(asked).toBeVisible({ timeout: 30_000 })
@@ -41,6 +38,13 @@ test("Branch timeline: a real question and its reply retain their object and out
   })
 
   await step("See the linked reply settle in the timeline", async () => {
+    // A 202 acknowledges the question, before Electric mounts its answer. Give that projection the live-model
+    // budget too, then follow the rail's actual link before checking its target.
+    await expect(replied).toBeVisible({ timeout: 180_000 })
+    const targetId = await replied.getAttribute("aria-controls")
+    expect(targetId).toBe(answerId)
+    await replied.click()
+    const answer = a.conversation.locator(`[id="${targetId}"]`)
     await expect(answer).toHaveAttribute("data-role", "assistant")
     await expect(answer).toHaveAttribute("data-state", /^(done|failed)$/, { timeout: 180_000 })
     const state = await answer.getAttribute("data-state")
