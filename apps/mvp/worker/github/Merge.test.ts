@@ -2,13 +2,16 @@
 // of the compose Postgres, against the scripted GitHub: the write is admitted as the writes route admits it, then
 // `pr/Merge` rechecks what the person saw and merges with their own token, or settles why not.
 import { Cause, Effect, Exit, Metric, Redacted } from "effect"
+import { HttpClient } from "effect/http"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { mergeExecutionId } from "../../src/features/pulls/contract.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
+import { withToken } from "./Calls.ts"
 import * as Merge from "./Merge.ts"
 import * as Metrics from "./Metrics.ts"
+import { moveBase, readPull } from "./Pulls.ts"
 import { TokenUnavailable } from "./Tokens.ts"
 import * as Write from "./Write.ts"
 import { admit, REPOSITORY, reset, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
@@ -21,12 +24,20 @@ beforeEach(async () => {
 })
 
 /** A pull request that adds a line to README.md, opened by the App; with what a person's page shows of it. */
-const opened = (github: ScriptedGitHub) => {
+const opened = (github: ScriptedGitHub, branch = "smithers/t1-readme") => {
   const baseSha = github.refs.get("main")!
-  const headSha = github.push("smithers/t1-readme", { "README.md": "# Widgets\n\nA line\n" })
-  const pull = github.openPull("smithers/t1-readme", "T1: README", BOT_LOGIN)
+  const change = branch === "smithers/t1-readme" ? { "README.md": "# Widgets\n\nA line\n" } : { [`${branch}.md`]: "A line\n" }
+  const headSha = github.push(branch, change)
+  const pull = github.openPull(branch, "T1: README", BOT_LOGIN)
   return { number: pull.number, headSha, baseSha }
 }
+
+/** Reads pull requests `numbers` into the projection with the App's token, as the webhook's re-read does. */
+const readPulls = (built: Awaited<ReturnType<typeof services>>["services"], numbers: ReadonlyArray<number>) =>
+  Effect.gen(function* () {
+    const token = yield* built.tokens.forInstallation(REPOSITORY, "pulls")
+    for (const number of numbers) yield* readPull(REPOSITORY, number).pipe(withToken(token, built.apiBaseUrl))
+  }).pipe(Effect.provideService(HttpClient.HttpClient, built.http), Effect.provide(built.database))
 
 /** Maya, a Maintainer signed in, and her merge of `seen`, admitted. */
 const merging = async (github: ScriptedGitHub, seen: ReturnType<typeof opened>, sessionId?: string | null) => {
@@ -54,7 +65,10 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
     const pull = github.pulls.get(seen.number)!
     expect(ran.exit).toEqual(Exit.succeed({ status: "done", mergeSha: pull.mergeSha }))
     expect([pull.merged, pull.mergedBy]).toEqual([true, "maya"])
-    expect(github.commits.get(github.refs.get("main")!)!.message).toBe(`T1: README (#${seen.number})`)
+    // The merge commit carries the write's key, which is how a lost answer finds it.
+    expect(github.commits.get(github.refs.get("main")!)!.message).toBe(
+      `T1: README (#${seen.number})\n\nSmithers-Write: ${Merge.mergeKeyOf(writeId)}`,
+    )
     expect(github.tree("main").get("README.md")).toBe("# Widgets\n\nA line\n")
     expect(github.seen("PUT", /\/merge$/).map((call) => call.token)).toEqual(["user"])
     expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", itemNumber: seen.number })
@@ -65,7 +79,8 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
   type Change = (github: ScriptedGitHub, number: number) => void
   test.each<readonly [string, Change]>([
     ["head_moved", (github) => void github.push("smithers/t1-readme", { "B.md": "b\n" })],
-    // The scripted GitHub reports a pull request's base as its base branch's head, so main moving moves it.
+    // GitHub keeps reporting the base the pull request opened on; the step reads the branch itself. Before 2026-10-21 the
+    // step compared that snapshot and merged onto the moved main (Codex Astra review).
     ["base_moved", (github) => void github.push("main", { "C.md": "c\n" })],
     ["merged", (github, number) => void github.merge(number)],
     ["closed", (github, number) => github.close(number)],
@@ -91,7 +106,7 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
     expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "draft" })
   })
 
-  test("a merge whose answer was lost is read back: merged at that head is this merge, done once", async () => {
+  test("a merge whose answer was lost is found by the key in its commit message: done once", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const seen = opened(github)
     const { writeId } = await merging(github, seen)
@@ -100,6 +115,183 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
     expect(ran.exit).toEqual(Exit.succeed({ status: "done", mergeSha: github.pulls.get(seen.number)!.mergeSha }))
     expect(github.seen("PUT", /\/merge$/)).toHaveLength(1)
     expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done", attempts: 1 })
+  })
+
+  test("someone else's merge at the same head, after an attempt that failed to read, is merged: never this write's", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const seen = opened(github)
+    const { writeId } = await merging(github, seen)
+    const { services: built } = await services(runtime, github)
+    // The first attempt can't read the pull request; meanwhile a person merges it on github.com at the same head.
+    github.faults.push({ match: (method, path) => method === "GET" && path.endsWith(`/pulls/${seen.number}`), status: 502 })
+    expect(Exit.isFailure(await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId }))))).toBe(true)
+    github.merge(seen.number, "sam")
+    // Before 2026-10-21 the attempt count rose before the read, so this run took sam's merge for its own (Codex Astra).
+    expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "refused", mergeSha: null })
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "merged" })
+    expect(github.seen("PUT", /\/merge$/)).toHaveLength(0)
+  })
+
+  test("the base moved: refused, and every open pull request into it shows the head read, so Merge again binds it", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const seen = opened(github)
+    const other = opened(github, "smithers/t2-other")
+    const { services: built } = await services(runtime, github)
+    await runtime.runPromise(readPulls(built, [seen.number, other.number]))
+    const moved = github.push("main", { "C.md": "c\n" })
+    const { maya, writeId } = await merging(github, seen)
+    await run(github, writeId)
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "base_moved" })
+    expect(await sql(runtime, `SELECT number, base_sha AS "baseSha" FROM pulls ORDER BY number`)).toEqual([
+      { number: seen.number, baseSha: moved },
+      { number: other.number, baseSha: moved },
+    ])
+    // Pressed again on the base the page now shows: merged onto it.
+    const again = await admit(runtime, {
+      actorId: maya.personId,
+      sessionId: maya.sessionId,
+      via: "person",
+      payload: { op: "pr/merge", number: seen.number, headSha: seen.headSha, baseSha: moved, method: "squash" },
+    })
+    const ran = await run(github, again)
+    expect(ran.exit).toEqual(Exit.succeed({ status: "done", mergeSha: github.refs.get("main")! }))
+    expect(github.commits.get(github.refs.get("main")!)!.parents).toEqual([moved])
+    // After the merge, the other pull request's base is the merge: its Merge needs one press.
+    expect(await sql(runtime, `SELECT base_sha AS "baseSha" FROM pulls WHERE number = ${other.number}`)).toEqual([
+      { baseSha: github.refs.get("main")! },
+    ])
+  })
+
+  test("a base branch whose head can't be read is refused, never merged onto GitHub's snapshot", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const seen = opened(github)
+    const { services: built } = await services(runtime, github)
+    // A name GitHub allows and the client won't put in a path: the projection shows GitHub's base.sha for it.
+    github.pulls.set(seen.number, { ...github.pulls.get(seen.number)!, base: "release;1" })
+    await runtime.runPromise(readPulls(built, [seen.number]))
+    expect(await sql(runtime, `SELECT base_sha AS "baseSha" FROM pulls`)).toEqual([{ baseSha: seen.baseSha }])
+    // Before 2026-10-21's review fix the merge compared that snapshot and merged (Codex Astra).
+    const { writeId } = await merging(github, seen)
+    await run(github, writeId)
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "base_moved" })
+    expect(github.seen("PUT", /\/merge$/)).toHaveLength(0)
+  })
+
+  test("a merge's settlement landing after a newer base never moves a pull request back", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const seen = opened(github)
+    const other = opened(github, "smithers/t2-other")
+    const { services: built } = await services(runtime, github)
+    await runtime.runPromise(readPulls(built, [seen.number, other.number]))
+    const newer = github.push("main", { "N.md": "n\n" })
+    // A later merge or read already showed the newer base; this settlement, checked against the older one, lands late.
+    await sql(runtime, `UPDATE pulls SET base_sha = '${newer}'`)
+    expect(await runtime.runPromise(moveBase(REPOSITORY.id, seen.number, seen.baseSha, "f".repeat(40)))).toBe(0)
+    expect(await sql(runtime, `SELECT DISTINCT base_sha AS "baseSha" FROM pulls`)).toEqual([{ baseSha: newer }])
+    expect(await runtime.runPromise(moveBase(REPOSITORY.id, seen.number, newer, "f".repeat(40)))).toBe(2)
+  })
+
+  test("a push that lands between the check and GitHub's merge is merged under, and recorded as such", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const seen = opened(github)
+    const { writeId } = await merging(github, seen)
+    const { services: built } = await services(runtime, github)
+    const registry: Metric.MetricRegistry = new Map()
+    const count = (base: Merge.Landed) =>
+      Effect.runSync(
+        Metric.value(Metric.withAttributes(Merge.merges, { outcome: "done", base })).pipe(
+          Effect.provideService(Metric.MetricRegistry, registry),
+        ),
+      ).count
+    // GitHub's merge has no base precondition: the push lands while the merge request is in flight.
+    github.faults.push({
+      match: (method, path) => method === "PUT" && path.endsWith("/merge"),
+      hold: async () => void github.push("main", { "E.md": "e\n" }),
+    })
+    const merged = await runtime.runPromise(
+      Merge.steps(built).send({ writeId }).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+    )
+    expect(merged.status).toBe("done")
+    expect([count("moved"), count("seen")]).toEqual([1, 0])
+    // The next merge lands where it was checked.
+    const next = opened(github, "smithers/t3-next")
+    const { writeId: nextId } = await merging(github, next)
+    await runtime.runPromise(Merge.steps(built).send({ writeId: nextId }).pipe(Effect.provideService(Metric.MetricRegistry, registry)))
+    expect([count("moved"), count("seen")]).toEqual([1, 1])
+  })
+
+  test("a squash whose comparison GitHub can't answer is merged all the same, its base unchecked", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const seen = opened(github)
+    const { writeId } = await merging(github, seen)
+    const { services: built } = await services(runtime, github)
+    const registry: Metric.MetricRegistry = new Map()
+    github.faults.push({ match: (method, path) => method === "GET" && path.includes("/compare/"), status: 502 })
+    const merged = await runtime.runPromise(
+      Merge.steps(built).send({ writeId }).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+    )
+    expect(merged.status).toBe("done")
+    const unchecked = () =>
+      Effect.runSync(
+        Metric.value(Metric.withAttributes(Merge.merges, { outcome: "done", base: "unchecked" })).pipe(
+          Effect.provideService(Metric.MetricRegistry, registry),
+        ),
+      ).count
+    expect(unchecked()).toBe(1)
+    // A merge commit is not one commit on its base: unchecked too.
+    const next = opened(github, "smithers/t3-next")
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const asMerge = await admit(runtime, {
+      actorId: maya.personId,
+      sessionId: maya.sessionId,
+      via: "person",
+      payload: { op: "pr/merge", number: next.number, headSha: next.headSha, baseSha: github.refs.get("main")!, method: "merge" },
+    })
+    await runtime.runPromise(Merge.steps(built).send({ writeId: asMerge }).pipe(Effect.provideService(Metric.MetricRegistry, registry)))
+    expect(await writeRow(runtime, asMerge)).toMatchObject({ status: "done" })
+    expect(unchecked()).toBe(2)
+  })
+
+  test("a merge another run settles while this one is at GitHub: settling again changes nothing and counts nothing", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const seen = opened(github)
+    const { writeId } = await merging(github, seen)
+    const { services: built } = await services(runtime, github)
+    const registry: Metric.MetricRegistry = new Map()
+    github.faults.push({
+      match: (method, path) => method === "PUT" && path.endsWith("/merge"),
+      hold: async () => void await sql(runtime, `UPDATE github_writes SET status = 'failed', failure = 'unavailable', settled_at = now() WHERE id = '${writeId}'`),
+    })
+    await runtime.runPromise(Merge.steps(built).send({ writeId }).pipe(Effect.provideService(Metric.MetricRegistry, registry)))
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "failed", failure: "unavailable" })
+    const counted = Effect.runSync(
+      Metric.value(Metric.withAttributes(Merge.merges, { outcome: "done", base: "seen" })).pipe(
+        Effect.provideService(Metric.MetricRegistry, registry),
+      ),
+    )
+    expect(counted.count).toBe(0)
+  })
+
+  test("a merge GitHub refused whose answer was lost is unknown: counted, tried again, nothing settled", async () => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const seen = opened(github)
+    const { writeId } = await merging(github, seen)
+    const { services: built } = await services(runtime, github)
+    const registry: Metric.MetricRegistry = new Map()
+    // GitHub refused the merge (a required check) and the answer never arrived: nothing merged, nothing to find.
+    github.unmergeable = true
+    github.faults.push({ match: (method, path) => method === "PUT" && path.endsWith("/merge"), lost: true })
+    const exit = await runtime.runPromise(
+      Effect.exit(Merge.steps(built).send({ writeId }).pipe(Effect.provideService(Metric.MetricRegistry, registry))),
+    )
+    expect(exit._tag === "Failure" && Cause.squash(exit.cause)).toBeInstanceOf(Merge.MergeUnavailable)
+    const unknown = Effect.runSync(
+      Metric.value(Metric.withAttributes(Metrics.writeUnknown, { op: "pr/merge" })).pipe(
+        Effect.provideService(Metric.MetricRegistry, registry),
+      ),
+    )
+    expect(unknown.count).toBe(1)
+    expect(await writeRow(runtime, writeId)).toMatchObject({ status: "pending" })
   })
 
   test("a session that ended is sign_in_required; a write with no session is too", async () => {
@@ -222,13 +414,13 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
     expect(await sql(runtime, `SELECT number FROM pulls`)).toEqual([])
   })
 
-  test("giving up on a write already settled changes nothing", async () => {
+  test("giving up on a write already settled changes nothing, and answers what it settled", async () => {
     const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
     const seen = opened(github)
     const { writeId } = await merging(github, seen)
     await run(github, writeId)
     const { services: built } = await services(runtime, github)
-    await runtime.runPromise(Merge.steps(built).giveUp({ writeId }))
+    expect(await runtime.runPromise(Merge.steps(built).giveUp({ writeId }))).toEqual({ status: "done", mergeSha: null })
     expect(await writeRow(runtime, writeId)).toMatchObject({ status: "done" })
   })
 
@@ -254,19 +446,6 @@ describe("pr/Merge", { timeout: 60_000 }, () => {
   })
 })
 
-
-test("a failed preflight read cannot claim another person's subsequent merge", async () => {
-  const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
-  const seen = opened(github)
-  const { writeId } = await merging(github, seen)
-  const { services: built } = await services(runtime, github)
-  github.faults.push({ match: (method, path) => method === "GET" && path.endsWith(`/pulls/${seen.number}`), status: 502 })
-  await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId })))
-  expect(github.seen("PUT", /\/merge$/)).toHaveLength(0)
-  github.merge(seen.number)
-  expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "refused", mergeSha: null })
-  expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "merged" })
-})
 
 test("projection failure after GitHub merged cannot turn success into a failed write", async () => {
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
@@ -307,14 +486,12 @@ test.each(["octocat", "maya"])("a definitive merge refusal cannot recover a late
 })
 
 
-test("a malformed successful merge response retains recovery of the person's actual merge", async () => {
+test("a malformed successful merge response is found by the key in its commit message: done, one merge", async () => {
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   const seen = opened(github)
   const { writeId } = await merging(github, seen)
   const { services: built } = await services(runtime, github)
   github.faults.push({ match: (method, path) => method === "PUT" && path.endsWith("/merge"), malformed: true })
-  expect((await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId }))))._tag).toBe("Failure")
-  expect(github.pulls.get(seen.number)!.merged).toBe(true)
   expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "done", mergeSha: github.pulls.get(seen.number)!.mergeSha })
   expect(github.seen("PUT", /\/merge$/)).toHaveLength(1)
 })
@@ -326,7 +503,6 @@ test("an unknown merge outcome cannot claim a different GitHub person's merge", 
   const { services: built } = await services(runtime, github)
   github.faults.push({ match: (method, path) => method === "PUT" && path.endsWith("/merge"), status: 503 })
   expect((await runtime.runPromise(Effect.exit(Merge.steps(built).send({ writeId }))))._tag).toBe("Failure")
-  expect(await sql(runtime, `SELECT merge_unknown FROM github_writes WHERE id = '${writeId}'`)).toEqual([{ merge_unknown: true }])
   github.merge(seen.number, "octocat")
   expect(await runtime.runPromise(Merge.steps(built).send({ writeId }))).toEqual({ status: "refused", mergeSha: null })
   expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "merged" })

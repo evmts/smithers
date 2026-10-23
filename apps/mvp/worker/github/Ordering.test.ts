@@ -53,9 +53,9 @@ test("failed commit replacement rolls back its delete and all inserts", async ()
 
 test("unchanged pull reads advance the freshness guard", async () => {
   const fetched = await snapshot()
-  await runtime.runPromise(upsertPull(REPOSITORY.id, fetched.pull, fetched.fetchedAt))
-  await runtime.runPromise(upsertPull(REPOSITORY.id, fetched.pull, fetched.fetchedAt + 2000))
-  await runtime.runPromise(upsertPull(REPOSITORY.id, { ...fetched.pull, additions: 999 }, fetched.fetchedAt + 1000))
+  await runtime.runPromise(upsertPull(REPOSITORY.id, fetched.pull, fetched.baseHead, fetched.fetchedAt))
+  await runtime.runPromise(upsertPull(REPOSITORY.id, fetched.pull, fetched.baseHead, fetched.fetchedAt + 2000))
+  await runtime.runPromise(upsertPull(REPOSITORY.id, { ...fetched.pull, additions: 999 }, fetched.baseHead, fetched.fetchedAt + 1000))
   expect(await sql(runtime, "SELECT additions FROM pulls")).toEqual([{ additions: fetched.pull.additions }])
 })
 

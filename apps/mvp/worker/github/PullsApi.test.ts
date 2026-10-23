@@ -203,13 +203,13 @@ describe("pull request webhooks", () => {
       updated_at: at,
       closed_at: null,
     }
-    expect(await runtime.runPromise(upsertPull(REPOSITORY.id, pull, Date.now()))).toBe(true)
+    expect(await runtime.runPromise(upsertPull(REPOSITORY.id, pull, pull.base.sha, Date.now()))).toBe(true)
     expect(await sql(runtime, `SELECT base_ref AS "baseRef", default_branch AS "defaultBranch" FROM pulls`)).toEqual([
       { baseRef: "main", defaultBranch: null },
     ])
     // A later read that names it is a change, and the row takes it.
     const named = { ...pull, base: { ...pull.base, repo: { default_branch: "main" } } }
-    expect(await runtime.runPromise(upsertPull(REPOSITORY.id, named, Date.now() + 1_000))).toBe(true)
+    expect(await runtime.runPromise(upsertPull(REPOSITORY.id, named, named.base.sha, Date.now() + 1_000))).toBe(true)
     expect(await sql(runtime, `SELECT default_branch AS "defaultBranch" FROM pulls`)).toEqual([{ defaultBranch: "main" }])
   })
 

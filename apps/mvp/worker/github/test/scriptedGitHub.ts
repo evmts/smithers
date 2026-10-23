@@ -74,6 +74,8 @@ export interface ScriptedPull {
   readonly head: string
   /** Its base branch: a stacked pull request moves onto another (`PATCH` with `base`). */
   base: string
+  /** GitHub keeps the base snapshot from opening, even after the branch moves. */
+  baseSha: string
   /** A draft until marked ready (GraphQL `markPullRequestReadyForReview`). */
   draft: boolean
   merged: boolean
@@ -554,7 +556,6 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
   const pullJson = (pull: ScriptedPull) => {
     const issue = github.issues.get(pull.number)!
     const headSha = github.refs.get(pull.head) ?? ""
-    const baseSha = github.refs.get(pull.base) ?? ""
     const changed = changedBetween(headFiles(pull.base), headFiles(pull.head))
     return {
       id: 9_000 + pull.number,
@@ -571,7 +572,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       mergeable_state: pull.draft ? "draft" : github.unmergeable ? "blocked" : "clean",
       user: user(issue.login),
       head: { ref: pull.head, sha: headSha },
-      base: { ref: pull.base, sha: baseSha, repo: { default_branch: "main" } },
+      base: { ref: pull.base, sha: pull.baseSha, repo: { default_branch: "main" } },
       commits: 1,
       additions: changed.reduce((sum, file) => sum + file.additions, 0),
       deletions: changed.reduce((sum, file) => sum + file.deletions, 0),
@@ -691,7 +692,24 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       const from = github.commits.get(compared[1]!)
       const to = github.commits.get(compared[2]!)
       if (from === undefined || to === undefined) return { response: json({ message: "Not Found" }, 404) }
-      return { response: json({ ahead_by: 1, behind_by: 0, total_commits: 1, files: changedBetween(from.files, to.files) }) }
+      // GitHub counts the commits each side holds that the other doesn't.
+      const ancestors = (sha: string) => {
+        const seen = new Set<string>()
+        const walk = [sha]
+        while (walk.length > 0) {
+          const next = walk.pop()!
+          if (seen.has(next)) continue
+          seen.add(next)
+          walk.push(...(github.commits.get(next)?.parents ?? []))
+        }
+        return seen
+      }
+      const [base, head] = [ancestors(from.sha), ancestors(to.sha)]
+      const aheadBy = [...head].filter((sha) => !base.has(sha)).length
+      const behindBy = [...base].filter((sha) => !head.has(sha)).length
+      return {
+        response: json({ ahead_by: aheadBy, behind_by: behindBy, total_commits: aheadBy, files: changedBetween(from.files, to.files) }),
+      }
     }
     if (rest === "/pulls" && method === "GET") {
       const head = url.searchParams.get("head")
@@ -735,6 +753,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
         number: issue.number,
         head: input.head,
         base: input.base,
+        baseSha: github.refs.get(input.base) ?? "",
         draft: input.draft === true,
         merged: false,
         mergeSha: null,
@@ -768,7 +787,11 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       if (!github.refs.has(base) || issue.state === "closed") {
         return { response: json({ message: "Validation Failed", errors: [{ field: "base" }] }, 422) }
       }
-      return { response: json({ ...pullJson(pull), base: { ...pullJson(pull).base, ref: base } }), apply: () => void (pull.base = base) }
+      const baseSha = github.refs.get(base)!
+      return {
+        response: json({ ...pullJson(pull), base: { ...pullJson(pull).base, ref: base, sha: baseSha } }),
+        apply: () => { pull.base = base; pull.baseSha = baseSha },
+      }
     }
     if (tail === undefined && method === "PATCH") {
       return {
@@ -782,7 +805,12 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       }
     }
     if (tail === "/merge" && method === "PUT") {
-      const input = body as { readonly sha: string; readonly merge_method: string; readonly commit_title?: string }
+      const input = body as {
+        readonly sha: string
+        readonly merge_method: string
+        readonly commit_title?: string
+        readonly commit_message?: string
+      }
       if (pull.merged || issue.state === "closed" || pull.draft || github.unmergeable) {
         return { response: json({ message: "Pull Request is not mergeable" }, 405) }
       }
@@ -792,7 +820,16 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
       const sha = (commitIds + 1).toString(16).padStart(40, "c")
       return {
         response: json({ sha, merged: true, message: "Pull Request successfully merged" }),
-        apply: () => void squash(pull, login, input.commit_title),
+        // A rebase writes the head's commit again with its own message; squash and merge write the title and message.
+        apply: () =>
+          void squash(
+            pull,
+            login,
+            input.merge_method === "rebase"
+              ? github.commits.get(input.sha)!.message
+              : [input.commit_title ?? `${issue.title} (#${pull.number})`, input.commit_message]
+                .filter((part) => part !== undefined && part !== "").join("\n\n"),
+          ),
       }
     }
     if (tail === "/commits" && method === "GET") {
@@ -1048,6 +1085,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets"): ScriptedGitHub
         number: issue.number,
         head,
         base: "main",
+        baseSha: github.refs.get("main")!,
         draft: false,
         merged: false,
         mergeSha: null,

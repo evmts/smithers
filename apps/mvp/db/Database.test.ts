@@ -836,3 +836,40 @@ describe("0048_github_projection_fences", () => {
         reviews: 0, mergeUnknown: false, attempts: 3 })
     }))
 })
+
+
+describe("0049–0050 GitHub write upgrade", () => {
+  test("retains old triage decisions and writes, adds unclaimed starts and removes only the obsolete merge flag", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0048"))
+      const decision = crypto.randomUUID()
+      const write = crypto.randomUUID()
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`INSERT INTO triage_decisions (id, repo_id, item_id, number, via, decision)
+          VALUES (${decision}::uuid, 'github/acme/widgets', 'github/acme/widgets#1', 1, 'flow', 'accept')`
+        yield* sql`INSERT INTO github_writes (id, repo_id, actor_id, session_id, via, op, payload, payload_hash, attempts, merge_unknown)
+          VALUES (${write}::uuid, 'github/acme/widgets', 'maya', ${crypto.randomUUID()}::uuid, 'person', 'pr/merge',
+            ${JSON.stringify({ op: "pr/merge", number: 1, headSha: "a".repeat(40), baseSha: "b".repeat(40), method: "squash" })}::jsonb,
+            ${"a".repeat(64)}, 3, true)`
+      }))
+      expect((await on(through("0049"))).map(([id, name]) => `${id}_${name}`)).toEqual(["49_triage_write_claims"])
+      const claims = () => on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT decision, label_started_at AS label, comment_started_at AS comment FROM triage_decisions
+        WHERE id = ${decision}::uuid`))
+      expect(await claims()).toEqual([{ decision: "accept", label: null, comment: null }])
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        UPDATE triage_decisions SET label_started_at = now(), comment_started_at = now() WHERE id = ${decision}::uuid`))
+      const started = await claims()
+      expect((await on(through("0050"))).map(([id, name]) => `${id}_${name}`)).toEqual(["50_drop_merge_unknown"])
+      expect(await claims()).toEqual(started)
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT attempts, status, payload->>'op' AS op, to_jsonb(w) ? 'merge_unknown' AS obsolete
+        FROM github_writes w WHERE id = ${write}::uuid`))).toEqual([
+          { attempts: 3, status: "pending", op: "pr/merge", obsolete: false },
+        ])
+      expect(await on(through("0050"))).toEqual([])
+    }))
+})

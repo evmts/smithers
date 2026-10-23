@@ -1,9 +1,9 @@
 ---
 title: GitHub write hardening (merge base, triage pin, home roles)
-status: in-progress
+status: done
 area: github
-owner: github-writes builder (Claude Opus)
-updated: 2026-10-21 21:00 PDT
+owner: codex-github-writes-rebuild
+updated: 2026-10-22
 links: [agent-review-finding-repairs.md, code-reviews.md, ../proposals/durable-external-effects.md, ../features/pulls.md, ../features/issues.md, ../features/home.md, ../features/sign-in.md, ../decisions/0007-roles-and-tags.md, ../decisions/0012-git-end-to-end.md, ../decisions/0018-issue-lifecycle.md]
 ---
 
@@ -89,7 +89,7 @@ and New branch.
 
 ## Over the curator's projection fences
 
-The curator's fix for the same review (3314ec3a: projection fences and merge outcomes, decision 0027) lands first. This
+The curator's fix for the same review (3314ec3a: projection fences and merge outcomes, decision 0077) lands first. This
 change keeps its fences and its projection-failure count, and replaces its merge recovery (a `merge_unknown` flag and a
 match on the person's GitHub id) with the key in the merge commit's message; migration `0050_drop_merge_unknown` drops
 the flag.
@@ -119,3 +119,5 @@ trade the `todo` rule chose.
 
 [base]: https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/changing-the-base-branch-of-a-pull-request
 [merge]: https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request
+
+Rebuilt against 998199dc6263 on 2026-10-22; see [rebuild receipts](github-writes-rebuild.md).

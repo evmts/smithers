@@ -152,7 +152,7 @@ const server = (api: TestChatApi["Service"]) => {
       run(
         Effect.andThen(
           Store.upsertIssue(REPO_ID, issueOf(pull.number, title, state), Date.now()),
-          PullStore.upsertPull(REPO_ID, pull, Date.now()),
+          PullStore.upsertPull(REPO_ID, pull, pull.base.sha, Date.now()),
         ),
       ),
     /** A plain issue: never on the pull request list. */

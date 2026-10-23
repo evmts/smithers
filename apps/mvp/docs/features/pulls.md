@@ -6,7 +6,8 @@ GitHub is the truth for pull requests, as for issues ([issues](issues.md)): Post
 GitHub ── pull_request, pull_request_review ─▶ POST /api/github/webhook ─▶ github/Apply (re-read the pull request)
                                                                                items · pulls · pull_commits · reviews
 Merge (a Maintainer's own press) ─▶ POST /api/repos/<o>/<n>/writes { op: "pr/merge" } ─▶ pr/Merge
-                                     recheck head, base, draft ─▶ PUT /pulls/<n>/merge { sha: head } with their token
+                                     Action.once: merged with our key? ─▶ else recheck head, draft, the base branch's head
+                                     ─▶ PUT /pulls/<n>/merge { sha: head, commit_message: Smithers-Write: <key> } with their token
 the todo run publishes ─▶ checks/Run on the head ─▶ runs rows with the head's SHA (the Checks tab)
                                      each .smithers/checks/<name>.sh on the branch's machine · the review: one comment
                                      each check's result ─▶ POST /statuses/<head> smithers/<name>, as the App (GH-10)
@@ -15,7 +16,7 @@ GET /api/repos/<o>/<n>/compare/<base>...<head> ─▶ the files two commits diff
 
 - **One row per pull request, beside its issue row.** A pull request is an `items` row of kind `pull` (title, body, state, author, conversation) and a `pulls` row with its head, base, draft, merge and size. `github/Apply` reads it with its commits and reviews (`worker/github/Pulls.ts`), under the same newer-than guard as an issue.
 - **Merging into the default branch is a deploy** (ruling GH-9). Beside Merge on a pull request into the repository's default branch, the page says `Merging into <branch> deploys it.`, with the branch's real name. Production work, checks and runs, happens on Smithers.
-- **A person merges, bound to what they saw.** The writes route takes `pr/merge` only from a person's own session, Maintainer or Admin, never from a run credential (the agent, a flow, a frame or a sandbox; `PROTECTED_ACTS`, worker/Actor.ts). `pr/Merge` re-reads the pull request and refuses a moved head or base, a draft, or one already merged or closed, then merges with the person's own GitHub token at the head they saw, squash by default. GitHub's refusal, a required check included, is `not_mergeable`. A lost answer is read back: merged at that head is this merge.
+- **A person merges, bound to what they saw.** The writes route takes `pr/merge` only from a person's own session, Maintainer or Admin, never from a run credential (the agent, a flow, a frame or a sandbox; `PROTECTED_ACTS`, worker/Actor.ts). `pr/Merge` re-reads the pull request and refuses a moved head, a draft, or one already merged or closed, reads the base branch's own head and refuses one other than the base the page showed, then merges with the person's own GitHub token at the head they saw, squash by default. GitHub's refusal, a required check included, is `not_mergeable`. The merge commit's message ends with `Smithers-Write: <key>`, so a lost answer is found by that key, never by the pull request merely being merged.
 - **Checks are Smithers runs.** `checks/Run` runs once per head. Each `.smithers/checks/<name>.sh` runs with `sh` on the head's own throwaway job machine, synced to the head ([where checks run](#where-checks-run)), and the `review` check reads the diff with the `judge` role and posts one comment review as the App, never an approval. Each is a `runs` row with the head's SHA, reported on GitHub as the commit status `smithers/<name>` ([commit statuses](#commit-statuses)). Smithers never gates the merge on them itself: a repository's branch protection may require `smithers/<name>`.
 - **Libraries** (`docs/libraries.md`): "Touch GitHub" (`@smthrs/integrations`: `GitHub.Pulls`, `GitHub.Refs`, `GitHub.Commits`, `GitHub.AppAuth`), `@smthrs/flow`, `@smthrs/agent` (`ModelStep` for the review), `@smthrs/sandbox` (`SandboxTools` on the branch machine), `@smthrs/effect-electric` (`ShapeProxy`).
 
@@ -68,7 +69,12 @@ Screens (`src/screens/pulls/`), at GitHub's paths:
 
 ## Merge
 
-`pr/Merge { writeId }` (`worker/github/Merge.ts`): `pr/Merge/send` (1 s doubling to 15 s, 5 minutes), then `pr/Merge/give-up` settles `failed unavailable`. Its write settles `done`, or `refused` with `head_moved`, `base_moved`, `draft`, `merged`, `closed`, `not_mergeable`, `sign_in_required`, `not_found`, `invalid` or `not_allowed`. `github/Write` refuses a `pr/merge` write it is handed: only `pr/Merge` merges.
+`pr/Merge { writeId }` (`worker/github/Merge.ts`): `pr/Merge/send` (1 s doubling to 15 s, 5 minutes), then `pr/Merge/give-up` settles `failed unavailable` (a write another run settled answers what it settled). Its write settles `done`, or `refused` with `head_moved`, `base_moved`, `draft`, `merged`, `closed`, `not_mergeable`, `sign_in_required`, `not_found`, `invalid` or `not_allowed`. `github/Write` refuses a `pr/merge` write it is handed: only `pr/Merge` merges.
+
+- **One merge, found by its key.** `send` merges through `Action.once` with `GitHub.Once.merge`, keyed by SHA-256 of the write id (`mergeKeyOf`). The adapter puts `Smithers-Write: <key>` at the end of the merge commit's message and finds the merge as the pull request's merge commit carrying it; a merge someone else made at the same head is `merged`, never this write's. A rebase writes no message to carry the key, so a rebase merge whose answer was lost settles `merged`, never claimed as this write's. The step is `irreversible` with the write id as its `idempotencyKey`, implementation `pr-merge/send/v2`.
+- **The base the person saw.** GitHub's `base.sha` is the commit the base branch pointed at when the pull request opened or changed base, and GitHub never moves it ("If the branch is updated in the future, GitHub does not update the base branch's commit", [GitHub docs](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/changing-the-base-branch-of-a-pull-request)). So `pulls.base_sha` is the base branch's head when the pull request was last read (`GitHub.Refs.getBranch`; GitHub's `base.sha` when the branch is gone or its name can't be read), and the step rechecks the branch's own head just before the merge, never falling back to the snapshot. A head other than the page's, or one it can't read, is `base_moved`: nothing merges, and every open pull request into that branch still showing the page's base takes the head read, so the page shows it and a second press binds it. After a merge, every other open pull request into the branch still showing the base the merge checked takes the merge as its base's head, so merging a stack one after another needs one press each; a settlement that lands late never moves a pull request back over a newer base.
+- **The window GitHub can't close.** GitHub's merge takes no base precondition (`sha` fences only the head), so a push between the step's check and GitHub's merge, one round trip, lands under the merge. The step compares a squash with the base it checked: one commit ahead is `base="seen"`, anything else `base="moved"` (a Warn), and a merge commit or a rebase is `unchecked`. Branch protection ("require branches to be up to date", or a merge queue) is the only full fence.
+- **A projection that fails after the merge** (the read-back, or the other pull requests' bases) is logged and skipped in a savepoint, so the write still settles `done`; the next webhook read fixes the rows.
 
 ## Where checks run
 
@@ -105,7 +111,7 @@ Migrations `0031_pulls`, `0033_pull_writes` and `0037_pull_default_branch`.
 
 | Table | | |
 |---|---|---|
-| `pulls` | `item_id` (`<repo_id>#<number>`), head and base refs and SHAs, `default_branch` (GitHub's `base.repo.default_branch`; `NULL` until a read names it), `draft`, `merged`, `merged_at`, `merged_by`, `merge_sha`, `mergeable_state`, sizes | synced without the guard's times |
+| `pulls` | `item_id` (`<repo_id>#<number>`), head and base refs and SHAs (`base_sha` the base branch's head at the last read), `default_branch` (GitHub's `base.repo.default_branch`; `NULL` until a read names it), `draft`, `merged`, `merged_at`, `merged_by`, `merge_sha`, `mergeable_state`, sizes | synced without the guard's times |
 | `pull_commits` | `item_id`, `position`, `sha`, `headline`, `author_login`, `authored_at` | rewritten whole when the list changes |
 | `reviews` | `id` (`<repo_id>/review/<GitHub id>`), `item_id`, `author_login`, `state`, `commit_sha`, `body` without the marker, `write_id` | |
 | `runs.sha` | the commit a run works on | a pull request's Checks read the runs on its head |
@@ -115,8 +121,8 @@ Migrations `0031_pulls`, `0033_pull_writes` and `0037_pull_default_branch`.
 
 | Record | Kind | Fields |
 |---|---|---|
-| `github.merge` | log, span | `writeId`, `outcome` (`done` or the refusal), `settled`, `errorCode` |
-| `smithers_pr_merges{outcome}` | counter | |
+| `github.merge` | log, span | `writeId`, `outcome` (`done` or the refusal), `settled`, `base` (`seen`, `moved`, `unchecked`), `projection` (`failed`), `errorCode` |
+| `smithers_pr_merges{outcome,base}` | counter | `base` on a merge only |
 | `github.compare`, `smithers_github_compares{outcome}` | log, span, counter | `outcome`, `files` |
 | `checks.script`, `checks.review`, `checks.sync`; `smithers_checks{check,outcome}` | logs, spans, counter | `repoId`, `sha`, `check`, `prNumber`, `outcome` |
 | `sandbox.job.egress`, `secrets.egress`; `smithers_job_egress_requests{outcome}` | span, log, counter | a check job's outbound request: `host`, `method`, `status`, `outcome` (`forwarded` or the refusal), never a path or a header |
@@ -131,7 +137,8 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 | Test | Proves |
 |---|---|
 | `packages/smithers/agent/integrations/test/Pulls.test.ts` | `GitHub.Pulls`, `Refs` and `Commits` against a fake GitHub on a real socket: fenced merges and commits, adoption after a lost answer, every refusal, 100% |
-| `worker/github/Merge.test.ts` | `pr/Merge` on the Node host against the scripted GitHub: as the person, each refusal, a lost answer adopted, a run again, give-up |
+| `packages/smithers/agent/integrations/test/Once.test.ts` | `GitHub.Once.merge` against a fake GitHub on a real socket: the trailer written and found by its key alone, never a merge someone else made at the same head, the head fence, a rebase never claimed |
+| `worker/github/Merge.test.ts` | `pr/Merge` on the Node host against the scripted GitHub: as the person, with the key in the commit message; each refusal, the base branch moved since the page read it included; a lost answer found by its key; someone else's merge at the same head refused `merged`; a base branch it can't read refused; a moved base moving every open pull request's base and a second press merging; a late settlement never moving a base back; a push landing during the merge counted `moved`; a failing projection settling `done`; a run again; give-up |
 | `worker/github/PullsApi.test.ts` | the merge write's admission (a Maintainer only; never the agent or a flow), the pull request webhooks and Apply's projection, the compare route, the shapes |
 | `worker/flows/Checks.test.ts` | script checks pass and fail, the review's one comment as the App, a lost review adopted, a failing judge, no App; each check's status pending then its result on the head, as the App with only `statuses: write`; no permission or an unknown commit refused once and the results kept; a 502 and a lost answer sent again; each head's statuses its own; the scripts on the head's own job machine, put to sleep after, and one that never answers runs no script |
 | `worker/branch/JobEgress.test.ts` | a job's box reaches the registry and dprint's plugins, counted; every other host refused before anything is sent; no secret in its policy or vault |
@@ -148,6 +155,4 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 
 Pull snapshots serialize per item and project atomically. Commit replacement uses the same transaction lock, including when called directly. An older pull snapshot cannot replace newer commits; unchanged pull and review reads still advance their freshness fences.
 
-Merge attempts are recorded immediately before the merge PUT, after preflight succeeds. A failed preflight cannot claim someone else's subsequent merge. Confirmed GitHub success settles the write before projection; projection failure is logged as `github.merge.projection` and counted by `github_projection_failures`, and the projection waits for the next read or webhook. It cannot turn that successful write into a failed one.
-
-Recovery uses the server-only `github_writes.merge_unknown` flag and the person's stable GitHub identity, not an attempt count alone. Definite GitHub rejections clear recovery eligibility; unknown write outcomes retain it. Legacy attempt counts migrate without inventing an unknown merge receipt.
+A merge's attempt count is a record of how many times the step went to GitHub; it decides nothing. Which merge is this write's is decided by the key in the merge commit's message (see [Merge](#merge)). Confirmed GitHub success settles the write; its projection runs in a savepoint of the same transaction, and a projection that fails is logged as `github.merge` with `projection: failed` and counted by `github_projection_failures`, waiting for the next read or webhook. It cannot turn that successful write into a failed one. Migration `0050_drop_merge_unknown` drops the `merge_unknown` flag `0045` added for the earlier recovery.

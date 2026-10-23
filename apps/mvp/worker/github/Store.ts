@@ -261,7 +261,6 @@ export interface Write {
   readonly id: string
   readonly repoId: string
   readonly actorId: string
-  readonly githubActorId: number | null
   /** The person's GitHub login, for the agent's attribution line; null when no person row has it. */
   readonly login: string | null
   readonly sessionId: string | null
@@ -270,7 +269,6 @@ export interface Write {
   readonly payload: WritePayload
   readonly status: WriteStatus
   readonly attempts: number
-  readonly mergeUnknown: boolean
   readonly itemNumber: number | null
   readonly githubId: number | null
   /** Epoch milliseconds. */
@@ -285,7 +283,6 @@ export const writeOf = (id: string) =>
       readonly id: string
       readonly repoId: string
       readonly actorId: string
-      readonly githubActorId: string | null
       readonly login: string | null
       readonly sessionId: string | null
       readonly via: WriteVia
@@ -293,20 +290,18 @@ export const writeOf = (id: string) =>
       readonly payload: unknown
       readonly status: WriteStatus
       readonly attempts: number
-      readonly mergeUnknown: boolean
       readonly itemNumber: number | null
       readonly githubId: string | null
       readonly createdAt: string
     }>`
-      SELECT w.id::text, w.repo_id AS "repoId", w.actor_id AS "actorId", p.github_id::text AS "githubActorId", p.github_login AS login,
-        w.session_id::text AS "sessionId", w.via, w.op, w.payload, w.status, w.attempts, w.merge_unknown AS "mergeUnknown", w.item_number AS "itemNumber",
+      SELECT w.id::text, w.repo_id AS "repoId", w.actor_id AS "actorId", p.github_login AS login,
+        w.session_id::text AS "sessionId", w.via, w.op, w.payload, w.status, w.attempts, w.item_number AS "itemNumber",
         w.github_id::text AS "githubId", (extract(epoch FROM w.created_at) * 1000)::bigint::text AS "createdAt"
       FROM github_writes w LEFT JOIN people p ON p.id::text = w.actor_id
       WHERE w.id = ${id}::uuid`
     return Option.map(Option.fromNullishOr(row), (found): Write => ({
       ...found,
       payload: decodePayload(found.payload),
-      githubActorId: found.githubActorId === null ? null : Number(found.githubActorId),
       githubId: found.githubId === null ? null : Number(found.githubId),
       createdAt: Number(found.createdAt),
     }))
@@ -317,17 +312,10 @@ export const beginAttempt = (id: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly before: number }>`
-      UPDATE github_writes SET attempts = attempts + 1, merge_unknown = (op = 'pr/merge')
-      WHERE id = ${id}::uuid RETURNING attempts - 1 AS before`
+      UPDATE github_writes SET attempts = attempts + 1 WHERE id = ${id}::uuid RETURNING attempts - 1 AS before`
     // The route recorded the write before its flow started, so the row is there.
     return row!.before
   })
-
-/** GitHub definitively rejected the merge PUT; a later merged pull cannot recover this request. */
-export const clearMergeUnknown = (id: string) => Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`UPDATE github_writes SET merge_unknown = false WHERE id = ${id}::uuid AND status = 'pending'`
-})
 
 /**
  * How a write ended: done, with the issue it wrote and what GitHub gave it (none for a write that made nothing on
@@ -347,11 +335,11 @@ export const settleWrite = <E = never, R = never>(id: string, settlement: Settle
     return yield* sql.withTransaction(Effect.gen(function* () {
       const rows = settlement.status === "done"
         ? yield* sql`
-          UPDATE github_writes SET status = 'done', merge_unknown = false, item_number = ${settlement.itemNumber},
+          UPDATE github_writes SET status = 'done', item_number = ${settlement.itemNumber},
             github_id = ${settlement.githubId}, settled_at = now()
           WHERE id = ${id}::uuid AND status = 'pending' RETURNING id`
         : yield* sql`
-          UPDATE github_writes SET status = ${settlement.status}, merge_unknown = false, failure = ${settlement.failure}, settled_at = now()
+          UPDATE github_writes SET status = ${settlement.status}, failure = ${settlement.failure}, settled_at = now()
           WHERE id = ${id}::uuid AND status = 'pending' RETURNING id`
       const settled = rows.length > 0
       yield* settled && settlement.status === "done" ? project : Effect.void

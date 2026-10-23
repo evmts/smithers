@@ -123,6 +123,8 @@ export default defineConfig({
         "worker/github/*.ts",
         "db/migrations/0016_github_issues.ts",
         "db/migrations/0048_github_projection_fences.ts",
+        "db/migrations/0049_triage_write_claims.ts",
+        "db/migrations/0050_drop_merge_unknown.ts",
         // Issue triage: its settings, decisions and pins (docs/features/issues.md#triage).
         "db/migrations/0018_triage.ts",
         // Repository secrets: the write routes, the flows, the shape and the sandbox egress (docs/features/secrets.md).
