@@ -1,6 +1,6 @@
 ---
 title: Mobile responsiveness sweep
-status: blocked
+status: in-progress
 area: frontend
 owner: codex-mobile-sweep
 updated: 2026-10-23
