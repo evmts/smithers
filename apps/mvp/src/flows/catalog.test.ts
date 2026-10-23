@@ -5,7 +5,13 @@ import { Effect } from "effect"
 import { describe, expect, test } from "vitest"
 import { PROMPT_CATALOG } from "../features/flows-ui/callable"
 import { AUTHOR_TOOLS } from "../features/flows-ui/contract"
-import { publicError, scopeFor, scopeOf } from "./catalog"
+import { catalogDescription, publicError, scopeFor, scopeOf } from "./catalog"
+
+test("approval-bearing catalog entries tell the agent the call asks the person itself", () => {
+  expect(catalogDescription("flow/save")).toContain("Do not call app/agent/ask separately")
+  expect(catalogDescription("flow/save")).toContain("Save this draft as your flow?")
+  expect(catalogDescription("repo/tree")).not.toContain("Approval:")
+})
 
 describe("publicError", () => {
   test("the agent reads a failure's kind and numeric command limit, without its message", () => {

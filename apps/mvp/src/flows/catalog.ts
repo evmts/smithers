@@ -58,8 +58,9 @@ export const agentFlows: ReadonlyArray<FlowName> = names.filter(modelInvocable)
 export const catalogDescription = (name: FlowName, registered: Pick<FlowRegistry["Service"], "entryOf"> = { entryOf }): string => {
   // Every registered flow describes itself (src/flows/registry.test.ts), though `Flow.make` leaves it optional.
   const description = declarationOf(name).description as string
-  const { changes } = registered.entryOf(name)
-  return changes === undefined ? description : `${description} Side effect: ${changes}; only when the person asks for that.`
+  const { changes, confirm } = registered.entryOf(name)
+  const effect = changes === undefined ? description : `${description} Side effect: ${changes}; only when the person asks for that.`
+  return confirm === undefined ? effect : `${effect} Approval: this call asks the person "${confirm}" before it runs. Do not call app/agent/ask separately.`
 }
 
 /** What a run's agent may call: every flow of the catalog, or only these. */

@@ -59,6 +59,12 @@ const fixtures: Record<string, { readonly good: Partial<Trial>; readonly bad: Pa
     // Judged it itself.
     bad: { text: "It links no issue and says nothing of testing." },
   },
+  "flow-create-run": {
+    good: { calls: [call("flow/new", { name: "effect-docs" }), call("flow/save", { draftId: "d" }),
+      call("flow/run", { name: "effect-docs" }), call("app/web/open", { url: "https://effect.website/docs" })],
+      asked: [{ kind: "approval", prompt: "Save this draft as your flow?", value: true }] },
+    bad: { calls: [call("flow/new", { name: "effect-docs" }), call("app/theme/set", { mode: "dark" })], text: "Draft ready." },
+  },
   "flow-list": {
     good: { calls: [call("flow/list")], text: "You have one flow, effect-docs." },
     bad: { calls: [call("flow/list"), call("flow/run", { name: "effect-docs" })] },
@@ -195,6 +201,12 @@ describe("every flow case", () => {
       expect(passes(name, trial({ ...good, status: "failed" }))).toBe(false)
     })
   }
+})
+
+test("an explicit create/save/run request cannot finish at the draft or ask for approval twice", () => {
+  expect(passes("flow-create-run", trial({ calls: [call("flow/new", { name: "effect-docs" })], text: "Draft ready." }))).toBe(false)
+  const good = fixtures["flow-create-run"]!.good
+  expect(passes("flow-create-run", trial({ ...good, asked: [...good.asked!, ...good.asked!] }))).toBe(false)
 })
 
 describe("asking", () => {
