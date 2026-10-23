@@ -4,7 +4,7 @@ status: blocked
 area: branches
 owner: Codex prod-new-branch
 updated: 2026-10-23
-links: [../features/branch-workspace.md]
+links: [../features/branch-workspace.md, ../proposals/new-branch-ref-location.md]
 ---
 
 Reproduce production `/new` failing after a ready clone. First retain safe Forge
@@ -81,3 +81,33 @@ credential-dependent live integration skipped; 100% in every coverage category.
 Resumed Astra review: no findings. Fable review could not run: `claude-rr`
 reported every account failed or cooling, tried none. No production e2e,
 deployment, push, `main` mutation or SDK credential change.
+
+Third round: design written; no runtime implementation. The deployer reports
+`git:write` reaches an empty repository's missing-ref response (404), whereas
+ordinary branch writes to GitHub-upstream mirrors return 401 then 403. The
+provider's current docs explicitly support ephemeral refs on synced repositories,
+and independent Code Storage forks seeded from a mirror. The SDK exposes neither
+namespace selection nor seeded copies. A prefix or scope change is not a fix.
+
+Read the rulings, 0012 and later decisions, provider documentation index and
+OpenAPI, SDK source/comments/docs, branch route and sandbox proxy, TODO publication
+and conversation browser-test history. 0012/0013 strongly support GitHub branches;
+0080 and the Forge describe Smithers-local creation until publication. No explicit
+decision reconciles that distinction for `/new`. The proposal records all options,
+GitHub effects, evidence and a pending recommendation for ephemeral conversation
+refs; accepting the GitHub interpretation instead means a GitHub branch per new
+conversation. Implementation waits for that choice under this round's brief.
+
+Read-only GitHub API verification confirms T9's PR #22 and commit
+`d01dfa0c87aca4ce92b9fea2da878f2901ba8c00`, with its host `Smithers-Write` trailer.
+Code trace: `todo/Begin` uses `Action.once` and `GitHub.Once.branch`; the attempt
+machine sets `forge: github`; Publish uses a fenced GraphQL commit and GitHub PR.
+It never exercises Code Storage branch creation. No successful production `/new`
+receipt was found for any repository in this clone; its original work note says
+that browser case was not run. History/archive passes track existing branches.
+
+Validation this round: direct HTTPS reads of provider Markdown/OpenAPI; read-only
+`gh api` for PR #22 and its commit; local Markdown link and whitespace checks.
+Documentation only, so no new runtime coverage claim or tests. No production e2e,
+Code Storage mutation, push or deployment. Previous commits and validation remain
+intact. See the linked proposal for the complete evidence and unresolved choice.
