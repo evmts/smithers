@@ -1,6 +1,6 @@
 import { HarnessError } from "@smthrs/harness"
 import { ModelStep } from "@smthrs/agent"
-import { Action, FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Model, ModelError, ModelEvent } from "@smthrs/model"
 import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -116,14 +116,17 @@ test("a model grant-store failure leaves the summary unavailable without exposin
   if (error._tag !== "@smthrs/capability/GrantStoreError") throw new Error("Expected grant-store failure")
   let attempts = 0
   const model = Model.make({ stream: () => { attempts++; return Stream.fail(error) } })
+  // Keep every real durable attempt; only the test's backoff timings differ from production.
+  const seat = Layer.effect(SummarySeat, Effect.map(SummarySeat, service => ({
+    ...service,
+    retryPolicy: RetryPolicy.make({ ...ModelStep.defaultRetryPolicy, initialMs: 1, maxMs: 1 }),
+  }))).pipe(Layer.provide(SummarySeat.layer("https://summary.test", model)))
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
   const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
-    Layer.provide(SummarySeat.layer("https://summary.test", model)), Layer.provideMerge(Action.layerImplementations),
+    Layer.provide(seat), Layer.provideMerge(Action.layerImplementations),
   ))))
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
   const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "grant-unavailable", payload })).pipe(Effect.provide(context)))
   expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
   expect(attempts).toBe(6)
-// ModelStep retries this unsealed failure six times: its five delays alone can take 31 seconds.
-// Keep the real retry policy and allow bounded overhead for the SQL-backed host.
-}, 90_000)
+})

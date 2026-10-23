@@ -10,6 +10,8 @@ Successful summaries persist on the device in TanStack DB. Full-content SHA-256 
 
 The compiled first-party contribution lives in `src/features/timeline`; its intended manifest declares `chat.rail`. Until decision 0017's new Manifest/PluginHost loader lands, chat explicitly mounts the contribution. There is no separate private data interface. [Design and limitations](../design/timeline/DESIGN.md), [interactive mock](../design/timeline/timeline.html).
 
+The grant-store failure regression injects one-millisecond retry timings through `SummarySeat`, preserving six real durable attempts and the safe `unavailable` failure. Hosts that omit the policy retain ModelStep’s production backoffs.
+
 Validation sources: `summary.test.ts` (bounds, content identities, safe labels), `view.test.ts` (states and stale summaries), `engine.test.ts` (real durable engine and replay), UI `chat-timeline.test.tsx` (keys/rendering and recorded accessible names), `e2e/timeline.spec.ts` (scripted app scroll, keys, arriving summaries, phone), and `e2e/timeline-live.spec.ts` (real-model question and linked reply on the deployment account's own branch). The live journey waits for the reply entry to sync after question acceptance, follows its `aria-controls` link, and checks the recorded question name and an answered outcome or visible failure without asserting model wording. Device actions and step chapters record its GIF. Receipts live in the work note; configured coverage is not executed coverage.
 
 

@@ -1,5 +1,5 @@
 import { ModelStep, type FlowEngineLike } from "@smthrs/agent"
-import { Interpreter } from "@smthrs/flow"
+import { Interpreter, type RetryPolicy } from "@smthrs/flow"
 import { ModelError, ModelEvent, ModelProxy, ModelRequest, type Model } from "@smthrs/model"
 import { Context, Effect, Layer, Metric } from "effect"
 import { isGenericSummary, safeTimelineText } from "./identity"
@@ -7,6 +7,8 @@ import { Summarize, SummarizeEntry, SummaryFailed, type SummaryPayload } from ".
 
 export class SummarySeat extends Context.Service<SummarySeat, {
   readonly model: Model.Model; readonly route: FlowEngineLike.RouteResolver
+  /** Host-selected retry timings; omitted uses the durable model step's production policy. */
+  readonly retryPolicy?: RetryPolicy.RetryPolicy
 }>()("timeline/SummarySeat") {
   static readonly layer = (origin: string, model?: Model.Model) => Layer.effect(SummarySeat, Effect.gen(function* () {
     const url = `${origin}/api/model/summary`
