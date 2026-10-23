@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-23 12:58 PDT
+updated: 2026-10-23 13:01 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -25,3 +25,7 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 - The failed E2E run's browser log shows a `repo/about` flow started and a signed-out `auth.run_credential` warning. It does not show that flow settling within the test's 30 s wait. The direct public About API also returned 503, so these observations do not yet isolate one root cause.
 - From the landing page, “Get started for free” opened `/app`; “Sign in with GitHub” then reached GitHub's login page without browser errors. This checks the redirect only, not a completed sign-in.
 - A read-only Alchemy logs query could not start because this Mac's default Alchemy profile has no Cloudflare provider. No production Worker logs were inspected; the API response and browser trace are the available receipts.
+
+## 2026-10-23, 13:01 PDT
+
+- At a 390 × 844 mobile viewport, the landing page and signed-out repository shell had no horizontal document overflow or browser errors. The app's signed-out top navigation clips “Conversations”: its left edge settles at x = −11.45 px at 390 px wide, −26.45 px at 375 px, and −81.45 px at 320 px (almost entirely offscreen); the page cannot scroll horizontally to reach it. At 430 px the link starts at x = 24 px. Screenshot: `/tmp/smithers-bugbash-20261023/mobile-app.png`. Retest after the ongoing mobile work deploys.
