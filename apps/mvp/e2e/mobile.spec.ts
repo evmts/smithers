@@ -112,7 +112,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
         for (const screen of screens) {
           test(`${screen.name}: controls and text fit`, async ({ page, request }, info) => {
             await test.step(`Open ${screen.name}`, async () => {
+              await page.goto(screen.path)
               if (screen.name === "files" || screen.name === "file-tabs") {
+                await expect(page.getByRole("main", { name: "Repository", exact: true })).toBeVisible({ timeout: 30_000 })
                 const repository = { owner: "octocat", name: "Spoon-Knife" }
                 // The request fixture has the test person's session, independent of
                 // a signed-out page's cookie. A real clone must precede file coverage.
@@ -122,7 +124,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
                 const launch = await request.post("/api/repos/launch", { data: { ...repository, cloneId } })
                 expect(launch.ok(), "the file fixture's real clone is launched").toBe(true)
               }
-              await page.goto(screen.path)
               const ready = screen.name === "terminal" && !signedIn ? ".branch-screen-view" : screen.ready
               await expect(page.locator(ready).first()).toBeVisible({ timeout: 30_000 })
               if (screen.name === "branch") await expect(page.locator(".branch-screen-view")).toBeVisible({ timeout: 30_000 })
