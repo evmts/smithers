@@ -8,9 +8,11 @@ import { baseURL, requires, scriptedAgent } from "./target"
 
 // Real pages and services. Persist a structured audit even when several checks fail,
 // so the first run is the red receipt for each subsequent layout change.
-const test = base.extend<{ recording: void }>({
-  contextOptions: async ({ viewport }, use, info) => {
-    await use({ recordVideo: { dir: info.outputPath("videos"), size: viewport ?? { width: 1280, height: 800 } } })
+const test = base.extend<{ recording: void; mobileViewport: { width: number; height: number } }>({
+  mobileViewport: [{ width: 1280, height: 800 }, { option: true }],
+  viewport: async ({ mobileViewport }, use) => use(mobileViewport),
+  contextOptions: async ({ mobileViewport }, use, info) => {
+    await use({ recordVideo: { dir: info.outputPath("videos"), size: mobileViewport } })
   },
   recording: [async ({ page }, use, info) => {
     const startedAt = Date.now()
@@ -95,7 +97,7 @@ const screens = [
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
   test.describe(`${viewport.width}×${viewport.height}`, () => {
-    test.use({ viewport })
+    test.use({ mobileViewport: viewport })
     for (const signedIn of [false, true]) {
       test.describe(signedIn ? "signed in" : "signed out", () => {
         test.beforeEach(async ({ context }) => {
