@@ -907,3 +907,14 @@ describe("GET /api/shapes/repositories", () => {
     expect(subset.status).toBe(200)
   })
 })
+
+test("clone launch fails closed when sessions or the request body cannot be read", async () => {
+  const down = await repoHarness(runtime, { sessions: Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) })) })
+  expect((await down.launch("octocat", "Spoon-Knife", crypto.randomUUID())).status).toBe(503)
+  const h = await repoHarness(runtime)
+  const response = await h.fetch("/api/repos/launch", { method: "POST", body: new ReadableStream({
+    start(controller) { controller.error(new Error("injected request body fault")) },
+  }), duplex: "half" } as RequestInit)
+  expect(response.status).toBe(400)
+  expect(await response.json()).toEqual({ code: "invalid" })
+})
