@@ -196,6 +196,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           } finally {
             await page.getByRole("button", { name: "Drop", exact: true }).click()
             await page.getByRole("dialog").getByRole("button", { name: "Drop", exact: true }).click()
+            await expect(page.getByRole("article", { name: new RegExp(title) })).toHaveAttribute("data-status", "dropped", { timeout: 30_000 })
           }
         })
         if (signedIn) test("run and queue: populated controls fit", async ({ page }, info) => {
