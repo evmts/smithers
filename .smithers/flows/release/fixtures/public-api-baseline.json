@@ -5422,7 +5422,7 @@
         "github.d.ts": "1a3e5bebc7b5e5f1af35a85718780e44f0fdbcbd5258ba2caa4aa7612912f16b",
         "github/Actions.d.ts": "7fcb37a9b5cc68c4f5a625f1028ad10f0f3f97432e7004bd3ecd5242cc6b7488",
         "github/AppAuth.d.ts": "386ce0d572c6c82f04c56a609561030e3c7d265d1dd6c89cdef0231d422ea859",
-        "github/Collaborators.d.ts": "d9b01f8d9941ec5b0da275acfcc1fbe44ce56f66d4b52950c7469995fc57c186",
+        "github/Collaborators.d.ts": "6716e3cca7ca5035bdc69328b157561ab26ed74fbc6fdfa5221113c3aedc3727",
         "github/Commits.d.ts": "065c8dde696db0edb0d30d1a35f7146ce5eef360aeabc968fa498d9d8fb7a25d",
         "github/Config.d.ts": "cb4b23f03ad5ac97b3e2d772eb2aee5992cdd711f8881f9f33c8986300dd521c",
         "github/Contents.d.ts": "bb88c0bca5e593f7aff311d8277f10c94e3b825e480bf7d51d803ee23832df02",
