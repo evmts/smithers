@@ -3,6 +3,7 @@ import { CAPACITY_COPY, CLONING, FAILURE_COPY, NOT_CLONED, SIGN_IN_TO_CLONE } fr
 import type { AboutRow, BlobRow, CloneRow, RefsRow, TreeRow } from "./rows"
 import type { About, Repository } from "./schema"
 import {
+  aboutFailed,
   aboutOf,
   aboutProps,
   atRoot,
@@ -336,6 +337,19 @@ const aboutRow = (state: AboutRow["state"], value: About | null = null): AboutRo
 })
 
 describe("the first visit: what GitHub says, before and after a clone", () => {
+  test("a failed public root read needs an honest error instead of a clone claim", () => {
+    expect(aboutFailed(aboutRow("failed"), { kind: "clone" }, true)).toBe(true)
+    expect(aboutFailed(aboutRow("loading"), { kind: "clone" }, true)).toBe(false)
+    expect(aboutFailed(aboutRow("ready", about()), { kind: "clone" }, true)).toBe(false)
+    expect(aboutFailed(aboutRow("failed"), { kind: "ready" }, true)).toBe(false)
+    expect(aboutFailed(aboutRow("failed"), { kind: "unknown" }, true)).toBe(false)
+    expect(aboutFailed(aboutRow("failed"), { kind: "clone" }, false)).toBe(false)
+    // A stale failed About answer must not cover Clone's progress or a clone refusal.
+    expect(aboutFailed(aboutRow("failed"), headerOf(undefined, clone("requesting"), true), true)).toBe(false)
+    expect(aboutFailed(aboutRow("failed"), headerOf(repository({ status: "cloning" }), undefined, true), true)).toBe(false)
+    expect(aboutFailed(aboutRow("failed"), headerOf(undefined, clone("failed"), true), true)).toBe(false)
+  })
+
   test("the top level is the repository's home or a ref's root; a file or a folder isn't", () => {
     expect(atRoot({ kind: "tree", path: "" })).toBe(true)
     expect(atRoot({ kind: "tree", path: "docs" })).toBe(false)

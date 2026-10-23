@@ -16,7 +16,10 @@ export const readFailure = (refused: RepoRefused): RepoNotFound | RepoReadsPause
     ? new RepoNotFound()
     : refused.status === 503 && refused.code === "capacity"
     ? new RepoReadsPaused()
-    : new RepoReadUnavailable(refused.retryAfterMillis === undefined ? {} : { retryAfterMillis: refused.retryAfterMillis })
+    : new RepoReadUnavailable({
+      ...(refused.retryAfterMillis === undefined ? {} : { retryAfterMillis: refused.retryAfterMillis }),
+      ...(refused.status === 503 && refused.code === "rate_limited" ? { reason: "rate_limited" as const } : {}),
+    })
 
 /** `AboutReader` over the browser's `RepoClient`: RepoApi's about route. */
 export const aboutLayer = Layer.effect(

@@ -318,6 +318,9 @@ export const BUSY = "Code Storage is busy"
 /** A view read that failed for any other reason: the network, or a gateway's 5xx. */
 export const COULDNT_LOAD = "Couldn't load"
 
+/** GitHub refused a public About read at its rate limit. */
+export const GITHUB_LIMIT = "GitHub limit reached"
+
 /** A view read refused by this month's read budget. */
 export const READING_PAUSED = "Reading paused"
 

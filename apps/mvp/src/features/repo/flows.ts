@@ -45,7 +45,7 @@ export class RepoReadsPaused extends Schema.TaggedError<RepoReadsPaused>()("@smt
  */
 export class RepoReadUnavailable extends Schema.TaggedError<RepoReadUnavailable>()(
   "@smthrs/mvp/repo/RepoReadUnavailable",
-  { retryAfterMillis: Schema.optional(Schema.Number) },
+  { retryAfterMillis: Schema.optional(Schema.Number), reason: Schema.optional(Schema.Literal("rate_limited")) },
 ) {}
 
 /** What a read can fail with. */

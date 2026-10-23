@@ -16,7 +16,7 @@ import { SqlClient } from "effect/sql"
 import { RepoStore } from "./store"
 import { VIEW } from "./rows"
 import { RepoClient, RepoRefused } from "./api"
-import { BUSY, COULDNT_LOAD, NOT_FOUND, rawRoute, READING_PAUSED } from "./contract"
+import { BUSY, COULDNT_LOAD, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
 import { TabClipboard } from "./copy"
 import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTree } from "./flows"
 import { aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, treeLoadMs } from "./metrics"
@@ -518,6 +518,38 @@ describe("the agent's repository flows on this device", () => {
 })
 
 describe("what GitHub says, cloned or not", () => {
+  test("a terminal public About refusal can be retried through the same flow", async () => {
+    const h = await repoHarness(server)
+    h.github.publish("octocat", "Spoon-Knife")
+    const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+    )
+    let paused = true
+    const refusing = Layer.effect(
+      RepoClient,
+      Effect.map(Effect.service(RepoClient), (client) => RepoClient.of({
+        ...client,
+        about: (owner, name) => paused
+          ? Effect.fail(new RepoRefused({ status: 503, code: "capacity" }))
+          : client.about(owner, name),
+      })),
+    ).pipe(Layer.provide(real))
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, client: refusing })
+    tabs.push(tab)
+    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
+    await waitFor(() => expect(tab.about().about).toMatchObject({ state: "failed", message: READING_PAUSED }))
+    expect(tab.histogramCount(aboutLoadMs, { outcome: "failed" })).toBe(1)
+    tab.repo.actions.openRoute("tree", { owner: "octocat", repo: "Spoon-Knife" }, {})
+    expect(tab.about().about).toMatchObject({ state: "failed", message: READING_PAUSED })
+    expect(tab.repo.actions.retryAbout("", "")).toBe(false)
+    paused = false
+    expect(tab.repo.actions.retryAbout("octocat", "Spoon-Knife")).toBe(true)
+    await waitFor(() => expect(tab.about().about?.state).toBe("ready"))
+    expect(tab.histogramCount(aboutLoadMs, { outcome: "ready" })).toBe(1)
+    expect(h.github.calls.length).toBeGreaterThan(0)
+  })
+
   test("a repository nobody cloned shows GitHub's top folder, README and about at once, with no clone", async () => {
     const h = await repoHarness(server)
     h.github.publish("octocat", "Spoon-Knife")

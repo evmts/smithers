@@ -21,6 +21,7 @@ import {
   CLONING,
   cloneUrl,
   CODE,
+  COULDNT_LOAD,
   COPY_CLONE_URL,
   COPY_CONTENTS,
   COPY_PATH,
@@ -28,10 +29,12 @@ import {
   DOWNLOAD,
   NOT_FOUND,
   RAW,
+  TRY_AGAIN,
 } from "../contract"
 import { editHrefFor, hrefFor } from "../paths"
 import {
   aboutOf,
+  aboutFailed,
   atRoot,
   codeEmptyOf,
   type Commit,
@@ -124,6 +127,14 @@ export function RepoPage({ editFiles = false }: { readonly editFiles?: boolean }
   // GitHub has no such public repository, and no copy of one is here: there is nothing to show or clone.
   if (view.missing || (!cloned && aboutRow?.about?.state === "missing")) return <EmptyState title={NOT_FOUND} />
   if (view.failure !== null) return <EmptyState title={view.failure} />
+  if (aboutFailed(aboutRow?.about, headerOf(repository, current.clone, view.signedIn, view.answered, current.about), root)) return (
+    <Card className="repo-page-empty">
+      <EmptyState
+        title={aboutRow?.about?.message ?? COULDNT_LOAD}
+        action={<Button variant="outline" onClick={() => actions.retryAbout(view.owner, view.name)}>{TRY_AGAIN}</Button>}
+      />
+    </Card>
+  )
   const aboutLoading = aboutRow?.about === null || aboutRow?.about === undefined || aboutRow.about.state === "loading"
   if (!cloned && root && aboutLoading) {
     // GitHub's answer on its way: the page's own layout, with skeletons in its places, so it fills in without a jump.
