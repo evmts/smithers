@@ -95,8 +95,8 @@ const landed = (write: Stored, conversationId: string) =>
     const sql = yield* SqlClient.SqlClient
     const [row] = write.template === "docs"
       ? yield* sql<{ readonly same: boolean }>`
-        SELECT template = 'docs' AND props->>'repository' = ${write.props.repository ?? ""}
-          AND props->>'path' = ${write.props.path ?? ""} AND conversation_id = ${conversationId} AS same
+        SELECT template = 'docs' AND props->>'repository' = ${write.props.repository as string}
+          AND props->>'path' = ${write.props.path as string} AND conversation_id = ${conversationId} AS same
         FROM views WHERE id = ${write.id}`
       : yield* sql<{ readonly same: boolean }>`
         SELECT template = ${write.template} AND props = ${JSON.stringify(write.props)}::jsonb
