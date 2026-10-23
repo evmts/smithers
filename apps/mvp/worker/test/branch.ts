@@ -281,6 +281,8 @@ interface BranchOptions {
   readonly actor?: Actor.Actor
   /** Sessions in place of `actor`. */
   readonly sessions?: Layer.Layer<Actor.Sessions>
+  /** An injected faulty forge for refusal tests. */
+  readonly forge?: Forge["Service"]
   /** The database the routes connect to: the file's schema unless set. */
   readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
   /** Where a route starts a remote flow: one that records each start in `starts` unless set. */
@@ -352,7 +354,7 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
           ? Effect.provide(Directory.layer(database, options.known))
           : Effect.provideService(Directory, options.directory),
         Effect.provide(options.sessions ?? (options.actor === undefined ? Actor.signedOut : signedIn(options.actor))),
-        Effect.provide(Forge.layerConfig.pipe(Layer.provideMerge(FetchHttpClient.layer))),
+        Effect.provide((options.forge === undefined ? Forge.layerConfig : Layer.succeed(Forge, options.forge)).pipe(Layer.provideMerge(FetchHttpClient.layer))),
         Effect.provideService(FetchHttpClient.Fetch, fetch),
       ),
     ),

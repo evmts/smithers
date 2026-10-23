@@ -13,6 +13,7 @@ import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { branchHarness, type BranchHarness, gitHost, resetBranches, shaOf, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
 import * as Branches from "./Branches.ts"
+import { CreateRefused, Forge } from "./Forge.ts"
 
 const runtime = testFile("branches")
 beforeEach(() => resetBranches(runtime))
@@ -343,6 +344,43 @@ describe("POST /api/branches with create: a new branch", () => {
   const create = (h: BranchHarness, ref: string, owner = "octocat") =>
     track(h, { owner, name: "Spoon-Knife", ref, create: true })
 
+  test("an injected Forge refusal records only its safe cause and the failed call", async () => {
+    const h = await open({ forge: Forge.of({
+      upstream: () => Effect.succeed({ url: "https://github.com/octocat/Spoon-Knife.git" }),
+      create: () => Effect.fail(new CreateRefused({
+        code: "unavailable",
+        errorTag: "@smthrs/effect-code-storage/CodeStorageError",
+        errorCode: "insufficient_scope",
+        errorStatus: 403,
+      })),
+    }) })
+    expect(await json(await create(h, `${SENTINEL}-new`))).toEqual([503, { code: "unavailable" }])
+    expect(h.only("branch.track").annotations).toMatchObject({
+      forgeOperation: "create_ref",
+      forgeErrorTag: "@smthrs/effect-code-storage/CodeStorageError",
+      forgeErrorCode: "insufficient_scope",
+      forgeStatus: 403,
+    })
+    expect(h.only("forge.createBranch").annotations).toMatchObject({
+      forgeOperation: "create_ref",
+      forgeErrorTag: "@smthrs/effect-code-storage/CodeStorageError",
+      forgeErrorCode: "insufficient_scope",
+      forgeStatus: 403,
+    })
+    for (const name of ["forge.createBranch", "branch.track"]) {
+      const spans = h.span(name)
+      expect(spans).toHaveLength(1)
+      expect(Object.fromEntries(spans[0]!.attributes)).toMatchObject({
+        forgeOperation: "create_ref",
+        forgeErrorTag: "@smthrs/effect-code-storage/CodeStorageError",
+        forgeErrorCode: "insufficient_scope",
+        forgeStatus: 403,
+      })
+    }
+    expect(recorded(h)).not.toContain(SENTINEL)
+    expect(await rows()).toEqual([])
+  })
+
   test("home create omits both repository names and opening refreshes the personal snapshot", async () => {
     const h = await onCodeStorage({ config: { GITHUB_REPOSITORY: "octocat/Spoon-Knife", CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() } })
     const response = await track(h, { ref: "conversation-abcdef", create: true })
@@ -406,6 +444,10 @@ describe("POST /api/branches with create: a new branch", () => {
     h.forge.fail(Response.json({ code: "internal_error" }, { status: 500 }))
     expect(await json(await create(h, "maya/b"))).toEqual([503, { code: "unavailable" }])
     expect(await rows()).toEqual([])
+    expect(h.line("branch.track")[1]!.annotations).toMatchObject({
+      forgeOperation: "create_ref", forgeErrorTag: "@smthrs/effect-code-storage/CodeStorageError",
+      forgeErrorCode: "internal_error", forgeStatus: 500,
+    })
     // A repository the forge doesn't have at all.
     expect(await json(await create(h, "maya/c", "nobody"))).toEqual([404, { code: "not_found" }])
   })
@@ -429,6 +471,23 @@ describe("POST /api/branches with create: a new branch", () => {
     h.github.fail("GET", new Response("busy", { status: 503 }))
     expect(await json(await create(h, "maya/d"))).toEqual([503, { code: "unavailable" }])
     expect(h.forge.created).toEqual([])
+    expect(h.only("branch.track").annotations).toMatchObject({
+      forgeOperation: "default_branch", forgeErrorTag: "@smthrs/effect-code-storage/GitRemoteError",
+      forgeErrorCode: "unavailable", forgeStatus: 503,
+    })
+  })
+
+  test("the created ref read failing records refs_read without its name or response body", async () => {
+    const h = await onCodeStorage()
+    h.github.fail("POST", new Response("credential-sentinel", { status: 502 }))
+    expect(await json(await create(h, `${SENTINEL}-new`))).toEqual([503, { code: "unavailable" }])
+    expect(h.only("branch.track").annotations).toMatchObject({
+      forgeOperation: "refs_read", forgeErrorTag: "@smthrs/effect-code-storage/GitRemoteError",
+      forgeErrorCode: "unavailable", forgeStatus: 502,
+    })
+    expect(recorded(h)).not.toContain(SENTINEL)
+    expect(recorded(h)).not.toContain("credential-sentinel")
+    expect(await rows()).toEqual([])
   })
 
   test("GitHub as the forge can't make a branch: 503 not_configured, and nothing is recorded", async () => {

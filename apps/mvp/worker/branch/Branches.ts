@@ -11,7 +11,7 @@ import { branchAccess, canView, isMember } from "./Access.ts"
 import * as Repos from "../Repos.ts"
 import * as Conversations from "./Conversations.ts"
 import * as ConversationPeople from "./ConversationPeople.ts"
-import { branchHead, createBranch, defaultBranch, type Forge } from "./Forge.ts"
+import { branchHead, createBranch, defaultBranch, failureFields, type Forge } from "./Forge.ts"
 
 // `POST /api/branches` (decision 0013 §2, docs/features/branch-workspace.md#tracking-a-branch): the write path of the
 // client flows `branch/track`, which a person opening a branch's page and the agent run alike, and `branch/create`,
@@ -120,6 +120,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         // (docs/proposals/durable-external-effects.md). A retry after a lost answer finds the branch tracked above.
         const from = yield* defaultBranch({ owner, name }).pipe(Effect.result)
         if (from._tag === "Failure" || from.success.branch === undefined) {
+          if (from._tag === "Failure") Object.assign(fields, failureFields("default_branch", from.failure))
           fields.forge = from._tag === "Failure" ? from.failure.code : "no_default_branch"
           return from._tag === "Failure" && from.failure.code !== "not_found" && from.failure.code !== "empty"
             ? refusal(503, "unavailable")
@@ -131,6 +132,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         // A new ref with the default branch's head where it was: the refs devices keep for the repository read again.
         if (made._tag === "Success") yield* Repos.refsChanged(repo).pipe(Effect.provide(database))
         if (made._tag === "Failure") {
+          Object.assign(fields, failureFields("create_ref", made.failure))
           if (made.failure.code === "exists") {
             fields.outcome = "exists"
             return refusal(409, "exists")
@@ -144,6 +146,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       }
       const head = yield* branchHead({ owner, name }, ref).pipe(Effect.result)
       if (head._tag === "Failure") {
+        Object.assign(fields, failureFields("refs_read", head.failure))
         const code = head.failure.code
         fields.forge = code
         return code === "not_found" || code === "ref_not_found" || code === "empty"
@@ -153,6 +156,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       if (resolvedDefault === undefined) {
         const remoteDefault = yield* defaultBranch({ owner, name }).pipe(Effect.result)
         if (remoteDefault._tag === "Failure" || remoteDefault.success.branch === undefined) {
+          if (remoteDefault._tag === "Failure") Object.assign(fields, failureFields("default_branch", remoteDefault.failure))
           fields.forge = remoteDefault._tag === "Failure" ? remoteDefault.failure.code : "no_default_branch"
           return refusal(503, "unavailable")
         }
@@ -186,7 +190,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
     const outcome = String(fields.outcome ?? (response.status === 405 ? "method" : codeFor(response.status)))
     yield* Metric.update(Metric.withAttributes(tracks, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+    yield* Effect.annotateCurrentSpan({ ...fields, "http.response.status_code": response.status, outcome })
     yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
       "branch.track",
     ).pipe(Effect.annotateLogs({ ...fields, outcome }))

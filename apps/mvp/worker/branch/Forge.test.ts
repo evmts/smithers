@@ -1,13 +1,13 @@
 // Where a branch's git comes from (worker/branch/Forge.ts, decision 0013 §2): Code Storage with a `git:read` token for
 // the one repository when the deployment has an organization, else the public repository on GitHub with no credential
 // at all. GitHub is the scripted git host of worker/test/branch.ts, reached through Effect's `FetchHttpClient`.
-import { GitProxy, GitRemote } from "@smthrs/effect-code-storage"
+import { CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-storage"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Redacted } from "effect"
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { gitHost, shaOf } from "../test/branch.ts"
 import { machineOf } from "../flows/TodoMachine.ts"
-import { branchHead, defaultBranch, Forge, forgeOf } from "./Forge.ts"
+import { branchHead, createBranch, defaultBranch, Forge, forgeOf } from "./Forge.ts"
 
 /** A fresh ES256 key, as Code Storage's Keys page hands one out: a PKCS#8 PEM. */
 const pem = async () => {
@@ -157,4 +157,24 @@ describe("the forge proxy", () => {
       ["/octocat/Spoon-Knife.git/info/refs?service=git-upload-pack", null],
     ])
   })
+})
+
+
+test("Code Storage transport refusal retains its tag and code without inventing an HTTP status", async () => {
+  const exit = await Effect.runPromiseExit(Effect.gen(function* () {
+    const client = yield* CodeStorage.CodeStorage.pipe(Effect.provide(
+      CodeStorage.CodeStorage.layer({ org: "acme", key: Redacted.make(yield* Effect.promise(pem)) }),
+    ))
+    const faulty = { ...client, createBranch: () => Effect.fail(new CodeStorage.CodeStorageError({
+      operation: "createBranch", code: "transport",
+    })) }
+    return yield* createBranch({ owner: "octocat", name: "Spoon-Knife" }, "b", "main").pipe(
+      Effect.provide(Forge.codeStorage(faulty)),
+    )
+  }).pipe(Effect.provide(FetchHttpClient.layer)))
+  expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
+    _tag: "CreateRefused", code: "unavailable",
+    errorTag: "@smthrs/effect-code-storage/CodeStorageError", errorCode: "transport",
+  })
+  expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).not.toHaveProperty("errorStatus")
 })

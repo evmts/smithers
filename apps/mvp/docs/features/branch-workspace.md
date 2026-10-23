@@ -71,7 +71,11 @@ The repository's default branch is recorded `locked` (decision 0007 §5) and is 
 | `503 not_configured` | the forge is GitHub, read with no credential, which can't make a branch: the flow fails `not_configured`, never tried again |
 | `503 unavailable` | the forge or Code Storage didn't answer; the step tries again for 30 s |
 
-The route's `branch.track` line says `created`: `created`, `exists`, or the forge's refusal. The branch lives on Code Storage's mirror until a person pushes it to GitHub.
+The route's `branch.track` line says `created`: `created`, `exists`, or the forge's refusal.
+Failures also record `forgeOperation` (`default_branch`, `create_ref`, `refs_read`),
+`forgeErrorTag`, `forgeErrorCode` and `forgeStatus` when HTTP answered. The
+`forge.createBranch` failure log and span retain the same fields. These come from
+typed errors; branch names, response text, URLs and credentials are never recorded. The branch lives on Code Storage's mirror until a person pushes it to GitHub.
 
 ## Conversations
 

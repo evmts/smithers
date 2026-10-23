@@ -21,6 +21,9 @@ import * as RepoConfig from "../RepoConfig.ts"
  */
 export class CreateRefused extends Data.TaggedError("CreateRefused")<{
   readonly code: "exists" | "not_found" | "not_configured" | "unavailable"
+  readonly errorTag?: string
+  readonly errorCode?: string
+  readonly errorStatus?: number
 }> {}
 
 /** A GitHub repository, by its owner and name. */
@@ -62,6 +65,9 @@ export class Forge extends Context.Service<
             Effect.asVoid,
             Effect.mapError((error) =>
               new CreateRefused({
+                errorTag: error._tag,
+                errorCode: error.code,
+                ...(error.status === undefined ? {} : { errorStatus: error.status }),
                 code: error.code === "conflict"
                   ? "exists"
                   : ["not_found", "repository_not_found", "ref_not_found", "branch_not_found"].includes(error.code)
@@ -95,7 +101,31 @@ export const branchHead = (repository: Repository, branch: string) =>
 
 /** Creates `branch` on the repository's forge at the commit `from` names. */
 export const createBranch = (repository: Repository, branch: string, from: string) =>
-  Effect.flatMap(Forge, (forge) => forge.create(repository, branch, from))
+  Effect.flatMap(Forge, (forge) => forge.create(repository, branch, from)).pipe(
+    Effect.tapError((error) => {
+      const fields = failureFields("create_ref", error)
+      return Effect.annotateCurrentSpan(fields).pipe(
+        Effect.andThen(Effect.logWarning("forge.createBranch").pipe(Effect.annotateLogs(fields))),
+      )
+    }),
+    Effect.withSpan("forge.createBranch"),
+  )
+
+/** Safe typed error metadata only: never a URL, branch, credential, message or raw cause. */
+export const failureFields = (
+  operation: "default_branch" | "create_ref" | "refs_read",
+  error: CreateRefused | GitRemote.GitRemoteError,
+): Record<string, string | number> => {
+  const cause = error instanceof CreateRefused
+    ? { _tag: error.errorTag ?? error._tag, code: error.errorCode ?? error.code, status: error.errorStatus }
+    : error
+  return {
+    forgeOperation: operation,
+    forgeErrorTag: cause._tag,
+    forgeErrorCode: cause.code,
+    ...(cause.status === undefined ? {} : { forgeStatus: cause.status }),
+  }
+}
 
 /** The repository's default branch on its forge. */
 export const defaultBranch = (repository: Repository) =>
