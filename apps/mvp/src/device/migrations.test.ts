@@ -20,6 +20,8 @@ import { ViewV2 } from "./views-history"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
+  PluginDraftsStore,
+  SteerSentStore,
   SpendSeenStore,
   AttentionPendingStore,
   TodoDraftsStore,
@@ -247,6 +249,8 @@ test("cached homes and timeline summaries restore and replace by their declared 
   const { path } = await deviceFrom({ build: "empty", collections: {}, outbox: {} } as Fixture)
   await prepare(path, deviceRegistry)
   const cases = [
+    [PluginDraftsStore, { id: "note", text: "Before" }, "text", "After"],
+    [SteerSentStore, { id: "steer", runId: "run", body: "Before", queuedAt: 1, status: "sent", reason: null }, "body", "After"],
     [HomesStore, { key: "repo@sha", state: "absent", sections: [], contributors: "role", skipped: 0, reason: null }, "reason", "missing"],
     [CuratedHomesStore, { key: "repo", state: "absent", defaultBranch: null, sections: [] }, "defaultBranch", "main"],
     [SpendSeenStore, { kind: "budget", through: "first" }, "through", "next"],
@@ -296,4 +300,29 @@ test.each([HomesStore, CuratedHomesStore])("$id upgrades cached homes across the
   expect((await prepare(path, deviceRegistry)).collections).toEqual([
     expect.objectContaining({ outcome: "current", migrated: 0, dropped: 0, kept: 0 }),
   ])
+})
+
+
+test("TODO requested v1 rows survive the retry-capable schema migration", async () => {
+  const row = { id: "drop", op: "drop", repo: "a/b", repoId: "repo", title: "", prompt: "", acceptance: [], number: 1,
+    queuedAt: 1, status: "requested", reason: null, taken: null }
+  const { path } = await deviceFrom({ ...currentDeployed, collections: {
+    "todo-requested": { kind: "local", key: "id", version: 1, rows: [row] },
+  }, outbox: {} } as Fixture)
+  await prepare(path, deviceRegistry)
+  expect(await opened(path, TodoRequestedStore)).toEqual([row])
+})
+
+test("a queued TODO v1 write upgrades to v2 without losing its requested operation", () => {
+  const source = JSON.parse(Object.values(currentDeployed.outbox)[0]!)
+  source.mutationFnName = "todo-op"
+  source.metadata.versions = { "todo-sending": 1 }
+  source.mutations[0].collectionId = "todo-sending"
+  source.mutations[0].modified = { id: "drop", op: "drop", repo: "a/b", repoId: "repo", title: "", prompt: "", acceptance: [], number: 1, queuedAt: 1, v: 1 }
+  const result = outboxUpgrade.write(JSON.stringify(source))
+  expect(result._tag).toBe("Upgraded")
+  if (result._tag !== "Upgraded") throw new Error(JSON.stringify(result))
+  const write = JSON.parse(result.value)
+  expect(write.mutations[0].modified).toEqual({ ...source.mutations[0].modified, v: 2 })
+  expect(write.metadata.versions).toEqual({ "todo-sending": 2 })
 })
