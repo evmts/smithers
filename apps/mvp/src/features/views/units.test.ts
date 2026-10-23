@@ -22,6 +22,8 @@ describe("a row by its template", () => {
   test("a page reads its props; a form and a generated view read nothing as a page", () => {
     expect(pageOf(row({}))).toEqual({ url: "https://example.com/" })
     expect(pageOf(row({ template: "link" }))).toEqual({ url: "https://example.com/" })
+    const docs = { url: "https://example.com/docs", text: "# Guide", repository: "acme/widgets", path: "/guide.md" }
+    expect(pageOf(row({ template: "docs", props: docs }))).toEqual(docs)
     expect(pageOf(row({ template: "form" }))).toEqual({ url: "" })
   })
 

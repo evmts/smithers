@@ -62,6 +62,7 @@ describe("the agent's forms and views", () => {
   test("boardShows holds for a generated view whose cells send a declared state event", () => {
     expect(boardShows(trial({ views: [board(9)] }), 9).pass).toBe(true)
     expect(boardShows(trial({ views: [board(4)] }), 9).pass).toBe(false)
+    expect(boardShows(trial({ views: [{ ...board(9), html: "<p>No playable cells</p>" }] }), 9).pass).toBe(false)
     expect(boardShows(trial({ views: [board(9, "message")] }), 9).pass).toBe(false)
     expect(boardShows(trial({ views: [form({}, [])] }), 9).pass).toBe(false)
   })

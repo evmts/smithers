@@ -184,6 +184,7 @@ const insert = (view: Stored, conversationId: string) =>
 const landed = (view: Stored, conversationId: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
+    // Every stored docs row is built from docsTarget, which requires its repository and path.
     const [row] = view.template === "docs"
       ? yield* sql<{ readonly same: boolean }>`
         SELECT template = 'docs' AND props->>'repository' = ${view.props.repository as string}
@@ -211,7 +212,7 @@ const docsTarget = (props: PageWrite["props"]) => {
   const [owner, name] = (props.repository ?? "").split("/")
   return owner === undefined || name === undefined || props.path === undefined || !isRepository(owner, name)
     ? undefined
-    : { owner, name, path: props.path }
+    : { owner, name, path: props.path, url: props.url }
 }
 
 /** The declared events of the generated view under `view`'s id, when it is this very view: the same add, landed before. */
@@ -329,7 +330,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         return undefined
       }
       // The page's own title, description and https icon, as the flow's check read them (ViewWrite bounds each).
-      const { url: _url, ...preview } = write.props
+      const { url: _url, repository: _repository, path: _path, ...preview } = write.props
       return { id: write.id, template: write.template, props: { url: page.page.href, ...preview } } satisfies Stored
     }
 
@@ -387,7 +388,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           docsStored = {
             id: write.id,
             template: "docs",
-            props: { url: String(write.props.url), repository: `${docs.owner}/${docs.name}`, path: docs.path },
+            props: { url: docs.url, repository: `${docs.owner}/${docs.name}`, path: docs.path },
           }
         } else if (docs !== undefined) {
           // The page as the repository's own docs index lists it, and its Markdown as the docs site answers it now.

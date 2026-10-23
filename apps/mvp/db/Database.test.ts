@@ -874,15 +874,23 @@ describe("0049–0050 GitHub write upgrade", () => {
     }))
 })
 
-describe("0051_agent_views", () => {
+describe("0052_agent_views", () => {
   test("adds forms and generated views, each with what it needs, and questions that name the view they came from", () =>
     emptySchema(async (url) => {
       const database = Database.layer(Effect.succeed(Redacted.make(url)))
       const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
         runtime.runPromise(Effect.provide(effect, database))
-      await on(through("0050"))
-      const applied = await on(through("0051"))
-      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["51_agent_views"])
+      await on(through("0051"))
+      const existingDocs = crypto.randomUUID()
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`INSERT INTO views (id, template, props, conversation_id)
+          SELECT ${existingDocs}, 'docs', '{"url":"https://docs.example/guide.md","text":"# Guide"}', id
+          FROM conversations LIMIT 1`))
+      const applied = await on(through("0052"))
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`SELECT template, props->>'text' AS text FROM views WHERE id = ${existingDocs}`)))
+        .toEqual([{ template: "docs", text: "# Guide" }])
+      expect(applied.map(([id, name]) => `${id}_${name}`)).toEqual(["52_agent_views"])
       const [home] = await on(Effect.flatMap(SqlClient.SqlClient, (sql) =>
         sql<{ readonly id: string }>`SELECT id FROM conversations LIMIT 1`))
       const insert = (template: string, columns: Record<string, unknown>) =>
@@ -891,6 +899,7 @@ describe("0051_agent_views", () => {
           .then(() => "taken", () => "refused")
       const json = (value: unknown) => JSON.stringify(value)
       // A page keeps only its props; a form needs its state; a generated view its title, state, code, HTML and events.
+      expect(await insert("docs", { props: json({ url: "https://docs.example/guide.md" }) })).toBe("taken")
       expect(await insert("webpage", { props: json({ url: "https://example.com/" }) })).toBe("taken")
       expect(await insert("link", { props: json({ url: "https://example.com/" }), state: json({}) })).toBe("refused")
       expect(await insert("form", { props: json({ title: "Clone" }), state: json({ submitted: false }) })).toBe("taken")

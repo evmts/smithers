@@ -20,12 +20,13 @@ import { ViewV2 } from "./views-history"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
+  BranchConversationsStore,
+  FileTabsStore,
   ConversationPendingStore,
   PluginDraftsStore,
   SteerSentStore,
   SpendSeenStore,
   AttentionPendingStore,
-  FileTabsStore,
   TodoDraftsStore,
   TodoRequestedStore,
   HomesStore,
@@ -175,7 +176,7 @@ describe.each(fixtures)("the device build $build left", (fixture) => {
       }
     ]
     expect(await synced(path, MessagesStore, "chat-messages", server)).toEqual(server)
-    // The server's row now: every column, `null` where a page has none (0051_agent_views).
+    // The server's row now: every column, `null` where a page has none (0052_agent_views).
     const view: typeof View.Type = {
       ...(rowsOf(fixture, "views")[0] as unknown as typeof View.Type),
       props: { url: "https://effect.website", title: "Effect" },
@@ -298,13 +299,14 @@ test("device-local records restore and replace by their declared identity", asyn
   const { path } = await deviceFrom({ build: "empty", collections: {}, outbox: {} } as Fixture)
   await prepare(path, deviceRegistry)
   const cases = [
-    [ConversationPendingStore, { conversationId: "conversation", archived: true, at: 1 }, "archived", false],
+    [BranchConversationsStore, { id: "acme/widgets@main", conversationId: "before" }, "conversationId", "after"],
+    [FileTabsStore, { key: "acme/widgets@main:README.md", owner: "acme", name: "widgets", revision: "main", path: "README.md", lines: null, position: 0 }, "lines", "2-4"],
+    [ConversationPendingStore, { conversationId: "conversation", archived: false, at: 1 }, "archived", true],
     [PluginDraftsStore, { id: "note", text: "Before" }, "text", "After"],
     [SteerSentStore, { id: "steer", runId: "run", body: "Before", queuedAt: 1, status: "sent", reason: null }, "body", "After"],
     [HomesStore, { key: "repo@sha", state: "absent", sections: [], contributors: "role", skipped: 0, reason: null }, "reason", "missing"],
     [CuratedHomesStore, { key: "repo", state: "absent", defaultBranch: null, sections: [] }, "defaultBranch", "main"],
     [SpendSeenStore, { kind: "budget", through: "first" }, "through", "next"],
-    [FileTabsStore, { key: "octo/hello@main:README.md", owner: "octo", name: "hello", revision: "main", path: "README.md", lines: null, position: 0 }, "lines", "2-4"],
     [AttentionPendingStore, { id: "ack", subject: "run:one", act: "read", version: 1 }, "version", 2],
     [TodoDraftsStore, { id: "draft", repo: "a/b", repoId: "repo", title: "First", prompt: "Build", acceptance: [], answerId: null, createdAt: 1 }, "title", "Next"],
     [TodoRequestedStore, { id: "op", op: "drop", repo: "a/b", title: "", prompt: "", acceptance: [], number: 1, repoId: "repo", queuedAt: 1, status: "requested", reason: null, taken: null }, "taken", 2],

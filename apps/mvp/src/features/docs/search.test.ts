@@ -288,8 +288,9 @@ describe("the flow", () => {
           ViewsClient,
           Effect.map(Effect.service(ViewsClient), (client) =>
             ViewsClient.of({
+              ...client,
               add: (write) =>
-                write.props.path === "/reference/schedule.md"
+                write.template === "docs" && write.props.path === "/reference/schedule.md"
                   ? Effect.fail(new ViewRefused({ status: 400, code: "refused" }))
                   : failures++ === 0
                   ? Effect.fail(new ViewRefused({ status: 503 }))

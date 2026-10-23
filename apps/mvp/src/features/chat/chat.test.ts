@@ -9,6 +9,7 @@ import { AnswerReference } from "../agent/reference"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import { TabRequests } from "../../flows/requests"
 import {
+  CHATAPI_ORIGIN,
   type Busy,
   type ChatApiOptions,
   type NodeDevice,
@@ -557,6 +558,38 @@ describe("admission", () => {
     tab.actions.resendUnsent(questionId)
     await until(() => expect(tab.shown()).toEqual(["user done hello", "assistant streaming "]))
     expect(tab.count(Metric.withAttributes(unsentActions, { action: "retry" }))).toBe(1)
+  })
+
+  test("Retry preserves a form's values and source when device storage refuses its first submission", async () => {
+    const { device, refusing } = refusingDevice()
+    const tab = await openChat({ host: device })
+    const viewId = crypto.randomUUID()
+    const added = await tab.api.fetch(`${CHATAPI_ORIGIN}/api/views`, {
+      method: "POST",
+      body: JSON.stringify({ id: viewId, template: "form", props: {
+        title: "Which repository?", submitLabel: "Clone",
+        schema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+      } }),
+    })
+    expect(added.status).toBe(202)
+    tab.actions.setDraft("Keep this draft")
+    const source = { viewId, event: "submit" }
+    const data = { url: "https://github.com/acme/widgets" }
+    refusing.now = true
+    const { questionId } = asked(tab.actions.askFromView("Clone", { source, data }))
+    expect(tab.composer()?.draft).toBe("Keep this draft")
+    await until(() => expect(tab.store.unsent.tanstack.get(questionId)).toMatchObject({
+      text: "Clone", source, data, reason: "not_admitted",
+    }))
+    refusing.now = false
+    tab.actions.resendUnsent(questionId)
+    await until(() => expect(tab.store.messages.tanstack.get(questionId)).toMatchObject({ text: "Clone" }))
+    const saved = await tab.onApi(tab.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT source, data FROM messages WHERE id = ${questionId}`)))
+    expect(saved).toEqual([{ source, data }])
+    expect(tab.store.unsent.tanstack.has(questionId)).toBe(false)
+    expect((await tab.onApi(tab.api.rows)).filter((row) => row.id === questionId)).toHaveLength(1)
+    expect(tab.composer()?.draft).toBe("Keep this draft")
   })
 
   test("a tab alone whose browser grants the outbox's lock late still shows its first question queued, never unsent", async () => {

@@ -69,7 +69,7 @@ In ChatApi (`worker/Views.ts`, routed by `worker/Chat.ts`). Adding and moving ta
 
 ## The table
 
-`db/migrations/0051_agent_views.ts` adds to `views`: `title`, `size` (`inline` or `full`), `state`, `code`, `html`, `interactions`, `revision` and `updated_at`, and the templates `form` and `generated`, each with the columns it needs (a CHECK). `messages` gains `source` and `data`, on questions only. `view_moves` keeps each move by its id with the revision it made.
+`db/migrations/0052_agent_views.ts` adds to `views`: `title`, `size` (`inline` or `full`), `state`, `code`, `html`, `interactions`, `revision` and `updated_at`, and the templates `form` and `generated`, each with the columns it needs (a CHECK). `messages` gains `source` and `data`, on questions only. `view_moves` keeps each move by its id with the revision it made.
 
 ## The browser
 
@@ -108,8 +108,8 @@ None of these carries a schema, values, a description, a module, props, state, H
 | `worker/ViewRealm.workerd.test.ts` | the realm in local workerd, bundled as Alchemy bundles ChatApi: QuickJS as one compiled `.wasm`, the board rendered and moved, a throwing module refused |
 | `src/features/views/steps.test.ts`, `api.test.ts`, `units.test.ts` | each step's refusals and retries with faulty clients and renderers; the client over failing transports; rows, the renderer's reply and the form rules |
 | `src/features/views/agentViews.test.ts` | the agent's own `chat/Answer` on the Node host: asks with a form, and the next answer reads the submission; a secret form refused before anything is added; the renderer corrected once, then the board rendered and played, a stale move refused; a renderer that never renders fails after two corrections |
-| `db/Database.test.ts` "0051_agent_views" | each template's columns, and `source` on questions only |
-| `src/device/*.test.ts` | `asking` v2, `chat-unsent` v2 and `views` v3, migrated or synced afresh |
+| `db/Database.test.ts` "0052_agent_views" | each template's columns, and `source` on questions only |
+| `src/device/*.test.ts` | `asking` v2, `chat-unsent` v2 and `views` v4, migrated or synced afresh |
 | `evals/cases.test.ts`, `checks.test.ts` | the four [agent eval](agent-evals.md) cases `form-ask`, `form-clone-no-url`, `board` and `view-loads-script`, calibrated |
 | `e2e/forms.spec.ts` | the real app, two devices: the agent asks with a form, the person fills and sends it, the agent answers with the URL; the form answered on both devices and after a reload |
 | `e2e/generated-view.spec.ts` | the real app, two devices: the agent shows a tic-tac-toe board in a sandboxed frame; a move shows on both; Full screen, the person plays to a win; it survives a reload |

@@ -404,6 +404,8 @@ describe("a docs view", () => {
     expect(await answer(docsView("/guide/retrying.md", "acme/unknown"))).toEqual([503, { code: "unavailable" }])
     // A docs site on the app's own origin is never kept.
     expect(await answer(docsView("/page.md", "acme/ours"))).toEqual([400, { code: "refused" }])
+    expect(await answer(docsView("/guide/retrying.md", "acme/widgets", { url: "https://chat.test/private" })))
+      .toEqual([400, { code: "refused" }])
     for (
       const props of [
         { url: "https://docs.example/a.md", path: "/a.md" },

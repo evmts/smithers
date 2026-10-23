@@ -45,7 +45,7 @@ export const MAX_SUBMIT_LABEL = 40
 /** The largest form schema, or generated view's props or state, as JSON: 16 KiB, as `@smthrs/views` bounds state. */
 export const MAX_VIEW_JSON_BYTES = 16 * 1024
 
-/** The largest HTML a generated view keeps: 256 KiB, the `views.html` bound (0051_agent_views). */
+/** The largest HTML a generated view keeps: 256 KiB, the `views.html` bound (0052_agent_views). */
 export const MAX_VIEW_HTML_BYTES = 256 * 1024
 
 /** ChatApi's route that changes a generated view's state by one declared event: `POST /api/views/<id>/state`. */
