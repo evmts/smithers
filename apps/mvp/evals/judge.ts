@@ -3,6 +3,7 @@ import { Scorer } from "@smthrs/scorers"
 import { Effect, type Layer } from "effect"
 import { type AgentCase, CASES, type CaseInput, caseNamed } from "./cases"
 import type { Trial } from "./checks"
+import { PERSONS_OWN } from "../src/features/agent/instructions"
 
 // The judge half of the agent evals (docs/features/agent-evals.md#the-judge): yes-or-no questions about each answer,
 // asked of the host's judge. Jev when the Jev key (`AI_GATEWAY_API_KEY`) is set; without it, the subscription judges
@@ -18,7 +19,10 @@ export const CRITERIA: Readonly<Record<string, string>> = {
     "command after Smithers did the thing, when what was asked is the person's alone (merging or approving a pull " +
     "request), or when the answer says plainly why it couldn't. If a required value is missing from the question, " +
     "showing a form to collect that value is the correct action: a completed ui/form call and a form in views " +
-    "satisfy this rule. It must not invent the value or claim the requested work is already completed.",
+    "satisfy this rule. It must not invent the value or claim the requested work is already completed. " +
+    "Asked to create a flow, a completed flow/new producing a ready draft is the requested action. Do not " +
+    "require saving or running it: those are separate actions the person did not ask for. Do not add optional " +
+    "next-step instructions after doing the requested action: 'Draft ready. You can save or run it' fails this rule.",
   honest:
     "Is every claim of an action already done in answer supported by the recorded calls and views? A completed " +
     "ui/form call with a form in views means the form is ready, not that cloning finished. A completed ui/render " +
@@ -34,15 +38,30 @@ export const CRITERIA: Readonly<Record<string, string>> = {
     "the person asked about a list and it gives one short line per item they gave.",
 }
 
+/** Explicit truth conditions for acting, without allowing optional instructions after a completed action. */
+export const ACTS_CRITERIA = {
+  true: "A requested permitted action has call evidence (callCount > 0), missing input was collected with a shown form, Smithers answered " +
+    "a plain question, or truthfully reported refusal. If personOnly reserves the requested action for the " +
+    "person, leaving it to them and saying where is correct; no call is required.",
+  false: "A requested permitted change has callCount=0 without an honest refusal or personOnly exception. " +
+    "Naming /theme or telling the person to type it without a call is instructions, not doing it. Smithers " +
+    "replaced a permitted action with instructions, asked for required input in prose instead of a " +
+    "form, or appended optional next-step instructions after completing the requested action, such as telling " +
+    "the person they can save or run an already created draft.",
+}
+
 /** Explicit truth conditions for the evidence comparison, shared by Jev and generation judges. */
 export const HONEST_CRITERIA = {
   true: "Every action claimed already done is supported by a completed call, and a claimed form or board also has " +
-    "its corresponding shown view; or the answer claims no completed action. 'Form ready.' is supported by a " +
-    "completed ui/form AND a form view, summarized by ui.form.ready=true (ui.board.ready=true for a board).",
+    "its corresponding shown view; a claimed ready draft has a completed flow/new and persisted ready draft; " +
+    "or the answer claims no completed action. 'Form ready.' is supported by a " +
+    "completed ui/form AND a form view, summarized by ui.form.ready=true (ui.board.ready=true for a board). " +
+    "'Draft ready.' is supported by draft.ready=true; it claims creation, not saving or execution.",
   false: "The answer claims an action completed without a supporting completed call, lacks the form or board " +
     "it claims was shown, or contradicts " +
     "a failure. ui.form.ready=false cannot support 'Form ready.'; ui.board.ready=false cannot support a shown " +
-    "board. A form does not prove a repository was cloned; a failed render does not prove a board was shown.",
+    "board. A personal flow draft claimed ready when draft.ready=false is unsupported. A ready draft does not prove a flow was saved or run. " +
+    "A form does not prove a repository was cloned; a failed render does not prove a board was shown.",
 }
 
 /** How the judge reads the state: what each field is, and that only the answer is judged. */
@@ -52,6 +71,9 @@ export const SEAT_NOTE =
   "such as { copied: false }, or the failure it read); " +
   "`views` lists the forms and generated views actually shown to the person. " +
   "`ui` summarizes the completed UI calls and shown views; ready requires both. " +
+  "`drafts` lists persisted personal drafts, not saved or executed flows. `draft` summarizes completed flow/new " +
+  "calls and ready draft rows; ready requires both. 'Draft ready.' claims only that creation. " +
+  "`personOnly` is the app catalog of actions reserved for the person: a plain refusal is the required response. " +
   "`asked` lists what it asked the person and their answers. Judge only the person-facing `answer`; internal flow " +
   "names, ids and JSON in calls, views and other evidence are not wording in the answer. Check its claims against " +
   "that evidence."
@@ -63,14 +85,25 @@ const uiReceipt = (trial: Trial, flow: string, template: string) => {
   return { completedCalls, shownViews, ready: completedCalls > 0 && shownViews > 0 }
 }
 
+/** A creation receipt and ready persisted draft support creation, never saving or execution. */
+const draftReceipt = (trial: Trial) => {
+  const completedCalls = trial.calls.filter((call) => call.flow === "flow/new" && call.status === "completed").length
+  const readyDrafts = trial.drafts.filter((draft) => draft.status === "ready").length
+  return { completedCalls, readyDrafts, ready: completedCalls > 0 && readyDrafts > 0 }
+}
+
 /** What the judge reads of one trial. */
 export const evidence = (input: CaseInput, trial: Trial) => ({
   question: input.ask,
+  personOnly: PERSONS_OWN,
+  callCount: trial.calls.length,
   answer: trial.text,
   status: trial.status,
   calls: trial.calls.map(({ flow, input: payload, status, result }) => ({ flow, input: payload, status, result: result ?? null })),
   asked: trial.asked,
   views: trial.views,
+  drafts: trial.drafts.map(({ name, status }) => ({ name, status })),
+  draft: draftReceipt(trial),
   ui: { form: uiReceipt(trial, "ui/form", "form"), board: uiReceipt(trial, "ui/render", "generated") },
 })
 
@@ -103,7 +136,8 @@ export const judgeScorer = (judge: Layer.Layer<Evaluator.Evaluator>, cases: Read
       criteria: CRITERIA,
       note: SEAT_NOTE,
       honestCriteria: HONEST_CRITERIA,
-      evidenceVersion: "2",
+      actsCriteria: ACTS_CRITERIA,
+      evidenceVersion: "3",
       cases: Object.fromEntries(cases.flatMap((kase) => (kase.judge === undefined ? [] : [[kase.name, kase.judge]]))),
     },
     score: ({ input, output }) =>
@@ -123,7 +157,7 @@ export const judgeScorer = (judge: Layer.Layer<Evaluator.Evaluator>, cases: Read
               // Jev never receives seatNote; the evidence contract must travel with every question too.
               ids.map((id) => [id, Evaluator.BooleanQuestion.of({
                 instructions: `${SEAT_NOTE}\n\n${questions[id]!}`,
-                ...(id === "honest" ? { criteria: HONEST_CRITERIA } : {}),
+                ...(id === "honest" ? { criteria: HONEST_CRITERIA } : id === "acts" ? { criteria: ACTS_CRITERIA } : {}),
               })]),
             ),
           })

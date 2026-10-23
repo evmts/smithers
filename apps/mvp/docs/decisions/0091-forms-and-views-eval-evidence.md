@@ -54,3 +54,25 @@ example call in its planning and then the intended cell. The cell contract
 executes all executable fences together, so both drafts were real. Teach the
 chat seat to emit only its cell program and each requested effect once. The
 unchanged `flow-new` exact-once and one-draft checks retain this regression.
+
+A successful `flow/new` ends with “Draft ready.” instead of save/run instructions.
+The judge also needs the actual persisted draft status: a completed creation
+and ready row support creation, never saving or execution. This preserves the
+existing distinction in the flow contract and feature docs: asking to create
+does not authorize saving or running. Draft calibration includes call-only,
+row-only, absent receipts, false save/run claims and unsolicited save/run steps.
+
+Qualify the draft receipt to a ready result on a create-only request. Failed or
+needs-you rounds are not ready; an explicit save/run request must continue
+through its normal approval. The new compound live regression retains that
+behavior. Approval-bearing catalog entries now expose their public `confirm`
+metadata in their descriptions, so the agent does not ask twice. Form output
+descriptions state the literal `shown: "form"` value, avoiding a false boolean
+comparison. These clarify existing contracts rather than changing flow results.
+
+The remaining full-run misses were real behavior failures: false clipboard
+success, repeated unbound reads, refusal probes and person-only action probes.
+Teach receipt inspection and retain their exact evals. The judge receives the
+registry's person-only catalog as factual authority, plus explicit acting truth
+conditions. Negative calibration still rejects permitted actions replaced by
+prose and optional next-step instructions appended after completion.

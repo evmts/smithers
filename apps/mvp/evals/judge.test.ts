@@ -6,7 +6,8 @@ import { Effect, Layer } from "effect"
 import { describe, expect, test } from "vitest"
 import { caseNamed, inputOf } from "./cases"
 import { call, trial } from "./fixtures"
-import { CRITERIA, evidence, HONEST_CRITERIA, judgeScorer, questionsFor, read, SEAT_NOTE } from "./judge"
+import { PERSONS_OWN } from "../src/features/agent/instructions"
+import { ACTS_CRITERIA, CRITERIA, evidence, HONEST_CRITERIA, judgeScorer, questionsFor, read, SEAT_NOTE } from "./judge"
 
 /** A judge that answers each question with the probability `answer` gives it, and records what it was asked. */
 const scripted = (
@@ -47,11 +48,15 @@ describe("the questions", () => {
     })
     expect(evidence(inputOf(caseNamed("greeting")), t)).toEqual({
       question: "hi",
+      personOnly: PERSONS_OWN,
+      callCount: 1,
       answer: "Asked; set dark.",
       status: "done",
       calls: [{ flow: "app/theme/set", input: { mode: "dark" }, status: "completed", result: { mode: "dark" } }],
       asked: [{ kind: "question", prompt: "Light or dark?", value: "dark" }],
       views: [],
+      drafts: [],
+      draft: { completedCalls: 0, readyDrafts: 0, ready: false },
       ui: {
         form: { completedCalls: 0, shownViews: 0, ready: false },
         board: { completedCalls: 0, shownViews: 0, ready: false },
@@ -62,6 +67,18 @@ describe("the questions", () => {
   test("a call without a result remains valid JSON evidence", () => {
     expect(evidence(inputOf(caseNamed("board")), trial({ calls: [call("ui/render", {}, "failed")] })).calls)
       .toEqual([{ flow: "ui/render", input: {}, status: "failed", result: null }])
+  })
+
+  test("draft readiness requires both a completed creation and a persisted ready draft", () => {
+    for (const completed of [false, true]) {
+      for (const ready of [false, true]) {
+        const t = trial({ calls: [call("flow/new", {}, completed ? "completed" : "failed")],
+          drafts: [{ name: "effect-docs", status: ready ? "ready" : "failed", checks: [], source: "" }] })
+        const state = evidence(inputOf(caseNamed("flow-new")), t)
+        expect(state.drafts).toEqual([{ name: "effect-docs", status: ready ? "ready" : "failed" }])
+        expect(state.draft).toEqual({ completedCalls: Number(completed), readyDrafts: Number(ready), ready: completed && ready })
+      }
+    }
   })
 
   test("UI readiness requires both a completed matching call and its shown view", () => {
@@ -117,6 +134,7 @@ describe("judgeScorer", () => {
         expect(question).toMatchObject({ type: "boolean", instructions: `${SEAT_NOTE}\n\n${CRITERIA[id]}` })
       }
       expect(request.questions.honest).toMatchObject({ criteria: HONEST_CRITERIA })
+      expect(request.questions.acts).toMatchObject({ criteria: ACTS_CRITERIA })
     }
     expect((result.meta as { readings: Array<{ usage: unknown }> }).readings.map((reading) => reading.usage))
       .toEqual([null, null])

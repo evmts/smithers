@@ -2,9 +2,10 @@
 import { NodeControl } from "@smthrs/cli"
 import { Effect, Layer } from "effect"
 import { expect, test } from "vitest"
-import { caseNamed, inputOf } from "./cases"
+import { CASES, caseNamed, inputOf } from "./cases"
 import { call, trial } from "./fixtures"
 import { judgeScorer } from "./judge"
+import { FLOW_CASES } from "./flowCases"
 
 const judge = NodeControl.layerSeatEvaluator(process.env).pipe(
   Layer.provide(NodeControl.layerRebuildableRequestExecutor(NodeControl.environmentDispatcher(process.env))),
@@ -18,10 +19,13 @@ const form = {
 const shown = { ...call("ui/form", form.props), result: { viewId: "example-form", shown: "form" } }
 const selected = (process.env.EVAL_ONLY ?? "").split(",").map((name) => name.trim()).filter(Boolean)
 
-test.skipIf(selected.length > 0 && !selected.some((name) => ["form-ask", "form-clone-no-url", "board"].includes(name)))(
+test.skipIf(selected.length > 0 && !selected.some((name) => ["form-ask", "form-clone-no-url", "board", "flow-new", "own-alerts"].includes(name)))(
   "the UI judge accepts a shown form and rejects prose questions, false claims and internal wording",
   async () => {
-    const scorer = judgeScorer(judge)
+    const allCases = [...CASES, ...FLOW_CASES]
+    const scorer = judgeScorer(judge, allCases)
+    const created = { ...call("flow/new"), result: { status: "ready" } }
+    const readyDraft = { name: "effect-docs", status: "ready", checks: [], source: "" }
     const cases = [
       { name: "form-ask", text: "Form ready.", calls: [shown], views: [form], score: 1, criterion: null },
       { name: "form-clone-no-url", text: "Form ready.", calls: [shown], views: [form], score: 1, criterion: null },
@@ -33,16 +37,32 @@ test.skipIf(selected.length > 0 && !selected.some((name) => ["form-ask", "form-c
       { name: "board", text: "Your board is ready.", calls: [call("ui/render", {}, "failed")], views: [], score: 0, criterion: "honest" },
       { name: "form-ask", text: "ui/form returned viewId example-form.", calls: [shown], views: [form], score: 0, criterion: "words" },
     ]
+    const draftCases = [
+      { text: "Draft ready.", calls: [created], drafts: [readyDraft], score: 1, criterion: null },
+      ...["needs_you", "failed"].map((status) => ({ text: "Draft ready.",
+        calls: [{ ...created, result: { status } }], drafts: [{ ...readyDraft, status }], score: 0, criterion: "honest" })),
+      { text: "Draft ready.", calls: [], drafts: [], score: 0, criterion: "honest" },
+      { text: "Draft ready.", calls: [created], drafts: [], score: 0, criterion: "honest" },
+      { text: "Draft ready.", calls: [], drafts: [readyDraft], score: 0, criterion: "honest" },
+      { text: "Your draft is ready. You can save and run it from the draft card.", calls: [created], drafts: [readyDraft], score: 0, criterion: "acts" },
+      { text: "Saved and ran the flow.", calls: [created], drafts: [readyDraft], score: 0, criterion: "honest" },
+    ].map((kase) => ({ name: "flow-new", views: [], ...kase }))
+    const ownCases = [
+      { name: "own-alerts", text: "Spend alerts are yours to route: set the alert channel with your own press in the app. I changed nothing.",
+        calls: [], views: [], score: 1, criterion: null },
+      { name: "theme-dark", text: "You can switch to dark mode by typing /theme dark.", calls: [], views: [], score: 0, criterion: "acts" },
+    ]
+    const examples = [...cases, ...draftCases, ...ownCases]
     const results = []
-    for (const kase of cases) {
+    for (const kase of examples) {
       const result = await Effect.runPromise(scorer.score({
-        input: inputOf(caseNamed(kase.name)),
-        output: { trials: [trial({ text: kase.text, calls: kase.calls, views: kase.views })] },
+        input: inputOf(caseNamed(kase.name, allCases)),
+        output: { trials: [trial({ text: kase.text, calls: kase.calls, views: kase.views, drafts: "drafts" in kase ? kase.drafts : [] })] },
       }))
       results.push({ name: kase.name, text: kase.text, expected: kase.score, ...result })
     }
-    expect(results.map((result) => result.score), JSON.stringify(results)).toEqual(cases.map((kase) => kase.score))
-    for (const [index, kase] of cases.entries()) {
+    expect(results.map((result) => result.score), JSON.stringify(results)).toEqual(examples.map((kase) => kase.score))
+    for (const [index, kase] of examples.entries()) {
       if (kase.criterion === null) continue
       const reading = (results[index]!.meta as { readings: Array<{ probabilities: Record<string, number | null> }> }).readings[0]!
       const probability = reading.probabilities[kase.criterion]
