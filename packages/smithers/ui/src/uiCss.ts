@@ -126,6 +126,9 @@ export const buttonCss = `
 .sui-button-sm { min-height:26px; padding:0 8px; font-size:12px; }
 .sui-button-lg { min-height:38px; padding:0 16px; }
 .sui-button-icon-size { min-height:${t.controlHeight}; width:32px; padding:0; }
+@media (max-width:960px) {
+  .sui-button { min-width:32px; min-height:32px; white-space:normal; }
+}
 `;
 
 /* -------------------------------------------------------------------------- */
