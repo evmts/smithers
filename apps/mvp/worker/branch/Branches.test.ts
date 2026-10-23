@@ -6,6 +6,7 @@ import { Effect, Layer, Option, Redacted } from "effect"
 import { HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
+import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Database from "../../db/Database.ts"
 import { CONVERSATION_NAMESPACE, MAX_TRACK_BODY_BYTES } from "../../src/features/branch/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
@@ -450,4 +451,34 @@ describe("POST /api/branches with create: a new branch", () => {
     expect((await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "maya/f", create: "yes" })).status).toBe(400)
     expect((await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "maya/f", create: false })).status).toBe(400)
   })
+})
+
+
+test.each(["existing", "new"] as const)("tracking a %s branch deleted before its access read returns not found", async (kind) => {
+  if (kind === "existing") {
+    const first = await open()
+    expect((await track(first, { owner: "octocat", name: "Spoon-Knife", ref: SENTINEL })).status).toBe(201)
+  }
+  const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  const database = Layer.effect(SqlClient.SqlClient, Effect.map(SqlClient.SqlClient, (sql) => new Proxy(sql, {
+    apply(target, receiver, args) {
+      const statement = Reflect.apply(target, receiver, args)
+      // Delete on the real database exactly between lookup/tracking and the permission read.
+      return Array.isArray(args[0]) && args[0].join("").includes('AS "anyShare"')
+        ? Effect.andThen(sql`UPDATE branches SET deleted_at = now() WHERE repo_id = 'github/octocat/spoon-knife'`, statement)
+        : statement
+    },
+  }))).pipe(Layer.provide(scratch.database))
+  const h = await open({ database })
+  expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: SENTINEL }))).toEqual([404, { code: "not_found" }])
+})
+
+test("tracking refuses a repository whose HEAD has no default branch", async () => {
+  const h = await open()
+  const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, "0")}${line}`
+  h.github.fail("GET", new Response(`${pkt("# service=git-upload-pack\n")}0000${pkt(`${shaOf("main")} HEAD\0multi_ack\n`)}0000`, {
+    headers: { "content-type": "application/x-git-upload-pack-advertisement" },
+  }))
+  expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: SENTINEL }))).toEqual([503, { code: "unavailable" }])
+  expect(await rows()).toEqual([])
 })
