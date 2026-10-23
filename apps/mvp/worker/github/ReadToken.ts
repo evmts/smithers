@@ -1,5 +1,5 @@
 import { GitHub } from "@smthrs/integrations"
-import { Clock, Config, Effect, Option, Redacted, Ref } from "effect"
+import { Clock, Config, Effect, Option, Redacted, Ref, Semaphore } from "effect"
 import type { HttpClient } from "effect/http"
 import { codeOf } from "../ErrorCode.ts"
 import * as GitHubConfig from "./Config.ts"
@@ -16,6 +16,8 @@ import * as GitHubConfig from "./Config.ts"
 //   until 5 minutes before it expires.
 // - neither: anonymous.
 //
+// Concurrent reads through the same token provider share one cache check and mint.
+//
 // An App token that can't be minted now leaves that read anonymous and logs `github.read_token` with GitHub's code; the
 // next read mints again.
 
@@ -30,11 +32,13 @@ export const fixed = (token: Option.Option<Redacted.Redacted<string>>): ReadToke
 
 /**
  * The App's installation token for `repository`, minted with `metadata: read` and narrowed to that repository, held in
- * this isolate until `REFRESH_BEFORE_MS` before it expires.
+ * this isolate until `REFRESH_BEFORE_MS` before it expires. One permit covers the check and mint so concurrent first
+ * reads use the same token instead of spending multiple installation-token requests.
  */
 export const fromApp = (app: GitHub.AppAuth.AppAuth, repository: { readonly owner: string; readonly name: string }) =>
   Effect.gen(function* () {
     const held = yield* Ref.make(Option.none<GitHub.AppAuth.InstallationToken>())
+    const gate = yield* Semaphore.make(1)
     const mint = Effect.gen(function* () {
       const installation = yield* app.installation(repository.owner, repository.name)
       const minted = yield* app.installationToken({
@@ -57,7 +61,7 @@ export const fromApp = (app: GitHub.AppAuth.AppAuth, repository: { readonly owne
       const now = yield* Clock.currentTimeMillis
       if (Option.isSome(current) && current.value.expiresAt - now > REFRESH_BEFORE_MS) return Option.some(current.value.token)
       return yield* mint
-    })
+    }).pipe(Semaphore.withPermits(gate, 1))
     return token
   })
 
