@@ -31,7 +31,7 @@ button.sui-avatar { margin:0; padding:0; border:0; font-family:inherit; cursor:p
 .sui-avatar-stack button.sui-avatar:focus-visible, .sui-avatar-more:focus-visible { outline:none; box-shadow:0 0 0 2px var(--sui-avatar-ring, ${t.background}), 0 0 0 4px ${t.ringBorder}; }
 .sui-avatar-more { width:auto; min-width:24px; padding:0 6px; background:${t.surface2}; color:${t.mutedForeground}; }
 @media (max-width:960px) {
-  button.sui-avatar { min-width:32px; min-height:32px; }
+  button.sui-avatar { min-width:32px; min-height:${t.controlHeight}; }
   .sui-avatar-stack { flex-wrap:wrap; gap:4px; }
   .sui-avatar-stack > li + li { margin-left:0; }
 }

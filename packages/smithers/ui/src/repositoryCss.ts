@@ -20,7 +20,7 @@ export const breadcrumbsCss = `
 .sui-breadcrumbs-link:hover { text-decoration:underline; }
 .sui-breadcrumbs-link:focus-visible { ${focusRing} }
 @media (max-width:960px) {
-  .sui-breadcrumbs-link { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }
+  .sui-breadcrumbs-link { display:inline-flex; align-items:center; min-height:${t.controlHeight}; min-width:32px; }
 }
 .sui-breadcrumbs-current { color:${t.foreground}; font-weight:650; overflow-wrap:anywhere; }
 `;
@@ -87,7 +87,7 @@ a.sui-repo-about-release-name:hover { color:${t.primary}; text-decoration:underl
 .sui-repo-about-people a:focus-visible { ${focusRing} }
 .sui-repo-about-avatar { display:block; width:28px; height:28px; border-radius:${t.radiusFull}; background:${t.muted}; }
 @media (max-width:960px) {
-  .sui-repo-about-people a { display:flex; align-items:center; justify-content:center; min-width:32px; min-height:32px; }
+  .sui-repo-about-people a { display:flex; align-items:center; justify-content:center; min-width:32px; min-height:${t.controlHeight}; }
 }
 .sui-repo-about-bar { display:flex; height:8px; overflow:hidden; border-radius:${t.radiusFull}; background:${t.muted}; }
 .sui-repo-about-bar > span { display:block; height:100%; }

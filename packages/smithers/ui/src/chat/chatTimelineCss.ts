@@ -5,7 +5,7 @@ export const chatTimelineCss = `
 .sui-timeline-disclosure{position:absolute;inset-inline-end:8px;top:0;z-index:4}
 .sui-timeline-disclosure>summary{cursor:pointer;font-size:11px;color:var(--text-muted,#665f54);padding:6px 8px;list-style:none}
 .sui-timeline-disclosure>summary::-webkit-details-marker{display:none}
-@media(max-width:960px){.sui-timeline-disclosure>summary{min-width:32px;min-height:32px;box-sizing:border-box;display:flex;align-items:center}}
+@media(max-width:960px){.sui-timeline-disclosure>summary{min-width:32px;min-height:${t.controlHeight};box-sizing:border-box;display:flex;align-items:center}}
 .sui-chat-timeline{width:190px;max-height:70vh;overflow:visible;scrollbar-width:thin;font-size:11px;font-weight:400;color:var(--text-muted,#665f54)}
 .sui-timeline-disclosure[open]{background:var(--surface,#fffefa);border:1px solid var(--border-solid,#e4ddcf);border-radius:${t.radius};box-shadow:${t.shadow2}}
 .sui-timeline-disclosure[open] .sui-chat-timeline{width:min(300px,80vw);padding:8px}

@@ -70,7 +70,7 @@ const repositoryCss = `
 .sui-repo-readme-name:hover { text-decoration:underline; }
 .sui-repo-readme-name:focus-visible { ${focusRing} }
 @media (max-width:960px) {
-  .sui-repo-readme-name { display:inline-flex; align-items:center; min-height:32px; }
+  .sui-repo-readme-name { display:inline-flex; align-items:center; min-height:${t.controlHeight}; }
 }
 .sui-repo-stats { min-width:0; font-variant-numeric:tabular-nums; }
 .sui-repo-file-actions { display:flex; align-items:center; gap:8px; margin-left:auto; }

@@ -37,6 +37,6 @@ export const flowGraphCss = `
 @media(max-width:640px) { .sui-flow-graph-viewport { height:330px; } }
 @media(max-width:960px) {
   .sui-flow-graph-tools { position:static; width:max-content; max-width:100%; margin:8px; }
-  .sui-journal-scrubber input { min-height:32px; }
+  .sui-journal-scrubber input { min-height:${t.controlHeight}; }
 }
 `;

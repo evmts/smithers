@@ -46,7 +46,7 @@ export const runPageCss = `
 .sui-waterfall-row[data-selected='true'] .sui-waterfall-label { color:${t.foreground}; font-weight:650; }
 .sui-waterfall-track { position:relative; display:block; height:14px; min-width:0; margin:0; padding:0; border:0; border-radius:${t.radiusControl}; background:${t.hoverSubtle}; font:inherit; }
 button.sui-waterfall-track { cursor:pointer; }
-@media (max-width:960px) { button.sui-waterfall-track { min-height:32px; } }
+@media (max-width:960px) { button.sui-waterfall-track { min-height:${t.controlHeight}; } }
 button.sui-waterfall-track:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; }
 .sui-waterfall-bar { position:absolute; top:3px; bottom:3px; min-width:2px; border-radius:${t.radiusFull}; background:${t.mutedForeground}; }
 .sui-waterfall-row[data-state='completed'] .sui-waterfall-bar { background:${t.success}; }
