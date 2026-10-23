@@ -850,10 +850,18 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     const limited = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
     expect(limited.status).toBe(503)
     expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0)
-    expect(await limited.json()).toEqual({ code: "unavailable" })
+    expect(await limited.json()).toEqual({ code: "rate_limited" })
+    expect(h.line("repo.about").at(-1)?.annotations).toMatchObject({
+      status: 503, errorCode: "rate_limited", stage: "tags", upstreamStatus: 403, rateLimited: 1,
+    })
     h.github.clear()
     h.github.fail("", "rate_limited")
-    expect((await h.fetch(aboutRoute("octocat", "Spoon-Knife"))).status).toBe(503)
+    const repositoryLimited = await h.fetch(aboutRoute("octocat", "Spoon-Knife"))
+    expect(repositoryLimited.status).toBe(503)
+    expect(await repositoryLimited.json()).toEqual({ code: "rate_limited" })
+    expect(h.line("repo.about").at(-1)?.annotations).toMatchObject({
+      status: 503, errorCode: "rate_limited", stage: "repository", upstreamStatus: 403, rateLimited: 1,
+    })
     h.github.clear()
     expect((await h.fetch(aboutRoute("octocat", "Spoon-Knife"))).status).toBe(200)
   })

@@ -104,6 +104,27 @@ describe("RepoAbout.read", () => {
     expect(github.calls).toEqual([])
   })
 
+  test("a failed read names the safe GitHub stage and status for diagnosis", async () => {
+    const github = scriptedGitHub()
+    github.publish("octocat", "Spoon-Knife", spoonKnife())
+    github.fail("/languages", "rate_limited")
+    const limited = await readOver(github)
+    expect(limited._tag === "Failure" && limited.failure).toMatchObject({
+      code: "unavailable", stage: "languages", upstreamStatus: 403, rateLimited: true,
+    })
+    github.fail("/languages", 429)
+    const limitedByStatus = await readOver(github)
+    expect(limitedByStatus._tag === "Failure" && limitedByStatus.failure).toMatchObject({
+      code: "unavailable", stage: "languages", upstreamStatus: 429, rateLimited: true,
+    })
+    github.fail("/languages", 404)
+    github.fail("", 502)
+    const unavailable = await readOver(github)
+    expect(unavailable._tag === "Failure" && unavailable.failure).toMatchObject({
+      code: "unavailable", stage: "repository", upstreamStatus: 502, rateLimited: false,
+    })
+  })
+
   test("the settings: GitHub's token only when set and not blank, the API URL, the App and the window", async () => {
     const read = (values: Record<string, string>) =>
       Effect.runPromise(

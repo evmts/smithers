@@ -420,13 +420,16 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               })
             }),
             Effect.catchTag("AboutRefused", (refused) => {
-              fields.errorCode = refused.code
+              fields.errorCode = refused.rateLimited ? "rate_limited" : refused.code
+              if (refused.stage !== undefined) fields.stage = refused.stage
+              if (refused.upstreamStatus !== undefined) fields.upstreamStatus = refused.upstreamStatus
+              if (refused.rateLimited !== undefined) fields.rateLimited = refused.rateLimited ? 1 : 0
               return Effect.succeed(
                 refused.code === "not_found"
                   ? refuse(404, "not_found")
                   : refuse(
                     503,
-                    "unavailable",
+                    refused.rateLimited ? "rate_limited" : "unavailable",
                     {},
                     refused.retryAfterMillis === undefined
                       ? {}

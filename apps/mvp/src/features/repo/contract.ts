@@ -66,8 +66,9 @@ export type CapacityReason = (typeof CAPACITY_REASONS)[number]
 /**
  * The refusal codes RepoApi answers with, as `{ code }`: `invalid` (400), `authentication` (401, cloning needs sign-in),
  * `forbidden` (403, cloning needs the Member role or above), `not_found` (404), `too_large` (413, with `size` for a
- * file), `repository_limit` (429), `capacity` (503, the read budget is spent), `unavailable` (503, with `Retry-After`
- * when Code Storage said when) and `not_configured` (503, no Code Storage organization).
+ * file), `repository_limit` (429), `capacity` (503, the read budget is spent), `rate_limited` (503, GitHub's
+ * public About limit), `unavailable` (503, with `Retry-After` when the upstream said when) and
+ * `not_configured` (503, no Code Storage organization).
  */
 export const REFUSALS = [
   "invalid",
@@ -77,6 +78,7 @@ export const REFUSALS = [
   "too_large",
   "repository_limit",
   "capacity",
+  "rate_limited",
   "unavailable",
   "not_configured",
 ] as const

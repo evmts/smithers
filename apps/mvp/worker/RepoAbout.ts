@@ -24,9 +24,15 @@ import * as ReadToken from "./github/ReadToken.ts"
 // whole read fails and nothing is cached.
 
 /** Why the about read couldn't answer: GitHub has no such public repository, or it couldn't answer now. */
+export type AboutStage = "repository" | "languages" | "release" | "releases" | "contributors" |
+  "contributor_count" | "readme" | "root" | "commits" | "branches" | "tags" | "home"
+
 export class AboutRefused extends Data.TaggedError("AboutRefused")<{
   readonly code: "not_found" | "unavailable"
   readonly retryAfterMillis?: number
+  readonly stage?: AboutStage
+  readonly upstreamStatus?: number
+  readonly rateLimited?: boolean
 }> {}
 
 /** How the about read reaches GitHub, and where the Smithers App is installed. */
@@ -110,19 +116,30 @@ const CommitJson = Schema.Struct({
 })
 const decodeCommit = Schema.decodeUnknownOption(CommitJson)
 
+/** GitHub's finite rate-limit signal, whether explicit or its 429 status. */
+const isRateLimited = (error: Core.IntegrationError.IntegrationError): boolean =>
+  error.details?.["rateLimited"] === true || error.details?.["status"] === 429
+
 /** A refusal the whole read fails with: a rate limit, with GitHub's wait, or anything else as `unavailable`. */
-const refusedBy = (error: Core.IntegrationError.IntegrationError): AboutRefused => {
+const refusedBy = (error: Core.IntegrationError.IntegrationError, stage: AboutStage): AboutRefused => {
   const wait = error.details?.["retryAfterMillis"]
-  return new AboutRefused(typeof wait === "number" ? { code: "unavailable", retryAfterMillis: wait } : { code: "unavailable" })
+  const status = error.details?.["status"]
+  return new AboutRefused({
+    code: "unavailable",
+    stage,
+    ...(typeof wait === "number" ? { retryAfterMillis: wait } : {}),
+    ...(typeof status === "number" ? { upstreamStatus: status } : {}),
+    rateLimited: isRateLimited(error),
+  })
 }
 
 /**
  * An optional part: its answer, or `null` when GitHub refused it for any reason but a rate limit, which fails the
  * read so nothing partial is cached for the hour.
  */
-const optional = <A>(part: Effect.Effect<A, Core.IntegrationError.IntegrationError>): Effect.Effect<A | null, AboutRefused> =>
+const optional = <A>(stage: AboutStage, part: Effect.Effect<A, Core.IntegrationError.IntegrationError>): Effect.Effect<A | null, AboutRefused> =>
   part.pipe(
-    Effect.catch((error) => error.details?.["rateLimited"] === true ? Effect.fail(refusedBy(error)) : Effect.succeed(null)),
+    Effect.catch((error) => isRateLimited(error) ? Effect.fail(refusedBy(error, stage)) : Effect.succeed(null)),
   )
 
 /** An `http(s)` homepage, trimmed; anything else is none. */
@@ -163,29 +180,31 @@ const headOf = (first: unknown): AboutCommit | null =>
 export const read = (client: GitHub.GitHubClient.GitHubClient, owner: string, name: string, appSlug: string) =>
   Effect.gen(function* () {
     const path = yield* GitHub.Repository.requireRepositoryPath(owner, name).pipe(
-      Effect.mapError(() => new AboutRefused({ code: "not_found" })),
+      Effect.mapError(() => new AboutRefused({ code: "not_found", stage: "repository" })),
     )
     const base = `/repos/${path}`
     const repository = yield* client.request("GET", base, undefined, { schema: RepositoryJson }).pipe(
-      Effect.mapError((error) => error.details?.["status"] === 404 ? new AboutRefused({ code: "not_found" }) : refusedBy(error)),
+      Effect.mapError((error) => error.details?.["status"] === 404
+        ? new AboutRefused({ code: "not_found", stage: "repository", upstreamStatus: 404 })
+        : refusedBy(error, "repository")),
     )
-    if (repository.private === true) return yield* new AboutRefused({ code: "not_found" })
+    if (repository.private === true) return yield* new AboutRefused({ code: "not_found", stage: "repository" })
     const [languages, release, releases, contributors, contributorCount, readme, root, commits, branches, tags] =
       yield* Effect.all(
         [
-          optional(client.request("GET", `${base}/languages`, undefined, { schema: LanguagesJson })),
-          optional(client.request("GET", `${base}/releases/latest`, undefined, { schema: ReleaseJson })),
-          optional(client.count(`${base}/releases`)),
-          optional(client.request("GET", `${base}/contributors`, undefined, {
+          optional("languages", client.request("GET", `${base}/languages`, undefined, { schema: LanguagesJson })),
+          optional("release", client.request("GET", `${base}/releases/latest`, undefined, { schema: ReleaseJson })),
+          optional("releases", client.count(`${base}/releases`)),
+          optional("contributors", client.request("GET", `${base}/contributors`, undefined, {
             schema: ContributorsJson,
             query: { per_page: ABOUT_CONTRIBUTORS },
           })),
-          optional(client.count(`${base}/contributors`)),
-          optional(client.request("GET", `${base}/readme`, undefined, { schema: ReadmeJson })),
-          optional(client.request("GET", `${base}/contents/`, undefined, { schema: ContentsJson })),
-          optional(client.count(`${base}/commits`)),
-          optional(client.count(`${base}/branches`)),
-          optional(client.count(`${base}/tags`)),
+          optional("contributor_count", client.count(`${base}/contributors`)),
+          optional("readme", client.request("GET", `${base}/readme`, undefined, { schema: ReadmeJson })),
+          optional("root", client.request("GET", `${base}/contents/`, undefined, { schema: ContentsJson })),
+          optional("commits", client.count(`${base}/commits`)),
+          optional("branches", client.count(`${base}/branches`)),
+          optional("tags", client.count(`${base}/tags`)),
         ] as const,
         { concurrency: "unbounded" },
       )
@@ -199,7 +218,7 @@ export const read = (client: GitHub.GitHubClient.GitHubClient, owner: string, na
     const readmeBody = readme === null ? null : readmeText(readme)
     const head = commits === null ? null : headOf(commits.first)
     // The repository's own home at that very commit, so a page before the clone draws the home the clone will have.
-    const home = head === null ? null : yield* optional(
+    const home = head === null ? null : yield* optional("home",
       client.request("GET", `${base}/contents/${Home.path}`, undefined, { schema: ReadmeJson, query: { ref: head.sha } }),
     )
     return {
