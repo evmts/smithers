@@ -19,10 +19,34 @@ export type Row = {
   created_at?: string
 }
 
-type ShapeMessage = {
+type ShapeMessage<A = Row> = {
   key?: string
-  value?: Partial<Row>
+  value?: Partial<A>
   headers: { operation?: "insert" | "update" | "delete"; control?: string }
+}
+
+/** A complete snapshot, through the real shape endpoint; a first HTTP chunk is not the whole shape. */
+export const shapeRows = async <A extends object>(request: APIRequestContext, path: string): Promise<Array<A>> => {
+  const rows = new Map<string, A>()
+  const query = new URLSearchParams({ offset: "-1" })
+  for (let page = 0; page < 1_000; page++) {
+    const response = await request.get(`${path}${path.includes("?") ? "&" : "?"}${query}`)
+    expect(response.status(), `${path} serves a complete fixture snapshot`).toBe(200)
+    const messages = await response.json() as Array<ShapeMessage<A>>
+    for (const message of messages) {
+      if (message.key === undefined) continue
+      if (message.headers.operation === "delete") rows.delete(message.key)
+      else if (message.headers.operation !== undefined) rows.set(message.key, { ...rows.get(message.key), ...message.value } as A)
+    }
+    const headers = response.headers()
+    // The protocol control closes the snapshot; HTTP metadata alone must not discard later chunks.
+    if (messages.some((message) => message.headers.control === "up-to-date")) return [...rows.values()]
+    expect(headers["electric-offset"], "a snapshot continuation needs an offset").toBeTruthy()
+    expect(headers["electric-handle"], "a snapshot continuation needs a handle").toBeTruthy()
+    query.set("offset", headers["electric-offset"]!)
+    query.set("handle", headers["electric-handle"]!)
+  }
+  throw new Error(`${path} did not finish its fixture snapshot`)
 }
 
 // Every row of Postgres `messages`, in `position` order, read the way devices read them: Electric's shape through

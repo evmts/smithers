@@ -5,7 +5,8 @@ import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
 import { recordActions, writeManifest } from "./fixtures"
 import { desktopBaseline } from "./mobile-baseline"
 import { openComposer } from "./composer"
-import { baseURL, requires, scriptedAgent, target, writeHeaders, me, stackRepository } from "./target"
+import { shapeRows } from "./shape"
+import { baseURL, requires, scriptedAgent, target, writeHeaders, me, stackRepository, syncedRepository, ownPlace } from "./target"
 
 // Real pages and services. Persist a structured audit even when several checks fail,
 // so the first run is the red receipt for each subsequent layout change.
@@ -20,7 +21,18 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
     const errors: string[] = []
     const docsReads: Array<{ status: number; code?: string; reason?: string }> = []
     const reads: Array<Promise<void>> = []
+    const shapes: Array<{ shape: string; status: number; rows?: number; complete?: boolean }> = []
     page.on("response", (response) => {
+      const url = new URL(response.url())
+      if (url.pathname.startsWith("/api/shapes/") && url.searchParams.get("live") !== "true") {
+        reads.push((async () => {
+          const body = await response.json().catch(() => undefined) as Array<{ headers?: { operation?: string; control?: string } }> | undefined
+          shapes.push({ shape: url.pathname, status: response.status(), ...(Array.isArray(body) ? {
+            rows: body.filter((message) => message.headers?.operation !== undefined).length,
+            complete: body.some((message) => message.headers?.control === "up-to-date"),
+          } : {}) })
+        })())
+      }
       if (!new URL(response.url()).pathname.startsWith("/api/repos/smithersai/vibelang/docs")) return
       reads.push((async () => {
         const receipt: { status: number; code?: string; reason?: string } = { status: response.status() }
@@ -37,6 +49,8 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
     await use()
     if (info.status === "skipped") return
     await Promise.all(reads)
+    await writeFile(info.outputPath("shape-reads.json"), JSON.stringify(shapes, null, 2))
+    await info.attach("shape-reads", { path: info.outputPath("shape-reads.json"), contentType: "application/json" })
     await writeFile(info.outputPath("docs-reads.json"), JSON.stringify(docsReads, null, 2))
     await info.attach("docs-reads", { path: info.outputPath("docs-reads.json"), contentType: "application/json" })
     await writeFile(info.outputPath("page-errors.json"), JSON.stringify(errors, null, 2))
@@ -204,9 +218,16 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             if (files) requires("codeStorage", "member")
             await test.step(`Open ${screen.name}`, async () => {
               if (screen.name === "conversations" && signedIn) {
-                requires("member")
-                await page.goto("/octocat/Spoon-Knife/tree/test-branch")
+                requires("member", "ownConversation")
+                await page.goto(ownPlace()?.path ?? "/octocat/Spoon-Knife/tree/test-branch")
                 await expect(page.getByRole("navigation", { name: "Branch" })).toBeVisible({ timeout: 30_000 })
+                await expect.poll(async () => {
+                  const rows = await shapeRows<{ conversation_id: string; owner: string; repo: string; branch: string; archived_at: string | null }>(page.request, "/api/shapes/my-conversations")
+                  const place = ownPlace()
+                  return rows.some((row) => row.archived_at === null && (place === undefined
+                    ? row.owner.toLowerCase() === "octocat" && row.repo.toLowerCase() === "spoon-knife" && row.branch === "test-branch"
+                    : row.conversation_id === place.conversationId))
+                }, { timeout: 30_000, message: "the opened branch must be recorded in this person's conversation shape" }).toBe(true)
               }
               if (files) {
                 test.setTimeout(180_000)
@@ -226,11 +247,15 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
                 }, { timeout: 120_000, message: "the Code Storage mirror must have main before file layout coverage" }).toMatchObject({
                   status: 200, branches: expect.arrayContaining([expect.objectContaining({ name: "main" })]),
                 })
+                await expect.poll(async () => (await shapeRows<{ id: string; status: string }>(request, "/api/shapes/repositories"))
+                  .find((row) => row.id === "github/octocat/spoon-knife")?.status,
+                { timeout: 30_000, message: "the finished clone must reach the repositories shape before file layout coverage" }).toBe("ready")
               }
               await page.goto(screen.path)
               const ready = screen.name === "terminal" && !signedIn ? ".branch-screen-view" : screen.ready
               await expect(page.locator(ready).first()).toBeVisible({ timeout: 30_000 })
-              if (screen.name === "conversations" && signedIn) await expect(page.getByRole("list", { name: "Conversations" }).getByRole("link").first()).toBeVisible({ timeout: 30_000 })
+              if (screen.name === "conversations" && signedIn) await expect(page.getByRole("list", { name: "Conversations" })
+                .locator(`a[href="${ownPlace()?.path ?? "/octocat/Spoon-Knife/tree/test-branch"}"]`)).toBeVisible({ timeout: 30_000 })
               if (screen.name === "secrets" && signedIn && me().role === "admin") await expect(page.getByRole("form", { name: "Add secret" })).toBeVisible({ timeout: 30_000 })
               if (screen.name === "repo-settings" && signedIn && ["admin", "maintainer"].includes(me().role ?? "")) await expect(page.getByRole("region", { name: "Domains" })).toBeVisible({ timeout: 30_000 })
               if (screen.name === "doc-page") await expect(page.getByRole("heading", { name: "Retrying", exact: true }).first()).toBeVisible({ timeout: 60_000 })
@@ -248,6 +273,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           await audit(page, info)
         })
         if (signedIn) test("flow draft and code: controls and text fit", async ({ page }, info) => {
+          requires("member")
           const name = `mobile-${crypto.randomUUID()}`
           const draftId = crypto.randomUUID()
           const source = renderSource({ name, description: "Mobile layout", instructions: "Answer ready.", flows: [] })
@@ -255,10 +281,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             scope: "person", round: 0, request: "Answer ready.", name, status: "ready", summary: "Mobile layout",
             files: [{ path: SOURCE_PATH, text: source }], checks: [{ check: "parses", ok: true }], questions: [], failure: null, flowId: null,
           } })).ok()).toBe(true)
+          await expect.poll(async () => (await shapeRows<{ id: string; status: string }>(page.request, "/api/shapes/flow-drafts"))
+            .find((row) => row.id === draftId)?.status,
+          { timeout: 30_000, message: "the ready draft must reach its person's shape before layout coverage" }).toBe("ready")
           await page.goto(`/app/flows/drafts/${draftId}`)
           const save = page.getByRole("button", { name: "Save", exact: true })
-          await expect.soft(save, "the persisted draft must load before layout coverage counts").toBeVisible({ timeout: 30_000 })
-          if (await save.isVisible()) await audit(page, info, "flow-draft")
+          await expect(save, "the persisted draft must load before layout coverage counts").toBeVisible({ timeout: 30_000 })
+          await audit(page, info, "flow-draft")
           const saved = await page.request.post("/api/flows/save", { headers: writeHeaders(), data: { draftId, name, description: "Mobile layout", source, digest: digestSync(source) } })
           expect(saved.ok()).toBe(true)
           const { flowId } = await saved.json() as { flowId: string }
@@ -271,8 +300,12 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           }
         })
         for (const kind of ["issues", "pulls"] as const) test(`${kind} detail: a synced item and its tabs fit`, async ({ page }, info) => {
-          requires("githubApp")
-          const repository = process.env.E2E_SYNCED_REPOSITORY ?? "smithersai/smithers"
+          requires("githubApp", "syncedRepository")
+          const repository = syncedRepository()
+          const repoId = `github/${repository}`.toLowerCase()
+          await expect.poll(async () => (await shapeRows<{ repo_id: string; kind: string; deleted_at: string | null }>(page.request, "/api/shapes/items"))
+            .filter((row) => row.repo_id === repoId && row.kind === (kind === "issues" ? "issue" : "pull") && row.deleted_at === null).length,
+          { timeout: 30_000, message: `the server must sync a real ${kind} fixture for ${repository}; an empty projection is a product failure` }).toBeGreaterThan(0)
           await page.goto(`/${repository}/${kind}`)
           const prefix = kind === "issues" ? "issues" : "pull"
           const item = page.locator(`a[href^="/${repository}/${prefix}/"]`).filter({ hasNotText: "New issue" }).first()

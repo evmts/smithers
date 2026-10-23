@@ -220,6 +220,11 @@ const needs = {
       (/^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_STACK_REPOSITORY ?? "") && !/^smithersai\//i.test(run.env.E2E_STACK_REPOSITORY!)),
     reason: "it commits and drops TODOs: locally on octocat/Spoon-Knife; a deployment needs E2E_STACK_REPOSITORY naming a writable scratch repository with stack shapes and repository membership, never a smithersai one",
   },
+  syncedRepository: {
+    met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_SYNCED_REPOSITORY ?? ""),
+    reason: "it needs existing synced issues and pull requests: set E2E_SYNCED_REPOSITORY to the deployment's synced public owner/name; an empty or unfinished sync fails the fixture check",
+    blocked: true,
+  },
   liveModel: {
     met: (run) =>
       run.target === "deployment" || set(run, MODEL_KEY) || dotEnvSets(run.env.E2E_DOT_ENV ?? DOT_ENV, MODEL_KEY),
@@ -457,4 +462,10 @@ export const scratchRepository = () => {
 export const stackRepository = (run: Run = thisRun) => {
   guard("writableStack", run)
   return run.target === "local" ? "octocat/Spoon-Knife" : run.env.E2E_STACK_REPOSITORY!
+}
+
+/** The explicitly selected repository whose real synced items this run reads. */
+export const syncedRepository = (run: Run = thisRun) => {
+  guard("syncedRepository", run)
+  return run.env.E2E_SYNCED_REPOSITORY!
 }

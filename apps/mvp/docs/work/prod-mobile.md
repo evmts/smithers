@@ -7,6 +7,109 @@ updated: 2026-10-23
 links: [./mobile-responsiveness-sweep.md, ../features/files.md, ../features/conversations.md]
 ---
 
+## Round 2 — production 93ac5778
+
+Started from main@origin 9fd0c0cb. Library catalog: existing
+`@smthrs/effect-electric`, `@smthrs/effect-tanstack-db` and `@smthrs/ui`.
+This repairs existing core route state and test infrastructure; no new feature,
+dependency, persisted schema or public SDK API. No push or deployment.
+
+Classification from `evidence/prod-mobile-2/results/*/error-context.md`:
+
+- Issues: missing product data, not a locator mismatch. Failed snapshots show
+  zero counts/No issues, or unknown counts with no rows. The numeric-link
+  locator is valid and succeeded for other cases in this same run. There is
+  no evidence here that migration 0048 or decision 0079 erased the projection.
+- Pulls: one reproduced product bug plus missing browser rows. A direct visit
+  left the shared issues sync-status query on an empty/previous repository.
+  `pulls.open` now updates that repository. The real Postgres/Electric test
+  failed waiting for loading=false, then passed, including switching to an
+  unsynced repository. This fixes the incorrect loading state; it does not
+  establish a repair of the missing pull rows.
+- Files: product delivery discrepancy. The mirror's refs were ready, but the
+  signed-in snapshots said Not cloned, with no file article. The spec now
+  confirms the ready server repositories-shape row as well as refs. It still
+  requires the actual article and every layout assertion. A real SQLite,
+  Postgres and Electric projection/reload test passes locally; it invokes no
+  forge or Code Storage stand-in and does not claim live file-read coverage.
+- Conversations: missing/stalled product data; the snapshots show neither a
+  list nor the loaded empty state. The spec also relied on a shared fixed
+  branch. It now requires the configured private test conversation, confirms
+  its unarchived row in the server shape, then requires that exact list link.
+- Draft: product delivery discrepancy, not a Save locator issue. The API
+  accepted the ready draft, but the snapshot contains only the page header.
+  A fresh persisted device loads the same API-created draft locally. The spec
+  declares Member, confirms its ready server row, and makes Save a hard gate.
+
+The mobile detail prerequisite explicitly requires E2E_SYNCED_REPOSITORY;
+missing configuration blocks the summary instead of permitting a green skip.
+Astra identified that missing blocked flag; the new summary regression was red
+before the flag and green after. The complete snapshot helper follows every
+chunk and folds inserts/updates/deletes. Its integration test uses real
+Postgres/Electric and a 24 MB, 3,000-row shape, plus real upstream refusals.
+Browser `shape-reads.json` attaches endpoint, status, change count and completion
+only; no row values, parameters or credentials. Every layout audit stays strict.
+
+Read-only public production investigation on 2026-10-23 (no browser, sign-in,
+test runner, assertions or writes): completed shapes currently contain 3,840
+present issues and five present pulls on smithersai/smithers; Spoon-Knife's
+repository row is ready with a head. The actual app schemas decode all 3,845
+items and 17 repositories. The same collections persist in local real SQLite
+in 3.7 s and 0.9 s. These are current receipts, not proof of what those shapes
+returned during the earlier sweep or a reproduction of its browser hydration.
+Counts-only logs: /tmp/prod-mobile-2-public-{shapes,decode,persist}.log.
+
+Local test infrastructure corrections: repository harnesses now honor
+TEST_ELECTRIC_PORT; Node repository tabs isolate Electric's URL replay cache
+per browser realm, matching the existing ChatApi fixture. A full investigation
+run passed 56 tests but timed out in the pre-existing Copy permalink wait; that
+case and the persisted-device regression both passed on a focused rerun.
+After isolating the run from concurrent suites, the whole repository file passed
+24/24 without changing its waits. The fault file passed 18/18 in the earlier
+combined run; flows/conversations passed 33/33. Earlier combined runs' timing
+failures remain recorded rather than being called product fixes.
+
+Final validation (Node 26.5.0; isolated Postgres 55489 / Electric 30189):
+
+- `pnpm install --frozen-lockfile`: pass.
+- `pnpm --dir apps/mvp run typecheck`: all four projects pass.
+- `pnpm exec smithers-build test '//apps/mvp:importRules'`: pass.
+- `vitest run src/features/pulls/pulls.test.ts
+  --coverage.include=src/features/pulls/actions.ts`: 7 pass, changed product
+  module 100% statements, branches, functions and lines. Red and green receipts:
+  /tmp/prod-mobile-2-pulls-{red-isolated,green}.log.
+- `vitest run e2e/shape.test.ts e2e/target.test.ts e2e/summary.test.ts
+  tests/MobileLayout.browser.test.ts --coverage.enabled=false --maxWorkers=1`:
+  64 pass (/tmp/prod-mobile-2-specs-seeded.log). Missing-config summary test's
+  red receipt: /tmp/prod-mobile-2-missing-fixture-red.log.
+- `vitest run src/features/repo/repo.test.ts --coverage.enabled=false
+  --maxWorkers=1 --reporter=verbose`: 24 pass
+  (/tmp/prod-mobile-2-repo-quiescent.log). The other local full-file receipts
+  are /tmp/prod-mobile-2-sync-final.log and
+  /tmp/prod-mobile-2-repo-suite-final.log; their earlier timing failures are
+  not hidden. The independent ready-draft regression passed before any
+  production behavior change.
+- `playwright test mobile.spec.ts --list`: 153 local cases compile/list. No
+  complete local mobile journey ran; live Code Storage/model prerequisites
+  are not configured in this clone. Production e2e was deliberately not run.
+- Optional explicit coverage of the existing e2e utilities still fails their
+  whole-module 100% gate (target.ts and shape.ts include unrelated unexecuted
+  Playwright helpers; the previous round records the baseline). Those modules
+  are normally outside the app's coverage include list. No gate, threshold
+  or production exclusion changed. Product action coverage above passes.
+- Astra final read-only review: no remaining actionable findings.
+
+Remaining blocker: the original signed-in browser's shape statuses, completion
+and hydration records were not included in the supplied evidence. No speculative
+fallback, wider access, longer layout timeout or data-dependent skip was added.
+The next authorized mobile run's receipts separate server absence from browser
+hydration. Public shapes and local layers now pass; the original browser data
+loss is not claimed fixed. Astra review complete; no Fable executable is
+available in this session. Production e2e was not run. No public API change
+requires docs:sync or a changeset.
+
+## Previous round
+
 Implemented against main@origin eeb01ea4. Library catalog entries: @smthrs/ui
 and @smthrs/repo-view; existing core rendering and test infrastructure only, no
 new dependency, plugin feature or public API. No push or deployment.

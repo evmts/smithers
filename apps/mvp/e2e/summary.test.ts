@@ -67,6 +67,12 @@ describe("a test's outcome", () => {
 })
 
 describe("the run's summary", () => {
+  it("cannot pass mobile detail coverage without a configured synced repository", () => {
+    const summary = summarize([ended({ file: "/e/mobile.spec.ts", title: "issues detail", outcome: "skipped",
+      annotations: [skip(describeNeed("syncedRepository"))] })])
+    expect(summary.passed).toBe(false)
+    expect(summary.total.blocked).toBe(1)
+  })
   const run = [
     ended({ file: "/e/chat.spec.ts", title: "ask" }),
     ended({ file: "/e/chat.spec.ts", title: "reload", outcome: "skipped", annotations: [skip(describeNeed("member"))] }),

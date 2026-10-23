@@ -21,6 +21,7 @@ import {
   type Run,
   scriptedAgent,
   stackRepository,
+  syncedRepository,
   sessionFiles,
   targetOf,
   UndeclaredNeed,
@@ -34,6 +35,27 @@ const local: Run = {
 const deployedAs = (role: ReturnType<Run["role"]>, env: Run["env"] = {}): Run => ({ target: "deployment", role: () => role, env })
 
 describe("the target", () => {
+  it("requires an explicitly named repository for synced item coverage", () => {
+    for (const value of [undefined, "", "smithers", "a/b/c", "/a/b", "a/b?x=1"]) {
+      const run = deployedAs("member", { E2E_SYNCED_REPOSITORY: value })
+      expect(NEEDS.syncedRepository.met(run)).toBe(false)
+      expect(() => syncedRepository(run)).toThrow(UndeclaredNeed)
+    }
+    const run = deployedAs("member", { E2E_SYNCED_REPOSITORY: "smithersai/smithers" })
+    expect(NEEDS.syncedRepository.met(run)).toBe(true)
+    expect(syncedRepository(run)).toBe("smithersai/smithers")
+    expect(NEEDS.syncedRepository.met(local)).toBe(false)
+    const previous = process.env.E2E_SYNCED_REPOSITORY
+    try {
+      delete process.env.E2E_SYNCED_REPOSITORY
+      expect(() => syncedRepository()).toThrow(UndeclaredNeed)
+      process.env.E2E_SYNCED_REPOSITORY = "smithersai/smithers"
+      expect(syncedRepository()).toBe("smithersai/smithers")
+    } finally {
+      if (previous === undefined) delete process.env.E2E_SYNCED_REPOSITORY
+      else process.env.E2E_SYNCED_REPOSITORY = previous
+    }
+  })
   it("is local without BASE_URL, and for this machine's dev server on any port, over https or http", () => {
     expect(targetOf({})).toBe("local")
     expect(targetOf({ BASE_URL: "https://localhost:1443" })).toBe("local")
@@ -101,6 +123,7 @@ describe("needs", () => {
       "alertProviders",
       "oldBuild",
       "githubSignIn",
+      "syncedRepository",
       "liveModel",
       "factoryRepository",
       "githubScratch",
@@ -274,9 +297,9 @@ describe("needs", () => {
     expect(() => NEEDS.member.met(run)).toThrow("no identity")
   })
 
-  it("each say why, and only a role need blocks the run", () => {
+  it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["syncedRepository", "member", "ownConversation", "maintainer"])
   })
 })
 
