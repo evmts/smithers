@@ -67,7 +67,7 @@ export function IssuesScreen() {
           session !== undefined && mayChange(session, confirmed),
           (number) => void navigate({ href: todos.actions.fromIssue(owner, repo, number) }),
         )}
-        loading={list.loading}
+        unknown={list.unknown}
         href={(issue) => (issue.number === null ? undefined : issuePath(owner, repo, issue.number))}
         onNavigate={(_, href) => void navigate({ href })}
         actions={session !== undefined && mayWrite(session, confirmed)

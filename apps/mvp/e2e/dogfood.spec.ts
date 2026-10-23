@@ -1,6 +1,7 @@
 import { expect, type Page, test, type TestInfo } from "@playwright/test"
 import { recordActions, step, themeOf, writeManifest } from "./fixtures"
 import { me, requires } from "./target"
+import { github } from "./github"
 
 // The dogfood loop (docs/work/dogfood-loop.md): Smithers builds Smithers on the deployment. A Member opens a real
 // low-priority issue on smithersai/smithers through the app, makes two TODOs from it, the TODOs' runs open stacked pull
@@ -65,19 +66,6 @@ test.beforeEach(async ({ page }, info) => {
 test.afterEach(async ({}, info) => {
   await writeManifest(info, "flow.json", started.get(info) ?? Date.now(), [{ name: "Maya", video: "video.webm", openedAt: 0 }])
 })
-
-/**
- * GitHub's own answer for `path` on its public API: the truth the loop is checked against, never the app's. With
- * `E2E_GITHUB_TOKEN` set, read as that token (5,000 calls an hour); without, anonymously (60 an hour per address).
- */
-const github = async <A>(page: Page, path: string): Promise<A> => {
-  const token = process.env.E2E_GITHUB_TOKEN ?? ""
-  const response = await page.request.get(`https://api.github.com${path}`, {
-    headers: { accept: "application/vnd.github+json", ...(token === "" ? {} : { authorization: `Bearer ${token}` }) },
-  })
-  expect(response.status(), `GitHub's ${path}`).toBe(200)
-  return (await response.json()) as A
-}
 
 /**
  * The open issue the test account opened with the loop's title, newest first; none before step 1. GitHub's issue list,

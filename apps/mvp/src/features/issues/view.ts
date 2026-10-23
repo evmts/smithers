@@ -86,9 +86,9 @@ export const refusedOf = (access: { readonly status: string } | undefined): Refu
   access?.status === "sign_in" || access?.status === "forbidden" ? access.status : undefined
 
 /**
- * The list page: its issues, whether it is loading (no complete sync of the repository yet and no issue from GitHub:
- * never "No issues" before the first complete sync, and never loading once the shape refused this person), why it was
- * refused, and the new issues that weren't sent.
+ * The list page: device rows, unknown counts until a complete sync or GitHub row arrives, the shape's refusal,
+ * and writes that weren't sent. Unknown lists show neither a spinner (ARCH-5) nor "No issues"; decision 0079
+ * defers syncing other repositories, whose local writes remain visible without promising an active sync.
  */
 export const listProps = (
   rows: ReadonlyArray<ListRow>,
@@ -98,7 +98,7 @@ export const listProps = (
 ) => ({
   refused: refusedOf(access),
   issues: rows.map((row) => issueOf(row, triageOn)),
-  loading: refusedOf(access) === undefined && synced === undefined && rows.every((row) => row.local === 1),
+  unknown: refusedOf(access) === undefined && synced === undefined && rows.every((row) => row.local === 1),
   notSent: rows
     .filter((row) => row.pending === "not_sent")
     .map((row): NotSent => ({ id: row.id, title: row.title, reason: reasonText(row.reason) })),

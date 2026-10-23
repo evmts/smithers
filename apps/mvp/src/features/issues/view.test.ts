@@ -54,6 +54,15 @@ const mine = (id: string, pending: string, reason: unknown = ""): ListRow => ({
 })
 
 describe("the list", () => {
+  test("an unsynced second repository stays usable without a loading state or false empty counts", () => {
+    for (const rows of [[], [mine("second-repo", "requested")]]) {
+      const props = listProps(rows, undefined, { status: "allowed" })
+      expect(props).toMatchObject({ unknown: true })
+      expect(props).not.toHaveProperty("loading")
+      expect(props.issues).toEqual(rows.map((row) => issueOf(row)))
+    }
+  })
+
   test("GitHub's rows as they are; this device's own as #– with their chip; Not sent ones with why", () => {
     expect(listProps([mine("a", "not_sent", "conflict"), mine("b", "requested"), synced], { syncedAt: "x" })).toEqual({
       issues: [
@@ -70,18 +79,18 @@ describe("the list", () => {
           triage: "accepted",
         },
       ],
-      loading: false,
+      unknown: false,
       notSent: [{ id: "a", title: "Mine a", reason: "Conflict" }],
     })
     // GitHub no longer has the author's account.
     expect(issueOf({ ...synced, author: "", state: "open" })).toMatchObject({ author: undefined, state: "open" })
   })
 
-  test("loading until the first complete sync, unless GitHub's rows are here already; never 'No issues' before", () => {
-    expect(listProps([], undefined).loading).toBe(true)
-    expect(listProps([mine("a", "requested")], undefined).loading).toBe(true)
-    expect(listProps([synced], undefined).loading).toBe(false)
-    expect(listProps([], { syncedAt: null }).loading).toBe(false)
+  test("unknown until the first complete sync, unless GitHub's rows are here already; never 'No issues' before", () => {
+    expect(listProps([], undefined).unknown).toBe(true)
+    expect(listProps([mine("a", "requested")], undefined).unknown).toBe(true)
+    expect(listProps([synced], undefined).unknown).toBe(false)
+    expect(listProps([], { syncedAt: null }).unknown).toBe(false)
   })
 
   test("a reason's words, and none for what isn't a reason", () => {
@@ -213,10 +222,10 @@ describe("keeping a write on the device", () => {
 
 describe("a repository this person may not read", () => {
   test("a refused list never loads: it says why; an issue's page asks to sign in, or isn't there", () => {
-    expect(listProps([], undefined, { status: "sign_in" })).toMatchObject({ refused: "sign_in", loading: false })
-    expect(listProps([], undefined, { status: "forbidden" })).toMatchObject({ refused: "forbidden", loading: false })
-    expect(listProps([], undefined, { status: "unknown" })).toMatchObject({ refused: undefined, loading: true })
-    expect(listProps([], undefined, { status: "allowed" })).toMatchObject({ refused: undefined, loading: true })
+    expect(listProps([], undefined, { status: "sign_in" })).toMatchObject({ refused: "sign_in", unknown: false })
+    expect(listProps([], undefined, { status: "forbidden" })).toMatchObject({ refused: "forbidden", unknown: false })
+    expect(listProps([], undefined, { status: "unknown" })).toMatchObject({ refused: undefined, unknown: true })
+    expect(listProps([], undefined, { status: "allowed" })).toMatchObject({ refused: undefined, unknown: true })
     expect(pageOf(undefined, undefined, { status: "sign_in" })).toBe("sign_in")
     expect(pageOf(undefined, undefined, { status: "forbidden" })).toBe("missing")
     expect(pageOf(undefined, undefined, { status: "allowed" })).toBe("loading")

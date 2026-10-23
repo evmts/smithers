@@ -220,7 +220,7 @@ export const conversationQuery = (
       .orderBy(({ $selected }) => $selected.at),
   )
 
-/** The routed repository's issues sync, once a walk of it was complete: before that, a list is loading. */
+/** The routed repository's issues sync, once a walk of it was complete: before that, its counts are unknown. */
 export const syncedQuery = (view: View, sync: Synced<SyncRow>) =>
   LiveQuery.make((q) =>
     q

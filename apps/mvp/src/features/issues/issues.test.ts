@@ -393,17 +393,17 @@ describe("a comment", () => {
 })
 
 describe("loading", () => {
-  test("a list is loading before the repository's first complete sync, never empty; then empty is empty", async () => {
+  test("a list is unknown before the repository's first complete sync, never falsely empty; then empty is empty", async () => {
     const tab = await open()
     tab.actions.open(OWNER, NAME)
-    expect(tab.list()).toEqual({ issues: [], loading: true, notSent: [] })
+    expect(tab.list()).toEqual({ issues: [], unknown: true, notSent: [] })
     tab.actions.open(OWNER, NAME, 3)
     expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0])).toBe("loading")
 
     await server(tab.api).synced()
 
     tab.actions.open(OWNER, NAME)
-    await until(() => expect(tab.list()).toEqual({ issues: [], loading: false, notSent: [] }))
+    await until(() => expect(tab.list()).toEqual({ issues: [], unknown: false, notSent: [] }))
     tab.actions.open(OWNER, NAME, 3)
     await until(() =>
       expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0])).toBe("missing")
@@ -419,7 +419,7 @@ describe("a link's warm", () => {
     await server(tab.api).synced()
     await until(() => expect(tab.issues.queries.access.toArray[0]?.status).not.toBe("unknown"))
     tab.actions.open(OWNER, NAME)
-    await until(() => expect(tab.list()).toEqual({ issues: [], loading: false, notSent: [] }))
+    await until(() => expect(tab.list()).toEqual({ issues: [], unknown: false, notSent: [] }))
   }, WITHIN)
 })
 
@@ -431,7 +431,7 @@ describe("who reads a repository's issues", () => {
     // GitHub hasn't said: the shape is refused, and the page asks to sign in instead of loading forever.
     await until(() => expect(access(visitor)).toMatchObject({ status: "sign_in" }))
     const refused = listProps([], undefined, access(visitor))
-    expect(refused).toMatchObject({ refused: "sign_in", loading: false })
+    expect(refused).toMatchObject({ refused: "sign_in", unknown: false })
     visitor.actions.open(OWNER, NAME, 1)
     expect(pageOf(undefined, undefined, access(visitor))).toBe("sign_in")
 

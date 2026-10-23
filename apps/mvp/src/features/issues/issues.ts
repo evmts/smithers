@@ -34,7 +34,7 @@ export interface IssuesQueries {
   readonly item: Store["item"]["tanstack"]
   /** Its comments, this device's own last. */
   readonly conversation: Store["conversation"]["tanstack"]
-  /** The repository's sync, once a walk was complete: before that a list is loading. */
+  /** The repository's sync, once a walk was complete: before that its counts are unknown. */
   readonly synced: Store["synced"]["tanstack"]
   /** Whether this person may read the repository's issues: refused, a page shows sign in or Not found. */
   readonly access: Store["accessState"]["tanstack"]

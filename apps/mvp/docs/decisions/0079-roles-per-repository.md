@@ -35,6 +35,16 @@ The device's outbox sends 429 and 5xx again and keeps a 4xx as Not sent with its
 - **The stack:** committing and dropping a TODO (Member, in person) and reading a repository's TODOs and their prompts (Member) use the role on the repository the path or `?repo=` names. This closes the widening above.
 - **Deferred, fenced to the default repository:** triage, commitments and merging still answer `404 not_found` on any other repository; the issues' shapes, the webhook, Reconcile, secrets and the repository home still serve the default repository only. Each moves when its own slice resolves roles through `RepoRoles`.
 
+### Unsynced lists (2026-10-23 production regression)
+
+The issue list renders the device's rows without a loading state (ARCH-5), using the existing library catalog's
+`@smthrs/ui` `IssuesView.unknown` contract until a complete sync or GitHub row arrives. Unknown counts and an empty
+list stay blank rather than claiming "No issues". This also applies to the default repository before its first sync.
+Other repositories keep their Requested rows visible; this does not broaden the shapes or claim they synced.
+Production on 9696f4c4 confirmed that an issue reached the second repository on GitHub while its list spun forever.
+The e2e verification now shares dogfood's authenticated GitHub reader and fails immediately on HTTP refusals,
+including 403 and 429, instead of letting polling swallow them for two minutes.
+
 ## Why
 
 - **Installation as permission, not as role** (Sol): installing the App says the owner lets Smithers act there, which is the deployment-level allowlist GH-4 asks for; it says nothing about the person.

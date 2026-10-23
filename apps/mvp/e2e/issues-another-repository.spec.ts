@@ -1,4 +1,5 @@
 import { expect, test } from "./devices"
+import { github, pollGitHub } from "./github"
 import { requires, scratchRepository } from "./target"
 
 // Opening an issue on a repository other than the deployment's own (decision 0079, docs/features/issues.md#routes): the
@@ -31,21 +32,17 @@ test("another repository: a Member opens an issue on a repository other than the
   await test.step("the deployment takes it: Requested, never Not sent", async () => {
     await expect(row).toBeVisible({ timeout: 30_000 })
     await expect(row).not.toContainText("Not sent", { timeout: 15_000 })
+    await expect(page.getByRole("region", { name: `${repo} issues` })).not.toHaveAttribute("aria-busy", "true")
   })
 
   const url = await test.step("GitHub has it on that repository, opened by Maya", async () => {
-    let found: string | undefined
-    await expect.poll(async () => {
-      const response = await fetch(
-        `https://api.github.com/repos/${repo}/issues?state=all&sort=created&direction=desc&per_page=20`,
-        { headers: { accept: "application/vnd.github+json" } },
-      )
-      if (!response.ok) return undefined
-      const issues = (await response.json()) as ReadonlyArray<{ readonly title: string; readonly html_url: string }>
-      found = issues.find((issue) => issue.title === title)?.html_url
-      return found
-    }, { timeout: 120_000, intervals: [2_000, 5_000] }).toBeDefined()
-    return found!
+    const issues = await pollGitHub(
+      () => github<ReadonlyArray<{ readonly title: string; readonly html_url: string }>>(
+        page, `/repos/${repo}/issues?state=all&sort=created&direction=desc&per_page=20`,
+      ),
+      (issues) => issues.some((issue) => issue.title === title),
+    )
+    return issues.find((issue) => issue.title === title)!.html_url
   })
 
   await test.step("the issue on GitHub", async () => {
