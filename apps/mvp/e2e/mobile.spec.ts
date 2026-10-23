@@ -35,6 +35,7 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
     page.on("pageerror", (error) => errors.push(error.message))
     await recordActions(page, info)
     await use()
+    if (info.status === "skipped") return
     await Promise.all(reads)
     await writeFile(info.outputPath("docs-reads.json"), JSON.stringify(docsReads, null, 2))
     await writeFile(info.outputPath("page-errors.json"), JSON.stringify(errors, null, 2))
@@ -103,8 +104,8 @@ const audit = async (page: Page, info: TestInfo, name = "screen") => {
   }
   findings.push(...await page.evaluate(() => {
     const errors: Finding[] = []
-    for (const element of document.querySelectorAll<HTMLElement>("p, h1, h2, h3, h4, label, button, a, span, li, td, th, pre")) {
-      if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) || !element.textContent?.trim() || element.clientWidth === 0) continue
+    for (const element of document.querySelectorAll<HTMLElement>("body *")) {
+      if (!(element instanceof HTMLElement) || !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) || !element.textContent?.trim()) continue
       const style = getComputedStyle(element)
       // Accessibility-only labels are intentionally visually clipped, not visible prose.
       if (style.clipPath === "inset(50%)" || style.clip === "rect(0px, 0px, 0px, 0px)") continue
@@ -144,11 +145,11 @@ const audit = async (page: Page, info: TestInfo, name = "screen") => {
     return errors
   }))
   await page.evaluate(() => window.scrollTo(0, 0))
-  if (page.viewportSize()?.width === 1280) await desktopBaseline(page, info, name)
-  else await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: "disabled" })
   const receipt = info.outputPath(`${name}.json`)
   await writeFile(receipt, JSON.stringify({ route: page.url(), viewport: page.viewportSize(), findings }, null, 2))
   await info.attach(`layout-audit-${name}`, { path: receipt, contentType: "application/json" })
+  if (page.viewportSize()?.width === 1280) await desktopBaseline(page, info, name)
+  else await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: "disabled" })
   expect.soft(findings, `${page.url()} at ${JSON.stringify(page.viewportSize())}`).toEqual([])
 }
 
@@ -166,6 +167,9 @@ const screens = [
   { name: "runs", path: "/app/runs", ready: 'main[aria-label="Runs"]' },
   { name: "flows", path: "/app/flows", ready: 'main[aria-label="Flows"]' },
   { name: "new-flow", path: "/app/flows/new", ready: "main" },
+  { name: "conversations", path: "/app/conversations", ready: 'main[aria-label="Conversations"]' },
+  { name: "secrets", path: "/smithersai/smithers/settings/secrets", ready: 'main[aria-label="Secrets"]' },
+  { name: "repo-settings", path: "/smithersai/smithers/settings", ready: 'main[aria-label="Settings"]' },
   { name: "settings", path: "/app/settings", ready: 'main[aria-label="Settings"]' },
   { name: "docs", path: "/smithersai/vibelang/docs", ready: '.docs-page-index' },
   { name: "doc-page", path: "/smithersai/vibelang/docs/error-management/018-retrying.md", ready: '[aria-label="Docs"]' },
@@ -184,13 +188,21 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             const secure = baseURL.startsWith("https:")
             await context.addCookies([{ name: `${secure ? "__Host-" : ""}smithers_dev_signed_out`, value: "1", url: baseURL, secure }])
           }
-          const session = await context.request.get("/api/auth/session")
-          expect(await session.json()).toMatchObject({ signedIn })
+          // The farm's static page can be ready before its Worker. Wait for
+          // the session boundary before opening the page under test.
+          await expect.poll(async () => {
+            const session = await context.request.get("/api/auth/session")
+            return { status: session.status(), ...(session.ok() ? await session.json() : {}) }
+          }, { timeout: 30_000 }).toMatchObject({ status: 200, signedIn })
         })
         for (const screen of screens) {
           test(`${screen.name}: controls and text fit`, async ({ page, request }, info) => {
             if (screen.name === "files" || screen.name === "file-tabs") requires("codeStorage")
             await test.step(`Open ${screen.name}`, async () => {
+              if (screen.name === "conversations" && signedIn) {
+                await page.goto("/octocat/Spoon-Knife/tree/test-branch")
+                await expect(page.getByRole("navigation", { name: "Branch" })).toBeVisible({ timeout: 30_000 })
+              }
               await page.goto(screen.path)
               if (screen.name === "files" || screen.name === "file-tabs") {
                 await expect(page.getByRole("main", { name: "Repository", exact: true })).toBeVisible({ timeout: 30_000 })
@@ -205,6 +217,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               }
               const ready = screen.name === "terminal" && !signedIn ? ".branch-screen-view" : screen.ready
               await expect(page.locator(ready).first()).toBeVisible({ timeout: 30_000 })
+              if (screen.name === "conversations" && signedIn) await expect(page.getByRole("list", { name: "Conversations" }).getByRole("link").first()).toBeVisible({ timeout: 30_000 })
+              if (screen.name === "secrets" && signedIn) await expect(page.getByRole("form", { name: "Add secret" })).toBeVisible({ timeout: 30_000 })
+              if (screen.name === "repo-settings" && signedIn) await expect(page.getByRole("region", { name: "Domains" })).toBeVisible({ timeout: 30_000 })
               if (screen.name === "doc-page") await expect(page.getByRole("heading", { name: "Retrying", exact: true }).first()).toBeVisible({ timeout: 60_000 })
               if (screen.name === "branch") await expect(page.locator(".branch-screen-view")).toBeVisible({ timeout: 30_000 })
               if (screen.name === "terminal" && !signedIn) await expect(page.locator(".terminal-panel")).toHaveCount(0)

@@ -20,6 +20,7 @@ export const segmentedControlCss = `
 .sui-segmented { display:inline-flex; align-items:stretch; height:${t.controlHeight}; border:1px solid ${t.borderStrong}; border-radius:${t.radiusControl}; overflow:hidden; background:${t.card}; }
 .sui-segmented[data-size='sm'] { height:var(--ctl-h-sm, 28px); }
 .sui-segmented-item { display:inline-flex; align-items:center; gap:6px; margin:0; padding:0 10px; border:0; background:${t.card}; color:${t.mutedForeground}; font:inherit; font-size:${t.fontSizeCompact}; white-space:nowrap; cursor:pointer; ${interaction} }
+@media (max-width:960px) { .sui-segmented { min-height:calc(${t.controlHeight} + 2px); } .sui-segmented-item { min-height:${t.controlHeight}; min-width:32px; } }
 .sui-segmented-item + .sui-segmented-item { border-left:1px solid ${t.borderStrong}; }
 .sui-segmented-item:hover:not(:disabled) { background:${t.secondary}; color:${t.foreground}; }
 .sui-segmented-item[aria-checked='true'] { background:${t.primarySoftStrong}; color:${t.foreground}; }

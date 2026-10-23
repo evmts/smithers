@@ -1,6 +1,6 @@
 import { expect, type Page, type TestInfo } from "@playwright/test"
 
-// The added rules relative to main 9dd5d9d0. Removing exactly these rules inside
+// The added rules relative to main 9f03901b. Removing exactly these rules inside
 // the rendered stylesheets reconstructs the baseline CSS on the same live DOM.
 // Paired screenshots avoid random TODO ids, timestamps and synced data changing
 // between two server runs. Both PNGs are retained; no content is masked.
@@ -11,13 +11,17 @@ const addedRules = [
   ".app-shell-nav > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }",
   ".branch-header-views > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }",
   ".branch-header-presence { flex-wrap: wrap; min-width: 0; }",
+  ".conversations-screen-header > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }",
+  ".conversation-list-row > a { min-height: 32px; }",
   ".docs-page-links a { display:flex; align-items:center; min-width:32px; min-height:32px; }",
   ".flows-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".flows-page td a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; max-width:100%; overflow-wrap:anywhere; }",
+  ".issues-screen[aria-label=\"New issue\"] > .sui-button { align-self: flex-start; }",
   ".plugin-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".repo-header-name a { display: inline-flex; align-items: center; min-height: 32px; }",
   ".repo-screen:has(.repo-header-bell) ~ .root-bell { display:none; }",
   ".runs-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
+  ".secrets-screen-header > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }",
   ".settings-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".sui-markdown-editor[data-readonly] .ProseMirror a { display:inline-block; min-width:32px; min-height:32px; line-height:32px; max-width:100%; overflow-wrap:anywhere; }",
   ".sui-repo-readme-name { display:inline-flex; align-items:center; min-height:var(--ctl-h, 32px); }",
@@ -28,6 +32,8 @@ const addedRules = [
   ".sui-notification-count { position:static; flex:none; }",
   ".sui-notification-bell:has(.sui-notification-count) { width:auto; padding-inline:8px; }",
   ".sui-timeline-disclosure>summary {min-width:32px;min-height:var(--ctl-h, 32px);box-sizing:border-box;display:flex;align-items:center}",
+  ".sui-segmented { min-height:calc(var(--ctl-h, 32px) + 2px); }",
+  ".sui-segmented-item { min-height:var(--ctl-h, 32px); min-width:32px; }",
   ".sui-flow-draft-file-path { min-height:var(--ctl-h, 32px); box-sizing:border-box; }",
   ".sui-flow-graph-tools { position:static; width:max-content; max-width:100%; margin:8px; }",
   ".sui-journal-scrubber input { min-height:var(--ctl-h, 32px); }",
@@ -48,7 +54,7 @@ const addedRules = [
 ]
 
 export const desktopBaseline = async (page: Page, info: TestInfo, name: string) => {
-  await expect(async () => {
+  await expect.soft(async () => {
     const content = await page.locator("body").innerText()
     const current = await page.screenshot({ path: info.outputPath(`${name}.png`), fullPage: true, animations: "disabled" })
     const removed = await page.evaluate((rules) => {

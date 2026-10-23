@@ -12,3 +12,7 @@
 .issues-not-sent { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
 .issues-not-sent-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
 .issues-not-sent-title { margin-right: auto; overflow-wrap: anywhere; }
+
+@media (max-width: 60rem) {
+  .issues-screen[aria-label="New issue"] > .sui-button { align-self: flex-start; }
+}
