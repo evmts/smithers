@@ -28,5 +28,6 @@ export const flowDraftViewCss = `
 .sui-flow-draft-check[data-ok='false'] { background:${t.destructiveSoft}; color:${t.destructive}; }
 .sui-flow-draft-failure { margin:0; color:${t.destructive}; font-size:13px; }
 .sui-flow-draft-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+@media (max-width:960px) { .sui-flow-draft-file-path { min-height:${t.controlHeight}; box-sizing:border-box; } }
 @media (max-width: 640px) { .sui-flow-draft-question { grid-template-columns:1fr; } }
 `;
