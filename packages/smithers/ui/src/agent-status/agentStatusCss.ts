@@ -84,5 +84,10 @@ button.sui-notification-row:focus-visible { outline:none; box-shadow:0 0 0 3px $
 .sui-notification-needs-glyph { font-size:11px; line-height:1; }
 .sui-notification-needs-count { min-width:18px; padding:0 6px; border-radius:${t.radiusFull}; background:${t.warning}; color:${t.card}; font-size:11px; font-variant-numeric:tabular-nums; text-align:center; }
 .sui-notification-count { position:absolute; top:-3px; right:-3px; min-width:16px; height:16px; padding:0 4px; border-radius:${t.radiusFull}; background:${t.primary}; color:${t.primaryForeground}; font-size:10px; font-weight:650; line-height:16px; font-variant-numeric:tabular-nums; text-align:center; }
+@media (max-width:960px) {
+  button.sui-toast-open { min-height:32px; }
+  .sui-toast-text, .sui-notification-text { white-space:normal; overflow-wrap:anywhere; }
+  .sui-notification-bell { flex-shrink:0; }
+}
 @media (max-width: 640px) { .sui-notification-panel { top:0; right:0; left:0; width:auto; max-height:100dvh; border-radius:0; } }
 `;
