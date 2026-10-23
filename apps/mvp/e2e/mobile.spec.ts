@@ -5,7 +5,7 @@ import { renderSource, SOURCE_PATH } from "../src/features/flows-ui/source"
 import { recordActions, writeManifest } from "./fixtures"
 import { desktopBaseline } from "./mobile-baseline"
 import { openComposer } from "./composer"
-import { baseURL, requires, scriptedAgent, target, writeHeaders, me } from "./target"
+import { baseURL, requires, scriptedAgent, target, writeHeaders, me, stackRepository } from "./target"
 
 // Real pages and services. Persist a structured audit even when several checks fail,
 // so the first run is the red receipt for each subsequent layout change.
@@ -38,6 +38,7 @@ const test = base.extend<{ recording: void; mobileViewport: { width: number; hei
     if (info.status === "skipped") return
     await Promise.all(reads)
     await writeFile(info.outputPath("docs-reads.json"), JSON.stringify(docsReads, null, 2))
+    await info.attach("docs-reads", { path: info.outputPath("docs-reads.json"), contentType: "application/json" })
     await writeFile(info.outputPath("page-errors.json"), JSON.stringify(errors, null, 2))
     const name = info.titlePath.slice(1).join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 150)
     // Playwright moves its temporary recording beside the manifest during teardown.
@@ -199,25 +200,34 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
         })
         for (const screen of screens) {
           test(`${screen.name}: controls and text fit`, async ({ page, request }, info) => {
-            if (screen.name === "files" || screen.name === "file-tabs") requires("codeStorage", "member")
+            const files = screen.name === "files" || screen.name === "file-tabs"
+            if (files) requires("codeStorage", "member")
             await test.step(`Open ${screen.name}`, async () => {
               if (screen.name === "conversations" && signedIn) {
                 requires("member")
                 await page.goto("/octocat/Spoon-Knife/tree/test-branch")
                 await expect(page.getByRole("navigation", { name: "Branch" })).toBeVisible({ timeout: 30_000 })
               }
-              await page.goto(screen.path)
-              if (screen.name === "files" || screen.name === "file-tabs") {
-                await expect(page.getByRole("main", { name: "Repository", exact: true })).toBeVisible({ timeout: 30_000 })
+              if (files) {
+                test.setTimeout(180_000)
                 const repository = { owner: "octocat", name: "Spoon-Knife" }
-                // The request fixture has the test person's session, independent of
-                // a signed-out page's cookie. A real clone must precede file coverage.
+                // A launch receipt isn't a finished clone. Prepare through the
+                // signed-in API before opening a signed-out page, which cannot
+                // subscribe to the members-only repositories shape.
                 const clone = await request.post("/api/repos", { headers: writeHeaders(), data: repository })
-                expect(clone.ok(), `the file fixture's real clone is admitted (HTTP ${clone.status()}, ${await clone.text()})`).toBe(true)
+                expect(clone.ok(), `the file fixture's real clone is admitted (HTTP ${clone.status()})`).toBe(true)
                 const { cloneId } = await clone.json() as { cloneId: string }
                 const launch = await request.post("/api/repos/launch", { headers: writeHeaders(), data: { ...repository, cloneId } })
                 expect(launch.ok(), "the file fixture's real clone is launched").toBe(true)
+                await expect.poll(async () => {
+                  const refs = await request.get("/api/repos/octocat/Spoon-Knife/refs")
+                  const body = await refs.json()
+                  return { status: refs.status(), ...body }
+                }, { timeout: 120_000, message: "the Code Storage mirror must have main before file layout coverage" }).toMatchObject({
+                  status: 200, branches: expect.arrayContaining([expect.objectContaining({ name: "main" })]),
+                })
               }
+              await page.goto(screen.path)
               const ready = screen.name === "terminal" && !signedIn ? ".branch-screen-view" : screen.ready
               await expect(page.locator(ready).first()).toBeVisible({ timeout: 30_000 })
               if (screen.name === "conversations" && signedIn) await expect(page.getByRole("list", { name: "Conversations" }).getByRole("link").first()).toBeVisible({ timeout: 30_000 })
@@ -262,9 +272,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
         })
         for (const kind of ["issues", "pulls"] as const) test(`${kind} detail: a synced item and its tabs fit`, async ({ page }, info) => {
           requires("githubApp")
-          await page.goto(`/smithersai/smithers/${kind}`)
+          const repository = process.env.E2E_SYNCED_REPOSITORY ?? "smithersai/smithers"
+          await page.goto(`/${repository}/${kind}`)
           const prefix = kind === "issues" ? "issues" : "pull"
-          const item = page.locator(`a[href^="/smithersai/smithers/${prefix}/"]`).filter({ hasNotText: "New issue" }).first()
+          const item = page.locator(`a[href^="/${repository}/${prefix}/"]`).filter({ hasNotText: "New issue" }).first()
           await expect(item, "a real synced item is required; an empty list is not detail-page coverage").toBeVisible({ timeout: 30_000 })
           const href = await item.getAttribute("href")
           await item.click()
@@ -277,9 +288,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           }
         })
         if (signedIn) test("TODO: draft, stack and detail fit", async ({ page }, info) => {
-          requires("member")
+          requires("member", "writableStack")
           test.setTimeout(120_000)
-          await page.goto("/octocat/Spoon-Knife/stack")
+          await page.goto(`/${stackRepository()}/stack`)
           await page.getByRole("button", { name: "New TODO" }).click()
           const draft = page.getByRole("form", { name: "TODO draft" }).first()
           const title = `Mobile layout ${crypto.randomUUID()}`

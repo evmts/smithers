@@ -20,6 +20,7 @@ import {
   readPlace,
   type Run,
   scriptedAgent,
+  stackRepository,
   sessionFiles,
   targetOf,
   UndeclaredNeed,
@@ -66,6 +67,20 @@ describe("the target", () => {
 })
 
 describe("needs", () => {
+  it("uses a declared writable scratch stack in a deployment, and Spoon-Knife locally", () => {
+    expect(NEEDS.writableStack.met(local)).toBe(true)
+    expect(stackRepository(local)).toBe("octocat/Spoon-Knife")
+    expect(stackRepository()).toBe("octocat/Spoon-Knife")
+    for (const repository of [undefined, "", "SmithersAI/smithers", "invalid", "a/b/c"]) {
+      const run = deployedAs("member", { E2E_STACK_REPOSITORY: repository })
+      expect(NEEDS.writableStack.met(run)).toBe(false)
+      expect(() => stackRepository(run)).toThrow(UndeclaredNeed)
+    }
+    const scratch = deployedAs("member", { E2E_STACK_REPOSITORY: "roninjin10/smithers-github-tests" })
+    expect(NEEDS.writableStack.met(scratch)).toBe(true)
+    expect(stackRepository(scratch)).toBe("roninjin10/smithers-github-tests")
+  })
+
   it("requires the local secrets flag and fixture repository together", () => {
     for (const target of ["local", "deployment"] as const) {
       for (const flag of [undefined, "false", "true"]) {

@@ -215,6 +215,11 @@ const needs = {
     met: (run) => run.target === "deployment" || set(run, "CODE_STORAGE_ORG", "CODE_STORAGE_KEY"),
     reason: "it clones into Code Storage, which the local dev server reaches only with CODE_STORAGE_ORG and CODE_STORAGE_KEY set",
   },
+  writableStack: {
+    met: (run) => run.target === "local" ||
+      (/^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_STACK_REPOSITORY ?? "") && !/^smithersai\//i.test(run.env.E2E_STACK_REPOSITORY!)),
+    reason: "it commits and drops TODOs: locally on octocat/Spoon-Knife; a deployment needs E2E_STACK_REPOSITORY naming a writable scratch repository with stack shapes and repository membership, never a smithersai one",
+  },
   liveModel: {
     met: (run) =>
       run.target === "deployment" || set(run, MODEL_KEY) || dotEnvSets(run.env.E2E_DOT_ENV ?? DOT_ENV, MODEL_KEY),
@@ -440,4 +445,10 @@ export const writeHeaders = (): Record<string, string> =>
 export const scratchRepository = () => {
   guard("githubScratch")
   return process.env.E2E_ISSUES_REPOSITORY!
+}
+
+/** The writable scratch stack this run may commit and drop TODOs on (the `writableStack` need). */
+export const stackRepository = (run: Run = thisRun) => {
+  guard("writableStack", run)
+  return run.target === "local" ? "octocat/Spoon-Knife" : run.env.E2E_STACK_REPOSITORY!
 }

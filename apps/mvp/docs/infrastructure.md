@@ -288,7 +288,9 @@ E2E_PROD_URL=<the production URL> pnpm e2e:prod [spec…] [playwright options…
 - Dev builds only: the faulty services (`faults`), the scripted model (`scriptedAgent`), local development's second and third people (`devPeople`) and its sign-out (`devSignIn`).
 - This machine only: local Worker logs (`localLogs`), local fixtures (`localServer`) and dev-server settings (`devConfig`).
 - A deployment only: GitHub sign-in (`githubSignIn`), and GitHub writes to a scratch repository (`githubScratch`, with `E2E_ISSUES_REPOSITORY`).
-- Code Storage (`codeStorage`), which locally needs its organization and key.
+- Code Storage (`codeStorage`), which locally needs its organization and key. Mobile file journeys launch the real clone and wait for its refs before opening either identity’s page.
+- Mobile TODO writes (`writableStack`): locally Spoon-Knife; in a deployment, `E2E_STACK_REPOSITORY` must name a writable scratch stack with repository membership and shapes, never a `smithersai` repository. `E2E_SYNCED_REPOSITORY` selects the issue/pull repository (default `smithersai/smithers`).
+- Mobile docs journeys read the live VibeLang docs source. A refused read remains a failure, with its HTTP status and refusal reason attached as `docs-reads`; a service failure is not a layout pass.
 - The real model (`liveModel`), which locally needs `CEREBRAS_API_KEY` in the environment or `apps/mvp/.env` (checked for presence only). The Mac mini's dev server has no model, so a spec that waits for real answers skips there.
 - The account's role (`member`, `maintainer`). A role need is **blocked** rather than skipped: the run lacks a prerequisite, and the run fails until it has it.
 - The run's own conversation (`ownConversation`, also blocked), for every test that asks:
