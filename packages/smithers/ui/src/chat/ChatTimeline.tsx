@@ -109,6 +109,7 @@ export function ChatTimeline({ entries, onJump, onActivate, groupSummaries = {},
         const previewId = `timeline-preview-${level.level}-${entry.id}`;
         return <li key={block.id} data-state={state} data-in-view={members.some(member => band.includes(member.id)) || undefined} style={{ flexGrow: members.length }}>
           <button type="button" aria-controls={entry.id} aria-current={members.some(member => band.includes(member.id)) ? "location" : undefined}
+            aria-label={!grouped && entry.label && entry.label !== label ? `${label} · ${entry.label}` : undefined}
             data-summary={(grouped ? groupSummaries[block.id] : entry.summary) ? "ready" : "pending"} aria-describedby={previewId}
             onClick={() => !grouped && onActivate ? onActivate(entry.id) : jump(entry.id)}
             onKeyDown={event => {

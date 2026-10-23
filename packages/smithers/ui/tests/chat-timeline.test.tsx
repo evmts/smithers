@@ -182,6 +182,31 @@ test("concrete host labels render while a summary is pending, and a summary take
   }
 })
 
+test("summary navigation retains the recorded object and outcome in its accessible name", () => {
+  const entries: ChatTimelineEntry[] = [
+    { id: "question", kind: "ask", state: "done", label: "Timeline check unique", summary: "Requested a short reply" },
+    { id: "answer", kind: "answer", state: "done", label: "Timeline check unique · answered", summary: "Replied briefly" },
+    { id: "failed", kind: "answer", state: "failed", label: "Timeline check unique · failed" },
+    { id: "same", kind: "ask", state: "done", label: "Same subject", summary: "Same subject" },
+    { id: "legacy", kind: "ask", state: "done", summary: "Legacy summary" },
+  ];
+  const host = document.createElement("div");
+  host.innerHTML = renderToStaticMarkup(<ChatTimeline entries={entries} />);
+  const buttons = host.querySelectorAll("button");
+  expect(buttons[0]!.getAttribute("aria-label")).toBe("Requested a short reply · Timeline check unique");
+  expect(buttons[1]!.getAttribute("aria-label")).toBe("Replied briefly · Timeline check unique · answered");
+  expect(buttons[0]!.textContent).toBe("Requested a short reply");
+  expect(buttons[1]!.getAttribute("aria-controls")).toBe("answer");
+  for (const button of [...buttons].slice(2)) expect(button.hasAttribute("aria-label")).toBe(false);
+  expect(buttons[2]!.textContent).toBe("Timeline check unique · failed");
+  // A grouped button names its group, never just its first member's object.
+  host.innerHTML = renderToStaticMarkup(<ChatTimeline entries={Array.from({ length: 100 }, (_, i) => ({ ...entries[0]!, id: `q-${i}` }))} />);
+  for (const button of host.querySelectorAll('ol:not([data-level="0"]) button')) {
+    expect(button.hasAttribute("aria-label")).toBe(false);
+    expect(button.textContent).toMatch(/^\d+ entries$/);
+  }
+})
+
 test("keyboard traversal does not activate an entry's external destination", async () => {
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");

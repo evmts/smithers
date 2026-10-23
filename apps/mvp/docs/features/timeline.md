@@ -10,12 +10,14 @@ Successful summaries persist on the device in TanStack DB. Full-content SHA-256 
 
 The compiled first-party contribution lives in `src/features/timeline`; its intended manifest declares `chat.rail`. Until decision 0017's new Manifest/PluginHost loader lands, chat explicitly mounts the contribution. There is no separate private data interface. [Design and limitations](../design/timeline/DESIGN.md), [interactive mock](../design/timeline/timeline.html).
 
-Validation sources: `summary.test.ts` (bounds, content identities, safe labels), `view.test.ts` (states and stale summaries), `engine.test.ts` (real durable engine and replay), UI `chat-timeline.test.tsx` (keys/rendering), and `e2e/timeline.spec.ts` (real app scroll, keys, arriving summaries, phone). Receipts live in the work note; configured coverage is not executed coverage.
+Validation sources: `summary.test.ts` (bounds, content identities, safe labels), `view.test.ts` (states and stale summaries), `engine.test.ts` (real durable engine and replay), UI `chat-timeline.test.tsx` (keys/rendering and recorded accessible names), `e2e/timeline.spec.ts` (scripted app scroll, keys, arriving summaries, phone), and `e2e/timeline-live.spec.ts` (real-model question and linked reply on the deployment account's own branch). The live journey checks recorded names and transcript links, accepting an answered outcome or a visible failure without asserting model wording. Device actions and step chapters record its GIF. Receipts live in the work note; configured coverage is not executed coverage.
 
 
 ## Entry text
 
 `@smthrs/ui`'s `ChatTimelineEntry.label` carries concrete fallback text independently of `summary`: fallback availability never claims the summary model completed. A matching, nonempty, specific summary wins. Old cached state-only summaries are ignored. The summary seat requests 1–8 words naming an object and observed outcome; its validator rejects generic labels such as “Reply sent”. Content identities, private model data and content-free telemetry are unchanged.
+
+When the summary differs, the button's accessible name includes both the visible summary and recorded label. Its question subject and outcome stay identifiable after summarization; grouped buttons keep their group names.
 
 | Entry | Before | Now without a summary |
 | --- | --- | --- |

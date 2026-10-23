@@ -69,6 +69,10 @@ import { Button, SmithersUiStyles, StatusPill } from "@smthrs/ui";
 - Time: `RelativeTime`, `useRelativeTime`, `formatRelativeTime`.
 - Calendar: `Calendar` with month, week, and agenda views.
 
+`ChatTimeline` shows a generated summary when available. Each entry's accessible
+name also retains its recorded `label` when different, preserving its object and
+outcome; `aria-controls` links to its transcript anchor. Group names stay grouped.
+
 `ItemConversation` and `ItemAsideSection` preserve their generated accessibility and
 data attributes when forwarding host props; host IDs, classes and other props
 still pass through.
