@@ -9,6 +9,9 @@ import { baseURL, requires, scriptedAgent } from "./target"
 // Real pages and services. Persist a structured audit even when several checks fail,
 // so the first run is the red receipt for each subsequent layout change.
 const test = base.extend<{ recording: void }>({
+  contextOptions: async ({ viewport }, use, info) => {
+    await use({ recordVideo: { dir: info.outputPath("videos"), size: viewport ?? { width: 1280, height: 800 } } })
+  },
   recording: [async ({ page }, use, info) => {
     const startedAt = Date.now()
     const errors: string[] = []
@@ -16,7 +19,8 @@ const test = base.extend<{ recording: void }>({
     await recordActions(page, info)
     await use()
     await writeFile(info.outputPath("page-errors.json"), JSON.stringify(errors, null, 2))
-    await writeManifest(info, "flow.json", startedAt, [{ name: "", video: "video.webm", openedAt: 0 }])
+    const name = info.titlePath.slice(1).join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 150)
+    await writeManifest(info, "flow.json", startedAt, [{ name: "", video: await page.video()?.path(), openedAt: 0 }], { test: name, flow: name })
   }, { auto: true }],
 })
 test.use({ video: "on", screenshot: "only-on-failure", colorScheme: "light" })
