@@ -338,6 +338,76 @@ describe("SandboxTools list", () => {
 })
 
 describe("SandboxTools status and diff", () => {
+  it.effect("compares commits and pending changes to a base without changing the real index", () =>
+    onMachine((session) =>
+      Effect.gen(function*() {
+        const base = git(session.workdir, "rev-parse", "HEAD").trim()
+        writeFileSync(join(session.workdir, "committed.txt"), "committed\n")
+        git(session.workdir, "add", ".")
+        git(session.workdir, "commit", "-m", "agent")
+        git(session.workdir, "mv", "README.md", "renamed.md")
+        writeFileSync(join(session.workdir, "pending.txt"), "pending\n")
+        const before = git(session.workdir, "status", "--porcelain=v1")
+        expect(yield* exec(session, { tool: "status", base })).toEqual({
+          tool: "status",
+          branch: null,
+          entries: [
+            { path: "README.md", index: "D", worktree: " " },
+            { path: "committed.txt", index: "A", worktree: " " },
+            { path: "pending.txt", index: "A", worktree: " " },
+            { path: "renamed.md", index: "A", worktree: " " }
+          ]
+        })
+        expect(git(session.workdir, "status", "--porcelain=v1")).toBe(before)
+        git(session.workdir, "reset", "--hard", base)
+        rmSync(join(session.workdir, "pending.txt"))
+        expect(yield* exec(session, { tool: "status", base })).toMatchObject({ entries: [] })
+        expect(yield* failure(exec(session, { tool: "status", base: "f".repeat(40) }))).toMatchObject({
+          _tag: "@smthrs/sandbox/SandboxTools/ToolUnavailable"
+        })
+      })
+    ))
+
+  it.effect(
+    "refuses base-relative status output larger than diffBytes",
+    () =>
+      onMachine((session) =>
+        Effect.gen(function*() {
+          const base = git(session.workdir, "rev-parse", "HEAD").trim()
+          const prefix = "x".repeat(240)
+          const count = Math.ceil((SandboxTools.limits.diffBytes + 1) / (prefix.length + 8))
+          for (let index = 0; index < count; index++) {
+            writeFileSync(join(session.workdir, `${prefix}${String(index).padStart(5, "0")}`), "")
+          }
+          expect(yield* failure(exec(session, { tool: "status", base }))).toEqual(
+            new SandboxTools.ToolUnavailable({ code: "unknown" })
+          )
+          expect(git(session.workdir, "diff", "--cached", "--name-only")).toBe("")
+        })
+      ),
+    slow
+  )
+
+  it.effect("refuses a base tree path outside the workdir", () =>
+    onMachine((session) =>
+      Effect.gen(function*() {
+        const blob = git(session.workdir, "rev-parse", "HEAD:README.md").trim()
+        // An untrusted base can contain a malformed tree even though the index refuses such paths.
+        const tree = Buffer.concat([Buffer.from("100644 ../outside\0"), Buffer.from(blob, "hex")])
+        const base = execFileSync("git", ["hash-object", "-w", "-t", "tree", "--literally", "--stdin"], {
+          cwd: session.workdir,
+          input: tree,
+          encoding: "utf8"
+        }).trim()
+        expect(yield* failure(exec(session, { tool: "status", base }))).toMatchObject({
+          _tag: "@smthrs/sandbox/SandboxTools/ToolRefused",
+          reason: "path"
+        })
+        expect(readFileSync(join(session.workdir, "README.md"), "utf8")).toBe("hello\n")
+        expect(git(session.workdir, "status", "--porcelain=v1")).toBe("")
+      })
+    ), slow)
+
   it.effect(
     "reports the branch and every changed path, renames with their old path",
     () =>

@@ -88,6 +88,21 @@ const saved = (map: Map<string, unknown>) =>
   map.get("checkpoint") as { generation: number; head: string; seq: number; pieces: number; bytes: number; bundleBytes?: number }
 
 describe("tool", () => {
+  test("base-relative status includes agent commits and pending edits, and excludes reverted work", async () => {
+    const machine = boxOf()
+    writeFileSync(join(machine.workdir, "slept.txt"), "committed\n")
+    git(machine.workdir, "add", ".")
+    git(machine.workdir, "commit", "-m", "agent commit")
+    const status = () => Effect.runPromise(tool(machine.box, { tool: "status", base }))
+    expect(await status()).toMatchObject({ _tag: "Done", result: { entries: [{ path: "slept.txt", index: "A" }] } })
+    writeFileSync(join(machine.workdir, "README.md"), "pending\n")
+    expect(await status()).toMatchObject({ _tag: "Done", result: { entries: [
+      { path: "README.md", index: "M" }, { path: "slept.txt", index: "A" },
+    ] } })
+    git(machine.workdir, "reset", "--hard", base)
+    expect(await status()).toMatchObject({ _tag: "Done", result: { entries: [] } })
+  })
+
   test("runs a call as the person's own user, made first, and saves the working copy after a write or a run only", async () => {
     const machine = boxOf()
     await Effect.runPromise(Machine.restore(machine.box, 1))

@@ -562,7 +562,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
           ),
         )
       // A tool answers its own call's result.
-      const { entries } = (yield* tool("status", { tool: "status" })) as typeof SandboxTools.StatusResult.Type
+      const { entries } = (yield* tool("status", { tool: "status", base: begun.baseSha })) as typeof SandboxTools.StatusResult.Type
       if (entries.length === 0) return yield* new TodoFailed({ failure: "empty_change" })
       if (entries.length > MAX_FILES) return yield* new TodoFailed({ failure: "implement" })
       const additions: Array<{ readonly path: string; readonly contents: string }> = []

@@ -15,7 +15,8 @@ import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, ConfigProvider, Context, Effect, Exit, Fiber, Layer, Option, Redacted, Schedule, Schema, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
@@ -811,6 +812,58 @@ describe("the run's steps, case by case", { timeout: 60_000 }, () => {
     ownerId: maya.id,
     ownerLogin: maya.login,
   })
+
+  test.each(["committed", "mixed", "empty", "forbidden"] as const)(
+    "collect and publish a real agent checkout: %s", async (kind) => {
+      const ctx = await setup()
+      const start = (await commit("Step", "Do it."))!
+      const workdir = mkdtempSync(join(boxes, "publish-"))
+      const git = (...args: Array<string>) => execFileSync("git", [
+        "-c", "user.name=Agent", "-c", "user.email=agent@example.com", "-c", "commit.gpgsign=false", ...args,
+      ], { cwd: workdir, encoding: "utf8" }).trim()
+      git("init", "-q", "-b", "main")
+      git("commit", "--allow-empty", "-m", "base")
+      const base = git("rev-parse", "HEAD")
+      const prior = ctx.github.refs.get("main")!
+      ctx.github.commits.set(base, { ...ctx.github.commits.get(prior)!, sha: base, files: new Map() })
+      ctx.github.refs.set("main", base)
+      const made = await dispatched(ctx, (steps) => steps.begin({ request: start }))
+      expect(made._tag).toBe("Success")
+      if (made._tag !== "Success") return
+      const begun = made.value as Todo.Begun
+      if (kind !== "empty") {
+        writeFileSync(join(workdir, kind === "forbidden" ? "bad\\path" : "slept.txt"), "agent work\n")
+        git("add", ".")
+        git("commit", "-m", "agent's own message")
+      }
+      if (kind === "mixed") writeFileSync(join(workdir, "pending.txt"), "pending\n")
+      const box = Box.boxAt({ workdir, homes: join(workdir, "..", `homes-${kind}`) })
+      const real = { ...ctx, machine: { ...ctx.machine, layer: Layer.succeed(Machines, Box.machinesOn(box.box)) } }
+      const collected = await step(real, (steps) => steps.collect({ request: start, begun }))
+      if (kind === "empty") {
+        expect(failure(collected)).toMatchObject({ failure: "empty_change" })
+        expect(ctx.github.pulls.size).toBe(0)
+        return
+      }
+      expect(collected._tag).toBe("Success")
+      if (collected._tag !== "Success") return
+      const published = await dispatched(real, (steps) => steps.publish({ request: start, begun, collected: collected.value }))
+      if (kind === "forbidden") {
+        expect(failure(published)).toMatchObject({ _tag: "@smthrs/mvp/todo/TodoUnavailable", step: "publish" })
+        expect(ctx.github.refs.get(begun.branch)).toBe(base)
+        expect(ctx.github.pulls.size).toBe(0)
+        return
+      }
+      expect(published._tag).toBe("Success")
+      const head = ctx.github.refs.get(begun.branch)!
+      expect(ctx.github.commits.get(head)).toMatchObject({ parents: [base] })
+      expect(ctx.github.commits.get(head)!.message).toContain("T1: Step")
+      expect(ctx.github.tree(begun.branch).get("slept.txt")).toBe("agent work\n")
+      if (kind === "mixed") expect(ctx.github.tree(begun.branch).get("pending.txt")).toBe("pending\n")
+      expect(ctx.github.refs.get("main")).toBe(base)
+      expect(ctx.github.pulls.size).toBe(1)
+    },
+  )
 
   test("begin: run again in its dispatch, it finds its own branch by key, even after the default branch moved; an attempt it doesn't know ends", async () => {
     const ctx = await setup()

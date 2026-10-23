@@ -169,3 +169,5 @@ See the [API reference](https://github.com/smithersai/smithers/blob/main/package
 engine retries confirmed shared Git contention, releasing the repository fence
 between attempts. Custom conflict strategies run as separate actions. The raw
 `SandboxMerge.apply` effect makes one attempt without retries.
+
+`SandboxTools.Status` accepts an optional immutable 40-character `base` SHA. With a base, status compares the complete working tree (local commits and pending tracked/untracked files) with that tree, without changing the checkout or its index. Renames are reported as deletion/addition pairs. Oversized status output fails rather than returning a partial change.

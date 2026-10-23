@@ -310,3 +310,6 @@ preserve attempt fencing. `todo.base_closed` logs and spans carry attempt IDs
 and outcomes; `smithers_todo_base_closed` counts settlement outcomes. PR cleanup
 runs after lane release; `smithers_todo_base_closed_pulls` counts closed, refused
 and retried closes. A close refusal never blocks cancellation or settlement.
+
+Publish compares the branch machine's complete working tree with the attempt's recorded base, including commits the agent already made and pending edits. An equal tree fails `empty_change`. The host publishes the resulting files as one commit with the TODO message, using the same path validation and expected-head fence; only the TODO branch is written (decision 0016).
+

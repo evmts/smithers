@@ -127,7 +127,11 @@ export const List = Schema.Struct({ tool: Schema.Literal("list"), path: Schema.o
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const Status = Schema.Struct({ tool: Schema.Literal("status") })
+export const Status = Schema.Struct({
+  tool: Schema.Literal("status"),
+  /** Compare the complete working tree with this immutable base, including local commits. */
+  base: Schema.optional(Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)))
+})
 
 /**
  * The working copy's changes from `HEAD` as a unified diff, untracked files
@@ -713,17 +717,39 @@ const branchOf = (header: string): string | null => {
   return name === "HEAD" ? null : name
 }
 
-const status = (session: Session) =>
+// Use a private index so collection never stages, resets or commits the agent's checkout.
+const BASE_STATUS = `cd -- "$1" 2>/dev/null || exit 69
+d=$(mktemp -d) || exit 125
+trap 'rm -rf -- "$d"' EXIT HUP INT TERM
+export GIT_INDEX_FILE="$d/index"
+git read-tree HEAD || exit 69
+git -c core.fsmonitor=false add -A -- . || exit 125
+tree=$(git write-tree) || exit 125
+git diff --name-status -z --no-renames --no-ext-diff "$2" "$tree" --`
+
+const status = (session: Session, call: typeof Status.Type) =>
   Effect.gen(function*() {
     const { code, stdout } = yield* gather(
       session,
-      script(STATUS, [resolve(session.workdir, ".")!]),
-      limits.diffBytes
+      script(call.base === undefined ? STATUS : BASE_STATUS, [
+        resolve(session.workdir, ".")!,
+        ...(call.base === undefined ? [] : [call.base])
+      ]),
+      limits.diffBytes + 1
     )
     if (code !== 0) return yield* Effect.fail(failedWith(code))
+    if (stdout.length > limits.diffBytes) return yield* Effect.fail(new ToolUnavailable({ code: "unknown" }))
     const records = text(stdout).split("\0")
     let branch: string | null = null
     const entries: Array<StatusEntry> = []
+    if (call.base !== undefined) {
+      for (let index = 0; index < records.length - 1; index += 2) {
+        const path = records[index + 1]!
+        if (resolve(session.workdir, path) === undefined) return yield* refused("path")
+        entries.push({ path, index: records[index]!, worktree: " " })
+      }
+      return { tool: "status", branch, entries } satisfies typeof StatusResult.Type
+    }
     for (let index = 0; index < records.length; index++) {
       const record = records[index]!
       if (record.startsWith("## ")) {
@@ -792,7 +818,7 @@ export const execute = (session: Session, call: Call, options: ExecuteOptions): 
     : call.tool === "list"
     ? list(session, call)
     : call.tool === "status"
-    ? status(session)
+    ? status(session, call)
     : diff(session, call)
   return effect.pipe(
     Effect.tap((result) =>
