@@ -175,6 +175,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
               expect((await page.request.post("/api/questions", { data: { id: crypto.randomUUID(), answerId, text: `Mobile notice ${answerId}` } })).ok()).toBe(true)
               expect((await page.request.post(`/api/runs/${answerId}`, { data: { status: "working" } })).ok()).toBe(true)
             }
+            // A conversation intentionally suppresses its own working notices.
+            await page.goto("/app/flows")
             await expect(page.locator('[data-slot="toast"]')).toHaveCount(3, { timeout: 30_000 })
             await audit(page, info)
           } finally {
