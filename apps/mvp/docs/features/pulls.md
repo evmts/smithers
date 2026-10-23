@@ -65,6 +65,7 @@ Screens (`src/screens/pulls/`), at GitHub's paths:
 - **Merge** shows only to a Maintainer or Admin, on an open pull request that isn't a draft, once the device has its head. It sends `pr/merge` at the head and base the page shows; the page says Merging, then Merged, or why not (`New commits`, `<base> moved`, `Can't merge`, `Not allowed`, `Sign in`).
 - **The deploy warning** shows beside Merge, and only there, when the base is the repository's default branch. `pulls.default_branch` is the base repository's default branch as GitHub's last read named it; until a read names it, no warning shows.
 - Until the repository's first complete sync the list and the page are loading, never empty. A person whose read the shape refused gets Sign in with GitHub, or Not found, as on the issue pages; so does a pull request number the synced repository doesn't have.
+- A direct pull-list visit updates the repository used by the shared issues sync-status query. An empty completed list stops loading; navigating to another repository cannot reuse the previous repository's completion.
 - A TODO's pull request link opens its page here ([TODOs](todos.md)).
 
 ## Merge

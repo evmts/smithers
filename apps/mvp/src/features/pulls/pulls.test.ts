@@ -14,11 +14,14 @@ import * as PullStore from "../../../worker/github/Pulls.ts"
 import * as Store from "../../../worker/github/Store.ts"
 import { CHATAPI_ORIGIN, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { itemId } from "../issues/contract"
+import { ISSUES_STREAM } from "../issues/contract"
+import { Issues } from "../issues/issues"
 import { repoId } from "../repo/contract"
 import { mergePresses } from "./actions"
 import { PullsClient, PullsRequestFailed } from "./api"
 import { mergeExecutionId } from "./contract"
 import { Pulls } from "./pulls"
+import { listPageOf } from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -71,7 +74,7 @@ const faultyClient = () => {
   return { layer, state }
 }
 
-type App = ManagedRuntime.ManagedRuntime<Pulls | TestChatApi, unknown>
+type App = ManagedRuntime.ManagedRuntime<Pulls | Issues | TestChatApi, unknown>
 
 /** The app on a fresh ChatApi as `actor` (Sam, a Maintainer, unless set), with the pulls queries started as React does. */
 const open = async (options: TabOptions = {}, actor: Actor | null = sam) => {
@@ -79,11 +82,13 @@ const open = async (options: TabOptions = {}, actor: Actor | null = sam) => {
   runtimes.push(runtime)
   const api = await runtime.runPromise(Effect.service(TestChatApi))
   const pulls = await runtime.runPromise(Effect.service(Pulls))
+  const issues = await runtime.runPromise(Effect.service(Issues))
   for (const query of Object.values(pulls.queries)) query.startSyncImmediate()
   return {
     api,
     actions: pulls.actions,
     queries: pulls.queries,
+    issues,
     view: () => pulls.queries.view.toArray[0],
     pull: () => pulls.queries.pull.toArray[0],
     count: (attributes: Record<string, string>) =>
@@ -203,6 +208,18 @@ const server = (api: TestChatApi["Service"]) => {
 }
 
 describe("the list and a pull request's page", () => {
+  test("a direct pull-list visit uses that repository's completed sync, including an empty list", async () => {
+    const tab = await open()
+    await Effect.runPromise(tab.api.github.run(Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: true, failure: null })))
+    tab.actions.open(OWNER, NAME)
+    tab.issues.queries.synced.startSyncImmediate()
+    await until(() => expect(listPageOf(tab.queries.list.toArray, { owner: OWNER, name: NAME },
+      tab.issues.queries.synced.toArray[0], undefined).loading).toBe(false))
+    expect(tab.queries.list.toArray).toEqual([])
+    tab.actions.open("other", "repository")
+    await until(() => expect(tab.issues.queries.synced.toArray).toEqual([]))
+  }, WITHIN)
+
   test("the repository's pull requests newest first, never its issues; each with its head, draft and merge", async () => {
     const tab = await open()
     const github = server(tab.api)

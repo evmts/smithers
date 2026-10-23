@@ -1,5 +1,6 @@
 import { Effect, Metric, Option, Stream } from "effect"
 import { IssuesStore } from "../issues/store"
+import { open as openIssues } from "../issues/actions"
 import { repoId } from "../repo/contract"
 import { PullsClient } from "./api"
 import { DEFAULT_MERGE_METHOD, type PullTab, SHA } from "./contract"
@@ -37,7 +38,8 @@ export const open = (owner: string, name: string, number?: number, tab: PullTab 
         row.mergeRefused = null
       }
     })
-    yield* (yield* IssuesStore).activate
+    // Sync status is shared with issues and must follow this route's repository too.
+    yield* openIssues(owner, name)
     // The Files tab reads its comparison once the device has the pull request's base and head.
     if (number !== undefined && tab === "files") {
       yield* store.pull.rows.pipe(
