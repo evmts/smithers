@@ -78,6 +78,7 @@ export const FLOWS_TELEMETRY = {
     "run heartbeat write failed",
     "run heartbeat receipt failed",
     "flows_engine_heartbeat_receipts",
+    "flows_engine_replay_seeds",
     "flows_engine_dispatches",
     "flows_engine_dispatch_duration",
     "flows_engine_claims",
