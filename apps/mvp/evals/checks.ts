@@ -80,6 +80,8 @@ export interface Trial {
   readonly modelFailures?: ReadonlyArray<ModelFailure>
   /** The provider requests the trial made through the HTTP/1.1 provider fetch, and how many failed before an answer. */
   readonly requests?: { readonly made: number; readonly failed: number }
+  /** Synthetic eval model requests and replies, including the renderer's corrections; artifacts only. */
+  readonly transcript?: ReadonlyArray<{ readonly request: unknown; readonly reply: string }>
 }
 
 /** One failed model call: what the SDK's `ModelError` says of it, never its body or the request. */

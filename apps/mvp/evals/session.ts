@@ -74,6 +74,8 @@ const refusedModel = (fetch: typeof globalThis.fetch) =>
 export const openSession = async (runtime: Runtime, maxTokens: number) => {
   /** The model calls that failed since the trial began, so an artifact says why a model failed, not only that it did. */
   const failures: Array<ModelFailure> = []
+  // Synthetic eval conversations only: keep the model's cells and renderer corrections in the artifact, never logs.
+  const transcript: Array<{ request: unknown; reply: string }> = []
   // The provider pool lives as long as the eval program.
   const provider = await openProviderResource(EgressHttpClient.providerFetch(process.env))
   providers.add(provider)
@@ -104,8 +106,12 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
   /** `host` noting each call that failed, as the SDK's `ModelError` says, in the trial's `modelFailures`. */
   const observed = (host: typeof guarded): typeof guarded => ({
     ...host,
-    model: { ...host.model, stream: (request: Parameters<typeof host.model.stream>[0]) =>
-      host.model.stream(request).pipe(Stream.tapError((error) => Effect.sync(() => failures.push(
+    model: { ...host.model, stream: (request: Parameters<typeof host.model.stream>[0]) => {
+      const turn = { request, reply: "" }
+      transcript.push(turn)
+      return host.model.stream(request).pipe(
+        Stream.tap((event) => Effect.sync(() => { if (event.type === "text-delta") turn.reply += event.text })),
+        Stream.tapError((error) => Effect.sync(() => failures.push(
         error._tag === "flows/model/ModelError"
           ? {
             code: error.code,
@@ -114,7 +120,8 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
             message: error.message.slice(0, 300),
           }
           : { code: error._tag, httpStatus: null, providerCode: null, message: "" },
-      )))) },
+      ))))
+    } },
   })
   const model = observed(guarded)
   if (budget) budgets.add(budget)
@@ -224,6 +231,7 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
     )
     const asking = await agentFor(kase.provider)
     failures.length = 0
+    transcript.length = 0
     requests = { made: 0, failed: 0 }
     const device = await openDevice(asking.fetch, {}, undefined, kase.at === undefined ? {} : { at: kase.at })
     try {
@@ -289,6 +297,7 @@ export const openSession = async (runtime: Runtime, maxTokens: number) => {
         ms,
         modelFailures: [...failures],
         requests,
+        transcript: [...transcript],
       }
     } finally {
       await device.close()
