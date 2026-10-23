@@ -1,3 +1,4 @@
+import { HarnessError } from "@smthrs/harness"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Model, ModelError, ModelEvent } from "@smthrs/model"
 import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Scope, Stream } from "effect"
@@ -92,4 +93,16 @@ test.each([
   const runtime = Context.get(context, FlowRuntime.FlowRuntime)
   const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: `unconfigured-${_where}`, payload })).pipe(Effect.provide(context)))
   expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unconfigured" }))
+})
+
+
+test("a non-provider model-step failure is a safe unavailable summary", async () => {
+  const model = Model.make({ stream: () => Stream.die("preparation must fail before the provider") })
+  const scope = Effect.runSync(Scope.make()); scopes.push(scope)
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+    Layer.provide(Layer.succeed(SummarySeat, { model, route: { prepare: () => Effect.fail(new HarnessError.HarnessError({ code: "approval_unavailable", message: "private failure" })) as never } })),
+    Layer.provideMerge(Action.layerImplementations),
+  ))))
+  const exit = await Effect.runPromise(Effect.exit(Context.get(context, FlowRuntime.FlowRuntime).execute(Summarize, { executionId: "summary-host-fault", payload })).pipe(Effect.provide(context)))
+  expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(new SummaryFailed({ code: "unavailable" }))
 })
