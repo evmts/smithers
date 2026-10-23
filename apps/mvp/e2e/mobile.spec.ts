@@ -31,6 +31,7 @@ const audit = async (page: Page, info: TestInfo, name = "screen") => {
     // Long pages and scrollable panels are legitimate. Bring each target into view,
     // then verify it is reachable, rather than requiring the whole page above the fold.
     await control.scrollIntoViewIfNeeded()
+    await control.evaluate((element) => element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" }))
     const issues = await control.evaluate((element) => {
       const rect = element.getBoundingClientRect()
       const name = `${element.tagName.toLowerCase()}.${element.className} ${element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 80) ?? ""}`
