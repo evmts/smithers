@@ -101,3 +101,14 @@ describe("refs", () => {
     })
   })
 })
+
+
+test("a clone whose transport never answers remains unavailable without inventing an HTTP status", async () => {
+  const { launchClone } = await import("./clone")
+  const { RepoCloneUnavailable } = await import("./flows")
+  const fault = RepoClient.of({ clone: () => Effect.die("unused"), launch: () => Effect.fail(new RepoRefused({})),
+    tree: () => Effect.die("unused"), blob: () => Effect.die("unused"), refs: () => Effect.die("unused"), about: () => Effect.die("unused"),
+  })
+  const result = await Effect.runPromise(Effect.flip(launchClone({ repo: "octo/hello", cloneId: crypto.randomUUID() }).pipe(Effect.provideService(RepoClient, fault))))
+  expect(result).toBeInstanceOf(RepoCloneUnavailable)
+})
