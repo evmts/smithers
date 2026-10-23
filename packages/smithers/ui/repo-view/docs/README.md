@@ -41,6 +41,9 @@ Render `<RepoViewStyles />` once beside `@smthrs/ui`'s `<SmithersUiStyles />`
 when you render on a server. `MarkdownEditor` ships its own sheet through
 `MarkdownEditorStyles`.
 
+File Markdown previews grow below their toolbar. Through 960px, preview mode
+controls have at least 32px tap targets.
+
 ## Pages
 
 - [Use the repository views](./guides/use-the-repository-views.md)

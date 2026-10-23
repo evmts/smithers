@@ -2,6 +2,9 @@
 
 The files open in a repository show as tabs above its code, and the agent opens a file there, with lines highlighted, to show the person code (Will's feature 4, rulings SCOPE-6: "open files and highlight lines of code for the user. Files themselves should show up as tabs"). A person and the agent use the same two flows, `file/open` and `file/close` (FLOW-3).
 
+Markdown file previews take their content height below the toolbar. Narrow screens
+keep file-close, tree and preview controls at least 32 pixels across and tall.
+
 ## What a person sees
 
 ```

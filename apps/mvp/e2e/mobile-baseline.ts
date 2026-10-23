@@ -7,6 +7,10 @@ import { expect, type Page, type TestInfo } from "@playwright/test"
 // This guards against widening these indexed mobile rules to desktop. It is
 // not a historical golden comparison of the approved desktop repairs.
 const addedRules = [
+  ".sui-file-tab > button { width:32px; height:var(--ctl-h, 32px); }",
+  ".sui-file-tree-file, .sui-file-tree-dir-toggle { min-height:var(--ctl-h, 32px); }",
+  ".sui-repo-segment { min-width:32px; min-height:var(--ctl-h, 32px); }",
+  ".sui-item-conv-external { display:inline-flex; align-items:center; min-width:32px; min-height:var(--ctl-h, 32px); }",
   ".sui-chat-transcript:has(> .sui-timeline-disclosure[open]) { z-index:41; }",
   ".app-shell-header { flex-wrap: wrap; }",
   ".app-shell-header [aria-label=\"Account\"] { min-width: 0; flex-wrap: wrap; }",
@@ -15,7 +19,7 @@ const addedRules = [
   ".branch-header-views > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }",
   ".branch-header-presence { flex-wrap: wrap; min-width: 0; }",
   ".conversations-screen-header > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }",
-  ".conversation-list-row > a { min-height: 32px; }",
+  ".conversation-list-row > a { min-height: 32px; flex-wrap: wrap; }",
   ".docs-page-links a { display:flex; align-items:center; min-width:32px; min-height:32px; }",
   ".flows-screen-header > a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; }",
   ".flows-page td a { display:inline-flex; align-items:center; min-height:32px; min-width:32px; max-width:100%; overflow-wrap:anywhere; }",

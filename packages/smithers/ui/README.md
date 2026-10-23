@@ -77,6 +77,9 @@ outcome; `aria-controls` links to its transcript anchor. Group names stay groupe
 data attributes when forwarding host props; host IDs, classes and other props
 still pass through.
 
+Through 960px, file-close buttons, file-tree controls and item external links
+provide at least 32px tap targets.
+
 Heavy renderers stay behind `@smthrs/ui/adapters/*` subpaths so the base barrel
 tree-shakes clean: `terminal`, `chart`, `knowledge-graph`.
 `tests/barrel-weight.test.ts` is the ratchet that keeps them out of

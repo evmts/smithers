@@ -123,3 +123,6 @@ The names are a snapshot for the list and its search, refreshed whenever you ope
 - `src/features/conversations/conversations.test.ts`: two devices of one person against ChatApi's real handler: listing, Archive on one device reaching the other, opening and Restore bringing it back, search, a refused act, and `/new` from a branch and from home, and `exists`.
 - `worker/branch/ConversationPeople.test.ts`, `worker/branch/Branches.test.ts`, `worker/Chat.test.ts`: the statements, the routes, the shape's scope, opening, asking and the home repository.
 - `e2e/conversations.spec.ts`: New, Archive and the list in real browsers, on two devices, each with its GIF.
+
+Conversation rows wrap branch and repository names so both remain readable beside
+Archive on a narrow screen.

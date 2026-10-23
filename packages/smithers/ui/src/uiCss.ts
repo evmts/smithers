@@ -341,6 +341,9 @@ export const tabsCss = `
 .sui-file-tab > a:focus-visible { ${focusRing} border-radius:${t.radiusControl}; }
 .sui-file-tab > button { display:inline-grid; place-items:center; width:20px; height:20px; padding:0; border:none; border-radius:${t.radiusControl}; background:transparent; color:inherit; cursor:pointer; opacity:.6; }
 .sui-file-tab > button:hover { opacity:1; background:${t.border}; }
+@media (max-width:960px) {
+  .sui-file-tab > button { width:32px; height:${t.controlHeight}; }
+}
 .sui-tabs-content { min-width:0; }
 .sui-tabs-content:focus-visible { outline:none; }
 `;
@@ -581,6 +584,9 @@ export const fileTreeCss = `
 .sui-file-tree-file:hover { background:${t.secondary}; }
 .sui-file-tree-file:focus-visible { ${focusRing} }
 .sui-file-tree-file[data-active='true'] { background:color-mix(in srgb, ${t.primary} 12%, transparent); color:${t.primary}; font-weight:650; }
+@media (max-width:960px) {
+  .sui-file-tree-file, .sui-file-tree-dir-toggle { min-height:${t.controlHeight}; }
+}
 .sui-file-tree-file-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sui-file-tree-affordance { flex:none; display:inline-flex; align-items:center; }
 .sui-file-tree-note { padding:4px 6px; color:${t.mutedForeground}; font-size:${t.fontSizeCompact}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -800,4 +806,3 @@ export const smithersUiCss = [
 ]
   .map((block) => block.trim())
   .join("\n");
-

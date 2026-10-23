@@ -65,7 +65,8 @@ const repositoryCss = `
 .sui-repo-content { min-width:0; display:grid; align-content:start; gap:16px; }
 .sui-repo[data-size='inline'] .sui-repo-content { max-height:420px; overflow:auto; }
 .sui-repo-box { min-width:0; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; overflow:hidden; }
-.sui-repo-readme > .sui-markdown-editor { height:auto; }
+.sui-repo-readme > .sui-markdown-editor,
+.sui-repo-file > .sui-markdown-editor { height:auto; }
 .sui-repo-toolbar { min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid ${t.border}; color:${t.mutedForeground}; font-size:${t.fontSizeCompact}; }
 .sui-repo-readme-name { color:${t.foreground}; font-weight:650; text-decoration:none; border-radius:${t.radiusControl}; }
 .sui-repo-readme-name:hover { text-decoration:underline; }
@@ -81,6 +82,9 @@ const repositoryCss = `
 .sui-repo-segment:hover { color:${t.foreground}; }
 .sui-repo-segment:focus-visible { ${focusRing} }
 .sui-repo-segment[aria-pressed='true'] { background:${t.card}; color:${t.foreground}; font-weight:650; }
+@media (max-width:960px) {
+  .sui-repo-segment { min-width:32px; min-height:${t.controlHeight}; }
+}
 .sui-repo-note { padding:14px; color:${t.mutedForeground}; font-size:13px; }
 /* The files or a file still loading: skeleton lines where they will be. */
 .sui-repo-loading { display:grid; gap:12px; padding:14px; }

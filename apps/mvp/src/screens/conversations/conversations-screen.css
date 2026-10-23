@@ -7,10 +7,10 @@
 .conversation-list-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .conversation-list-row { display: flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; }
 .conversation-list-row > a { flex: 1; min-width: 0; display: flex; gap: 0.75rem; align-items: baseline; }
-.conversation-list-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conversation-list-repo { opacity: 0.7; font-size: 0.875rem; white-space: nowrap; }
+.conversation-list-branch { min-width: 0; overflow-wrap: anywhere; }
+.conversation-list-repo { min-width: 0; opacity: 0.7; font-size: 0.875rem; overflow-wrap: anywhere; }
 
 @media (max-width: 60rem) {
   .conversations-screen-header > a { display: inline-flex; align-items: center; min-width: 32px; min-height: 32px; }
-  .conversation-list-row > a { min-height: 32px; }
+  .conversation-list-row > a { min-height: 32px; flex-wrap: wrap; }
 }
