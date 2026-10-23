@@ -1,3 +1,5 @@
+import { useTodos } from "../../features/todos/components/TodosContext"
+import { repoId } from "../../features/repo/contract"
 import { Card, EmptyState } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useSearch } from "@tanstack/react-router"
@@ -30,6 +32,7 @@ import "./branch-screen.css"
 export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean } = {}) {
   const { queries, presence } = useBranch()
   const { data: current } = useLiveQuery(queries.current)
+  const { data: todos } = useLiveQuery(useTodos().queries.stack(current ? repoId(current.owner, current.repo) : "").todos)
   const { data: room } = useLiveQuery(presence.queries.room)
   const { data: participants } = useLiveQuery(presence.queries.participants)
   const search = useSearch({ strict: false }) as { readonly terminal?: string; readonly edit?: string }
@@ -66,7 +69,7 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
       {open || savedConversation ? (
         <div className="branch-screen-side">
           <Card className="branch-screen-conversation" aria-label="Conversation">
-            <Conversation readOnly={savedConversation} empty={<EmptyState title={NO_MESSAGES} />} />
+            <Conversation timelineTodos={todos.filter(todo => todo.branch === current?.name)} timelineRepo={current ? { owner: current.owner, name: current.repo } : undefined} readOnly={savedConversation} empty={<EmptyState title={NO_MESSAGES} />} />
           </Card>
           {open ? <div className="branch-screen-composer">
             {writes(access) ? (

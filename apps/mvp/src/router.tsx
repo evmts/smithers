@@ -266,6 +266,7 @@ const treeRoute = createRoute({
     enter(load, () => context.repo.actions.warmRoute("tree", params, { L: search.L }), () =>
       Promise.all([
         context.repo.actions.openRoute("tree", params, { L: search.L }),
+        context.todos.actions.warm(params.owner, params.repo),
         openBranchPage(context.branch, context.terminal, load.abortController.signal, params, search),
       ])),
   onLeave: ({ context, abortController }) => {

@@ -170,3 +170,35 @@ test("preview evidence preserves zero usage and omits unavailable measurements",
     expect(preview({ kind })).toContain(`>${actor}</span>`);
   }
 });
+
+test("concrete host labels render while a summary is pending, and a summary takes precedence", () => {
+  for (const kind of ["ask", "answer", "tool", "flow"] as const) {
+    const entry = { id: kind, kind, state: "done" as const, label: "README.md · updated" }
+    expect(timelineLabel(entry)).toBe("README.md · updated")
+    const html = renderToStaticMarkup(<ChatTimeline entries={[entry]} />)
+    expect(html).toContain("README.md · updated")
+    expect(html).toContain('data-summary="pending"')
+    expect(timelineLabel({ ...entry, summary: "Release notes updated" })).toBe("Release notes updated")
+  }
+})
+
+test("keyboard traversal does not activate an entry's external destination", async () => {
+  const { act } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const jumps: string[] = [];
+  const activations: string[] = [];
+  const entries = ["question", "todo"].map(id => ({ id, kind: "ask" as const, state: "done" as const }));
+  try {
+    await act(async () => root.render(<ChatTimeline entries={entries} onJump={id => jumps.push(id)} onActivate={id => activations.push(id)} />));
+    const buttons = host.querySelectorAll("button");
+    await act(async () => buttons[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true })));
+    expect(jumps).toEqual(["todo"]);
+    expect(activations).toEqual([]);
+    expect(document.activeElement).toBe(buttons[1]);
+    await act(async () => buttons[1]!.click());
+    expect(activations).toEqual(["todo"]);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

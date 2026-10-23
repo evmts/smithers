@@ -1,7 +1,8 @@
 import { HarnessError } from "@smthrs/harness"
+import { ModelStep } from "@smthrs/agent"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Model, ModelError, ModelEvent } from "@smthrs/model"
-import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Scope, Stream } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope, Stream } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { build } from "../../../worker/test/flowHost"
@@ -39,7 +40,7 @@ test("sealed summary model step replays without a second provider call and logs 
   expect(lines.join("\n")).not.toContain("Inspect both retry attempts")
 })
 
-test.each(["two words", "one <two> three"])("invalid model output is a safe typed failure: %s", async text => {
+test.each(["Reply sent", "one <two> three"])("invalid model output is a safe typed failure: %s", async text => {
   const model = Model.make({ stream: () => Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "text-delta", id: "s", text }, { type: "settle", stopReason: "stop" }]) })
   const scope = Effect.runSync(Scope.make()); scopes.push(scope)
   const registry: Metric.MetricRegistry = new Map()
@@ -105,4 +106,20 @@ test("a non-provider model-step failure is a safe unavailable summary", async ()
   ))))
   const exit = await Effect.runPromise(Effect.exit(Context.get(context, FlowRuntime.FlowRuntime).execute(Summarize, { executionId: "summary-host-fault", payload })).pipe(Effect.provide(context)))
   expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(new SummaryFailed({ code: "unavailable" }))
+})
+
+
+test("a model grant-store failure leaves the summary unavailable without exposing its detail", async () => {
+  const error = Schema.decodeUnknownSync(ModelStep.Failure)({
+    _tag: "@smthrs/capability/GrantStoreError", code: "journal_failed", message: "private grant detail",
+  })
+  if (error._tag !== "@smthrs/capability/GrantStoreError") throw new Error("Expected grant-store failure")
+  const model = Model.make({ stream: () => Stream.fail(error) })
+  const scope = Effect.runSync(Scope.make()); scopes.push(scope)
+  const { context } = await Effect.runPromise(Scope.provide(scope)(build(registration.pipe(
+    Layer.provide(SummarySeat.layer("https://summary.test", model)), Layer.provideMerge(Action.layerImplementations),
+  ))))
+  const runtime = Context.get(context, FlowRuntime.FlowRuntime)
+  const exit = await Effect.runPromise(Effect.exit(runtime.execute(Summarize, { executionId: "grant-unavailable", payload })).pipe(Effect.provide(context)))
+  expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : exit).toEqual(new SummaryFailed({ code: "unavailable" }))
 })

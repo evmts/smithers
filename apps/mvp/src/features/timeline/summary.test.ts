@@ -7,7 +7,11 @@ import { revisionOf } from "./store"
 describe("timeline summary contract", () => {
   test("accepts only short plain navigation summaries", () => {
     expect(cleanSummary("  Inspect both retry attempts  ")).toBe("Inspect both retry attempts")
-    for (const text of ["", "Two words", "one two three four five six seven eight nine", "one\ntwo three", "one\rtwo three", "one <two> three", "one `two` three", "a "+"b".repeat(98)+" c"]) expect(cleanSummary(text)).toBeUndefined()
+    expect(cleanSummary("README.md updated")).toBe("README.md updated")
+    expect(cleanSummary("README.md")).toBe("README.md")
+    expect(cleanSummary("Use API_TOKEN=example-secret")).not.toContain("example-secret")
+    for (const text of ["Waiting to send", "Waiting for reply", "Not sent", "Done", "Failed", "Queued"]) expect(cleanSummary(text)).toBeUndefined()
+    for (const text of ["", "Reply sent", "Run completed", "Working", "one two three four five six seven eight nine", "one\ntwo three", "one\rtwo three", "one <two> three", "one `two` three", "a "+"b".repeat(98)+" c"]) expect(cleanSummary(text)).toBeUndefined()
   })
   test("keys every content change, even beyond the model excerpt, independently of streaming metadata", () => {
     const row = { id: "a", role: "user" as const, text: "Find help commands" }

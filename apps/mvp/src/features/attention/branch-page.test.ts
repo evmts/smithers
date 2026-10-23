@@ -19,14 +19,15 @@ import { Terminal } from "../terminal/terminal"
 import { Theme } from "../theme/theme"
 import { BranchScreen } from "../../screens/branch/BranchScreen"
 import { branchRenderer } from "../../screens/branch/offline-render"
+import { Todos } from "../todos/todos"
 import { Attention } from "./attention"
 
 test("a branch page renders its shared inline toast stack below the header", async () => {
   const runtime = openTestApp({ answers: false })
   try {
-    const [api, attention, branch, repo, intel, spend, chat, auth, status, commands, theme, terminal] =
+    const [api, attention, branch, repo, intel, spend, chat, auth, status, commands, theme, terminal, todos] =
       await runtime.runPromise(Effect.all([
-        TestChatApi, Attention, Branch, Repo, CodeIntel, Spend, Chat, Auth, Status, Commands, Theme, Terminal,
+        TestChatApi, Attention, Branch, Repo, CodeIntel, Spend, Chat, Auth, Status, Commands, Theme, Terminal, Todos,
       ]))
     repo.actions.openRoute("tree", { owner: "acme", repo: "widgets", ref: "feature" }, {})
     repo.queries.view.startSyncImmediate()
@@ -48,7 +49,7 @@ test("a branch page renders its shared inline toast stack below the header", asy
     })
     await router.load()
     expect(router.state.matches.map((match) => match.routeId)).toContain(route.id)
-    const html = branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend })(router)
+    const html = branchRenderer({ files: await runtime.runPromise(Effect.service(Files)), chat, auth, repo, branch, intel, status, commands, theme, terminal, attention, spend, todos })(router)
     expect(html).toContain('class="branch-screen"')
     expect(html).toContain('data-placement="inline"')
     expect(html).toContain(`data-subject="${subject}"`)

@@ -431,6 +431,9 @@ importers:
       '@smthrs/integrations':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/integrations
+      '@smthrs/journal':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/journal
       '@smthrs/memory':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/memory

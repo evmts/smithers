@@ -25,6 +25,7 @@ export const statusesQuery = (
       .leftJoin({ mine: local.tanstack }, ({ message, mine }) => Query.eq(message.id, mine.id))
       .select(({ message, run, mine }) => ({
         id: message.id,
+        flow: run?.flow,
         position: message.position,
         state: Query.caseWhen(
           Query.eq(message.status, "done"),

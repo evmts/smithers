@@ -35,6 +35,7 @@ export const conversationQuery = (
       .unionAll(
         q.from({ synced: messages.tanstack }).select(({ synced }) => ({
           id: synced.id,
+          questionId: Query.coalesce(synced.questionId, ""),
           role: synced.role,
           text: Query.caseWhen(Query.eq(synced.status, "failed"), COULDNT_ANSWER, synced.text),
           status: synced.status,

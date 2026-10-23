@@ -31,10 +31,13 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
   const rail = a.page.getByRole("navigation", { name: "Conversation timeline" })
   await expect(rail).toBeVisible()
   const transcriptWidth = (await a.conversation.boundingBox())!.width
+  const rowHeights = () => rail.getByRole("button").evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().height))
+  const initialHeights = await rowHeights()
   await test.step("Receive navigation summaries", async () => {
     await expect.poll(() => rail.locator('[data-summary="ready"]').count(), { timeout: 90_000 }).toBeGreaterThan(0)
     expect((await a.conversation.boundingBox())!.width).toBe(transcriptWidth)
-    expect(await rail.getByRole("button").evaluateAll(buttons => buttons.every(button => button.getBoundingClientRect().height === 34))).toBe(true)
+    expect(initialHeights.every(height => height > 0)).toBe(true)
+    expect(await rowHeights()).toEqual(initialHeights)
   })
   await test.step("Preview an entry on hover and focus", async () => {
     const first = rail.getByRole("button").first()
@@ -83,5 +86,35 @@ test("Conversation timeline: scroll, jump by key and receive durable summaries",
     await rail.getByRole("button").first().press("Escape")
     await expect(rail).toBeHidden()
     await expect(toggle).toBeFocused()
+  })
+})
+
+test("Branch timeline: question, reply, run and TODO name their objects", {
+  annotation: { type: "summary", description: "Every branch entry identifies the question, flow or TODO while summaries arrive." },
+}, async ({ devices }) => {
+  test.setTimeout(180_000)
+  const [a] = await devices.open("Branch timeline")
+  await a.page.goto(scriptedAgent("todo-draft", "/octocat/Spoon-Knife/tree/main"))
+  await expect(a.page.getByRole("navigation", { name: "Branch", exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(a.page.getByRole("progressbar", { name: "Loading page" })).toHaveCount(0, { timeout: 60_000 })
+  const word = devices.word
+  await test.step("Ask for a README TODO on the branch", async () => {
+    await a.askAndWaitTaken(`todo-draft octocat/Spoon-Knife ${word}`)
+    await expect(a.page.getByRole("form", { name: "TODO draft" })).toBeVisible({ timeout: 120_000 })
+    await a.page.getByRole("form", { name: "TODO draft" }).getByLabel("Title").fill(`README release ${word}`)
+  })
+  await test.step("Read the objects in the timeline", async () => {
+    const rail = a.page.getByRole("navigation", { name: "Conversation timeline" })
+    if (!(await rail.isVisible())) await a.page.locator(".sui-timeline-disclosure > summary").click()
+    const rows = rail.locator('ol[data-level="0"] button')
+    await expect(rows.filter({ hasText: "chat/Answer · completed" })).toHaveCount(1, { timeout: 30_000 })
+    await expect(rows.filter({ hasText: `README release ${word} · draft` })).toHaveCount(1)
+    await expect(rows).toHaveCount(4)
+    for (const label of await rows.allTextContents()) {
+      expect(label.trim()).not.toMatch(/^(?:(?:Reply|Question|Answer|Tool|Run|TODO) (?:sent|completed|done|failed|queued|opened)|Working|Waiting(?: to send| for reply)?|Needs you|Not sent|Done|Failed|Queued)$/i)
+      expect(label.trim().length).toBeGreaterThan(0)
+    }
+    await rows.last().click()
+    await expect(a.page.getByRole("form", { name: "TODO draft" })).toBeInViewport()
   })
 })

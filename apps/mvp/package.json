@@ -44,6 +44,7 @@
     "@smthrs/gateway": "workspace:*",
     "@smthrs/harness": "workspace:*",
     "@smthrs/integrations": "workspace:*",
+    "@smthrs/journal": "workspace:*",
     "@smthrs/memory": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/model-host": "workspace:*",

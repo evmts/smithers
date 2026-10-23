@@ -12,6 +12,7 @@ export function DraftCard({ draft }: { readonly draft: Draft }) {
   const navigate = useNavigate()
   return (
     <TodoDraftCard
+      id={`todo:${draft.id}`}
       data-draft={draft.id}
       repo={draft.repo}
       {...(draft.issue === undefined ? {} : { source: `#${draft.issue}` })}

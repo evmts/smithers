@@ -1,10 +1,13 @@
 import { TimelineContribution } from "../../timeline/TimelineContribution"
 import { Badge, Button, ChatMessage, ChatTranscript, CopyButton, MessageResponse, RelativeTime, Wordmark } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { Link } from "@tanstack/react-router"
+import type { RailTodo } from "../../timeline/view"
+import { todoPath } from "../../todos/contract"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { Fragment, type ReactNode } from "react"
 import { useChat } from "../../../AppContext"
 import { AnswerStatus } from "../../status/components/AnswerStatus"
+import { useTodos } from "../../todos/components/TodosContext"
 import { AnswerDrafts } from "../../todos/components/AnswerDrafts"
 import { useStatus } from "../../status/components/StatusContext"
 import { ConversationView } from "../../views/components/ConversationView"
@@ -20,8 +23,18 @@ import { debugRunOf, timeOf } from "../view"
 // (src/features/views) shows where it was added, from its own row. An answer shows its agent status under it
 // (src/features/status): its question while it needs you, in place of an empty bubble. Empty, it shows `empty`: the
 // wordmark on /app, the branch's own empty state on a branch's page.
-export function Conversation({ empty = <Wordmark />, readOnly = false }: { readonly empty?: ReactNode; readonly readOnly?: boolean } = {}) {
+export function Conversation({ empty = <Wordmark />, readOnly = false, timelineTodos = [], timelineRepo }: { readonly empty?: ReactNode; readonly readOnly?: boolean; readonly timelineTodos?: readonly RailTodo[]; readonly timelineRepo?: { readonly owner: string; readonly name: string } } = {}) {
+  const navigate = useNavigate()
+  const jump = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ block: "center", behavior: "instant" })
+  }
+  const activate = (id: string) => {
+    const todo = timelineTodos.find(todo => `todo:${todo.id}` === id)
+    if (todo && timelineRepo) { void navigate({ href: todoPath(timelineRepo.owner, timelineRepo.name, todo.number) }); return }
+    jump(id)
+  }
   const { queries, actions } = useChat()
+  const { data: drafts } = useLiveQuery(useTodos().queries.drafts)
   // The conversation this tab shows: the branch's on a branch's page (decision 0013 §1), the home one on /app.
   const { data: place } = useLiveQuery(queries.place)
   const shown = queries.of(place?.conversationId)
@@ -33,7 +46,7 @@ export function Conversation({ empty = <Wordmark />, readOnly = false }: { reado
   const { data: connection } = useLiveQuery(queries.connection)
   const pill = connection !== undefined && connection.status !== "up"
   return (
-    <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={conversation} summaries={summaries} statuses={statuses} />}>
+    <ChatTranscript empty={history?.opened === true ? empty : null} rail={<TimelineContribution messages={conversation} summaries={summaries} statuses={statuses} drafts={readOnly ? [] : drafts} todos={timelineTodos} onJump={jump} onActivate={activate} />}>
       {history?.earlier === true ? (
         <Button variant="ghost" size="sm" onClick={actions.loadEarlier}>
           Load earlier
@@ -125,6 +138,7 @@ export function Conversation({ empty = <Wordmark />, readOnly = false }: { reado
           )}
         </ChatMessage>
         )}
+        {message.role === "assistant" ? <span id={`run:${message.id}`} /> : null}
         {message.role === "assistant" && !readOnly ? <div id={message.text === "" && statuses.find(status => status.id === message.id)?.state === "needs_you" ? message.id : undefined}><AnswerStatus id={message.id} statuses={status.statuses} /></div> : null}
         {/* A TODO the agent drafted in this answer, private to this device until the person commits it (0016 §3). */}
         {message.role === "assistant" && !readOnly ? <AnswerDrafts id={message.id} /> : null}

@@ -7,6 +7,8 @@ import { useInjectUiCss } from "../styles";
 export interface ChatTimelineEntry {
   readonly id: string;
   readonly summary?: string;
+  /** Concrete recorded object and outcome while a generated summary is unavailable. */
+  readonly label?: string;
   readonly actor?: string;
   readonly time?: string;
   readonly duration?: string;
@@ -19,11 +21,13 @@ export interface ChatTimelineProps {
   readonly entries: readonly ChatTimelineEntry[];
   /** The host owns navigation. Without it, jump to the entry's transcript anchor. */
   readonly onJump?: (id: string) => void;
+  /** Explicit activation of a single entry; keyboard traversal and grouped entries only jump. */
+  readonly onActivate?: (id: string) => void;
   readonly groupSummaries?: Readonly<Record<string, string>>;
   /** Only groups in currently existing, visible levels are requested. */
   readonly onGroupsChange?: (groups: readonly TimelineBlock[]) => void;
 }
-export const timelineLabel = (entry: ChatTimelineEntry): string => entry.summary || ({
+export const timelineLabel = (entry: ChatTimelineEntry): string => entry.summary || entry.label || ({
   done: { ask: "Question sent", answer: "Reply completed", tool: "Tool completed", flow: "Run completed" }[entry.kind],
   working: "Working", waiting: "Needs you",
   failed: { ask: "Not sent", answer: "Reply failed", tool: "Tool failed", flow: "Run failed" }[entry.kind],
@@ -39,7 +43,7 @@ export const timelineKey = (key: string, index: number, length: number): number 
 };
 
 /** The browser viewport is an external store; summaries never change its geometry. */
-export function ChatTimeline({ entries, onJump, groupSummaries = {}, onGroupsChange }: ChatTimelineProps) {
+export function ChatTimeline({ entries, onJump, onActivate, groupSummaries = {}, onGroupsChange }: ChatTimelineProps) {
   useInjectUiCss();
   const rail = useRef<HTMLElement>(null);
   const onGroupsChangeRef = useRef(onGroupsChange);
@@ -106,7 +110,7 @@ export function ChatTimeline({ entries, onJump, groupSummaries = {}, onGroupsCha
         return <li key={block.id} data-state={state} data-in-view={members.some(member => band.includes(member.id)) || undefined} style={{ flexGrow: members.length }}>
           <button type="button" aria-controls={entry.id} aria-current={members.some(member => band.includes(member.id)) ? "location" : undefined}
             data-summary={(grouped ? groupSummaries[block.id] : entry.summary) ? "ready" : "pending"} aria-describedby={previewId}
-            onClick={() => jump(entry.id)}
+            onClick={() => !grouped && onActivate ? onActivate(entry.id) : jump(entry.id)}
             onKeyDown={event => {
               if (event.key === "Escape") {
                 const target = document.getElementById(entry.id);
