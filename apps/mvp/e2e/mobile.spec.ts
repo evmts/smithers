@@ -104,6 +104,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             const secure = baseURL.startsWith("https:")
             await context.addCookies([{ name: `${secure ? "__Host-" : ""}smithers_dev_signed_out`, value: "1", url: baseURL, secure }])
           }
+          const session = await context.request.get("/api/auth/session")
+          expect(await session.json()).toMatchObject({ signedIn })
         })
         for (const screen of screens) {
           test(`${screen.name}: controls and text fit`, async ({ page, request }, info) => {
@@ -119,8 +121,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
                 expect(launch.ok(), "the file fixture's real clone is launched").toBe(true)
               }
               await page.goto(screen.path)
-              await expect(page.locator(screen.ready).first()).toBeVisible({ timeout: 30_000 })
+              const ready = screen.name === "terminal" && !signedIn ? ".branch-screen-view" : screen.ready
+              await expect(page.locator(ready).first()).toBeVisible({ timeout: 30_000 })
               if (screen.name === "branch") await expect(page.locator(".branch-screen-view")).toBeVisible({ timeout: 30_000 })
+              if (screen.name === "terminal" && !signedIn) await expect(page.locator(".terminal-panel")).toHaveCount(0)
             })
             await audit(page, info)
           })
