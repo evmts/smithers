@@ -294,7 +294,7 @@ describe("AnswerProgress", () => {
   test("drops a write the routes refuse, and writes nothing for an answer it has forgotten", async () => {
     const tried: Array<string> = []
     const { progress, close } = await open((id) =>
-      Effect.sync(() => tried.push(id)).pipe(Effect.andThen(Effect.fail(new AnswersUnavailable({ status: 409 }))))
+      Effect.sync(() => tried.push(id)).pipe(Effect.andThen(Effect.fail(new AnswersUnavailable(id === "refused" ? {} : { status: 409 }))))
     )
 
     await Effect.runPromise(progress.record("refused", started(0, 0)))

@@ -8,12 +8,14 @@ import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
-import { harness, testFile } from "../../../worker/test/harness.ts"
+import { contents, harness, stop, testFile, usage } from "../../../worker/test/harness.ts"
 import { member, openAgent, ORIGIN } from "../../test/agent"
 import { JudgeSeat } from "../jev/steps"
 import { runFlow } from "../../../worker/test/flowHost.ts"
 import { OpeningFailed, OpeningRefused, Prepare, PreparedTurn } from "./flows"
-import { catalogUnavailable, layer, prepare, recall } from "./memory"
+import { catalogUnavailable, layer, prepare, recall, remembered, rememberRegistration } from "./memory"
+
+import { MEMORY_BANK, Remember } from "./memoryFlows"
 
 const runtime = testFile("memory_sources")
 // The memory banks' own schema on the compose Postgres, dropped when each test's scope closes.
@@ -106,4 +108,61 @@ test("catalog outage preserves recalled memory so chat can continue", async () =
   expect(result.history).toEqual(turn.history)
   expect(result.candidates).toContainEqual(expect.objectContaining({ kind: "memory", key: "launch", text: "launch mascot is cobalt" }))
   expect(result.candidates.some((row) => row.kind === "skill")).toBe(false)
+})
+
+test("remember returns a save receipt, stores in the host-owned bank and replaces the same key", async () => {
+  const before = Effect.runSync(Metric.value(remembered)).count
+  await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const context = yield* Layer.build(MemoryStore.layer.pipe(Layer.provideMerge(database), Layer.provideMerge(NodeHost.NodeCrypto.layer)))
+    for (const text of ["launch mascot is cobalt", "launch mascot is amber"]) {
+      const result = yield* Effect.promise(() => runFlow(Remember, { key: "mascot", text }, rememberRegistration.pipe(Layer.provide(Layer.succeedContext(context)))))
+      expect(result.exit).toEqual(Exit.succeed({ key: "mascot" }))
+      const rows = yield* Effect.flatMap(Opening.Sources, (sources) => sources.recall("launch mascot")).pipe(
+        Effect.provide(Opening.layerSources([MEMORY_BANK]).pipe(Layer.provide(RecallKeyword.layer), Layer.provide(Layer.succeedContext(context)))),
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ bank: MEMORY_BANK, key: "mascot", text })
+    }
+  })))
+  expect(Effect.runSync(Metric.value(remembered)).count - before).toBe(2)
+})
+
+
+test.each(["judged", "unavailable"] as const)("a nonempty opening is %s through the durable judge seat", async (mode) => {
+  const agent = await openAgent(runtime, (request) => {
+    const asked = JSON.parse(contents(request).at(-1)!) as { questions: Record<string, unknown> }
+    return Stream.make({ type: "text-delta" as const, id: "judge", text: JSON.stringify({ answers: Object.fromEntries(
+      Object.keys(asked.questions).map((id, index) => [id, { type: "boolean", probability: index === 0 ? 0.01 : 0.99 }]),
+    ) }) }, usage, stop)
+  })
+  const candidates = [
+    { kind: "memory" as const, bank: MEMORY_BANK, key: "launch", text: "launch mascot is cobalt" },
+    { kind: "skill" as const, bank: "skills", key: "irrelevant", text: "unrelated skill" },
+  ]
+  const flow = Flow.make(`memory/TestOpening-${mode}`, {
+    payload: {}, success: PreparedTurn, error: OpeningFailed,
+    body: Node.capture({ prepare: Prepare.name, turn }, () => Prepare.call({ ...turn, candidates })),
+  })
+  const transport = mode === "judged" ? agent.fetch : (() => Promise.reject(new Error("injected judge outage"))) as typeof fetch
+  const result = await runFlow(flow, {}, Interpreter.layerWithImplementations(flow, Prepare.toLayer(prepare)).pipe(
+    Layer.provide(JudgeSeat.layer(ORIGIN)), Layer.provide(http(transport)),
+  ))
+  if (mode === "unavailable") {
+    expect(Exit.isFailure(result.exit) && Cause.squash(result.exit.cause)).toBeInstanceOf(OpeningFailed)
+  } else {
+    expect(result.exit).toEqual(Exit.succeed({ ...turn, memoryDebug: { recalled: 2, inserted: 1, filtered: 1, skillsInserted: 0 },
+      opening: [{ bank: MEMORY_BANK, key: "launch", text: "launch mascot is cobalt", origin: "recall" }],
+    }))
+  }
+})
+
+test("a host with an injected failing memory source closes the answer before calling a model", async () => {
+  const agent = await openAgent(runtime, () => Stream.die("source failure must precede model calls"))
+  const engine = await agent.engine(undefined, { memorySources: Layer.succeed(Opening.Sources, {
+    recall: () => Effect.fail(new MemoryError.MemoryError({ code: "store", message: "injected storage fault" })),
+  }) })
+  try {
+    const id = await agent.ask("Recall the launch")
+    expect(await agent.answer(engine, id)).toEqual(Exit.succeed({ status: "failed" }))
+  } finally { await engine.kill() }
 })
