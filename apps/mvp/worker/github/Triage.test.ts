@@ -1286,3 +1286,30 @@ describe("a person's triage", () => {
     expect((await decisions())[0]).toMatchObject({ via: "person", triageBefore: "proposed", commented: false })
   })
 })
+
+test("a transient rejection-comment outage retries durably and writes one comment", async () => {
+  const github = repository()
+  await enable()
+  github.open("Spam", "Body")
+  github.faults.push({ match: (method, path) => method === "POST" && /\/comments$/.test(path), status: 502 })
+  const { value } = await judged(github, judging("reject", "duplicate"))
+  expect((await triage(value, 1)).exit).toEqual(Exit.succeed({ outcome: "commented", decisionId: expect.any(String) }))
+  expect(githubComments(github, 1)).toHaveLength(1)
+  expect((await decisions())[0]).toMatchObject({ commented: true, commentFailed: false })
+}, 60_000)
+
+test("a queued commitment whose author no longer resolves is refused without changing labels", async () => {
+  const github = repository()
+  github.open("Accepted", "Body")
+  github.relabel(1, [ACCEPTED_LABEL])
+  const person = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+  // Fault the persisted author reference; the real session still supplies its token.
+  const writeId = await admit(runtime, { actorId: "missing-author", sessionId: person.sessionId, via: "person",
+    payload: { op: "issue/commitment", number: 1, commitment: "now" },
+  })
+  const { services: value } = await services(runtime, github)
+  const result = await runFlow(Write.Write, { writeId }, Write.registration(value))
+  expect(result.exit).toEqual(Exit.succeed({ status: "refused", itemNumber: null }))
+  expect(await writeRow(runtime, writeId)).toMatchObject({ status: "refused", failure: "not_allowed" })
+  expect(github.issues.get(1)!.labels).toEqual([ACCEPTED_LABEL])
+})
