@@ -313,8 +313,9 @@ describe("an Admin's Secrets page", () => {
     // ChatApi took it, and the answer was lost: once the list shows it, it landed.
     faulty.state.next.push("lost")
     expect(tab.actions.add("NEW_KEY", VALUE, "api.example.com")).toBe(true)
-    await until(() => expect(tab.form("add")).toMatchObject({ state: "done" }))
+    await until(() => expect(tab.form("add")).toMatchObject({ state: "done", saved: 1 }))
     expect(tab.rows().map((row) => row.name)).toEqual(["NEW_KEY", "OLD_KEY"])
+    expect(tab.count({ op: "put", outcome: "started" })).toBe(1)
     faulty.state.next.push("lost")
     expect(tab.actions.remove("OLD_KEY")).toBe(true)
     await until(() => expect(tab.form("delete:OLD_KEY")).toBeUndefined())

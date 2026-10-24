@@ -85,8 +85,14 @@ const make = Effect.fnUntraced(function* (config: SecretsConfig) {
   /** A form's write the list shows landed: Add's form says so; Rotate's and Delete's close. */
   const settle = (form: SecretForm) =>
     Effect.gen(function* () {
-      yield* record(form.kind === "delete" ? "delete" : "put", form.secret, "landed")
-      if (form.kind === "add") return yield* forms.update(form.id, (row) => void (row.state = "done"))
+      const op = form.kind === "delete" ? "delete" : "put"
+      // A lost 202 left the outcome unknown; the row now proves ChatApi took the write.
+      if (form.state === "unknown") yield* record(op, form.secret, "started")
+      yield* record(op, form.secret, "landed")
+      if (form.kind === "add") return yield* forms.update(form.id, (row) => {
+        if (row.state === "unknown") row.saved++
+        row.state = "done"
+      })
       yield* forms.delete(form.id)
       yield* view.update(VIEW, (row) => {
         if (row.repoId !== form.repoId) return
