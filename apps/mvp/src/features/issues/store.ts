@@ -186,7 +186,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       if (status !== "allowed" || (yield* Ref.getAndSet(awaitingItems, true))) return
       yield* items.currentApplied.pipe(
         Effect.flatMap(() => Effect.ignore(access.update(ACCESS, (row) => {
-          if (row.status === "allowed") row.installed = true
+          row.installed = true
         }))),
         Effect.ensuring(Ref.set(awaitingItems, false)),
         Effect.forkIn(scope, { startImmediately: true }),
@@ -195,13 +195,12 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     Effect.forkIn(scope, { startImmediately: true }),
   )
   // A fast first batch can be followed by a live Sent before this listener subscribes. Its installed receipt remains
-  // current until a refusal or failed request invalidates it; an older receipt cannot undo a current refusal.
+  // current until a refusal or failed request invalidates it. currentApplied only resumes for the latest accepted,
+  // decoded and installed cursor (ElectricCollection.certify); a refused request cannot release either waiter.
   yield* items.currentApplied.pipe(
     Effect.flatMap(() => Effect.ignore(access.update(ACCESS, (row) => {
-      if (row.status === "unknown" || row.status === "allowed") {
-        row.status = "allowed"
-        row.installed = true
-      }
+      row.status = "allowed"
+      row.installed = true
     }))),
     Effect.forkIn(scope, { startImmediately: true }),
   )

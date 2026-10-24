@@ -172,9 +172,9 @@ export const pageOf = (
     ? "loading"
     : synced !== undefined
     ? "missing"
-    : access?.status === "allowed" || access?.status === "unavailable"
-    ? "unknown"
-    : "loading"
+    // IssuesStore only installs an allowed batch; a later unavailable poll retains it, and refusals clear it.
+    // PullScreen's pullAccessOf preserves that invariant. No unknown access can reach here with installed === true.
+    : "unknown"
 
 /**
  * Whether the person at the page may open issues and comment: signed in with a role on the repository (decision 0007

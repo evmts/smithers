@@ -212,6 +212,47 @@ const server = (api: TestChatApi["Service"]) => {
 }
 
 describe("the list and a pull request's page", () => {
+  test.each([[401, "sign_in", "sign_in"], [403, "forbidden", "missing"]] as const)(
+    "a %s pull refusal survives a failed reconnect and recovers only with an installed batch",
+    async (status, refusal, page) => {
+      let fault: number | undefined = status
+      const source = ShapeSource.ShapeSource.of({ request: (url, init) =>
+        new URL(url).pathname === PULLS_SHAPE_ROUTE && fault !== undefined
+          ? Effect.succeed(new Response(null, { status: fault }))
+          : ShapeSource.fetchSource.request(url, init),
+      })
+      const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam })
+      runtimes.push(runtime)
+      const api = await runtime.runPromise(Effect.service(TestChatApi))
+      const pulls = await runtime.runPromise(Effect.service(Pulls))
+      const issues = await runtime.runPromise(Effect.service(Issues))
+      for (const query of Object.values(pulls.queries)) query.startSyncImmediate()
+      issues.queries.access.startSyncImmediate()
+      issues.queries.synced.startSyncImmediate()
+      await server(api).pull(pullOf(2), "Recovered pull")
+      pulls.actions.open(OWNER, NAME, 2)
+      const view = () => pulls.queries.view.toArray[0]
+      const currentPage = () => pageOf(pulls.queries.pull.toArray[0], issues.queries.synced.toArray[0],
+        pulls.queries.pull.isReady() && view()?.installed === true, issues.queries.synced.isReady(),
+        pullAccessOf(issues.queries.access.toArray[0], view()))
+      await until(() => expect(view()).toMatchObject({ pullStatus: refusal, installed: false }))
+      await until(() => expect(issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
+      expect(currentPage()).toBe(page)
+      fault = 503
+      pulls.actions.retry()
+      await until(() => expect(runtime.runSync(Metric.value(
+        Metric.withAttributes(pullShapeTransitions, { phase: "failed" }),
+      )).count).toBeGreaterThan(0))
+      expect(view()).toMatchObject({ pullStatus: refusal, installed: false })
+      expect(currentPage()).toBe(page)
+      fault = undefined
+      pulls.actions.retry()
+      await until(() => expect(view()).toMatchObject({ pullStatus: "allowed", installed: true }))
+      await until(() => expect(pulls.queries.pull.toArray[0]).toMatchObject({ number: 2, title: "Recovered pull" }))
+      expect(currentPage()).toBe("shown")
+    }, WITHIN,
+  )
+
   test("a stopped pull shape settles a direct page and Try again installs its recovered batch", async () => {
     let refused = true
     let pullRequests = 0

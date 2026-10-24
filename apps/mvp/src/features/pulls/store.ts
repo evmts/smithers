@@ -125,7 +125,7 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
       if (yield* Ref.getAndSet(awaitingPulls, true)) return
       yield* pulls.currentApplied.pipe(
         Effect.flatMap(() => Effect.ignore(view.update(VIEW, (row) => {
-          if (row.pullStatus === "allowed") row.installed = true
+          row.installed = true
         }))),
         Effect.ensuring(Ref.set(awaitingPulls, false)),
         Effect.forkIn(scope, { startImmediately: true }),
@@ -134,13 +134,12 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
     Effect.forkIn(scope, { startImmediately: true }),
   )
   // The first batch can finish while the other pull collections are being built. Its current installed receipt
-  // survives a later live Sent event; a current refusal still wins over that receipt.
+  // survives a later live Sent event. currentApplied certifies only the latest accepted, decoded and installed cursor;
+  // a refusal invalidates that cursor and cannot release either waiter (ElectricCollection.certify).
   yield* pulls.currentApplied.pipe(
     Effect.flatMap(() => Effect.ignore(view.update(VIEW, (row) => {
-      if (row.pullStatus === "unknown" || row.pullStatus === "allowed") {
-        row.pullStatus = "allowed"
-        row.installed = true
-      }
+      row.pullStatus = "allowed"
+      row.installed = true
     }))),
     Effect.forkIn(scope, { startImmediately: true }),
   )

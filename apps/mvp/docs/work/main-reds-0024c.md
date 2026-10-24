@@ -28,3 +28,29 @@ Newest main already contains the earlier shared TODO transport repair
 `cfcdf6fa` for `dbbb167b`'s durable read: registration must retain the host's
 authenticated HTTP transport. Its real-device missing/current-row test passes
 unchanged in this clone. No earlier-job file was edited.
+
+Coverage causes: `4944e3dd` added defensive alternatives around installed-batch
+receipts and in the final detail-page fallback; `211f5ec8` added refusal
+preservation on failed reconnects. The latter is reachable and now tested for
+both 401 and 403 on the real pull store, including failed reconnect and recovery.
+The receipt alternatives are unreachable: ElectricCollection.certify requires
+the latest accepted cursor to be decoded and installed; Failed/Stopped invalidates
+acceptance. Its currentApplied callback resumes synchronously in the installed
+Effect runtime, and the short continuation synchronously mutates Collection.local.
+There is no async gap in which a later refusal can overtake that mutation. A
+held older installation cannot certify after refusal. Keep the actual refusal
+handling and installed-batch wait; remove only those redundant guards.
+
+IssueScreen passes IssuesStore's access row to pageOf; PullScreen passes it
+through pullAccessOf. Both initialize unknown access with installed=false, only
+install an allowed batch, retain installation on unavailable polls, and clear
+it on refusal. Once pageOf passed refusal and installed/readiness checks, its
+remaining unknown-status/loading alternative was unreachable and is removed.
+
+`bcbd3822` added the About rate-limit terminal message without a durable-exhaustion
+test. New tests use the real retry budget, retain loading while retries remain,
+assert the terminal rate-limit/general message, and recover through Try again.
+No public API, stored schema, threshold or assertion is weakened.
+
+Astra review: no actionable findings, including an independent trace of the
+receipt ordering above. Fable is unavailable in this session's tools/models.
