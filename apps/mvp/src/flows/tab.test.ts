@@ -10,6 +10,7 @@
 import { build } from "esbuild"
 import { isBuiltin } from "node:module"
 import { join, relative } from "node:path"
+import { createServer } from "vite"
 import { describe, expect, test } from "vitest"
 
 const app = join(import.meta.dirname, "../..")
@@ -20,27 +21,48 @@ const forbidden = (specifier: string) => isBuiltin(specifier) || /^@smthrs\/(age
 /** Every import in `entry`'s browser module graph of something {@link forbidden}, as `<specifier> <- <importer>`. */
 const reached = async (entry: string): Promise<ReadonlyArray<string>> => {
   const found = new Set<string>()
-  await build({
-    entryPoints: [entry],
-    absWorkingDir: app,
-    bundle: true,
-    write: false,
-    platform: "browser",
-    format: "esm",
-    logLevel: "silent",
-    define: { "import.meta.env.DEV": "true" },
-    plugins: [{
-      name: "tab-graph",
-      setup: (graph) => {
-        graph.onResolve({ filter: /\.css$/ }, (args) => ({ path: args.path, external: true }))
-        graph.onResolve({ filter: /.*/ }, (args) => {
-          if (forbidden(args.path)) found.add(`${args.path} <- ${relative(app, args.importer)}`)
-          // A Node built-in can't resolve for a browser: keep it out of the bundle, and keep walking.
-          return isBuiltin(args.path) ? { path: args.path, external: true } : undefined
-        })
-      },
-    }],
+  // Resolve virtual imports with the app's own Vite plugins, then walk their real code too.
+  const vite = await createServer({
+    root: app,
+    configFile: join(app, "vite.config.ts"),
+    server: { middlewareMode: true, watch: null },
+    optimizeDeps: { noDiscovery: true, include: [] },
   })
+  try {
+    await build({
+      entryPoints: [entry],
+      absWorkingDir: app,
+      bundle: true,
+      write: false,
+      platform: "browser",
+      format: "esm",
+      logLevel: "silent",
+      define: { "import.meta.env.DEV": "true" },
+      plugins: [{
+        name: "tab-graph",
+        setup: (graph) => {
+          graph.onResolve({ filter: /^virtual:pwa-register$/ }, async (args) => {
+            const resolved = await vite.environments.client.pluginContainer.resolveId(args.path, args.importer)
+            if (!resolved) throw new Error(`Vite could not resolve ${args.path}`)
+            return { path: resolved.id, namespace: "vite-pwa" }
+          })
+          graph.onLoad({ filter: /.*/, namespace: "vite-pwa" }, async (args) => {
+            const loaded = await vite.environments.client.pluginContainer.load(args.path)
+            if (!loaded) throw new Error(`Vite could not load ${args.path}`)
+            return { contents: typeof loaded === "string" ? loaded : loaded.code, resolveDir: app }
+          })
+          graph.onResolve({ filter: /\.css$/ }, (args) => ({ path: args.path, external: true }))
+          graph.onResolve({ filter: /.*/ }, (args) => {
+            if (forbidden(args.path)) found.add(`${args.path} <- ${relative(app, args.importer)}`)
+            // A Node built-in can't resolve for a browser: keep it out of the bundle, and keep walking.
+            return isBuiltin(args.path) ? { path: args.path, external: true } : undefined
+          })
+        },
+      }],
+    })
+  } finally {
+    await vite.close()
+  }
   return [...found]
 }
 
