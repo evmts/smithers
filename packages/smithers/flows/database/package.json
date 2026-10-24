@@ -224,7 +224,7 @@
     "vibelang-vite": "0.0.3",
     "vitest": "5.0.0",
     "@effect/sql-sqlite-bun": "4.0.5",
-    "@types/bun": "1.3.6",
+    "@types/bun": "1.4.4",
     "@effect/sql-pg": "4.0.5"
   },
   "peerDependencies": {

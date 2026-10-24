@@ -20,7 +20,7 @@
     "zod": "^4.5.2"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.0",
+    "@types/bun": "1.4.4",
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",

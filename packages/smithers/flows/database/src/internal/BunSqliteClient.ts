@@ -110,7 +110,6 @@ const make = (
       Effect.withFiber<A, SqlError>((fiber) => {
         try {
           const statement = db.query(sql)
-          // @ts-expect-error bun-types lacks safeIntegers; fixed in oven-sh/bun#26627.
           statement.safeIntegers(Context.get(fiber.context, Client.SafeIntegers))
           return Effect.succeed(run(statement, params as Array<any>))
         } catch (cause) {

@@ -101,6 +101,7 @@
     "yaml": "2.9.0"
   },
   "overrides": {
+    "@types/bun": "1.4.4",
     "effect": "4.0.5",
     "@effect/opentelemetry": "4.0.5",
     "@effect/platform-bun": "4.0.5",

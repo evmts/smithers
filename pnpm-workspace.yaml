@@ -47,6 +47,7 @@ verifyDepsBeforeRun: false
 
 # Keep transitive prerelease adapters on the same tested Effect family.
 overrides:
+  "@types/bun": "1.4.4"
   "effect": "4.0.5"
   "@effect/opentelemetry": "4.0.5"
   "@effect/platform-bun": "4.0.5"

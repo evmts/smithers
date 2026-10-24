@@ -56,7 +56,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "happy-dom": "20.13.2",
-    "@types/bun": "latest",
+    "@types/bun": "1.4.4",
     "vibelang": "0.0.3"
   }
 }
