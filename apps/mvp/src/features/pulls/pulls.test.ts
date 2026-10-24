@@ -12,7 +12,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import * as PullStore from "../../../worker/github/Pulls.ts"
 import * as Store from "../../../worker/github/Store.ts"
-import { CHATAPI_ORIGIN, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { CHATAPI_ORIGIN, openTab, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { itemId } from "../issues/contract"
 import { ISSUES_STREAM } from "../issues/contract"
 import { Issues } from "../issues/issues"
@@ -208,6 +208,45 @@ const server = (api: TestChatApi["Service"]) => {
 }
 
 describe("the list and a pull request's page", () => {
+  test("a fresh signed-out device hydrates a chunked issue snapshot without losing its pulls", async () => {
+    const source = await open({}, null)
+    await Effect.runPromise(source.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+      yield* Store.recordRepository(REPO_ID, { githubId: 1, private: false })
+      // Production-size counts, with a multi-chunk items snapshot. The pull
+      // metadata and sync receipt can finish before the shared items shape.
+      yield* sql`INSERT INTO items (id, repo_id, number, kind, github_id, title, body, state, created_at, updated_at, source_updated_at, fetched_at)
+        SELECT ${REPO_ID} || '/' || n, ${REPO_ID}, n, CASE WHEN n > 3840 THEN 'pull' ELSE 'issue' END,
+          n, 'Item ' || n, repeat('x', 2000), 'open', now(), now(), now(), now() FROM generate_series(1, 3845) n`
+      yield* sql`INSERT INTO comments (id, repo_id, item_id, github_id, body, created_at, updated_at, source_updated_at, fetched_at)
+        SELECT 'comment-' || n, ${REPO_ID}, ${REPO_ID} || '/3845', n, repeat('c', 1000), now(), now(), now(), now()
+        FROM generate_series(1, 8061) n`
+      yield* Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: true, failure: null })
+    })))))
+    let itemChunks = 0
+    let itemsComplete = false
+    const fresh = openTab({ ...source.api, fetch: async (input, init) => {
+      const response = await source.api.fetch(input, init)
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      if (url.pathname === "/api/shapes/items" && url.searchParams.get("live") !== "true") {
+        const messages = await response.clone().json() as Array<{ headers: { control?: string } }>
+        itemChunks++
+        itemsComplete ||= messages.some((message) => message.headers.control === "up-to-date")
+      }
+      return response
+    } }, { answers: false })
+    runtimes.push(fresh)
+    const pulls = await fresh.runPromise(Effect.service(Pulls))
+    pulls.queries.list.startSyncImmediate()
+    pulls.actions.open(OWNER, NAME)
+    await until(() => expect(pulls.queries.list.toArray.map((row) => row.number)).toEqual([3845, 3844, 3843, 3842, 3841]))
+    expect(itemChunks).toBeGreaterThan(1)
+    expect(itemsComplete).toBe(true)
+    expect(pulls.queries.list.isReady()).toBe(true)
+    const page = listPageOf(pulls.queries.list.toArray, { owner: OWNER, name: NAME }, { syncedAt: "now" }, { status: "allowed" }, pulls.queries.list.isReady())
+    expect(page.loading).toBe(false)
+    expect(page.pulls.map((row) => row.href)).toEqual([3845, 3844, 3843, 3842, 3841].map((number) => `/${TEST_REPOSITORY}/pull/${number}`))
+  }, WITHIN)
+
   test("a direct pull-list visit uses that repository's completed sync, including an empty list", async () => {
     const tab = await open()
     await Effect.runPromise(tab.api.github.run(Store.finishSync(REPO_ID, ISSUES_STREAM, { complete: true, failure: null })))

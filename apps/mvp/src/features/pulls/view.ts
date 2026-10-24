@@ -55,18 +55,19 @@ export const listProps = (rows: ReadonlyArray<ListRow>, owner: string, name: str
   }))
 
 /**
- * The list page: its rows, whether it is loading (never "No pull requests" before the repository's first complete sync,
- * and never loading once the shape refused this person), and why it was refused (sign in, or not allowed).
+ * The list page: its rows, loading until the repository sync and device hydration finish,
+ * and the shape's refusal (sign in, or not allowed). Existing rows and refusals never wait.
  */
 export const listPageOf = (
   rows: ReadonlyArray<ListRow>,
   repository: { readonly owner: string; readonly name: string },
   synced: unknown,
   access: { readonly status: string } | undefined,
+  ready = true,
 ) => ({
   refused: refusedOf(access),
   pulls: listProps(rows, repository.owner, repository.name),
-  loading: refusedOf(access) === undefined && synced === undefined && rows.length === 0,
+  loading: refusedOf(access) === undefined && (!ready || synced === undefined) && rows.length === 0,
 })
 
 /** Who is at the page, as sign-in says: signed in, and their role on the repository, confirmed when known. */

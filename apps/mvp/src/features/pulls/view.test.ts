@@ -88,6 +88,17 @@ describe("the list page", () => {
     expect(listPageOf([row], repository, undefined, undefined).pulls.map((pull) => pull.href)).toEqual(["/octo/hello/pull/3"])
   })
 
+  test("the GitHub sync receipt does not finish the device's hydration", () => {
+    for (const synced of [undefined, { syncedAt: "now" }]) {
+      expect(listPageOf([], repository, synced, { status: "allowed" }, false).loading).toBe(true)
+      expect(listPageOf([row], repository, synced, { status: "allowed" }, false).loading).toBe(false)
+      for (const status of ["sign_in", "forbidden"]) {
+        expect(listPageOf([], repository, synced, { status }, false)).toMatchObject({ refused: status, loading: false })
+      }
+    }
+    expect(listPageOf([], repository, { syncedAt: "now" }, { status: "allowed" }, true).loading).toBe(false)
+  })
+
   test("a person the shape refused signs in, or is not allowed: no rows, never loading", () => {
     expect(listPageOf([], repository, undefined, { status: "sign_in" })).toMatchObject({ refused: "sign_in", loading: false })
     expect(listPageOf([], repository, undefined, { status: "forbidden" })).toMatchObject({ refused: "forbidden", loading: false })

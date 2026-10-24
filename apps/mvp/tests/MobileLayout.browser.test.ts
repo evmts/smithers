@@ -65,6 +65,30 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
       }
     } finally { await page.close() }
   })
+  test(`${viewport.width}: issue TODO links and TODO Watch links are reachable`, async () => {
+    const page = await browser.newPage({ viewport })
+    try {
+      await page.goto(origin)
+      const links = page.locator(".sui-item-aside-link")
+      await links.first().waitFor()
+      expect(await links.allTextContents()).toEqual(["T5", "T4", "Watch", "smithers/t13-mobile-layout-84a0f279-c5d2-4f47-bf1f-2d-9f58a66879c3"])
+      for (const link of await links.all()) {
+        await link.scrollIntoViewIfNeeded()
+        const box = (await link.boundingBox())!
+        if (viewport.width <= 960) {
+          expect.soft(box.width).toBeGreaterThanOrEqual(32)
+          expect.soft(box.height).toBeGreaterThanOrEqual(32)
+        }
+        expect(box.x).toBeGreaterThanOrEqual(0)
+        expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
+        expect(await link.evaluate((element) => {
+          const box = element.getBoundingClientRect()
+          return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
+        })).toBe(true)
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
+    } finally { await page.close() }
+  })
   test(`${viewport.width}: conversation branch and repository labels remain readable`, async () => {
     const page = await browser.newPage({ viewport })
     page.setDefaultTimeout(5_000)
@@ -78,3 +102,14 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
     } finally { await page.close() }
   })
 }
+
+test("a completed GitHub sync cannot show an empty pull list while the device is hydrating", async () => {
+  const page = await browser.newPage()
+  try {
+    await page.goto(`${origin}?list=pending`)
+    await page.locator("#pulls [data-slot=issues-view]").waitFor()
+    expect(await page.locator("#pulls").textContent()).not.toContain("No pull requests")
+    await page.goto(`${origin}?list=empty`)
+    await page.getByText("No pull requests", { exact: true }).waitFor()
+  } finally { await page.close() }
+})

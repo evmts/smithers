@@ -10,6 +10,7 @@ const addedRules = [
   ".sui-file-tab > button { width:32px; height:var(--ctl-h, 32px); }",
   ".sui-file-tree-file, .sui-file-tree-dir-toggle { min-height:var(--ctl-h, 32px); }",
   ".sui-repo-segment { min-width:32px; min-height:var(--ctl-h, 32px); }",
+  ".sui-item-aside-link { display:inline-flex; align-items:center; min-width:32px; min-height:var(--ctl-h, 32px); max-width:100%; }",
   ".sui-item-conv-external { display:inline-flex; align-items:center; min-width:32px; min-height:var(--ctl-h, 32px); }",
   ".sui-chat-transcript:has(> .sui-timeline-disclosure[open]) { z-index:41; }",
   ".app-shell-header { flex-wrap: wrap; }",

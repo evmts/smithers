@@ -41,6 +41,7 @@ export const itemConversationCss = `
 .sui-item-conv-external:hover { text-decoration:underline; text-underline-offset:3px; }
 .sui-item-conv-external:focus-visible { outline:none; box-shadow:0 0 0 3px ${t.ring}; }
 @media (max-width:960px) {
+  .sui-item-aside-link { display:inline-flex; align-items:center; min-width:32px; min-height:${t.controlHeight}; max-width:100%; }
   .sui-item-conv-external { display:inline-flex; align-items:center; min-width:32px; min-height:${t.controlHeight}; }
 }
 .sui-item-conv-header-actions { margin-left:auto; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }

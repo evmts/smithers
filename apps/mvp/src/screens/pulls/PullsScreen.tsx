@@ -15,11 +15,11 @@ export function PullsScreen() {
   const { owner, repo } = useParams({ from: "/$owner/$repo/pulls" })
   const { queries } = usePulls()
   const issues = useIssues()
-  const { data: rows } = useLiveQuery(queries.list)
+  const { data: rows, isReady } = useLiveQuery(queries.list)
   const { data: synced } = useLiveQuery(issues.queries.synced)
   const { data: access } = useLiveQuery(issues.queries.access)
   const navigate = useNavigate()
-  const page = listPageOf(rows ?? [], { owner, name: repo }, synced, access)
+  const page = listPageOf(rows ?? [], { owner, name: repo }, synced, access, isReady)
   if (page.refused === "sign_in") return <main className="pulls-screen" aria-label="Pull requests"><SignInButton /></main>
   if (page.refused === "forbidden") {
     return <main className="pulls-screen" aria-label="Pull requests"><EmptyState title={NOT_FOUND} /></main>

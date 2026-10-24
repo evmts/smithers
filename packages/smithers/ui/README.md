@@ -168,3 +168,6 @@ lists retain their space-separated grammar.
 `PromptInput` ignores submission attempts while its handler is pending. Owned
 attachment URLs remain readable until that handler settles, even after removal
 or unmount. Action menu wrappers forward Enter and Space to their button child.
+
+At widths up to 960px, `ItemAsideSection` links (TODO numbers, branches and Watch)
+have a 32px minimum touch target. Longer labels wrap within the side column.
