@@ -376,9 +376,8 @@ describe("ExecutionHost over the compose Postgres", () => {
     // ChatApi started the expiry, as it asks the Durable Object to: one execution per answer.
     const executionId = Expire.executionId(answerId)
     expect(h.starts).toEqual([{ flow: "chat/Expire", executionId, payload: { answerId } }])
-    // Long enough that the first alarm, which migrates the engine's schema, still finds the answer young under a loaded
-    // suite (5 seconds was not, once).
-    const services = await appServices("10 seconds")
+    // Use the production expiry: a shortened deadline can enter the host's five-second hold during setup.
+    const services = await appServices()
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
         const object = memory()
@@ -397,9 +396,15 @@ describe("ExecutionHost over the compose Postgres", () => {
         expect(object.alarm()).toBe(wakeAt)
         expect(yield* status(sql, name, executionId)).toBe("suspended")
 
-        // Cloudflare's wake-up at the armed time settles the answer and the run.
-        yield* Effect.sleep(Math.max(0, wakeAt! - Date.now()))
-        const settled = yield* host.alarm()
+        // Advance both time domains: Postgres owns the answer age, and the host owns the durable timer.
+        const [aged] = yield* Effect.flatMap(SqlClient.SqlClient, (appSql) => appSql`
+          UPDATE messages SET updated_at = updated_at - make_interval(secs => ${Duration.toSeconds(services.expiry)})
+          WHERE id = ${answerId} RETURNING status`).pipe(Effect.provide(services.database))
+        expect(aged).toMatchObject({ status: "streaming" })
+        const settled = yield* Effect.gen(function* () {
+          yield* TestClock.setTime(wakeAt! + 1)
+          return yield* host.alarm()
+        }).pipe(Effect.provide(TestClock.layer()))
         expect(settled).toMatchObject({ _tag: "Settled" })
         expect(object.alarm()).toBe(settled._tag === "Settled" ? settled.forgetAtMs : null)
         expect(yield* status(sql, name, executionId)).toBe("completed")
@@ -605,7 +610,7 @@ describe("ExecutionHost over the compose Postgres", () => {
     expect((await h.ask({ id: crypto.randomUUID(), answerId: ahead, text: "First" })).status).toBe(202)
     expect((await h.ask({ id: crypto.randomUUID(), answerId: last, text: "Second" })).status).toBe(202)
     const executionId = Expire.executionId(last)
-    const services = await appServices("10 seconds")
+    const services = await appServices()
     const router = recording()
     const timing: Array<{ readonly stage: string; readonly serverNowMs: number; readonly renewedAtMs: number; readonly deadlineMs: number }> = []
     let renewedAtMs = 0
@@ -614,7 +619,7 @@ describe("ExecutionHost over the compose Postgres", () => {
         Effect.provide(services.database),
         Effect.orDie,
         Effect.tap(([clock]) => Effect.sync(() => {
-          timing.push({ stage, serverNowMs: clock!.serverNowMs, renewedAtMs, deadlineMs: renewedAtMs + 10_000 })
+          timing.push({ stage, serverNowMs: clock!.serverNowMs, renewedAtMs, deadlineMs: renewedAtMs + Duration.toMillis(services.expiry) })
         })),
       )
     await withSchema(({ name, url }) =>
@@ -629,7 +634,10 @@ describe("ExecutionHost over the compose Postgres", () => {
         yield* host.start(yield* ExecutionHost.intent(Expire.Expire, { executionId, payload: { answerId: last } }))
         const parked = yield* host.alarm()
         expect(parked._tag).toBe("Parked")
-        yield* Effect.sleep(Math.max(0, (parked._tag === "Parked" ? parked.wakeAtMs ?? 0 : 0) - Date.now()))
+        const wakeAt = parked._tag === "Parked" ? parked.wakeAtMs : null
+        yield* Effect.flatMap(SqlClient.SqlClient, (appSql) => appSql`
+          UPDATE messages SET updated_at = updated_at - make_interval(secs => ${Duration.toSeconds(services.expiry)})
+          WHERE id IN (${ahead}, ${last})`).pipe(Effect.provide(services.database))
         // Renew immediately before delivering the original due alarm. Renewing
         // just after Parked leaves only startup time between the two deadlines;
         // a late alarm can then correctly abandon the renewed queue instead.
@@ -642,7 +650,10 @@ describe("ExecutionHost over the compose Postgres", () => {
         )
         renewedAtMs = moved!.renewedAtMs
         yield* sample("before_alarm")
-        yield* host.alarm()
+        yield* Effect.gen(function* () {
+          yield* TestClock.setTime(wakeAt! + 1)
+          return yield* host.alarm()
+        }).pipe(Effect.provide(TestClock.layer()))
         yield* sample("after_alarm")
       })
     )
