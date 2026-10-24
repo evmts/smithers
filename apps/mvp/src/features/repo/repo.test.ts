@@ -104,7 +104,27 @@ describe("cloning from a tab", () => {
     tab.repo.actions.clone("octocat", "Spoon-Knife")
     expect(header(tab)).toEqual({ kind: "cloning" })
     // The Clone button runs `repo/clone` on this device's engine, whose step asks RepoApi.
-    await waitFor(() => expect(tab.view().clone).toBeUndefined(), { timeout: 10_000 })
+    await waitFor(() => expect(tab.view().clone).toBeUndefined(), { timeout: 10_000 }).catch((error) => {
+      // Capture live metadata before afterEach disposes the tabs; retain the original assertion failure.
+      for (const [device, opened] of [["first", tab], ["second", other]] as const) {
+        const view = opened.view()
+        console.info("repo.clone.test.diagnostic", JSON.stringify({
+          device,
+          backgroundStarted: h.started().length,
+          cloneStatus: view?.clone?.status ?? null,
+          repositoryStatus: view?.repository?.status ?? null,
+          records: opened.logs.filter((line) => typeof line.message === "string" && [
+            "flow.dispatch", "repo.clone", "repo.clone.unconfirmed", "repo.tree.load", "repo.about.load",
+            "engine-store.registration.recovered", "engine-store.sweep.failed",
+          ].includes(line.message)).slice(-80).map((line) => ({
+            message: line.message,
+            annotations: Object.fromEntries(Object.entries(line.annotations).filter(([key]) =>
+              ["flow", "smithers.flow", "durationMs", "outcome", "reason", "refusal"].includes(key))),
+          })),
+        }))
+      }
+      throw error
+    })
     expect(tab.count(clones, { outcome: "started" })).toBe(1)
     expect(tab.lines("repo.clone")[0]!.annotations).toMatchObject({ outcome: "started", feature: "repo" })
     await h.settled()

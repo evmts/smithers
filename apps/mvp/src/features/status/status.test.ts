@@ -170,7 +170,10 @@ describe("a question from the agent", { timeout: ENGINE_WITHIN }, () => {
     // Answer twice while the first is still sending: one answer goes.
     b.status.actions.answer(answerId, "eu")
     b.status.actions.answer(answerId, "eu")
-    const second = await Effect.runPromise(api.answerTo("Deploy the branch preview", 1))
+    const second = await Effect.runPromise(api.answerTo("Deploy the branch preview", 1)).catch(async (cause: unknown) => {
+      const diagnostics = await Effect.runPromise(api.answerDiagnostics(answerId)).catch(() => ({ unavailable: true }))
+      throw new Error(`Branch answer did not resume: ${JSON.stringify(diagnostics)}`, { cause })
+    })
     second.cell(`ctx.done("Deploying to eu.")`)
     for (const device of [a, b]) {
       await until(() => expect(inBranch(device).statusOf(answerId)?.state).toBe("done"))
