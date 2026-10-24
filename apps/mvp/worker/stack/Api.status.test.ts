@@ -102,6 +102,22 @@ describe("one TODO's shared status", () => {
     expect(h.line("stack.status").at(-1)?.annotations).toMatchObject({ outcome: "not_configured", status: 503 })
   })
 
+  test("a failed Postgres read reports unavailable and records only the SQL reason", async () => {
+    const h = await stackHarness(runtime, { actor: member })
+    // Remove the queried relation only in this file's isolated schema; the route still uses the real database layer.
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`ALTER TABLE todos RENAME TO unreadable_todos`))
+    try {
+      expect(await json(await h.fetch(route))).toEqual([503, { code: "unavailable" }])
+      expect(h.line("stack.status").at(-1)?.annotations).toMatchObject({
+        outcome: "unavailable", status: 503, errorCode: "sql:SqlSyntaxError",
+      })
+      expect(h.count(Api.statusReads, { outcome: "unavailable" })).toBe(1)
+      expect(JSON.stringify(h.logs)).not.toContain("unreadable_todos")
+    } finally {
+      await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`ALTER TABLE unreadable_todos RENAME TO todos`))
+    }
+  })
+
   test("an unexpected database failure records no arbitrary error tag", async () => {
     const privateText = "Private customer title"
     const h = await stackHarness(runtime, {

@@ -229,8 +229,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, rol
           fields.errorCode = SqlError.isSqlError(error) ? codeOf(error) : "unexpected"
           return Effect.succeed(refusal(503, "unavailable"))
         }))
+        // The missing-row path already sets `todo_not_found`; 404 never reaches this fallback.
         const outcome = String(fields.outcome ?? (response.status === 200 ? "found" :
-          response.status === 404 ? "not_found" : response.status === 401 ? "authentication" :
+          response.status === 401 ? "authentication" :
           response.status === 403 ? "forbidden" : "unavailable"))
         fields.outcome = outcome
         fields.status = response.status
