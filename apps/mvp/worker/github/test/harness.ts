@@ -129,7 +129,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   const logs: Array<StructuredLog> = []
   const logger = Logger.make((logOptions) => void logs.push(StructuredLogger.formatStructured.log(logOptions)))
   const registry: Metric.MetricRegistry = new Map()
-  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl), ...(options.metadata === undefined ? {} : { GITHUB_API_URL: options.metadata.url, GITHUB_TOKEN: options.metadata.token }) })
+  const provider = ConfigProvider.fromUnknown({ ...await runtime.runPromise(TestDatabase.fixtureConfig), ...(options.metadata === undefined ? {} : { GITHUB_API_URL: options.metadata.url, GITHUB_TOKEN: options.metadata.token }) })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),

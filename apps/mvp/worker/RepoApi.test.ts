@@ -50,6 +50,8 @@ describe("POST /api/repos", () => {
     expect(row!.cloneId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
     const executionId = cloneExecutionId("github/octocat/spoon-knife", row!.cloneId)
     expect(h.started()).toEqual([executionId])
+    expect(await sql(`SELECT nspname FROM pg_namespace WHERE nspname = '${h.engineSchema()}'`))
+      .toEqual([{ nspname: h.engineSchema() }])
     expect(row).toMatchObject({
       owner: "octocat",
       name: "Spoon-Knife",

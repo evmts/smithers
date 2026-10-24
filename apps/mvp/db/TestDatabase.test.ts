@@ -1,4 +1,4 @@
-// The guard every Postgres test passes (db/TestDatabase.ts): the compose Postgres only, a schema of its own, and a
+// The guard every Postgres test passes (db/TestDatabase.ts): the selected local Postgres only, a schema of its own, and a
 // failure that says `pnpm db:up` when nothing is running.
 import { PgClient } from "@effect/sql-pg"
 import { ConfigProvider, Context, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime, Option, Redacted, Scope } from "effect"
@@ -44,7 +44,7 @@ describe("serverUrl", () => {
   test.each([
     ["another host", "postgresql://owner:secret-pass@db.example.com:54321/smithers", "db.example.com:54321"],
     ["another port", "postgresql://owner:secret-pass@localhost:5432/smithers", "localhost:5432"],
-    ["the same server by another name", "postgresql://owner:secret-pass@127.0.0.1:54321/smithers", "127.0.0.1:54321"],
+    ["another loopback address", "postgresql://owner:secret-pass@127.0.0.2:54321/smithers", "127.0.0.2:54321"],
   ])("refuses %s, naming its host but never its password", async (_, url, host) => {
     const refused = await runtime.runPromise(Effect.flip(TestDatabase.serverUrl.pipe(withDatabaseUrl(url))))
     expect(refused).toBeInstanceOf(TestDatabase.Unusable)

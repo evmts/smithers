@@ -436,7 +436,7 @@ export class TestChatApi extends Context.Service<
           }
         })
         const config = ConfigProvider.fromUnknown({
-          ELECTRIC_URL: yield* TestDatabase.electricUrl,
+          ...(yield* TestDatabase.fixtureConfig),
           ALERT_APP_URL: "http://chat.test/app",
           ...(options.forge === "code-storage"
             ? { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: yield* Effect.promise(codeStorageKey) }

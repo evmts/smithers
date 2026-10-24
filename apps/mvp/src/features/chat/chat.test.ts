@@ -7,6 +7,7 @@ import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { AnswerReference } from "../agent/reference"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
+import { read as readTelemetry } from "../../test/otlp"
 import { TabRequests } from "../../flows/requests"
 import {
   CHATAPI_ORIGIN,
@@ -147,6 +148,22 @@ const quick: TabOptions = {
   confirmWithin: "1 second",
   retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }),
 }
+
+/** Read the actual run and journal: several dispatch joins still execute one close action. */
+const closedOnce = (engine: BrowserEngine.BrowserEngine["Service"], answerId: string) => Effect.gen(function* () {
+  const id = `${answerId}/close`
+  const listed = yield* engine.list({ roots: false, limit: 200 })
+  expect(listed.runs.filter((run) => run.flowName === "chat/Close").map((run) => run.runId)).toEqual([id])
+  const closed = yield* engine.inspect(id, { limit: 500 })
+  expect(closed.run.status).toBe("completed")
+  const writes = closed.steps.filter((step) => step.action === "chat/CloseWrite")
+  expect(writes).toHaveLength(1)
+  expect(writes[0]).toMatchObject({ status: "completed", attempts: [{ attempt: 1, state: "succeeded", error: null }] })
+  expect(closed.journal.hasMore).toBe(false)
+  const receipts = closed.journal.events.filter((event) => event.eventType === "flows.engine.node-settled" &&
+    (JSON.parse(event.payload.text) as { action?: string }).action === "chat/CloseWrite")
+  expect(receipts).toHaveLength(1)
+})
 
 describe("asking", () => {
   test("shows the question at once at the end of the conversation, clears the draft, and Postgres stores it once", async () => {
@@ -329,8 +346,9 @@ describe("the agent", () => {
 
   test("a confirmed engine cancellation settles the answer and its Working notice", async () => {
     const tab = await openChat(quick)
-    const { answerId } = asked(tab.actions.ask("Use the sandbox tools on this branch"))
+    const { questionId, answerId } = asked(tab.actions.ask("Use the sandbox tools on this branch"))
     await tab.onApi(tab.api.answerTo("Use the sandbox tools on this branch"))
+    await until(() => expect(tab.store.asking.tanstack.has(questionId)).toBe(false))
     const engine = await tab.runtime.runPromise(Effect.service(BrowserEngine.BrowserEngine))
     const live = await tab.runtime.runPromise(engine.inspect(answerId, { limit: 1 }))
     expect(live.run.status).toBe("running")
@@ -339,7 +357,47 @@ describe("the agent", () => {
       "user done Use the sandbox tools on this branch", `assistant failed ${COULDNT_ANSWER}`,
     ]), 10_000)
     const closed = Metric.withAttributes(dispatches, { flow: "chat/Close", door: "composer", outcome: "done" })
-    await until(() => expect(tab.count(closed)).toBe(1))
+    const admissions = tab.api.questionStatuses().length
+    await until(() => expect(tab.count(closed)).toBe(admissions))
+    await until(async () => { await tab.runtime.runPromise(closedOnce(engine, answerId)) })
+    expect(await tab.onApi(tab.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT state FROM notifications WHERE run_id = ${answerId}`)))).toEqual([{ state: "failed" }])
+  }, 120_000)
+
+  test("confirmation resends cancel one durable answer and close it once", async () => {
+    const tab = await openFaulty({ ...quick, confirmWithin: "200 millis" })
+    await until(() => expect(tab.connection()?.status).toBe("up"))
+    tab.shapes((shapes) => shapes.stall())
+    const { questionId, answerId } = asked(tab.actions.ask("Cancel the retried question"))
+    await until(() => expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(1))
+    tab.actions.retry()
+    await until(() => expect(tab.sentQuestions().length).toBeGreaterThanOrEqual(2))
+    await tab.onApi(tab.api.answerTo("Cancel the retried question"))
+    tab.shapes((shapes) => shapes.heal)
+    tab.actions.retry()
+    await until(() => expect(tab.store.asking.tanstack.has(questionId)).toBe(false))
+    const engine = await tab.runtime.runPromise(Effect.service(BrowserEngine.BrowserEngine))
+    await tab.runtime.runPromise(engine.cancel(AnswerReference, answerId))
+    await until(() => expect(tab.shown()).toEqual([
+      "user done Cancel the retried question", `assistant failed ${COULDNT_ANSWER}`,
+    ]), 10_000)
+    const closed = Metric.withAttributes(dispatches, { flow: "chat/Close", door: "composer", outcome: "done" })
+    const admissions = tab.sentQuestions().length
+    expect(tab.api.questionStatuses()).toHaveLength(admissions)
+    expect(tab.api.questionStatuses()).toContain(200)
+    expect(admissions).toBeGreaterThanOrEqual(2)
+    expect(tab.api.modelRequests("Cancel the retried question")).toBe(1)
+    const cancelled = Metric.withAttributes(dispatches, { flow: "chat/Answer", door: "composer", outcome: "error" })
+    await until(() => expect(tab.count(cancelled)).toBe(admissions))
+    await until(() => expect(tab.count(closed)).toBe(admissions))
+    await until(async () => { await tab.runtime.runPromise(closedOnce(engine, answerId)) })
+    expect(await tab.onApi(tab.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`SELECT state FROM notifications WHERE run_id = ${answerId}`)))).toEqual([{ state: "failed" }])
+    await tab.close() // Flush the real exporter before checking every dispatch identity.
+    const joins = readTelemetry(tab.api.telemetry).log("flow.dispatch").filter((line) =>
+      line.attributes.flow === "chat/Close" && line.attributes.door === "composer" && line.attributes.outcome === "done")
+    expect(joins).toHaveLength(admissions)
+    expect(joins.map((line) => line.attributes.executionId)).toEqual(Array(admissions).fill(`${answerId}/close`))
   }, 120_000)
 
   test("a reloaded tab settles a stopped persisted answer without its original launch observer", async () => {
@@ -366,11 +424,14 @@ describe("the agent", () => {
     // The run's end reads as refused, as a run parked under one build and resumed under the next does: its plan changed,
     // or its recorded payload no longer decodes.
     tab.engine((engine) => engine.refuseResults("chat/Answer", code))
-    const { answerId } = asked(tab.actions.ask("hello"))
+    const { questionId, answerId } = asked(tab.actions.ask("hello"))
     await until(() => expect(tab.shown()).toEqual(["user done hello", `assistant failed ${COULDNT_ANSWER}`]), agentWithin)
     expect(tab.store.messages.tanstack.get(answerId)).toMatchObject({ failure: "unfinished" })
     const closed = Metric.withAttributes(dispatches, { flow: "chat/Close", door: "composer", outcome: "done" })
-    await until(() => expect(tab.count(closed)).toBe(1), agentWithin)
+    await until(() => expect(tab.store.asking.tanstack.has(questionId)).toBe(false))
+    await until(() => expect(tab.count(closed)).toBe(tab.api.questionStatuses().length), agentWithin)
+    const engine = await tab.runtime.runPromise(Effect.service(BrowserEngine.BrowserEngine))
+    await until(async () => { await tab.runtime.runPromise(closedOnce(engine, answerId)) })
   })
 
   test("a run that ends in any other defect leaves its answer to chat/Expire: nothing closes it", async () => {

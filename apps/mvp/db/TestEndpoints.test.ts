@@ -19,3 +19,55 @@ test("an isolated Electric endpoint stays on localhost", async () => {
   expect(await configured(TestDatabase.electricUrl, { TEST_ELECTRIC_PORT: "30441" })).toBe("http://localhost:30441")
   expect(await configured(TestDatabase.electricUrl, {})).toBe("http://localhost:30001")
 })
+
+
+test("nested fixture configuration retains selected database and Electric endpoints only", async () => {
+  const values = {
+    TEST_DATABASE_PORT: "55441", TEST_ELECTRIC_PORT: "30441",
+    DATABASE_URL: "postgresql://smithers:smithers@localhost:55441/smithers", PRIVATE_TOKEN: "must-not-inherit",
+  }
+  const selected = await configured(TestDatabase.fixtureConfig, values)
+  expect(selected).toEqual({
+    DATABASE_URL: values.DATABASE_URL, TEST_DATABASE_PORT: "55441",
+    ELECTRIC_URL: "http://localhost:30441", TEST_ELECTRIC_PORT: "30441",
+  })
+  expect((await configured(TestDatabase.serverUrl, selected)).port).toBe("55441")
+  expect(await configured(TestDatabase.electricUrl, selected)).toBe("http://localhost:30441")
+})
+
+for (const port of ["54321", "55582"]) {
+  test.each(["localhost", "127.0.0.1", "[::1]"])(`the isolated local database accepts %s at port ${port}`, async host => {
+    const values = {
+      ...(port === "54321" ? {} : { TEST_DATABASE_PORT: port }),
+      DATABASE_URL: `postgresql://owner:PRIVATE@${host}:${port}/fixture`,
+    }
+    expect((await configured(TestDatabase.serverUrl, values)).host).toBe(`${host}:${port}`)
+  })
+}
+
+test.each([
+  "postgresql://owner:PRIVATE@db.example.com:55582/fixture",
+  "postgresql://owner:PRIVATE@127.0.0.2:55582/fixture",
+  "postgresql://owner:PRIVATE@127.0.0.1:54321/fixture",
+  "postgresql://owner:PRIVATE@[::1]:54321/fixture",
+  "postgresql://owner:PRIVATE@localhost/fixture",
+])("the isolated local database refuses a different endpoint without credentials: %s", async database => {
+  const failure = await configured(Effect.flip(TestDatabase.serverUrl), { TEST_DATABASE_PORT: "55582", DATABASE_URL: database })
+  expect(failure).toBeInstanceOf(TestDatabase.Unusable)
+  expect(String(failure)).not.toContain("PRIVATE")
+  expect(String(failure)).not.toContain("owner")
+})
+
+test.each([
+  "host=remote-PRIVATE.example", "host=localhost", "host=", "port=55582", "port=5432", "port=",
+  "host=localhost&host=remote-PRIVATE.example", "host=remote-PRIVATE.example&host=localhost",
+  "port=55582&port=5432", "port=5432&port=55582", "%68ost=remote-PRIVATE.example", "%70ort=5432",
+])("the isolated local database refuses every host or port query override: %s", async query => {
+  const failure = await configured(Effect.flip(TestDatabase.serverUrl), {
+    TEST_DATABASE_PORT: "55582", DATABASE_URL: `postgresql://owner:PRIVATE@localhost:55582/fixture?${query}`,
+  })
+  expect(failure).toBeInstanceOf(TestDatabase.Unusable)
+  expect(String(failure)).not.toContain("PRIVATE")
+  expect(String(failure)).not.toContain("owner")
+  expect(String(failure)).not.toContain(query)
+})

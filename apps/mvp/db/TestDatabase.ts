@@ -3,15 +3,15 @@ import { Config, Context, Data, Effect, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "./Database.ts"
 
-// The Postgres a test uses (docs/infrastructure.md#tests): the compose Postgres only, and there only a schema of its
+// The Postgres a test uses (docs/infrastructure.md#tests): the selected local fixture only, and there a schema of its
 // own, built by db/migrations and dropped after. A test never migrates the dev database, never touches the dev
 // conversation, and never sees another test file's rows.
 
-/** Tests can't use Postgres: `DATABASE_URL` names another server, or nothing answers at the compose Postgres. */
+/** Tests cannot use Postgres: the endpoint is not allowed, or the selected local fixture does not answer. */
 export class Unusable extends Data.TaggedError("TestDatabaseUnusable")<{ readonly message: string }> {}
 
 /**
- * A test file's schema on the compose Postgres: its `name`, and `database`, which opens a client with the schema as
+ * A test file's schema on the selected local Postgres: its `name`, and `database`, which opens a client with the schema as
  * its `search_path` for the scope that builds it, as `Database.layer` does for ChatApi.
  */
 export class Scratch extends Context.Service<
@@ -36,16 +36,29 @@ export const electricUrl = Config.Port("TEST_ELECTRIC_PORT").pipe(
   Effect.map((port) => `http://localhost:${port}`),
 )
 
-/** `DATABASE_URL`, the compose Postgres when unset, refused when it names another host or port. */
+/** `DATABASE_URL`, the local Postgres when unset; only selected-port loopback authorities without endpoint overrides. */
 export const serverUrl = Effect.gen(function* () {
   const expected = yield* localServer
   const url = new URL(Redacted.value(yield* Database.url))
-  if (url.hostname !== expected.hostname || url.port !== expected.port) {
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) || url.port !== expected.port ||
+    url.searchParams.has("host") || url.searchParams.has("port")) {
     return yield* new Unusable({
       message: `Tests use only the compose Postgres at ${expected.host}, and DATABASE_URL names ${url.host}. Unset it.`,
     })
   }
   return url
+})
+
+/** Only selected local fixture endpoints, retained across nested ConfigProvider boundaries. */
+export const fixtureConfig = Effect.gen(function* () {
+  const database = yield* serverUrl
+  const electric = yield* electricUrl
+  return {
+    DATABASE_URL: database.toString(),
+    TEST_DATABASE_PORT: database.port,
+    ELECTRIC_URL: electric,
+    TEST_ELECTRIC_PORT: new URL(electric).port,
+  }
 })
 
 /** Socket error codes that only say nothing listens there, or there is no route to it. */

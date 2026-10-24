@@ -4,7 +4,7 @@
 // (worker/stack/Api.ts) and its one writer over the compose Postgres and Electric. Only the model is scripted. Unhappy
 // paths give the tab a faulty `StackClient`, the real one behind switches (test.faults-by-injection).
 import { Persistence, Outbox } from "@smthrs/effect-tanstack-db"
-import { Context, Exit, Effect, Layer, type ManagedRuntime, Metric, Option } from "effect"
+import { Context, Deferred, Exit, Effect, Layer, type ManagedRuntime, Metric, Option } from "effect"
 import { ShapeSource } from "@smthrs/effect-electric"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -31,6 +31,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { TodoStepRefused } from "./flows"
 import { pendingActions, sends } from "./metrics"
 import type { Draft, Requested, Sending, Todo, TodoRequest } from "./schema"
+import { IssuesStore } from "../issues/store"
 import { TodosStore } from "./store"
 import { Todos } from "./todos"
 import { accessFor, draftsOfAnswer, draftsOfRepo, notSentRows, stackRows, todoCardOf, todosByIssue } from "./view"
@@ -79,7 +80,24 @@ const faultyClient = () => {
   return { layer, state, next: (...faults: Array<"network" | "drop" | number>) => void plan.push(...faults) }
 }
 
-type App = ManagedRuntime.ManagedRuntime<Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch, unknown>
+/** Hold a real outbound operation until its pending UI has been observed. */
+const holdClient = (op: "commit" | "drop") => {
+  const entered = Deferred.makeUnsafe<void>()
+  const release = Deferred.makeUnsafe<void>()
+  const settled = Deferred.makeUnsafe<void>()
+  const layer = Layer.effect(StackClient, Effect.map(StackClient, (real) => StackClient.of({
+    change: (owner, name, change) => change.op !== op
+      ? real.change(owner, name, change)
+      : Effect.gen(function* () {
+        yield* Deferred.succeed(entered, undefined)
+        yield* Deferred.await(release)
+        return yield* real.change(owner, name, change).pipe(Effect.tap(() => Deferred.succeed(settled, undefined)))
+      }),
+  }))).pipe(Layer.provide(StackClient.layer({ origin: CHATAPI_ORIGIN, within: "10 seconds" })))
+  return { layer, entered, release, settled }
+}
+
+type App = ManagedRuntime.ManagedRuntime<Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | IssuesStore, unknown>
 
 /** A tab on `runtime`, with the TODOs layer's queries started as React starts them. */
 const tabOf = async (runtime: App) => {
@@ -126,7 +144,7 @@ type Tab = Awaited<ReturnType<typeof tabOf>>
 /** The app on a fresh ChatApi as `actor` (Maya unless set), its device's engine leading. */
 const open = async (options: TabOptions = {}, actor: Actor | null = maya) => {
   const runtime: ManagedRuntime.ManagedRuntime<
-    Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | TestChatApi,
+    Todos | TodosStore | ChatStore | Chat | Commands | AuthStore | FlowDispatch | IssuesStore | TestChatApi,
     unknown
   > = openTestApp(options, { actor })
   runtimes.push(runtime)
@@ -161,61 +179,69 @@ const committed = async (tab: Tab, title: string, number: number) => {
 
 describe("a commit", () => {
   test("shows T– Requested at once; the stack numbers it T1, Queued, on every device; its prompt syncs", async () => {
-    const tab = await open()
+    const held = holdClient("commit")
+    const tab = await open({ replace: held.layer })
     const other = await another(tab.api)
-    await tab.actions.open(OWNER, NAME)
-    await other.actions.open(OWNER, NAME)
-    const draftId = drafted(tab, "  Retry webhook delivery  ", "Retry a failed delivery **three** times.")
-    expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([
-      expect.objectContaining({ id: draftId, title: "  Retry webhook delivery  ", answerId: null }),
-    ])
-    // Another device has none of this device's drafts.
-    expect(other.drafts()).toEqual([])
-
-    expect(tab.actions.commit(draftId)).toBe(stackPath(OWNER, NAME))
-    expect(tab.view()?.committing).toEqual([draftId])
-    // A second press while the first is on its way runs nothing.
-    expect(tab.actions.commit(draftId)).toBeUndefined()
-
-    await until(() =>
-      expect(tab.rows()).toEqual([
-        { id: expect.any(String), number: null, title: "Retry webhook delivery", state: "queued", pending: "requested" },
+    try {
+      await tab.actions.open(OWNER, NAME)
+      await other.actions.open(OWNER, NAME)
+      const draftId = drafted(tab, "  Retry webhook delivery  ", "Retry a failed delivery **three** times.")
+      expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([
+        expect.objectContaining({ id: draftId, title: "  Retry webhook delivery  ", answerId: null }),
       ])
-    )
-    // The step queued it: the draft goes and the card can press again.
-    await until(() => expect(tab.drafts()).toEqual([]))
-    await until(() => expect(tab.view()?.committing).toEqual([]))
+      // Another device has none of this device's drafts.
+      expect(other.drafts()).toEqual([])
 
-    for (const device of [tab, other]) {
+      expect(tab.actions.commit(draftId)).toBe(stackPath(OWNER, NAME))
+      expect(tab.view()?.committing).toEqual([draftId])
+      // A second press while the first is on its way runs nothing.
+      expect(tab.actions.commit(draftId)).toBeUndefined()
+
+      await Effect.runPromise(Deferred.await(held.entered))
       await until(() =>
-        expect(device.rows()).toEqual([{ id: expect.any(String), number: 1, title: "Retry webhook delivery", state: "queued" }])
+        expect(tab.rows()).toEqual([
+          { id: expect.any(String), number: null, title: "Retry webhook delivery", state: "queued", pending: "requested" },
+        ])
       )
-    }
-    // The follower dropped the requested change: the stack's row shows in its place.
-    await until(() => expect(tab.store.requested.tanstack.size).toBe(0))
-    expect(tab.count(sends, { op: "commit", outcome: "taken" })).toBe(1)
-    expect(await sql(tab.api, `SELECT via, outcome FROM stack_ops`)).toEqual([{ via: "person", outcome: "committed" }])
+      // The step queued it: the draft goes and the card can press again.
+      await until(() => expect(tab.drafts()).toEqual([]))
+      await until(() => expect(tab.view()?.committing).toEqual([]))
 
-    // The TODO at full size, on the device that didn't commit it.
-    await other.actions.open(OWNER, NAME, 1)
-    await until(() =>
-      expect(other.card()).toEqual({
-        id: expect.any(String),
-        number: 1,
-        title: "Retry webhook delivery",
-        state: "queued",
-        prompt: "Retry a failed delivery **three** times.",
-        acceptance: [],
-        createdLogin: expect.any(String),
-        createdAt: expect.any(String),
-        updatedAt: expect.any(String),
-        settledAt: null,
-        branch: null,
-        prNumber: null,
-        issueNumber: null,
-        runId: null,
-      })
-    )
+      await Effect.runPromise(Deferred.succeed(held.release, undefined))
+      await Effect.runPromise(Deferred.await(held.settled))
+      for (const device of [tab, other]) {
+        await until(() =>
+          expect(device.rows()).toEqual([{ id: expect.any(String), number: 1, title: "Retry webhook delivery", state: "queued" }])
+        )
+      }
+      // The follower dropped the requested change: the stack's row shows in its place.
+      await until(() => expect(tab.store.requested.tanstack.size).toBe(0))
+      expect(tab.count(sends, { op: "commit", outcome: "taken" })).toBe(1)
+      expect(await sql(tab.api, `SELECT via, outcome FROM stack_ops`)).toEqual([{ via: "person", outcome: "committed" }])
+
+      // The TODO at full size, on the device that didn't commit it.
+      await other.actions.open(OWNER, NAME, 1)
+      await until(() =>
+        expect(other.card()).toEqual({
+          id: expect.any(String),
+          number: 1,
+          title: "Retry webhook delivery",
+          state: "queued",
+          prompt: "Retry a failed delivery **three** times.",
+          acceptance: [],
+          createdLogin: expect.any(String),
+          createdAt: expect.any(String),
+          updatedAt: expect.any(String),
+          settledAt: null,
+          branch: null,
+          prNumber: null,
+          issueNumber: null,
+          runId: null,
+        })
+      )
+    } finally {
+      await Effect.runPromise(Deferred.succeed(held.release, undefined))
+    }
   }, WITHIN)
 
   test("a draft with a blank title or prompt, or one the device doesn't have, commits nothing", async () => {
@@ -276,30 +302,38 @@ describe("a commit", () => {
 describe("a drop", () => {
   test("shows Requested on its TODO, then Dropped on every device, after the open ones", async () => {
     const tab = await open()
-    const other = await another(tab.api)
+    const held = holdClient("drop")
+    const other = await another(tab.api, { replace: held.layer })
     await tab.actions.open(OWNER, NAME)
     await other.actions.open(OWNER, NAME)
     await committed(tab, "First", 1)
     await committed(tab, "Second", 2)
     await until(() => expect(other.rows().map(({ number }) => number)).toEqual([1, 2]))
 
-    other.actions.drop(OWNER, NAME, 1)
-    await until(() =>
-      expect(other.rows()[0]).toEqual(expect.objectContaining({ number: 1, state: "queued", pending: "requested" }))
-    )
-    for (const device of [tab, other]) {
+    try {
+      other.actions.drop(OWNER, NAME, 1)
+      await Effect.runPromise(Deferred.await(held.entered))
       await until(() =>
-        expect(device.rows().map(({ number, state, pending }) => [number, state, pending])).toEqual([
-          [2, "queued", undefined],
-          [1, "dropped", undefined],
-        ])
+        expect(other.rows()[0]).toEqual(expect.objectContaining({ number: 1, state: "queued", pending: "requested" }))
       )
+      await Effect.runPromise(Deferred.succeed(held.release, undefined))
+      await Effect.runPromise(Deferred.await(held.settled))
+      for (const device of [tab, other]) {
+        await until(() =>
+          expect(device.rows().map(({ number, state, pending }) => [number, state, pending])).toEqual([
+            [2, "queued", undefined],
+            [1, "dropped", undefined],
+          ])
+        )
+      }
+      await until(() => expect(other.store.requested.tanstack.size).toBe(0))
+      expect(await sql(tab.api, `SELECT number, position FROM todos ORDER BY number`)).toEqual([
+        { number: 1, position: null },
+        { number: 2, position: 1 },
+      ])
+    } finally {
+      await Effect.runPromise(Deferred.succeed(held.release, undefined))
     }
-    await until(() => expect(other.store.requested.tanstack.size).toBe(0))
-    expect(await sql(tab.api, `SELECT number, position FROM todos ORDER BY number`)).toEqual([
-      { number: 1, position: null },
-      { number: 2, position: 1 },
-    ])
   }, WITHIN)
 
   test("a refused drop stays Not sent on its TODO, with Discard", async () => {
@@ -575,6 +609,11 @@ describe("slash commands", () => {
       VALUES ('${REPO_ID}#5', '${REPO_ID}', 5, 'issue', 7005, 'Slow page', 'The home page is slow.', 'open', now(), now(),
         now(), now())`,
     )
+    // This command drafts from the issue this device holds, not an SQL write still in Electric's WAL.
+    const issues = await tab.runtime.runPromise(Effect.service(IssuesStore))
+    await tab.runtime.runPromise(issues.activate)
+    await tab.runtime.runPromise(issues.items.preload)
+    await until(() => expect(issues.items.tanstack.get(`${REPO_ID}#5`)).toMatchObject({ number: 5, title: "Slow page" }))
     const line = `/todo.issue ${TEST_REPOSITORY} 5`
     commands.actions.type(line)
     commands.actions.submit(line)

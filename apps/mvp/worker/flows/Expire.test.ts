@@ -2,8 +2,9 @@
 // and as its steps alone, over this file's schema of the compose Postgres (`pnpm db:up`). Answers are asked through
 // ChatApi's real handler, and the device that asked is the browser's agent on the Node host (src/test/agent.ts), with a
 // scripted model.
+import { Action, Interpreter } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Cause, ConfigProvider, Deferred, Duration, Effect, Exit, Logger, Metric, Redacted, Stream } from "effect"
+import { Cause, ConfigProvider, Deferred, Duration, Effect, Exit, Layer, Logger, Metric, Redacted, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
@@ -47,11 +48,6 @@ const settledAfter = (answerId: string) =>
 
 const sql = (statement: string) =>
   runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(client.unsafe(statement))))
-
-/** How long ago, on Postgres' clock, an answer last changed, in milliseconds. */
-const msSinceChanged = (answerId: string) =>
-  sql(`SELECT (extract(epoch FROM now() - updated_at) * 1000)::float8 AS ms FROM messages WHERE id = '${answerId}'`)
-    .then((rows) => (rows as unknown as ReadonlyArray<{ readonly ms: number }>)[0]!.ms)
 
 /** How long after `earlier` last changed `later` did, in milliseconds. */
 const msBetween = (earlier: string, later: string) =>
@@ -139,17 +135,48 @@ describe("chat/Expire", () => {
     const answers: Array<string> = []
     for (let i = 1; i <= 25; i++) answers.push(await agent.ask(`Question ${i}`))
     const last = answers.at(-1)!
-    // Its device is gone. Every answer before it settles 250 ms after the one before it, 6 s in all, while the
-    // expiry is 1.5 s.
-    const expiring = run(last, "1500 millis")
-    let previous = last
-    for (const answerId of answers.slice(0, -1)) {
-      await expect.poll(() => msSinceChanged(previous), { interval: 20, timeout: 10_000 }).toBeGreaterThanOrEqual(250)
-      await settle(answerId)
-      previous = answerId
+    // Start with an old queue, then move it while the real abandonment step is held at its database boundary.
+    await sql(`UPDATE messages SET updated_at = now() - interval '1 hour' WHERE role = 'assistant'`)
+    const reached = Deferred.makeUnsafe<void>()
+    const release = Deferred.makeUnsafe<void>()
+    const live = await services("1500 millis")
+    const outcomes: Array<string> = []
+    let checks = 0
+    const registration = Interpreter.layerWithImplementations(Expire.Expire, Layer.merge(
+      Expire.ExpiresIn.toLayer(({ answerId }) => Expire.observedExpiresIn(answerId, live)),
+      Expire.Abandon.toLayer(({ answerId }) => Effect.gen(function* () {
+        const first = checks++ === 0
+        if (first) {
+          yield* Deferred.succeed(reached, undefined)
+          yield* Deferred.await(release)
+        }
+        const outcome = first
+          ? yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+            // The final queue write and the check share PostgreSQL's transaction clock, so CPU/IO delays
+            // cannot insert an accidental expiry interval between these deliberately ordered operations.
+            yield* sql`UPDATE messages SET updated_at = now() WHERE id = ${answers.at(-2)!}`
+            // Reproduce a database boundary delayed longer than expiry, without changing PostgreSQL's
+            // transaction clock between the final queue movement and its abandonment check.
+            yield* Effect.sleep("1600 millis")
+            return yield* Expire.observedAbandon(answerId, { ...live, database: Layer.succeed(SqlClient.SqlClient, sql) })
+          }))).pipe(Effect.provide(live.database), Effect.orDie)
+          : yield* Expire.observedAbandon(answerId, live)
+        outcomes.push(outcome.outcome)
+        return outcome
+      })),
+    )).pipe(Layer.provideMerge(Action.layerImplementations))
+    const expiring = runFlow(Expire.Expire, { answerId: last }, registration, { executionId: Expire.executionId(last) })
+    try {
+      await Effect.runPromise(Deferred.await(reached))
+      for (const answerId of answers.slice(0, -1)) await settle(answerId)
+    } finally {
+      await Effect.runPromise(Deferred.succeed(release, undefined))
     }
     const ran = await expiring
 
+    expect(outcomes[0]).toBe("waiting")
+    expect(outcomes.at(-1)).toBe("abandoned")
+    expect(outcomes.length).toBeGreaterThanOrEqual(2)
     expect(ran.exit).toEqual(Exit.succeed({ outcome: "abandoned" }))
     expect(ran.status).toBe("completed")
     expect(await answerRow(runtime, last)).toMatchObject({ status: "failed", failure: "abandoned" })

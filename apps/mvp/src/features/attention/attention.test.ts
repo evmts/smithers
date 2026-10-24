@@ -165,20 +165,47 @@ describe("the feed on two people's devices", { timeout: ENGINE_WITHIN }, () => {
     ann.attention.actions.open("run:nowhere", "page")
     expect(ann.host.navigated).toEqual([])
 
-    annToo.status.actions.answer(answerId, "docs-v2")
-    ;(await Effect.runPromise(api.answerTo("Deploy the docs preview", 1))).cell(`ctx.done("Deploying docs-v2.")`)
-    // Done: a new version, so it shows again, unread, then hides by itself after 4 s and stays in Ann's list.
-    await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done", stack: true, unread: true }))
-    await until(() => expect(benDevice.entry(subject)).toMatchObject({ state: "done", stack: true }))
-    await until(() => expect(ann.entry(subject)).toMatchObject({ stack: false, listed: true }), 10_000)
-    // Ben's, someone else's, leaves his feed altogether.
-    await until(() => expect(benDevice.entry(subject)).toBeUndefined(), 10_000)
+    // Record the real transient toast before releasing the model. A slow assertion must not miss a
+    // four-second state that was actually delivered, and a toast never delivered must still fail.
+    const watchDone = async (device: Device, unread: boolean) => {
+      const store = await device.run(Effect.service(AttentionStore))
+      const frames: Array<{ state: string; stack: boolean; unread: boolean; noticeAgeMs: number | null }> = []
+      let observed = false
+      const subscription = store.entries.tanstack.subscribeChanges((batch) => {
+        for (const change of batch) {
+          if (change.key !== subject || change.type === "delete") continue
+          const entry = change.value
+          const notice = store.notices.tanstack.toArray.find((row) => row.subject === subject)
+          const updatedAt = notice === undefined ? NaN : Date.parse(String(notice.updatedAt))
+          frames.push({ state: entry.state, stack: entry.stack, unread: entry.unread,
+            noticeAgeMs: Number.isFinite(updatedAt) ? Date.now() - updatedAt : null })
+          if (entry.state === "done" && entry.stack && (!unread || entry.unread)) observed = true
+        }
+      })
+      return { observed: () => observed, frames, subscription }
+    }
+    const annDone = await watchDone(ann, true)
+    const benDone = await watchDone(benDevice, false)
+    try {
+      annToo.status.actions.answer(answerId, "docs-v2")
+      ;(await Effect.runPromise(api.answerTo("Deploy the docs preview", 1))).cell(`ctx.done("Deploying docs-v2.")`)
+      // Done: a new version, so it shows again, unread, then hides by itself after 4 s and stays in Ann's list.
+      // Consume the recorded frames after the toast expired, as a delayed assertion would.
+      await until(() => expect(ann.entry(subject)).toMatchObject({ state: "done", stack: false, listed: true }), 10_000)
+      await until(() => expect(annDone.observed(), JSON.stringify(annDone.frames)).toBe(true))
+      await until(() => expect(benDone.observed(), JSON.stringify(benDone.frames)).toBe(true))
+      // Ben's, someone else's, leaves his feed altogether.
+      await until(() => expect(benDevice.entry(subject)).toBeUndefined(), 10_000)
 
-    // Dismiss on one device closes it on both.
-    annToo.attention.actions.dismiss(subject)
-    await until(() => expect(annToo.entry(subject)).toBeUndefined())
-    await until(() => expect(ann.entry(subject)).toBeUndefined())
-    expect(ann.count(Metric.withAttributes(shown, { state: "done" }))).toBe(1)
+      // Dismiss on one device closes it on both.
+      annToo.attention.actions.dismiss(subject)
+      await until(() => expect(annToo.entry(subject)).toBeUndefined())
+      await until(() => expect(ann.entry(subject)).toBeUndefined())
+      expect(ann.count(Metric.withAttributes(shown, { state: "done" }))).toBe(1)
+    } finally {
+      annDone.subscription.unsubscribe()
+      benDone.subscription.unsubscribe()
+    }
   })
 
   test("an act a device can't send yet shows at once and keeps up with a newer version", async () => {

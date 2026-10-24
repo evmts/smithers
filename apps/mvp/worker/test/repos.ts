@@ -173,7 +173,7 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
   const logs: Array<StructuredLog> = []
   const logger = Logger.make((logOptions) => void logs.push(StructuredLogger.formatStructured.log(logOptions)))
   const registry: Metric.MetricRegistry = new Map()
-  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: await Effect.runPromise(TestDatabase.electricUrl), ...options.config })
+  const provider = ConfigProvider.fromUnknown({ ...await runtime.runPromise(TestDatabase.fixtureConfig), ...options.config })
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(Tracer.Tracer, tracer),
@@ -359,6 +359,8 @@ export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions 
     },
     /** The clone executions started, by execution id. */
     started: () => [...fibers.keys()],
+    /** The real engine schema, for asserting it belongs to this fixture database. */
+    engineSchema: () => engine?.engine.schema,
     /** Publishes `owner/name` on the scripted GitHub, clones it to the end, and answers its id and head commit. */
     seed: async (owner: string, name: string, repository: GitHubRepository = fixture()) => {
       scripted.publish(owner, name, repository)
