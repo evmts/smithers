@@ -634,7 +634,9 @@ export class TestChatApi extends Context.Service<
               )
             ),
         })
-        const domains = yield* DomainsApi.make({ id: repoId(repository.owner, repository.name) }, database)
+        const domains = yield* DomainsApi.make({ id: repoId(repository.owner, repository.name) }, database).pipe(
+          Effect.provideService(ConfigProvider.ConfigProvider, config),
+        )
 
         // Repository secrets, as ChatApi routes them (worker/ChatApi.ts), on under TEST_SECRETS_KEY for TEST_REPOSITORY:
         // `secret/Put` and `secret/Delete` run for real on a Node host's engine of their own, built on first use, so a
