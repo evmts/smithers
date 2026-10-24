@@ -440,3 +440,7 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 
 - Pushed the reviewed issue/pull recovery fix to append-only `main` as `211f5ec8` with jj. The isolated workspace's test-only dependency links and compatibility edits were removed before that commit. The final source validation was seven affected files, 83/83, under the corrected local dependency links and temporary old-PKCE compatibility needed by this sparse checkout; no full build or deployment is claimed.
 - The saved remote execution locations are still unavailable: two Cloud workspaces did not answer a bounded read-only `pwd` probe and returned a gateway failure when interrupted; the saved SSH route exited 255. Heavy build and Alchemy deploy have therefore not run. Arc remains reserved after the desktop was reclaimed, so no production browser smoke or stacked VibeLang acceptance has resumed.
+
+## 2026-10-24, 01:27 PDT
+
+- The third saved Cloud workspace, `handoff-validation`, also failed a bounded read-only `pwd` probe: after 60 seconds with no command output, interruption returned the same gateway failure. All three saved Latitude workspaces are currently unable to run a shell. `jj git fetch --remote origin` found no new main revision. The app's full build, deploy, and Arc production acceptance remain open.
