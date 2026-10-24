@@ -149,7 +149,7 @@ export const answer = Effect.gen(function* () {
   const admitted = yield* started((admitted) =>
     flows.dispatch("flow/answer", { draftId: draft.id, round: draft.round, answers: changed }, { door: "button", admitted })
   )
-  if (admitted) yield* trackEditorPersistence(Effect.flatMap((yield* FlowsUiStore).answers.delete(ids), (write) => write.persisted)).pipe(Effect.orDie)
+  if (admitted && ids.length > 0) yield* trackEditorPersistence(Effect.flatMap((yield* FlowsUiStore).answers.delete(ids), (write) => write.persisted)).pipe(Effect.orDie)
 })
 
 /**

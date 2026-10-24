@@ -539,12 +539,16 @@ describe("a flow of your own, from a tab", () => {
       ],
     }))
     await until(() => expect(t.draft()?.draft.status).toBe("needs_you"))
-    // The person changed nothing: Answer takes the default the field shows for the blocking question, and only that.
+    // The person changed nothing: Answer takes the default without deleting any stored answer rows.
+    expect(t.flows.queries.answers.toArray).toEqual([])
+    expect(t.host.stored("flow-answers")).toBe(0)
     t.flows.actions.answer()
     // Round 1 drafts with that answer: its model request is the one that says so.
     await t.reply("The person answered:\n- Which greeting? Hello", `ctx.done(${JSON.stringify(drafted())})`)
     await until(() => expect(t.draft()?.draft).toMatchObject({ status: "ready", round: 1 }))
     expect(t.api.modelRequests("- Say it twice?")).toBe(0)
+    await awaitEditorWrites()
+    expect(t.host.stored("flow-answers")).toBe(0)
   }, WITHIN)
 
   test("a question the draft asked: the person's answer starts the next round", async () => {
