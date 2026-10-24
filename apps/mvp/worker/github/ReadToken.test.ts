@@ -1,8 +1,8 @@
 // What GitHub REST reads of public repositories go out as (worker/github/ReadToken.ts): `GITHUB_TOKEN`, else the App's
 // installation token for the deployment's own repository, else none. The App is `GitHub.AppAuth` over the scripted
 // GitHub (worker/github/test/scriptedGitHub.ts) on the `HttpClient` seam; nothing intercepts a request.
-import { ConfigProvider, Effect, Option, Redacted } from "effect"
-import { describe, expect, test, vi } from "vitest"
+import { ConfigProvider, Deferred, Effect, Fiber, Option, Redacted } from "effect"
+import { describe, expect, test } from "vitest"
 import * as ReadToken from "./ReadToken.ts"
 import { APP_ID, appKey, INSTALLATION_ID, SCRIPTED_API, scriptedApp, scriptedGitHub } from "./test/scriptedGitHub.ts"
 
@@ -34,17 +34,24 @@ describe("ReadToken.fromApp", () => {
     const github = scriptedGitHub("acme", "widgets")
     let release!: () => void
     const held = new Promise<void>((resolve) => { release = resolve })
+    const minting = Deferred.makeUnsafe<void>()
     github.faults.push({
       match: (method, path) => method === "POST" && path === `/app/installations/${INSTALLATION_ID}/access_tokens`,
-      hold: () => held,
+      hold: async () => {
+        await Effect.runPromise(Deferred.succeed(minting, undefined))
+        await held
+      },
     })
     const token = await Effect.runPromise(ReadToken.fromApp(await Effect.runPromise(scriptedApp(github, await appKey())), github))
-    const first = Effect.runPromise(token)
-    await vi.waitFor(() => expect(github.calls.some((call) => call.method === "POST" && call.path.endsWith("/access_tokens"))).toBe(true))
-    const second = Effect.runPromise(token)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    release()
-    expect((await Promise.all([first, second])).map(value)).toEqual(["ghs_scripted_1", "ghs_scripted_1"])
+    const tokens = await Effect.runPromise(Effect.gen(function* () {
+      const first = yield* token.pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(minting)
+      // Start the second read while the first mint is held at the provider.
+      const second = yield* token.pipe(Effect.forkChild({ startImmediately: true }))
+      release()
+      return [yield* Fiber.join(first), yield* Fiber.join(second)]
+    }))
+    expect(tokens.map(value)).toEqual(["ghs_scripted_1", "ghs_scripted_1"])
     expect(github.minted).toHaveLength(1)
   })
 
