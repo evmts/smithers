@@ -23,4 +23,14 @@ describe("direct issue and pull pages before a repository's first sync", () => {
     expect(pageOf({ number: 1, body: "private content" }, undefined, true, true, { status: "forbidden" })).toBe("missing")
     expect(pageOf({ number: 1 }, undefined, true, true, { status: "unknown" })).toBe("shown")
   })
+
+  test("a failed shape settles a missing issue or pull without claiming Not found, then waits for recovered rows", () => {
+    expect(pageOf(undefined, undefined, false, false, { status: "unavailable", installed: false })).toBe("unknown")
+    expect(pageOf(undefined, { syncedAt: "old" }, true, true, { status: "unavailable", installed: false })).toBe("unknown")
+    expect(pageOf({ number: 1 }, undefined, false, false, { status: "unavailable", installed: false })).toBe("shown")
+    expect(pageOf(undefined, { syncedAt: "old" }, true, true, { status: "unavailable", installed: true })).toBe("missing")
+    expect(pageOf(undefined, undefined, true, true, { status: "unavailable", installed: true })).toBe("unknown")
+    expect(pageOf(undefined, undefined, false, false, { status: "allowed", installed: false })).toBe("loading")
+    expect(pageOf(undefined, undefined, true, true, { status: "allowed", installed: true })).toBe("unknown")
+  })
 })

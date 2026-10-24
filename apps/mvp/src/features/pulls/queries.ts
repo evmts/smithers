@@ -166,7 +166,7 @@ export const viewQuery = (view: View, writes: Synced<WriteRow>) =>
         mergeWriteId: view.mergeWriteId,
         mergeRefused: view.mergeRefused,
         installed: view.installed,
-        pullRefusal: view.pullRefusal,
+        pullStatus: view.pullStatus,
         mergeStatus: Query.coalesce(write?.status, ""),
         mergeFailure: Query.coalesce(write?.failure, ""),
       }))

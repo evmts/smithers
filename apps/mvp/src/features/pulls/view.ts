@@ -16,10 +16,16 @@ import type { ChangedFile } from "./schema"
 /** A current pull-shape refusal wins over an older issue-shape success and cached pull content. */
 export const pullAccessOf = (
   issueAccess: { readonly status: string; readonly installed?: boolean } | undefined,
-  pullView: { readonly pullRefusal: string | null } | undefined,
+  pullView: { readonly pullStatus: string; readonly installed?: boolean } | undefined,
 ): { readonly status: string; readonly installed?: boolean } | undefined =>
-  pullView?.pullRefusal === "sign_in" || pullView?.pullRefusal === "forbidden"
-    ? { status: pullView.pullRefusal }
+  pullView?.pullStatus === "sign_in" || pullView?.pullStatus === "forbidden"
+    ? { status: pullView.pullStatus }
+    : refusedOf(issueAccess) !== undefined
+    ? issueAccess
+    : pullView?.pullStatus === "unavailable" && pullView.installed === true && issueAccess?.installed !== true
+    ? issueAccess
+    : pullView?.pullStatus === "unavailable"
+    ? { status: "unavailable", installed: pullView.installed === true && issueAccess?.installed === true }
     : issueAccess
 
 // What the pull request pages show, from the queries' rows (decision 0012 §6, docs/features/pulls.md#the-browser):

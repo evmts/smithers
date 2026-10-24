@@ -235,14 +235,15 @@ describe("a repository this person may not read", () => {
     expect(pageOf({ number: 1 }, undefined, true, true, { status: "sign_in" })).toBe("sign_in")
   })
 
-  test("the items shape's answers: allowed once one succeeds, refused when stopped with 401 or 403, else nothing new", () => {
+  test("the items shape's answers: allowed, refused, or unavailable until its next success", () => {
     expect(accessOf({ _tag: "Succeeded" })).toBe("allowed")
     expect(accessOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 401 }) })).toBe("sign_in")
     expect(accessOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 403 }) })).toBe(
       "forbidden",
     )
-    expect(accessOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 400 }) })).toBeUndefined()
-    expect(accessOf({ _tag: "Failed", status: 503 })).toBeUndefined()
+    expect(accessOf({ _tag: "Stopped", error: new ElectricCollection.SyncFailed({ cause: null, status: 400 }) })).toBe("unavailable")
+    expect(accessOf({ _tag: "Failed", status: 503 })).toBe("unavailable")
+    expect(accessOf({ _tag: "Failed" })).toBe("unavailable")
     expect(accessOf({ _tag: "Sent" })).toBeUndefined()
   })
 })

@@ -5,6 +5,7 @@
 // a merge's settlement) through the server's own store (worker/github/Store.ts, worker/github/Pulls.ts). The compare
 // route reads the scripted GitHub as the App. Unhappy paths give the tab a faulty `PullsClient`, the real one behind
 // switches (test.faults-by-injection).
+import { ShapeSource } from "@smthrs/effect-electric"
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Layer, type ManagedRuntime, Metric } from "effect"
 import { SqlClient } from "effect/sql"
@@ -17,11 +18,13 @@ import { itemId } from "../issues/contract"
 import { ISSUES_STREAM } from "../issues/contract"
 import { Issues } from "../issues/issues"
 import { pageOf } from "../issues/view"
+import { shapeRetries } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"
 import { mergePresses } from "./actions"
 import { PullsClient, PullsRequestFailed } from "./api"
-import { mergeExecutionId } from "./contract"
+import { mergeExecutionId, PULLS_SHAPE_ROUTE } from "./contract"
 import { Pulls } from "./pulls"
+import { pullShapeTransitions } from "./shapeSync"
 import { listPageOf, pullAccessOf } from "./view"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -209,6 +212,42 @@ const server = (api: TestChatApi["Service"]) => {
 }
 
 describe("the list and a pull request's page", () => {
+  test("a stopped pull shape settles a direct page and Try again installs its recovered batch", async () => {
+    let refused = true
+    let pullRequests = 0
+    const source = ShapeSource.ShapeSource.of({ request: (url, init) => {
+      if (new URL(url).pathname === PULLS_SHAPE_ROUTE) {
+        pullRequests++
+        if (refused) return Effect.succeed(new Response(null, { status: 400 }))
+      }
+      return ShapeSource.fetchSource.request(url, init)
+    } })
+    const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam })
+    runtimes.push(runtime)
+    const pulls = await runtime.runPromise(Effect.service(Pulls))
+    const issues = await runtime.runPromise(Effect.service(Issues))
+    for (const query of Object.values(pulls.queries)) query.startSyncImmediate()
+    issues.queries.access.startSyncImmediate()
+    issues.queries.synced.startSyncImmediate()
+    pulls.actions.open(OWNER, NAME, 404)
+    await until(() => expect(pulls.queries.view.toArray[0]).toMatchObject({ pullStatus: "unavailable", installed: false }), 5_000)
+    await until(() => expect(issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
+    const access = pullAccessOf(issues.queries.access.toArray[0], pulls.queries.view.toArray[0])
+    expect(pageOf(pulls.queries.pull.toArray[0], issues.queries.synced.toArray[0],
+      pulls.queries.pull.isReady() && pulls.queries.view.toArray[0]?.installed === true,
+      issues.queries.synced.isReady(), access)).toBe("unknown")
+    expect(runtime.runSync(Metric.value(Metric.withAttributes(pullShapeTransitions, { phase: "stopped" }))).count).toBeGreaterThan(0)
+    const beforeRetry = pullRequests
+    refused = false
+    pulls.actions.retry()
+    await until(() => expect(pullRequests).toBeGreaterThan(beforeRetry))
+    await until(() => expect(pulls.queries.view.toArray[0]).toMatchObject({ pullStatus: "allowed", installed: true }))
+    expect(pageOf(pulls.queries.pull.toArray[0], issues.queries.synced.toArray[0],
+      pulls.queries.pull.isReady() && pulls.queries.view.toArray[0]?.installed === true,
+      issues.queries.synced.isReady(), pullAccessOf(issues.queries.access.toArray[0], pulls.queries.view.toArray[0]))).toBe("unknown")
+    expect(runtime.runSync(Metric.value(Metric.withAttributes(shapeRetries, { item: "pull" }))).count).toBe(1)
+  }, WITHIN)
+
   test("an absent direct pull settles after both current shape batches are installed", async () => {
     const tab = await open()
     tab.issues.queries.access.startSyncImmediate()

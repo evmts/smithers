@@ -5,6 +5,7 @@
 // GitHub's flows would (the write's settlement and GitHub's row), through the server's own store
 // (worker/github/Store.ts). Only the model is scripted. Unhappy paths give the tab a faulty `IssuesClient`, the real one
 // behind switches (test.faults-by-injection), or a host capability that fails (an outbox storage that refuses).
+import { ShapeSource } from "@smthrs/effect-electric"
 import { Outbox } from "@smthrs/effect-tanstack-db"
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Layer, type ManagedRuntime, Metric, Stream } from "effect"
@@ -13,7 +14,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.ts"
 import * as Store from "../../../worker/github/Store.ts"
 import * as TriageStore from "../../../worker/github/TriageStore.ts"
-import { CHATAPI_ORIGIN, failingWorker, nodeDevice, openTab, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { CHATAPI_ORIGIN, failingWorker, nodeDevice, openFaultyApp, openTab, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { read } from "../../test/otlp"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
@@ -25,6 +26,7 @@ import {
   ACCEPTED_LABEL,
   commentId,
   commentDraftKey,
+  ITEMS_SHAPE_ROUTE,
   ISSUES_STREAM,
   issuePath,
   itemId,
@@ -36,7 +38,7 @@ import {
 } from "./contract"
 import { Issues } from "./issues"
 import { pendingActions, sends } from "./metrics"
-import { shapeTransitions } from "./shapeSync"
+import { shapeRetries, shapeTransitions } from "./shapeSync"
 import { IssuesStore } from "./store"
 import {
   commentOf,
@@ -394,6 +396,91 @@ describe("a comment", () => {
 })
 
 describe("loading", () => {
+  test("a cached issue stays visible on a failed poll, then a 403 hides it through another failure", async () => {
+    const runtime = openFaultyApp()
+    runtimes.push(runtime)
+    const tab = await tabOf(runtime)
+    const api = await runtime.runPromise(Effect.service(TestChatApi))
+    await server(api).seed(31, "Cached issue")
+    tab.actions.open(OWNER, NAME, 31)
+    await until(() => {
+      expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 31, title: "Cached issue" })
+      expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true })
+    })
+    const currentPage = () => pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
+      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])
+    expect(currentPage()).toBe("shown")
+    const faults = await runtime.runPromise(Effect.service(ShapeSource.Faults))
+    await runtime.runPromise(faults.refuse(503))
+    // Wake the in-flight live poll; the next request receives the injected failure.
+    await server(api).seed(32, "Wake poll")
+    await runtime.runPromise(tab.store.items.reconnect)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: true }), 15_000)
+    expect(currentPage()).toBe("shown")
+    await runtime.runPromise(faults.refuse(403))
+    await runtime.runPromise(tab.store.items.reconnect)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false }), 5_000)
+    expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 31 })
+    expect(currentPage()).toBe("missing")
+    await runtime.runPromise(faults.refuse(503))
+    await runtime.runPromise(tab.store.items.reconnect)
+    await until(() => expect(tab.count(shapeTransitions, { phase: "failed" })).toBeGreaterThan(1), 15_000)
+    expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false })
+    expect(currentPage()).toBe("missing")
+  }, WITHIN)
+
+  test("a failed reconnect cannot clear a 403 refusal", async () => {
+    const runtime = openFaultyApp({}, (faults) => faults.refuse(403))
+    runtimes.push(runtime)
+    const tab = await tabOf(runtime)
+    tab.actions.open(OWNER, NAME, 3)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false }), 5_000)
+    const faults = await runtime.runPromise(Effect.service(ShapeSource.Faults))
+    await runtime.runPromise(faults.refuse(503))
+    await runtime.runPromise(tab.store.items.reconnect)
+    await until(() => expect(tab.count(shapeTransitions, { phase: "failed" })).toBeGreaterThan(0), 5_000)
+    expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "forbidden", installed: false })
+    expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
+      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])).toBe("missing")
+  }, WITHIN)
+
+  test("a failed items shape settles a direct issue before device hydration or the next retry", async () => {
+    const runtime = openFaultyApp({}, (faults) => faults.refuse(503))
+    runtimes.push(runtime)
+    const tab = await tabOf(runtime)
+    tab.actions.open(OWNER, NAME, 3)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false }), 5_000)
+    expect(pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
+      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])).toBe("unknown")
+    expect(tab.count(shapeTransitions, { phase: "failed" })).toBeGreaterThan(0)
+    tab.actions.retry()
+    expect(tab.count(shapeRetries, { item: "issue" })).toBe(1)
+  }, WITHIN)
+
+  test("Try again restarts a stopped issue shape and installs its recovered item", async () => {
+    const runtime = openFaultyApp({}, (faults) => faults.refuse(400))
+    runtimes.push(runtime)
+    const api = await runtime.runPromise(Effect.service(TestChatApi))
+    const tab = await tabOf(runtime)
+    await server(api).seed(33, "Recovered issue")
+    tab.actions.open(OWNER, NAME, 33)
+    await until(() => expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "unavailable", installed: false }), 5_000)
+    const page = () => pageOf(tab.issues.queries.item.toArray[0], tab.issues.queries.synced.toArray[0],
+      tab.issues.queries.item.isReady(), tab.issues.queries.synced.isReady(), tab.issues.queries.access.toArray[0])
+    expect(page()).toBe("unknown")
+    const faults = await runtime.runPromise(Effect.service(ShapeSource.Faults))
+    const countRequests = async () => (await runtime.runPromise(faults.sent)).filter((url) => url.pathname === ITEMS_SHAPE_ROUTE).length
+    const beforeRetry = await countRequests()
+    await runtime.runPromise(faults.heal)
+    tab.actions.retry()
+    await until(async () => expect(await countRequests()).toBeGreaterThan(beforeRetry))
+    await until(() => {
+      expect(tab.issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true })
+      expect(tab.issues.queries.item.toArray[0]).toMatchObject({ number: 33, title: "Recovered issue" })
+    })
+    expect(page()).toBe("shown")
+  }, WITHIN)
+
   test("a late issues visit recognizes a batch installed before the live poll began", async () => {
     const tab = await open()
     await until(() => expect(tab.count(shapeTransitions, { phase: "ready" })).toBeGreaterThan(0))

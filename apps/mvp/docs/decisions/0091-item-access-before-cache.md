@@ -21,3 +21,13 @@ repository sync query is ready. A restored local snapshot or an eager query's
 readiness alone does not certify the new batch.
 Only then may the page show the GitHub fallback or, after a complete repository
 sync, Not found.
+
+Failure addendum, 2026-10-24: a cold issue or pull shape failure settles an
+absent detail page as unavailable with Try again and its GitHub link. A failed
+live poll preserves an already installed snapshot, so an established page does
+not change to Loading. A failed reconnect cannot replace a current `401` or
+`403` refusal or reveal cached content. The pull metadata shape has its own
+status; either shape's failure can settle a cold pull page. Try again on an
+unavailable fallback, including one after an installed empty snapshot, reconnects
+the tab's item shapes through `@smthrs/effect-electric`; successful responses
+wait for their current batch to be installed before a cold absent page settles.

@@ -9,6 +9,7 @@ import {
   enableTriage,
   open,
   pauseTriage,
+  retry,
   warm,
   runTriageAgain,
   setCommentDraft,
@@ -51,6 +52,8 @@ export interface IssuesActions {
   readonly open: (owner: string, name: string, number?: number) => void
   /** What an issue route calls on a link's hover or focus: starts the issues' sync without showing a page. */
   readonly warm: () => void
+  /** Reconnect failed issue shapes now. */
+  readonly retry: () => void
   readonly setNewTitle: (owner: string, name: string, title: string) => void
   readonly setNewBody: (owner: string, name: string, body: string) => void
   readonly setCommentDraft: (owner: string, name: string, number: number, body: string) => void
@@ -95,6 +98,7 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           setCommitment: (owner, name, number, commitment, previousWriteId) => run(setCommitment(owner, name, number, commitment, previousWriteId)),
           open: (owner, name, number) => run(open(owner, name, number)),
           warm: () => run(warm),
+          retry: () => run(retry),
           setNewTitle: (owner, name, title) => run(setNewTitle(owner, name, title)),
           setNewBody: (owner, name, body) => run(setNewBody(owner, name, body)),
           setCommentDraft: (owner, name, number, body) => run(setCommentDraft(owner, name, number, body)),

@@ -172,11 +172,12 @@ export type IssueView = typeof IssueView.Type
 
 /**
  * Whether this person may read the repository's issues, from the shape's answers: `unknown` until one answers,
- * `allowed`, or refused: `sign_in` (signed out, and GitHub hasn't said the repository is public) or `forbidden` (no
- * role on it). One row; the screens show the sign-in link or Not found rather than loading forever.
+ * `allowed`, temporarily `unavailable` when the shape failed, or refused: `sign_in` (signed out, and GitHub hasn't
+ * said the repository is public) or `forbidden` (no role on it). One row; a failed shape never leaves a detail page
+ * loading forever or claims that an absent item is Not found.
  */
 export const ACCESS = "access"
-export const ACCESS_STATES = ["unknown", "allowed", "sign_in", "forbidden"] as const
+export const ACCESS_STATES = ["unknown", "allowed", "unavailable", "sign_in", "forbidden"] as const
 export const Access = Schema.Struct({ id: Schema.Literal(ACCESS), status: Schema.Literals(ACCESS_STATES), installed: Schema.Boolean })
 export type Access = typeof Access.Type
 

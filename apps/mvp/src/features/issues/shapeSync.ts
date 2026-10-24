@@ -24,8 +24,19 @@ export const shapeTransitions = Metric.counter("smithers_issue_shape_transitions
   incremental: true,
 })
 
+/** A person's retry of the failed item shapes, by the page they used. */
+export const shapeRetries = Metric.counter("smithers_item_shape_retries", {
+  description: "Person-requested issue or pull shape reconnects",
+  incremental: true,
+})
+
+export const recordShapeRetry = (item: "issue" | "pull") => Effect.gen(function* () {
+  yield* Metric.update(Metric.withAttributes(shapeRetries, { item }), 1)
+  yield* Effect.logInfo("item.shape.retry").pipe(Effect.annotateLogs({ item }))
+}).pipe(Effect.withSpan("item.shape.retry", { attributes: { item } }))
+
 /** A page stuck on Loading can be matched to its shape's first request and last observed outcome. */
-export const observeIssueShape = (events: Stream.Stream<Event>) =>
+export const observeShape = (events: Stream.Stream<Event>, name: string, transitions: typeof shapeTransitions) =>
   Effect.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis
     const snapshot = yield* Ref.make<Snapshot>({ phase: "starting" })
@@ -39,11 +50,13 @@ export const observeIssueShape = (events: Stream.Stream<Event>) =>
         ...(next.status === undefined ? {} : { status: next.status }),
       }
       yield* Effect.gen(function* () {
-        yield* Metric.update(Metric.withAttributes(shapeTransitions, { phase: next.phase }), 1)
+        yield* Metric.update(Metric.withAttributes(transitions, { phase: next.phase }), 1)
         yield* Effect.annotateCurrentSpan(fields)
         yield* Effect.logWithLevel(next.phase === "failed" || next.phase === "stopped" ? "Warn" : "Info")(
-          "issues.shape.sync",
+          name,
         ).pipe(Effect.annotateLogs(fields))
-      }).pipe(Effect.withSpan("issues.shape.sync"))
+      }).pipe(Effect.withSpan(name))
     })))
   })
+
+export const observeIssueShape = (events: Stream.Stream<Event>) => observeShape(events, "issues.shape.sync", shapeTransitions)

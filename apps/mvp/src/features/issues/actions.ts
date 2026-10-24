@@ -12,6 +12,7 @@ import {
   type TriageDecision,
 } from "./contract"
 import { pendingActions } from "./metrics"
+import { recordShapeRetry } from "./shapeSync"
 import { type Draft, VIEW } from "./schema"
 import { IssuesStore } from "./store"
 
@@ -24,6 +25,19 @@ import { IssuesStore } from "./store"
  * showing a page, so the page the click opens has its rows.
  */
 export const warm = Effect.flatMap(IssuesStore, (store) => store.activate)
+
+/** Reconnects this tab's issue shapes after one stopped or failed; the SDK owns retries and resumption. */
+export const reconnectShapes = Effect.flatMap(IssuesStore, (store) =>
+  Effect.all([
+    store.items.reconnect,
+    store.comments.reconnect,
+    store.sync.reconnect,
+    store.writes.reconnect,
+    store.triageSettings.reconnect,
+  ], { discard: true }))
+
+/** A person's Try again on an unavailable direct issue. */
+export const retry = Effect.andThen(reconnectShapes, recordShapeRetry("issue"))
 
 /** What the route calls on a navigation: shows `owner/name`'s issues, or, with `number`, that issue; and starts the sync. */
 export const open = (owner: string, name: string, number?: number) =>

@@ -52,7 +52,10 @@ export function IssueScreen() {
   if (page === "unknown") return (
     <main className="issues-screen">
       <EmptyState title="Issue unavailable here" action={
-        <Button asChild variant="outline"><a href={githubIssueUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
+        <>
+          {access?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
+          {" "}<Button asChild variant="outline"><a href={githubIssueUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
+        </>
       } />
     </main>
   )

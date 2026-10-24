@@ -478,6 +478,8 @@ The git loop's routes, flows and tokens, triage, and the browser's issue writes,
 | `triage_runs{outcome}`, `triage_decisions{decision,via}`, `triage_dropped{reason}`, `triage_overrides{from,to}`, `triage_tokens` | counters | the Durable Object; a person's override is counted by `github/Write`. Overrides of the flow are its error rate |
 | `issues.write.queue`, `issues.write.send`, `issues.pending`, `smithers_issue_writes`, `smithers_issue_write_sends`, `smithers_issue_pending_actions` | browser | the engine worker and the tab |
 | `issues.shape.sync`, `smithers_issue_shape_transitions` | browser log, span, counter | the tab; first request, first answer, changed failure status or recovery with finite phase, status and observation duration, without repository or issue content |
+| `pulls.shape.sync`, `smithers_pull_shape_transitions` | browser log, span, counter | the tab; the same finite progress for the pull metadata shape, without repository or pull content |
+| `item.shape.retry`, `smithers_item_shape_retries{item}` | browser log, span, counter | a person's Try again on an unavailable issue or pull; `item` is `issue` or `pull` |
 | `pulls.merge.post`, `pulls.compare.get`, `smithers_web_pull_merges` | browser | the tab ([pull requests](features/pulls.md#observability)) |
 
 ### Agent status

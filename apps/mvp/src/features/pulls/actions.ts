@@ -1,6 +1,7 @@
 import { Effect, Metric, Option, Stream } from "effect"
 import { IssuesStore } from "../issues/store"
-import { open as openIssues } from "../issues/actions"
+import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions"
+import { recordShapeRetry } from "../issues/shapeSync"
 import { repoId } from "../repo/contract"
 import { PullsClient } from "./api"
 import { DEFAULT_MERGE_METHOD, type PullTab, SHA } from "./contract"
@@ -20,6 +21,19 @@ export const mergePresses = Metric.counter("smithers_web_pull_merges", {
 
 /** What a pull request route calls on a link's hover or focus: starts the sync without showing a page. */
 export const warm = Effect.flatMap(IssuesStore, (store) => store.activate)
+
+/** A person's Try again on an unavailable pull; both its own and the shared issue shapes may need reconnecting. */
+export const retry = Effect.gen(function* () {
+  const store = yield* PullsStore
+  yield* Effect.all([
+    reconnectIssueShapes,
+    store.pulls.reconnect,
+    store.commits.reconnect,
+    store.reviews.reconnect,
+    store.checks.reconnect,
+  ], { discard: true })
+  yield* recordShapeRetry("pull")
+})
 
 /** What the route calls on a navigation: shows `owner/name`'s pull requests, or, with `number`, that one at `tab`. */
 export const open = (owner: string, name: string, number?: number, tab: PullTab = "conversation") =>

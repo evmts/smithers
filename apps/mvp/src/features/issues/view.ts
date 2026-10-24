@@ -148,9 +148,10 @@ export const draftOf = (view: { readonly title?: string | undefined; readonly bo
 
 /**
  * What an issue or pull page shows: a current shape refusal wins over cached content (sign in, or Not found for a
- * person with no role); otherwise the item, then loading until the eager item and sync queries are ready. A 2xx can
- * report access before its rows are installed. An absent item stays unknown before this repository's first complete sync;
- * other repositories do not yet receive that sync, so unknown settles the skeleton without claiming Not found.
+ * person with no role); otherwise the item, then a failed shape settles an absent item as unavailable. A healthy
+ * shape keeps loading until the eager item and sync queries are ready: a 2xx can report access before its rows are
+ * installed. An absent item stays unknown before this repository's first complete sync; other repositories do not
+ * yet receive that sync, so unknown settles the skeleton without claiming Not found.
  */
 export const pageOf = (
   item: unknown,
@@ -165,11 +166,13 @@ export const pageOf = (
     ? "missing"
     : item !== undefined
     ? "shown"
+    : access?.status === "unavailable" && access.installed !== true
+    ? "unknown"
     : !itemReady || !syncedReady || access?.installed !== true
     ? "loading"
     : synced !== undefined
     ? "missing"
-    : access?.status === "allowed"
+    : access?.status === "allowed" || access?.status === "unavailable"
     ? "unknown"
     : "loading"
 

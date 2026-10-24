@@ -1,7 +1,7 @@
 import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Ref, Stream, type Scope } from "effect"
-import { IssuesStore } from "../issues/store"
+import { accessOf, IssuesStore } from "../issues/store"
 import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "./contract"
 import {
   checksQuery,
@@ -14,6 +14,7 @@ import {
   viewQuery,
 } from "./queries"
 import { CheckRow, commitKey, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow, VIEW } from "./schema"
+import { observePullShape } from "./shapeSync"
 
 // Pull requests on this tab (decision 0012 §6, docs/features/pulls.md#the-browser): the repository's pull requests,
 // their commits, reviews and checks in Postgres, synced by Electric and kept on the device, beside the issues' store's
@@ -68,6 +69,7 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
     shape: shape(PULLS_SHAPE_ROUTE),
     ...kept,
   })
+  yield* observePullShape(pulls.sync).pipe(Effect.forkScoped)
   const commits = yield* ElectricCollection.make<PullCommitRow>({
     id: "pull-commits",
     schema: PullCommitRow,
@@ -105,23 +107,26 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
       mergeWriteId: null,
       mergeRefused: null,
       installed: false,
-      pullRefusal: null,
+      pullStatus: "unknown",
     }],
   })
   const awaitingPulls = yield* Ref.make(false)
   yield* pulls.sync.pipe(
     Stream.runForEach((event) => Effect.gen(function* () {
-      if (event._tag === "Stopped" && (event.error.status === 401 || event.error.status === 403)) {
-        yield* Effect.ignore(view.update(VIEW, (row) => {
-          row.installed = false
-          row.pullRefusal = event.error.status === 401 ? "sign_in" : "forbidden"
-        }))
-      }
-      if (event._tag !== "Succeeded") return
-      yield* Effect.ignore(view.update(VIEW, (row) => void (row.pullRefusal = null)))
+      const status = accessOf(event)
+      if (status === undefined) return
+      yield* Effect.ignore(view.update(VIEW, (row) => {
+        if (status !== "unavailable" || (row.pullStatus !== "sign_in" && row.pullStatus !== "forbidden")) {
+          row.pullStatus = status
+        }
+        if (status === "sign_in" || status === "forbidden") row.installed = false
+      }))
+      if (status !== "allowed") return
       if (yield* Ref.getAndSet(awaitingPulls, true)) return
       yield* pulls.currentApplied.pipe(
-        Effect.flatMap(() => Effect.ignore(view.update(VIEW, (row) => void (row.installed = true)))),
+        Effect.flatMap(() => Effect.ignore(view.update(VIEW, (row) => {
+          if (row.pullStatus === "allowed") row.installed = true
+        }))),
         Effect.ensuring(Ref.set(awaitingPulls, false)),
         Effect.forkIn(scope, { startImmediately: true }),
       )
@@ -132,7 +137,10 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
   // survives a later live Sent event; a current refusal still wins over that receipt.
   yield* pulls.currentApplied.pipe(
     Effect.flatMap(() => Effect.ignore(view.update(VIEW, (row) => {
-      if (row.pullRefusal === null) row.installed = true
+      if (row.pullStatus === "unknown" || row.pullStatus === "allowed") {
+        row.pullStatus = "allowed"
+        row.installed = true
+      }
     }))),
     Effect.forkIn(scope, { startImmediately: true }),
   )

@@ -107,12 +107,18 @@ describe("the list page", () => {
 
   test("the pull shape's current refusal hides cached rows while the issue shape still says allowed", () => {
     const cached = { status: "allowed" }
-    for (const [pullRefusal, detail] of [["sign_in", "sign_in"], ["forbidden", "missing"]] as const) {
-      const access = pullAccessOf(cached, { pullRefusal })
-      expect(listPageOf([row], repository, { syncedAt: "now" }, access)).toMatchObject({ refused: pullRefusal, pulls: [] })
+    for (const [pullStatus, detail] of [["sign_in", "sign_in"], ["forbidden", "missing"]] as const) {
+      const access = pullAccessOf(cached, { pullStatus })
+      expect(listPageOf([row], repository, { syncedAt: "now" }, access)).toMatchObject({ refused: pullStatus, pulls: [] })
       expect(pageOf({ number: 3 }, { syncedAt: "now" }, true, true, access)).toBe(detail)
     }
-    expect(pullAccessOf(cached, { pullRefusal: null })).toBe(cached)
+    expect(pullAccessOf(cached, { pullStatus: "allowed" })).toBe(cached)
+    expect(pullAccessOf({ status: "forbidden" }, { pullStatus: "unavailable", installed: false })).toEqual({ status: "forbidden" })
+    expect(pageOf(undefined, undefined, false, false, pullAccessOf(cached, { pullStatus: "unavailable", installed: false }))).toBe("unknown")
+    expect(pageOf(undefined, undefined, false, false,
+      pullAccessOf({ status: "allowed", installed: false }, { pullStatus: "unavailable", installed: true }))).toBe("loading")
+    expect(pageOf(undefined, { syncedAt: "now" }, true, true,
+      pullAccessOf({ status: "allowed", installed: true }, { pullStatus: "unavailable", installed: true }))).toBe("missing")
   })
 })
 

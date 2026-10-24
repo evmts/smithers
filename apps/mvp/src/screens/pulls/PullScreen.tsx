@@ -33,13 +33,17 @@ export function PullScreen({ tab }: { readonly tab: PullTab }) {
   const { data: synced, isReady: syncedReady } = useLiveQuery(issues.queries.synced)
   const { data: access } = useLiveQuery(issues.queries.access)
   // A pull request is an issue row of kind `pull`: shown, loading until the first complete sync, or not there.
-  const page = pageOf(pull, synced, pullReady && view?.installed === true, syncedReady, pullAccessOf(access, view))
+  const pageAccess = pullAccessOf(access, view)
+  const page = pageOf(pull, synced, pullReady && view?.installed === true, syncedReady, pageAccess)
   if (page === "sign_in") return <main className="pulls-screen"><SignInButton /></main>
   if (page === "missing") return <main className="pulls-screen"><EmptyState title={NOT_FOUND} /></main>
   if (page === "unknown") return (
     <main className="pulls-screen">
       <EmptyState title="Pull request unavailable here" action={
-        <Button asChild variant="outline"><a href={githubPullUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
+        <>
+          {pageAccess?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
+          {" "}<Button asChild variant="outline"><a href={githubPullUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
+        </>
       } />
     </main>
   )

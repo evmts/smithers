@@ -177,8 +177,10 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       const status = accessOf(event)
       if (status === undefined) return
       yield* Effect.ignore(access.update(ACCESS, (row) => {
-        row.status = status
-        if (status !== "allowed") row.installed = false
+        // A failed reconnect cannot undo a current authorization refusal and reveal a cached private item.
+        if (status !== "unavailable" || (row.status !== "sign_in" && row.status !== "forbidden")) row.status = status
+        // An installed batch stays readable through a failed live poll. A cold shape has no such receipt.
+        if (status === "sign_in" || status === "forbidden") row.installed = false
       }))
       // A 2xx precedes installation. Restored rows can also make `preload` ready before the network answers.
       if (status !== "allowed" || (yield* Ref.getAndSet(awaitingItems, true))) return
@@ -268,7 +270,8 @@ export const repoIdOf = (repo: string): string => {
 
 /**
  * What one of the items shape's sync events says of access: allowed once a request succeeds; refused when ChatApi
- * stopped the shape with `401` (sign in) or `403` (no role); anything else says nothing new.
+ * stopped the shape with `401` (sign in) or `403` (no role); a failed request or other stop is unavailable until
+ * another request succeeds. `Sent` says nothing new.
  */
 export const accessOf = (event: ElectricCollection.SyncEvent): Access["status"] | undefined =>
   event._tag === "Succeeded"
@@ -277,4 +280,6 @@ export const accessOf = (event: ElectricCollection.SyncEvent): Access["status"] 
     ? "sign_in"
     : event._tag === "Stopped" && event.error.status === 403
     ? "forbidden"
+    : event._tag === "Failed" || event._tag === "Stopped"
+    ? "unavailable"
     : undefined
