@@ -54,3 +54,18 @@ No public API, stored schema, threshold or assertion is weakened.
 
 Astra review: no actionable findings, including an independent trace of the
 receipt ordering above. Fable is unavailable in this session's tools/models.
+
+Focused validation: 255/256 behavioral tests pass, including both real About
+retry-budget exhaustion/recovery cases. The one failure is an unrelated manifest
+test's 30 s timeout while another job runs the full suite; it must be rerun under
+the full-suite lock and is not treated as a product result. The executed V8 JSON
+report gives 100% statements, branches, functions and lines for issues/store.ts,
+issues/view.ts, pulls/store.ts and repo/actions.ts. The restricted selection's
+remaining coverage gap is issues/writes.ts, whose other consumers are outside
+that selection. Thresholds remain 100%. Receipts: /tmp/main-reds-0024c-focused.log
+and /tmp/main-reds-0024c-focused-coverage/coverage-final.json.
+
+Final-source typechecks: browser, infrastructure and eval projects pass; worker
+has exactly the 31 existing TS2741 fetch.preconnect diagnostics. ImportRules
+passes. The locked full suite is queued; its shell fetches main again before
+starting and refuses to run if new commits need integration.

@@ -16,7 +16,7 @@ import { SqlClient } from "effect/sql"
 import { RepoStore } from "./store"
 import { VIEW } from "./rows"
 import { RepoClient, RepoRefused } from "./api"
-import { BUSY, COULDNT_LOAD, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
+import { BUSY, COULDNT_LOAD, GITHUB_LIMIT, NOT_FOUND, rawRoute, READING_PAUSED, repoId } from "./contract"
 import { TabClipboard } from "./copy"
 import { RepoCloneRequest, RepoCopy, RepoCopyRefused, RepoRead, RepoRefs, RepoTree } from "./flows"
 import { aboutLoadMs, blobLoadMs, clones, copies, refsLoadMs, treeLoadMs } from "./metrics"
@@ -518,6 +518,45 @@ describe("the agent's repository flows on this device", () => {
 })
 
 describe("what GitHub says, cloned or not", () => {
+  test.each([
+    ["rate_limited", GITHUB_LIMIT],
+    ["unavailable", COULDNT_LOAD],
+  ])("an exhausted %s About read shows its refusal and retries successfully", async (code, message) => {
+    const h = await repoHarness(server)
+    h.github.publish("octocat", "Spoon-Knife")
+    const real = RepoClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+    )
+    let refused = true
+    let attempts = 0
+    const faulty = Layer.effect(RepoClient, Effect.map(RepoClient, (client) => RepoClient.of({
+      ...client,
+      about: (owner, name) => Effect.suspend(() => {
+        attempts++
+        return refused ? Effect.fail(new RepoRefused({ status: 503, code })) : client.about(owner, name)
+      }),
+    }))).pipe(Layer.provide(real))
+    const tab = await openTab({ origin: h.origin, fetch: h.fetch, client: faulty })
+    tabs.push(tab)
+    tab.repo.actions.open(root("octocat", "Spoon-Knife"))
+    // Exercise the real durable retry budget, including the terminal answer after it expires.
+    await waitFor(() => expect(attempts).toBeGreaterThan(1))
+    expect(tab.about().about?.state).toBe("loading")
+    await waitFor(() => expect(tab.about().about).toMatchObject({ state: "failed", message }), { timeout: 150_000 })
+    expect(tab.histogramCount(aboutLoadMs, { outcome: "failed" })).toBe(1)
+    const exhausted = attempts
+    tab.repo.actions.open(root("octocat", "Spoon-Knife"))
+    expect(attempts).toBe(exhausted)
+    expect(tab.about().about).toMatchObject({ state: "failed", message })
+    refused = false
+    expect(tab.repo.actions.retryAbout("octocat", "Spoon-Knife")).toBe(true)
+    await waitFor(() => expect(tab.about().about?.state).toBe("ready"))
+    expect(attempts).toBe(exhausted + 1)
+    expect(tab.histogramCount(aboutLoadMs, { outcome: "ready" })).toBe(1)
+    expect(h.github.calls.length).toBeGreaterThan(0)
+  }, 180_000)
+
   test("a terminal public About refusal can be retried through the same flow", async () => {
     const h = await repoHarness(server)
     h.github.publish("octocat", "Spoon-Knife")
