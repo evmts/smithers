@@ -1,13 +1,13 @@
 ---
 title: Repair newest main test and branch coverage reds
-status: in-progress
+status: done
 area: app-tests
 owner: codex-main-reds-0024c
 updated: 2026-10-24
 links: [../rules.md, ./main-reds-0024.md]
 ---
 
-Trace RemoteRuns and shared TODO status failures to their introducing commits;
+Trace RemoteRuns and TODO card failures to their introducing commits;
 repair behavior or test setup without weakening assertions. Exercise missing
 issue/pull installed-receipt branches and repository About failures through
 real services. Use the catalog's existing @smthrs/flow, @smthrs/effect-electric,
@@ -87,3 +87,58 @@ and the exact toEqual check. The run also reported two Checks test timeouts.
 It was stopped after this discovery and is not accepted as full-suite evidence
 (`/tmp/main-reds-0024c-full-interrupted.log`). Restart the complete gate after
 the corrected assertion's isolated run, under the same suite lock.
+
+The corrected queued-card test passes alone under the suite lock (12.42 s).
+Main was fetched again and all repairs rebased onto `1471d335`, incorporating
+`52a5e776` and the earlier repair job. A short restarted full run was stopped
+before completion to address the newly recorded FileTabs regression; neither
+interrupted run is a full-gate receipt.
+
+The FileTabs navigation test from `bce9128d` reproducibly failed under the lock
+before SQLite entered its deliberately held write. The implicit one-second
+vi.waitFor poll expired during real durable admission. Wait for a bounded actual
+write-entry receipt instead, then retain all focus, persisted-row, navigation,
+DOM identity and error assertions. The unchanged assertions pass with the receipt
+(28.46 s). Astra reviewed this change without findings. Receipts:
+/tmp/main-reds-0024c-filetabs-red.log and /tmp/main-reds-0024c-filetabs-green.log.
+This is synchronization for the persistence/navigation contract, not a latency
+budget change in production.
+
+On the final tree at `1471d335`, browser, infrastructure and eval typechecks pass;
+worker reports exactly 31 TS2741 diagnostics, all existing fetch.preconnect sites.
+ImportRules passes. The next full gate must acquire the shared lock and fetch
+main again before running. Another active job owns the flows-ui/device repairs;
+this change leaves those files and all explicitly reserved earlier-job files alone.
+
+
+Resumed after the disk-full interruption: restored dependencies with
+`pnpm install --frozen-lockfile`, fetched main and rebased the six repairs onto
+`37472935`. Fetching again immediately before the complete gate found no newer
+main. No finished repair was reimplemented and no reserved file was changed.
+The first resumed run was interrupted following shared Postgres crash recovery:
+its setup queries spent over a minute on catalog disk reads (928 schemas,
+155,538 relations). That interrupted run is not validation evidence. Created a
+fresh instance of the repository's real compose Postgres/Electric/PgBouncer
+stack on the supported isolated test ports (55321/31001/55322), leaving the shared
+stack and its data intact; removed only this job's fresh fixture after validation.
+
+Final full gate, held under the Mac mini's full-suite lock throughout:
+`DATABASE_URL=<local fixture> TEST_DATABASE_PORT=55321 ELECTRIC_URL=http://localhost:31001 TEST_ELECTRIC_PORT=31001 pnpm --dir apps/mvp test --maxWorkers=2 --coverage.reporter=text --coverage.reporter=json --coverage.reportsDirectory=/tmp/main-reds-0024c-resume-coverage`.
+Completed in 1725.94 s: 335 files passed, two failed, four skipped; 4,359 tests
+passed, two expected failures and 12 skipped. The only failed suites are the
+allowed ChatApi startup Rolldown parse error on SmithersError.vibe and
+ExecutionHost workerd's missing .vibe loader. No behavioral failure or unhandled
+error remains. Overall coverage is exactly 100%: 23,830 statements, 13,351
+branches, 7,117 functions and 20,586 lines; no source file has a coverage gap.
+Thresholds and exclusions are unchanged. The lock was released on exit.
+Receipts: `/tmp/main-reds-0024c-resume-full.log` and
+`/tmp/main-reds-0024c-resume-coverage/coverage-final.json`.
+
+Final-source static checks on the rebased tree: browser, infrastructure and
+eval VibeLang projects pass; worker has exactly the 31 permitted TS2741
+fetch.preconnect diagnostics and no others. ImportRules passes (one target ran).
+Receipts: `/tmp/main-reds-0024c-resume-type-*.log` and
+`/tmp/main-reds-0024c-resume-importRules.log`. No public API changed, so docs sync
+and a changeset do not apply. No live/e2e deployment test, push or landing was
+performed; this task's proof is the requested local full app gate. The existing
+Astra reviews remain applicable; Fable was unavailable as recorded above.

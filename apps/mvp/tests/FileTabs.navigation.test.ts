@@ -33,10 +33,12 @@ test("persisted keyboard close survives the real repository route reopening", as
   let write: Promise<void> | undefined
   let releaseWrite: (() => void) | undefined
   let entered = false
+  let signalWriteEntered = () => {}
+  const writeEntered = new Promise<void>((resolve) => { signalWriteEntered = resolve })
   const persistence = Persistence.layer({ ...host, open: async () => {
     const database = await host.open()
     return { ...database, execute: async <T>(sql: string, params?: ReadonlyArray<unknown>) => {
-      if (write !== undefined) { entered = true; await write }
+      if (write !== undefined) { entered = true; signalWriteEntered(); await write }
       return database.execute<T>(sql, params)
     } }
   } })
@@ -84,7 +86,10 @@ test("persisted keyboard close survives the real repository route reopening", as
     const remaining = container.querySelectorAll<HTMLElement>('[role=tab]')[1]!
     write = new Promise<void>((resolve) => { releaseWrite = resolve })
     await act(async () => { readme.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })) })
-    await vi.waitFor(() => expect(entered).toBe(true))
+    // A real durable dispatch may still be admitting after vi.waitFor's default one second.
+    // Synchronize on SQLite reaching the held write; never navigate before its persistence receipt.
+    await Effect.runPromise(Effect.promise(() => writeEntered).pipe(Effect.timeout("10 seconds")))
+    expect(entered).toBe(true)
     expect(tab.lines("files.focus").map((line) => ({ phase: line.annotations.phase, reason: line.annotations.reason }))).toEqual([
       { phase: "requested", reason: "keyboard" }, { phase: "consumed", reason: "keyboard" },
     ])
