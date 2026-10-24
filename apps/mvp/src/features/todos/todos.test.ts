@@ -276,6 +276,7 @@ describe("a commit", () => {
           prNumber: null,
           issueNumber: null,
           runId: null,
+          failure: null,
         })
       )
     } finally {

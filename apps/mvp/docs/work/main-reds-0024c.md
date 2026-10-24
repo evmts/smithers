@@ -69,3 +69,21 @@ Final-source typechecks: browser, infrastructure and eval projects pass; worker
 has exactly the 31 existing TS2741 fetch.preconnect diagnostics. ImportRules
 passes. The locked full suite is queued; its shell fetches main again before
 starting and refuses to run if new commits need integration.
+
+Refresh while queued: main advanced to `52a5e776` (branch creation). Rebased all
+repairs, retaining its RemoteRuns step-entry synchronization and exact-row
+assertion together with the empty-snapshot/cursor regression. Astra approved
+the integration. The complete RemoteRuns and new browser branch-creation files
+pass 60/60 on the refreshed tree.
+
+The first locked full run reproduced the original TODO commit-card failure
+(110 s) while both shared status-read regressions passed. Its cause is distinct
+from the upstream transport repair: `3fa4e20f` correctly projected `failure`
+onto cards for the failed-run timeline but left the queued-card integration
+assertion expecting the old object. The pure view regression already expects
+failure=null for a queued TODO. Keep that product field and explicitly assert
+failure=null in the real-device integration test; retain every existing field
+and the exact toEqual check. The run also reported two Checks test timeouts.
+It was stopped after this discovery and is not accepted as full-suite evidence
+(`/tmp/main-reds-0024c-full-interrupted.log`). Restart the complete gate after
+the corrected assertion's isolated run, under the same suite lock.
