@@ -3,7 +3,7 @@ title: Production bug bash, October 23–24
 status: in-progress
 area: app
 owner: Codex production bug bash
-updated: 2026-10-24 01:20 PDT
+updated: 2026-10-24 01:25 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -435,3 +435,8 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 - Astra's next review found the pull failure test could pass from the shared issue failure alone. The replacement faults only the pull metadata shape with a non-auth 400, lets the issue shape succeed, then proves Try again sends a new pull request and installs the recovered batch. It passed. The final affected suite passed 82/82 across seven files. Test-only old-PKCE compatibility lines were restored; no probe or compatibility change belongs to this draft. A standalone TypeScript 5.9.3 check hit its internal `getSignatureApplicabilityError` assertion before reporting file diagnostics, so it is not a typecheck receipt. Arc is still reserved; no production acceptance or deploy occurred.
 - Claude pushed `97174ab1` on append-only main while this draft was under review. Rebased the issue/pull change onto that revision without conflicts. Its shared ChatApi test fixture changed, so I reran the two real recovery cases (2/2), then all seven affected files (82/82), against the rebased tree. The two temporary PKCE compatibility lines needed by this sparse install were restored after the run. Astra's focused follow-up on the replacement pull test found no actionable issue. Fable's read-only final review remains in flight.
 - Fable's review found a pull failure projected too early while the shared issue shape still hydrated, and no real issue retry-to-installed test. It also spotted that its saved diff predated the stronger pull test and that the retry wording was broader than the available fallback. The pull projection now waits for the shared shape when its own installed snapshot exists, both unavailable fallback screens offer Try again, and decision 0091 limits that claim to the fallback. A new real ChatApi/SQLite test begins with a non-auth stopped issue shape, seeds an actual item, heals the source, presses Retry, observes a new items-shape request, and waits for the installed item to display. The focused cases passed 2/2 and the seven-file suite passed 83/83 on rebased main. Astra's follow-up found no actionable issue. Fable verified the corrected diff and found no remaining actionable bug. Production behavior remains untested while Arc is reserved.
+
+## 2026-10-24, 01:25 PDT
+
+- Pushed the reviewed issue/pull recovery fix to append-only `main` as `211f5ec8` with jj. The isolated workspace's test-only dependency links and compatibility edits were removed before that commit. The final source validation was seven affected files, 83/83, under the corrected local dependency links and temporary old-PKCE compatibility needed by this sparse checkout; no full build or deployment is claimed.
+- The saved remote execution locations are still unavailable: two Cloud workspaces did not answer a bounded read-only `pwd` probe and returned a gateway failure when interrupted; the saved SSH route exited 255. Heavy build and Alchemy deploy have therefore not run. Arc remains reserved after the desktop was reclaimed, so no production browser smoke or stacked VibeLang acceptance has resumed.
