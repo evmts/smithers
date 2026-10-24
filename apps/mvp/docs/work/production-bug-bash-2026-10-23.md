@@ -1,9 +1,9 @@
 ---
 title: Production bug bash, October 23–24
-status: in-progress
+status: blocked
 area: app
 owner: Codex production bug bash
-updated: 2026-10-24 01:33 PDT
+updated: 2026-10-24 01:40 PDT
 links: [production-e2e.md, ../features/repo.md, ../rulings.md]
 ---
 
@@ -449,3 +449,8 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 
 - Rechecked the required device schema and migration gates before a future deploy. The sparse workspace's installed `@smthrs/views` points into a different checkout, so the uncorrected run failed two old home-store fingerprints and their migration counts. Temporarily resolving Views and Crypto from this revision made both files pass 27/27. The temporary links were restored; no lock or source was changed.
 - The older-device upgrade suite initially stopped at the sparse install's older PKCE API, then at its older Electric wrapper. With two temporary PKCE compatibility substitutions and test-only links to this revision's Views, Electric, and TanStack DB wrappers, all three upgrade cases passed against real local Postgres and Electric (3/3). The substitutions and links were restored, and `jj diff --summary` is empty. These local checks do not replace the remote full build, the deployed-build browser upgrade test, or Arc production acceptance.
+
+## 2026-10-24, 01:40 PDT
+
+- Rechecked the Cloud workspace-list capability; it still returned `backend_unavailable`. A bounded readiness monitor stayed live through repeated checks without reporting recovery, then was stopped when the workstream was marked blocked. All three saved Latitude workspaces have failed before running a shell, and the SSH route also failed. No full build or Alchemy deployment ran. `jj git fetch --remote origin` found no newer main revision.
+- Arc remains reserved after the production test window was reclaimed and no separate handback has arrived. The deployed fixes, PWA upgrade, VibeLang T2/T3 stacked implementation, in-app review and human landing therefore remain unverified or incomplete. Resume with the acceptance list above when Arc is handed back; run the clean pushed revision's build and deploy on Latitude when its service recovers. Do not infer T2's root cause from the old generic harness error.
