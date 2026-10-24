@@ -138,6 +138,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     const second = await Effect.runPromise(api.answerTo("Deploy the preview", 1))
     second.cell(`ctx.done("Deploying docs-v2.")`)
     await until(() => expect(a.run(answerId)?.answer).toEqual({ value: "docs-v2" }))
+    await until(() => expect(a.run(answerId)?.status).toBe("done"))
     await until(() => expect(tab.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0 }))
     expect(heard).toBeGreaterThan(0)
     stop()
@@ -153,7 +154,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
   test("keys: g q opens the queue, j and k stay on its one item, a digit answers, i and a send an approval's note, ⌘↵ replies from the note", async () => {
     const api = await openApi()
     const a = await openDevice(api)
-    // One conversation holds one open wait at a time: each ask waits for the one before it to be answered.
+    // Complete each run before setting up the next keyboard scenario.
     const first = await a.ask("Deploy one", question("one"))
     const tab = (await a.plugins.actions.tab("queue")) as QueueTab
     await until(() => expect(tab.queries.current.current()).toMatchObject({ total: 1, item: { runId: first } }))
@@ -185,6 +186,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     expect(a.state()?.sending).toBe(true)
     ;(await Effect.runPromise(api.answerTo("Deploy one", 1))).cell(`ctx.done("Deploying docs-v2.")`)
     await until(() => expect(a.run(first)?.answer).toEqual({ value: "docs-v2" }))
+    await until(() => expect(a.run(first)?.status).toBe("done"))
     expect(a.count(Metric.withAttributes(presses, { plugin: "queue", event: "option", door: "key", outcome: "done" }))).toBe(1)
 
     // An approval: `a` sends Approve with the note.
@@ -195,6 +197,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     expect(a.press("a")).toBe(true)
     ;(await Effect.runPromise(api.answerTo("Approve two", 1))).cell(`ctx.done("Approved")`)
     await until(() => expect(a.run(approval)?.answer).toEqual({ value: { approved: true, note: "ship it" } }))
+    await until(() => expect(a.run(approval)?.status).toBe("done"))
     expect(a.count(Metric.withAttributes(presses, { plugin: "queue", event: "approve", door: "key", outcome: "done" }))).toBe(1)
 
     // A question again: ⌘↵ from the note replies with its words.
@@ -204,6 +207,7 @@ describe("the plugin host", { timeout: ENGINE_WITHIN }, () => {
     expect(a.press("enter", { metaKey: true }, field)).toBe(true)
     ;(await Effect.runPromise(api.answerTo("Deploy three", 1))).cell(`ctx.done("Deploying release.")`)
     await until(() => expect(a.run(third)?.answer).toEqual({ value: "release" }))
+    await until(() => expect(a.run(third)?.status).toBe("done"))
     await until(() => expect(tab.queries.current.current()).toEqual({ item: undefined, index: 0, total: 0 }))
   })
 
