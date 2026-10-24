@@ -12,6 +12,7 @@ import type { Inspection } from "./schema"
 import { VIEW } from "./schema"
 import { openList } from "./actions"
 import { Runs } from "./runs"
+import { flowSummary } from "./summary"
 import { followChanges, RunsStore, stateOf } from "./store"
 
 const value = (text: string) => ({ text, bytes: text.length, clipped: false })
@@ -258,6 +259,29 @@ describe("a run on Cloudflare", () => {
 })
 
 describe("readList and following the engine", () => {
+  test("an engine reporting completion without advancing its journal cannot turn an unread result into success", async () => {
+    // Faulty BrowserEngine: completion is reported at the running row's journal version, before a detail result.
+    let completed = false
+    const t = open({
+      inspect: () => Effect.die("opening the list must not inspect each run"),
+      list: () => Effect.succeed({ runs: [summary("answer", {
+        flowName: "chat/Answer", status: completed ? "completed" : "running", finishedAtMs: completed ? 10 : null,
+      })], cursor: null }),
+    })
+    await t.run(t.store.readList)
+    expect((await t.run(t.store.runs.toArray))[0]).not.toHaveProperty("outcome")
+    completed = true
+    t.publish("answer")
+    await vi.waitFor(async () => expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW))).listReady).toBe(false))
+    await t.run(openList)
+    const rows = await t.run(t.store.runs.toArray)
+    expect(rows[0]).toMatchObject({ status: "completed", outcome: "unknown" })
+    expect(flowSummary(rows)).toEqual([{
+      flow: "chat/Answer", runs: 1, settled: 1, succeeded: 0, successRate: null, p95Ms: 9,
+    }])
+    expect(Option.getOrThrow(await t.run(t.store.view.get(VIEW)))).toMatchObject({ listOpen: true, listReady: true })
+  })
+
   test("an answer's list waits for a detail read before counting its domain result", async () => {
     let inspections = 0
     const t = open({

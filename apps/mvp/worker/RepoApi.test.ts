@@ -877,7 +877,14 @@ describe("GET /api/repos/<owner>/<name>/about", () => {
     h.github.fail("", 502)
     const down = await h.fetch(aboutRoute("octocat", "Down"))
     expect(down.status).toBe(503)
+    expect(await down.json()).toEqual({ code: "unavailable" })
     expect(down.headers.get("retry-after")).toBeNull()
+    expect(down.headers.get("cache-control")).toBe("no-store")
+    expect(h.line("repo.about").map((line) => line.annotations)).toEqual([
+      expect.objectContaining({ status: 404, errorCode: "not_found", stage: "repository", upstreamStatus: 404 }),
+      expect.objectContaining({ status: 404, errorCode: "not_found", stage: "repository" }),
+      expect.objectContaining({ status: 503, errorCode: "unavailable", stage: "repository", upstreamStatus: 502, rateLimited: 0 }),
+    ])
     expect((await h.fetch("/api/repos/app/x/about")).status).toBe(404)
     expect((await h.fetch("/api/repos/%E0%A4%A/x/about")).status).toBe(404)
     expect((await h.fetch(aboutRoute("octocat", "Gone"), { method: "POST" })).status).toBe(405)

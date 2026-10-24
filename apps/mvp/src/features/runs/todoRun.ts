@@ -39,11 +39,12 @@ export const answerOutcomeOf = (result: unknown): "succeeded" | "failed" | "unkn
 }
 
 /** These client flows' domain result can differ from the engine settlement. */
-export const hasDomainOutcome = (flowName: string): boolean => flowName === "flow/new" || flowName === "chat/Answer"
+export const hasDomainOutcome = (flowName: string): flowName is "flow/new" | "chat/Answer" =>
+  flowName === "flow/new" || flowName === "chat/Answer"
 
 /** The finite domain result kept after a detail read, without answer or draft content. */
-export const domainOutcomeOf = (flowName: string, result: unknown): "succeeded" | "failed" | "unknown" =>
-  flowName === "chat/Answer" ? answerOutcomeOf(result) : flowName === "flow/new" ? draftOutcomeOf(result) : "unknown"
+export const domainOutcomeOf = (flowName: "flow/new" | "chat/Answer", result: unknown): "succeeded" | "failed" | "unknown" =>
+  flowName === "chat/Answer" ? answerOutcomeOf(result) : draftOutcomeOf(result)
 
 /** A completed engine run can settle the requested TODO, draft or answer as failed. */
 export const headerStatusOf = (run: {

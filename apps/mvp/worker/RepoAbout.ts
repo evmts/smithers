@@ -30,7 +30,7 @@ export type AboutStage = "repository" | "languages" | "release" | "releases" | "
 export class AboutRefused extends Data.TaggedError("AboutRefused")<{
   readonly code: "not_found" | "unavailable"
   readonly retryAfterMillis?: number
-  readonly stage?: AboutStage
+  readonly stage: AboutStage
   readonly upstreamStatus?: number
   readonly rateLimited?: boolean
 }> {}
