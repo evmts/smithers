@@ -210,11 +210,15 @@ export class FlowsUiStore extends Context.Service<
         const form = formReady._tag === "Success" ? savedForm : yield* Collection.local<Form, string>({
           id: "flow-form-unavailable", schema: Form, getKey: (row) => row.id, initialData: [formSeed()],
         })
-        if (answersReady._tag === "Failure") yield* Effect.logWarning("flows.editor.storage").pipe(Effect.annotateLogs({ collection: "flow-answers", outcome: "failed" }))
-        const answers = answersReady._tag === "Success" ? savedAnswers : yield* Collection.local<AnswerRow, string>({
-          // Read-only and empty while the editors are disabled; reuse the saved store's identity rule.
-          id: "flow-answers-unavailable", schema: AnswerRow, getKey: answerKey, initialData: [],
-        })
+        const answers = answersReady._tag === "Success" ? savedAnswers : yield* Effect.andThen(
+          Effect.logWarning("flows.editor.storage").pipe(
+            Effect.annotateLogs({ collection: "flow-answers", outcome: "failed" }),
+          ),
+          Collection.local<AnswerRow, string>({
+            // Read-only and empty while the editors are disabled; reuse the saved store's identity rule.
+            id: "flow-answers-unavailable", schema: AnswerRow, getKey: answerKey, initialData: [],
+          }),
+        )
         const shown = yield* Collection.local<Shown, string>({
           id: "flow-shown",
           schema: Shown,
