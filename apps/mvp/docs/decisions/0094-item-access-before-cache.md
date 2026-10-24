@@ -1,4 +1,4 @@
-# 0091 — Current item access wins over cached issue and pull content
+# 0094 — Current item access wins over cached issue and pull content
 
 2026-10-23. Production bug bash follow-up to GH-4 and decision 0079.
 

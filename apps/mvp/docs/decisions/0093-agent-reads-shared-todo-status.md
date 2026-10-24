@@ -1,4 +1,4 @@
-# 0090 — Agent reads shared TODO status
+# 0093 — Agent reads shared TODO status
 
 2026-10-23. Implements FLOW-3 and the production bug bash's false status answer.
 
