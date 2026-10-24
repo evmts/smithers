@@ -158,22 +158,36 @@ describe("an engine that refuses a start", () => {
     expect(t.flows.queries.drafts.toArray.map((draft) => draft.id)).toEqual([draftId])
   }, 180_000)
 
-  test("a flow's code the engine won't read is unavailable, and a write it won't start says it couldn't save", async () => {
+  test("a refused code read preserves unsaved edits with a refusal, and an untouched editor is unavailable", async () => {
     const t = await open()
     await readyDraft(t)
     t.flows.actions.save()
     await until(() => expect(t.flows.queries.flows.toArray.map((flow) => flow.name)).toEqual(["hello"]))
     await t.flows.actions.openCode("hello")
     expect(t.flows.queries.code.toArray[0]).toMatchObject({ state: "read", revision: 1 })
+    const source = t.flows.queries.code.toArray[0]!.text
+    const edited = `${source}// mine\n`
     await t.refuse("flow/write")
-    t.flows.actions.editCode("hello", `${t.flows.queries.code.toArray[0]!.text}// mine\n`)
-    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toContain("// mine"))
+    t.flows.actions.editCode("hello", edited)
+    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(edited))
     t.flows.actions.saveCode()
     await until(() => expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: "unavailable" }))
     expect(t.refused("flow/write")).toBe(1)
     await t.refuse("flow/read")
     await t.flows.actions.openCode("hello")
-    expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "hello", state: "unavailable" })
+    // 4a6932b4 / decision 0092: an unreadable revision keeps unsaved text visible with a refusal.
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({
+      name: "hello", state: "read", revision: 1, source, text: edited, busy: false, refusal: "unavailable",
+    })
+    expect(t.refused("flow/read")).toBe(1)
+    // Without an unsaved edit, a failed read still makes the editor unavailable.
+    t.flows.actions.editCode("hello", source)
+    await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(source))
+    await t.flows.actions.openCode("hello")
+    expect(t.flows.queries.code.toArray[0]).toMatchObject({
+      name: "hello", state: "unavailable", revision: 0, source: "", text: "",
+    })
+    expect(t.refused("flow/read")).toBe(2)
   }, 180_000)
 
   test("an act on a run the engine refuses to start says it was refused", async () => {
