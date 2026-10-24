@@ -87,6 +87,8 @@ export const codeQuery = (code: Collection.Collection<Code, string>, id: string)
 export const answersQuery = (answers: Collection.Collection<AnswerRow, string>, tabId: string) =>
   LiveQuery.make((q) => q.from({ answer: answers.tanstack }).where(({ answer }) => Query.eq(answer.tabId, tabId)))
 
+const answerKey = (row: AnswerRow): string => row.id
+
 type Live<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
 
 /** Your own flows' state for one tab. */
@@ -176,7 +178,7 @@ export class FlowsUiStore extends Context.Service<
         const savedAnswers = yield* Collection.persisted<AnswerRow, string>({
           id: "flow-answers",
           schema: AnswerRow,
-          getKey: (row) => row.id,
+          getKey: answerKey,
           schemaVersion: 1,
         })
         const codeSeed = (): Code => ({
@@ -210,7 +212,8 @@ export class FlowsUiStore extends Context.Service<
         })
         if (answersReady._tag === "Failure") yield* Effect.logWarning("flows.editor.storage").pipe(Effect.annotateLogs({ collection: "flow-answers", outcome: "failed" }))
         const answers = answersReady._tag === "Success" ? savedAnswers : yield* Collection.local<AnswerRow, string>({
-          id: "flow-answers-unavailable", schema: AnswerRow, getKey: (row) => row.id, initialData: [],
+          // Read-only and empty while the editors are disabled; reuse the saved store's identity rule.
+          id: "flow-answers-unavailable", schema: AnswerRow, getKey: answerKey, initialData: [],
         })
         const shown = yield* Collection.local<Shown, string>({
           id: "flow-shown",

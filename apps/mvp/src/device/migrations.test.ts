@@ -20,6 +20,10 @@ import { ViewV2 } from "./views-history"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import currentDeployed from "./fixtures/c6940ac53e5a.json" with { type: "json" }
 import {
+  FlowFormStore,
+  FlowAnswersStore,
+  FlowCodeStore,
+  PinPendingStore,
   BranchConversationsStore,
   FileTabsStore,
   ConversationPendingStore,
@@ -299,6 +303,10 @@ test("device-local records restore and replace by their declared identity", asyn
   const { path } = await deviceFrom({ build: "empty", collections: {}, outbox: {} } as Fixture)
   await prepare(path, deviceRegistry)
   const cases = [
+    [FlowFormStore, { id: "form:tab", name: "hello", request: "Before", draftId: "draft", seeded: false }, "request", "After"],
+    [FlowAnswersStore, { id: "tab:draft:question", tabId: "tab", draftId: "draft", questionId: "question", value: "Before" }, "value", "After"],
+    [FlowCodeStore, { id: "code:tab", name: "hello", state: "read", revision: 1, source: "source", text: "Before", busy: false, refusal: null }, "text", "After"],
+    [PinPendingStore, { conversationId: "conversation", personId: "person", messageId: "message", changedAt: "2026-10-24", at: 1, home: false, failed: false, awaitAdmission: true }, "awaitAdmission", false],
     [BranchConversationsStore, { id: "acme/widgets@main", conversationId: "before" }, "conversationId", "after"],
     [FileTabsStore, { key: "acme/widgets@main:README.md", owner: "acme", name: "widgets", revision: "main", path: "README.md", lines: null, position: 0 }, "lines", "2-4"],
     [ConversationPendingStore, { conversationId: "conversation", archived: false, at: 1 }, "archived", true],

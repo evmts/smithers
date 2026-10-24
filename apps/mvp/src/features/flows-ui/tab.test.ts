@@ -109,6 +109,7 @@ test("a PWA reload restores an unfinished flow request and its unsent answer fro
   flows.actions.setName("same")
   await until(() => expect(flows.queries.form.toArray[0]).toMatchObject({ name: "same", seeded: false }))
   await flows.actions.openNew("same")
+  await flows.actions.openNew("same")
   await flows.actions.openNew(undefined)
   await until(() => expect(flows.queries.form.toArray[0]).toMatchObject({ name: "", seeded: false }))
 }, WITHIN)
@@ -198,6 +199,37 @@ test("a late code keystroke cannot replace a pending editor stash or leave the r
   })
 }, WITHIN)
 
+test("leaving an editor replaces a stash retained by an interrupted earlier departure", async () => {
+  const t = await open()
+  const runtime = ManagedRuntime.make(FlowsUiStore.layer({
+    origin: t.api.origin, editorTabId: t.host.editorTabId, editorTabPersistent: t.host.editorTabPersistent,
+  }).pipe(Layer.provideMerge(Layer.succeedContext(await t.runtime.context()))))
+  runtimes.push(runtime)
+  const store = await runtime.runPromise(Effect.service(FlowsUiStore))
+  const stashId = `${store.codeId}:draft:first`
+  // A recovered editor can have both its active row and an older departure's persisted stash.
+  await runtime.runPromise(Effect.gen(function* () {
+    yield* (yield* store.code.update(store.codeId, (row) => Object.assign(row, {
+      name: "first", state: "read" as const, source: "source", text: "latest edit",
+    }))).persisted
+    yield* (yield* store.code.insert({
+      id: stashId, name: "first", state: "read", revision: 0, source: "source", text: "older edit", busy: false, refusal: null,
+    })).persisted
+  }))
+  const ui = ManagedRuntime.make(FlowsUi.layer.pipe(
+    Layer.provide(Layer.succeed(FlowsUiStore, store)),
+    Layer.provideMerge(Layer.succeedContext(await t.runtime.context())),
+    Layer.provide(Layer.succeed(RunsNavigation, RunsNavigation.of({ navigate: t.host.navigate }))),
+  ))
+  runtimes.push(ui)
+  const flows = await ui.runPromise(Effect.service(FlowsUi))
+  await flows.actions.openCode("second")
+  expect(t.host.storedRows("flow-code")).toContainEqual(expect.objectContaining({ id: stashId, text: "latest edit" }))
+  await flows.actions.openCode("first")
+  expect(await runtime.runPromise(store.code.get(store.codeId))).toMatchObject({ value: { name: "first", text: "latest edit" } })
+  expect(t.host.storedRows("flow-code")).not.toContainEqual(expect.objectContaining({ id: stashId }))
+}, WITHIN)
+
 test("an unretained tab identity refuses flow edits without blocking chat", async () => {
   const t = await open()
   const unretained = openTab(t.api, { host: { ...t.host, editorTabId: crypto.randomUUID(), editorTabPersistent: false } })
@@ -206,6 +238,10 @@ test("an unretained tab identity refuses flow edits without blocking chat", asyn
   flows.queries.form.startSyncImmediate()
   expect(flows.editorAvailable).toBe(false)
   flows.actions.setRequest("Must not be stranded")
+  flows.actions.setAnswer("draft", "question", "Must not be stranded")
+  flows.actions.answer()
+  await flows.actions.openCode("hello")
+  flows.actions.editCode("hello", "Must not be stranded")
   await awaitEditorWrites()
   expect(flows.queries.form.toArray[0]?.request).toBe("")
   expect(await unretained.runPromise(Effect.service(Chat))).toBeDefined()
@@ -240,12 +276,24 @@ test("a database open failure refuses memory-only edits without blocking chat", 
   await until(() => expect(restored.queries.form.toArray[0]?.request).toBe("Retained on device"))
 }, WITHIN)
 
-test("an editor restore failure keeps retained text and leaves chat usable", async () => {
+test.each(["flow-form", "flow-answers", "flow-code"])("a %s restore failure keeps retained text and leaves chat usable", async (failedCollection) => {
   const t = await open()
-  t.flows.queries.form.startSyncImmediate()
+  const draftId = await draftHello(t)
+  await until(() => expect(t.draft()?.draft.status).toBe("ready"))
+  t.flows.actions.save()
+  await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ name: "hello", revision: 1 }]))
+  await t.flows.actions.openCode("hello")
+  const source = t.flows.queries.code.toArray[0]!.source
+  const edited = `${source}\n// Retained code edit`
+  t.flows.actions.editCode("hello", edited)
+  t.flows.actions.setAnswer(draftId, "question", "Retained answer")
   t.flows.actions.setRequest("Retained request")
+  await awaitEditorWrites()
   await until(() => expect(t.flows.queries.form.toArray[0]?.request).toBe("Retained request"))
   await until(() => expect(t.host.storedRows("flow-form")).toContainEqual(expect.objectContaining({ request: "Retained request" })))
+  const retained = Object.fromEntries(["flow-form", "flow-answers", "flow-code"].map((id) => [id, t.host.storedRows(id)]))
+  expect(retained["flow-answers"]).toContainEqual(expect.objectContaining({ value: "Retained answer" }))
+  expect(retained["flow-code"]).toContainEqual(expect.objectContaining({ text: edited }))
   await t.runtime.dispose()
 
   const originalMake = t.host.persistence.make
@@ -264,7 +312,7 @@ test("an editor restore failure keeps retained text and leaves chat usable", asy
           }
           return typeof value === "function" ? value.bind(target) : value
         } })
-        return selection.collectionId === "flow-form"
+        return selection.collectionId === failedCollection
           ? { ...resolved, adapter: blocked(resolved.adapter) as typeof resolved.adapter }
           : resolved
       } }
@@ -273,18 +321,25 @@ test("an editor restore failure keeps retained text and leaves chat usable", asy
   const broken = openTab(t.api, { host: brokenHost })
   runtimes.push(broken)
   const flows = await broken.runPromise(Effect.service(FlowsUi))
-  expect(selected).toContain("flow-form")
+  expect(selected).toContain(failedCollection)
   expect(flows.editorAvailable).toBe(false)
   expect(await broken.runPromise(Effect.service(Chat))).toBeDefined()
-  expect(t.host.stored("flow-form")).toBe(1)
+  flows.actions.setRequest("Must not replace retained request")
+  flows.actions.setAnswer(draftId, "question", "Must not replace retained answer")
+  flows.actions.editCode("hello", "Must not replace retained code")
+  await awaitEditorWrites()
   await broken.dispose()
+  for (const [id, rows] of Object.entries(retained)) expect(t.host.storedRows(id)).toEqual(rows)
 
   const recovered = openTab(t.api, { host: t.host })
   runtimes.push(recovered)
   const restored = await recovered.runPromise(Effect.service(FlowsUi))
-  restored.queries.form.startSyncImmediate()
+  for (const query of [restored.queries.form, restored.queries.answers, restored.queries.code]) query.startSyncImmediate()
   expect(restored.editorAvailable).toBe(true)
   await until(() => expect(restored.queries.form.toArray[0]?.request).toBe("Retained request"))
+  expect(restored.queries.answers.toArray).toContainEqual(expect.objectContaining({ draftId, questionId: "question", value: "Retained answer" }))
+  await restored.actions.openCode("hello")
+  expect(restored.queries.code.toArray[0]).toMatchObject({ name: "hello", source, text: edited, state: "read", refusal: null })
 }, WITHIN)
 
 test("two tabs keep separate unsaved code edits through a PWA reload and revision check", async () => {
@@ -703,12 +758,12 @@ describe("a flow's code, from a tab", () => {
     const drafted = renderSource({ name: "hello", description: "Say hello.", flows: [], instructions: RUN_TASK })
     expect(t.flows.queries.code.toArray[0]).toMatchObject({ name: "hello", state: "read", revision: 1, source: drafted, text: drafted })
     // Unchanged code doesn't save.
-    t.flows.actions.saveCode()
+    await t.flows.actions.saveCode()
 
     // A check that fails stays on the page, by its code.
     t.flows.actions.editCode("hello", drafted.replace(`Flow.make("hello"`, `Flow.make("goodbye"`))
     await until(() => expect(t.flows.queries.code.toArray[0]?.text).toContain(`Flow.make("goodbye"`))
-    t.flows.actions.saveCode()
+    await t.flows.actions.saveCode()
     await until(() => expect(t.flows.queries.code.toArray[0]).toMatchObject({ busy: false, refusal: "check:name" }))
 
     const relabelled = drafted.replace(`"hello/agent"`, `"hello/greet"`)
@@ -716,7 +771,7 @@ describe("a flow's code, from a tab", () => {
     t.flows.actions.editCode("hello", relabelled)
     await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(relabelled))
     const before = host(t).navigated.length
-    t.flows.actions.saveCode()
+    await t.flows.actions.saveCode()
     await until(() => expect(host(t).navigated.length).toBeGreaterThan(before))
     expect(t.went(FLOWS_PATH)).toBe(FLOWS_PATH)
     await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ revision: 2, placement: "sandbox" }]))
@@ -735,7 +790,7 @@ describe("a flow's code, from a tab", () => {
     await t.flows.actions.openCode("hello")
     t.flows.actions.editCode("hello", drafted)
     await until(() => expect(t.flows.queries.code.toArray[0]?.text).toBe(drafted))
-    t.flows.actions.saveCode()
+    await t.flows.actions.saveCode()
     await until(() => expect(t.flows.queries.flows.toArray).toMatchObject([{ revision: 3, placement: "client" }]))
   }, WITHIN)
 
