@@ -1,3 +1,4 @@
+import * as Creation from "./creationSteps"
 import { Interpreter } from "@smthrs/flow"
 import { Clock, Effect, Layer, Metric } from "effect"
 import { BranchClient, type TrackRefused } from "./api"
@@ -81,7 +82,10 @@ export const stampOpen = <P extends object>(open: P & { readonly openedAt?: numb
   Effect.map(Clock.currentTimeMillis, (now) => ({ ...open, openedAt: open.openedAt ?? now }))
 
 /** `branch/create/request`: the same request, making the branch first. */
-export const requestCreate = (request: { readonly repo: string; readonly branch: string }) => requestTrack(request, true)
+export const requestCreate = (request: { readonly repo: string; readonly branch: string }) => {
+  const [owner, name] = parts(request.repo)
+  return Creation.run({ owner, name, ref: request.branch })
+}
 
 /** Registers `branch/track` and `branch/create` with their steps, asking through the host's `BranchClient`. */
 export const registration = Layer.merge(

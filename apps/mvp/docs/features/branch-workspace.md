@@ -61,7 +61,7 @@ The repository's default branch is recorded `locked` (decision 0007 §5) and is 
 
 ## New branch
 
-`branch/create { repo, branch }` (`src/features/branch/flows.ts`) makes a new branch and tracks it. A repository home's New branch runs it ([home](home.md#new-branch)), `/branch.new` and the agent can too; Will, 2026-10-20 18:12: "The maintainer should have a prominent button to start working on a new branch". Its one step posts the same route with `create: true`: `POST /api/branches { owner, name, ref, create: true }`. For a branch the app doesn't track yet, the route reads the default branch from the forge, makes `ref` there at its head (`CodeStorage.createBranch` on the repository's mirror, decision 0005 §"Create is lazy"), then tracks it as above: `201`, `open`, the Member's own. Asking again for a branch the app tracks, such as a retry whose answer was lost, answers that branch. A name the forge already has and the app doesn't track is someone else's branch, from a push or the mirror, so the route refuses it `409 exists` and tracks nothing: a branch name carries no mark of who made it, so its existence is never read as this request's create ([durable external effects](../proposals/durable-external-effects.md)). Then the page opens its workspace: its conversation, terminal and views.
+`branch/create { repo, branch }` (`src/features/branch/flows.ts`) makes a new branch and tracks it. A repository home's New branch runs it ([home](home.md#new-branch)), `/branch.new` and the agent can too; Will, 2026-10-20 18:12: "The maintainer should have a prominent button to start working on a new branch". It runs the [selected repository creation flow](branch-creation.md). The default host action posts the same route with `create: true`: `POST /api/branches { owner, name, ref, create: true }`. For a branch the app doesn't track yet, the route reads the default branch from the forge, makes `ref` in its ephemeral namespace at that head (`CodeStorage.createBranch`, decision 0095), then tracks it as above: `201`, `open`, the Member's own. Asking again for a branch the app tracks, such as a retry whose answer was lost, answers that branch. A name the forge already has and the app doesn't track is someone else's branch, from a push or the mirror, so the route refuses it `409 exists` and tracks nothing: a branch name carries no mark of who made it, so its existence is never read as this request's create ([durable external effects](../proposals/durable-external-effects.md)). Then the page opens its workspace: its conversation, terminal and views.
 
 | Answer | When |
 |---|---|
@@ -70,13 +70,13 @@ The repository's default branch is recorded `locked` (decision 0007 §5) and is 
 | `409 exists` | the forge already has a branch of that name, which the app doesn't track: the flow fails `exists`, never tried again, and the home's New branch shows "Couldn't make a branch" |
 | `403 forbidden` | Code Storage refused the ref write with HTTP 401 or 403; the flow fails `forbidden` without retrying, with the provider cause in its records |
 | `503 not_configured` | the forge is GitHub, read with no credential, which can't make a branch: the flow fails `not_configured`, never tried again |
-| `503 unavailable` | the forge or Code Storage didn't answer; the step tries again for 30 s |
+| `503 unavailable` | the forge or Code Storage didn't answer; creation tries again for 24 hours |
 
 The route's `branch.track` line says `created`: `created`, `exists`, or the forge's refusal.
 Failures also record `forgeOperation` (`default_branch`, `create_ref`, `refs_read`),
 `forgeErrorTag`, `forgeErrorCode` and `forgeStatus` when HTTP answered. The
 `forge.createBranch` failure log and span retain the same fields. These come from
-typed errors; branch names, response text, URLs and credentials are never recorded. The branch lives on Code Storage's mirror until a person pushes it to GitHub.
+typed errors; branch names, response text, URLs and credentials are never recorded. The branch lives in Code Storage's ephemeral namespace until a person explicitly publishes it. The stored namespace also scopes sandbox Git fetches to this branch. Ephemeral sandbox checkouts clone its full reachable history; the scoped proxy refuses shallow negotiation. Ordinary namespace checkouts keep the depth-50 limit.
 
 ## Conversations
 

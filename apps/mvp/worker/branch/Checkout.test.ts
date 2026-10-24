@@ -1,6 +1,11 @@
 // How a branch's machine checks its branch out (worker/branch/Checkout.ts), run for real against a local git
 // repository in a scratch directory: the script clones once, keeps a checkout, and starts over after a broken one.
-import { execFileSync } from "node:child_process"
+import { GitProxy } from "@smthrs/effect-code-storage"
+import { Effect } from "effect"
+import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { createServer } from "node:http"
+import type { AddressInfo } from "node:net"
+import { execFileSync, spawn } from "node:child_process"
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -31,8 +36,8 @@ const remote = (() => {
 })()
 
 /** Runs the checkout with /workspace replaced by `workspace`, as the machine's shell would. */
-const checkout = (workspace: string, branch: string, from = remote) => {
-  const [shell, flag, script, name, ...args] = checkoutArgv(branch, from)
+const checkout = (workspace: string, branch: string, from = remote, namespace: "default" | "ephemeral" = "default") => {
+  const [shell, flag, script, name, ...args] = checkoutArgv(branch, from, namespace)
   return execFileSync(shell!, [flag!, script!.replaceAll(WORKSPACE, workspace), name!, ...args], { encoding: "utf8" })
 }
 
@@ -69,6 +74,24 @@ describe("checkoutArgv", () => {
     expect(readFileSync(join(workspace, "feature.txt"), "utf8")).toBe("x\n")
     expect(git(workspace, "branch", "-r").trim()).toBe("origin/feature/x")
     expect(Number(git(workspace, "rev-list", "--count", "HEAD").trim())).toBeLessThanOrEqual(DEPTH)
+  })
+
+  test("ephemeral checkout retains complete history beyond the ordinary depth limit", () => {
+    const dir = join(root, "history")
+    mkdirSync(dir)
+    git(dir, "init", "-q", "-b", "main")
+    for (let n = 0; n <= DEPTH; n++) {
+      writeFileSync(join(dir, "history"), String(n))
+      git(dir, "add", ".")
+      git(dir, "commit", "-q", "-m", `commit ${n}`)
+    }
+    for (const namespace of ["default", "ephemeral"] as const) {
+      const workspace = join(root, namespace)
+      mkdirSync(workspace)
+      checkout(workspace, "main", `file://${dir}`, namespace)
+      expect(git(workspace, "rev-parse", "--is-shallow-repository").trim()).toBe(String(namespace === "default"))
+      expect(Number(git(workspace, "rev-list", "--count", "HEAD").trim())).toBe(namespace === "default" ? DEPTH : DEPTH + 1)
+    }
   })
 
   test("keeps a checkout that is there: nothing in it changes", () => {
@@ -133,4 +156,62 @@ describe("forgeRemote", () => {
     expect(forgeRemote("octocat", "Spoon-Knife")).toBe("http://forge.smithers.internal/octocat/Spoon-Knife")
     expect(forgeRemote("o", "a b")).toBe("http://forge.smithers.internal/o/a%20b")
   })
+})
+
+
+test("the real git client checks out an ephemeral branch through the scoped SDK proxy", async () => {
+  const dir = remote.slice("file://".length)
+  const execute = (command: string, args: string[], input?: Uint8Array, protocol?: string) => new Promise<Buffer>((resolve, reject) => {
+    const child = spawn(command, args, { env: { ...process.env, ...(protocol ? { GIT_PROTOCOL: protocol } : {}) } })
+    const chunks: Buffer[] = []
+    let errors = ""
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk))
+    child.stderr.on("data", (chunk: Buffer) => { errors += String(chunk) })
+    child.on("error", reject)
+    child.on("close", (code) => code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(errors)))
+    child.stdin.end(input)
+  })
+  const server = createServer(async (req, res) => {
+    try {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const body = Buffer.concat(chunks)
+      if (req.url!.startsWith("/upstream")) {
+        const discovery = req.method === "GET"
+        const pack = await execute("git", ["upload-pack", "--stateless-rpc", ...(discovery ? ["--advertise-refs"] : []), dir], body, req.headers["git-protocol"] as string | undefined)
+        res.writeHead(200, { "content-type": `application/x-git-upload-pack-${discovery ? "advertisement" : "result"}` })
+        res.end(discovery ? Buffer.concat([Buffer.from("001e# service=git-upload-pack\n0000"), pack]) : pack)
+        return
+      }
+      const request = new Request(`${origin}${req.url}`, {
+        method: req.method, headers: req.headers as Record<string, string>,
+        ...(req.method === "POST" ? { body } : {}),
+      })
+      const { response, context } = await Effect.runPromise(Effect.all({
+        response: GitProxy.uploadPack(HttpServerRequest.fromWeb(request), { url: `${origin}/upstream` }, "feature/x"),
+        context: Effect.context<never>(),
+      }).pipe(Effect.provide(FetchHttpClient.layer)))
+      const web = HttpServerResponse.toWeb(response, { context })
+      res.writeHead(web.status, Object.fromEntries(web.headers))
+      res.end(Buffer.from(await web.arrayBuffer()))
+    } catch (error) {
+      res.writeHead(500)
+      res.end(String(error))
+    }
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  try {
+    const workspace = join(root, "scoped")
+    mkdirSync(workspace)
+    const [shell, flag, script, name, ...args] = checkoutArgv("feature/x", `${origin}/proxy`, "ephemeral")
+    await execute(shell!, [flag!, script!.replaceAll(WORKSPACE, workspace), name!, ...args])
+    expect(readFileSync(join(workspace, "feature.txt"), "utf8")).toBe("x\n")
+    expect(git(workspace, "rev-parse", "--is-shallow-repository").trim()).toBe("false")
+    expect(git(workspace, "for-each-ref", "--format=%(refname)", "refs/remotes").trim().split("\n")).toEqual(["refs/remotes/origin/HEAD", "refs/remotes/origin/feature/x"])
+    expect(git(workspace, "rev-list", "--count", "HEAD").trim()).toBe("2")
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
 })

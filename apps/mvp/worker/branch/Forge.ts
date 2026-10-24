@@ -1,6 +1,8 @@
-import { type CodeStorage, GitRemote } from "@smthrs/effect-code-storage"
-import { Context, Data, Effect, Layer, Option } from "effect"
-import type { HttpClient } from "effect/http"
+import { CreateRefused } from "./CreateRefused.ts"
+export { CreateRefused } from "./CreateRefused.ts"
+import { type CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-storage"
+import { Context, Effect, Layer, Metric, Option } from "effect"
+import { type HttpClient, type HttpServerRequest, HttpServerResponse } from "effect/http"
 import { repoId } from "../../src/features/repo/contract.ts"
 import * as RepoConfig from "../RepoConfig.ts"
 
@@ -14,18 +16,6 @@ import * as RepoConfig from "../RepoConfig.ts"
 // - GitHub otherwise: the public repository itself, with no credential at all. `GITHUB_TOKEN` is never used here: it
 //   would read every repository its owner can, private ones included, for anyone who names one. Private repositories
 //   wait for per-repository GitHub App installation tokens (decision 0008 §5).
-
-/**
- * The forge didn't create a branch: one of that name exists (`exists`), it has no such repository or start (`not_found`),
- * it can't create branches here (`not_configured`: GitHub read with no credential), the provider denied the write
- * (`forbidden`: HTTP 401/403), or it didn't answer (`unavailable`).
- */
-export class CreateRefused extends Data.TaggedError("CreateRefused")<{
-  readonly code: "exists" | "not_found" | "not_configured" | "forbidden" | "unavailable"
-  readonly errorTag?: string
-  readonly errorCode?: string
-  readonly errorStatus?: number
-}> {}
 
 /** A GitHub repository, by its owner and name. */
 export interface Repository {
@@ -47,22 +37,23 @@ const gitHubForge = {
 export class Forge extends Context.Service<
   Forge,
   {
-    readonly upstream: (repository: Repository) => Effect.Effect<GitRemote.Upstream>
+    readonly upstream: (repository: Repository, namespace?: CodeStorage.RefNamespace) => Effect.Effect<GitRemote.Upstream>
     /** Creates `branch` at the commit `from` names, on the forge. */
     readonly create: (repository: Repository, branch: string, from: string) => Effect.Effect<void, CreateRefused>
   }
 >()("@smthrs/mvp/branch/Forge") {
   /**
    * The repository's Code Storage mirror: read with a `git:read` token, and a new branch made there with a `git:write`
-   * one (`CodeStorage.createBranch`). The branch is Smithers' until a person pushes it to GitHub.
+   * one in the ephemeral namespace (`CodeStorage.createBranch`). Ordinary mirror refs are read-only.
+   * Nothing reaches GitHub until a person explicitly publishes (Will, 2026-10-23 14:09).
    */
   static readonly codeStorage = (client: CodeStorage.Client) =>
     Layer.succeed(
       Forge,
       Forge.of({
-        upstream: ({ owner, name }) => client.gitRemote(repoId(owner, name)),
+        upstream: ({ owner, name }, namespace) => client.gitRemote(repoId(owner, name), namespace),
         create: ({ owner, name }, branch, from) =>
-          client.createBranch(repoId(owner, name), { branch, from }).pipe(
+          client.createBranch(repoId(owner, name), { branch, from, namespace: "ephemeral" }).pipe(
             Effect.asVoid,
             Effect.mapError((error) =>
               new CreateRefused({
@@ -98,9 +89,9 @@ export class Forge extends Context.Service<
 }
 
 /** A branch's commit on its forge, through the forge's credential: `ref_not_found` when it has no such branch. */
-export const branchHead = (repository: Repository, branch: string) =>
+export const branchHead = (repository: Repository, branch: string, namespace: CodeStorage.RefNamespace = "default") =>
   Effect.flatMap(Forge, (forge) =>
-    Effect.flatMap(forge.upstream(repository), (upstream) => GitRemote.ref(upstream, branch)))
+    Effect.flatMap(forge.upstream(repository, namespace), (upstream) => GitRemote.ref(upstream, branch)))
 
 /** Creates `branch` on the repository's forge at the commit `from` names. */
 export const createBranch = (repository: Repository, branch: string, from: string) =>
@@ -140,5 +131,35 @@ export const defaultBranch = (repository: Repository) =>
  * TODO's attempt branch, which `todo/Begin` makes on GitHub as the App), else `deployment`, the deployment's own forge.
  * With Code Storage the deployment's forge is the mirror, which never holds a branch made on GitHub after its last pull.
  */
-export const forgeOf = (deployment: Forge["Service"], branch: { readonly forge?: "github" | undefined }): Forge["Service"] =>
-  branch.forge === "github" ? gitHubForge : deployment
+export const forgeOf = (deployment: Forge["Service"], branch: { readonly forge?: "github" | undefined; readonly namespace?: CodeStorage.RefNamespace | undefined }): Forge["Service"] =>
+  branch.forge === "github" ? gitHubForge : {
+    ...deployment,
+    upstream: (repository) => deployment.upstream(repository, branch.namespace),
+  }
+
+/**
+ * Guest Git traffic must not expose other conversations in a shared ephemeral namespace.
+ * The SDK advertises only the persisted branch and authorizes its current tip. A missing branch
+ * is refused before obtaining its credential.
+ */
+export const proxy = (
+  request: HttpServerRequest.HttpServerRequest,
+  deployment: Forge["Service"],
+  branch: Repository & { readonly branch?: string | undefined; readonly forge?: "github" | undefined; readonly namespace?: CodeStorage.RefNamespace | undefined },
+) => Effect.gen(function* () {
+  if (branch.namespace === "ephemeral" && branch.branch === undefined) {
+    const service = GitProxy.classify(request.method, request.url) ?? "refused"
+    yield* Metric.update(Metric.withAttributes(GitProxy.requests, { service, outcome: "refused" }), 1)
+    yield* Effect.annotateCurrentSpan({
+      "git.proxy.service": service,
+      "http.response.status_code": 403,
+      outcome: "namespace_unscoped",
+    })
+    yield* Effect.logWarning("sandbox.forge").pipe(
+      Effect.annotateLogs({ status: 403, outcome: "namespace_unscoped" }),
+    )
+    return HttpServerResponse.empty({ status: 403 })
+  }
+  const remote = yield* forgeOf(deployment, branch).upstream(branch)
+  return yield* GitProxy.uploadPack(request, remote, branch.namespace === "ephemeral" ? branch.branch : undefined)
+}).pipe(Effect.withSpan("sandbox.forge", { kind: "server" }))

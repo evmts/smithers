@@ -1,3 +1,5 @@
+import { CodeStorage } from "@smthrs/effect-code-storage"
+import * as Conversations from "./branch/Conversations.ts"
 // RepoApi (worker/RepoApi.ts, docs/features/repo.md#repoapi) through its real handler, over this file's schema of the
 // compose Postgres and Electric (`pnpm db:up`), with the scripted Code Storage and GitHub (worker/test/codeStorage.ts).
 // Clones run on the Node host in this process (worker/test/repos.ts). Unhappy paths arm a fault on the scripted
@@ -531,7 +533,7 @@ describe("branches and tags", () => {
     const { headSha } = await h.seed("octocat", "Spoon-Knife", branched())
     const first = await h.fetch(refsRoute("octocat", "Spoon-Knife"))
     expect(first.status).toBe(200)
-    expect(first.headers.get("cache-control")).toBe("no-cache")
+    expect(first.headers.get("cache-control")).toBe("private, no-store")
     expect(first.headers.get("content-type")).toContain("application/json")
     expect(await first.json()).toEqual({
       defaultBranch: "main",
@@ -564,6 +566,30 @@ describe("branches and tags", () => {
     await Effect.runPromise(h.scripted.client.createBranch(id, { branch: "made", from: "main" }))
     await runtime.runPromise(Repos.refsChanged(id))
     expect(await names()).toEqual(expect.arrayContaining(["b0", "main", "made"]))
+  })
+
+  test("a created ephemeral ref is visible to its owner while GitHub and ordinary refs stay unchanged", async () => {
+    const h = await repoHarness(runtime)
+    const { id } = await h.seed("octocat", "Spoon-Knife", branched())
+    const source = h.scripted.github.get("octocat/spoon-knife")
+    await Effect.runPromise(h.scripted.client.createBranch(id, {
+      branch: "private-ref", from: "main", namespace: "ephemeral", fromNamespace: "default",
+    }))
+    await Effect.runPromise(h.scripted.client.createBranch(id, {
+      branch: "unowned-private-ref", from: "main", namespace: "ephemeral", fromNamespace: "default",
+    }))
+    await runtime.runPromise(Conversations.track(id, "private-ref", "open", source!.commit.sha, "octocat", undefined, "ephemeral"))
+    await runtime.runPromise(Repos.refsChanged(id))
+    const answer = await h.fetch(refsRoute("octocat", "Spoon-Knife"))
+    expect(answer.status).toBe(200)
+    const visible = await answer.json() as { branches: Array<{ name: string; sha: string }> }
+    expect(visible.branches).toContainEqual({ name: "private-ref", sha: source!.commit.sha })
+    expect(visible.branches.map((branch) => branch.name)).not.toContain("unowned-private-ref")
+    expect(h.scripted.github.get("octocat/spoon-knife")).toEqual(source)
+    const ordinary = await Effect.runPromise(h.scripted.client.listBranches(id))
+    expect(ordinary.branches.map((branch) => branch.name)).toEqual(["b0", "main"])
+    const other = await repoHarness(runtime, { scripted: h.scripted, actor: { subject: { kind: "person", id: "other" }, role: "member" } })
+    expect(await (await other.fetch(refsRoute("octocat", "Spoon-Knife"))).text()).not.toContain("private-ref")
   })
 
   test("pages of branches and tags, stopped at REPO_MAX_REFS saying so", async () => {
@@ -664,6 +690,15 @@ describe("the agent's reads on the server", () => {
     expect(Exit.isFailure(unknown.exit) && Cause.squash(unknown.exit.cause)).toBeInstanceOf(RepoFlows.RepoNotFound)
     // Each `runFlow` builds an engine of its own: seven builds take a loaded machine more than the default 30 s.
   }, 90_000)
+
+  test("the agent refs reader maps an unavailable ready-head database to its declared failure without querying Code Storage", async () => {
+    const down = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+    const h = await repoHarness(runtime, { database: down })
+    const reader = await Effect.runPromise(Effect.service(RepoFlows.RepoReader).pipe(Effect.provide(h.reader())))
+    const exit = await Effect.runPromiseExit(reader.refs("octocat", "Spoon-Knife"))
+    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toEqual(new RepoFlows.RepoReadUnavailable({}))
+    expect(h.scripted.calls).toEqual([])
+  })
 
   test("a reader's failures are the flows' declared ones: paused reads and a busy Code Storage", async () => {
     const h = await repoHarness(runtime, { config: { REPO_MAX_READ_GB_PER_MONTH: "0.000001" } })
@@ -933,4 +968,28 @@ test("clone launch fails closed when sessions or the request body cannot be read
   }), duplex: "half" } as RequestInit)
   expect(response.status).toBe(400)
   expect(await response.json()).toEqual({ code: "invalid" })
+})
+
+test("ephemeral ref listing failures stay private and never fall back to the ordinary namespace", async () => {
+  const h = await repoHarness(runtime)
+  h.scripted.publish("octocat", "Spoon-Knife")
+  await h.clone("octocat", "Spoon-Knife")
+  await h.settled()
+  await runtime.runPromise(Conversations.track("github/octocat/spoon-knife", "private-ref", "open", "a".repeat(40), "octocat", undefined, "ephemeral"))
+  const seen: Array<string | undefined> = []
+  const faulty = await repoHarness(runtime, { scripted: h.scripted, codeStorage: {
+    ...h.scripted.client,
+    listBranches: (repo, options) => {
+      seen.push(options?.namespace)
+      return options?.namespace === "ephemeral"
+        ? Effect.fail(new CodeStorage.CodeStorageError({ operation: "listBranches", code: "transport" }))
+        : h.scripted.client.listBranches(repo, options)
+    },
+  } })
+  expect((await faulty.fetch(refsRoute("octocat", "Spoon-Knife"))).status).toBe(503)
+  expect(seen).toContain("ephemeral")
+  const other = await repoHarness(runtime, { scripted: h.scripted, actor: { subject: { kind: "person", id: "elsewhere" }, role: "member" } })
+  const answer = await other.fetch(refsRoute("octocat", "Spoon-Knife"))
+  expect(answer.status).toBe(200)
+  expect(await answer.text()).not.toContain("private-ref")
 })

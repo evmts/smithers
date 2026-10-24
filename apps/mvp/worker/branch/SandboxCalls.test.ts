@@ -19,6 +19,7 @@ import * as Messages from "../Messages.ts"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
 import * as BranchApi from "./BranchApi.ts"
+import * as Conversations from "./Conversations.ts"
 import * as SandboxCalls from "./SandboxCalls.ts"
 
 const runtime = testFile("sandbox_calls")
@@ -403,4 +404,43 @@ describe("handles", () => {
       expect([path, SandboxCalls.handles(path)]).toEqual([path, false])
     }
   })
+})
+
+
+test("a failed launch keeps the persisted ephemeral namespace for retry", async () => {
+  const { branch } = await runtime.runPromise(Conversations.track(REPO, "private-work", "open", "a".repeat(40), member.subject.id, undefined, "ephemeral"))
+  const payloads: Array<unknown> = []
+  const h = await open(member, { starter: { start: (_flow, options) => {
+    payloads.push(options.payload)
+    return Effect.fail(new Flows.StartUnavailable({ errorCode: "injected" }))
+  } } })
+  const body = { callId: crypto.randomUUID(), call: run, conversationId: branch.conversationId }
+  const response = await post(h, body)
+  expect(response.status).toBe(503)
+  expect((await post(h, body)).status).toBe(503)
+  expect(payloads).toHaveLength(2)
+  expect(payloads[0]).toMatchObject({ branch: { branchId: branch.branchId, namespace: "ephemeral" } })
+  expect(payloads[1]).toEqual(payloads[0])
+  expect(await calls()).toEqual([
+    { id: body.callId, branchId: branch.branchId, personId: member.subject.id, answerId: null, tool: "run", status: "running" },
+  ])
+})
+
+test("a failed launch keeps the persisted GitHub forge for retry", async () => {
+  const { branch } = await runtime.runPromise(Conversations.track(REPO, "private-work", "open", "a".repeat(40), member.subject.id, undefined, "default", "github"))
+  const payloads: Array<unknown> = []
+  const h = await open(member, { starter: { start: (_flow, options) => {
+    payloads.push(options.payload)
+    return Effect.fail(new Flows.StartUnavailable({ errorCode: "injected" }))
+  } } })
+  const body = { callId: crypto.randomUUID(), call: run, conversationId: branch.conversationId }
+  const response = await post(h, body)
+  expect(response.status).toBe(503)
+  expect((await post(h, body)).status).toBe(503)
+  expect(payloads).toHaveLength(2)
+  expect(payloads[0]).toMatchObject({ branch: { branchId: branch.branchId, forge: "github" } })
+  expect(payloads[1]).toEqual(payloads[0])
+  expect(await calls()).toEqual([
+    { id: body.callId, branchId: branch.branchId, personId: member.subject.id, answerId: null, tool: "run", status: "running" },
+  ])
 })

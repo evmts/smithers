@@ -304,10 +304,10 @@ Code is structured to scale: one folder per screen and per feature, and each fil
 
 ### plugin.core-names-no-plugin
 
-The core names a built-in plugin in one place, `src/plugins/builtin.ts`. Deleting a plugin's folder and its line there removes the feature.
+The core names each built-in plugin in its registry: `src/plugins/builtin.ts` for UI, `src/plugins/builtinFlows.ts` for flow source. Deleting a plugin's folder and its registry line removes the feature. The flow registry is server-safe and imports no browser UI.
 
 - **Will:** "It's very important that we similar to webpack try to treat everything like a plugin." (2026-10-20 14:40, PLUGIN-1).
-- **Scope:** every core source in `apps/mvp` (`src/`, `worker/`), `src/plugins/builtin.ts` left out.
+- **Scope:** every core source in `apps/mvp` (`src/`, `worker/`), only those two registry entries left out.
 - **Enforced:** `ImportRules` `forbid` of `**/plugins/*/src/**` and `**/plugins/*/plugin.json` in `apps/mvp/PACKAGE.ts` (decision [0017](decisions/0017-everything-is-a-plugin.md), "The deletion test").
 
 ### plugin.public-interface-only

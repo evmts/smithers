@@ -334,6 +334,7 @@ export class TestChatApi extends Context.Service<
      * does.
      */
     readonly branches: {
+      readonly forge: ReturnType<typeof codeStorageGit>
       readonly github: GitHost
       readonly starts: ReadonlyArray<Started>
       readonly sockets: Sockets
@@ -509,11 +510,13 @@ export class TestChatApi extends Context.Service<
 
         // The branch workspace, as ChatApi routes it (worker/ChatApi.ts): branches read from the scripted GitHub, each
         // `terminal/Open` recorded and never run, and a test `TerminalSockets` for the branches' machines.
-        const branchApi = yield* BranchApi.make(database).pipe(
-          Effect.provideService(ConfigProvider.ConfigProvider, config)
-        )
         const branchGitHub = gitHost()
         const branchForge = codeStorageGit(branchGitHub)
+        const branchApi = yield* BranchApi.make(database).pipe(
+          Effect.provide(FetchHttpClient.layer),
+          Effect.provideService(FetchHttpClient.Fetch, branchForge.fetch),
+          Effect.provideService(ConfigProvider.ConfigProvider, config),
+        )
         const sockets = terminalSockets()
         const branchRooms = rooms()
         const directory = Directory.layer(
@@ -904,6 +907,7 @@ export class TestChatApi extends Context.Service<
             scripted
           },
           branches: {
+            forge: branchForge,
             github: branchGitHub,
             starts: branchStarts,
             sockets,

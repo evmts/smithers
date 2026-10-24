@@ -1,10 +1,11 @@
+import type { CodeStorage } from "@smthrs/effect-code-storage"
 import { FORGE_HOST, WORKSPACE } from "../../src/features/terminal/contract.ts"
 
-// How a branch's machine checks the branch out (decision 0013 §2, `terminal/Open` step 2): a shallow clone of the one
+// How a branch's machine checks the branch out (decision 0013 §2, `terminal/Open` step 2): a clone of the one
 // branch into /workspace, through the forge proxy, whose remote names no credential. A machine that has a checkout
 // keeps it. An unresolved HEAD never authorizes deleting files; clone refuses a nonempty workspace.
 
-/** How many commits of the branch the machine clones: enough for `git log`, cheap to read from the forge. */
+/** Ordinary namespace checkout depth: enough for `git log`, cheap to read from the forge. */
 export const DEPTH = 50
 
 /** The git remote the box clones from: the forge proxy's own host, which the box can't leave. */
@@ -17,7 +18,7 @@ export const forgeRemote = (owner: string, name: string): string =>
  */
 export const CHECKOUT_FAILURES: Readonly<Record<number, "forge" | "branch" | "clone">> = { 70: "forge", 71: "branch", 72: "clone" }
 
-const script = [
+const script = (namespace: CodeStorage.RefNamespace) => [
   "set -e",
   // Files the clone writes are the `workspace` group's to change too: every person's shell shares the checkout.
   "umask 002",
@@ -33,12 +34,14 @@ const script = [
   "fi",
   `refs=$(git ls-remote --heads "$2" 2>/dev/null) || exit 70`,
   `printf '%s\\n' "$refs" | awk -v ref="refs/heads/$1" '$2 == ref { found = 1 } END { exit !found }' || exit 71`,
-  `git clone --quiet --depth ${DEPTH} --branch "$1" --single-branch "$2" ${WORKSPACE} || exit 72`,
+  `git clone --quiet ${namespace === "ephemeral" ? "" : `--depth ${DEPTH} `}--branch "$1" --single-branch "$2" ${WORKSPACE} || exit 72`,
 ].join("\n")
 
 /**
  * The command that checks branch `branch` of `remote` out in /workspace unless it is there; `branch` may instead be a
  * commit's 40-hex id, which a CI job's machine checks out alone and detached. The branch and the remote travel as
  * arguments, never inside the script, so no name can change what runs.
+ * Ephemeral refs use full history because their scoped proxy disallows shallow negotiation.
  */
-export const checkoutArgv = (branch: string, remote: string): Array<string> => ["sh", "-c", script, "checkout", branch, remote]
+export const checkoutArgv = (branch: string, remote: string, namespace: CodeStorage.RefNamespace = "default"): Array<string> =>
+  ["sh", "-c", script(namespace), "checkout", branch, remote]

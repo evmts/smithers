@@ -4,7 +4,9 @@
 
 `/new` uses the branch creation route and the deployment's forge. From home
 it names `GITHUB_REPOSITORY`; from a branch it names that branch's repository.
-Code Storage needs an existing mirror with a default branch. Membership grants
+Code Storage needs an existing mirror with a default branch. New conversation refs
+use its ephemeral namespace (GH-11, [0095](0095-new-conversation-ephemeral-refs.md));
+the ordinary namespace of a GitHub-synced mirror is not writable. Membership grants
 permission to create a branch, and does not provision a mirror. GitHub's
 single-repository writes endpoint is not on this path.
 
@@ -20,6 +22,6 @@ cannot replace the person's newer work. A dismissal advances the revision even
 when its row already has no items.
 
 The existing successful browser spec remains unchanged. Its success requires
-the deployment repository's writable Code Storage mirror. Do not claim that a
+a writable ephemeral namespace on the deployment repository's Code Storage mirror. Do not claim that a
 visible refusal proves successful branch creation, and do not treat a real
 refusal as a flake.

@@ -20,6 +20,7 @@ export const SandboxBranch = Schema.Struct({
   name: Schema.String,
   branch: Schema.String,
   forge: Schema.optional(Schema.Literal("github")),
+  namespace: Schema.optional(Schema.Literals(["default", "ephemeral"])),
   kind: Schema.optional(Schema.Literal("job")),
 })
 export type SandboxBranch = typeof SandboxBranch.Type

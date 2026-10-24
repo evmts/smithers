@@ -357,17 +357,17 @@ describe("the branch client", () => {
 
 describe("the step", () => {
   /** `branch/track/request` over a client that answers `answer`: how it ended, and every record it left. */
-  const step = async (answer: () => Promise<Response>, branch = "feature/one") => {
+  const step = async (answer: typeof globalThis.fetch, branch = "feature/one", create = false) => {
     const registry: Metric.MetricRegistry = new Map()
     const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
     const logger = Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))
     const exit = await Effect.runPromise(
-      requestTrack({ repo: "octo/hello", branch }).pipe(
+      requestTrack({ repo: "octo/hello", branch }, create).pipe(
         Effect.match({ onSuccess: (tracked) => ({ tracked }), onFailure: (failed) => ({ failed }) }),
         Effect.provide(
           BranchClient.layer({ origin: "http://chat.test", within: "50 millis" }).pipe(
             Layer.provide(FetchHttpClient.layer),
-            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, () => answer())),
+            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, answer)),
           ),
         ),
         Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
@@ -380,6 +380,26 @@ describe("the step", () => {
       ).count
     return { exit, logs, count }
   }
+
+  test("an unconfigured forge remains a final refusal with its own count", async () => {
+    const result = await step(async () => Response.json({ code: "not_configured" }, { status: 503 }))
+    expect(result.exit).toEqual({ failed: new BranchTrackRefused({ reason: "not_configured" }) })
+    expect(result.count("not_configured")).toBe(1)
+    expect(result.logs[0]).toMatchObject({ level: "WARN", annotations: { outcome: "not_configured", status: 503 } })
+  })
+
+  test("the explicit create request sends and records creation without logging the branch name", async () => {
+    const posted: unknown[] = []
+    const result = await step(async (input, init) => {
+      posted.push(await new Request(input, init).json())
+      return Response.json(trackedBody, { status: 201 })
+    }, "private-create", true)
+    expect(posted).toEqual([{ owner: "octo", name: "hello", ref: "private-create", create: true }])
+    expect(result.exit).toEqual({ tracked: trackedBody })
+    expect(result.count("tracked")).toBe(1)
+    expect(result.logs[0]).toMatchObject({ level: "INFO", annotations: { create: true, outcome: "tracked" } })
+    expect(JSON.stringify(result.logs)).not.toContain("private-create")
+  })
 
   test.each<[number, BranchTrackRefused | BranchTrackUnavailable, string]>([
     [400, new BranchTrackRefused({ reason: "invalid" }), "invalid"],

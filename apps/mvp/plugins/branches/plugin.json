@@ -1,0 +1,11 @@
+{
+  "apiVersion": 1,
+  "id": "branches",
+  "version": "1.0.0",
+  "title": "Branches",
+  "description": "Create Smithers conversations without publishing to GitHub.",
+  "requires": { "api": "^1.0.0" },
+  "capabilities": ["git:write"],
+  "uses": ["branches/ephemeral"],
+  "owns": ["create"]
+}

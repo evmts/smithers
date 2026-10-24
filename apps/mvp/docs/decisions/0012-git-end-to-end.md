@@ -1,5 +1,7 @@
 # 0012: Git end to end: issues, triage, pull requests and branches, with GitHub as the truth
 
+For new conversations, [0095](0095-new-conversation-ephemeral-refs.md) supersedes the GitHub-branch interpretation below: the default creation flow makes a Smithers-only ephemeral ref; repository code may explicitly select GitHub.
+
 Status: proposed (design panel G: Opus as lead and merger, and Sol; 2026-10-20). Will's 2026-10-20 priority: "finishing the entire git e2e flow of being able to create issues open prs or update branch resync etc." His mid-design addition is issue triage (§5). It builds on:
 - [0002](0002-local-first.md): the device store and the outbox;
 - [0005](0005-sandboxes-secrets-and-the-forge.md): branch machines;

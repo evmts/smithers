@@ -1,3 +1,4 @@
+import * as RefReads from "./branch/RefReads.ts"
 import { ImmutableCache } from "@smthrs/artifacts"
 import type { CodeStorage } from "@smthrs/effect-code-storage"
 import { ShapeProxy } from "@smthrs/effect-electric"
@@ -307,12 +308,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           if (target.kind !== "refs") fields.sha = target.sha
           if (Option.isNone(reads)) return refuse(503, "not_configured")
           const answered = target.kind === "refs"
-            ? reads.value.refs(target.owner, target.name).pipe(
+            ? Effect.gen(function* () {
+              const names = yield* Effect.gen(function* () {
+                const actor = yield* (yield* Sessions).resolve
+                return yield* RefReads.visible(repoId(target.owner, target.name), actor).pipe(Effect.provide(database))
+              }).pipe(Effect.mapError(() => new RepoReads.ReadRefused({ code: "unavailable" })))
+              return yield* reads.value.refs(target.owner, target.name, names)
+            }).pipe(
               Effect.map((refs) => {
                 const bytes = encoder.encode(JSON.stringify(refs))
                 fields.bytes = bytes.length
                 return HttpServerResponse.uint8Array(bytes, {
-                  headers: { "cache-control": "no-cache" },
+                  headers: { "cache-control": "private, no-store" },
                   contentType: "application/json",
                 })
               }),

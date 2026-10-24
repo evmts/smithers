@@ -7,12 +7,14 @@ import { HttpServerRequest } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
+import * as Flows from "../Flows.ts"
 import * as Database from "../../db/Database.ts"
 import { CONVERSATION_NAMESPACE, MAX_TRACK_BODY_BYTES } from "../../src/features/branch/contract.ts"
 import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
 import { branchHarness, type BranchHarness, gitHost, resetBranches, shaOf, shared, tracked } from "../test/branch.ts"
 import { recorded, testFile } from "../test/harness.ts"
 import * as Branches from "./Branches.ts"
+import * as Conversations from "./Conversations.ts"
 import { CreateRefused, Forge } from "./Forge.ts"
 
 const runtime = testFile("branches")
@@ -421,16 +423,51 @@ describe("POST /api/branches with create: a new branch", () => {
 
   test("makes the branch on Code Storage at the default branch's head and records it open, the Member's; again, 200", async () => {
     const h = await onCodeStorage()
-    const [status, body] = await json(await create(h, "maya/k3f9q2"))
-    expect(status).toBe(201)
-    expect(body).toMatchObject({ name: "maya/k3f9q2", mode: "open", access: "owner", repoId: "github/octocat/spoon-knife" })
-    expect(h.github.seen.filter((seen) => seen.method === "GET")).toHaveLength(1)
-    expect(h.forge.created).toEqual([{ repo: "github/octocat/spoon-knife", from: "main", branch: "maya/k3f9q2" }])
-    expect((await rows()).find((row) => row.name === "maya/k3f9q2")).toMatchObject({ mode: "open", baseSha: shaOf("main") })
-    expect(h.only("branch.track").annotations).toMatchObject({ outcome: "tracked", created: "created", status: 201 })
-    // Pressed again, or retried after a lost answer: the branch it made, at once, and nothing made twice.
-    expect(await json(await create(h, "maya/k3f9q2"))).toEqual([200, body])
-    expect(h.forge.created).toHaveLength(1)
+    // Observe what a device can discover at the precise point its refs cache is invalidated.
+    await runtime.runPromise(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`INSERT INTO repositories (id, owner, name, status)
+        VALUES ('github/octocat/spoon-knife', 'octocat', 'spoon-knife', 'cloning')`
+      yield* sql`CREATE TABLE ref_visibility (tracked boolean NOT NULL)`
+      yield* sql.unsafe(`CREATE FUNCTION record_ref_visibility() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          INSERT INTO ref_visibility SELECT EXISTS (
+            SELECT 1 FROM branches b JOIN conversations c ON c.branch_id = b.id
+            WHERE b.repo_id = NEW.id AND b.name = 'maya/k3f9q2' AND b.ref_namespace = 'ephemeral'
+          );
+          RETURN NEW;
+        END $$`)
+      yield* sql`CREATE TRIGGER record_ref_visibility AFTER UPDATE OF refs_changed_at ON repositories
+        FOR EACH ROW EXECUTE FUNCTION record_ref_visibility()`
+    }))
+    try {
+      const [status, body] = await json(await create(h, "maya/k3f9q2"))
+      expect(status).toBe(201)
+      expect(body).toMatchObject({ name: "maya/k3f9q2", mode: "open", access: "owner", repoId: "github/octocat/spoon-knife" })
+      expect(h.github.seen.filter((seen) => seen.method === "GET")).toHaveLength(1)
+      expect(h.forge.created).toEqual([{ repo: "github/octocat/spoon-knife", from: "main", branch: "maya/k3f9q2" }])
+      expect(h.github.repository("octocat", "Spoon-Knife")!.branches["maya/k3f9q2"]).toBeUndefined()
+      expect(h.forge.ephemeral.repository("octocat", "Spoon-Knife")!.branches["maya/k3f9q2"]).toBe(shaOf("main"))
+      expect(h.github.seen.every((seen) => seen.path.includes("/info/refs") || seen.path.endsWith("/git-upload-pack"))).toBe(true)
+      expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT ref_namespace AS namespace FROM branches WHERE repo_id = 'github/octocat/spoon-knife' AND name = 'maya/k3f9q2'`)))
+        .toEqual([{ namespace: "ephemeral" }])
+      expect((await rows()).find((row) => row.name === "maya/k3f9q2")).toMatchObject({ mode: "open", baseSha: shaOf("main") })
+      expect(h.only("branch.track").annotations).toMatchObject({ outcome: "tracked", created: "created", status: 201 })
+      // Pressed again, or retried after a lost answer: the branch it made, at once, and nothing made twice.
+      expect(await json(await create(h, "maya/k3f9q2"))).toEqual([200, body])
+      expect(h.forge.created).toHaveLength(1)
+      expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT tracked FROM ref_visibility`)))
+        .toEqual([{ tracked: true }])
+    } finally {
+      await runtime.runPromise(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`DROP TRIGGER record_ref_visibility ON repositories`
+        yield* sql`DROP FUNCTION record_ref_visibility()`
+        yield* sql`DROP TABLE ref_visibility`
+        yield* sql`DELETE FROM repositories WHERE id = 'github/octocat/spoon-knife'`
+      }))
+    }
   })
 
   test("a fresh conversation's request: its own branch again, 200; a branch the app tracks for anyone else, 409 exists", async () => {
@@ -456,12 +493,21 @@ describe("POST /api/branches with create: a new branch", () => {
 
   // A branch someone pushed under the name a create asked for was tracked as the requester's new branch, owned by them
   // and not at the default branch's head. A branch name carries no mark of who made it, so its existence is refused.
-  test("a branch the forge has that the app doesn't track is someone else's: 409 exists, nothing tracked", async () => {
+  test("an untracked ephemeral ref with no ordinary counterpart is refused by the provider and never adopted", async () => {
     const h = await onCodeStorage()
-    expect(await json(await create(h, "feature"))).toEqual([409, { code: "exists" }])
-    expect((await rows()).find((row) => row.name === "feature")).toBeUndefined()
+    h.forge.ephemeral.publish("octocat", "Spoon-Knife", {
+      ...h.github.repository("octocat", "Spoon-Knife")!,
+      branches: { "ephemeral-only": shaOf("someone-else") },
+    })
+    expect(await json(await create(h, "ephemeral-only"))).toEqual([409, { code: "exists" }])
+    expect((await rows()).find((row) => row.name === "ephemeral-only")).toBeUndefined()
     expect(h.forge.created).toEqual([])
-    expect(h.only("branch.track").annotations).toMatchObject({ created: "exists", outcome: "exists", status: 409 })
+    expect(h.github.repository("octocat", "Spoon-Knife")!.branches["ephemeral-only"]).toBeUndefined()
+    expect(h.forge.ephemeral.repository("octocat", "Spoon-Knife")!.branches["ephemeral-only"]).toBe(shaOf("someone-else"))
+    expect(h.only("branch.track").annotations).toMatchObject({
+      created: "exists", outcome: "exists", status: 409, forgeOperation: "create_ref",
+      forgeErrorCode: "conflict", forgeStatus: 409,
+    })
   })
 
   test("Code Storage refusing or failing: 404 for no mirror or start, 503 otherwise; nothing recorded", async () => {
@@ -506,7 +552,7 @@ describe("POST /api/branches with create: a new branch", () => {
 
   test("the created ref read failing records refs_read without its name or response body", async () => {
     const h = await onCodeStorage()
-    h.github.fail("POST", new Response("credential-sentinel", { status: 502 }))
+    h.forge.ephemeral.fail("POST", new Response("credential-sentinel", { status: 502 }))
     expect(await json(await create(h, `${SENTINEL}-new`))).toEqual([503, { code: "unavailable" }])
     expect(h.only("branch.track").annotations).toMatchObject({
       forgeOperation: "refs_read", forgeErrorTag: "@smthrs/effect-code-storage/GitRemoteError",
@@ -567,4 +613,210 @@ test("tracking refuses a repository whose HEAD has no default branch", async () 
   }))
   expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: SENTINEL }))).toEqual([503, { code: "unavailable" }])
   expect(await rows()).toEqual([])
+})
+
+describe("an explicit branch provider", () => {
+  test("an unknown or hostile provider is invalid, and a provider without create is invalid", async () => {
+    const h = await open()
+    for (const provider of ["code-storage", "https://attacker.invalid", "github;token", {}, null]) {
+      expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "new", create: true, provider })))
+        .toEqual([400, { code: "invalid" }])
+    }
+    expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "feature", provider: "github" })))
+      .toEqual([400, { code: "invalid" }])
+    expect(h.forge.created).toEqual([])
+    expect(await rows()).toEqual([])
+  })
+
+  test("explicit GitHub creation without a configured App fails closed and never creates a mirror ref", async () => {
+    const h = await open({ config: { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem(), GITHUB_TOKEN: "unused-global-token" } })
+    expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "new", create: true, provider: "github", request: crypto.randomUUID() })))
+      .toEqual([503, { code: "not_configured" }])
+    expect(h.only("branch.track").annotations).toMatchObject({ outcome: "not_configured", status: 503 })
+    expect(Object.fromEntries(h.span("branch.track")[0]!.attributes)).toMatchObject({ outcome: "not_configured", "http.response.status_code": 503 })
+    expect(h.count(Branches.tracks, { outcome: "not_configured" })).toBe(1)
+    expect(h.count(Branches.tracks, { outcome: "unavailable" })).toBe(0)
+    expect(h.forge.created).toEqual([])
+    expect(h.github.repository("octocat", "Spoon-Knife")!.branches.new).toBeUndefined()
+    expect(await rows()).toEqual([])
+  })
+
+  test("the default explicit request creates an ephemeral deployment ref and retains its request identity", async () => {
+    const h = await open({ config: { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() } })
+    const request = crypto.randomUUID()
+    const body = { owner: "octocat", name: "Spoon-Knife", ref: "new", create: true, request }
+    const [status, branch] = await json(await track(h, body))
+    expect(status).toBe(201)
+    expect(await json(await track(h, body))).toEqual([200, branch])
+    expect(await json(await track(h, { ...body, request: crypto.randomUUID() }))).toEqual([409, { code: "exists" }])
+    expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      SELECT ref_namespace AS namespace, ref_forge AS forge, create_request AS request FROM branches WHERE name = 'new'`)))
+      .toEqual([{ namespace: "ephemeral", forge: "deployment", request }])
+    expect(h.github.repository("octocat", "Spoon-Knife")!.branches.new).toBeUndefined()
+    expect(h.forge.created).toHaveLength(1)
+  })
+})
+
+test("GitHub creation admits one durable identity, returns its actual generated branch, and never launches after a terminal receipt", async () => {
+  const h = await open({ config: { GITHUB_APP_ID: "17", GITHUB_APP_PRIVATE_KEY: "configured only; the durable action imports it" } })
+  const request = crypto.randomUUID()
+  const body = { owner: "octocat", name: "Spoon-Knife", ref: "draft", create: true, provider: "github", request }
+  expect(await json(await track(h, body))).toEqual([202, { code: "requested" }])
+  expect(await json(await track(h, body))).toEqual([202, { code: "requested" }])
+  expect(h.starts).toEqual([
+    { flow: "branch/GitHubCreate", executionId: request, payload: { request } },
+    { flow: "branch/GitHubCreate", executionId: request, payload: { request } },
+  ])
+  expect(h.forge.created).toEqual([])
+  expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    SELECT count(*)::int AS count FROM github_branch_requests WHERE id = ${request}`))).toEqual([{ count: 1 }])
+  expect(await json(await track(h, { ...body, ref: "different" }))).toEqual([409, { code: "exists" }])
+  const actual = "smithers/draft-123456abcdef"
+  const made = await runtime.runPromise(Conversations.track("github/octocat/spoon-knife", actual, "open", shaOf("main"), member.subject.id, request, "default", "github"))
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    UPDATE github_branch_requests SET branch_id = ${made.branch.branchId} WHERE id = ${request}`))
+  expect(await json(await track(h, body))).toEqual([201, { ...made.branch, access: "owner", shared: false }])
+  expect(h.starts).toHaveLength(2)
+  expect(await runtime.runPromise(Conversations.forgeOf(made.branch.branchId))).toBe("github")
+  expect(await runtime.runPromise(Conversations.namespaceOf(made.branch.branchId))).toBe("default")
+  await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    UPDATE branches SET deleted_at = now() WHERE id = ${made.branch.branchId}`))
+  expect(await json(await track(h, body))).toEqual([404, { code: "not_found" }])
+  expect(h.starts).toHaveLength(2)
+})
+
+test("GitHub creation terminal provider refusals are returned without starting again", async () => {
+  const h = await open({ config: { GITHUB_APP_ID: "17", GITHUB_APP_PRIVATE_KEY: "configured" } })
+  for (const [failure, status] of [["forbidden", 403], ["not_found", 404], ["exists", 409], ["not_configured", 503]] as const) {
+    const request = crypto.randomUUID()
+    const body = { owner: "octocat", name: "Spoon-Knife", ref: `draft-${failure}`, create: true, provider: "github", request }
+    expect((await track(h, body)).status).toBe(202)
+    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+      UPDATE github_branch_requests SET failure = ${failure} WHERE id = ${request}`))
+    const starts = h.starts.length
+    expect(await json(await track(h, body))).toEqual([status, { code: failure }])
+    expect(h.starts).toHaveLength(starts)
+  }
+})
+
+test("creation refuses an untracked ordinary ref before writing an ephemeral ref with the same app identity", async () => {
+  const ordinary = github()
+  ordinary.publish("octocat", "Spoon-Knife", { defaultBranch: "main", branches: { main: shaOf("main"), existing: shaOf("existing") } })
+  const h = await open({ github: ordinary, config: { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() } })
+  expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "existing", create: true, request: crypto.randomUUID() })))
+    .toEqual([409, { code: "exists" }])
+  expect(h.forge.created).toEqual([])
+  expect(h.forge.ephemeral.repository("octocat", "Spoon-Knife")).toBeUndefined()
+  expect(await rows()).toEqual([])
+  expect(h.github.repository("octocat", "Spoon-Knife")!.branches.existing).toBe(shaOf("existing"))
+  expect(h.github.seen.every((seen) => seen.path.includes("/info/refs") || seen.path.endsWith("/git-upload-pack"))).toBe(true)
+})
+
+test("creation fails closed when ordinary ref collision visibility is unavailable", async () => {
+  let reads = 0
+  const h = await open({ forge: Forge.of({
+    upstream: () => Effect.succeed({ url: ++reads === 1
+      ? "https://github.com/octocat/Spoon-Knife.git"
+      : "https://github.com/octocat/inaccessible.git" }),
+    create: () => Effect.fail(new CreateRefused({ code: "forbidden" })),
+  }) })
+  expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "unreadable", create: true })))
+    .toEqual([503, { code: "unavailable" }])
+  expect(reads).toBe(2)
+  expect(h.forge.created).toEqual([])
+  expect(await rows()).toEqual([])
+  expect(h.only("branch.track").annotations).toMatchObject({ outcome: "unavailable", forgeOperation: "refs_read" })
+})
+
+test("creating the repository default branch name refuses before writing an ephemeral ref or claiming its home identity", async () => {
+  const h = await open({ config: { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() } })
+  expect(await json(await track(h, { owner: "octocat", name: "Spoon-Knife", ref: "main", create: true, request: crypto.randomUUID() })))
+    .toEqual([409, { code: "exists" }])
+  expect(h.forge.created).toEqual([])
+  expect(h.forge.ephemeral.repository("octocat", "Spoon-Knife")).toBeUndefined()
+  expect(await rows()).toEqual([])
+})
+
+test("GitHub admission requires a request and a Member, and a reused identity remains private", async () => {
+  const config = { GITHUB_APP_ID: "17", GITHUB_APP_PRIVATE_KEY: "configured" }
+  const h = await open({ config })
+  const body = { owner: "octocat", name: "Spoon-Knife", ref: "new", create: true, provider: "github" }
+  expect(await json(await track(h, body))).toEqual([400, { code: "invalid" }])
+  const request = crypto.randomUUID()
+  expect((await track(h, { ...body, request })).status).toBe(202)
+  const other = await open({ config, actor: { subject: { kind: "person", id: "other" }, role: "member" } })
+  expect(await json(await track(other, { ...body, request }))).toEqual([409, { code: "exists" }])
+  const guest = await open({ config, actor: { ...member, role: "guest" } })
+  expect(await json(await track(guest, { ...body, request: crypto.randomUUID() }))).toEqual([403, { code: "forbidden" }])
+  expect(guest.starts).toEqual([])
+})
+
+test("GitHub admission records before launch, retries the same launch identity, and refuses a host conflict", async () => {
+  const config = { GITHUB_APP_ID: "17", GITHUB_APP_PRIVATE_KEY: "configured" }
+  const calls: Array<unknown> = []
+  let available = false
+  const h = await open({ config, starter: { start: (_flow, value) => {
+    calls.push(value)
+    return available ? Effect.void : Effect.fail(new Flows.StartUnavailable({ errorCode: "injected" }))
+  } } })
+  const request = crypto.randomUUID()
+  const body = { owner: "octocat", name: "Spoon-Knife", ref: "new", create: true, provider: "github", request }
+  expect(await json(await track(h, body))).toEqual([503, { code: "unavailable" }])
+  expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+    SELECT count(*)::int AS count FROM github_branch_requests WHERE id = ${request}`))).toEqual([{ count: 1 }])
+  available = true
+  h.github.fail("GET", new Response("no reread of the base", { status: 500 }))
+  expect(await json(await track(h, body))).toEqual([202, { code: "requested" }])
+  expect(calls).toHaveLength(2)
+  expect(calls[1]).toEqual(calls[0])
+  const conflict = await open({ config, starter: { start: () => Effect.fail(new Flows.StartConflict({})) } })
+  expect(await json(await track(conflict, { ...body, request: crypto.randomUUID() }))).toEqual([409, { code: "exists" }])
+  expect(conflict.only("branch.track").annotations).toMatchObject({ outcome: "exists", status: 409 })
+  expect(Object.fromEntries(conflict.span("branch.track")[0]!.attributes)).toMatchObject({ outcome: "exists", "http.response.status_code": 409 })
+  expect(conflict.count(Branches.tracks, { outcome: "exists" })).toBe(1)
+  expect(conflict.count(Branches.tracks, { outcome: "unavailable" })).toBe(0)
+})
+
+test("GitHub admission distinguishes an unavailable default read from a missing repository", async () => {
+  const h = await open({ config: { GITHUB_APP_ID: "17", GITHUB_APP_PRIVATE_KEY: "configured" } })
+  const body = { owner: "octocat", name: "Spoon-Knife", ref: "new", create: true, provider: "github", request: crypto.randomUUID() }
+  h.github.fail("GET", new Response("busy", { status: 503 }))
+  expect(await json(await track(h, body))).toEqual([503, { code: "unavailable" }])
+  expect(await json(await track(h, { ...body, owner: "missing" }))).toEqual([404, { code: "not_found" }])
+  expect(h.starts).toEqual([])
+})
+
+test("a completed GitHub branch deleted between receipt lookup and access lookup is not exposed", async () => {
+  const h = await open({ config: { GITHUB_APP_ID: "17", GITHUB_APP_PRIVATE_KEY: "configured" } })
+  const request = crypto.randomUUID()
+  const body = { owner: "octocat", name: "Spoon-Knife", ref: "draft", create: true, provider: "github", request }
+  expect((await track(h, body)).status).toBe(202)
+  const made = await runtime.runPromise(Conversations.track("github/octocat/spoon-knife", "smithers/draft-123456abcdef", "open", shaOf("main"), member.subject.id, request, "default", "github"))
+  await runtime.runPromise(Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    yield* sql`UPDATE github_branch_requests SET branch_id = ${made.branch.branchId} WHERE id = ${request}`
+    yield* sql`CREATE TABLE deletion_race_target (id uuid NOT NULL)`
+    yield* sql`INSERT INTO deletion_race_target VALUES (${made.branch.branchId})`
+    yield* sql`ALTER TABLE branches RENAME TO deletion_race_branches`
+    yield* sql.unsafe(`CREATE FUNCTION deletion_race(branch_id uuid) RETURNS boolean LANGUAGE plpgsql AS $$
+      BEGIN
+        IF branch_id = (SELECT id FROM deletion_race_target) AND current_query() LIKE '%b.create_request%' THEN
+          UPDATE deletion_race_branches SET deleted_at = now() WHERE id = branch_id;
+        END IF;
+        RETURN true;
+      END $$`)
+    yield* sql`CREATE VIEW branches AS SELECT * FROM deletion_race_branches b WHERE deletion_race(b.id)`
+  }))
+  try {
+    expect(await json(await track(h, body))).toEqual([404, { code: "not_found" }])
+    expect(h.starts).toHaveLength(1)
+  } finally {
+    await runtime.runPromise(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`DROP VIEW branches`
+      yield* sql`ALTER TABLE deletion_race_branches RENAME TO branches`
+      yield* sql`DROP FUNCTION deletion_race(uuid)`
+      yield* sql`DROP TABLE deletion_race_target`
+    }))
+  }
 })

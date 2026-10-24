@@ -1,10 +1,10 @@
 # Plugins
 
-Like webpack, the app is a core of primitives plus plugins, and our own features are plugins on the same public interface anyone uses (ruling PLUGIN-1, [decision 0017](../decisions/0017-everything-is-a-plugin.md)). This page is the host as built: slice 1, with the queue ([decision 0022](../decisions/0022-review-queue.md), slice 1) as its first plugin.
+Like webpack, the app is a core of primitives plus plugins, and our own features are plugins on the same public interface anyone uses (ruling PLUGIN-1, [decision 0017](../decisions/0017-everything-is-a-plugin.md)). The queue uses the UI host ([decision 0022](../decisions/0022-review-queue.md)); conversation creation has its own scoped flow execution point.
 
 ## A plugin
 
-A built-in plugin is a folder in `apps/mvp/plugins/<id>/`:
+A built-in UI plugin is a folder in `apps/mvp/plugins/<id>/`:
 
 ```
 plugins/queue/
@@ -13,7 +13,7 @@ plugins/queue/
   src/components/*.tsx     React over { queries, actions }; the names its `component` renders name
 ```
 
-`plugin.json` is decoded and checked by `@smthrs/plugin`'s `Manifest` and `Load` ([library catalog](../../../../docs/libraries.md)). It declares the flows the plugin borrows (`uses`), its capability ceiling (`capabilities`), and what it contributes. The core names a plugin in one place, `src/plugins/builtin.ts`; deleting the folder and that line removes the feature (rule [`plugin.core-names-no-plugin`](../rules.md#plugincore-names-no-plugin)). A plugin imports only `@smthrs/*` roots, `react`, `@tanstack/react-db`, `effect` and its own folder ([`plugin.public-interface-only`](../rules.md#pluginpublic-interface-only)).
+`plugin.json` is decoded and checked by `@smthrs/plugin`'s `Manifest` and `Load` ([library catalog](../../../../docs/libraries.md)). It declares the flows the plugin borrows (`uses`), its capability ceiling (`capabilities`), and what it contributes. The core names a UI plugin in `src/plugins/builtin.ts` and a flow plugin in the server-safe `src/plugins/builtinFlows.ts`; deleting the folder and its registry line removes the feature (rule [`plugin.core-names-no-plugin`](../rules.md#plugincore-names-no-plugin)). A plugin imports only `@smthrs/*` roots, `react`, `@tanstack/react-db`, `effect` and its own folder ([`plugin.public-interface-only`](../rules.md#pluginpublic-interface-only)).
 
 ## Loading
 
@@ -25,9 +25,25 @@ boot ─ Plugins.layer ─ Load.load(hostFacts, BUILTIN manifests)
 use    a slot draws · a view opens · a key or command fires ─▶ the plugin's chunks load, its tab is built once
 ```
 
-- **The host's points.** This host implements `views`, `slots`, `commands` and `keybindings` (with view events). A manifest using any other point is refused `unsupported_point`; nothing it declares is silently ignored (`src/plugins/contract.ts`).
+- **The UI host's points.** `Plugins.layer` implements `views`, `slots`, `commands` and `keybindings` (with view events). The UI host refuses owned flows and other unsupported points with `unsupported_point`; nothing it declares is silently ignored (`src/plugins/contract.ts`). The creation host below separately admits one selected owned flow.
 - **A refused plugin never blocks boot.** It is logged as `plugin.refused` with its reason and the field (`contributes.keybindings[2].event`), and the rest load. A component that throws, or a chunk that fails, shows one line naming the plugin, and the shell stays (`Boundary.tsx`).
 - **Lazy.** No component, tab or flow body loads at boot. A plugin's tab is built on first use, in the host's scope, from `PluginHost` alone.
+
+## Branch creation flows
+
+New conversations use `branch/creation/start`, which selects a plugin implementation before executing its code. The default is `plugins/branches`: its public `Flow.make("branches/create", …)` calls `branches/ephemeral`, creating a Smithers-only branch. It does not publish to GitHub.
+
+A repository selects an implementation in `.smithers/branch.json`:
+
+```json
+{ "plugin": "team-branches", "flow": "create" }
+```
+
+Members and above use `GET /api/branches/creation`, which reads that configuration, `.smithers/plugins/team-branches/plugin.json`, and `.smithers/flows/team-branches/create/flow.ts` at one default-branch commit. The manifest must own `create`, match its plugin id, and pass the same public `Manifest` and `Load` checks. This host advertises only the `flows` point; UI contributions remain unsupported here. Missing configuration selects the default; malformed, missing or unavailable installation files fail without falling back.
+
+The browser's durable engine journals the selected source, commit, digest and interpreter version. Repository source runs in the SDK realm, with host operations limited to the manifest's declared `uses`: `branches/ephemeral` (`git:write`) and, when explicitly selected, `branches/github` (`github:write`). The host fixes the repository, request identity and permissions; the plugin supplies the branch name. Completion requires the matching durable write receipt. Source cannot replace a system action, widen its capabilities, read credentials or install itself in the global UI catalog.
+
+This execution point supports repository-owned branch creation flows. General repository flow contributions to `Plugins.layer`, custom UI code and other execution points remain unavailable.
 
 ## Trust boundaries
 
@@ -35,13 +51,13 @@ The loader checks every manifest against the host's facts (`src/plugins/facts.ts
 
 | Boundary | How it holds | Refusal |
 |---|---|---|
-| System flows can't be overridden | Every flow in the registry is the core's: a plugin may borrow one through `uses`, never own, replace or rename one. Owned flow tags, plugin ids and contribution ids may not start with a reserved segment (`app`, `chat`, `run`, `flow`, `secret`, `auth`, `system`, `plugin`, `core`, …). | `conflict`, `reserved` |
+| System flows can't be overridden | Every existing system flow remains the core's: a plugin may borrow one through `uses`, never own, replace or rename one. The creation host admits a separate owned tag without replacing a system flow. Owned flow tags, plugin ids and contribution ids may not start with a reserved segment (`app`, `chat`, `run`, `flow`, `secret`, `auth`, `system`, `plugin`, `core`, …). | `conflict`, `reserved` |
 | A plugin acts only through what it declares | A contribution may name only flows it owns or `uses`; every used flow's capabilities must be in the manifest's ceiling; `PluginHost` serves only the queries its contributions `read` and the events its views declare. | `undeclared_use`, `capability_exceeded`; at run time `undeclared_query`, `undeclared_event` |
 | Person-only actions need a person | A command may point at a person-only flow only in a built-in plugin, and a plugin keys only its own commands. An event whose flow is person-only (a `userOnlyReason` in the registry, as `run/answer`) is never dispatched for plugin code: `PluginHost.dispatch` refuses it `person_only`. The host's action strip draws it under the view, and the person's press (door `button`) or key (door `key`) sends it with their own session ([run credentials](sign-in.md#run-credentials)). | `person_only` |
 | Nobody sees what the server refuses | A view's, slot's or command's `minimum` must be at least every flow it dispatches. | `minimum_below_flow` |
 | Secrets stay opaque | No tier holds a `secret:` capability until an Admin's per-installation grant exists (decision 0017 slice 6), and a schema field named like a secret, `format: "password"` or `writeOnly` is refused, so a plugin never collects or reads one. No core query carries a secret. | `capability_exceeded`, `secret_field` |
 
-Compiled code runs with the app's full power: the import rules are hygiene, its boundary is code review and the build (decision 0017, "Compiled code is trusted application code").
+Compiled UI plugin chunks run with the app's full power: the import rules are hygiene, its boundary is code review and the build (decision 0017, "Compiled code is trusted application code").
 
 ## The host contract
 

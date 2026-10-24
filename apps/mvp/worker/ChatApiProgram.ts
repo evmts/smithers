@@ -118,7 +118,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const repos = yield* RepoApi.make(database, { codeStorage })
     // The branch workspace (docs/features/branch-workspace.md): tracking a branch, its terminals, and the branches'
     // machines, `SandboxObject`s ChatApi hosts (worker/BranchSandboxes.ts).
-    const branchApi = yield* BranchApi.make(database)
+    const branchApi = yield* BranchApi.make(database).pipe(Effect.provide(FetchHttpClient.layer))
     // Repository secrets (docs/features/secrets.md): write-only values sealed under SECRETS_KEY, off without it.
     const secretKeys = yield* Effect.service(SecretKeys).pipe(Effect.provide(SecretKeys.layerConfig), Effect.orDie)
     const secretsApi = yield* SecretsApi.make(yield* GitHubConfig.repository)

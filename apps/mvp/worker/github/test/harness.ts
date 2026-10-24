@@ -1,3 +1,4 @@
+import * as GitHubCreation from "../../branch/GitHubCreation.ts"
 // The git loop's routes (worker/github/Api.ts) for the tests, on a test file's own schema of the compose Postgres and
 // Electric (`pnpm db:up`), as ChatApi serves them: who is asking from a `Sessions` layer, remote flows from a
 // `FlowStarter` that records each start in an in-memory Durable Object storage (the same intent again is a no-op,
@@ -152,7 +153,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     const { services } = yield* Effect.promise(() =>
       flowServices(runtime, github, { database, ...(options.judge === undefined ? {} : { judge: options.judge }) })
     )
-    const built = yield* build(Host.registration(services), { maxConnections: 3 }).pipe(
+    const built = yield* build(Host.registration(services).pipe(Layer.provide(Layer.succeed(GitHubCreation.Settings, { app: Option.none(), allowed: Option.none() }))), { maxConnections: 3 }).pipe(
       Effect.provideService(Scope.Scope, scope),
       Effect.orDie,
     )

@@ -167,9 +167,12 @@ export type GitHost = ReturnType<typeof gitHost>
  * `https://<org>.code.storage/github/<owner>/<name>.git`, and `POST https://api.<org>.code.storage/api/repos/<repo>/
  * branches/create` makes a branch there at the commit `base_ref` names, as Code Storage does: `409 conflict` when it
  * exists, `404 ref_not_found` for a start it doesn't have, `404 repository_not_found` for no mirror. `fail` answers the
- * next create with a `Response` instead. Every create it took is in `created`.
+ * next create with a `Response` instead. Every create it took is in `created`. Ephemeral refs live in their own
+ * namespace, served at the `+ephemeral` remote, and never alter the GitHub source.
  */
 export const codeStorageGit = (github: GitHost) => {
+  const ephemeral = gitHost()
+  const files = new Map<string, string>()
   const faults: Array<Response> = []
   const created: Array<{ readonly repo: string; readonly from: string; readonly branch: string }> = []
   const problem = (status: number, code: string) => Response.json({ code }, { status })
@@ -177,30 +180,42 @@ export const codeStorageGit = (github: GitHost) => {
     const request = new Request(input, init)
     const url = new URL(request.url)
     if (url.hostname.startsWith("api.")) {
+      const fileRoute = /^\/api\/repos\/([^/]+)\/file$/.exec(url.pathname)
+      if (fileRoute !== null && request.method === "GET") {
+        const path = url.searchParams.get("path") ?? ""
+        const body = files.get(path)
+        return body === undefined
+          ? problem(404, "not_found")
+          : new Response(body, { headers: { "content-length": String(new TextEncoder().encode(body).length) } })
+      }
       const route = /^\/api\/repos\/([^/]+)\/branches\/create$/.exec(url.pathname)
       if (route === null || request.method !== "POST") return problem(404, "route_not_found")
       const fault = faults.shift()
       if (fault !== undefined) return fault
       const repo = decodeURIComponent(route[1]!)
-      const { base_ref, target_branch } = (await request.json()) as { base_ref: string; target_branch: string }
+      const { base_ref, target_branch, base_is_ephemeral = false, target_is_ephemeral = false } = (await request.json()) as {
+        base_ref: string; target_branch: string; base_is_ephemeral?: boolean; target_is_ephemeral?: boolean
+      }
       const [, owner = "", name = ""] = repo.split("/")
       const repository = github.repository(owner, name)
       if (repository === undefined) return problem(404, "repository_not_found")
-      const sha = repository.branches[base_ref]
+      const sha = (base_is_ephemeral ? ephemeral.repository(owner, name) : repository)?.branches[base_ref]
       if (sha === undefined) return problem(404, "ref_not_found")
-      if (repository.branches[target_branch] !== undefined) return problem(409, "conflict")
-      github.publish(owner, name, { ...repository, branches: { ...repository.branches, [target_branch]: sha } })
+      const target = target_is_ephemeral ? ephemeral : github
+      const previous = target.repository(owner, name)
+      if (previous?.branches[target_branch] !== undefined) return problem(409, "conflict")
+      target.publish(owner, name, { ...repository, branches: { ...(previous?.branches ?? {}), [target_branch]: sha } })
       created.push({ repo, from: base_ref, branch: target_branch })
-      return Response.json({ message: "created", target_branch, target_is_ephemeral: false, commit_sha: sha })
+      return Response.json({ message: "created", target_branch, target_is_ephemeral, commit_sha: sha })
     }
-    // The mirror's git: GitHub's copy, as Code Storage serves its sync.
-    const mirrored = /^\/github\/([^/]+)\/([^/]+\.git\/.*)$/.exec(url.pathname)
+    // The mirror and ephemeral git remotes share commits, with separate advertised refs.
+    const mirrored = /^\/github\/([^/]+)\/([^/]+?)(\+ephemeral)?\.git\/(.*)$/.exec(url.pathname)
     if (mirrored === null) return new Response("Repository not found.", { status: 404 })
-    const forwarded = new Request(`https://github.com/${mirrored[1]}/${mirrored[2]}${url.search}`, request)
+    const forwarded = new Request(`https://github.com/${mirrored[1]}/${mirrored[2]}.git/${mirrored[4]}${url.search}`, request)
     forwarded.headers.delete("authorization")
-    return github.fetch(forwarded)
+    return (mirrored[3] === undefined ? github : ephemeral).fetch(forwarded)
   }
-  return { fetch, created, fail: (...answers: ReadonlyArray<Response>) => void faults.push(...answers) }
+  return { fetch, created, ephemeral, files, fail: (...answers: ReadonlyArray<Response>) => void faults.push(...answers) }
 }
 
 /**
@@ -290,6 +305,7 @@ interface BranchOptions {
   /** The routes' configuration, in place of the environment. */
   readonly config?: Record<string, string>
   /** The scripted GitHub: a fresh one unless set. */
+  readonly githubApi?: typeof globalThis.fetch
   readonly github?: GitHost
   /** The branch machines' sockets: a fresh `terminalSockets()` unless set. */
   readonly sockets?: TerminalSockets["Service"]
@@ -324,6 +340,9 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
   const fetch: typeof globalThis.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
     if (url.hostname === "github.com") return github.fetch(input, init)
+    if (url.hostname === "api.github.com") return options.githubApi === undefined
+      ? Promise.resolve(Response.json({ message: "Not Found" }, { status: 404 }))
+      : options.githubApi(input, init)
     if (url.hostname.endsWith(".code.storage")) return forge.fetch(input, init)
     electric.push(new URL(url))
     const table = url.searchParams.get("table")
@@ -341,7 +360,12 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
       Effect.provideService(ConfigProvider.ConfigProvider, config),
     )
   const homeRepository = await runtime.runPromise(observed(Conversations.configuredHomeRepositoryNames))
-  const api = await runtime.runPromise(observed(BranchApi.make(database)))
+  const api = await runtime.runPromise(observed(BranchApi.make(database).pipe(
+    Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fetch),
+  )))
+  const capturedForge = options.forge ?? await runtime.runPromise(observed(Effect.service(Forge).pipe(
+    Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, fetch),
+  )))
   const starter = options.starter ?? Flows.FlowStarter.of({
     start: (flow, { executionId, payload }) =>
       Effect.sync(() => void starts.push({ flow: flow._tag, executionId, payload })),
@@ -349,6 +373,8 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
   const handler = HttpEffect.toWebHandler(
     observed(
       api.fetch.pipe(
+        // Alchemy's deployed request environment contains no deployment Config values.
+        Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
         Effect.provideService(Conversations.homeRepositoryNames, homeRepository),
         Effect.provideService(Flows.FlowStarter, starter),
         Effect.provideService(TerminalSockets, options.sockets ?? sockets.service),
@@ -357,7 +383,8 @@ export const branchHarness = async (runtime: Runtime, options: BranchOptions = {
           ? Effect.provide(Directory.layer(database, options.known))
           : Effect.provideService(Directory, options.directory),
         Effect.provide(options.sessions ?? (options.actor === undefined ? Actor.signedOut : signedIn(options.actor))),
-        Effect.provide((options.forge === undefined ? Forge.layerConfig : Layer.succeed(Forge, options.forge)).pipe(Layer.provideMerge(FetchHttpClient.layer))),
+        Effect.provideService(Forge, capturedForge),
+        Effect.provide(FetchHttpClient.layer),
         Effect.provideService(FetchHttpClient.Fetch, fetch),
       ),
     ),
@@ -402,6 +429,7 @@ export const resetBranches = (runtime: Runtime) =>
   runtime.runPromise(Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const home = yield* Conversations.home
+    yield* sql`DELETE FROM github_branch_requests`
     yield* sql`DELETE FROM conversation_people`
     yield* sql`DELETE FROM terminal_sessions`
     yield* sql`DELETE FROM sandbox_calls`

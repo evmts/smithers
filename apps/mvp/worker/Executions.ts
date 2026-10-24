@@ -1,3 +1,4 @@
+import * as GitHubCreation from "./branch/GitHubCreation.ts"
 import { Logger } from "@smthrs/observability"
 import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
@@ -153,6 +154,7 @@ const object = <E, R>(
       // and metered in process as the model endpoint's calls are (docs/features/issues.md#triage).
       const repositories = options.repositories
       const idleMs = (yield* SandboxKeep.idleSeconds.pipe(Effect.orDie)) * 1000
+      const creationSettings = yield* GitHubCreation.settings.pipe(Effect.orDie)
       const github = yield* GitHubHost.ready(appDatabase).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
       // Each admitted call of a server seat starts its window's spend alert, as the endpoint's calls do: `spendAlerts`,
       // which only `alchemy dev` sets, to `false`, is `MODEL_SPEND_ALERTS`' default (docs/features/spend-alerts.md).
@@ -183,6 +185,7 @@ const object = <E, R>(
             flows: {
               ...flows,
               registration: flows.registration.pipe(
+                Layer.provide(Layer.succeed(GitHubCreation.Settings, creationSettings)),
                 Layer.provide(Layer.succeed(Conversations.homeRepositoryNames, options.homeRepository)),
               ),
             },

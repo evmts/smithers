@@ -1,3 +1,4 @@
+import * as GitHubCreation from "../branch/GitHubCreation.ts"
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Layer, Option } from "effect"
 import { HttpClient } from "effect/http"
@@ -20,7 +21,7 @@ import * as Write from "./Write.ts"
 // here names a host.
 
 /** The GitHub flows, in the order a host registers them. */
-export const flows = [Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun, Merge.Merge] as const
+export const flows = [Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun, Merge.Merge, GitHubCreation.Create] as const
 
 /** The App, configured and ready: what `services` turns into the flows' services once the host knows how to refresh. */
 export interface Ready<E, R> {
@@ -75,4 +76,5 @@ export const registration = <E, R>(services: Triage.Services<E, R>) =>
     Write.registration(services),
     Triage.registration(services),
     Merge.registration(services),
+    GitHubCreation.registration(services.database, services.http),
   )

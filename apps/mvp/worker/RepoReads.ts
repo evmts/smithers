@@ -202,7 +202,7 @@ export const make = <E, R>(services: Services<E, R>) => {
    * `owner/name`'s default branch, head commit, branches and tags: the ready row's head from Postgres, and the listing
    * cached under it. A repository that isn't ready is `not_found`.
    */
-  const refs = (owner: string, name: string) => {
+  const refs = (owner: string, name: string, ephemeralNames: ReadonlyArray<string> = []) => {
     const id = repoId(owner, name)
     return Effect.gen(function* () {
       const head = yield* Repos.readyHead(id).pipe(
@@ -220,7 +220,28 @@ export const make = <E, R>(services: Services<E, R>) => {
         }),
       )
       const listing = yield* Effect.orDie(decodeRefs(decoder.decode(entry.bytes)))
-      return { defaultBranch: head.value.defaultBranch, head: head.value.sha, ...listing } satisfies Refs
+      if (ephemeralNames.length === 0) {
+        return { defaultBranch: head.value.defaultBranch, head: head.value.sha, ...listing } satisfies Refs
+      }
+      // The default listing is shared; ephemeral discovery is authorized per request and never cached on a device
+      // across an access decision. Object reads remain pinned to SHA: both namespaces share Git objects.
+      yield* admitRead
+      const ephemeral = yield* pages(
+        (cursor) => codeStorage.listBranches(id, { namespace: "ephemeral", cursor, limit: REFS_PAGE_SIZE }).pipe(
+          Effect.map((page) => ({ items: page.branches, nextCursor: page.nextCursor, bytesRead: page.bytesRead })),
+        ),
+        services.maxRefs,
+      ).pipe(Effect.mapError(refusedBy))
+      yield* meter(ephemeral.bytesRead)
+      const visible = new Set(ephemeralNames)
+      const branches = new Map(listing.branches.map((branch) => [branch.name, branch]))
+      for (const { name, sha } of ephemeral.items) {
+        if (visible.has(name)) branches.set(name, { name, sha })
+      }
+      return {
+        defaultBranch: head.value.defaultBranch, head: head.value.sha,
+        tags: listing.tags, branches: [...branches.values()], truncated: listing.truncated || ephemeral.truncated,
+      } satisfies Refs
     })
   }
 

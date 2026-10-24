@@ -1,3 +1,4 @@
+import type { CodeStorage } from "@smthrs/effect-code-storage"
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Config, Context, Effect, Schema } from "effect"
 import { SqlClient } from "effect/sql"
@@ -77,14 +78,16 @@ export const track = (
   baseSha: string,
   createdBy?: string,
   createRequest?: string,
+  namespace: CodeStorage.RefNamespace = "default",
+  forge: "deployment" | "github" = "deployment",
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const owner = mode === "locked" ? null : createdBy ?? null
     return yield* sql.withTransaction(Effect.gen(function* () {
       const [inserted] = yield* sql<{ readonly id: string }>`
-        INSERT INTO branches (id, repo_id, name, mode, base_sha, created_by, create_request)
-        VALUES (gen_random_uuid(), ${repo}, ${name}, ${mode}, ${baseSha}, ${owner}, ${createRequest ?? null})
+        INSERT INTO branches (id, repo_id, name, mode, base_sha, created_by, create_request, ref_namespace, ref_forge)
+        VALUES (gen_random_uuid(), ${repo}, ${name}, ${mode}, ${baseSha}, ${owner}, ${createRequest ?? null}, ${namespace}, ${forge})
         ON CONFLICT (repo_id, name) WHERE deleted_at IS NULL DO NOTHING
         RETURNING id`
       if (inserted !== undefined) {
@@ -114,4 +117,30 @@ export const createRequestOf = (branchId: string) =>
 export const home = Effect.gen(function* () {
   const branch = yield* find(yield* homeRepository, HOME_BRANCH)
   return branch?.conversationId
+})
+
+/** The persisted forge namespace; legacy branches and unknown ids use the ordinary namespace. */
+export const namespaceOf = (branchId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    const [row] = yield* sql<{ readonly namespace: CodeStorage.RefNamespace }>`
+      SELECT ref_namespace AS namespace FROM branches WHERE id = ${branchId}`
+    return row?.namespace ?? "default"
+  })
+
+/** The recorded forge for a conversation branch; historical branches use the deployment mirror. */
+export const forgeOf = (branchId: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const [row] = yield* sql<{ readonly forge: "deployment" | "github" }>`SELECT ref_forge AS forge FROM branches WHERE id = ${branchId}`
+  return row?.forge === "github" ? "github" as const : undefined
+})
+
+/** The living branch a durable create request recorded, including its provider-selected name. */
+export const createdFor = (repo: string, person: string, request: string) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const rows = yield* sql`
+    SELECT b.id AS "branchId", c.id AS "conversationId", b.repo_id AS "repoId", b.name, b.mode
+    FROM branches b JOIN conversations c ON c.branch_id = b.id
+    WHERE b.repo_id = ${repo} AND b.created_by = ${person} AND b.create_request = ${request} AND b.ref_forge = 'github' AND b.deleted_at IS NULL`
+  return rows[0] === undefined ? undefined : yield* Schema.decodeUnknownEffect(BranchRow)(rows[0]).pipe(Effect.orDie)
 })

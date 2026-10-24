@@ -27,6 +27,7 @@ import {
 } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import * as BranchApi from "./BranchApi.ts"
+import * as Conversations from "./Conversations.ts"
 import { TerminalSockets } from "./Sandboxes.ts"
 import * as Terminals from "./Terminals.ts"
 
@@ -550,3 +551,42 @@ describe("BranchApi", () => {
   })
 })
 
+
+
+test("a failed launch keeps the persisted ephemeral namespace for retry", async () => {
+  const { branch } = await runtime.runPromise(Conversations.track(REPO, "private-work", "open", "a".repeat(40), member.subject.id, undefined, "ephemeral"))
+  const payloads: Array<unknown> = []
+  const h = await open(member, { starter: { start: (_flow, options) => {
+    payloads.push(options.payload)
+    return Effect.fail(new Flows.StartUnavailable({ errorCode: "injected" }))
+  } } })
+  const body = request(branch.branchId)
+  const response = await post(h, body)
+  expect(response.status).toBe(503)
+  expect((await post(h, body)).status).toBe(503)
+  expect(payloads).toHaveLength(2)
+  expect(payloads[0]).toMatchObject({ branch: { branchId: branch.branchId, namespace: "ephemeral" } })
+  expect(payloads[1]).toEqual(payloads[0])
+  expect(await terminalRows(runtime, branch.branchId)).toEqual([
+    expect.objectContaining({ id: body.terminalId, status: "opening" }),
+  ])
+})
+
+test("a failed launch keeps the persisted GitHub forge for retry", async () => {
+  const { branch } = await runtime.runPromise(Conversations.track(REPO, "private-work", "open", "a".repeat(40), member.subject.id, undefined, "default", "github"))
+  const payloads: Array<unknown> = []
+  const h = await open(member, { starter: { start: (_flow, options) => {
+    payloads.push(options.payload)
+    return Effect.fail(new Flows.StartUnavailable({ errorCode: "injected" }))
+  } } })
+  const body = request(branch.branchId)
+  const response = await post(h, body)
+  expect(response.status).toBe(503)
+  expect((await post(h, body)).status).toBe(503)
+  expect(payloads).toHaveLength(2)
+  expect(payloads[0]).toMatchObject({ branch: { branchId: branch.branchId, forge: "github" } })
+  expect(payloads[1]).toEqual(payloads[0])
+  expect(await terminalRows(runtime, branch.branchId)).toEqual([
+    expect.objectContaining({ id: body.terminalId, status: "opening" }),
+  ])
+})

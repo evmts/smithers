@@ -19,6 +19,7 @@ import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
 import { ACTION_FAILED } from "../home/contract"
 import { NEW_BRANCH_PREFIX } from "./contract"
+import { CREATION } from "../../plugins/builtinFlows"
 import { dropped } from "./metrics"
 import { ConversationsStore } from "./store"
 
@@ -47,6 +48,7 @@ const openApi = async (forge?: Forge["Service"]) => {
   })
   const [owner, name] = DEFAULT_REPOSITORY.split("/") as [string, string]
   api.branches.github.publish(owner, name, { defaultBranch: "main", branches: { main: shaOf("main"), taken: shaOf("taken") } })
+  api.branches.forge.ephemeral.publish(owner, name, { defaultBranch: "main", branches: { taken: shaOf("taken") } })
   return api
 }
 
@@ -213,8 +215,8 @@ test("an act a closed tab left on the device follows its run when the device ope
 
 describe("a new conversation", () => {
   test("a Member's /new from home reports a missing deployment mirror and keeps the command retryable", async () => {
-    // No mirror is published for the deployment repository. This is the real
-    // branch handler's 404, not GitHub's repository-restricted writes endpoint.
+    // Without the deployment mirror, the selector cannot pin repository installation bytes.
+    // Its real not_found response is terminal and restores the accepted command.
     const runtime = openTestApp({ answers: false }, { forge: "code-storage" })
     runtimes.push(runtime)
     const api = await runtime.runPromise(Effect.service(TestChatApi))
@@ -316,6 +318,24 @@ describe("a new conversation", () => {
     await until(() =>
       expect(laptop.count(dispatches, { flow: "conversation/new", door: "slash", outcome: "done" })).toBe(2)
     )
+  }, WITHIN)
+
+  test("/new executes the repository-selected source through the device's durable engine", async () => {
+    const api = await openApi()
+    api.branches.forge.files.set(".smithers/branch.json", JSON.stringify({ plugin: "team-branches", flow: "create" }))
+    api.branches.forge.files.set(".smithers/plugins/team-branches/plugin.json", JSON.stringify({ ...CREATION.manifest, id: "team-branches" }))
+    api.branches.forge.files.set(".smithers/flows/team-branches/create/flow.ts", CREATION.source
+      .replace('"branches/create"', '"team-branches/create"')
+      .replace('Create.call({ ref })', 'Create.call({ ref: `team/${ref}` })'))
+    const laptop = await openDevice(api)
+    await laptop.branch.actions.open("octo", "hello", "feature/one")
+    laptop.commands.actions.type("/new selected")
+    laptop.commands.actions.submit("/new selected")
+    await until(() => expect(laptop.host.navigated).toEqual(["/octo/hello/tree/team/selected"]))
+    await until(() => expect(laptop.list()).toContain("team/selected"))
+    expect(api.branches.forge.created).toContainEqual({ repo: "github/octo/hello", from: "main", branch: "team/selected" })
+    expect(api.branches.github.repository("octo", "hello")?.branches["team/selected"]).toBeUndefined()
+    expect(api.branches.forge.ephemeral.repository("octo", "hello")?.branches["team/selected"]).toBe(shaOf("main"))
   }, WITHIN)
 
   test.each([401, 403])("/new stops after Code Storage %s: one write attempt, no navigation", async (status) => {

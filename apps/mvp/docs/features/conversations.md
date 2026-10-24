@@ -14,7 +14,7 @@ Each branch has one conversation for as long as the branch lives ([decision 0013
   a row opens its branch      Archived lists the others, each with [Restore]
 ```
 
-Conversations are part of the app's core, beside chat: every branch has one, and the composer, the branch page and the agent's turn all address it, so their rows, the pending acts and both flows (`conversation/*`) are core. The list's view is core for now: the [plugin host](plugins.md)'s first slice serves only `core/waits` as a query and runs events without a pending act on the device, so moving it means a `core/conversations` query and Archive as an event over the same action.
+Conversations are part of the app's core, beside chat: every branch has one, and the composer, the branch page and the agent's turn all address it, so their rows and pending acts are core. GH-11 makes branch creation an overridable plugin flow; [repository code](branch-creation.md) runs through the isolated public flow host. The list's view is core for now: the [plugin host](plugins.md)'s first slice serves only `core/waits` as a query and runs events without a pending act on the device, so moving it means a `core/conversations` query and Archive as an event over the same action.
 
 ## The list
 
@@ -39,7 +39,7 @@ Archive is personal: it changes your own list, on all your devices, and nobody e
 
 ## New
 
-`/new [branch]` in the composer starts a new conversation: a new branch at the default branch's head, opened in your tab. The agent can do the same (`conversation/new`), and so can the [New branch](branch-workspace.md#new-branch) button on a repository's home.
+`/new [branch]` in the composer starts a new conversation: by default, a Smithers-only branch at the default branch's head, opened in your tab. It lives in Code Storage's ephemeral namespace. GitHub writes require explicit publication or a [repository-selected creation flow](branch-creation.md) ([GH-11](../rulings.md#7-github), [0095](../decisions/0095-new-conversation-ephemeral-refs.md)). The agent can do the same (`conversation/new`), and so can the [New branch](branch-workspace.md#new-branch) button on a repository's home.
 
 | Where you type it | The new branch's repository |
 |---|---|
@@ -51,13 +51,17 @@ Archive is personal: it changes your own list, on all your devices, and nobody e
 - **Offline**, the step tries again for a day: the branch is made, and your tab opens it, once the device is back.
 - **A name the forge already has** is refused `exists` and never tried again; the tab stays where it is.
 - **The repository must already have a Code Storage mirror with a default branch.**
-  `/new` creates there through `POST /api/branches`, not GitHub's writes route;
+  `/new` creates an ephemeral ref there through `POST /api/branches`;
   being a Member of the deployment repository permits creation but does not
   create its mirror. A missing mirror or default branch is `not_found`.
 - **A failed command** restores its line in the composer with the existing
   `Couldn't make a branch` status. The person can submit it again. A late
   failure leaves newer typing, a dismissed menu or another conversation alone.
 - `/new` is a Member's command, as making a branch is.
+
+The repository can replace the default with [its own creation flow](branch-creation.md),
+including an explicit GitHub implementation. The selected source and its action
+receipts are durable, so reloads keep the original implementation.
 
 ## Flows
 
@@ -66,7 +70,8 @@ conversation/archive { conversationId?, archived, at? }    the list's Archive an
   conversation/archive/request ─ POST /api/conversations/archive
 
 conversation/new { repo?, branch? }                         /new; the agent
-  conversation/new/request ─ POST /api/branches { create: true, owner?, name?, ref, request }
+  conversation/new/request ─ branch/creation/start ─ pinned repository Flow.make
+    branches/ephemeral ─ POST /api/branches { create: true, owner?, name?, ref, request }
   app/navigate/go ─ the tab that asked opens /<owner>/<repo>/tree/<branch>
 ```
 

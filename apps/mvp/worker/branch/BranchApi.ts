@@ -1,3 +1,7 @@
+import * as GitHubConfig from "../github/Config.ts"
+import * as RepoConfig from "../RepoConfig.ts"
+import { CREATION_ROUTE } from "../../src/features/branch/creation.ts"
+import * as Creation from "./Creation.ts"
 import { Effect, type Layer } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
@@ -31,10 +35,12 @@ const branchPath = (path: string) => {
 
 /**
  * The routes over `database`, which opens a Postgres client for each request's scope. Reads `SANDBOX_COMMAND_MAX_SECONDS`
- * once, for the sandbox calls' commands.
+ * once, for the sandbox calls' commands. Captures the GitHub App and Code Storage client before building handlers.
  */
 export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
   Effect.gen(function* () {
+    const app = yield* GitHubConfig.configured
+    const client = yield* RepoConfig.codeStorage
     const conversations = yield* ConversationApi.make(database)
     const terminals = yield* Terminals.make(database)
     const shares = yield* Shares.make(database)
@@ -45,7 +51,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       const request = yield* HttpServerRequest.HttpServerRequest
       const path = request.url.split("?")[0]!
       if (ConversationApi.handles(path)) return yield* conversations.fetch
-      if (path === BRANCHES_ROUTE) return yield* Branches.make(database)
+      if (path === CREATION_ROUTE) return yield* Creation.route(client)
+      if (path === BRANCHES_ROUTE) return yield* Branches.make(database, app)
       if (SandboxCalls.handles(path)) return yield* sandboxCalls.fetch
       if (Texts.handles(path)) return yield* texts.fetch
       if (path === SHARES_SHAPE_ROUTE) return yield* shares.shape

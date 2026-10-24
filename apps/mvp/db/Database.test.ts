@@ -874,6 +874,7 @@ describe("0049–0050 GitHub write upgrade", () => {
     }))
 })
 
+
 describe("0052_agent_views", () => {
   test("adds forms and generated views, each with what it needs, and questions that name the view they came from", () =>
     emptySchema(async (url) => {
@@ -927,3 +928,68 @@ describe("0052_agent_views", () => {
       expect(await ask("user", ["a"])).toBe("refused")
     }))
 })
+
+
+describe("0055_branch_ref_namespace", () => {
+  test("preserves existing branches, conversations and shares, defaults their namespace and rejects unknown namespaces", () =>
+    emptySchema(async (url) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) => runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0052"))
+      const branchId = crypto.randomUUID()
+      const conversationId = crypto.randomUUID()
+      await on(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`INSERT INTO branches (id, repo_id, name, created_by)
+          VALUES (${branchId}, 'github/acme/widgets', 'existing', 'owner')`
+        yield* sql`INSERT INTO conversations (id, repo_id, branch_id)
+          VALUES (${conversationId}, 'github/acme/widgets', ${branchId})`
+        yield* sql`INSERT INTO branch_shares (branch_id, grantee, login, access, shared_by)
+          VALUES (${branchId}, 'viewer', 'viewer-login', 'view', 'owner')`
+      }))
+      const snapshot = (hasNamespace: boolean) => on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT to_jsonb(b) - ${hasNamespace ? "ref_namespace" : ""} - ${hasNamespace ? "ref_forge" : ""} AS branch, to_jsonb(c) AS conversation,
+          (SELECT jsonb_agg(to_jsonb(s) ORDER BY s.grantee) FROM branch_shares s WHERE s.branch_id = b.id) AS shares
+        FROM branches b JOIN conversations c ON c.branch_id = b.id ORDER BY b.id`))
+      const before = await snapshot(false)
+
+      expect((await on(through("0055"))).map(([id, name]) => `${id}_${name}`)).toEqual(["53_repo_runs", "54_message_pins", "55_branch_ref_namespace"])
+      expect(await snapshot(true)).toEqual(before)
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT DISTINCT ref_namespace AS namespace, ref_forge AS forge FROM branches`))).toEqual([{ namespace: "default", forge: "deployment" }])
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        UPDATE branches SET ref_namespace = 'ephemeral' WHERE id = ${branchId}`))
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT id, ref_namespace AS namespace FROM branches WHERE id = ${branchId}`)))
+        .toEqual([{ id: branchId, namespace: "ephemeral" }])
+      for (const namespace of ["unknown", null]) {
+        const refused = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          UPDATE branches SET ref_namespace = ${namespace} WHERE id = ${branchId}`).pipe(Effect.result))
+        expect(refused._tag).toBe("Failure")
+      }
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        UPDATE branches SET ref_forge = 'github' WHERE id = ${branchId}`))
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT ref_forge AS forge FROM branches WHERE id = ${branchId}`))).toEqual([{ forge: "github" }])
+      for (const forge of ["unknown", null]) {
+        const refused = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          UPDATE branches SET ref_forge = ${forge} WHERE id = ${branchId}`).pipe(Effect.result))
+        expect(refused._tag).toBe("Failure")
+      }
+      const request = crypto.randomUUID()
+      await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO github_branch_requests (id, person_id, actor, repo_id, owner, name, ref, sha)
+        VALUES (${request}, 'owner', '{"subject":{"kind":"person","id":"owner"},"role":"member"}'::jsonb,
+          'github/acme/widgets', 'acme', 'widgets', 'draft', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')`))
+      for (const failure of ["exists", "not_found", "not_configured", "forbidden"]) {
+        await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`UPDATE github_branch_requests SET failure = ${failure} WHERE id = ${request}`))
+      }
+      for (const failure of ["outcome_unknown", "unavailable", "unknown"]) {
+        const refused = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+          UPDATE github_branch_requests SET failure = ${failure} WHERE id = ${request}`).pipe(Effect.result))
+        expect(refused._tag).toBe("Failure")
+      }
+      expect(await on(through("0055"))).toEqual([])
+    }))
+})
+

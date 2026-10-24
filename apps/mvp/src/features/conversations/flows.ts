@@ -14,7 +14,7 @@ import { Archived, Made } from "./schema"
 //
 //   conversation/new { repo?, branch? }                      `/new` in the composer, and the agent
 //     conversation/new/stamp ─ now, recorded once: when the new branch was opened
-//     conversation/new/request ─ POST /api/branches { create: true }
+//     conversation/new/request ─ durable selected branch creation child
 //     app/navigate/go ─ the tab that asked opens the new branch
 //
 // A conversation lives as long as its branch, so a fresh one is a new branch. Archive changes only the person's own

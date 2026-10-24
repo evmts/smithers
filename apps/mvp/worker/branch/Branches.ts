@@ -1,3 +1,6 @@
+import { FlowStarter } from "../Flows.ts"
+import * as GitHubConfig from "../github/Config.ts"
+import * as GitHubCreation from "./GitHubCreation.ts"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { HttpClient } from "effect/http"
@@ -11,16 +14,17 @@ import { branchAccess, canView, isMember } from "./Access.ts"
 import * as Repos from "../Repos.ts"
 import * as Conversations from "./Conversations.ts"
 import * as ConversationPeople from "./ConversationPeople.ts"
-import { branchHead, createBranch, defaultBranch, failureFields, type Forge } from "./Forge.ts"
+import { branchHead, createBranch, defaultBranch, failureFields, Forge } from "./Forge.ts"
 
 // `POST /api/branches` (decision 0013 §2, docs/features/branch-workspace.md#tracking-a-branch): the write path of the
 // client flows `branch/track`, which a person opening a branch's page and the agent run alike, and `branch/create`,
 // which first makes a new branch on the forge from the default branch's head (`create: true`; a repository's home's New
-// branch, `/branch.new` and the agent; docs/features/branch-workspace.md#new-branch). It records a branch
-// GitHub already has, with its conversation, and answers both ids, what the person may do on it and whether its owner
+// branch, `/branch.new` and the agent; docs/features/branch-workspace.md#new-branch). Creation targets the mirror's
+// ephemeral namespace (decision 0095); tracking existing refs targets the default namespace. It records the branch
+// with its conversation, and answers both ids, what the person may do on it and whether its owner
 // shared it (`shared`: its prompt is then typed together, docs/features/coedit.md#the-prompt). A branch the app
 // tracks already answers at once, to those it is shared with (worker/branch/Access.ts), and 403 to anyone else; a new
-// one is read from its forge first (`Forge`), with the read credential the server holds, so a name GitHub doesn't have
+// one is read from its forge and namespace first (`Forge`), with the read credential the server holds, so a missing ref
 // is never recorded, and becomes the Member's who tracked it, private until they share it. The repository's default
 // branch is recorded `locked` (decision 0007 §5), and is the team's. A new branch whose name the forge already has is
 // refused 409 `exists`: it is someone else's branch, not one this request made. A new branch may name no repository:
@@ -41,6 +45,7 @@ const TrackRequest = Schema.Struct({
   ref: Schema.String,
   /** `branch/create`'s: make the branch on the forge, from the default branch's head, before tracking it. */
   create: Schema.optional(Schema.Literal(true)),
+  provider: Schema.optional(Schema.Literal("github")),
   /**
    * With `create`, `conversation/new`'s: the request asking for a fresh branch. A branch the app tracks answers only to
    * the request that made it; to any other, it is someone's branch already, refused `exists`.
@@ -55,7 +60,7 @@ const TrackRequest = Schema.Struct({
   Schema.makeFilter((request) =>
     ((request.owner === undefined && request.name === undefined && request.create === true) ||
       (request.owner !== undefined && request.name !== undefined && isRepository(request.owner, request.name))) &&
-    isBranchName(request.ref) && (request.request === undefined || request.create === true)
+    isBranchName(request.ref) && (request.request === undefined || request.create === true) && (request.provider === undefined || (request.create === true && request.request !== undefined))
   ),
 )
 const decodeTrack = Schema.decodeUnknownEffect(Schema.fromJsonString(TrackRequest))
@@ -70,7 +75,7 @@ type Fields = Record<string, string | number | boolean>
  * `Sessions` and the branch's forge from `Forge`. Each request is one span `branch.track`, one log line `branch.track`
  * with the repository, the outcome, the status and the duration, and one count; never the branch's name.
  */
-export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
+export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, app: Option.Option<GitHubConfig.GitHubApp>) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const startedAt = yield* Clock.currentTimeMillis
@@ -94,6 +99,45 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       const name = decoded.value.name ?? home.name
       const repo = repoId(owner, name)
       fields.repoId = repo
+      if (decoded.value.provider === "github") {
+        fields.forge = "github"
+        const reject = (status: number, code: string) => {
+          fields.outcome = code
+          return refusal(status, code)
+        }
+        if (!isMember(actor)) return reject(403, "forbidden")
+        const existing = yield* GitHubCreation.read(createRequest!, actor.value.subject.id).pipe(Effect.provide(database))
+        if (existing !== undefined && (existing.repo !== repo || existing.ref !== ref)) return reject(409, "exists")
+        const completed = yield* Conversations.createdFor(repo, actor.value.subject.id, createRequest!).pipe(Effect.provide(database))
+        if (completed !== undefined) {
+          const found = yield* branchAccess(actor, completed.branchId).pipe(Effect.provide(database))
+          if (found === undefined || !canView(found.access)) return reject(404, "not_found")
+          yield* ConversationPeople.opened(completed.conversationId, actor.value.subject.id, owner, name, completed.name, openedAt).pipe(Effect.provide(database))
+          fields.outcome = "tracked"
+          return HttpServerResponse.jsonUnsafe({ ...completed, access: found.access, shared: found.shared }, { status: 201, headers: noStore })
+        }
+        if (existing?.branchId !== undefined && existing.branchId !== null) return reject(404, "not_found")
+        if (existing?.failure !== undefined && existing.failure !== null) {
+          const code = existing.failure
+          fields.outcome = code
+          return reject(code === "forbidden" ? 403 : code === "not_found" ? 404 : code === "exists" ? 409 : 503, code)
+        }
+        if (Option.isNone(app)) return reject(503, "not_configured")
+        if (existing === undefined) {
+          const from = yield* defaultBranch({ owner, name }).pipe(Effect.result)
+          if (from._tag === "Failure" || from.success.branch === undefined) return from._tag === "Failure" && !["not_found", "empty"].includes(from.failure.code)
+            ? reject(503, "unavailable") : reject(404, "not_found")
+          const admitted = yield* GitHubCreation.admit({ actor: actor.value, repository: { id: repo, owner, name }, ref,
+            from: from.success.sha, request: createRequest! }).pipe(Effect.provide(database))
+          if (admitted === undefined) return reject(409, "exists")
+        }
+        const started = yield* (yield* FlowStarter).start(GitHubCreation.Create, {
+          executionId: createRequest!, payload: { request: createRequest! },
+        }).pipe(Effect.result)
+        if (started._tag === "Failure" && started.failure._tag === "@smthrs/mvp/flows/StartConflict") return reject(409, "exists")
+        fields.outcome = started._tag === "Failure" ? "unavailable" : "requested"
+        return started._tag === "Failure" ? reject(503, "unavailable") : reject(202, "requested")
+      }
       const known = yield* Conversations.find(repo, ref).pipe(Effect.provide(database))
       if (known !== undefined) {
         const found = yield* branchAccess(actor, known.branchId).pipe(Effect.provide(database))
@@ -127,10 +171,25 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             : refusal(404, "not_found")
         }
         resolvedDefault = from.success.branch
+        if (ref === resolvedDefault) {
+          fields.created = "exists"
+          fields.outcome = "exists"
+          return refusal(409, "exists")
+        }
+        // App identity is repository + name, so a private ephemeral ref cannot claim an ordinary ref's URL.
+        const ordinary = yield* branchHead({ owner, name }, ref).pipe(Effect.result)
+        if (ordinary._tag === "Success") {
+          fields.created = "exists"
+          fields.outcome = "exists"
+          return refusal(409, "exists")
+        }
+        if (ordinary.failure.code !== "ref_not_found") {
+          Object.assign(fields, failureFields("refs_read", ordinary.failure))
+          fields.outcome = "unavailable"
+          return refusal(503, "unavailable")
+        }
         const made = yield* createBranch({ owner, name }, ref, from.success.branch).pipe(Effect.result)
         fields.created = made._tag === "Success" ? "created" : made.failure.code
-        // A new ref with the default branch's head where it was: the refs devices keep for the repository read again.
-        if (made._tag === "Success") yield* Repos.refsChanged(repo).pipe(Effect.provide(database))
         if (made._tag === "Failure") {
           Object.assign(fields, failureFields("create_ref", made.failure))
           if (made.failure.code === "exists") {
@@ -146,7 +205,9 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             : refusal(503, "unavailable")
         }
       }
-      const head = yield* branchHead({ owner, name }, ref).pipe(Effect.result)
+      const namespace = decoded.value.create === true ? "ephemeral" : "default"
+      const readHead = branchHead({ owner, name }, ref, namespace)
+      const head = yield* readHead.pipe(Effect.result)
       if (head._tag === "Failure") {
         Object.assign(fields, failureFields("refs_read", head.failure))
         const code = head.failure.code
@@ -164,9 +225,11 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         }
         resolvedDefault = remoteDefault.success.branch
       }
-      const mode = resolvedDefault === ref ? "locked" : "open"
-      const tracked = yield* Conversations.track(repo, ref, mode, head.success, actor.value.subject.id, createRequest)
+      const mode = decoded.value.create !== true && resolvedDefault === ref ? "locked" : "open"
+      const tracked = yield* Conversations.track(repo, ref, mode, head.success, actor.value.subject.id, createRequest, namespace, "deployment")
         .pipe(Effect.provide(database))
+      // Devices may discover private refs only after their branch and conversation have been persisted.
+      if (decoded.value.create === true && tracked.created) yield* Repos.refsChanged(repo).pipe(Effect.provide(database))
       // Two people tracking one new branch at once: the one whose insert won owns it; the other may not see it.
       const found = yield* branchAccess(actor, tracked.branch.branchId).pipe(Effect.provide(database))
       if (found === undefined) return refusal(404, "not_found")
@@ -212,4 +275,4 @@ const codeFor = (status: number) =>
     : "unavailable"
 
 /** What the route needs from its host beyond Postgres: who is asking, the forge, and an HTTP client to reach it. */
-export type Requirements = Sessions | Forge | HttpClient.HttpClient | HttpServerRequest.HttpServerRequest
+export type Requirements = Sessions | FlowStarter | Forge | HttpClient.HttpClient | HttpServerRequest.HttpServerRequest

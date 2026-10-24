@@ -20,6 +20,7 @@ import {
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import { Directory, DirectoryUnavailable } from "./People.ts"
 import * as Shares from "./Shares.ts"
+import * as Conversations from "./Conversations.ts"
 
 const runtime = testFile("shares")
 beforeEach(() => resetBranches(runtime))
@@ -69,6 +70,40 @@ const grants = (branchId: string) =>
       ORDER BY grantee`))
 
 describe("POST /api/branches/<id>/shares", () => {
+  test("sharing and revocation invalidate repository refs after their new access is persisted", async () => {
+    const { branch } = await runtime.runPromise(Conversations.track(REPO, "private", "open", "a".repeat(40), maya.subject.id, undefined, "ephemeral"))
+    await runtime.runPromise(Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`INSERT INTO repositories (id, owner, name, status, refs_changed_at)
+        VALUES (${REPO}, 'octocat', 'spoon-knife', 'cloning', '2000-01-01')`
+      yield* sql`CREATE TABLE share_ref_visibility (access text)`
+      yield* sql.unsafe(`CREATE FUNCTION record_share_ref_visibility() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          INSERT INTO share_ref_visibility SELECT s.access FROM branches b
+            LEFT JOIN branch_shares s ON s.branch_id = b.id AND s.grantee = 'repository'
+            WHERE b.repo_id = NEW.id AND b.name = 'private';
+          RETURN NEW;
+        END $$`)
+      yield* sql`CREATE TRIGGER record_share_ref_visibility AFTER UPDATE OF refs_changed_at ON repositories
+        FOR EACH ROW EXECUTE FUNCTION record_share_ref_visibility()`
+    }))
+    try {
+      const h = await open()
+      const changes = ["view", "view", "edit", null, null] as const
+      for (const access of changes) expect((await post(h, branch.branchId, { grantee: "repository", access })).status).toBe(200)
+      expect(await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT access FROM share_ref_visibility`)))
+        .toEqual([{ access: "view" }, { access: "edit" }, { access: null }])
+    } finally {
+      await runtime.runPromise(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient
+        yield* sql`DROP TRIGGER record_share_ref_visibility ON repositories`
+        yield* sql`DROP FUNCTION record_share_ref_visibility()`
+        yield* sql`DROP TABLE share_ref_visibility`
+        yield* sql`DELETE FROM repositories WHERE id = ${REPO}`
+      }))
+    }
+  })
+
   test("the owner shares with a person by login, to view; again changes nothing; the sessions open are held to it", async () => {
     const branch = await mine()
     const h = await open()

@@ -15,6 +15,7 @@ import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import { type Actor, refusesPersonOnly, type Role, Sessions } from "../Actor.ts"
 import { readBounded } from "../Body.ts"
 import { codeOf } from "../ErrorCode.ts"
+import * as Repos from "../Repos.ts"
 import * as ShapeAccess from "../ShapeAccess.ts"
 import { branchAccess, canView, type Policy, policyOf, underPolicy } from "./Access.ts"
 import { Directory } from "./People.ts"
@@ -90,7 +91,7 @@ class Refused extends Schema.TaggedError<Refused>()("Refused", { status: Schema.
  * Writes `change` to branch `branchId`'s permission list for its owner `owner`, `person` the person a login named:
  * the transaction it wrote in, or `null` when the list already said so.
  */
-const write = (branchId: string, owner: Actor, change: Change, person: { readonly id: string; readonly login: string } | undefined) =>
+const write = (branchId: string, repoId: string, owner: Actor, change: Change, person: { readonly id: string; readonly login: string } | undefined) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     return yield* sql.withTransaction(Effect.gen(function* () {
@@ -137,7 +138,10 @@ const write = (branchId: string, owner: Actor, change: Change, person: { readonl
         UPDATE branch_shares SET access = ${access}, updated_at = now()
         WHERE branch_id = ${branchId} AND grantee = ${grantee}`
       return yield* txid
-    }))
+    }).pipe(
+      // Ref discovery changes with sharing. Publish the new grants and their cache revision in one transaction.
+      Effect.tap((written) => written === null ? Effect.void : Repos.refsChanged(repoId)),
+    ))
   })
 
 /** The live terminals on branch `branchId` whose owners may no longer view it under `policy`. */
@@ -203,7 +207,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             ? yield* (yield* Directory).find(decoded.value.login)
             : Option.none()
           if ("login" in decoded.value && Option.isNone(person)) return refuse(fields, 404, "no_person")
-          const written = yield* write(id, actor.value, decoded.value, Option.getOrUndefined(person)).pipe(
+          const written = yield* write(id, branch.repoId, actor.value, decoded.value, Option.getOrUndefined(person)).pipe(
             Effect.provide(database),
             Effect.result,
           )

@@ -1,3 +1,4 @@
+import * as Creation from "../branch/creationSteps"
 import { Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Clock, Effect, Layer, Metric, Result } from "effect"
@@ -107,9 +108,9 @@ export const requestNew = (
     const branch = request.branch ?? newBranchName(requestId)
     const repository = request.repo === undefined ? {} : (([owner, name]) => ({ owner, name }))(parts(request.repo))
     const answer = yield* Effect.result(
-      (yield* BranchClient).track({ ...repository, ref: branch, create: true, request: requestId, openedAt: request.at }),
+      Creation.run({ ...repository, ref: branch, request: requestId, openedAt: request.at }),
     )
-    const failure = answer._tag === "Failure" ? trackFailure(answer.failure) : undefined
+    const failure = answer._tag === "Failure" ? answer.failure : undefined
     const outcome = failure === undefined
       ? "made"
       : failure._tag === "@smthrs/mvp/branch/BranchTrackRefused"
@@ -120,7 +121,6 @@ export const requestNew = (
     yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("conversation.new").pipe(
       Effect.annotateLogs({
         outcome,
-        ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
         ...(answer._tag === "Success" ? { conversationId: answer.success.conversationId } : {}),
         durationMs: (yield* Clock.currentTimeMillis) - startedAt,
         feature: "conversations",
@@ -149,4 +149,4 @@ export const registration = Layer.merge(
 
 /** Your conversations' flows, asking ChatApi on `origin`. Needs the host's `HttpClient` and navigation's `Tabs`. */
 export const registrationAt = (origin: string) =>
-  registration.pipe(Layer.provide(ConversationsClient.layer({ origin })), Layer.provide(BranchClient.layer({ origin })))
+  Layer.merge(registration, Creation.registration(origin)).pipe(Layer.provide(ConversationsClient.layer({ origin })), Layer.provide(BranchClient.layer({ origin })))

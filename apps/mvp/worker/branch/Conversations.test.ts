@@ -122,3 +122,34 @@ describe("home", () => {
       .toBeUndefined()
   })
 })
+
+test("retains the ref namespace across tracking, reload, and sharing identity", async () => {
+  const first = await runtime.runPromise(Conversations.track(REPO, "private-work", "open", shaOf("main"), "owner", undefined, "ephemeral"))
+  const [row] = await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql<{ namespace: string }>`SELECT ref_namespace AS namespace FROM branches WHERE id = ${first.branch.branchId}`))
+  expect(row!.namespace).toBe("ephemeral")
+  expect(await runtime.runPromise(Conversations.namespaceOf(first.branch.branchId))).toBe("ephemeral")
+  expect(await runtime.runPromise(Conversations.find(REPO, "private-work"))).toEqual(first.branch)
+  // A replay through the legacy call shape cannot replace a recorded namespace, owner, or identity.
+  const replay = await runtime.runPromise(Conversations.track(REPO, "private-work", "locked", shaOf("other")))
+  expect(replay).toEqual({ created: false, branch: first.branch })
+  expect(await runtime.runPromise(Conversations.namespaceOf(replay.branch.branchId))).toBe("ephemeral")
+  const old = await runtime.runPromise(Conversations.track(REPO, "ordinary", "open", shaOf("main")))
+  expect(await runtime.runPromise(Conversations.namespaceOf(old.branch.branchId))).toBe("default")
+  const home = await runtime.runPromise(Conversations.find("github/smithersai/smithers", HOME_BRANCH))
+  expect(await runtime.runPromise(Conversations.namespaceOf(home!.branchId))).toBe("default")
+  expect(home!.conversationId).toBe(await runtime.runPromise(Conversations.conversationIdOf(home!.branchId)))
+  expect(await runtime.runPromise(Conversations.namespaceOf(crypto.randomUUID()))).toBe("default")
+})
+
+test("retains the explicit GitHub forge on replay and defaults legacy and missing branches to deployment", async () => {
+  const first = await runtime.runPromise(Conversations.track(REPO, "published", "open", shaOf("main"), "owner", undefined, "default", "github"))
+  expect(await runtime.runPromise(Conversations.forgeOf(first.branch.branchId))).toBe("github")
+  const replay = await runtime.runPromise(Conversations.track(REPO, "published", "locked", shaOf("other")))
+  expect(replay.branch).toEqual(first.branch)
+  expect(await runtime.runPromise(Conversations.forgeOf(replay.branch.branchId))).toBe("github")
+  expect(await runtime.runPromise(Conversations.namespaceOf(replay.branch.branchId))).toBe("default")
+  const old = await runtime.runPromise(Conversations.track(REPO, "ordinary", "open", shaOf("main")))
+  expect(await runtime.runPromise(Conversations.forgeOf(old.branch.branchId))).toBeUndefined()
+  expect(await runtime.runPromise(Conversations.forgeOf(crypto.randomUUID()))).toBeUndefined()
+})

@@ -2,12 +2,12 @@
 // the one repository when the deployment has an organization, else the public repository on GitHub with no credential
 // at all. GitHub is the scripted git host of worker/test/branch.ts, reached through Effect's `FetchHttpClient`.
 import { CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-storage"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Redacted } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Metric, Redacted, Tracer } from "effect"
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { describe, expect, test } from "vitest"
 import { gitHost, shaOf } from "../test/branch.ts"
 import { machineOf } from "../flows/TodoMachine.ts"
-import { branchHead, createBranch, defaultBranch, Forge, forgeOf } from "./Forge.ts"
+import { branchHead, CreateRefused, createBranch, defaultBranch, failureFields, Forge, forgeOf, proxy } from "./Forge.ts"
 
 /** A fresh ES256 key, as Code Storage's Keys page hands one out: a PKCS#8 PEM. */
 const pem = async () => {
@@ -139,13 +139,50 @@ describe("branchHead and defaultBranch on GitHub", () => {
 })
 
 describe("the forge proxy", () => {
+  test.each([
+    ["GET", "/info/refs?service=git-upload-pack"],
+    ["POST", "/git-upload-pack"],
+    ["POST", "/git-receive-pack"],
+  ])("refuses an unscoped ephemeral %s %s before contacting the provider", async (method, path) => {
+    let contacted = false
+    const registry: Metric.MetricRegistry = new Map()
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({ span(options) {
+      const span = new Tracer.NativeSpan(options)
+      spans.push(span)
+      return span
+    } })
+    const service = GitProxy.classify(method, path) ?? "refused"
+    const count = () => Effect.runSync(Metric.value(Metric.withAttributes(GitProxy.requests, { service, outcome: "refused" })).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+    )).count
+    const before = count()
+    const exit = await run<HttpServerResponse.HttpServerResponse, unknown>(Effect.flatMap(Forge, (forge) => proxy(
+      HttpServerRequest.fromWeb(new Request(`http://forge.smithers.internal${path}`, { method })),
+      forge,
+      { owner: "octocat", name: "Spoon-Knife", namespace: "ephemeral" },
+    )).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+      Effect.provideService(Tracer.Tracer, tracer),
+    ), {}, async () => {
+      contacted = true
+      throw new Error("injected transport outage")
+    })
+    expect(value(exit).status).toBe(403)
+    expect(contacted).toBe(false)
+    expect(count()).toBe(before + 1)
+    expect(spans.map((span) => ({ name: span.name, attributes: Object.fromEntries(span.attributes) }))).toEqual([{
+      name: "sandbox.forge",
+      attributes: { "git.proxy.service": service, "http.response.status_code": 403, outcome: "namespace_unscoped" },
+    }])
+  })
+
   test("reads only the branch's own repository, whatever repository the guest's path names", async () => {
     const host = github()
     const exit = await run(
       Effect.gen(function* () {
-        const remote = yield* upstream({ owner: "octocat", name: "Spoon-Knife" })
         const guest = new Request("http://forge.smithers.internal/octocat/secret/info/refs?service=git-upload-pack")
-        return yield* GitProxy.uploadPack(HttpServerRequest.fromWeb(guest), remote)
+        return yield* proxy(HttpServerRequest.fromWeb(guest), yield* Forge, { owner: "octocat", name: "Spoon-Knife" })
       }),
       {},
       host.fetch,
@@ -201,5 +238,87 @@ test.each([
   expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
     _tag: "CreateRefused", code: "forbidden",
     errorTag: "@smthrs/effect-code-storage/CodeStorageError", errorCode: code, errorStatus: status,
+  })
+})
+
+test("an ephemeral branch's proxy remote stays in its persisted namespace", async () => {
+  const exit = await run(Effect.flatMap(Forge, (forge) =>
+    forgeOf(forge, { namespace: "ephemeral" }).upstream({ owner: "octocat", name: "Spoon-Knife" })),
+    { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() })
+  expect(value(exit).url).toBe("https://acme.code.storage/github/octocat/spoon-knife+ephemeral.git")
+})
+
+test("default conversation creation asks only for the ephemeral destination", async () => {
+  let options: unknown
+  await Effect.runPromise(Effect.gen(function* () {
+    const client = yield* CodeStorage.CodeStorage
+    const faulty: CodeStorage.Client = { ...client, createBranch: (_repo, input) => {
+      options = input
+      return Effect.fail(new CodeStorage.CodeStorageError({ operation: "createBranch", code: "transport" }))
+    } }
+    yield* createBranch({ owner: "o", name: "r" }, "conversation", "main").pipe(
+      Effect.provide(Forge.codeStorage(faulty)), Effect.flip)
+  }).pipe(Effect.provide(CodeStorage.CodeStorage.layer({ org: "acme", key: Redacted.make(await pem()) }).pipe(
+    Layer.provide(FetchHttpClient.layer)))))
+  expect(options).toEqual({ branch: "conversation", from: "main", namespace: "ephemeral" })
+})
+
+
+test("an ephemeral sandbox advertises only its persisted branch through its namespace", async () => {
+  const seen: Array<string> = []
+  const tip = shaOf("conversation")
+  const pkt = (line: string) => (new TextEncoder().encode(line).length + 4).toString(16).padStart(4, "0") + line
+  const exit = await run<HttpServerResponse.HttpServerResponse, unknown>(Effect.flatMap(Forge, (forge) => proxy(
+    HttpServerRequest.fromWeb(new Request("http://forge.smithers.internal/other/repo/info/refs?service=git-upload-pack", {
+      headers: { "git-protocol": "version=2" },
+    })), forge,
+    { owner: "octocat", name: "Spoon-Knife", branch: "conversation", namespace: "ephemeral" },
+  )), { CODE_STORAGE_ORG: "acme", CODE_STORAGE_KEY: await pem() }, async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init)
+    seen.push(request.url)
+    expect(await request.text()).toContain("ref-prefix refs/heads/conversation")
+    return new Response(pkt(`${tip} refs/heads/conversation\n`) + pkt(`${shaOf("secret")} refs/heads/secret\n`) + "0000", {
+      headers: { "content-type": "application/x-git-upload-pack-result" },
+    })
+  })
+  const response = HttpServerResponse.toWeb(value(exit))
+  expect(response.status).toBe(200)
+  const body = await response.text()
+  expect(body).toContain(`${tip} refs/heads/conversation`)
+  expect(body).not.toContain("secret")
+  expect(seen).toEqual(["https://acme.code.storage/github/octocat/spoon-knife+ephemeral.git/git-upload-pack"])
+})
+
+
+test.each([
+  [409, "conflict", "exists"],
+  [404, "not_found", "not_found"],
+  [404, "repository_not_found", "not_found"],
+  [404, "ref_not_found", "not_found"],
+  [404, "branch_not_found", "not_found"],
+  [503, "unavailable", "unavailable"],
+])("Code Storage %s %s preserves the creation refusal class", async (status, code, expected) => {
+  const exit = await Effect.runPromiseExit(Effect.gen(function* () {
+    const client = yield* CodeStorage.CodeStorage
+    const faulty: CodeStorage.Client = { ...client, createBranch: () => Effect.fail(new CodeStorage.CodeStorageError({
+      operation: "createBranch", code, status,
+    })) }
+    return yield* createBranch({ owner: "o", name: "r" }, "conversation", "main").pipe(
+      Effect.provide(Forge.codeStorage(faulty)),
+    )
+  }).pipe(Effect.provide(CodeStorage.CodeStorage.layer({ org: "acme", key: Redacted.make(await pem()) }).pipe(
+    Layer.provide(FetchHttpClient.layer),
+  ))))
+  expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
+    _tag: "CreateRefused", code: expected, errorCode: code, errorStatus: status,
+  })
+})
+
+test("forge diagnostics fall back to the typed refusal and retain direct read failures", () => {
+  expect(failureFields("create_ref", new CreateRefused({ code: "not_configured" }))).toEqual({
+    forgeOperation: "create_ref", forgeErrorTag: "CreateRefused", forgeErrorCode: "not_configured",
+  })
+  expect(failureFields("refs_read", new GitRemote.GitRemoteError({ code: "not_found", status: 404 }))).toEqual({
+    forgeOperation: "refs_read", forgeErrorTag: "@smthrs/effect-code-storage/GitRemoteError", forgeErrorCode: "not_found", forgeStatus: 404,
   })
 })

@@ -1,3 +1,4 @@
+import * as GitHubCreation from "../branch/GitHubCreation.ts"
 // What a host builds to run the git loop (worker/github/{Config,Host}.ts, worker/ExecutionHost.ts `withGitHub`): the
 // App's settings from Config, the App itself, and the Durable Object's handlers running `github/Write` to the end over
 // the compose Postgres (`pnpm db:up`) with an in-memory object storage, as worker/ExecutionHost.test.ts runs the others.
@@ -129,7 +130,7 @@ describe("Host", () => {
         ),
       ),
     )
-    expect(flows.flows.slice(-5)).toEqual([Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun, Merge.Merge])
+    expect(flows.flows.slice(-6)).toEqual([Apply.Apply, Reconcile.Reconcile, Write.Write, Triage.TriageRun, Merge.Merge, GitHubCreation.Create])
     const values = new Map<string, unknown>()
     const storage: ExecutionHost.Storage = {
       get: <A>(storageKey: string) => Effect.sync(() => structuredClone(values.get(storageKey)) as A | undefined),
@@ -149,7 +150,9 @@ describe("Host", () => {
         const host = ExecutionHost.make(storage, {
           hostId: `object-${executionId}`,
           database: ExecutionHost.database(url, name),
-          flows,
+          flows: { ...flows, registration: flows.registration.pipe(
+            Layer.provide(Layer.succeed(GitHubCreation.Settings, { app: Option.none(), allowed: Option.none() })),
+          ) },
           router: { start: () => Effect.void, wake: () => Effect.void },
         })
         yield* host.start(yield* ExecutionHost.intent(Write.Write, { executionId, payload: { writeId } }))

@@ -70,6 +70,7 @@ interface Mirror {
   snapshots?: ReadonlyMap<string, Readonly<Record<string, Uint8Array>>>
   /** Every branch with its head, the default one included, and every tag, by name. */
   branches?: ReadonlyArray<{ readonly name: string; readonly sha: string }>
+  ephemeralBranches?: ReadonlyArray<{ readonly name: string; readonly sha: string }>
   tags?: ReadonlyArray<{ readonly name: string; readonly sha: string }>
 }
 
@@ -176,10 +177,12 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
           mirror.pending--
           return yield* error("listCommits", "sync_in_progress", 409, { retryAfterMillis: 5 })
         }
-        if (list.ref !== undefined && list.ref !== mirror.defaultBranch && list.ref !== mirror.commit!.sha) {
+        const branches = list.namespace === "ephemeral" ? mirror.ephemeralBranches ?? [] : mirror.branches!
+        const sha = list.ref === undefined ? mirror.commit!.sha : branches.find((branch) => branch.name === list.ref)?.sha ?? list.ref
+        if (!mirror.snapshots!.has(sha)) {
           return yield* error("listCommits", "ref_not_found", 404)
         }
-        const { sha, message, author, date } = mirror.commit!
+        const { message, author, date } = mirror.commit!
         return {
           commits: [{ sha, parentShas: [], message, authorName: author, authorEmail: "mona@example.com", date }],
           nextCursor: undefined,
@@ -195,7 +198,8 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
           return yield* error("listFiles", "repository_not_found", 404)
         }
         const ref = list.ref ?? ""
-        const files = mirror.snapshots!.get(ref)
+        const branches = list.namespace === "ephemeral" ? mirror.ephemeralBranches ?? [] : mirror.branches!
+        const files = mirror.snapshots!.get(branches.find((branch) => branch.name === ref)?.sha ?? ref)
         if (files === undefined) return yield* error("listFiles", "ref_not_found", 404)
         const limit = Math.min(list.limit ?? 5_000, options.pageSize ?? 5_000)
         const { page, next } = pageOf(Object.keys(files).sort(), list.cursor, limit)
@@ -212,7 +216,11 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
         calls.push(`readFile:${repo}:${read.path}`)
         yield* fault("readFile")
         const mirror = mirrors.get(repo)
-        const body = mirror?.synced === true ? mirror.snapshots!.get(read.ref ?? "")?.[read.path] : undefined
+        const branches = read.namespace === "ephemeral" ? mirror?.ephemeralBranches ?? [] : mirror?.branches ?? []
+        const ref = read.ref ?? ""
+        const body = mirror?.synced === true
+          ? mirror.snapshots!.get(branches.find((branch) => branch.name === ref)?.sha ?? ref)?.[read.path]
+          : undefined
         if (body === undefined) return yield* error("readFile", "not_found", 404)
         if (body.length > read.maxBytes) return yield* error("readFile", "too_large", 200, { size: body.length })
         return { bytes: body, blobSha: shaOf(read.path) }
@@ -223,7 +231,7 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
         yield* fault("listBranches")
         const mirror = mirrors.get(repo)
         if (mirror === undefined || !mirror.synced) return yield* error("listBranches", "repository_not_found", 404)
-        const { page, next } = pageOf(mirror.branches!, list.cursor, list.limit ?? 20)
+        const { page, next } = pageOf(list.namespace === "ephemeral" ? mirror.ephemeralBranches ?? [] : mirror.branches!, list.cursor, list.limit ?? 20)
         return {
           branches: page.map(({ name, sha }) => ({ name, sha, createdAt: "2026-10-19T12:00:00Z" })),
           nextCursor: next,
@@ -246,11 +254,13 @@ export const scripted = (options: { readonly syncPolls?: number; readonly pageSi
         yield* fault("createBranch")
         const mirror = mirrors.get(repo)
         if (mirror === undefined || !mirror.synced) return yield* error("createBranch", "repository_not_found", 404)
-        const branches = mirror.branches!
-        const from = branches.find((branch) => branch.name === create.from)
+        const branches = create.namespace === "ephemeral" ? mirror.ephemeralBranches ?? [] : mirror.branches!
+        const source = create.fromNamespace === "ephemeral" ? mirror.ephemeralBranches ?? [] : mirror.branches!
+        const from = source.find((branch) => branch.name === create.from)
         if (from === undefined) return yield* error("createBranch", "ref_not_found", 404)
         if (branches.some((branch) => branch.name === create.branch)) return yield* error("createBranch", "conflict", 409)
-        mirror.branches = [...branches, { name: create.branch, sha: from.sha }]
+        if (create.namespace === "ephemeral") mirror.ephemeralBranches = [...branches, { name: create.branch, sha: from.sha }]
+        else mirror.branches = [...branches, { name: create.branch, sha: from.sha }]
         return { branch: create.branch, sha: from.sha }
       }),
   }

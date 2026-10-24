@@ -1,4 +1,3 @@
-import { GitProxy } from "@smthrs/effect-code-storage"
 import { Logger } from "@smthrs/observability"
 import { ContainerSession, ContainerTerminal, SandboxObject as SandboxHost } from "@smthrs/platform-cloudflare"
 import type { SandboxTools } from "@smthrs/sandbox"
@@ -25,7 +24,7 @@ import {
 } from "./branch/Machines.ts"
 import { userOf } from "./branch/Users.ts"
 import { asUser, configuredSessionOn, failureFields, runOn, type UserOptions } from "./branch/Session.ts"
-import { Forge, forgeOf } from "./branch/Forge.ts"
+import { Forge, proxy } from "./branch/Forge.ts"
 import {
   type Attachment,
   CheckoutFailed,
@@ -255,7 +254,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
             yield* state.storage.put("branch", branch)
             const generation = yield* timed(start)
             stage = "checkout"
-            const exit = yield* timed(run(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name)), SANDBOX_USER))
+            const exit = yield* timed(run(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name), branch.namespace), SANDBOX_USER))
             if (exit !== 0) {
               yield* Effect.logWarning("sandbox.checkout").pipe(
                 Effect.annotateLogs({ branchId: branch.branchId, exitCode: exit, failure: CHECKOUT_FAILURES[exit] ?? "other" }),
@@ -475,8 +474,7 @@ export const live = <E, R>(connection: Effect.Effect<Cloudflare.Hyperdrive.Conne
             yield* Effect.logWarning("sandbox.forge").pipe(Effect.annotateLogs({ status: 403, outcome: "no_branch" }))
             return HttpServerResponse.empty({ status: 403 })
           }
-          const upstream = yield* forgeOf(forge, branch).upstream({ owner: branch.owner, name: branch.name })
-          const response = yield* GitProxy.uploadPack(request, upstream).pipe(Effect.provide(FetchHttpClient.layer))
+          const response = yield* proxy(request, forge, branch).pipe(Effect.provide(FetchHttpClient.layer))
           yield* Effect.logInfo("sandbox.forge").pipe(
             Effect.annotateLogs({ branchId: branch.branchId, status: response.status, outcome: "answered" }),
           )

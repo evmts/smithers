@@ -31,6 +31,7 @@ export class BranchClient extends Context.Service<
       readonly name?: string
       readonly ref: string
       readonly create?: true
+      readonly provider?: "github"
       /** With `create`, the request asking for a fresh branch (`conversation/new`). */
       readonly request?: string
       /** When the person opened the branch, in milliseconds since the epoch. */

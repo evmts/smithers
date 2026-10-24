@@ -81,10 +81,13 @@ const Reviewed = Flow.make("remote-runs-test/Reviewed", {
 })
 
 /** While set, `Produce` waits for it: a run holds in its first step until the test releases it. */
-let producing: Promise<void> | undefined
+let producing: { readonly wait: Promise<void>; readonly entered: () => void } | undefined
 
 const registration = Layer.mergeAll(
-  Produce.toLayer(({ size }) => Effect.promise(() => producing ?? Promise.resolve()).pipe(Effect.as("x".repeat(size)))),
+  Produce.toLayer(({ size }) => Effect.promise(() => {
+    producing?.entered()
+    return producing?.wait ?? Promise.resolve()
+  }).pipe(Effect.as("x".repeat(size)))),
   Implemented.toLayer(() => Effect.succeed("done")),
   Interpreter.layer(Child, { callbackIdentity: "stable" }),
   Interpreter.layer(Watched, { callbackIdentity: "stable" }),
@@ -415,15 +418,17 @@ describe("GET /api/shapes/remote-runs", () => {
       const h = await routes(engine, { actor: member })
       // Started, then held in its first step until the shape has its row: the run can't finish before it is followed.
       let release = () => {}
-      producing = new Promise<void>((resolve) => (release = resolve))
+      let entered = () => {}
+      const stepEntered = new Promise<void>((resolve) => (entered = resolve))
+      producing = { wait: new Promise<void>((resolve) => (release = resolve)), entered }
       let first: Awaited<ReturnType<typeof firstShape>>
       try {
         await engine.start(runId, 0)
+        // offset=-1 replays an initial snapshot; open it after the real first step begins.
+        await stepEntered
         first = await firstShape(h, runId)
-        await eventually(async () => {
-          first = await firstShape(h, runId)
-          return first.rows.length === 1
-        }, 10_000)
+        expect(first.status).toBe(200)
+        expect(first.rows).toEqual([{ run_id: runId, revision: expect.any(String) }])
       } finally {
         producing = undefined
         release()

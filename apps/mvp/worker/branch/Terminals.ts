@@ -1,3 +1,4 @@
+import { forgeOf, namespaceOf } from "./Conversations.ts"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -187,13 +188,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (admitted === undefined) return refuse(fields, 409, "id_taken")
           if (admitted.terminalId === terminalId) {
             const { owner, name } = partsOf(branch.repoId)
+          const namespace = yield* namespaceOf(branch.branchId).pipe(Effect.provide(database))
+          const forge = yield* forgeOf(branch.branchId).pipe(Effect.provide(database))
             // A resend starts the same execution, a no-op, so an open whose first start was lost still gets one.
             const started = yield* starter.start(TerminalOpen, {
               executionId: openExecutionId(terminalId),
               payload: {
                 terminalId,
                 ownerId: actor.value.subject.id,
-                branch: { branchId, owner, name, branch: branch.name },
+                branch: { branchId, owner, name, branch: branch.name, ...(namespace === "ephemeral" ? { namespace } : {}), ...(forge === undefined ? {} : { forge }) },
               },
             }).pipe(Effect.result)
             if (started._tag === "Failure") {

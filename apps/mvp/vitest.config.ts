@@ -64,6 +64,7 @@ export default defineConfig({
         "worker/ModelUsage.ts",
         "worker/SetModel.ts",
         "db/migrations/0004_model_roles.ts",
+        "db/migrations/0055_branch_ref_namespace.ts",
         // Sign-in (docs/features/sign-in.md).
         "worker/GitHubAuth.ts",
         "worker/SessionKeys.ts",

@@ -1,3 +1,4 @@
+import { forgeOf, namespaceOf } from "./Conversations.ts"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -187,10 +188,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, com
         }
         if (row.status === "running") {
           const { owner, name } = partsOf(branch.repoId)
+          const namespace = yield* namespaceOf(branch.branchId).pipe(Effect.provide(database))
+          const forge = yield* forgeOf(branch.branchId).pipe(Effect.provide(database))
           // A resend starts the same execution, a no-op, so a call whose first start was lost still gets one.
           const started = yield* starter.start(SandboxCall, {
             executionId: callExecutionId(callId),
-            payload: { callId, ownerId, branch: { branchId: branch.branchId, owner, name, branch: branch.name }, call },
+            payload: { callId, ownerId, branch: { branchId: branch.branchId, owner, name, branch: branch.name, ...(namespace === "ephemeral" ? { namespace } : {}), ...(forge === undefined ? {} : { forge }) }, call },
           }).pipe(Effect.result)
           if (started._tag === "Failure") {
             fields.errorCode = started.failure._tag
