@@ -10,7 +10,39 @@ import { baseURL, requires, scriptedAgent, target, writeHeaders, me, stackReposi
 
 // Real pages and services. Persist a structured audit even when several checks fail,
 // so the first run is the red receipt for each subsequent layout change.
-const test = base.extend<{ recording: void; mobileViewport: { width: number; height: number } }>({
+const test = base.extend<{ recording: void; mobileViewport: { width: number; height: number }; todos: Array<{ repository: string; title: string }> }>({
+  todos: [async ({ request }, use) => {
+    const todos: Array<{ repository: string; title: string }> = []
+    try {
+      await use(todos)
+    } finally {
+      // Fixture teardown has its own budget even when the test times out in
+      // commit, list hydration, navigation or the layout audit.
+      for (const { repository, title } of todos) {
+        type Todo = { title: string; number: number; state: string; run_id: string | null }
+        const path = `/api/shapes/todos?repo=${encodeURIComponent(repository)}`
+        let todo: Todo | undefined
+        await expect.poll(async () => {
+          todo = (await shapeRows<Todo>(request, path)).find((row) => row.title === title)
+          return Number(todo?.number)
+        }, { timeout: 30_000, message: "recover the committed TODO even if its browser row never rendered" }).toBeGreaterThan(0)
+        const dropped = await request.post(`/api/repos/${repository}/stack`, {
+          headers: writeHeaders(), data: { opId: crypto.randomUUID(), op: "drop", number: Number(todo!.number) },
+        })
+        expect(dropped.ok(), "cleanup must drop the real TODO and request its run cancellation").toBe(true)
+        await expect.poll(async () => {
+          todo = (await shapeRows<Todo>(request, path)).find((row) => row.title === title)
+          return todo?.state
+        }, { timeout: 30_000 }).toBe("dropped")
+        if (todo!.run_id !== null) await expect.poll(async () => {
+          const run = await request.get(`/api/remote-runs/${encodeURIComponent(todo!.run_id!)}?limit=1`)
+          if (!run.ok()) return `HTTP ${run.status()}`
+          const body = await run.json() as { run: { status: string } }
+          return body.run.status
+        }, { timeout: 30_000, message: "a drop receipt is not proof the TODO's run stopped" }).toMatch(/^(cancelled|completed|failed)$/)
+      }
+    }
+  }, { timeout: 100_000 }],
   mobileViewport: [{ width: 1280, height: 800 }, { option: true }],
   viewport: async ({ mobileViewport }, use) => use(mobileViewport),
   contextOptions: async ({ mobileViewport }, use, info) => {
@@ -301,12 +333,18 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
         })
         for (const kind of ["issues", "pulls"] as const) test(`${kind} detail: a synced item and its tabs fit`, async ({ page }, info) => {
           requires("githubApp", "syncedRepository")
+          test.setTimeout(Math.max(info.timeout, 180_000))
           const repository = syncedRepository()
           const repoId = `github/${repository}`.toLowerCase()
           await expect.poll(async () => (await shapeRows<{ repo_id: string; kind: string; deleted_at: string | null }>(page.request, "/api/shapes/items"))
             .filter((row) => row.repo_id === repoId && row.kind === (kind === "issues" ? "issue" : "pull") && row.deleted_at === null).length,
           { timeout: 30_000, message: `the server must sync a real ${kind} fixture for ${repository}; an empty projection is a product failure` }).toBeGreaterThan(0)
           await page.goto(`/${repository}/${kind}`)
+          // The server's projection and this browser's Electric snapshot are
+          // different receipts. Wait for the actual list query to finish before
+          // requiring a populated detail link; never accept an empty settled list.
+          await expect(page.locator('[data-slot="issues-view"]')).toBeVisible({ timeout: 30_000 })
+          await expect(page.locator('[data-slot="issues-view"]')).not.toHaveAttribute("aria-busy", "true", { timeout: 60_000 })
           const prefix = kind === "issues" ? "issues" : "pull"
           const item = page.locator(`a[href^="/${repository}/${prefix}/"]`).filter({ hasNotText: "New issue" }).first()
           await expect(item, "a real synced item is required; an empty list is not detail-page coverage").toBeVisible({ timeout: 30_000 })
@@ -320,7 +358,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             await audit(page, info, tab)
           }
         })
-        if (signedIn) test("TODO: draft, stack and detail fit", async ({ page }, info) => {
+        if (signedIn) test("TODO: draft, stack and detail fit", async ({ page, todos }, info) => {
           requires("member", "writableStack")
           test.setTimeout(120_000)
           await page.goto(`/${stackRepository()}/stack`)
@@ -330,19 +368,14 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
           await draft.getByLabel("Title").fill(title)
           await draft.getByLabel("Prompt").fill("Check that every control remains accessible on a narrow screen.")
           await audit(page, info, "draft")
+          todos.push({ repository: stackRepository(), title })
           await draft.getByRole("button", { name: "Commit", exact: true }).click()
           const row = page.locator('[data-slot="issues-row"]', { hasText: title })
           await expect(row).toContainText(/T\d+/, { timeout: 60_000 })
           await audit(page, info, "stack")
           await row.getByRole("link", { name: title }).click()
           await expect(page.getByRole("article", { name: new RegExp(title) })).toBeVisible()
-          try {
-            await audit(page, info, "todo")
-          } finally {
-            await page.getByRole("button", { name: "Drop", exact: true }).click()
-            await page.getByRole("dialog").getByRole("button", { name: "Drop", exact: true }).click()
-            await expect(page.getByRole("article", { name: new RegExp(title) })).toHaveAttribute("data-status", "dropped", { timeout: 30_000 })
-          }
+          await audit(page, info, "todo")
         })
         if (signedIn) test("run and queue: populated controls fit", async ({ page }, info) => {
           test.setTimeout(120_000)

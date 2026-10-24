@@ -1,11 +1,65 @@
 ---
 title: Production mobile sweep failures
-status: blocked
+status: done
 area: frontend
 owner: Codex (mini/prod-mobile)
 updated: 2026-10-23
 links: [./mobile-responsiveness-sweep.md, ../features/files.md, ../features/conversations.md]
 ---
+
+## Round 3 — production 98bd3487
+
+Started from main@origin 98bd3487. Existing catalog entries: `@smthrs/ui`,
+`@smthrs/effect-electric`, `@smthrs/effect-tanstack-db`. Repairs existing core
+rendering and its sweep; no new feature, dependency, stored schema or public API.
+Decision: [0089](../decisions/0089-mobile-shape-readiness.md).
+
+The issue and TODO screenshots expose the same product defect: the shared
+sidebar's T5/T4 and Watch links are 18px high. They now have 32px minimum
+width/height through 960px, with long branches still wrapping. The desktop
+baseline indexes the new mobile rule; the strict layout audit is unchanged.
+
+Pulls: its metadata shape completed, but the supplied items-shape receipt is
+3,845 rows without up-to-date. The list reads items too. The UI incorrectly
+showed No pull requests from the completed GitHub sync while the device query
+was still loading. It now checks the real live query's isReady. The sweep waits
+for the actual list to settle and still requires a real detail link. A fresh
+signed-out real SQLite device receives every one of five pulls from a
+multi-chunk 3,845-item snapshot alongside 8,061 comments. No local row loss was
+reproduced; this does not establish the original browser's eventual outcome.
+The first new integration run failed because the test had not recorded its
+repository as public; using the existing repository projection fixed that
+fixture without changing access policy.
+
+TODO cleanup belongs to fixture teardown in finally with its own budget,
+starting before Commit. It recovers the unique TODO from the server shape even
+if commit/list/navigation fails, posts Drop, verifies Dropped and waits for an
+existing run to be cancelled or already terminal (completed/failed). Supplied
+T13/T14 failure snapshots already show Dropped. They contain no terminal engine
+receipt, so their historical cancellation remains unverified; no production
+test or request was run.
+
+Red/green receipts (all `/tmp/prod-mobile-3-*`):
+
+- `layout-red.log`: 2 failures matching captured target dimensions; layout-green:
+  12 pass. `ready-red.log`: false empty pull-list render fails before the fix.
+- `render-final.log`: `vitest run tests/MobileLayout.browser.test.ts
+  src/features/pulls/view.test.ts --coverage.include=src/features/pulls/view.ts
+  --maxWorkers=1`, 26 pass; view.ts 100% statements/branches/functions/lines.
+- `pulls-final.log`: full touched pulls.test.ts, real Postgres/Electric/SQLite,
+  8 pass (isolated local ports 55489/30189). No production service was used.
+- `ui-tests.log`: `bun test tests/item-conversation.test.tsx
+  tests/item-conversation-page.test.tsx --coverage`, 34 pass. Changed
+  itemConversationCss export: 25/25 measured lines, 1/1 functions. Browser
+  geometry assertions are the CSS behavior evidence.
+- `cancellation.log`: actual durable engine cancellation regression in
+  worker/stack/Api.test.ts, 1 pass (30 unmatched tests skipped).
+- Frozen install, all four app typecheck projects, UI check, both app/UI
+  importRules pass. `playwright test mobile.spec.ts --list`: 153 cases.
+- Astra read-only review: no actionable findings. Fable executable unavailable.
+  Full suite not run; no full-suite lock taken. Full local mobile journey not
+  run (live model/Code Storage prerequisites); production e2e prohibited.
+  No public API change requires docs:sync; UI README and changeset updated.
 
 ## Round 2 — production 93ac5778
 
