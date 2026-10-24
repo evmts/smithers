@@ -1,10 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
-import { Effect } from "effect"
+import { Effect, Logger, Metric, Tracer } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, expect, test } from "vitest"
 import { BROWSER_TELEMETRY, EXPORTED_SPANS } from "../../telemetry"
 import { type ChangeRequest, readTodoStatus, StackClient } from "./api"
+import { statusReads } from "./metrics"
+import { inspectStatus } from "./steps"
 
 // The real stack client from the browser's side, against a local HTTP server that plays a gateway: real sockets, so a
 // stalled body, a body cut short and nothing listening are what a browser would meet. Every answer ChatApi itself gives
@@ -138,6 +140,16 @@ test("a status response that never completes cannot be treated as missing or que
   expect(await read(stalled.origin)).toMatchObject({ _tag: "Failure", failure: { reason: "unavailable" } })
 })
 
+test("an unreadable refusal body and an unavailable network never prove a TODO is missing", async () => {
+  const gateway = await serve((_, response) => {
+    response.writeHead(502, { "content-type": "text/html" })
+    response.end("<html>bad gateway</html>")
+  })
+  expect(await read(gateway.origin)).toMatchObject({ _tag: "Failure", failure: { reason: "unavailable" } })
+  await servers.splice(0)[0]!()
+  expect(await read(gateway.origin)).toMatchObject({ _tag: "Failure", failure: { reason: "unavailable" } })
+})
+
 test("the status read's log, counter and agent span pass the browser telemetry relay", () => {
   for (const name of ["todos.inspect", "smithers_todo_status_reads_client", "execute_tool todo/inspect"]) {
     expect(BROWSER_TELEMETRY.records).toContain(name)
@@ -145,4 +157,35 @@ test("the status read's log, counter and agent span pass the browser telemetry r
   expect(EXPORTED_SPANS).toContain("todos.inspect")
   expect(EXPORTED_SPANS).toContain("execute_tool todo/inspect")
   expect(BROWSER_TELEMETRY.fields).toEqual(expect.arrayContaining(["outcome", "durationMs", "feature"]))
+})
+
+test("status steps record the actual read outcome in their log, span and counter", async () => {
+  const registry: Metric.MetricRegistry = new Map()
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  const spans: Array<Tracer.NativeSpan> = []
+  const tracer = Tracer.make({ span(options) {
+    const span = new Tracer.NativeSpan(options)
+    spans.push(span)
+    return span
+  } })
+  for (const [status, code, outcome] of [[404, "todo_not_found", "not_found"], [403, "forbidden", "forbidden"]] as const) {
+    const served = await serve(json(status, { code }))
+    const result = await Effect.runPromise(Effect.result(inspectStatus(served.origin, { repo: "octo/hello", number: 3 })).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.provideService(Metric.MetricRegistry, registry),
+      Effect.provideService(Tracer.Tracer, tracer),
+      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((o) => void logs.push(Logger.formatStructured.log(o)))])),
+    ))
+    expect(result).toMatchObject(status === 404
+      ? { _tag: "Success", success: { kind: "not_found", number: 3 } }
+      : { _tag: "Failure", failure: { reason: "forbidden" } })
+    expect(Effect.runSync(Metric.value(Metric.withAttributes(statusReads, { outcome })).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry),
+    ))).toMatchObject({ count: 1 })
+    expect(served.asked).toEqual([{ method: "GET", url: "/api/repos/octo/hello/stack/3", body: "" }])
+    expect(logs.at(-1)).toMatchObject({ message: "todos.inspect", annotations: {
+      outcome, feature: "todos", durationMs: expect.any(Number),
+    } })
+    expect(spans.filter((span) => span.name === "todos.inspect").at(-1)?.attributes.get("outcome")).toBe(outcome)
+  }
 })

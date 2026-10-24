@@ -67,6 +67,10 @@ describe("one TODO's shared status", () => {
     for (const path of [route.replace(/1$/, "0"), route.replace(/1$/, "01"), route.replace(/1$/, "2147483648")]) {
       expect(Api.handles(path)).toBe(false)
     }
+    for (const path of ["/api/repos/%/hello/stack/1", "/api/repos/Octo/%/stack/1", "/api/repos/Octo/bad%2Fname/stack/1"]) {
+      expect(Api.handles(path)).toBe(false)
+      expect((await h.fetch(path)).status).toBe(404)
+    }
   })
 
   test("does not disclose another repository's TODOs without its GitHub role", async () => {

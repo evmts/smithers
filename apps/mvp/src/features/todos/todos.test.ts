@@ -28,7 +28,7 @@ import { repoId } from "../repo/contract"
 import { ChangeNotTaken, StackClient } from "./api"
 import { stackPath } from "./contract"
 import { FlowDispatch } from "../../flows/dispatch"
-import { TodoStepRefused } from "./flows"
+import { TodoStatusUnavailable, TodoStepRefused } from "./flows"
 import { pendingActions, sends } from "./metrics"
 import type { Draft, Requested, Sending, Todo, TodoRequest } from "./schema"
 import { IssuesStore } from "../issues/store"
@@ -176,6 +176,45 @@ const committed = async (tab: Tab, title: string, number: number) => {
   tab.actions.commit(drafted(tab, title, `${title}, please.`))
   await until(() => expect(tab.rows()).toContainEqual(expect.objectContaining({ number, title })))
 }
+
+describe("a shared TODO status read", () => {
+  test("the registered durable flow reads missing and current TODOs from the server without changing them", async () => {
+    const tab = await open()
+    const flows = await tab.runtime.runPromise(Effect.service(FlowDispatch))
+    const inspect = () => tab.runtime.runPromise(
+      flows.dispatch("todo/inspect", { repo: TEST_REPOSITORY, number: 1 }, { door: "agent" }),
+    )
+    expect(await inspect()).toEqual({ _tag: "Done", value: { kind: "not_found", number: 1 } })
+    await tab.actions.open(OWNER, NAME)
+    tab.actions.commit(drafted(tab, "Private title", "Private prompt"))
+    await until(() => expect(tab.rows()).toEqual([
+      { id: expect.any(String), number: 1, title: "Private title", state: "queued" },
+    ]))
+    // The read uses the shared row, including changes this device has not yet synced.
+    const runId = `todo:${crypto.randomUUID()}`
+    await sql(tab.api, `UPDATE todos SET state = 'failed', failure = 'empty_change', run_id = '${runId}' WHERE number = 1`)
+    expect(await inspect()).toEqual({
+      _tag: "Done", value: {
+        kind: "found", number: 1, state: "failed", step: null, attempt: 0, branch: null,
+        prNumber: null, failure: "empty_change", note: null, runId, updatedAt: expect.any(String),
+      },
+    })
+    expect(tab.api.spans.filter((span) => span.name === "stack.status").map((span) => span.attributes.get("outcome")))
+      .toEqual(["todo_not_found", "found"])
+    expect(await sql(tab.api, "SELECT count(*)::int AS n FROM stack_ops")).toEqual([{ n: 1 }])
+  }, WITHIN)
+
+  test("the registered flow preserves a real access refusal without reporting absence", async () => {
+    const tab = await open({}, gus)
+    const flows = await tab.runtime.runPromise(Effect.service(FlowDispatch))
+    expect(await tab.runtime.runPromise(
+      flows.dispatch("todo/inspect", { repo: TEST_REPOSITORY, number: 1 }, { door: "agent" }),
+    )).toEqual({ _tag: "Failed", error: new TodoStatusUnavailable({ reason: "forbidden" }) })
+    expect(tab.api.spans.filter((span) => span.name === "stack.status").map((span) => span.attributes.get("outcome")))
+      .toEqual(["forbidden"])
+    expect(await sql(tab.api, "SELECT count(*)::int AS n FROM stack_ops")).toEqual([{ n: 0 }])
+  }, WITHIN)
+})
 
 describe("a commit", () => {
   test("shows T– Requested at once; the stack numbers it T1, Queued, on every device; its prompt syncs", async () => {

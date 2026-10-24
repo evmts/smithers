@@ -1,6 +1,7 @@
 import { Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Clock, Context, type Duration, Effect, Layer, Metric, Option } from "effect"
+import { HttpClient } from "effect/http"
 import { asker } from "../../flows/askingTab"
 import type { Door } from "../../flows/dispatch"
 import { requesterOf } from "../../flows/requests"
@@ -245,5 +246,10 @@ export const inspectStatus = (origin: string, payload: { readonly repo: string; 
 /** Model-readable TODO status on the device's durable engine. */
 export const registrationAt = (origin: string) => Layer.mergeAll(
   registration,
-  Interpreter.layerWithImplementations(TodoInspect, ReadTodoStatus.toLayer((payload) => inspectStatus(origin, payload))),
+  // Keep the host's authenticated transport when the engine supplies its step context.
+  Layer.unwrap(Effect.map(HttpClient.HttpClient, (client) =>
+    Interpreter.layerWithImplementations(TodoInspect, ReadTodoStatus.toLayer((payload) =>
+      inspectStatus(origin, payload).pipe(Effect.provideService(HttpClient.HttpClient, client)),
+    )),
+  )),
 )
