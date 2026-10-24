@@ -444,3 +444,8 @@ Exercise smithers.sh as a real user for 24 hours, through October 24 at about 12
 ## 2026-10-24, 01:27 PDT
 
 - The third saved Cloud workspace, `handoff-validation`, also failed a bounded read-only `pwd` probe: after 60 seconds with no command output, interruption returned the same gateway failure. All three saved Latitude workspaces are currently unable to run a shell. `jj git fetch --remote origin` found no new main revision. The app's full build, deploy, and Arc production acceptance remain open.
+
+## 2026-10-24, 01:33 PDT
+
+- Rechecked the required device schema and migration gates before a future deploy. The sparse workspace's installed `@smthrs/views` points into a different checkout, so the uncorrected run failed two old home-store fingerprints and their migration counts. Temporarily resolving Views and Crypto from this revision made both files pass 27/27. The temporary links were restored; no lock or source was changed.
+- The older-device upgrade suite initially stopped at the sparse install's older PKCE API, then at its older Electric wrapper. With two temporary PKCE compatibility substitutions and test-only links to this revision's Views, Electric, and TanStack DB wrappers, all three upgrade cases passed against real local Postgres and Electric (3/3). The substitutions and links were restored, and `jj diff --summary` is empty. These local checks do not replace the remote full build, the deployed-build browser upgrade test, or Arc production acceptance.
