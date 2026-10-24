@@ -262,15 +262,34 @@ const json = async (response: Response): Promise<readonly [number, EngineStore.R
   await response.json(),
 ]
 
-/** A shape request's first answer, and the rows it carried. */
-const firstShape = async (h: Awaited<ReturnType<typeof routes>>, runId: string) => {
-  const response = await h.fetch(`${REMOTE_RUN_SHAPE_ROUTE}?run=${encodeURIComponent(runId)}&offset=-1`)
-  const body = response.status === 200 ? ((await response.json()) as Array<{ value?: Record<string, string> }>) : []
+/** A shape's snapshot, or changes after its last cursor, and the rows those messages install. */
+const firstShape = async (
+  h: Awaited<ReturnType<typeof routes>>,
+  runId: string,
+  cursor?: { readonly handle: string; readonly offset: string; readonly rows: ReadonlyArray<Record<string, string>> },
+) => {
+  const query = new URLSearchParams({ run: runId, offset: cursor?.offset ?? "-1" })
+  if (cursor !== undefined) {
+    query.set("handle", cursor.handle)
+    query.set("live", "true")
+  }
+  const response = await h.fetch(`${REMOTE_RUN_SHAPE_ROUTE}?${query}`)
+  const body = response.status === 200
+    ? ((await response.json()) as Array<{ value?: Record<string, string>; headers: { operation?: string } }>)
+    : []
+  // Electric returns changes, including multiple revisions of a row, rather than a new snapshot at every offset.
+  const rows = new Map(cursor?.rows.map((row) => [row.run_id!, row]))
+  for (const message of body) {
+    if (message.value === undefined) continue
+    const id = message.value.run_id!
+    if (message.headers.operation === "delete") rows.delete(id)
+    else rows.set(id, { ...rows.get(id), ...message.value })
+  }
   return {
     status: response.status,
     handle: response.headers.get("electric-handle"),
     offset: response.headers.get("electric-offset"),
-    rows: body.flatMap((message) => (message.value === undefined ? [] : [message.value])),
+    rows: [...rows.values()],
   }
 }
 
@@ -423,10 +442,16 @@ describe("GET /api/shapes/remote-runs", () => {
       producing = { wait: new Promise<void>((resolve) => (release = resolve)), entered }
       let first: Awaited<ReturnType<typeof firstShape>>
       try {
-        await engine.start(runId, 0)
-        // offset=-1 replays an initial snapshot; open it after the real first step begins.
-        await stepEntered
         first = await firstShape(h, runId)
+        expect(first.status).toBe(200)
+        expect(first.rows).toEqual([])
+        await engine.start(runId, 0)
+        await stepEntered
+        await eventually(async () => {
+          // The original snapshot can be empty forever. Consume its cursor to see the later insertion.
+          first = await firstShape(h, runId, { handle: first.handle!, offset: first.offset!, rows: first.rows })
+          return first.rows.length === 1
+        }, 10_000)
         expect(first.status).toBe(200)
         expect(first.rows).toEqual([{ run_id: runId, revision: expect.any(String) }])
       } finally {
